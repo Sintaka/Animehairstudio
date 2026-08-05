@@ -1276,6 +1276,47 @@ button:focus-visible {
   pointer-events: auto;
 }
 
+.file-drop-target {
+  position: absolute;
+  inset: 18px;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  border: 2px dashed rgba(124, 222, 168, 0.72);
+  border-radius: 10px;
+  background: rgba(17, 15, 19, 0.72);
+  color: #bdf3d5;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.viewport-panel.file-drop-active .file-drop-target {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.file-drop-shell {
+  display: grid;
+  gap: 8px;
+  width: min(620px, calc(100% - 48px));
+  padding: 18px;
+  border: 1px solid #3d5c4c;
+  border-radius: 8px;
+  background: #161419f2;
+  box-shadow: 0 18px 48px #0009;
+  text-align: center;
+}
+
+.file-drop-shell > span {
+  color: #aaa2ae;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .reference-image-drop-shell {
   display: grid;
   gap: 8px;

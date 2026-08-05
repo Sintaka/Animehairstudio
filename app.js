@@ -270,6 +270,7 @@ setupEditableSliderControls();
 const viewport = document.querySelector("#viewport");
 const viewportPanel = viewport.closest(".viewport-panel");
 const referenceImageDropTarget = document.querySelector("#referenceImageDropTarget");
+const fileDropTarget = document.querySelector("#fileDropTarget");
 const referenceOverlayDropMarker = document.querySelector("#referenceOverlayDropMarker");
 const selectionMarquee = document.querySelector("#selectionMarquee");
 const sculptBrushDock = document.querySelector("#sculptBrushDock");
@@ -6675,23 +6676,37 @@ async function addReferenceImagesFromFiles(
   return added;
 }
 
-function dragContainsReferenceImage(event) {
-  const items = [...(event.dataTransfer?.items || [])].filter((item) => item.kind === "file");
-  if (!items.length) return false;
-  return items.some((item) => !item.type || SUPPORTED_REFERENCE_IMAGE_TYPES.has(item.type.toLowerCase()));
-}
-function isProjectFile(file) {
-  return Boolean(file) && /\.(?:ahs|animehair\.json|json)$/i.test(String(file.name));
+const FILE_DROP_KINDS = Object.freeze({
+  project: "project",
+  image: "image",
+  other: "other"
+});
+
+function classifyDroppedFile(file) {
+  if (isProjectFile(file)) return FILE_DROP_KINDS.project;
+  if (isSupportedReferenceImageFile(file)) return FILE_DROP_KINDS.image;
+  return FILE_DROP_KINDS.other;
 }
 
-function dragContainsProjectFile(event) {
+function fileDropKindFromDrag(event) {
   const files = [...(event.dataTransfer?.files || [])];
-  if (files.some(isProjectFile)) return true;
+  if (files.length) {
+    const kinds = new Set(files.map(classifyDroppedFile));
+    if (kinds.has(FILE_DROP_KINDS.project)) return FILE_DROP_KINDS.project;
+    if (kinds.has(FILE_DROP_KINDS.image)) return FILE_DROP_KINDS.image;
+    return FILE_DROP_KINDS.other;
+  }
   const items = [...(event.dataTransfer?.items || [])].filter((item) => item.kind === "file");
-  return items.some((item) => {
-    const file = item.getAsFile?.();
-    return file ? isProjectFile(file) : false;
-  });
+  if (items.length) {
+    const kinds = new Set(items.map((item) => {
+      const file = item.getAsFile?.();
+      return file ? classifyDroppedFile(file) : FILE_DROP_KINDS.other;
+    }));
+    if (kinds.has(FILE_DROP_KINDS.project)) return FILE_DROP_KINDS.project;
+    if (kinds.has(FILE_DROP_KINDS.image)) return FILE_DROP_KINDS.image;
+    return FILE_DROP_KINDS.other;
+  }
+  return null;
 }
 
 function setReferenceImageDragActive(active) {
@@ -6702,13 +6717,11 @@ function setReferenceImageDragActive(active) {
   if (!nextActive) setReferenceDropHover();
 }
 
-function prepareReferenceImageDrop() {
-  if (viewportEditMode !== "reference") {
-    setViewportEditMode("reference");
-    return;
-  }
-  if (activeOutlinerTab !== "references") setOutlinerTab("references");
-  if (referenceImagePanel.classList.contains("hidden")) setReferenceImagePanelOpen(true);
+function setFileDropActive(active) {
+  const nextActive = Boolean(active);
+  viewportPanel.classList.toggle("file-drop-active", nextActive);
+  document.body.classList.toggle("file-drop-active", nextActive);
+  fileDropTarget.setAttribute("aria-hidden", String(!nextActive));
 }
 
 function referenceDropDestination(event) {
@@ -25798,57 +25811,69 @@ referenceImageFile.addEventListener("change", async () => {
   }
 });
 window.addEventListener("dragenter", (event) => {
-  if (dragContainsProjectFile(event)) {
-    event.preventDefault();
-    return;
-  }
-  if (!dragContainsReferenceImage(event)) return;
+  const kind = fileDropKindFromDrag(event);
+  if (!kind) return;
   event.preventDefault();
-  prepareReferenceImageDrop();
-  setReferenceImageDragActive(true);
-  setReferenceDropHover(event);
+  if (kind === FILE_DROP_KINDS.image) {
+    setReferenceImageDragActive(true);
+    setReferenceDropHover(event);
+  } else {
+    setFileDropActive(true);
+  }
 });
 window.addEventListener("dragover", (event) => {
-  if (dragContainsProjectFile(event)) {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-    return;
-  }
-  if (!dragContainsReferenceImage(event)) return;
+  const kind = fileDropKindFromDrag(event);
+  if (!kind) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = "copy";
-  prepareReferenceImageDrop();
-  setReferenceImageDragActive(true);
-  setReferenceDropHover(event);
+  if (kind === FILE_DROP_KINDS.image) {
+    setReferenceImageDragActive(true);
+    setReferenceDropHover(event);
+  } else {
+    setFileDropActive(true);
+  }
 });
 window.addEventListener("dragleave", (event) => {
-  if (event.relatedTarget == null) setReferenceImageDragActive(false);
-});
-window.addEventListener("dragend", () => setReferenceImageDragActive(false));
-window.addEventListener("drop", async (event) => {
-  const projectFiles = [...(event.dataTransfer?.files || [])].filter(isProjectFile);
-  if (projectFiles.length) {
-    event.preventDefault();
+  if (event.relatedTarget == null) {
     setReferenceImageDragActive(false);
+    setFileDropActive(false);
+  }
+});
+window.addEventListener("dragend", () => {
+  setReferenceImageDragActive(false);
+  setFileDropActive(false);
+});
+window.addEventListener("drop", async (event) => {
+  const files = [...(event.dataTransfer?.files || [])];
+  setReferenceImageDragActive(false);
+  setFileDropActive(false);
+  if (!files.length) return;
+  event.preventDefault();
+
+  const projectFiles = files.filter(isProjectFile);
+  if (projectFiles.length) {
     openHairProjectFile(projectFiles[0]);
     return;
   }
-  const files = [...(event.dataTransfer?.files || [])].filter(isSupportedReferenceImageFile);
-  const destination = referenceDropDestination(event);
-  const overlayPosition = destination === "overlay" ? viewportOverlayDropPosition(event) : null;
-  setReferenceImageDragActive(false);
-  if (!files.length) return;
-  event.preventDefault();
-  if (!destination) return;
-  try {
-    const type = destination === "overlay" ? "overlay" : "plane";
-    await addReferenceImagesFromFiles(files, type, {
-      view: type === "plane" ? destination : "front",
-      overlayPosition
-    });
-  } catch (error) {
-    console.error("Could not add dropped reference images", error);
+
+  const imageFiles = files.filter(isSupportedReferenceImageFile);
+  if (imageFiles.length) {
+    const destination = referenceDropDestination(event);
+    const overlayPosition = destination === "overlay" ? viewportOverlayDropPosition(event) : null;
+    if (!destination) return;
+    try {
+      const type = destination === "overlay" ? "overlay" : "plane";
+      await addReferenceImagesFromFiles(imageFiles, type, {
+        view: type === "plane" ? destination : "front",
+        overlayPosition
+      });
+    } catch (error) {
+      console.error("Could not add dropped reference images", error);
+    }
+    return;
   }
+
+  console.warn("Dropped file type is not supported:", files.map((file) => file.name));
 });
 
 bindUndoCapture(referenceImageType);
