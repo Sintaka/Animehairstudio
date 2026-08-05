@@ -12701,6 +12701,7 @@ function deleteActiveHairMaterial() {
   activeHairMaterialId = DEFAULT_HAIR_MATERIAL_ID;
   syncHairMaterialEditor();
   renderLockList();
+  hairMaterialOutliner.querySelector(`[data-hair-material-id="${CSS.escape(DEFAULT_HAIR_MATERIAL_ID)}"]`)?.focus();
 }
 
 function createHairTopologyGeometry(sourceGeometry) {
@@ -24028,6 +24029,7 @@ hairMaterialOutliner.addEventListener("click", (event) => {
   if (!item) return;
   activeHairMaterialId = item.dataset.hairMaterialId;
   syncHairMaterialEditor();
+  hairMaterialOutliner.querySelector(`[data-hair-material-id="${CSS.escape(item.dataset.hairMaterialId)}"]`)?.focus();
 });
 
 [
