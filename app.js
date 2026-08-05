@@ -1843,6 +1843,7 @@ let selectedCurveLatticePoint = null;
 let selectedControlPoints = [];
 let selectionMarqueeDrag = null;
 let altOrbitDrag = null;
+let houdiniZoomDrag = null;
 let altPointRemovalCandidate = null;
 let altStrandRemovalCandidate = null;
 let curvePointInsertionCandidate = null;
@@ -10275,8 +10276,8 @@ function finishBrushSizeDrag(event) {
 
 function updateInteractionLocks() {
   const loftStrokeActive = Boolean(loftSurfaceDraft?.activeStroke);
-  controls.enabled = Boolean(altOrbitDrag) || (!toolRadialGesture && !strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !selectPointerCapture && !transformDragging && !relaxEdit && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpLatticeDrag && !scalpPaintDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !polyBrushStroke && !loftStrokeActive && !selectionMarqueeDrag && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag);
-  transformControls.enabled = !toolRadialGesture && !strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !altOrbitDrag && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !polyBrushStroke && !loftStrokeActive && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag;
+  controls.enabled = Boolean(altOrbitDrag) || (!toolRadialGesture && !strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !selectPointerCapture && !transformDragging && !relaxEdit && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpLatticeDrag && !scalpPaintDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !polyBrushStroke && !loftStrokeActive && !selectionMarqueeDrag && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag && !houdiniZoomDrag);
+  transformControls.enabled = !toolRadialGesture && !strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !altOrbitDrag && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !polyBrushStroke && !loftStrokeActive && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag && !houdiniZoomDrag;
 }
 
 function configureTransformControls(tool) {
@@ -19996,6 +19997,46 @@ function endAltOrbit(event) {
   updateInteractionLocks();
 }
 
+function fastDragMagnitude(dx, dy) {
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  return ax > ay ? ax + ay * 0.4142 : ay + ax * 0.4142;
+}
+
+function beginHoudiniZoomDrag(event) {
+  if (navigationMode !== NAVIGATION_MODES.houdini || event.button !== 2 || !event.altKey) return;
+  houdiniZoomDrag = { pointerId: event.pointerId, lastX: event.clientX, lastY: event.clientY };
+  renderer.domElement.setPointerCapture?.(event.pointerId);
+  updateInteractionLocks();
+  event.preventDefault();
+}
+
+function updateHoudiniZoomDrag(event) {
+  if (!houdiniZoomDrag || event.pointerId !== houdiniZoomDrag.pointerId) return;
+  const dx = event.clientX - houdiniZoomDrag.lastX;
+  const dy = event.clientY - houdiniZoomDrag.lastY;
+  houdiniZoomDrag.lastX = event.clientX;
+  houdiniZoomDrag.lastY = event.clientY;
+  if (dx === 0 && dy === 0) return;
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  const magnitude = fastDragMagnitude(dx, dy);
+  const sign = ay >= ax ? (dy < 0 ? -1 : 1) : (dx < 0 ? -1 : 1);
+  const delta = sign * magnitude;
+  if (delta >= 0) controls.dollyOut(controls.getZoomScale(delta));
+  else controls.dollyIn(controls.getZoomScale(-delta));
+  controls.update();
+  event.preventDefault();
+}
+
+function endHoudiniZoomDrag(event) {
+  if (!houdiniZoomDrag || (event?.pointerId !== undefined && event.pointerId !== houdiniZoomDrag.pointerId)) return;
+  const pointerId = houdiniZoomDrag.pointerId;
+  houdiniZoomDrag = null;
+  if (renderer.domElement.hasPointerCapture?.(pointerId)) renderer.domElement.releasePointerCapture(pointerId);
+  updateInteractionLocks();
+}
+
 function updateSelectionMarquee(event) {
   if (!selectionMarqueeDrag || event.pointerId !== selectionMarqueeDrag.pointerId) return;
   selectionMarqueeDrag.currentX = event.clientX;
@@ -22650,7 +22691,7 @@ function setNavigationMode(mode, { persist = true } = {}) {
   navigationModePreferenceInput.value = navigationMode;
   const houdini = navigationMode === NAVIGATION_MODES.houdini;
   controls.mouseButtons = houdini
-    ? { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.DOLLY }
+    ? { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: -1 }
     : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
   updateNavigationTips();
   if (persist) writeStoredPreference(window, NAVIGATION_MODE_PREFERENCE_KEY, navigationMode);
@@ -28173,6 +28214,7 @@ window.addEventListener("pointermove", updateScalpBuilderStroke);
 window.addEventListener("pointermove", updatePanelSplitHandleDrag);
 window.addEventListener("pointermove", updateCapsuleGuideLoopHover);
 window.addEventListener("pointermove", updateCapsuleGuideLoopDrag);
+window.addEventListener("pointermove", updateHoudiniZoomDrag, true);
 window.addEventListener("pointerup", endViewSnap);
 window.addEventListener("pointerup", finishTaperMeshPointDrag, true);
 window.addEventListener("pointerup", finishReferenceCrop, true);
@@ -28197,6 +28239,7 @@ window.addEventListener("pointerup", finishCurvePointInsertion, true);
 window.addEventListener("pointerup", finishAltPointRemoval, true);
 window.addEventListener("pointerup", finishAltStrandRemoval, true);
 window.addEventListener("pointerup", endAltOrbit);
+window.addEventListener("pointerup", endHoudiniZoomDrag);
 window.addEventListener("pointerup", endSelectPointerCapture);
 window.addEventListener("pointercancel", endViewSnap);
 window.addEventListener("pointercancel", (event) => finishTaperMeshPointDrag(event, { cancel: true }), true);
@@ -28225,6 +28268,7 @@ window.addEventListener("pointercancel", () => {
 });
 window.addEventListener("pointercancel", (event) => finishSelectionMarquee(event, { cancel: true }));
 window.addEventListener("pointercancel", endAltOrbit);
+window.addEventListener("pointercancel", endHoudiniZoomDrag);
 window.addEventListener("pointercancel", endSelectPointerCapture);
 window.addEventListener("pointerup", (event) => {
   if (activeTool === "place" && finishPlacementPointer(event)) {
@@ -28251,6 +28295,7 @@ renderer.domElement.addEventListener("pointerdown", beginPolyBrushPointer, true)
 renderer.domElement.addEventListener("pointerdown", trackViewportPointerDown, true);
 renderer.domElement.addEventListener("pointerdown", prepareSelectPointerCapture, true);
 renderer.domElement.addEventListener("pointerdown", beginAltOrbit, true);
+renderer.domElement.addEventListener("pointerdown", beginHoudiniZoomDrag, true);
 renderer.domElement.addEventListener("pointerdown", prepareCurvePointSelection, true);
 renderer.domElement.addEventListener("pointerdown", prioritizeScalpBuilderPointSelection, true);
 renderer.domElement.addEventListener("pointermove", updateControlPointHover);
