@@ -2631,7 +2631,10 @@ const APP_SHORTCUT_KEYS = new Set([
 function focusedControlShouldYieldToShortcut(event) {
   const focused = document.activeElement;
   const tag = focused?.tagName?.toLowerCase();
-  const yieldsAppShortcuts = tag === "select" || (tag === "input" && (focused.type === "range" || focused.type === "number"));
+  const textEntry = tag === "textarea"
+    || focused?.isContentEditable === true
+    || (tag === "input" && ["text", "search", "email", "password", "url", "tel"].includes(focused.type));
+  const yieldsAppShortcuts = !textEntry && (tag === "select" || tag === "input");
   if (!yieldsAppShortcuts) return false;
   const key = event.key.toLowerCase();
   if (event.ctrlKey || event.metaKey) return key === "z" || key === "y" || key === "d";
@@ -9985,6 +9988,7 @@ function setSculptBrushShiftSmoothHeld(held) {
 
 function setActiveTool(tool) {
   clearCurvePointTopologyCursor();
+  historyShortcutHeld = false;
   const previousTool = activeTool;
   if (sculptBrushToolActive(previousTool) && tool !== previousTool) {
     finishSculptMoveStroke(null, { cancel: true });
