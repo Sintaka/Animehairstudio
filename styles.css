@@ -5672,39 +5672,3 @@ body.outliner-folder-colors-disabled .outliner-layer-items {
   display: none !important;
 }
 
-.settings-hint {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 300px;
-  padding: 6px 8px 6px 10px;
-  border: 1px solid #3d4d44;
-  border-radius: 6px;
-  background: #141a17cc;
-  color: #a9d8be;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.35;
-  pointer-events: auto;
-  box-shadow: 0 8px 24px #0000003d;
-  backdrop-filter: blur(5px);
-}
-
-.settings-hint button {
-  flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 1px solid #5c7166;
-  border-radius: 4px;
-  background: transparent;
-  color: #b7e3c9;
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.settings-hint button:hover {
-  background: #274a39;
-  color: #fff;
-}
