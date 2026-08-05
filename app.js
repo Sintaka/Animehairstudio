@@ -25853,6 +25853,7 @@ function initPanelResizeHandles() {
     studioShell.style.setProperty(variable, `${next}px`);
     writeStoredPreference(window, storageKey, next);
     resize();
+    updateSnappedFloatingPanels();
   };
   const restoreWidth = (variable, storageKey, fallback, min, max) => {
     const saved = Number(readStoredPreference(window, storageKey, { fallback }));
@@ -25890,6 +25891,15 @@ function initPanelResizeHandles() {
   bindResize(attributeHandle, "--attribute-width", "anime-hair-studio-attribute-width", 280, 640, true);
 }
 initPanelResizeHandles();
+
+function updateSnappedFloatingPanels() {
+  const snapTarget = document.querySelector(".tool-panel");
+  if (!snapTarget) return;
+  const targetLeft = snapTarget.getBoundingClientRect().left;
+  document.querySelectorAll(".profile-dialog.floating-snapped").forEach((dialog) => {
+    dialog.style.left = `${targetLeft - dialog.offsetWidth}px`;
+  });
+}
 
 function initFloatingPanelControls() {
   const snapTarget = document.querySelector(".tool-panel");
