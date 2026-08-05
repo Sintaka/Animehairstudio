@@ -22734,7 +22734,7 @@ function setNavigationMode(mode, { persist = true } = {}) {
   const houdini = navigationMode === NAVIGATION_MODES.houdini;
   controls.mouseButtons = houdini
     ? { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: -1 }
-    : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+    : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
   updateNavigationTips();
   if (persist) writeStoredPreference(window, NAVIGATION_MODE_PREFERENCE_KEY, navigationMode);
 }
@@ -25863,6 +25863,7 @@ function initPanelResizeHandles() {
 
   const bindResize = (handle, variable, storageKey, min, max, invert) => {
     handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
       event.preventDefault();
       handle.classList.add("dragging");
       handle.setPointerCapture?.(event.pointerId);
