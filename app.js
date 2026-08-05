@@ -6631,6 +6631,10 @@ function isSupportedReferenceImageFile(file) {
   );
 }
 
+function isProjectFile(file) {
+  return Boolean(file) && /\.(?:ahs|animehair\.json|json)$/i.test(String(file.name));
+}
+
 async function addReferenceImagesFromFiles(
   files,
   type = "overlay",
@@ -6676,37 +6680,9 @@ async function addReferenceImagesFromFiles(
   return added;
 }
 
-const FILE_DROP_KINDS = Object.freeze({
-  project: "project",
-  image: "image",
-  other: "other"
-});
-
-function classifyDroppedFile(file) {
-  if (isProjectFile(file)) return FILE_DROP_KINDS.project;
-  if (isSupportedReferenceImageFile(file)) return FILE_DROP_KINDS.image;
-  return FILE_DROP_KINDS.other;
-}
-
-function fileDropKindFromDrag(event) {
-  const files = [...(event.dataTransfer?.files || [])];
-  if (files.length) {
-    const kinds = new Set(files.map(classifyDroppedFile));
-    if (kinds.has(FILE_DROP_KINDS.project)) return FILE_DROP_KINDS.project;
-    if (kinds.has(FILE_DROP_KINDS.image)) return FILE_DROP_KINDS.image;
-    return FILE_DROP_KINDS.other;
-  }
-  const items = [...(event.dataTransfer?.items || [])].filter((item) => item.kind === "file");
-  if (items.length) {
-    const kinds = new Set(items.map((item) => {
-      const file = item.getAsFile?.();
-      return file ? classifyDroppedFile(file) : FILE_DROP_KINDS.other;
-    }));
-    if (kinds.has(FILE_DROP_KINDS.project)) return FILE_DROP_KINDS.project;
-    if (kinds.has(FILE_DROP_KINDS.image)) return FILE_DROP_KINDS.image;
-    return FILE_DROP_KINDS.other;
-  }
-  return null;
+function dragContainsFiles(event) {
+  if ((event.dataTransfer?.files?.length || 0) > 0) return true;
+  return [...(event.dataTransfer?.items || [])].some((item) => item.kind === "file");
 }
 
 function setReferenceImageDragActive(active) {
@@ -25840,19 +25816,17 @@ referenceImageFile.addEventListener("change", async () => {
   }
 });
 window.addEventListener("dragenter", (event) => {
-  const kind = fileDropKindFromDrag(event);
-  if (!kind) return;
+  if (!dragContainsFiles(event)) return;
   event.preventDefault();
   setReferenceImageDragActive(true);
-  if (kind === FILE_DROP_KINDS.image) setReferenceDropHover(event);
+  setReferenceDropHover(event);
 });
 window.addEventListener("dragover", (event) => {
-  const kind = fileDropKindFromDrag(event);
-  if (!kind) return;
+  if (!dragContainsFiles(event)) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = "copy";
   setReferenceImageDragActive(true);
-  if (kind === FILE_DROP_KINDS.image) setReferenceDropHover(event);
+  setReferenceDropHover(event);
 });
 window.addEventListener("dragleave", (event) => {
   if (event.relatedTarget == null) setReferenceImageDragActive(false);
@@ -25861,7 +25835,6 @@ window.addEventListener("dragend", () => setReferenceImageDragActive(false));
 window.addEventListener("drop", async (event) => {
   const files = [...(event.dataTransfer?.files || [])];
   setReferenceImageDragActive(false);
-  setFileDropActive(false);
   if (!files.length) return;
   event.preventDefault();
 
