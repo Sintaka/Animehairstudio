@@ -41,20 +41,47 @@ python -m http.server 8080 --bind 127.0.0.1
 
 ## JS 改动标注 / JS change annotations
 
-> 记录与原有 JS 的差别/新增功能（对应「开发规范 - JS 改动标注」）。
+> 记录与原有 JS 的差别/新增功能（对应「开发规范 - JS 改动标注」）。Bug 修复统一见下方「Bug 修复」。
 
 - **app.js**
   - 新增 Quick Save（Ctrl+S）/ Save as（Ctrl+Shift+S）：`saveHairProjectFile` 优先用 File System Access API 写盘并记住文件句柄，浏览器不支持时回退原下载对话框；新增 `saveHairProjectQuickly` 覆盖保存到上次文件；全局 keydown 拦截 Ctrl+S / Ctrl+Shift+S（代替浏览器默认"保存网页"，原快捷键说明不改动，新增内容放在独立「Local Adaptation」分区）。
   - 雕刻笔刷选择遮罩：新增 `sculptBrushSelectionMask`；`sculptBrushUnits` / `updateSculptBrushViabilityPlane` 增加选择过滤（未选中 → 所有可见头发可雕刻；选中 → 仅选中头发可雕刻）。
-  - 拖放统一分发（规范化）：dragContainsFiles 只判断是否为文件拖拽——任何文件拖拽都 preventDefault 接受，并恢复原始参考图浮动框视觉（虚线框 + 卡片高亮 + 跟随鼠标的「2D Overlay」标记），**拖动阶段不再进入 reference 编辑模式**；文件类型只在 drop 那一刻判别分发（.ahs/.animehair.json/.json → openHairProjectFile，图片 → 2D/3D 参考图，其他 → 忽略并警告），后续新增 geo / 附加模型等 drop 类型只需在 drop 分发处扩展。
+  - 拖放统一分发（规范化）：任何文件拖拽都接受，drop 时按类型分发（.ahs/.animehair.json/.json → openHairProjectFile，图片 → 2D/3D 参考图，其他 → 忽略并警告）；后续新增 geo / 附加模型等 drop 类型只需在 drop 分发处扩展。
   - 材质面板：新增删除材质（面板删除按钮 / Delete 键，焦点在材质面板时生效）；被删除材质的头发自动改回默认材质；默认材质不可删除。
-  - 浮动面板跟随选择：Strand Profile / Width・Depth Curve 面板打开时切换选中头发，会自动改指向新选中的头发并刷新；show points on mesh 的控制点随雕刻/移动实时更新。
   - 视口导航模式：新增偏好设置「Navigation mode」（Default / Houdini，默认 Houdini）；Houdini 模式 Alt+左键旋转（不变）、Alt+中键平移、Alt+右键拖拽缩放，滚轮缩放保持；左下角导航提示随模式更新（Alt + Middle Mouse / Alt + Right Mouse）。
-  - Houdini 右键拖拽缩放：改为自绘 Alt+右键缩放（同时响应水平+垂直位移，用快速模长近似 x + ay*0.4142 归一化，45° 对角 = 1 倍；方向：**右上放大、左下缩小**），滚轮缩放不变；修复：three r165 的 dollyIn/dollyOut/getZoomScale 为私有函数，改用直接相机 dolly（dollyCameraByDrag，透视/正交均支持），缩放系数复用原版 getZoomScale 公式 pow(0.95, zoomSpeed*|delta|*0.01)，与原始灵敏度一致。
+  - Houdini 右键拖拽缩放：自绘 Alt+右键缩放，同时响应水平+垂直位移，用快速模长近似 `ax + ay*0.4142` 归一化（45° 对角 = 1 倍），方向右上放大、左下缩小，滚轮缩放不变（API 与灵敏度问题见「Bug 修复」）。
 - **index.html**：File 菜单新增 Quick Save（Ctrl+S）与 Save as（Ctrl+Shift+S）快捷键提示；快捷键帮助新增独立「Local Adaptation」分区。
 - **modules/localization.js**：新增 "Save as"、"Quick Save"、"Quick Save the project"、"Local Adaptation" 的日语翻译（含导航模式：Navigation mode / Alt + Middle Mouse 等）。
   - 新增简体中文（zh）：SUPPORTED_LANGUAGES 增加 `{ id: "zh", label: "简体中文" }`；新增完整 ZH 词典（约 540 条）；translateUiString 改为按语言词典分发（JA / ZH），未收录文案回退英文；3D 专业名词（strand / clump / braid / mesh / shader / UV / lattice / verts / tris 等）保留英文。
 - **start-dev-server.cmd**：精简为一行 python 静态服务器启动，并自动在默认浏览器打开 http://127.0.0.1:8080/。
+
+## Bug 修复 / Bug fixes
+
+> 每个条目简单说明问题与修复方法。
+
+1. **拖入 .ahs 误进 reference 编辑模式**
+   - 问题：.ahs 的 MIME 类型为空，被当成参考图；拖动一开始就切进 reference 编辑模式（笔刷消失、选不中头发）。
+   - 修复：拖动阶段不再切换编辑模式，只在 drop 时按类型分发（.ahs → openHairProjectFile，图片 → 参考图，其他 → 忽略）。
+
+2. **drop 不被接受，浏览器直接打开文件（全是字符）**
+   - 问题：重构时误删 `isProjectFile`，且 drop 处理器残留对已删除 `setFileDropActive` 的调用，在 `preventDefault` 之前抛错，drop 崩溃退回浏览器默认行为。
+   - 修复：恢复 `isProjectFile`，删除残留调用；dragenter/dragover 对任何文件拖拽都 `preventDefault` 接受。
+
+3. **图片拖入只剩浮动框（卡片高亮 / 跟随鼠标的 2D 标记消失）**
+   - 问题：高亮视觉被错误绑定到 dragover 阶段能否判别出是图片，浏览器拖拽中拿不到文件名时就不显示。
+   - 修复：dragenter/dragover 恢复原始视觉——任意文件拖拽都显示浮动框、卡片高亮与跟随鼠标的「2D Overlay」标记。
+
+4. **浮动面板指向旧头发；show points on mesh 不更新**
+   - 问题：Strand Profile / Width・Depth Curve 面板打开后切换选中头发，仍编辑旧头发；雕刻/移动后 3D 控制点停留在原地。
+   - 修复：新增 `retargetFloatingStrandEditors()`，selectLock 时把打开的面板改指向新选中头发并刷新；`rebuildLockGeometry` 末尾按需刷新 `updateTaperMeshPoints()`。
+
+5. **Houdini 右键缩放无反应**
+   - 问题：three r165 的 OrbitControls 中 `dollyIn` / `dollyOut` / `getZoomScale` 为私有函数，直接调用抛 TypeError。
+   - 修复：改为直接相机 dolly（`dollyCameraByDrag`，透视/正交均支持），缩放系数复用原版 `getZoomScale` 公式。
+
+6. **Houdini 右键缩放灵敏度过高、左右方向反**
+   - 问题：手写缩放系数少了 `*0.01` 归一化（约 100 倍灵敏）；横向方向与预期相反。
+   - 修复：复用原版公式 `pow(0.95, zoomSpeed*|delta|*0.01)` 与原始灵敏度一致；方向改为右上放大、左下缩小。
 
 ## 本地适配进度 / Local adaptation log
 
@@ -65,6 +92,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - [x] 在 devlog 中记录开发规范（代码最简化、仅必要注释、优先用已有预设/开源库、减少手搓半成品）
 - [x] 在 devlog 中记录分支管理规范（禁止直接 merge 主分支、新功能独立开分支、由主进程处理合并与冲突）
 - [x] 在 devlog 中记录 JS 改动标注与快捷键分区规范
+- [x] devlog 整理：Bug 修复独立成类（每条注明问题与修复方法）
 - [x] 拖入 .ahs / 项目文件时执行 Open（不再当作参考图添加）
 - [x] Save as 增加 Ctrl+Shift+S 快捷键
 - [x] 启动脚本（cmd）自动在默认浏览器打开 8080
