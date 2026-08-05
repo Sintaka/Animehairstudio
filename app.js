@@ -27886,12 +27886,11 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
         if (curve) {
           const t = pointIndex / Math.max(1, source.points.length - 1);
           const tangent = curve.getTangent(t).normalize();
-          const cameraDirection = camera.getWorldDirection(new THREE.Vector3()).normalize();
-          let targetUp = new THREE.Vector3().crossVectors(cameraDirection, tangent);
-          if (targetUp.lengthSq() < 0.0001) targetUp.set(0, 1, 0).projectOnPlane(tangent).normalize();
+          const point = curve.getPoint(t);
+          let targetUp = camera.position.clone().sub(point).projectOnPlane(tangent);
+          if (targetUp.lengthSq() < 0.0001) targetUp.set(0, 1, 0).projectOnPlane(tangent);
           targetUp.normalize();
           const currentUp = curveFrameAt(source, t).z;
-          if (currentUp.dot(targetUp) < 0) targetUp.negate();
           const angle = signedAngleAroundAxis(currentUp, targetUp, tangent);
           source.pointTwists[pointIndex] += angle * weight * strength * 0.08;
           sourceChanged = true;
