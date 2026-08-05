@@ -230,6 +230,7 @@ const JA = Object.freeze({
   "Save as": "名前を付けて保存",
   "Quick Save": "クイック保存",
   "Quick Save the project": "プロジェクトをクイック保存",
+  "Local Adaptation": "ローカル適応",
   "Local Save": "ローカル保存",
   "Export to OBJ": "OBJに書き出し",
   "Export to USDA": "USDAに書き出し",

@@ -6680,6 +6680,19 @@ function dragContainsReferenceImage(event) {
   if (!items.length) return false;
   return items.some((item) => !item.type || SUPPORTED_REFERENCE_IMAGE_TYPES.has(item.type.toLowerCase()));
 }
+function isProjectFile(file) {
+  return Boolean(file) && /\.(?:ahs|animehair\.json|json)$/i.test(String(file.name));
+}
+
+function dragContainsProjectFile(event) {
+  const files = [...(event.dataTransfer?.files || [])];
+  if (files.some(isProjectFile)) return true;
+  const items = [...(event.dataTransfer?.items || [])].filter((item) => item.kind === "file");
+  return items.some((item) => {
+    const file = item.getAsFile?.();
+    return file ? isProjectFile(file) : false;
+  });
+}
 
 function setReferenceImageDragActive(active) {
   const nextActive = Boolean(active);
@@ -25785,6 +25798,10 @@ referenceImageFile.addEventListener("change", async () => {
   }
 });
 window.addEventListener("dragenter", (event) => {
+  if (dragContainsProjectFile(event)) {
+    event.preventDefault();
+    return;
+  }
   if (!dragContainsReferenceImage(event)) return;
   event.preventDefault();
   prepareReferenceImageDrop();
@@ -25792,6 +25809,11 @@ window.addEventListener("dragenter", (event) => {
   setReferenceDropHover(event);
 });
 window.addEventListener("dragover", (event) => {
+  if (dragContainsProjectFile(event)) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    return;
+  }
   if (!dragContainsReferenceImage(event)) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = "copy";
@@ -25804,6 +25826,13 @@ window.addEventListener("dragleave", (event) => {
 });
 window.addEventListener("dragend", () => setReferenceImageDragActive(false));
 window.addEventListener("drop", async (event) => {
+  const projectFiles = [...(event.dataTransfer?.files || [])].filter(isProjectFile);
+  if (projectFiles.length) {
+    event.preventDefault();
+    setReferenceImageDragActive(false);
+    openHairProjectFile(projectFiles[0]);
+    return;
+  }
   const files = [...(event.dataTransfer?.files || [])].filter(isSupportedReferenceImageFile);
   const destination = referenceDropDestination(event);
   const overlayPosition = destination === "overlay" ? viewportOverlayDropPosition(event) : null;
@@ -26101,9 +26130,11 @@ proportionalLockRootInput.addEventListener("change", () => {
 });
 
 window.addEventListener("keydown", (event) => {
-  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "s") {
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
     event.preventDefault();
-    if (!event.repeat) saveHairProjectQuickly();
+    if (event.repeat) return;
+    if (event.shiftKey) saveHairProjectFile();
+    else saveHairProjectQuickly();
     return;
   }
   const tag = document.activeElement?.tagName?.toLowerCase();
