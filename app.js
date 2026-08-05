@@ -25980,6 +25980,21 @@ function initFloatingPanelControls() {
   });
 }
 initFloatingPanelControls();
+
+function updateSculptBrushDockCompact() {
+  const dock = document.querySelector("#sculptBrushDock");
+  if (!dock || !viewportPanel) return;
+  const buttonCount = dock.querySelectorAll(".sculpt-brush-button").length;
+  if (!buttonCount) return;
+  const gap = 6;
+  const padding = 10;
+  const available = Math.max(0, viewportPanel.clientWidth - 16);
+  const fullWidth = buttonCount * 76 + (buttonCount - 1) * gap + padding;
+  const compactWidth = buttonCount * 54 + (buttonCount - 1) * gap + padding;
+  dock.classList.toggle("dock-compact", available < fullWidth);
+  dock.classList.toggle("dock-icons", available < compactWidth);
+}
+updateSculptBrushDockCompact();
 openPreferencesButton.addEventListener("click", openPreferencesDialog);
 preferenceCategoryButtons.forEach((button) => {
   button.addEventListener("click", () => setPreferenceCategory(button.dataset.preferenceCategory));
@@ -27040,6 +27055,7 @@ function resize() {
   const { clientWidth, clientHeight } = viewport;
   updateCameraProjectionForViewport();
   renderer.setSize(clientWidth, clientHeight, false);
+  updateSculptBrushDockCompact();
   referenceImages
     .filter((reference) => reference.type === "overlay")
     .forEach(applyReferenceImageRuntime);

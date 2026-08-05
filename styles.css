@@ -5739,3 +5739,28 @@ body.outliner-folder-colors-disabled .outliner-layer-items {
 .dialog-resize-handle.dragging::before {
   border-color: #ffd26e;
 }
+
+.sculpt-brush-dock .brush-label {
+  white-space: nowrap;
+}
+
+.sculpt-brush-dock.dock-compact .sculpt-brush-button {
+  width: auto;
+  min-width: 44px;
+  padding: 0 7px;
+}
+
+.sculpt-brush-dock.dock-compact .sculpt-brush-button .brush-suffix {
+  display: none;
+}
+
+.sculpt-brush-dock.dock-icons .sculpt-brush-button {
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  justify-content: center;
+}
+
+.sculpt-brush-dock.dock-icons .sculpt-brush-button .brush-label {
+  display: none;
+}
