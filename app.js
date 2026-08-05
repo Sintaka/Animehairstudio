@@ -25841,6 +25841,53 @@ setControlPointDisplaySize(controlPointDisplaySize, { persist: false });
 setDefaultHairShader(defaultHairShader, { persist: false });
 setNavigationMode(navigationMode, { persist: false });
 updateSculptScaleModeRow();
+
+function initPanelResizeHandles() {
+  const studioShell = document.querySelector(".studio-shell");
+  const outlinerHandle = document.querySelector("#outlinerResizeHandle");
+  const attributeHandle = document.querySelector("#attributeResizeHandle");
+  if (!studioShell || !outlinerHandle || !attributeHandle) return;
+
+  const applyWidth = (variable, storageKey, value, min, max) => {
+    const next = Math.max(min, Math.min(max, Math.round(value)));
+    studioShell.style.setProperty(variable, `${next}px`);
+    writeStoredPreference(window, storageKey, next);
+  };
+  const restoreWidth = (variable, storageKey, fallback, min, max) => {
+    const saved = Number(readStoredPreference(window, storageKey, { fallback }));
+    applyWidth(variable, storageKey, Number.isFinite(saved) && saved > 0 ? saved : fallback, min, max);
+  };
+
+  restoreWidth("--outliner-width", "anime-hair-studio-outliner-width", 252, 160, 480);
+  restoreWidth("--attribute-width", "anime-hair-studio-attribute-width", 360, 280, 640);
+
+  const bindResize = (handle, variable, storageKey, min, max, invert) => {
+    handle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      handle.classList.add("dragging");
+      handle.setPointerCapture?.(event.pointerId);
+      const startX = event.clientX;
+      const startWidth = parseFloat(getComputedStyle(studioShell).getPropertyValue(variable)) || (variable === "--outliner-width" ? 252 : 360);
+      const onMove = (moveEvent) => {
+        const delta = moveEvent.clientX - startX;
+        applyWidth(variable, storageKey, startWidth + (invert ? -delta : delta), min, max);
+      };
+      const onUp = () => {
+        handle.classList.remove("dragging");
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onUp);
+        handle.removeEventListener("pointercancel", onUp);
+      };
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onUp);
+      handle.addEventListener("pointercancel", onUp);
+    });
+  };
+
+  bindResize(outlinerHandle, "--outliner-width", "anime-hair-studio-outliner-width", 160, 480, false);
+  bindResize(attributeHandle, "--attribute-width", "anime-hair-studio-attribute-width", 280, 640, true);
+}
+initPanelResizeHandles();
 openPreferencesButton.addEventListener("click", openPreferencesDialog);
 preferenceCategoryButtons.forEach((button) => {
   button.addEventListener("click", () => setPreferenceCategory(button.dataset.preferenceCategory));

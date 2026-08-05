@@ -670,8 +670,9 @@ button:focus-visible {
 }
 
 .studio-shell {
+  position: relative;
   display: grid;
-  grid-template-columns: 252px minmax(0, 1fr) 360px;
+  grid-template-columns: var(--outliner-width, 252px) minmax(0, 1fr) var(--attribute-width, 360px);
   grid-template-rows: 36px minmax(0, 1fr);
   height: 100vh;
 }
@@ -5672,3 +5673,39 @@ body.outliner-folder-colors-disabled .outliner-layer-items {
   display: none !important;
 }
 
+
+.panel-resize-handle {
+  position: absolute;
+  top: 36px;
+  bottom: 0;
+  width: 6px;
+  z-index: 30;
+  cursor: col-resize;
+}
+
+.panel-resize-handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.panel-resize-handle:hover::after,
+.panel-resize-handle.dragging::after {
+  background: rgba(255, 210, 110, 0.55);
+}
+
+.outliner-resize-handle {
+  left: var(--outliner-width, 252px);
+  transform: translateX(-50%);
+}
+
+.attribute-resize-handle {
+  left: calc(100% - var(--attribute-width, 360px));
+  transform: translateX(-50%);
+}
