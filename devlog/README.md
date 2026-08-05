@@ -1,4 +1,4 @@
-﻿# Anime Hair Studio — Devlog
+# Anime Hair Studio — Devlog
 
 ## 这是什么 / What this is
 
@@ -22,10 +22,19 @@ python -m http.server 8080 --bind 127.0.0.1
 
 然后访问 <http://127.0.0.1:8080/>。
 
-也可以直接运行仓库根目录下的启动脚本（自动调用上面的命令并打开浏览器）：
+也可以直接运行仓库根目录下的启动脚本（内容就是上面这一行 python 命令）：
 
 - `start-dev-server.cmd`（Windows 命令提示符）
 - `start-dev-server.ps1`（Windows PowerShell）
+
+## 开发规范 / Development guidelines
+
+> 后续所有改动遵循以下原则：
+
+- **所有代码最简化**：能简单就不复杂，避免过度设计。
+- **仅必要注释**：只写必要注释，不堆砌说明文字。
+- **尽量使用已有的预设、开源库**：优先复用项目内预设与成熟开源库，避免重复造轮子。
+- **减少手搓半成品**：少写自制的半成品实现，需要能力时优先引入成熟方案。
 
 ## 本地适配进度 / Local adaptation log
 
@@ -33,5 +42,6 @@ python -m http.server 8080 --bind 127.0.0.1
 
 - [x] 补充本说明文档
 - [x] 增加基于 Python 的静态服务器启动脚本
+- [x] 在 devlog 中记录开发规范（代码最简化、仅必要注释、优先用已有预设/开源库、减少手搓半成品）
 - [x] File 菜单新增 **Quick Save (Ctrl+S)**，原 Save 改名 **Save as**
 - [x] 雕刻笔刷（Move / Smooth）增加选择遮罩：未选中时只能雕刻可见头发；选中后只能雕刻选中头发
