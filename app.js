@@ -19997,6 +19997,29 @@ function endAltOrbit(event) {
   updateInteractionLocks();
 }
 
+function dollyCameraByDrag(delta) {
+  const cam = controls.object;
+  const zoomScale = Math.pow(0.95, Math.abs(delta));
+  if (cam.isPerspectiveCamera) {
+    const offset = cam.position.clone().sub(controls.target);
+    const distance = offset.length() || 1;
+    const nextDistance = THREE.MathUtils.clamp(
+      delta >= 0 ? distance / zoomScale : distance * zoomScale,
+      controls.minDistance,
+      controls.maxDistance
+    );
+    offset.setLength(nextDistance);
+    cam.position.copy(controls.target).add(offset);
+  } else if (cam.isOrthographicCamera) {
+    cam.zoom = THREE.MathUtils.clamp(
+      delta >= 0 ? cam.zoom * zoomScale : cam.zoom / zoomScale,
+      controls.minZoom,
+      controls.maxZoom
+    );
+    cam.updateProjectionMatrix();
+  }
+}
+
 function fastDragMagnitude(dx, dy) {
   const ax = Math.abs(dx);
   const ay = Math.abs(dy);
@@ -20023,8 +20046,7 @@ function updateHoudiniZoomDrag(event) {
   const magnitude = fastDragMagnitude(dx, dy);
   const sign = ay >= ax ? (dy < 0 ? -1 : 1) : (dx < 0 ? -1 : 1);
   const delta = sign * magnitude;
-  if (delta >= 0) controls.dollyOut(controls.getZoomScale(delta));
-  else controls.dollyIn(controls.getZoomScale(-delta));
+  dollyCameraByDrag(delta);
   controls.update();
   event.preventDefault();
 }
