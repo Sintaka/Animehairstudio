@@ -304,7 +304,9 @@ const sculptBrushStrengthByTool = {
   "sculpt-smooth": 0.5,
   "sculpt-inflate": 0.5,
   "sculpt-slide": 0.6,
-  "sculpt-scale": 0.8
+  "sculpt-scale": 0.8,
+  "sculpt-push": 1,
+  "sculpt-orient": 0.5
 };
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -9941,7 +9943,7 @@ function updateGuideGeometry(guide) {
 }
 
 function sculptBrushToolActive(tool = activeTool) {
-  return ["sculpt-move", "sculpt-smooth", "sculpt-inflate", "sculpt-slide", "sculpt-scale"].includes(tool);
+  return ["sculpt-move", "sculpt-smooth", "sculpt-inflate", "sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient"].includes(tool);
 }
 
 function effectiveSculptBrushTool() {
@@ -27754,7 +27756,7 @@ function syncSculptBrushMirrorPoints(source, partner) {
 }
 
 function beginSculptMoveStroke(event) {
-  const reverseTool = ["sculpt-slide", "sculpt-scale"].includes(activeTool);
+  const reverseTool = ["sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient"].includes(activeTool);
   if (
     !sculptBrushToolActive()
     || viewportEditMode !== "strand"
@@ -27818,6 +27820,8 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
   const inflateBrushActive = effectiveSculptBrushTool() === "sculpt-inflate";
   const slideBrushActive = effectiveSculptBrushTool() === "sculpt-slide";
   const scaleBrushActive = effectiveSculptBrushTool() === "sculpt-scale";
+  const pushBrushActive = effectiveSculptBrushTool() === "sculpt-push";
+  const orientBrushActive = effectiveSculptBrushTool() === "sculpt-orient";
   const reverse = Boolean(stroke.reverse);
   const strokeDistance = Math.hypot(deltaX, deltaY);
   const changedSources = [];
@@ -27856,7 +27860,45 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
         }
         continue;
       }
-      if (smoothBrushActive) continue;
+      if (pushBrushActive) {
+        if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
+        const curve = stroke.originalCurves?.get(source.id);
+        if (curve) {
+          const t = pointIndex / Math.max(1, source.points.length - 1);
+          const point = curve.getPoint(t);
+          const tangent = curve.getTangent(t).normalize();
+          const up = guidedNormalAt(source, point, tangent, t)
+            .applyAxisAngle(tangent, sampleArray(source.pointTwists || [], t))
+            .normalize();
+          const dragWorld = sculptBrushWorldDelta(sourcePoint, deltaX, deltaY, rect);
+          const amount = (reverse ? -1 : 1) * weight * strength * dragWorld.dot(up);
+          sourcePoint.addScaledVector(up, amount);
+          const basePoint = source.groupLatticeBasePoints?.[pointIndex];
+          if (basePoint) basePoint.addScaledVector(up, amount);
+          sourceChanged = true;
+        }
+        continue;
+      }
+      if (orientBrushActive) {
+        if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
+        if (!source.pointTwists) source.pointTwists = source.points.map(() => 0);
+        const curve = stroke.originalCurves?.get(source.id);
+        if (curve) {
+          const t = pointIndex / Math.max(1, source.points.length - 1);
+          const tangent = curve.getTangent(t).normalize();
+          const cameraDirection = camera.getWorldDirection(new THREE.Vector3()).normalize();
+          let targetUp = new THREE.Vector3().crossVectors(cameraDirection, tangent);
+          if (targetUp.lengthSq() < 0.0001) targetUp.set(0, 1, 0).projectOnPlane(tangent).normalize();
+          targetUp.normalize();
+          const currentUp = curveFrameAt(source, t).z;
+          if (currentUp.dot(targetUp) < 0) targetUp.negate();
+          const angle = signedAngleAroundAxis(currentUp, targetUp, tangent);
+          source.pointTwists[pointIndex] += angle * weight * strength * 0.08;
+          sourceChanged = true;
+        }
+        continue;
+      }
+            if (smoothBrushActive) continue;
       if (scaleBrushActive) continue;
       if (!stroke.undoCaptured) {
         pushUndoState();
