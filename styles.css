@@ -3103,7 +3103,7 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
 }
 
 #hairMaterialAnimeControls .slider-input-row {
-  grid-template-columns: 46px minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(56px, 1fr) minmax(0, 2fr) 24px;
   width: 100%;
 }
 
@@ -4658,7 +4658,7 @@ input[type="range"] {
 
 .slider-input-row {
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(56px, 1fr) minmax(0, 2fr) 24px;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -4728,7 +4728,7 @@ input[type="range"] {
 
 .profile-offset-control.editable-slider-control .slider-input-row {
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(56px, 1fr) minmax(0, 2fr) 24px;
   margin-top: 4px;
 }
 
@@ -4762,7 +4762,7 @@ input[type="range"] {
 }
 
 .slider-number-pair.slider-input-row {
-  grid-template-columns: 54px minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(56px, 1fr) minmax(0, 2fr) 24px;
   gap: 6px;
 }
 
