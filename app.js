@@ -25838,6 +25838,16 @@ setOutlinerFolderColorsEnabled(outlinerFolderColorsEnabled, { persist: false });
 setControlPointDisplaySize(controlPointDisplaySize, { persist: false });
 setDefaultHairShader(defaultHairShader, { persist: false });
 setNavigationMode(navigationMode, { persist: false });
+updateSculptScaleModeRow();
+const settingsHint = document.querySelector("#settingsHint");
+const dismissSettingsHintButton = document.querySelector("#dismissSettingsHint");
+if (readStoredBooleanPreference(window, "anime-hair-studio-settings-hint-dismissed", false)) {
+  settingsHint?.classList.add("hidden");
+}
+dismissSettingsHintButton?.addEventListener("click", () => {
+  settingsHint?.classList.add("hidden");
+  writeStoredPreference(window, "anime-hair-studio-settings-hint-dismissed", true);
+});
 openPreferencesButton.addEventListener("click", openPreferencesDialog);
 preferenceCategoryButtons.forEach((button) => {
   button.addEventListener("click", () => setPreferenceCategory(button.dataset.preferenceCategory));
