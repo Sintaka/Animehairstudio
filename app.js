@@ -22734,7 +22734,7 @@ function setNavigationMode(mode, { persist = true } = {}) {
   const houdini = navigationMode === NAVIGATION_MODES.houdini;
   controls.mouseButtons = houdini
     ? { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: -1 }
-    : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
+    : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
   updateNavigationTips();
   if (persist) writeStoredPreference(window, NAVIGATION_MODE_PREFERENCE_KEY, navigationMode);
 }
@@ -25852,6 +25852,7 @@ function initPanelResizeHandles() {
     const next = Math.max(min, Math.min(max, Math.round(value)));
     studioShell.style.setProperty(variable, `${next}px`);
     writeStoredPreference(window, storageKey, next);
+    resize();
   };
   const restoreWidth = (variable, storageKey, fallback, min, max) => {
     const saved = Number(readStoredPreference(window, storageKey, { fallback }));
