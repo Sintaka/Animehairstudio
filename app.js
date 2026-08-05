@@ -161,6 +161,7 @@ const OUTLINER_FOLDER_COLORS_PREFERENCE_KEY = "anime-hair-studio-outliner-folder
 const CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY = "anime-hair-studio-control-point-display-size";
 const SIDE_NAMING_PERSPECTIVE_PREFERENCE_KEY = "anime-hair-studio-side-naming-perspective";
 const DEFAULT_HAIR_SHADER_PREFERENCE_KEY = "anime-hair-studio-default-hair-shader";
+const NAVIGATION_MODE_PREFERENCE_KEY = "anime-hair-studio-navigation-mode";
 
 function saveBooleanPreference(key, enabled) {
   writeStoredPreference(window, key, Boolean(enabled));
@@ -175,9 +176,22 @@ function normalizeSideNamingPerspective(value) {
   return value === "character" ? "character" : "viewport";
 }
 
+const NAVIGATION_MODES = Object.freeze({
+  default: "default",
+  houdini: "houdini"
+});
+
+function normalizeNavigationMode(value) {
+  return value === NAVIGATION_MODES.houdini ? NAVIGATION_MODES.houdini : NAVIGATION_MODES.default;
+}
+
 let defaultHairShader = readStoredPreference(window, DEFAULT_HAIR_SHADER_PREFERENCE_KEY, {
   fallback: STANDARD_ANISOTROPIC_SHADER,
   normalize: normalizeHairShader
+});
+let navigationMode = readStoredPreference(window, NAVIGATION_MODE_PREFERENCE_KEY, {
+  fallback: NAVIGATION_MODES.houdini,
+  normalize: normalizeNavigationMode
 });
 const savedLanguage = readStoredPreference(window, LANGUAGE_STORAGE_KEY, {
   fallback: DEFAULT_LANGUAGE,
@@ -2043,6 +2057,7 @@ const preferenceCategoryButtons = [...document.querySelectorAll("[data-preferenc
 const preferencePanels = [...document.querySelectorAll("[data-preference-panel]")];
 const radialMenusPreferenceInput = document.querySelector("#radialMenusPreference");
 const navigationTipsPreferenceInput = document.querySelector("#navigationTipsPreference");
+const navigationModePreferenceInput = document.querySelector("#navigationModePreference");
 const toolTipsPreferenceInput = document.querySelector("#toolTipsPreference");
 const compactToolButtonsPreferenceInput = document.querySelector("#compactToolButtonsPreference");
 const viewportStatisticsPreferenceInput = document.querySelector("#viewportStatisticsPreference");
@@ -14972,7 +14987,8 @@ function downloadPreferencesAndPresets() {
       sideNamingPerspective,
       controlPointDisplaySize,
       radialMenus: radialMenusEnabled,
-      defaultShader: defaultHairShader
+      defaultShader: defaultHairShader,
+      navigationMode
     },
     presets: customCreationPresets,
     shapePresets: customShapePresets
@@ -15009,6 +15025,7 @@ async function loadPreferencesAndPresets(file) {
     saveLanguage(language);
   }
   if (preferences.defaultShader != null) setDefaultHairShader(preferences.defaultShader);
+  if (preferences.navigationMode != null) setNavigationMode(preferences.navigationMode);
   customCreationPresets = normalizeCreationPresetLibrary(backup.presets);
   saveCustomCreationPresets();
   customShapePresets = normalizeShapePresetLibrary(backup.shapePresets);
@@ -15030,7 +15047,8 @@ async function loadPreferencesAndPresets(file) {
     outlinerFolderColorsEnabled,
     sideNamingPerspective,
     controlPointDisplaySize,
-    defaultHairShader
+    defaultHairShader,
+    navigationMode
   };
   preferencesBackupStatus.textContent = "Preferences and presets loaded.";
 }
@@ -22619,6 +22637,25 @@ function setNavigationTipsEnabled(enabled, { persist = true } = {}) {
   if (persist) saveBooleanPreference(NAVIGATION_TIPS_PREFERENCE_KEY, navigationTipsEnabled);
 }
 
+function updateNavigationTips() {
+  const houdini = navigationMode === NAVIGATION_MODES.houdini;
+  const panKey = document.querySelector("#navigationPanKey");
+  const zoomDragHint = document.querySelector("#navigationZoomDragHint");
+  if (panKey) panKey.textContent = houdini ? "Alt + Middle Mouse" : "Alt + Right Mouse";
+  zoomDragHint?.classList.toggle("hidden", !houdini);
+}
+
+function setNavigationMode(mode, { persist = true } = {}) {
+  navigationMode = normalizeNavigationMode(mode);
+  navigationModePreferenceInput.value = navigationMode;
+  const houdini = navigationMode === NAVIGATION_MODES.houdini;
+  controls.mouseButtons = houdini
+    ? { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.DOLLY }
+    : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+  updateNavigationTips();
+  if (persist) writeStoredPreference(window, NAVIGATION_MODE_PREFERENCE_KEY, navigationMode);
+}
+
 function setToolTipsEnabled(enabled, { persist = true } = {}) {
   toolTipsEnabled = Boolean(enabled);
   toolTipsPreferenceInput.checked = toolTipsEnabled;
@@ -22785,7 +22822,8 @@ function openPreferencesDialog() {
     outlinerFolderColorsEnabled,
     sideNamingPerspective,
     controlPointDisplaySize,
-    defaultHairShader
+    defaultHairShader,
+    navigationMode
   };
   defaultHairShaderPreferenceInput.value = defaultHairShader;
   setControlPointDisplaySize(controlPointDisplaySize, { persist: false });
@@ -22805,6 +22843,7 @@ function savePreferencesDialog() {
   writeStoredPreference(window, SIDE_NAMING_PERSPECTIVE_PREFERENCE_KEY, sideNamingPerspective);
   writeStoredPreference(window, CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY, controlPointDisplaySize);
   writeStoredPreference(window, DEFAULT_HAIR_SHADER_PREFERENCE_KEY, defaultHairShader);
+  writeStoredPreference(window, NAVIGATION_MODE_PREFERENCE_KEY, navigationMode);
   preferencesOpenSnapshot = null;
   preferencesDialog.close();
 }
@@ -22821,6 +22860,7 @@ function cancelPreferencesDialog() {
     setSideNamingPerspective(preferencesOpenSnapshot.sideNamingPerspective, { persist: false });
     setControlPointDisplaySize(preferencesOpenSnapshot.controlPointDisplaySize, { persist: false });
     setDefaultHairShader(preferencesOpenSnapshot.defaultHairShader, { persist: false });
+    setNavigationMode(preferencesOpenSnapshot.navigationMode, { persist: false });
   }
   preferencesOpenSnapshot = null;
   preferencesDialog.close();
@@ -25715,6 +25755,7 @@ setLayerColorShiftsEnabled(layerColorShiftsEnabled, { persist: false });
 setOutlinerFolderColorsEnabled(outlinerFolderColorsEnabled, { persist: false });
 setControlPointDisplaySize(controlPointDisplaySize, { persist: false });
 setDefaultHairShader(defaultHairShader, { persist: false });
+setNavigationMode(navigationMode, { persist: false });
 openPreferencesButton.addEventListener("click", openPreferencesDialog);
 preferenceCategoryButtons.forEach((button) => {
   button.addEventListener("click", () => setPreferenceCategory(button.dataset.preferenceCategory));
@@ -25741,6 +25782,9 @@ radialMenusPreferenceInput.addEventListener("change", () => {
 });
 navigationTipsPreferenceInput.addEventListener("change", () => {
   setNavigationTipsEnabled(navigationTipsPreferenceInput.checked, { persist: false });
+});
+navigationModePreferenceInput.addEventListener("change", () => {
+  setNavigationMode(navigationModePreferenceInput.value, { persist: false });
 });
 toolTipsPreferenceInput.addEventListener("change", () => {
   setToolTipsEnabled(toolTipsPreferenceInput.checked, { persist: false });

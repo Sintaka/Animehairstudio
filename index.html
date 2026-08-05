@@ -200,7 +200,8 @@
           </div>
           <div id="viewportNavigationTips" class="viewport-navigation-tips" aria-label="Viewport navigation tips">
             <div><kbd>Alt + Left Mouse</kbd><span>Orbit</span></div>
-            <div><kbd>Alt + Right Mouse</kbd><span>Pan</span></div>
+            <div id="navigationPanHint"><kbd id="navigationPanKey">Alt + Right Mouse</kbd><span>Pan</span></div>
+            <div id="navigationZoomDragHint" class="hidden"><kbd>Alt + Right Mouse</kbd><span>Zoom</span></div>
             <div><kbd>Scrollwheel</kbd><span>Zoom</span></div>
             <div><kbd>F</kbd><span>Cycle selected and full-scene framing</span></div>
           </div>
@@ -1197,6 +1198,16 @@
                   <small>Show viewport navigation controls in the bottom-left corner.</small>
                 </span>
                 <input id="navigationTipsPreference" type="checkbox" checked />
+              </label>
+              <label class="preference-select" for="navigationModePreference">
+                <span>
+                  <strong>Navigation mode</strong>
+                  <small>Choose the viewport navigation controls.</small>
+                </span>
+                <select id="navigationModePreference">
+                  <option value="default">Default</option>
+                  <option value="houdini">Houdini</option>
+                </select>
               </label>
               <label class="preference-toggle" for="toolTipsPreference">
                 <span>
