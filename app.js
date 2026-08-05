@@ -9950,7 +9950,13 @@ function effectiveSculptBrushTool() {
     : activeTool;
 }
 
+function updateSculptScaleModeRow() {
+  const scaleModeRow = document.querySelector("#sculptScaleModeRow");
+  scaleModeRow?.classList.toggle("hidden", effectiveSculptBrushTool() !== "sculpt-scale");
+}
+
 function syncSculptBrushToolButtons() {
+
   const effectiveTool = effectiveSculptBrushTool();
   modeToolButtons.filter((button) => sculptBrushToolActive(button.dataset.tool)).forEach((button) => {
     const effective = button.dataset.tool === effectiveTool;
@@ -9963,8 +9969,7 @@ function syncSculptBrushToolButtons() {
   });
   sculptBrushCursor.classList.toggle("smooth", effectiveTool === "sculpt-smooth");
   sculptBrushCursor.classList.toggle("inflate", effectiveTool === "sculpt-inflate");
-  const scaleModeRow = document.querySelector("#sculptScaleModeRow");
-  scaleModeRow?.classList.toggle("hidden", effectiveSculptBrushTool() !== "sculpt-scale");
+  updateSculptScaleModeRow();
 }
 
 function setSculptBrushShiftSmoothHeld(held) {
@@ -21776,6 +21781,7 @@ function updateAttributeEditorMode() {
   transformToolPanel.classList.toggle("hidden", !transformToolActive);
   drawStrandToolPanel.classList.toggle("hidden", activeTool !== "draw");
   sculptMoveToolPanel.classList.toggle("hidden", !sculptBrushToolActive());
+  updateSculptScaleModeRow();
   polyBrushToolPanel.classList.toggle("hidden", activeTool !== "poly");
   loftSurfaceToolPanel.classList.toggle("hidden", activeTool !== "surface-loft");
   braidToolPanel.classList.toggle("hidden", activeTool !== "braid");
@@ -27766,6 +27772,7 @@ function beginSculptMoveStroke(event) {
     undoCaptured: false,
     reverse: Boolean(event.ctrlKey),
     scaleMode: activeTool === "sculpt-scale" ? (document.querySelector("#sculptScaleMode")?.value || "scale") : null,
+    cutExtendOffset: 0,
     planeNormal: sculptBrushWorkingPlaneNormal(),
     planeOffset: sculptBrushPlaneOffset(),
     units: sculptBrushUnits(),
@@ -27845,8 +27852,8 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
         if (curve) {
           const t = pointIndex / Math.max(1, source.points.length - 1);
           const tangent = curve.getTangent(t).normalize();
-          const worldLength = sculptBrushWorldDelta(sourcePoint, deltaX, deltaY, rect).length();
-          const amount = (reverse ? -1 : 1) * pointWeight * strength * worldLength;
+          const dragWorld = sculptBrushWorldDelta(sourcePoint, deltaX, deltaY, rect);
+          const amount = (reverse ? -1 : 1) * pointWeight * strength * dragWorld.dot(tangent);
           sourcePoint.addScaledVector(tangent, amount);
           const basePoint = source.groupLatticeBasePoints?.[pointIndex];
           if (basePoint) basePoint.addScaledVector(tangent, amount);
@@ -27893,7 +27900,8 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
           // Whole-strand Cut/Extend: uniform parameter scaling preserves current spacing.
           const curve = stroke.originalCurves?.get(source.id);
           if (curve) {
-            const factor = 1 + (reverse ? -1 : 1) * strength * strokeDistance * 0.01;
+            stroke.cutExtendOffset += (reverse ? -1 : 1) * strength * strokeDistance * 0.01;
+            const factor = Math.max(0.02, 1 + stroke.cutExtendOffset);
             for (let index = 1; index < source.points.length; index += 1) {
               const t0 = index / Math.max(1, source.points.length - 1);
               const t1 = t0 * factor;
@@ -27920,6 +27928,16 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
             const direction = source.points[index].clone().sub(anchor);
             const factor = Math.max(0.02, 1 + (reverse ? -1 : 1) * weightForPoint * strength * strokeDistance * 0.01);
             source.points[index].copy(anchor).addScaledVector(direction, factor);
+          }
+          // Scalp collision: push root-side points that end up inside the scalp back out onto the surface.
+          const collisionPointCount = Math.min(3, source.points.length);
+          for (let index = 0; index < collisionPointCount; index += 1) {
+            const collisionHit = closestPointOnActiveScalp(source.points[index]);
+            if (collisionHit && source.points[index].clone().sub(collisionHit.point).dot(collisionHit.normal) < 0) {
+              source.points[index].copy(collisionHit.point).addScaledVector(collisionHit.normal, 0.004);
+              const basePoint = source.groupLatticeBasePoints?.[index];
+              if (basePoint) basePoint.copy(source.points[index]);
+            }
           }
           sourceChanged = true;
         }
