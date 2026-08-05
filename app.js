@@ -13856,6 +13856,21 @@ function closeSweepProfileEditor() {
   updateViewportStatsVisibility();
 }
 
+function retargetFloatingStrandEditors() {
+  const lock = getSelectedLock();
+  if (!lock) return;
+  if (sweepProfileEditor.open && sweepProfileEdit?.type === "strand") {
+    sweepProfileEdit.id = lock.id;
+    sweepProfileTarget.textContent = lock.name || "Selected strand";
+    renderSweepProfileEditor();
+  }
+  if (taperCurveEditor.open && taperCurveEdit?.type === "strand") {
+    taperCurveEdit.id = lock.id;
+    taperCurveTarget.textContent = lock.name || "Selected strand";
+    renderTaperCurveEditor();
+  }
+}
+
 function addLock(presetName, overrides = {}, options = {}) {
   const base = { ...presets[presetName], ...overrides };
   const scalpRegion = base.scalpRegion || "unassigned";
@@ -21025,6 +21040,7 @@ function rebuildLockGeometry(lock) {
   lock.mesh.material.needsUpdate = true;
   updateCurveObjects(lock);
   if (!clumpUpdateInProgress && lock.clumpGuide) updateClumpMembers(lock);
+  if (taperMeshPointsVisible && taperCurveEdit?.id === lock.id) updateTaperMeshPoints();
 }
 
 function scheduleSculptBrushGeometryUpdates() {
@@ -21419,6 +21435,7 @@ function selectLock(id, options = {}) {
   refreshRebuildCurveDialog();
   if (!lock) return;
   syncInputs(lock);
+  retargetFloatingStrandEditors();
 }
 
 function deselectStrandsForGuideEditor() {
