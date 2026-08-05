@@ -19999,7 +19999,7 @@ function endAltOrbit(event) {
 
 function dollyCameraByDrag(delta) {
   const cam = controls.object;
-  const zoomScale = Math.pow(0.95, Math.abs(delta));
+  const zoomScale = Math.pow(0.95, controls.zoomSpeed * Math.abs(delta) * 0.01);
   if (cam.isPerspectiveCamera) {
     const offset = cam.position.clone().sub(controls.target);
     const distance = offset.length() || 1;
@@ -20044,7 +20044,7 @@ function updateHoudiniZoomDrag(event) {
   const ax = Math.abs(dx);
   const ay = Math.abs(dy);
   const magnitude = fastDragMagnitude(dx, dy);
-  const sign = ay >= ax ? (dy < 0 ? -1 : 1) : (dx < 0 ? -1 : 1);
+  const sign = ay >= ax ? (dy < 0 ? -1 : 1) : (dx > 0 ? -1 : 1);
   const delta = sign * magnitude;
   dollyCameraByDrag(delta);
   controls.update();

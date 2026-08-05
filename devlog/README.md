@@ -50,7 +50,7 @@ python -m http.server 8080 --bind 127.0.0.1
   - 材质面板：新增删除材质（面板删除按钮 / Delete 键，焦点在材质面板时生效）；被删除材质的头发自动改回默认材质；默认材质不可删除。
   - 浮动面板跟随选择：Strand Profile / Width・Depth Curve 面板打开时切换选中头发，会自动改指向新选中的头发并刷新；show points on mesh 的控制点随雕刻/移动实时更新。
   - 视口导航模式：新增偏好设置「Navigation mode」（Default / Houdini，默认 Houdini）；Houdini 模式 Alt+左键旋转（不变）、Alt+中键平移、Alt+右键拖拽缩放，滚轮缩放保持；左下角导航提示随模式更新（Alt + Middle Mouse / Alt + Right Mouse）。
-  - Houdini 右键拖拽缩放：改为自绘 Alt+右键缩放（同时响应水平+垂直位移，用快速模长近似 x + ay*0.4142 归一化，45° 对角 = 1 倍），滚轮缩放不变；修复：three r165 的 dollyIn/dollyOut/getZoomScale 为私有函数，改用直接相机 dolly（dollyCameraByDrag，透视/正交均支持）。
+  - Houdini 右键拖拽缩放：改为自绘 Alt+右键缩放（同时响应水平+垂直位移，用快速模长近似 x + ay*0.4142 归一化，45° 对角 = 1 倍；方向：**右上放大、左下缩小**），滚轮缩放不变；修复：three r165 的 dollyIn/dollyOut/getZoomScale 为私有函数，改用直接相机 dolly（dollyCameraByDrag，透视/正交均支持），缩放系数复用原版 getZoomScale 公式 pow(0.95, zoomSpeed*|delta|*0.01)，与原始灵敏度一致。
 - **index.html**：File 菜单新增 Quick Save（Ctrl+S）与 Save as（Ctrl+Shift+S）快捷键提示；快捷键帮助新增独立「Local Adaptation」分区。
 - **modules/localization.js**：新增 "Save as"、"Quick Save"、"Quick Save the project"、"Local Adaptation" 的日语翻译（含导航模式：Navigation mode / Alt + Middle Mouse 等）。
   - 新增简体中文（zh）：SUPPORTED_LANGUAGES 增加 `{ id: "zh", label: "简体中文" }`；新增完整 ZH 词典（约 540 条）；translateUiString 改为按语言词典分发（JA / ZH），未收录文案回退英文；3D 专业名词（strand / clump / braid / mesh / shader / UV / lattice / verts / tris 等）保留英文。
