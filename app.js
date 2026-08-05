@@ -2629,7 +2629,7 @@ const APP_SHORTCUT_KEYS = new Set([
 function focusedControlShouldYieldToShortcut(event) {
   const focused = document.activeElement;
   const tag = focused?.tagName?.toLowerCase();
-  const yieldsAppShortcuts = tag === "select" || (tag === "input" && focused.type === "range");
+  const yieldsAppShortcuts = tag === "select" || (tag === "input" && (focused.type === "range" || focused.type === "number"));
   if (!yieldsAppShortcuts) return false;
   const key = event.key.toLowerCase();
   if (event.ctrlKey || event.metaKey) return key === "z" || key === "y" || key === "d";
@@ -15348,6 +15348,7 @@ function undoLastAction() {
     restoringHistory = false;
     updateHistoryButtons();
   }
+  if (taperCurveEditor.open) renderTaperCurveEditor();
 }
 
 function redoLastAction() {
@@ -15360,6 +15361,7 @@ function redoLastAction() {
     restoringHistory = false;
     updateHistoryButtons();
   }
+  if (taperCurveEditor.open) renderTaperCurveEditor();
 }
 
 function updateHistoryButtons() {
@@ -27839,21 +27841,14 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
       const weight = Math.max(sourceWeight, partnerWeight);
       if (weight <= 0) continue;
       pointWeights[pointIndex] = weight;
-      if (slideBrushActive || (scaleBrushActive && stroke.scaleMode === "cut-extend" && proportionalEditing)) {
-        const softOrigin = selectedPoint?.lockId === source.id ? selectedPoint.pointIndex : null;
-        const pointWeight = proportionalEditing && softOrigin !== null
-          ? proportionalWeight(pointIndex, softOrigin)
-          : (sourceVisible && pointInCameraFacingHalfSpace(sourcePoint, stroke.planeNormal, stroke.planeOffset)
-            ? sculptBrushPointWeight(sourcePoint, cursor, rect, radius, falloff)
-            : 0);
-        if (pointWeight <= 0) continue;
+      if (slideBrushActive) {
         if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
         const curve = stroke.originalCurves?.get(source.id);
         if (curve) {
           const t = pointIndex / Math.max(1, source.points.length - 1);
           const tangent = curve.getTangent(t).normalize();
           const dragWorld = sculptBrushWorldDelta(sourcePoint, deltaX, deltaY, rect);
-          const amount = (reverse ? -1 : 1) * pointWeight * strength * dragWorld.dot(tangent);
+          const amount = (reverse ? -1 : 1) * weight * strength * dragWorld.dot(tangent);
           sourcePoint.addScaledVector(tangent, amount);
           const basePoint = source.groupLatticeBasePoints?.[pointIndex];
           if (basePoint) basePoint.addScaledVector(tangent, amount);
@@ -27892,11 +27887,10 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
 
     }
     if (scaleBrushActive) {
-      const softOrigin = proportionalEditing && selectedPoint?.lockId === source.id ? selectedPoint.pointIndex : null;
-      const unitAffected = softOrigin !== null || pointWeights.some((pointWeightValue) => pointWeightValue > 0);
+      const unitAffected = pointWeights.some((pointWeightValue) => pointWeightValue > 0);
       if (unitAffected) {
         if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
-        if (stroke.scaleMode === "cut-extend" && softOrigin === null) {
+        if (stroke.scaleMode === "cut-extend") {
           // Whole-strand Cut/Extend: uniform parameter scaling preserves current spacing.
           const curve = stroke.originalCurves?.get(source.id);
           if (curve) {
@@ -27916,28 +27910,13 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
             }
             sourceChanged = true;
           }
-        } else if (stroke.scaleMode !== "cut-extend") {
-          // Scale mode: root-anchored (or soft-selection anchor) scaling, point order preserved.
-          const anchorIndex = softOrigin === null
-            ? 0
-            : Math.max(0, Math.floor(softOrigin - Number(proportionalRadiusInput?.value || 2.5)) - 1);
-          const anchor = source.points[anchorIndex];
-          for (let index = anchorIndex; index < source.points.length; index += 1) {
-            const weightForPoint = softOrigin === null ? 1 : proportionalWeight(index, softOrigin);
-            if (weightForPoint <= 0) continue;
+        } else {
+          // Scale mode: root-anchored uniform scaling, point order preserved (no scalp collision).
+          const anchor = source.points[0];
+          for (let index = 1; index < source.points.length; index += 1) {
             const direction = source.points[index].clone().sub(anchor);
-            const factor = Math.max(0.02, 1 + (reverse ? -1 : 1) * weightForPoint * strength * strokeDistance * 0.01);
+            const factor = Math.max(0.02, 1 + (reverse ? -1 : 1) * strength * strokeDistance * 0.01);
             source.points[index].copy(anchor).addScaledVector(direction, factor);
-          }
-          // Scalp collision: push root-side points that end up inside the scalp back out onto the surface.
-          const collisionPointCount = Math.min(3, source.points.length);
-          for (let index = 0; index < collisionPointCount; index += 1) {
-            const collisionHit = closestPointOnActiveScalp(source.points[index]);
-            if (collisionHit && source.points[index].clone().sub(collisionHit.point).dot(collisionHit.normal) < 0) {
-              source.points[index].copy(collisionHit.point).addScaledVector(collisionHit.normal, 0.004);
-              const basePoint = source.groupLatticeBasePoints?.[index];
-              if (basePoint) basePoint.copy(source.points[index]);
-            }
           }
           sourceChanged = true;
         }
