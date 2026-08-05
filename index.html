@@ -218,6 +218,14 @@
             <span class="sculpt-smooth-icon" aria-hidden="true"></span>
             <span>Smooth Brush</span>
           </button>
+          <button class="tool-button sculpt-brush-button" data-tool="sculpt-slide" type="button" title="Slide strand points along the curve trajectory" aria-label="Slide Brush">
+            <span class="sculpt-slide-icon" aria-hidden="true"></span>
+            <span>Slide Brush</span>
+          </button>
+          <button class="tool-button sculpt-brush-button" data-tool="sculpt-scale" type="button" title="Scale or cut/extend strands" aria-label="Scale Brush">
+            <span class="sculpt-scale-icon" aria-hidden="true"></span>
+            <span>Scale Brush</span>
+          </button>
         </div>
         <div id="viewportEditModeControl" class="viewport-edit-mode" aria-label="Viewport edit mode">
           <label for="viewportEditMode">
@@ -687,6 +695,13 @@
           <label class="topology-control" title="Controls how strongly each brush affects nearby strands.">Strength <input id="sculptBrushStrength" type="range" min="0.05" max="1" step="0.01" value="1" /><output id="sculptBrushStrengthValue" class="slider-value">1.00</output></label>
           <label class="topology-control" title="Sets the brush area of influence in viewport pixels.">Radius <input id="sculptBrushRadius" type="range" min="20" max="240" step="1" value="90" /><output id="sculptBrushRadiusValue" class="slider-value">90 px</output></label>
           <label class="topology-control" title="Controls how much of the brush radius softly fades toward its edge.">Falloff Radius <input id="sculptBrushFalloff" type="range" min="0" max="1" step="0.01" value="0.5" /><output id="sculptBrushFalloffValue" class="slider-value">0.50</output></label>
+          <label id="sculptScaleModeRow" class="compact-select-row hidden" for="sculptScaleMode">
+            <span>Scale Mode</span>
+            <select id="sculptScaleMode">
+              <option value="scale">Scale</option>
+              <option value="cut-extend">Cut/Extend</option>
+            </select>
+          </label>
           <details class="sculpt-brush-debug-settings">
             <summary>Debug</summary>
             <div class="sculpt-brush-debug-options">

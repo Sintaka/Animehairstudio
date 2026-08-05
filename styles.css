@@ -1524,6 +1524,45 @@ body.reference-image-drag-active .reference-outliner-group-head.reference-drop-h
   background: currentColor;
 }
 
+.sculpt-slide-icon {
+  position: relative;
+  width: 17px;
+  height: 17px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.sculpt-slide-icon::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 9px;
+  height: 9px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.sculpt-scale-icon {
+  position: relative;
+  width: 17px;
+  height: 17px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+
+.sculpt-scale-icon::before {
+  content: "";
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid currentColor;
+  border-left: 2px solid currentColor;
+}
+
 .sculpt-brush-cursor {
   position: absolute;
   left: 0;

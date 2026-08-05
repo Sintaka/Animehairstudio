@@ -302,7 +302,9 @@ const sculptBrushPlanePositionValue = document.querySelector("#sculptBrushPlaneP
 const sculptBrushStrengthByTool = {
   "sculpt-move": 1,
   "sculpt-smooth": 0.5,
-  "sculpt-inflate": 0.5
+  "sculpt-inflate": 0.5,
+  "sculpt-slide": 0.6,
+  "sculpt-scale": 0.8
 };
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -9939,7 +9941,7 @@ function updateGuideGeometry(guide) {
 }
 
 function sculptBrushToolActive(tool = activeTool) {
-  return ["sculpt-move", "sculpt-smooth", "sculpt-inflate"].includes(tool);
+  return ["sculpt-move", "sculpt-smooth", "sculpt-inflate", "sculpt-slide", "sculpt-scale"].includes(tool);
 }
 
 function effectiveSculptBrushTool() {
@@ -9961,6 +9963,8 @@ function syncSculptBrushToolButtons() {
   });
   sculptBrushCursor.classList.toggle("smooth", effectiveTool === "sculpt-smooth");
   sculptBrushCursor.classList.toggle("inflate", effectiveTool === "sculpt-inflate");
+  const scaleModeRow = document.querySelector("#sculptScaleModeRow");
+  scaleModeRow?.classList.toggle("hidden", effectiveSculptBrushTool() !== "sculpt-scale");
 }
 
 function setSculptBrushShiftSmoothHeld(held) {
@@ -27742,11 +27746,12 @@ function syncSculptBrushMirrorPoints(source, partner) {
 }
 
 function beginSculptMoveStroke(event) {
+  const reverseTool = ["sculpt-slide", "sculpt-scale"].includes(activeTool);
   if (
     !sculptBrushToolActive()
     || viewportEditMode !== "strand"
     || event.button !== 0
-    || event.ctrlKey
+    || (!reverseTool && event.ctrlKey)
     || event.altKey
     || event.metaKey
   ) return;
@@ -27759,6 +27764,8 @@ function beginSculptMoveStroke(event) {
     frameRequest: null,
     changed: false,
     undoCaptured: false,
+    reverse: Boolean(event.ctrlKey),
+    scaleMode: activeTool === "sculpt-scale" ? (document.querySelector("#sculptScaleMode")?.value || "scale") : null,
     planeNormal: sculptBrushWorkingPlaneNormal(),
     planeOffset: sculptBrushPlaneOffset(),
     units: sculptBrushUnits(),
@@ -27770,7 +27777,12 @@ function beginSculptMoveStroke(event) {
       pointScales: lock.pointScales.map((scale) => ({ ...scale })),
       pointWidths: [...lock.pointWidths],
       width: lock.width
-    }))
+    })),
+    originalCurves: new Map(
+      locks.filter(sculptBrushEditableLock)
+        .filter((lock) => lock.points.length >= 2)
+        .map((lock) => [lock.id, new THREE.CatmullRomCurve3(lock.points.map((point) => point.clone()))])
+    )
   };
   renderer.domElement.setPointerCapture?.(event.pointerId);
   updateInteractionLocks();
@@ -27795,6 +27807,9 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
   const falloff = Number(sculptBrushFalloffInput.value);
   const smoothBrushActive = effectiveSculptBrushTool() === "sculpt-smooth";
   const inflateBrushActive = effectiveSculptBrushTool() === "sculpt-inflate";
+  const slideBrushActive = effectiveSculptBrushTool() === "sculpt-slide";
+  const scaleBrushActive = effectiveSculptBrushTool() === "sculpt-scale";
+  const reverse = Boolean(stroke.reverse);
   const strokeDistance = Math.hypot(deltaX, deltaY);
   const changedSources = [];
 
@@ -27817,7 +27832,30 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
       const weight = Math.max(sourceWeight, partnerWeight);
       if (weight <= 0) continue;
       pointWeights[pointIndex] = weight;
+      if (slideBrushActive || (scaleBrushActive && stroke.scaleMode === "cut-extend" && proportionalEditing)) {
+        const softOrigin = selectedPoint?.lockId === source.id ? selectedPoint.pointIndex : null;
+        const pointWeight = proportionalEditing && softOrigin !== null
+          ? proportionalWeight(pointIndex, softOrigin)
+          : (sourceVisible && pointInCameraFacingHalfSpace(sourcePoint, stroke.planeNormal, stroke.planeOffset)
+            ? sculptBrushPointWeight(sourcePoint, cursor, rect, radius, falloff)
+            : 0);
+        if (pointWeight <= 0) continue;
+        if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
+        const curve = stroke.originalCurves?.get(source.id);
+        if (curve) {
+          const t = pointIndex / Math.max(1, source.points.length - 1);
+          const tangent = curve.getTangent(t).normalize();
+          const worldLength = sculptBrushWorldDelta(sourcePoint, deltaX, deltaY, rect).length();
+          const amount = (reverse ? -1 : 1) * pointWeight * strength * worldLength;
+          sourcePoint.addScaledVector(tangent, amount);
+          const basePoint = source.groupLatticeBasePoints?.[pointIndex];
+          if (basePoint) basePoint.addScaledVector(tangent, amount);
+          sourceChanged = true;
+        }
+        continue;
+      }
       if (smoothBrushActive) continue;
+      if (scaleBrushActive) continue;
       if (!stroke.undoCaptured) {
         pushUndoState();
         stroke.undoCaptured = true;
@@ -27844,7 +27882,50 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
         source.groupLatticeBasePoints[pointIndex].add(worldDelta);
       }
       sourceChanged = true;
+
     }
+    if (scaleBrushActive) {
+      const softOrigin = proportionalEditing && selectedPoint?.lockId === source.id ? selectedPoint.pointIndex : null;
+      const unitAffected = softOrigin !== null || pointWeights.some((pointWeightValue) => pointWeightValue > 0);
+      if (unitAffected) {
+        if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
+        if (stroke.scaleMode === "cut-extend" && softOrigin === null) {
+          // Whole-strand Cut/Extend: uniform parameter scaling preserves current spacing.
+          const curve = stroke.originalCurves?.get(source.id);
+          if (curve) {
+            const factor = 1 + (reverse ? -1 : 1) * strength * strokeDistance * 0.01;
+            for (let index = 1; index < source.points.length; index += 1) {
+              const t0 = index / Math.max(1, source.points.length - 1);
+              const t1 = t0 * factor;
+              let position;
+              if (t1 <= 1) {
+                position = curve.getPoint(Math.max(0, t1));
+              } else {
+                position = curve.getPoint(1).clone()
+                  .addScaledVector(curve.getTangent(1).normalize(), (t1 - 1) * curve.getLength());
+              }
+              source.points[index].copy(position);
+            }
+            sourceChanged = true;
+          }
+        } else if (stroke.scaleMode !== "cut-extend") {
+          // Scale mode: root-anchored (or soft-selection anchor) scaling, point order preserved.
+          const anchorIndex = softOrigin === null
+            ? 0
+            : Math.max(0, Math.floor(softOrigin - Number(proportionalRadiusInput?.value || 2.5)) - 1);
+          const anchor = source.points[anchorIndex];
+          for (let index = anchorIndex; index < source.points.length; index += 1) {
+            const weightForPoint = softOrigin === null ? 1 : proportionalWeight(index, softOrigin);
+            if (weightForPoint <= 0) continue;
+            const direction = source.points[index].clone().sub(anchor);
+            const factor = Math.max(0.02, 1 + (reverse ? -1 : 1) * weightForPoint * strength * strokeDistance * 0.01);
+            source.points[index].copy(anchor).addScaledVector(direction, factor);
+          }
+          sourceChanged = true;
+        }
+      }
+    }
+
     if (smoothBrushActive) {
       const smoothDeltas = smoothSculptPointDeltas(source.points, pointWeights, strength);
       smoothDeltas.forEach((delta, pointIndex) => {

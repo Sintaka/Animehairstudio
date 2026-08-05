@@ -84,7 +84,7 @@ python -m http.server 8080 --bind 127.0.0.1
   - Shift：临时唤出 Smooth 笔刷。
   - B：软选择（proportional editing），作为滑动 / 缩放笔刷的"软选范围"开关。
 
-- **规划中的新笔刷（设计，未实现）**
+- **新笔刷（已实现）**
   1. **Sliding 笔刷**：把引导线控制点沿原曲线的 NURBS 轨迹滑动（非自由 3D 位移，这是与 Move 的区别）。
      - 影响范围：未软选 = 笔刷半径内控制点；软选 = 软选部分。
      - 方向：默认朝尖端方向（尖端一开始的方向无限延伸）；**Ctrl+左键 → 朝根部滑动**。
@@ -92,6 +92,7 @@ python -m http.server 8080 --bind 127.0.0.1
   2. **Scale 笔刷（Scale / Cut·Extend 两种模式）**
      - **Scale 模式**：直接根缩放；或按末端方向伸缩。未软选从发根开始缩放；软选则从"软选最低点序再往前一个点"的位置开始缩放（注意根部判别）；按软选范围移动引导线；**点序不变**。
      - **Cut/Extend 模式**：沿原曲线 NURBS 轨迹滑动控制点（同 Sliding）；未软选 = 整根按当前等间隔比例（保留用户改过的间距）；软选 = 软选部分及其子引导点；末端沿初始方向无限延伸；**Ctrl+左键 → 向根部**。
+     （已在 codex/brush-dev 实现：Slide Brush = sculpt-slide，Scale Brush = sculpt-scale，含 Scale / Cut·Extend 模式，Ctrl=反向；遵循上述统一架构。）
 
 ## 本地适配进度 / Local adaptation log
 
@@ -107,3 +108,4 @@ python -m http.server 8080 --bind 127.0.0.1
 - [x] 语言：Settings Language 新增简体中文（保留 3D 专业名词）
 - [x] devlog：维护开发规范 / JS 改动标注 / Bug 修复分类
 - [x] devlog 记录修改型笔刷开发规范（沿用 Move/Smooth 架构；Ctrl=反向、Shift=临时 Smooth、B=软选）
+- [x] 实现 Slide / Scale 修改型笔刷（sculpt-slide / sculpt-scale，Scale·Cut/Extend 模式，Ctrl=反向）
