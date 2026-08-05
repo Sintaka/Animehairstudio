@@ -2641,6 +2641,8 @@ const presetCatalog = [
 let activePresetFilter = "full";
 let currentProjectName = "Untitled Hair Project";
 let projectSaveInProgress = false;
+let quickSaveFileHandle = null;
+let quickSaveFileName = null;
 let pendingFileAction = null;
 let importedHeadAsset = null;
 
@@ -15022,6 +15024,7 @@ async function handlePreferencesAndPresetsFile(event) {
 function setProjectSaveButtonsDisabled(disabled) {
   document.querySelector("#saveCurrentPreset").disabled = disabled;
   document.querySelector("#devSaveProject").disabled = disabled;
+  document.querySelector("#quickSaveProject").disabled = disabled;
 }
 
 const fileExportAvailability = Object.freeze({
@@ -15167,7 +15170,57 @@ fileActionDialog.addEventListener("close", () => {
 });
 
 async function saveHairProjectFile() {
+  const baseName = cleanFileBaseName(currentProjectName, "Untitled Hair Project");
+  const suggestedName = fileNameForAction(baseName, "project", "Untitled Hair Project");
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{
+          description: "Anime Hair Studio Project",
+          accept: { "application/json": [".ahs", ".animehair.json", ".json"] }
+        }]
+      });
+      const content = `${JSON.stringify(buildHairProjectFile(baseName))}\n`;
+      const writable = await handle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      quickSaveFileHandle = handle;
+      const savedName = cleanFileBaseName(handle.name, "Untitled Hair Project");
+      quickSaveFileName = savedName;
+      currentProjectName = savedName;
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      console.error("Save as could not write to the chosen file, falling back to download.", error);
+    }
+  }
   openFileActionDialog({ format: "project", local: false });
+}
+
+async function saveHairProjectQuickly() {
+  if (projectSaveInProgress) return;
+  if (quickSaveFileHandle) {
+    const baseName = cleanFileBaseName(quickSaveFileName || currentProjectName, "Untitled Hair Project");
+    const content = `${JSON.stringify(buildHairProjectFile(baseName))}\n`;
+    projectSaveInProgress = true;
+    setProjectSaveButtonsDisabled(true);
+    try {
+      const writable = await quickSaveFileHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      currentProjectName = baseName;
+      return;
+    } catch (error) {
+      console.error("Quick Save could not overwrite the last saved file, opening Save As instead.", error);
+      quickSaveFileHandle = null;
+      quickSaveFileName = null;
+    } finally {
+      projectSaveInProgress = false;
+      setProjectSaveButtonsDisabled(false);
+    }
+  }
+  await saveHairProjectFile();
 }
 
 async function saveHairProjectThroughLocalDialog() {
@@ -24393,6 +24446,7 @@ scalpGuideMeshFileInput.addEventListener("change", () => {
 });
 document.querySelector("#saveCurrentPreset").addEventListener("click", saveHairProjectFile);
 document.querySelector("#devSaveProject").addEventListener("click", saveHairProjectThroughLocalDialog);
+document.querySelector("#quickSaveProject").addEventListener("click", saveHairProjectQuickly);
 presetFilterButtons.forEach((button) => button.addEventListener("click", () => {
   activePresetFilter = button.dataset.presetFilter;
   renderPresetLibrary();
@@ -26047,6 +26101,11 @@ proportionalLockRootInput.addEventListener("change", () => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "s") {
+    event.preventDefault();
+    if (!event.repeat) saveHairProjectQuickly();
+    return;
+  }
   const tag = document.activeElement?.tagName?.toLowerCase();
   let editingField = tag === "input"
     || tag === "textarea"
@@ -27384,16 +27443,23 @@ function sculptBrushLockViable(
   );
 }
 
+function sculptBrushSelectionMask() {
+  if (selectedStrandIds.size === 0 && selectedId === undefined) return null;
+  return (lock) => Boolean(lock && (selectedStrandIds.has(lock.id) || lock.id === selectedId));
+}
+
 function sculptBrushUnits() {
   const units = [];
   const visited = new Set();
   const planeNormal = sculptBrushWorkingPlaneNormal();
   const planeOffset = sculptBrushPlaneOffset();
+  const selectionMask = sculptBrushSelectionMask();
   locks.forEach((lock) => {
     if (!sculptBrushEditableLock(lock)) return;
     const partner = sculptBrushEditableLock(mirrorPartnerFor(lock))
       ? mirrorPartnerFor(lock)
       : null;
+    if (selectionMask && !selectionMask(lock) && !(partner && selectionMask(partner))) return;
     const source = partner && String(partner.id).localeCompare(String(lock.id)) < 0
       ? partner
       : lock;
@@ -27450,9 +27516,11 @@ function updateSculptBrushViabilityPlane() {
   );
   sculptBrushViabilityPlane.position.copy(sculptBrushPlaneNormal).multiplyScalar(planeOffset);
   sculptBrushViabilityPlane.quaternion.setFromRotationMatrix(sculptBrushPlaneBasis);
+  const selectionMask = sculptBrushSelectionMask();
   const nextViableLockIds = new Set(locks
     .filter((lock) => (
       sculptBrushEditableLock(lock)
+      && (!selectionMask || selectionMask(lock))
       && strandVisibleForDisplay(lock)
       && sculptBrushLockViable(lock, normal, planeOffset)
     ))

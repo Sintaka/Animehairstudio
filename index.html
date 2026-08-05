@@ -15,7 +15,8 @@
               <button id="fileMenuToggle" class="app-menu-trigger" type="button" aria-haspopup="menu" aria-expanded="false">File</button>
               <div id="fileMenu" class="app-menu-dropdown hidden" role="menu" aria-label="File">
                 <button id="openHairProject" type="button" role="menuitem"><span>Open</span></button>
-                <button id="saveCurrentPreset" type="button" role="menuitem"><span>Save</span></button>
+                <button id="saveCurrentPreset" type="button" role="menuitem"><span>Save as</span></button>
+                <button id="quickSaveProject" type="button" role="menuitem"><span>Quick Save</span><kbd>Ctrl+S</kbd></button>
                 <button
                   id="devSaveProject"
                   class="local-save-menu-item"
@@ -1047,6 +1048,7 @@
           </section>
           <section class="shortcuts-section">
             <h3>General and Viewport</h3>
+            <div class="shortcut-row"><span class="shortcut-key-group"><kbd>Ctrl</kbd><span>+</span><kbd>S</kbd></span><span>Quick Save the project</span></div>
             <div class="shortcut-row"><span class="shortcut-key-group"><kbd>Ctrl</kbd><span>+</span><kbd>Z</kbd></span><span>Undo</span></div>
             <div class="shortcut-row"><span class="shortcut-key-group"><kbd>Ctrl</kbd><span>+</span><kbd>Y</kbd></span><span>Redo</span></div>
             <div class="shortcut-row"><span class="shortcut-key-group"><kbd>Ctrl</kbd><span>+</span><kbd>Shift</kbd><span>+</span><kbd>Z</kbd></span><span>Redo</span></div>
