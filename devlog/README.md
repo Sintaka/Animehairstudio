@@ -117,6 +117,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - [x] 修复删除材质时误删发片：材质 outliner 重渲染后重新聚焦选中项，Delete 保持在材质上下文
 - [x] 左侧大纲 / 右侧属性面板支持左右拖拽调宽（宽度持久化到 localStorage）
 - [x] 滑杆数值框可随宽度变宽（minmax(56px,1fr)，滑杆占 2fr）
+- [x] 浮动面板（Width/Depth Curve、Strand Profile）支持拖动、右下角缩放、右缘吸附到属性面板左侧
 - [x] 浮动面板：跟随选中头发；show points on mesh 随雕刻/移动更新
 - [x] 视口导航模式：新增 Default / Houdini（默认 Houdini）；Houdini = Alt 左键旋转 / Alt 中键平移 / Alt 右键缩放（同时响应左右/上下并归一化），滚轮缩放保持
 - [x] 语言：Settings Language 新增简体中文（保留 3D 专业名词）

@@ -25890,6 +25890,91 @@ function initPanelResizeHandles() {
   bindResize(attributeHandle, "--attribute-width", "anime-hair-studio-attribute-width", 280, 640, true);
 }
 initPanelResizeHandles();
+
+function initFloatingPanelControls() {
+  const snapTarget = document.querySelector(".tool-panel");
+  const snapThreshold = 14;
+
+  document.querySelectorAll(".profile-dialog").forEach((dialog) => {
+    dialog.style.margin = "0";
+    const head = dialog.querySelector(".profile-dialog-head");
+    if (!head) return;
+
+    const detach = () => {
+      const rect = dialog.getBoundingClientRect();
+      dialog.style.right = "auto";
+      dialog.style.bottom = "auto";
+      dialog.style.left = `${rect.left}px`;
+      dialog.style.top = `${rect.top}px`;
+    };
+
+    // Drag to move (head as handle, excluding buttons), with right-edge snap to the attribute panel
+    let drag = null;
+    head.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || event.target.closest("button")) return;
+      const rect = dialog.getBoundingClientRect();
+      detach();
+      drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
+      head.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+    });
+    head.addEventListener("pointermove", (event) => {
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const maxLeft = Math.max(8, window.innerWidth - dialog.offsetWidth - 8);
+      const maxTop = Math.max(8, window.innerHeight - dialog.offsetHeight - 8);
+      let left = THREE.MathUtils.clamp(drag.left + event.clientX - drag.x, 8, maxLeft);
+      const top = THREE.MathUtils.clamp(drag.top + event.clientY - drag.y, 8, maxTop);
+      if (snapTarget) {
+        const targetLeft = snapTarget.getBoundingClientRect().left;
+        if (Math.abs(left + dialog.offsetWidth - targetLeft) <= snapThreshold) {
+          left = targetLeft - dialog.offsetWidth;
+        }
+      }
+      dialog.style.left = `${left}px`;
+      dialog.style.top = `${top}px`;
+    });
+    const endDrag = (event) => {
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      head.releasePointerCapture?.(event.pointerId);
+      drag = null;
+    };
+    head.addEventListener("pointerup", endDrag);
+    head.addEventListener("pointercancel", endDrag);
+
+    // Resize via a bottom-right handle
+    let handle = dialog.querySelector(".dialog-resize-handle");
+    if (!handle) {
+      handle = document.createElement("div");
+      handle.className = "dialog-resize-handle";
+      dialog.appendChild(handle);
+    }
+    let resize = null;
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      const rect = dialog.getBoundingClientRect();
+      detach();
+      resize = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, width: rect.width, height: rect.height };
+      handle.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    handle.addEventListener("pointermove", (event) => {
+      if (!resize || resize.pointerId !== event.pointerId) return;
+      const width = THREE.MathUtils.clamp(resize.width + event.clientX - resize.x, 300, 720);
+      const height = THREE.MathUtils.clamp(resize.height + event.clientY - resize.y, 240, window.innerHeight - 16);
+      dialog.style.width = `${width}px`;
+      dialog.style.height = `${height}px`;
+    });
+    const endResize = (event) => {
+      if (!resize || resize.pointerId !== event.pointerId) return;
+      handle.releasePointerCapture?.(event.pointerId);
+      resize = null;
+    };
+    handle.addEventListener("pointerup", endResize);
+    handle.addEventListener("pointercancel", endResize);
+  });
+}
+initFloatingPanelControls();
 openPreferencesButton.addEventListener("click", openPreferencesDialog);
 preferenceCategoryButtons.forEach((button) => {
   button.addEventListener("click", () => setPreferenceCategory(button.dataset.preferenceCategory));
