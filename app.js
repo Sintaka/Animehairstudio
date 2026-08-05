@@ -112,7 +112,7 @@ import {
   DEFAULT_LANGUAGE,
   LANGUAGE_STORAGE_KEY,
   normalizeLanguage
-} from "./modules/localization.js?v=20260730-27";
+} from "./modules/localization.js?v=20260805-2";
 import {
   emptyToolPresetLibrary,
   normalizeToolPresetLibrary,
@@ -25983,16 +25983,22 @@ initFloatingPanelControls();
 
 function updateSculptBrushDockCompact() {
   const dock = document.querySelector("#sculptBrushDock");
-  if (!dock || !viewportPanel) return;
-  const buttonCount = dock.querySelectorAll(".sculpt-brush-button").length;
-  if (!buttonCount) return;
-  const gap = 6;
-  const padding = 10;
+  if (!dock || !viewportPanel || dock.classList.contains("hidden")) return;
+  if (!dock.querySelector(".sculpt-brush-button")) return;
+
+  // Measure the dock's natural content width in each state (scrollWidth = max-content).
+  dock.classList.remove("dock-compact", "dock-icons");
+  const fullWidth = dock.scrollWidth;
+  dock.classList.add("dock-compact");
+  const compactWidth = dock.scrollWidth;
+  dock.classList.remove("dock-compact");
+  dock.classList.add("dock-icons");
+  const iconWidth = dock.scrollWidth;
+
   const available = Math.max(0, viewportPanel.clientWidth - 16);
-  const fullWidth = buttonCount * 76 + (buttonCount - 1) * gap + padding;
-  const compactWidth = buttonCount * 54 + (buttonCount - 1) * gap + padding;
-  dock.classList.toggle("dock-compact", available < fullWidth);
-  dock.classList.toggle("dock-icons", available < compactWidth);
+  dock.classList.remove("dock-compact", "dock-icons");
+  if (available < compactWidth) dock.classList.add("dock-icons");
+  else if (available < fullWidth) dock.classList.add("dock-compact");
 }
 updateSculptBrushDockCompact();
 openPreferencesButton.addEventListener("click", openPreferencesDialog);
