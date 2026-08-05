@@ -5710,6 +5710,10 @@ body.outliner-folder-colors-disabled .outliner-layer-items {
   transform: translateX(-50%);
 }
 
+
+.profile-dialog.floating-snapped {
+  box-shadow: none;
+}
 .dialog-resize-handle {
   position: absolute;
   right: 4px;

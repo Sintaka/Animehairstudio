@@ -25893,7 +25893,7 @@ initPanelResizeHandles();
 
 function initFloatingPanelControls() {
   const snapTarget = document.querySelector(".tool-panel");
-  const snapThreshold = 14;
+  const snapThreshold = 2;
 
   document.querySelectorAll(".profile-dialog").forEach((dialog) => {
     dialog.style.margin = "0";
@@ -25928,7 +25928,12 @@ function initFloatingPanelControls() {
         const targetLeft = snapTarget.getBoundingClientRect().left;
         if (Math.abs(left + dialog.offsetWidth - targetLeft) <= snapThreshold) {
           left = targetLeft - dialog.offsetWidth;
+          dialog.classList.add("floating-snapped");
+        } else {
+          dialog.classList.remove("floating-snapped");
         }
+      } else {
+        dialog.classList.remove("floating-snapped");
       }
       dialog.style.left = `${left}px`;
       dialog.style.top = `${top}px`;
