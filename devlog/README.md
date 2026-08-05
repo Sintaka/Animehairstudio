@@ -47,6 +47,7 @@ python -m http.server 8080 --bind 127.0.0.1
   - 新增 Quick Save（Ctrl+S）/ Save as（Ctrl+Shift+S）：`saveHairProjectFile` 优先用 File System Access API 写盘并记住文件句柄，浏览器不支持时回退原下载对话框；新增 `saveHairProjectQuickly` 覆盖保存到上次文件；全局 keydown 拦截 Ctrl+S / Ctrl+Shift+S（代替浏览器默认"保存网页"，原快捷键说明不改动，新增内容放在独立「Local Adaptation」分区）。
   - 雕刻笔刷选择遮罩：新增 `sculptBrushSelectionMask`；`sculptBrushUnits` / `updateSculptBrushViabilityPlane` 增加选择过滤（未选中 → 所有可见头发可雕刻；选中 → 仅选中头发可雕刻）。
   - 拖放统一分发（规范化）：新增 `FILE_DROP_KINDS` / `classifyDroppedFile` / `fileDropKindFromDrag`，按扩展名把拖入文件分为 project（.ahs/.animehair.json/.json）/ image / other；dragenter/dragover 只做提示（图片显示参考图覆盖层，项目/其他显示通用 fileDropTarget 覆盖层），**拖动阶段不再进入 reference 编辑模式**；drop 阶段统一分发（project → openHairProjectFile，image → 添加参考图，其他 → 忽略并警告），后续新增 geo / 附加模型等 drop 类型只需在 classifyDroppedFile 与 drop 分发处扩展。
+  - 材质面板：新增删除材质（面板删除按钮 / Delete 键，焦点在材质面板时生效）；被删除材质的头发自动改回默认材质；默认材质不可删除。
 - **index.html**：File 菜单新增 Quick Save（Ctrl+S）与 Save as（Ctrl+Shift+S）快捷键提示；快捷键帮助新增独立「Local Adaptation」分区。
 - **modules/localization.js**：新增 "Save as"、"Quick Save"、"Quick Save the project"、"Local Adaptation" 的日语翻译。
   - 新增简体中文（zh）：SUPPORTED_LANGUAGES 增加 `{ id: "zh", label: "简体中文" }`；新增完整 ZH 词典（约 540 条）；translateUiString 改为按语言词典分发（JA / ZH），未收录文案回退英文；3D 专业名词（strand / clump / braid / mesh / shader / UV / lattice / verts / tris 等）保留英文。
@@ -67,5 +68,6 @@ python -m http.server 8080 --bind 127.0.0.1
 - [x] Settings Language 增加简体中文（保留 3D 专业名词）
 - [x] 在 devlog 中记录：新增说明需添加现有语言支持
 - [x] 规范化拖放处理：拖动阶段不再进入 reference 模式；drop 时统一分发（项目 / 参考图 / 其他）
+- [x] 材质面板支持删除多余材质（剩余头发自动改回默认材质，默认材质不可删除）
 - [x] File 菜单新增 **Quick Save (Ctrl+S)**，原 Save 改名 **Save as**
 - [x] 雕刻笔刷（Move / Smooth）增加选择遮罩：未选中时只能雕刻可见头发；选中后只能雕刻选中头发

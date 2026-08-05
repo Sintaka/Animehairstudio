@@ -1973,6 +1973,7 @@ const hairMaterialSelect = document.querySelector("#hairMaterialSelect");
 const newHairMaterialButton = document.querySelector("#newHairMaterial");
 const addProjectHairMaterialButton = document.querySelector("#addProjectHairMaterial");
 const hairMaterialOutliner = document.querySelector("#hairMaterialOutliner");
+const deleteProjectHairMaterialButton = document.querySelector("#deleteProjectHairMaterial");
 const hairMaterialNameInput = document.querySelector("#hairMaterialName");
 const hairMaterialShaderInput = document.querySelector("#hairMaterialShader");
 const hairMaterialStandardControls = document.querySelector("#hairMaterialStandardControls");
@@ -12643,6 +12644,7 @@ function renderHairMaterialOptions(selectedMaterialId = DEFAULT_HAIR_MATERIAL_ID
 function syncHairMaterialEditor(lock = null) {
   if (lock) activeHairMaterialId = materialForLock(lock).id;
   const definition = activeHairMaterialDefinition();
+  deleteProjectHairMaterialButton.disabled = definition.id === DEFAULT_HAIR_MATERIAL_ID;
   const assignedMaterialId = getSelectedLock()?.materialId || DEFAULT_HAIR_MATERIAL_ID;
   renderHairMaterialOptions(assignedMaterialId);
   renderHairMaterialOutliner();
@@ -12680,6 +12682,23 @@ function createProjectHairMaterial({ assignToSelected = false } = {}) {
     applyMaterialDefinitionToLock(lock);
     syncActiveMirror(lock, { refreshUi: true });
   }
+  syncHairMaterialEditor();
+  renderLockList();
+}
+
+function deleteActiveHairMaterial() {
+  const material = activeHairMaterialDefinition();
+  if (material.id === DEFAULT_HAIR_MATERIAL_ID) return;
+  pushUndoState();
+  hairMaterialDefinitions.splice(hairMaterialDefinitions.indexOf(material), 1);
+  locks.forEach((lock) => {
+    if ((lock.materialId || DEFAULT_HAIR_MATERIAL_ID) === material.id) {
+      lock.materialId = DEFAULT_HAIR_MATERIAL_ID;
+      applyMaterialDefinitionToLock(lock);
+      syncActiveMirror(lock, { refreshUi: true });
+    }
+  });
+  activeHairMaterialId = DEFAULT_HAIR_MATERIAL_ID;
   syncHairMaterialEditor();
   renderLockList();
 }
@@ -23896,6 +23915,7 @@ newHairMaterialButton.addEventListener("click", () => {
 });
 
 addProjectHairMaterialButton.addEventListener("click", () => createProjectHairMaterial());
+deleteProjectHairMaterialButton.addEventListener("click", deleteActiveHairMaterial);
 hairMaterialOutliner.addEventListener("click", (event) => {
   const item = event.target.closest("[data-hair-material-id]");
   if (!item) return;
@@ -26289,7 +26309,12 @@ window.addEventListener("keydown", (event) => {
   if (editingField || event.ctrlKey || event.metaKey || event.altKey) return;
   if (event.key === "Delete") {
     event.preventDefault();
-    if (!event.repeat) deleteCurrentSelection();
+    if (event.repeat) return;
+    if (hairMaterialPanel.contains(document.activeElement)) {
+      deleteActiveHairMaterial();
+      return;
+    }
+    deleteCurrentSelection();
     return;
   }
   if (event.code === "Space") {
