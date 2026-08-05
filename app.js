@@ -63,8 +63,9 @@ import {
   inflateSculptPointScale,
   pointInCameraFacingHalfSpace,
   sculptBrushWeight,
-  smoothSculptPointDeltas
-} from "./modules/sculpt-brush.js?v=20260730-8";
+  smoothSculptPointDeltas,
+  smoothSculptTwistDeltas
+} from "./modules/sculpt-brush.js?v=20260805-1";
 import {
   createHairProject,
   validateHairProject
@@ -190,7 +191,7 @@ let defaultHairShader = readStoredPreference(window, DEFAULT_HAIR_SHADER_PREFERE
   normalize: normalizeHairShader
 });
 let navigationMode = readStoredPreference(window, NAVIGATION_MODE_PREFERENCE_KEY, {
-  fallback: NAVIGATION_MODES.houdini,
+  fallback: NAVIGATION_MODES.default,
   normalize: normalizeNavigationMode
 });
 const savedLanguage = readStoredPreference(window, LANGUAGE_STORAGE_KEY, {
@@ -304,7 +305,7 @@ const sculptBrushStrengthByTool = {
   "sculpt-smooth": 0.5,
   "sculpt-inflate": 0.5,
   "sculpt-slide": 0.6,
-  "sculpt-scale": 0.8,
+  "sculpt-scale": 0.5,
   "sculpt-push": 1,
   "sculpt-orient": 0.5
 };
@@ -25818,7 +25819,7 @@ appMenuTriggers.forEach((trigger) => {
 });
 appMenuDropdowns.forEach((menu) => {
   menu.addEventListener("click", (event) => {
-    if (event.target.closest("button")) closeAppMenus();
+    if (event.target.closest("button") && !event.target.closest("#toggleTurntable")) closeAppMenus();
   });
 });
 toggleTurntableButton.addEventListener("click", () => setTurntableActive(!turntableActive));
@@ -27970,6 +27971,17 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
 
     if (smoothBrushActive) {
       const smoothDeltas = smoothSculptPointDeltas(source.points, pointWeights, strength);
+      const smoothTwistDeltas = smoothSculptTwistDeltas(source.pointTwists || [], pointWeights, strength);
+      smoothTwistDeltas.forEach((delta, pointIndex) => {
+        if (delta === 0) return;
+        if (!stroke.undoCaptured) {
+          pushUndoState();
+          stroke.undoCaptured = true;
+        }
+        if (!source.pointTwists) source.pointTwists = source.points.map(() => 0);
+        source.pointTwists[pointIndex] += delta;
+        sourceChanged = true;
+      });
       smoothDeltas.forEach((delta, pointIndex) => {
         if (pointIndex === 0 || (delta.x === 0 && delta.y === 0 && delta.z === 0)) return;
         if (!stroke.undoCaptured) {

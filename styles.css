@@ -5667,3 +5667,13 @@ body.outliner-folder-colors-disabled .outliner-layer-items {
   width: 11px;
   height: 11px;
 }
+
+.viewport-navigation-tips-hint {
+  display: block;
+  max-width: 210px;
+  margin-top: 2px;
+  color: #8f8892;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+}
