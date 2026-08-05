@@ -5668,6 +5668,10 @@ body.outliner-folder-colors-disabled .outliner-layer-items {
   height: 11px;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .settings-hint {
   display: flex;
   align-items: center;
@@ -5692,7 +5696,7 @@ body.outliner-folder-colors-disabled .outliner-layer-items {
   height: 18px;
   padding: 0;
   border: 1px solid #5c7166;
-  border-radius: 50%;
+  border-radius: 4px;
   background: transparent;
   color: #b7e3c9;
   font-size: 13px;
