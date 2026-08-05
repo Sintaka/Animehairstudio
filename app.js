@@ -270,7 +270,6 @@ setupEditableSliderControls();
 const viewport = document.querySelector("#viewport");
 const viewportPanel = viewport.closest(".viewport-panel");
 const referenceImageDropTarget = document.querySelector("#referenceImageDropTarget");
-const fileDropTarget = document.querySelector("#fileDropTarget");
 const referenceOverlayDropMarker = document.querySelector("#referenceOverlayDropMarker");
 const selectionMarquee = document.querySelector("#selectionMarquee");
 const sculptBrushDock = document.querySelector("#sculptBrushDock");
@@ -6716,13 +6715,6 @@ function setReferenceImageDragActive(active) {
   document.body.classList.toggle("reference-image-drag-active", nextActive);
   referenceImageDropTarget.setAttribute("aria-hidden", String(!nextActive));
   if (!nextActive) setReferenceDropHover();
-}
-
-function setFileDropActive(active) {
-  const nextActive = Boolean(active);
-  viewportPanel.classList.toggle("file-drop-active", nextActive);
-  document.body.classList.toggle("file-drop-active", nextActive);
-  fileDropTarget.setAttribute("aria-hidden", String(!nextActive));
 }
 
 function referenceDropDestination(event) {
@@ -25851,35 +25843,21 @@ window.addEventListener("dragenter", (event) => {
   const kind = fileDropKindFromDrag(event);
   if (!kind) return;
   event.preventDefault();
-  if (kind === FILE_DROP_KINDS.image) {
-    setReferenceImageDragActive(true);
-    setReferenceDropHover(event);
-  } else {
-    setFileDropActive(true);
-  }
+  setReferenceImageDragActive(true);
+  if (kind === FILE_DROP_KINDS.image) setReferenceDropHover(event);
 });
 window.addEventListener("dragover", (event) => {
   const kind = fileDropKindFromDrag(event);
   if (!kind) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = "copy";
-  if (kind === FILE_DROP_KINDS.image) {
-    setReferenceImageDragActive(true);
-    setReferenceDropHover(event);
-  } else {
-    setFileDropActive(true);
-  }
+  setReferenceImageDragActive(true);
+  if (kind === FILE_DROP_KINDS.image) setReferenceDropHover(event);
 });
 window.addEventListener("dragleave", (event) => {
-  if (event.relatedTarget == null) {
-    setReferenceImageDragActive(false);
-    setFileDropActive(false);
-  }
+  if (event.relatedTarget == null) setReferenceImageDragActive(false);
 });
-window.addEventListener("dragend", () => {
-  setReferenceImageDragActive(false);
-  setFileDropActive(false);
-});
+window.addEventListener("dragend", () => setReferenceImageDragActive(false));
 window.addEventListener("drop", async (event) => {
   const files = [...(event.dataTransfer?.files || [])];
   setReferenceImageDragActive(false);
