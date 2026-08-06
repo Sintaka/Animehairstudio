@@ -20957,36 +20957,41 @@ function branchRootRegionSurface(lock) {
 function applyBranchRootRegionCarving(lock, geometry) {
   const children = branchChildrenFor(lock);
   const faces = geometry?.userData?.quadFaces;
+  const index = geometry?.index;
   const rows = Number(geometry?.userData?.gridRows || 0);
-  if (!children.length || !Array.isArray(faces) || !faces.length || rows < 2) return;
+  if (!children.length || !Array.isArray(faces) || !faces.length || !index || rows < 2) return;
   const facesPerRow = Math.round(faces.length / (rows - 1));
   if (facesPerRow < 2) return;
   const removed = new Set();
   children.forEach((child) => {
     const surface = branchRootRegionSurface(child);
     if (!surface) return;
-    faces.forEach((face, index) => {
-      if (removed.has(index)) return;
-      const row = Math.floor(index / facesPerRow);
-      const col = index % facesPerRow;
+    faces.forEach((face, faceIndex) => {
+      if (removed.has(faceIndex)) return;
+      const row = Math.floor(faceIndex / facesPerRow);
+      const col = faceIndex % facesPerRow;
       if (row >= surface.rowMin && row <= surface.rowMax && col >= surface.colMin && col <= surface.colMax) {
-        removed.add(index);
+        removed.add(faceIndex);
       }
     });
   });
   if (!removed.size) return;
-  const index = [];
-  faces.forEach((face, faceIndex) => {
-    if (removed.has(faceIndex)) return;
-    const a = face[0];
-    const b = face[1];
-    const c = face[2];
-    const d = face[3];
-    index.push(a, c, b, b, c, d);
-  });
-  geometry.setIndex(index);
+  // Keep the original index, dropping only the 6 indices per removed face.
+  // Faces occupy the first faces.length * 6 indices (hair card / strand sweep);
+  // anything after (end caps etc.) is preserved. Authored normals are kept.
+  const source = index.array;
+  const rebuilt = [];
+  for (let faceIndex = 0; faceIndex < faces.length; faceIndex += 1) {
+    if (removed.has(faceIndex)) continue;
+    const base = faceIndex * 6;
+    rebuilt.push(source[base], source[base + 1], source[base + 2], source[base + 3], source[base + 4], source[base + 5]);
+  }
+  for (let offset = faces.length * 6; offset < source.length; offset += 1) {
+    rebuilt.push(source[offset]);
+  }
+  geometry.setIndex(rebuilt);
   geometry.userData.quadFaces = faces.filter((_, faceIndex) => !removed.has(faceIndex));
-  geometry.computeVertexNormals();
+  geometry.userData.sideTriangleCount = Math.max(0, faces.length - removed.size) * 2;
   geometry.computeBoundingSphere?.();
 }
 
@@ -30442,6 +30447,8 @@ hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
 });
+
+
 
 
 
