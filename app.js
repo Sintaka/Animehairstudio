@@ -14028,18 +14028,29 @@ function createBranchChildGeometry(lock) {
   const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), 4), 4, 256);
   const curveParameters = strandCurveParameters(lock, curve, lengthSegments);
   const ringCount = ring.points.length;
-  const sweepPositions = [];
+  // Sweep start is pushed away from the child root (along tangent) and eases to 0 at the tip,
+  // leaving room for the connection to be bridged cleanly later.
+  const sweepStartOffset = Math.max(0, Number(lock.branchSweepOffset ?? 0.08));
+  const positions = [...conn.positions];
+  const uvs = [];
+  const colors = [];
+  const rootColor = strandInfluenceColor(lock, 0);
+  const connectionCount = conn.positions.length / 3;
+  for (let i = 0; i < connectionCount; i += 1) { uvs.push(0.5, 0); colors.push(rootColor.r, rootColor.g, rootColor.b); }
   const sweepQuads = [];
   let previousFrame = null;
   curveParameters.forEach((t, row) => {
     const point = curve.getPoint(t);
     const frame = row === 0 ? rootFrame : strandGeometryFrameAt(lock, curve, t, previousFrame);
     previousFrame = frame;
+    const offset = sweepStartOffset * (1 - t);
+    const color = strandInfluenceColor(lock, t);
     ring.points.forEach((p, index) => {
-      const v = index === 0 && row === 0
-        ? ringWorld[0].clone()
-        : point.clone().addScaledVector(frame.x, p.x).addScaledVector(frame.z, p.z);
-      sweepPositions.push(v.x, v.y, v.z);
+      const v = point.clone().addScaledVector(frame.x, p.x).addScaledVector(frame.z, p.z);
+      if (offset > 0) v.addScaledVector(frame.y, offset);
+      positions.push(v.x, v.y, v.z);
+      uvs.push(index / ringCount, t);
+      colors.push(color.r, color.g, color.b);
     });
   });
   for (let row = 0; row < curveParameters.length - 1; row += 1) {
@@ -14051,30 +14062,37 @@ function createBranchChildGeometry(lock) {
       sweepQuads.push([a, c, d, b]);
     }
   }
-  const connCount = conn.positions.length / 3;
-  const positions = [...conn.positions, ...sweepPositions];
   const indices = [];
+  const allQuads = [];
   conn.quads.forEach((q) => {
     const a = q[0]; const b = q[1]; const c = q[2]; const d = q[3];
     indices.push(a, c, b, b, c, d);
+    allQuads.push([a, c, d, b]);
   });
   sweepQuads.forEach((q) => {
-    const a = q[0] + connCount; const b = q[1] + connCount; const c = q[2] + connCount; const d = q[3] + connCount;
+    const a = q[0] + connectionCount; const b = q[1] + connectionCount;
+    const c = q[2] + connectionCount; const d = q[3] + connectionCount;
     indices.push(a, c, b, b, c, d);
+    allQuads.push([a, c, d, b]);
   });
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices);
-  geometry.userData.quadFaces = [
-    ...conn.quads.map((q) => [...q]),
-    ...sweepQuads.map((q) => q.map((i) => i + connCount))
-  ];
+  geometry.userData.quadFaces = allQuads;
   geometry.userData.openSurface = false;
   geometry.computeVertexNormals();
+  // Sanitize zero-length normals (avoid NaN in the anime shader).
+  const normalAttr = geometry.getAttribute("normal");
+  for (let i = 0; i < normalAttr.count; i += 1) {
+    const x = normalAttr.getX(i); const y = normalAttr.getY(i); const z = normalAttr.getZ(i);
+    if (x * x + y * y + z * z < 0.0001) normalAttr.setXYZ(i, 0, 1, 0);
+  }
+  normalAttr.needsUpdate = true;
   geometry.computeBoundingSphere();
   return geometry;
 }
-
 function createHairGeometry(lock) {
   if (lock.branchRootRegion) {
     const branchChildGeometry = createBranchChildGeometry(lock);
@@ -30531,6 +30549,8 @@ hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
 });
+
+
 
 
 
