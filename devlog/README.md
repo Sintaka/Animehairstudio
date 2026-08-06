@@ -39,6 +39,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - **快捷键分区**：新增/修改的快捷键必须放在独立分区（自己的栏），不得改动原有快捷键说明；若与原有快捷键冲突或被代替，需标暗红并指向代替按键。
 - **语言支持**：新增说明/文案需要同步添加现有语言支持（EN / JA / ZH）。
 - **版本号规范**：开发版本号采用语义化版本加 daily build，格式 `主版本.次版本.修订版-Sintaka.N`（如 `0.1.4-Sintaka.1`）。`N` 为 daily build 序号：每次构建直接 +1（可累加到 5 位数，如 `-Sintaka.12345`）；主版本号更新后清零重计。版本号写入 `modules/app-config.js` 的 `APP_VERSION`，显示在 Settings → Version。
+- **Codex 子智能体**：适当的时候可以直接使用 Codex 子智能体（sub-agent）完成任务（如并行调研、独立的小改动等），无需用户每次手动提示。
 - **许可证合规**：保留原作者 LICENSE 与 .github/FUNDING.yml（捐赠链接不得删改）；再分发须附带 LICENSE、标明修改、仅限免费非商业；商用 / 打包分发需作者书面许可；引入第三方代码时确保许可兼容。
 
 ## 持续修改功能 / Persistent local adaptations
