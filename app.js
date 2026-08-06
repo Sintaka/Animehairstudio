@@ -11050,6 +11050,7 @@ function refreshProportionalPreview() {
 
 function activeBrushSizeInput() {
   if (scalpPaintEditing) return scalpBrushSizeInput;
+  if (sculptBrushToolActive()) return sculptBrushRadiusInput;
   if (["draw", "procedural-draw"].includes(activeTool)) return drawToolSizeInput;
   if (activeTool === "braid") return braidToolSizeInput;
   if (activeTool === "panel") return panelToolSizeInput;
@@ -11059,6 +11060,10 @@ function activeBrushSizeInput() {
 function refreshActiveBrushSizeCursor(event) {
   if (scalpPaintEditing) {
     updateScalpBrushCursor(scalpHitFromEvent(event));
+    return;
+  }
+  if (sculptBrushToolActive()) {
+    updateSculptBrushCursor(event);
     return;
   }
   updateDrawStrandBrushCursor(event);
@@ -11072,6 +11077,10 @@ function refreshActiveBrushSizeScale() {
       + scalpSurfaceGroup.scale.z
     ) / 3;
     scalpBrushCursor.scale.setScalar(Number(scalpBrushSizeInput.value) * averageScale);
+    return;
+  }
+  if (sculptBrushToolActive()) {
+    syncSculptBrushControls();
     return;
   }
   const cursorScale = activeStrokeBrushSize() * (braidStrokeActive() ? 1 / 3 : 1);
@@ -34238,6 +34247,7 @@ function beginSculptMoveStroke(event) {
   const reverseTool = ["sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient"].includes(activeTool);
   if (
     !sculptBrushToolActive()
+    || brushSizeHotkeyHeld
     || viewportEditMode !== "strand"
     || event.button !== 0
     || (!reverseTool && event.ctrlKey)
