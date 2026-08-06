@@ -109,7 +109,7 @@ import {
   smoothSculptPointDeltas,
   smoothSculptTwistDeltas
 } from "./modules/sculpt-brush.js?v=20260806-1";
-import { squareChildRing, holeBoundary, connectBoundaryToRing } from "./modules/branch-connect.js?v=20260807-1";
+import { squareChildRing, holeBoundary, connectSide, connectBoundaryToRing } from "./modules/branch-connect.js?v=20260807-2";
 import {
   createHairProject,
   validateHairProject
@@ -14002,7 +14002,71 @@ function createConnectedCurveCardGeometry(lock) {
 // Branch-child geometry — mirrors the original strand sweep construction (radial
 // normals + tangent + end caps) with the 8-point square ring instead of the profile,
 // so the anime shader sees the same attribute layout as the original hair.
-const BRANCH_CONNECTION_ENABLED = false;
+// Build the parent-hole -> child-ring bridge (marching stitch, quads + seam triangles).
+// Bridge vertices use the parent surface normal (by grid index) for the hole side and
+// radial normals for the ring side, matching the original hair attribute layout.
+function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, rootCenter, parentGeom) {
+  const positionAttr = parentGeom?.getAttribute?.("position");
+  const normalAttr = parentGeom?.getAttribute?.("normal");
+  if (!positionAttr) return null;
+  const rows = Number(parentGeom.userData?.gridRows || 0);
+  const cols = Number(parentGeom.userData?.gridColumns || 0);
+  if (rows < 2 || cols < 2) return null;
+  const boundary = holeBoundary(surface, positionAttr.array, rows, cols);
+  if (!boundary) return null;
+  const ring = squareChildRing(0.001, 0.001);
+  const vertices = [];
+  const normals = [];
+  const tangents = [];
+  const uvs = [];
+  const colors = [];
+  const indices = [];
+  const quads = [];
+  const triangles = [];
+  const rootColor = strandInfluenceColor(lock, 0);
+  ring.sides.forEach((ringSide, sideIndex) => {
+    const bSide = boundary.sides.find((s) => s.name === ringSide.name) || boundary.sides[sideIndex];
+    const bVerts = [];
+    for (let i = 0; i <= bSide.count; i += 1) bVerts.push(boundary.vertices[(bSide.start + i) % boundary.vertices.length]);
+    const rVerts = [];
+    for (let i = 0; i <= ringSide.count; i += 1) rVerts.push(ringWorld[(ringSide.start + i) % ringWorld.length]);
+    const boundaryBase = vertices.length / 3;
+    bVerts.forEach((v) => {
+      vertices.push(v.x, v.y, v.z);
+      let nx = 0; let ny = 1; let nz = 0;
+      if (normalAttr && v.index != null) {
+        nx = normalAttr.getX(v.index); ny = normalAttr.getY(v.index); nz = normalAttr.getZ(v.index);
+      }
+      normals.push(nx, ny, nz);
+      tangents.push(1, 0, 0, 1);
+      uvs.push(0.5, 0);
+      colors.push(rootColor.r, rootColor.g, rootColor.b);
+    });
+    const ringBase = vertices.length / 3;
+    rVerts.forEach((p) => {
+      vertices.push(p.x, p.y, p.z);
+      const radial = new THREE.Vector3(p.x - rootCenter.x, p.y - rootCenter.y, p.z - rootCenter.z);
+      if (radial.lengthSq() < 0.0001) radial.set(0, 1, 0);
+      radial.normalize();
+      normals.push(radial.x, radial.y, radial.z);
+      tangents.push(1, 0, 0, 1);
+      uvs.push(0.5, 0);
+      colors.push(rootColor.r, rootColor.g, rootColor.b);
+    });
+    const result = connectSide(bVerts, rVerts, boundaryBase, ringBase);
+    result.quads.forEach((q) => {
+      quads.push(q);
+      indices.push(q[0], q[2], q[1], q[1], q[2], q[3]);
+    });
+    result.triangles.forEach((tr) => {
+      triangles.push(tr);
+      indices.push(tr[0], tr[1], tr[2]);
+    });
+  });
+  return { vertices, normals, tangents, uvs, colors, indices, quads, triangles };
+}
+
+const BRANCH_CONNECTION_ENABLED = true;
 
 function createBranchChildGeometry(lock) {
   const parent = locks.find((item) => item.id === lock?.branchParentId);
@@ -14043,18 +14107,22 @@ function createBranchChildGeometry(lock) {
       colors.push(color.r, color.g, color.b);
     });
   });
-  // End caps (same as the original sweep).
-  const startPoint = curve.getPoint(0);
+  // Bridge: parent hole -> child root ring (only when enabled).
+  const bridge = BRANCH_CONNECTION_ENABLED ? (() => {
+    const frame0 = strandGeometryFrameAt(lock, curve, 0);
+    const point0 = curve.getPoint(0);
+    const rootCenter = point0.clone().addScaledVector(frame0.y, sweepStartOffset);
+    const ringWorld = ring.points.map((p) => {
+      const v = point0.clone().addScaledVector(frame0.x, p.x).addScaledVector(frame0.z, p.z);
+      if (sweepStartOffset > 0) v.addScaledVector(frame0.y, sweepStartOffset);
+      return v;
+    });
+    return buildBranchBridgeGeometry(lock, parent, surface, ringWorld, rootCenter, parent.mesh.geometry);
+  })() : null;
+  const bridgeVertexCount = bridge ? bridge.vertices.length / 3 : 0;
+  // End cap at the tip.
   const endPoint = curve.getPoint(1);
-  const startCenter = vertices.length / 3;
-  vertices.push(startPoint.x, startPoint.y, startPoint.z);
-  normals.push(0, 1, 0);
-  const startFrame = strandGeometryFrameAt(lock, curve, 0);
-  tangents.push(startFrame.x.x, startFrame.x.y, startFrame.x.z, 1);
-  uvs.push(0.5, 0);
-  const startColor = strandInfluenceColor(lock, 0);
-  colors.push(startColor.r, startColor.g, startColor.b);
-  const endCenter = vertices.length / 3;
+  const endCenter = bridgeVertexCount + vertices.length / 3;
   vertices.push(endPoint.x, endPoint.y, endPoint.z);
   normals.push(0, -1, 0);
   const endFrame = strandGeometryFrameAt(lock, curve, 1);
@@ -14064,20 +14132,45 @@ function createBranchChildGeometry(lock) {
   colors.push(endColor.r, endColor.g, endColor.b);
   for (let row = 0; row < actualLengthSegments; row += 1) {
     for (let s = 0; s < ringCount; s += 1) {
-      const a = row * ringCount + s;
-      const b = row * ringCount + ((s + 1) % ringCount);
-      const c = (row + 1) * ringCount + s;
-      const d = (row + 1) * ringCount + ((s + 1) % ringCount);
+      const a = bridgeVertexCount + row * ringCount + s;
+      const b = bridgeVertexCount + row * ringCount + ((s + 1) % ringCount);
+      const c = bridgeVertexCount + (row + 1) * ringCount + s;
+      const d = bridgeVertexCount + (row + 1) * ringCount + ((s + 1) % ringCount);
       indices.push(a, c, b, b, c, d);
       quadFaces.push([a, c, d, b]);
     }
   }
-  // Cap triangles (same winding as the original).
   ring.points.forEach((p, s) => {
-    const a = s;
-    const b = (s + 1) % ringCount;
-    indices.push(a, b, startCenter, b, a, endCenter);
+    const a = bridgeVertexCount + actualLengthSegments * ringCount + s;
+    const b = bridgeVertexCount + actualLengthSegments * ringCount + ((s + 1) % ringCount);
+    indices.push(a, b, endCenter, b, a, endCenter);
   });
+  if (bridge) {
+    indices.unshift(...bridge.indices);
+    vertices.unshift(...bridge.vertices);
+    normals.unshift(...bridge.normals);
+    tangents.unshift(...bridge.tangents);
+    uvs.unshift(...bridge.uvs);
+    colors.unshift(...bridge.colors);
+    quadFaces.unshift(...bridge.quads);
+    bridge.triangles.forEach((tr) => quadFaces.push(tr));
+  } else {
+    // Root cap only when there is no bridge.
+    const startPoint = curve.getPoint(0);
+    const startCenter = bridgeVertexCount + vertices.length / 3;
+    vertices.push(startPoint.x, startPoint.y, startPoint.z);
+    normals.push(0, 1, 0);
+    const startFrame = strandGeometryFrameAt(lock, curve, 0);
+    tangents.push(startFrame.x.x, startFrame.x.y, startFrame.x.z, 1);
+    uvs.push(0.5, 0);
+    const startColor = strandInfluenceColor(lock, 0);
+    colors.push(startColor.r, startColor.g, startColor.b);
+    ring.points.forEach((p, s) => {
+      const a = bridgeVertexCount + s;
+      const b = bridgeVertexCount + ((s + 1) % ringCount);
+      indices.push(a, b, startCenter, b, a, startCenter);
+    });
+  }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
   geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
@@ -30548,6 +30641,8 @@ hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
 });
+
+
 
 
 

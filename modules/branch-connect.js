@@ -47,7 +47,7 @@ export function holeBoundary(region, positions, gridRows, gridCols) {
     const ri = Math.min(Math.max(r, 0), Math.max(0, gridRows - 1));
     const ci = Math.min(Math.max(c, 0), Math.max(0, gridCols - 1));
     const base = (ri * gridCols + ci) * 3;
-    return { x: positions[base] || 0, y: positions[base + 1] || 0, z: positions[base + 2] || 0 };
+    return { x: positions[base] || 0, y: positions[base + 1] || 0, z: positions[base + 2] || 0, index: ri * gridCols + ci };
   };
   // Walk the hole perimeter CCW: top (rowMin), right (colMax+1), bottom (rowMax+1), left (colMin).
   const order = [];
@@ -61,6 +61,15 @@ export function holeBoundary(region, positions, gridRows, gridCols) {
   order.forEach((p) => {
     const key = `${p.x.toFixed(4)}|${p.y.toFixed(4)}|${p.z.toFixed(4)}`;
     if (!seen.has(key)) { seen.add(key); vertices.push(p); }
+  });
+  // A boundary vertex's grid index is needed to look up parent normals; store the first hit.
+  const indexByKey = new Map();
+  order.forEach((p) => {
+    const key = `${p.x.toFixed(4)}|${p.y.toFixed(4)}|${p.z.toFixed(4)}`;
+    if (!indexByKey.has(key)) indexByKey.set(key, p.index);
+  });
+  vertices.forEach((v) => {
+    v.index = indexByKey.get(`${v.x.toFixed(4)}|${v.y.toFixed(4)}|${v.z.toFixed(4)}`) ?? null;
   });
   const W = colMax - colMin + 1;
   const H = rowMax - rowMin + 1;
