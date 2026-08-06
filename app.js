@@ -13734,6 +13734,8 @@ function createHairCardGeometry(lock, curve, profilePoints) {
   geometry.userData.quadFaces = quadFaces;
   geometry.userData.sideTriangleCount = actualLengthSegments * profileEdges.length * 2;
   geometry.userData.actualLengthSegments = actualLengthSegments;
+  geometry.userData.gridRows = actualLengthSegments + 1;
+  geometry.userData.gridColumns = profileVertexCount;
   geometry.userData.openSurface = true;
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
@@ -14095,6 +14097,8 @@ function createHairGeometry(lock) {
   geometry.setIndex(indices);
   geometry.userData.sideTriangleCount = actualLengthSegments * profileTopology.edges.length * 2;
   geometry.userData.actualLengthSegments = actualLengthSegments;
+  geometry.userData.gridRows = actualLengthSegments + 1;
+  geometry.userData.gridColumns = profileTopology.slots.length;
   geometry.computeVertexNormals();
   return geometry;
 }
@@ -18170,6 +18174,7 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     branchLocalPoints: snapshot.branchLocalPoints?.map(dataToVector) || null,
     branchLocalSurfaceNormals: snapshot.branchLocalSurfaceNormals?.map((normal) => normal ? dataToVector(normal) : null) || null,
     branchRootRegion: cloneBranchRootRegion(snapshot.branchRootRegion),
+    branchRootRegion: cloneBranchRootRegion(snapshot.branchRootRegion) || (snapshot.branchParentId ? branchRootRegionFromParam(snapshot.branchParentParameter ?? 0) : null),
     rootSurfacePoint: snapshot.rootSurfacePoint ? dataToVector(snapshot.rootSurfacePoint) : null,
     rootSurfaceNormal: snapshot.rootSurfaceNormal ? dataToVector(snapshot.rootSurfaceNormal).normalize() : null,
     groupLatticeBasePoints: snapshot.groupLatticeBasePoints?.map(dataToVector) || null,
@@ -20904,6 +20909,28 @@ function cloneBranchRootRegion(region, { mirror = false } = {}) {
   };
 }
 
+
+// Cache of the parent-surface grid region for a child's branchRootRegion.
+// Recomputed only when the control points change; parent moves never touch it.
+function branchRootRegionSurface(lock) {
+  const region = lock?.branchRootRegion;
+  const parent = locks.find((item) => item.id === lock?.branchParentId);
+  if (!region || !parent) return null;
+  const geometry = parent.mesh?.geometry;
+  const rows = Number(geometry?.userData?.gridRows || 0);
+  const cols = Number(geometry?.userData?.gridColumns || 0);
+  if (rows < 2 || cols < 2) return null;
+  const toRow = (u) => THREE.MathUtils.clamp(Math.round(clampRegionParam(u) * (rows - 1)), 0, rows - 1);
+  const toCol = (v) => THREE.MathUtils.clamp(Math.round(clampRegionParam(v) * (cols - 1)), 0, cols - 1);
+  return {
+    rows,
+    cols,
+    rowMin: toRow(region.cross.down.u),
+    rowMax: toRow(region.cross.up.u),
+    colMin: toCol(region.cross.left.v),
+    colMax: toCol(region.cross.right.v)
+  };
+}
 function attachDrawnLocksAsBranches(stroke, created) {
   const parent = locks.find((lock) => lock.id === stroke.branchSourceLockId);
   if (!canBranchDrawFromLock(parent) || !created.length) return null;
@@ -30336,6 +30363,8 @@ hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
 });
+
+
 
 
 dropImportForm.addEventListener("submit", async (event) => {
