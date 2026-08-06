@@ -109,6 +109,7 @@ import {
   smoothSculptPointDeltas,
   smoothSculptTwistDeltas
 } from "./modules/sculpt-brush.js?v=20260806-1";
+import { squareChildRing, holeBoundary, connectBoundaryToRing } from "./modules/branch-connect.js?v=20260807-1";
 import {
   createHairProject,
   validateHairProject
@@ -13995,7 +13996,90 @@ function createConnectedCurveCardGeometry(lock) {
   return geometry;
 }
 
+// Branch-child geometry: bridge the parent hole boundary (10 segs) to the child
+// square ring (8 pts) via the connection module, then sweep the square ring
+// along the child curve. Framework version — topology focus, not final visuals.
+function createBranchChildGeometry(lock) {
+  const parent = locks.find((item) => item.id === lock?.branchParentId);
+  const surface = branchRootRegionSurface(lock);
+  if (!parent || !surface) return null;
+  const parentGeom = parent.mesh?.geometry;
+  const positionAttr = parentGeom?.getAttribute?.("position");
+  if (!positionAttr) return null;
+  const rows = Number(parentGeom.userData?.gridRows || 0);
+  const cols = Number(parentGeom.userData?.gridColumns || 0);
+  if (rows < 2 || cols < 2) return null;
+  const boundary = holeBoundary(surface, positionAttr.array, rows, cols);
+  if (!boundary) return null;
+  const halfWidth = Math.max(0.001, Number(lock.width ?? lock.baseWidth ?? 0.08) * 0.5);
+  const halfDepth = Math.max(0.001, Number(lock.depth ?? 0.12) * 0.5);
+  const ring = squareChildRing(halfWidth, halfDepth);
+  const rootCurve = new THREE.CatmullRomCurve3(lock.points);
+  const rootPoint = rootCurve.getPoint(0);
+  const rootFrame = curveFrameAt(lock, 0);
+  const ringWorld = ring.points.map((p) => {
+    const v = new THREE.Vector3();
+    v.copy(rootPoint).addScaledVector(rootFrame.x, p.x).addScaledVector(rootFrame.z, p.z);
+    return v;
+  });
+  const ring3 = { points: ringWorld, sides: ring.sides };
+  const conn = connectBoundaryToRing(boundary, ring3);
+  const curve = strandGeometryCurve(lock);
+  const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), 4), 4, 256);
+  const curveParameters = strandCurveParameters(lock, curve, lengthSegments);
+  const ringCount = ring.points.length;
+  const sweepPositions = [];
+  const sweepQuads = [];
+  let previousFrame = null;
+  curveParameters.forEach((t, row) => {
+    const point = curve.getPoint(t);
+    const frame = row === 0 ? rootFrame : strandGeometryFrameAt(lock, curve, t, previousFrame);
+    previousFrame = frame;
+    ring.points.forEach((p, index) => {
+      const v = index === 0 && row === 0
+        ? ringWorld[0].clone()
+        : point.clone().addScaledVector(frame.x, p.x).addScaledVector(frame.z, p.z);
+      sweepPositions.push(v.x, v.y, v.z);
+    });
+  });
+  for (let row = 0; row < curveParameters.length - 1; row += 1) {
+    for (let s = 0; s < ringCount; s += 1) {
+      const a = row * ringCount + s;
+      const b = row * ringCount + ((s + 1) % ringCount);
+      const c = (row + 1) * ringCount + s;
+      const d = (row + 1) * ringCount + ((s + 1) % ringCount);
+      sweepQuads.push([a, c, d, b]);
+    }
+  }
+  const connCount = conn.positions.length / 3;
+  const positions = [...conn.positions, ...sweepPositions];
+  const indices = [];
+  conn.quads.forEach((q) => {
+    const a = q[0]; const b = q[1]; const c = q[2]; const d = q[3];
+    indices.push(a, c, b, b, c, d);
+  });
+  sweepQuads.forEach((q) => {
+    const a = q[0] + connCount; const b = q[1] + connCount; const c = q[2] + connCount; const d = q[3] + connCount;
+    indices.push(a, c, b, b, c, d);
+  });
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.userData.quadFaces = [
+    ...conn.quads.map((q) => [...q]),
+    ...sweepQuads.map((q) => q.map((i) => i + connCount))
+  ];
+  geometry.userData.openSurface = false;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 function createHairGeometry(lock) {
+  if (lock.branchRootRegion) {
+    const branchChildGeometry = createBranchChildGeometry(lock);
+    if (branchChildGeometry) return branchChildGeometry;
+  }
   if (lock.geometryType === "poly") return createPolyGeometry(lock);
   if (lock.geometryType === "curve-surface") return createConnectedCurveCardGeometry(lock);
   if (["panel", "surface"].includes(lock.geometryType)) return createPanelStrandGeometry(lock);
@@ -30447,6 +30531,8 @@ hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
 });
+
+
 
 
 
