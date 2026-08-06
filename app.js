@@ -14069,6 +14069,7 @@ function createHairGeometry(lock) {
   const endColor = strandInfluenceColor(lock, 1);
   colors.push(endColor.r, endColor.g, endColor.b);
 
+  const sweepQuadFaces = [];
   for (let i = 0; i < actualLengthSegments; i += 1) {
     profileTopology.edges.forEach((edge) => {
       const a = i * profileVertexCount + edge.start;
@@ -14076,6 +14077,7 @@ function createHairGeometry(lock) {
       const c = (i + 1) * profileVertexCount + edge.start;
       const d = (i + 1) * profileVertexCount + edge.end;
       indices.push(a, c, b, b, c, d);
+      sweepQuadFaces.push([a, c, d, b]);
     });
   }
 
@@ -14099,6 +14101,7 @@ function createHairGeometry(lock) {
   geometry.userData.actualLengthSegments = actualLengthSegments;
   geometry.userData.gridRows = actualLengthSegments + 1;
   geometry.userData.gridColumns = profileTopology.slots.length;
+  geometry.userData.quadFaces = sweepQuadFaces;
   geometry.computeVertexNormals();
   return geometry;
 }
@@ -17896,6 +17899,11 @@ function restoreSceneCollectionsForStateRestore(restorePlan, {
     deferRootAttachment: deferRootAttachments,
     remapRootAttachment: preservePlacement
   }));
+  // Deep-reset pass: carve parent regions for branch children and offset their roots.
+  locks.filter((lock) => branchChildrenFor(lock).length).forEach((parent) => {
+    applyBranchRootRegionCarving(parent, parent.mesh.geometry);
+  });
+  locks.filter((lock) => lock.branchParentId).forEach((child) => applyBranchRootOffset(child));
   selectionSets.push(...normalizeSelectionSets(
     restorePlan.scene.selectionSets,
     locks.map((lock) => lock.id)
@@ -20870,7 +20878,13 @@ function enforceBranchRootPosition(lock) {
   return frame;
 }
 
-const BRANCH_ROOT_REGION_DEFAULTS = Object.freeze({ upLength: 0.1, downLength: 0.08, leftWidth: 0.18, rightWidth: 0.18 });
+const BRANCH_ROOT_REGION_DEFAULTS = Object.freeze({
+  centerV: 0.25,
+  upLength: 0.04,
+  downLength: 0.04,
+  leftWidth: 0.05,
+  rightWidth: 0.05
+});
 
 function clampRegionParam(value) {
   return THREE.MathUtils.clamp(Number(value) || 0, 0, 1);
@@ -20881,14 +20895,15 @@ function clampRegionParam(value) {
 // child rides the parent without recomputation on parent moves.
 function branchRootRegionFromParam(parameter) {
   const u0 = clampRegionParam(parameter);
-  const { upLength, downLength, leftWidth, rightWidth } = BRANCH_ROOT_REGION_DEFAULTS;
+  const { centerV, upLength, downLength, leftWidth, rightWidth } = BRANCH_ROOT_REGION_DEFAULTS;
+  const v0 = clampRegionParam(centerV);
   return {
-    center: { u: u0, v: 0.5 },
+    center: { u: u0, v: v0 },
     cross: {
-      up: { u: clampRegionParam(u0 + upLength), v: 0.5 },
-      down: { u: clampRegionParam(u0 - downLength), v: 0.5 },
-      left: { u: u0, v: clampRegionParam(0.5 - leftWidth) },
-      right: { u: u0, v: clampRegionParam(0.5 + rightWidth) }
+      up: { u: clampRegionParam(u0 + upLength), v: v0 },
+      down: { u: clampRegionParam(u0 - downLength), v: v0 },
+      left: { u: u0, v: clampRegionParam(v0 - leftWidth) },
+      right: { u: u0, v: clampRegionParam(v0 + rightWidth) }
     }
   };
 }
@@ -20920,17 +20935,79 @@ function branchRootRegionSurface(lock) {
   const rows = Number(geometry?.userData?.gridRows || 0);
   const cols = Number(geometry?.userData?.gridColumns || 0);
   if (rows < 2 || cols < 2) return null;
+  const faces = geometry?.userData?.quadFaces;
+  const facesPerRow = Array.isArray(faces) && faces.length ? Math.round(faces.length / Math.max(1, rows - 1)) : 0;
+  const colCount = facesPerRow > 1 ? facesPerRow : cols - 1;
   const toRow = (u) => THREE.MathUtils.clamp(Math.round(clampRegionParam(u) * (rows - 1)), 0, rows - 1);
-  const toCol = (v) => THREE.MathUtils.clamp(Math.round(clampRegionParam(v) * (cols - 1)), 0, cols - 1);
+  const toCol = (v) => THREE.MathUtils.clamp(Math.round(clampRegionParam(v) * (colCount - 1)), 0, colCount - 1);
   return {
     rows,
     cols,
+    facesPerRow,
+    colCount,
     rowMin: toRow(region.cross.down.u),
     rowMax: toRow(region.cross.up.u),
     colMin: toCol(region.cross.left.v),
     colMax: toCol(region.cross.right.v)
   };
 }
+
+// Remove the parent-surface quads covered by child branchRootRegions (procedural,
+// re-applied on every rebuild so it survives .ahs load which stores only guide params).
+function applyBranchRootRegionCarving(lock, geometry) {
+  const children = branchChildrenFor(lock);
+  const faces = geometry?.userData?.quadFaces;
+  const rows = Number(geometry?.userData?.gridRows || 0);
+  if (!children.length || !Array.isArray(faces) || !faces.length || rows < 2) return;
+  const facesPerRow = Math.round(faces.length / (rows - 1));
+  if (facesPerRow < 2) return;
+  const removed = new Set();
+  children.forEach((child) => {
+    const surface = branchRootRegionSurface(child);
+    if (!surface) return;
+    faces.forEach((face, index) => {
+      if (removed.has(index)) return;
+      const row = Math.floor(index / facesPerRow);
+      const col = index % facesPerRow;
+      if (row >= surface.rowMin && row <= surface.rowMax && col >= surface.colMin && col <= surface.colMax) {
+        removed.add(index);
+      }
+    });
+  });
+  if (!removed.size) return;
+  const index = [];
+  faces.forEach((face, faceIndex) => {
+    if (removed.has(faceIndex)) return;
+    const a = face[0];
+    const b = face[1];
+    const c = face[2];
+    const d = face[3];
+    index.push(a, c, b, b, c, d);
+  });
+  geometry.setIndex(index);
+  geometry.userData.quadFaces = faces.filter((_, faceIndex) => !removed.has(faceIndex));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere?.();
+}
+
+// Offset the child root to the center of its carved parent region (half-cell nudge).
+function applyBranchRootOffset(lock) {
+  const region = lock?.branchRootRegion;
+  const parent = locks.find((item) => item.id === lock?.branchParentId);
+  if (!region || !parent?.points?.length) return;
+  const surface = branchRootRegionSurface(lock);
+  if (!surface) return;
+  const u = (surface.rowMin + surface.rowMax) / 2 / Math.max(1, surface.rows - 1);
+  const v = (surface.colMin + surface.colMax) / 2 / Math.max(1, surface.cols - 1);
+  const curve = new THREE.CatmullRomCurve3(parent.points);
+  const point = curve.getPoint(u);
+  const frame = curveFrameAt(parent, u);
+  const width = Math.max(0.001, Number(parent.baseWidth ?? parent.width ?? 0.16));
+  const target = point.clone().addScaledVector(frame.x, (v - 0.5) * width);
+  if (lock.points?.[0]) lock.points[0].copy(target);
+  if (lock.groupLatticeBasePoints?.[0]) lock.groupLatticeBasePoints[0].copy(target);
+}
+
 function attachDrawnLocksAsBranches(stroke, created) {
   const parent = locks.find((lock) => lock.id === stroke.branchSourceLockId);
   if (!canBranchDrawFromLock(parent) || !created.length) return null;
@@ -20996,6 +21073,7 @@ function updateBranchChildren(parent) {
       child.rootSurfaceNormal = frame.z.clone();
       child.rootAttachment = null;
       syncLockFromCurve(child);
+      applyBranchRootOffset(child);
       updateLockGeometry(child, { updateBranches: false });
       updateBranchChildren(child);
     });
@@ -25018,6 +25096,7 @@ function labelForPreset(name) {
 function rebuildLockGeometry(lock, options = {}) {
   const previousGeometry = lock.mesh.geometry;
   lock.mesh.geometry = createHairGeometry(lock);
+  applyBranchRootRegionCarving(lock, lock.mesh.geometry);
   if (lock.selectionOutline) lock.selectionOutline.geometry = lock.mesh.geometry;
   previousGeometry.dispose();
   if ((hairTopologyVisible || lock.proceduralParentHidden || lock.locked) && lock.wireOverlay) {
@@ -30363,6 +30442,8 @@ hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
 });
+
+
 
 
 
