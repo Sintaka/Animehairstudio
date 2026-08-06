@@ -94,6 +94,7 @@ python -m http.server 8080 --bind 127.0.0.1
   - 语言：ZH 词典扩展覆盖 0.1.4 新增文案（导航方式 / 相机平滑 / 最近项目 / 拖放项目确认 / 选择集 / 锁定 / 隔离等，3D 名词保留英文）；JA 补充新笔刷 / ScaleMode / 保存等词条；`translateUiString` 按语言词典分发（JA / ZH），未收录回退英文。
 - **快捷导出（Ctrl+Alt+S）**：新增 `exportHairProjectQuickly`，完全复刻上一次导出（`lastExport`：格式 / 文件名 / 导出内容 / 本地标志）。普通导出与快捷导出都优先用 File System Access API 写盘（`writeExportThroughFileSystem`）并记住文件句柄 `quickExportFileHandle`，重复导出直接覆盖同一文件（不再用浏览器下载产生 `(1)` 后缀）；仅在不支持该 API 或取消选择时回退下载。从未导出时快捷导出回退到原导出对话框；File 菜单新增「Quick Export（Ctrl+Alt+S）」；快捷键帮助「Sintaka Fork」分区新增 Ctrl+Alt+S 行。
 - **快捷键帮助分区改名**：「Local Adaptation」分区改名为「Sintaka Fork」（专用名词，不随语言翻译）。
+- **分支层级解除限制**：`canBranchDrawFromLock` 不再要求 `!branchParentId`，分支可以从分支继续长出（真树结构，默认层级 1 视觉不变）；`updateBranchChildren` 递归更新整棵子树，父级移动会带动所有层级。
 - **笔刷大小快捷调节**：原有「S + 左键拖动」只作用于 Draw/Braid/Panel/Scalp 笔刷；现扩展到雕刻栏的修改型笔刷（Move/Smooth/Slide/Push/Scale/Orient）：`activeBrushSizeInput` 在雕刻笔刷下返回 `sculptBrushRadiusInput`，`beginSculptMoveStroke` 在按住 S 时让位给 `beginBrushSizeDrag`，拖动时同步刷新雕刻笔刷光标（`syncSculptBrushControls`）。 拖动过程中把笔刷光标固定在起点并隐藏系统鼠标指针，松开后恢复（大小仍按真实拖拽距离计算）。
 - **Quick Save 记住打开的项目**：打开项目时（Open 菜单优先用 `showOpenFilePicker`、拖入优先用 `DataTransferItem.getAsFileSystemHandle`，均拿到可写 handle）把 `quickSaveFileHandle` / `quickSaveFileName` 记成该文件，Quick Save（Ctrl+S）直接覆盖写回、不再重新选择；拿不到 handle 的路径（文件选择框 / 旧浏览器）也会记住文件名，Save As 预填该名称。Quick Save 写盘前先 `requestPermission({mode:"readwrite"})`（打开的文件默认只读，首次授予后记住）。
 - **index.html**：File 菜单新增 Quick Save（Ctrl+S）与 Save as（Ctrl+Shift+S）快捷键提示；快捷键帮助新增独立「Local Adaptation」分区。

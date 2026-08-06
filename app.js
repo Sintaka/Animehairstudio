@@ -20926,6 +20926,7 @@ function updateBranchChildren(parent) {
       child.rootAttachment = null;
       syncLockFromCurve(child);
       updateLockGeometry(child, { updateBranches: false });
+      updateBranchChildren(child);
     });
   } finally {
     branchUpdateInProgress = false;
@@ -21626,7 +21627,6 @@ function selectedDrawBranchPoint(event) {
 function canBranchDrawFromLock(lock) {
   return Boolean(
     lock?.geometryType === "strand"
-    && !lock.branchParentId
     && (!lock.clumpId || lock.clumpGuide)
   );
 }
