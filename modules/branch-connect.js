@@ -73,82 +73,76 @@ export function holeBoundary(region, positions, gridRows, gridCols) {
   return { vertices, sides };
 }
 
-// Connect one boundary side (bn edges) to one ring side (rn edges) as quads.
-// boundary: array of {x,y,z}; ring: array of {x,y,z} (already in same space).
-// Collapses (bn - rn) boundary edges (midpoint merge) so only quads are emitted.
-// Returns array of [b0, b1, r1, r0] vertex-index quads into a combined vertex list.
+// March one boundary side (bn vertices) to one ring side (rn vertices).
+// Equal counts -> pure quads. Mismatched counts -> quads + a few seam triangles
+// (the "appropriate triangle insertion" case, avoids degenerate/collapsed quads).
 export function connectSide(boundary, ring, boundaryBase, ringBase) {
-  const bn = boundary.length - 1;
-  const rn = ring.length - 1;
   const quads = [];
+  const triangles = [];
+  const bn = boundary.length;
+  const rn = ring.length;
   if (bn === rn) {
-    for (let i = 0; i < rn; i += 1) {
+    for (let i = 0; i < bn - 1; i += 1) {
       quads.push([boundaryBase + i, boundaryBase + i + 1, ringBase + i + 1, ringBase + i]);
     }
-    return quads;
+    return { quads, triangles };
   }
-  if (bn < rn) {
-    // Ring has more edges than the boundary side; split boundary edges (quad per boundary edge,
-    // using one ring edge for the first and distributing the remainder).
-    // Keep it simple: one boundary edge per ring edge except the last absorbs the rest.
-    // (Not used by the current 10->8 case, provided for completeness.)
-    const extra = rn - bn;
-    let b = 0;
-    for (let i = 0; i < rn; i += 1) {
-      const consume = i === rn - 1 ? Math.max(1, extra + 1) : 1;
-      const bNext = Math.min(b + consume, bn);
-      const r0 = ringBase + i;
-      const r1 = ringBase + i + 1;
-      quads.push([boundaryBase + b, boundaryBase + bNext, r1, r0]);
-      b = bNext;
+  const progress = (verts) => {
+    const out = [0];
+    for (let i = 1; i < verts.length; i += 1) {
+      out.push(out[i - 1] + Math.hypot(
+        verts[i].x - verts[i - 1].x,
+        verts[i].y - verts[i - 1].y,
+        verts[i].z - verts[i - 1].z
+      ));
     }
-    return quads;
+    const total = out[out.length - 1] || 1;
+    return out.map((v) => v / total);
+  };
+  const bProg = progress(boundary);
+  const rProg = progress(ring);
+  let b = 0;
+  let r = 0;
+  let guard = 0;
+  while ((b < bn - 1 || r < rn - 1) && guard < 64) {
+    guard += 1;
+    const bNext = Math.min(b + 1, bn - 1);
+    const rNext = Math.min(r + 1, rn - 1);
+    const bFrac = bNext >= bn - 1 ? Infinity : bProg[bNext];
+    const rFrac = rNext >= rn - 1 ? Infinity : rProg[rNext];
+    const advanceB = bFrac === rFrac ? b < bn - 1 : bFrac < rFrac;
+    if (advanceB) {
+      if (rNext === r) triangles.push([boundaryBase + b, boundaryBase + bNext, ringBase + r]);
+      else quads.push([boundaryBase + b, boundaryBase + bNext, ringBase + rNext, ringBase + r]);
+      b = bNext;
+    } else {
+      if (bNext === b) triangles.push([boundaryBase + b, ringBase + rNext, ringBase + r]);
+      else quads.push([boundaryBase + b, boundaryBase + bNext, ringBase + rNext, ringBase + r]);
+      r = rNext;
+    }
   }
-  // bn > rn: collapse (bn - rn) boundary edges. Distribute collapses evenly across the side.
-  const collapses = bn - rn;
-  const boundaryVerts = [];
-  for (let i = 0; i <= bn; i += 1) boundaryVerts.push(boundary[i]);
-  // collapse: merge edge (collapseAt) by replacing its two endpoints with the midpoint
-  for (let k = 0; k < collapses; k += 1) {
-    const target = Math.round(((k + 0.5) / collapses) * (boundaryVerts.length - 2));
-    const a = boundaryVerts[target];
-    const b = boundaryVerts[target + 1];
-    boundaryVerts.splice(target, 2, {
-      x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2
-    });
-  }
-  for (let i = 0; i < rn; i += 1) {
-    quads.push([boundaryBase + i, boundaryBase + i + 1, ringBase + i + 1, ringBase + i]);
-  }
-  return { quads, collapsedBoundary: boundaryVerts };
+  return { quads, triangles };
 }
 
-// Full connection: parent hole boundary (10 segs) to child ring (8 pts), per side.
-// boundary: { vertices, sides }; ring: { points, sides }.
-// Returns { positions: combined world-space vertex list, quads }.
+// Full connection: parent hole boundary to child ring, per side (keeps square corners aligned).
+// Returns { positions, quads, triangles }.
 export function connectBoundaryToRing(boundary, ring) {
   const positions = [];
   const quads = [];
+  const triangles = [];
   ring.sides.forEach((ringSide, sideIndex) => {
     const bSide = boundary.sides.find((s) => s.name === ringSide.name) || boundary.sides[sideIndex];
-    const bStart = bSide.start;
-    const bCount = bSide.count;
     const bVerts = [];
-    for (let i = 0; i <= bCount; i += 1) bVerts.push(boundary.vertices[(bStart + i) % boundary.vertices.length]);
-    const rStart = ringSide.start;
-    const rCount = ringSide.count;
+    for (let i = 0; i <= bSide.count; i += 1) bVerts.push(boundary.vertices[(bSide.start + i) % boundary.vertices.length]);
     const rVerts = [];
-    for (let i = 0; i <= rCount; i += 1) rVerts.push(ring.points[(rStart + i) % ring.points.length]);
+    for (let i = 0; i <= ringSide.count; i += 1) rVerts.push(ring.points[(ringSide.start + i) % ring.points.length]);
     const boundaryBase = positions.length / 3;
     bVerts.forEach((p) => positions.push(p.x, p.y, p.z));
     const ringBase = positions.length / 3;
     rVerts.forEach((p) => positions.push(p.x, p.y, p.z));
     const result = connectSide(bVerts, rVerts, boundaryBase, ringBase);
-    if (Array.isArray(result)) {
-      result.forEach((q) => quads.push(q));
-    } else {
-      result.quads.forEach((q) => quads.push(q));
-    }
+    result.quads.forEach((q) => quads.push(q));
+    result.triangles.forEach((tr) => triangles.push(tr));
   });
-  return { positions, quads };
+  return { positions, quads, triangles };
 }

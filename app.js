@@ -14068,10 +14068,15 @@ function createBranchChildGeometry(lock) {
   }
   const indices = [];
   const allQuads = [];
+  const allTriangles = [];
   conn.quads.forEach((q) => {
     const a = q[0]; const b = q[1]; const c = q[2]; const d = q[3];
     indices.push(a, c, b, b, c, d);
     allQuads.push([a, c, d, b]);
+  });
+  conn.triangles.forEach((tr) => {
+    indices.push(tr[0], tr[1], tr[2]);
+    allTriangles.push([tr[0], tr[1], tr[2]]);
   });
   sweepQuads.forEach((q) => {
     const a = q[0] + connectionCount; const b = q[1] + connectionCount;
@@ -14085,6 +14090,7 @@ function createBranchChildGeometry(lock) {
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices);
   geometry.userData.quadFaces = allQuads;
+  geometry.userData.triangleFaces = allTriangles;
   geometry.userData.openSurface = false;
   geometry.computeVertexNormals();
   // Sanitize zero-length normals (avoid NaN in the anime shader).
@@ -30553,6 +30559,8 @@ hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
 });
+
+
 
 
 
