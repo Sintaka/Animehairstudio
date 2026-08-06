@@ -13999,53 +13999,31 @@ function createConnectedCurveCardGeometry(lock) {
 // Branch-child geometry: bridge the parent hole boundary (10 segs) to the child
 // square ring (8 pts) via the connection module, then sweep the square ring
 // along the child curve. Framework version — topology focus, not final visuals.
+// Branch-child geometry. The connection bridge is currently disabled to isolate the
+// child sweep rendering; re-enable BRANCH_CONNECTION_ENABLED once the sweep is clean.
+const BRANCH_CONNECTION_ENABLED = false;
+
 function createBranchChildGeometry(lock) {
   const parent = locks.find((item) => item.id === lock?.branchParentId);
   const surface = branchRootRegionSurface(lock);
   if (!parent || !surface) return null;
-  const parentGeom = parent.mesh?.geometry;
-  const positionAttr = parentGeom?.getAttribute?.("position");
-  if (!positionAttr) return null;
-  const rows = Number(parentGeom.userData?.gridRows || 0);
-  const cols = Number(parentGeom.userData?.gridColumns || 0);
-  if (rows < 2 || cols < 2) return null;
-  const boundary = holeBoundary(surface, positionAttr.array, rows, cols);
-  if (!boundary) return null;
   const halfWidth = Math.max(0.001, Number(lock.width ?? lock.baseWidth ?? 0.08) * 0.5);
   const halfDepth = Math.max(0.001, Number(lock.depth ?? 0.12) * 0.5);
   const ring = squareChildRing(halfWidth, halfDepth);
-  const rootCurve = new THREE.CatmullRomCurve3(lock.points);
-  const rootPoint = rootCurve.getPoint(0);
-  // Orient the ring with the PARENT surface frame at the region center so the square
-  // sides line up with the hole sides (approximate completion per current orient).
-  const uCenter = (surface.rowMin + surface.rowMax) / 2 / Math.max(1, surface.rows - 1);
-  const rootFrame = curveFrameAt(parent, uCenter);
-  const ringWorld = ring.points.map((p) => {
-    const v = new THREE.Vector3();
-    v.copy(rootPoint).addScaledVector(rootFrame.x, p.x).addScaledVector(rootFrame.z, p.z);
-    return v;
-  });
-  const ring3 = { points: ringWorld, sides: ring.sides };
-  const conn = connectBoundaryToRing(boundary, ring3);
   const curve = strandGeometryCurve(lock);
   const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), 4), 4, 256);
   const curveParameters = strandCurveParameters(lock, curve, lengthSegments);
   const ringCount = ring.points.length;
-  // Sweep start is pushed away from the child root by ~1.5 poly widths (hardcoded for now),
-  // easing to 0 at the tip, leaving room for the connection bridge.
   const polyWidth = curve.getLength() / Math.max(1, curveParameters.length - 1);
   const sweepStartOffset = Math.max(0, polyWidth * 1.5);
-  const positions = [...conn.positions];
+  const positions = [];
   const uvs = [];
   const colors = [];
-  const rootColor = strandInfluenceColor(lock, 0);
-  const connectionCount = conn.positions.length / 3;
-  for (let i = 0; i < connectionCount; i += 1) { uvs.push(0.5, 0); colors.push(rootColor.r, rootColor.g, rootColor.b); }
-  const sweepQuads = [];
+  const quads = [];
   let previousFrame = null;
   curveParameters.forEach((t, row) => {
     const point = curve.getPoint(t);
-    const frame = row === 0 ? rootFrame : strandGeometryFrameAt(lock, curve, t, previousFrame);
+    const frame = strandGeometryFrameAt(lock, curve, t, previousFrame);
     previousFrame = frame;
     const offset = sweepStartOffset * (1 - t);
     const color = strandInfluenceColor(lock, t);
@@ -14063,24 +14041,13 @@ function createBranchChildGeometry(lock) {
       const b = row * ringCount + ((s + 1) % ringCount);
       const c = (row + 1) * ringCount + s;
       const d = (row + 1) * ringCount + ((s + 1) % ringCount);
-      sweepQuads.push([a, c, d, b]);
+      quads.push([a, c, d, b]);
     }
   }
   const indices = [];
   const allQuads = [];
-  const allTriangles = [];
-  conn.quads.forEach((q) => {
+  quads.forEach((q) => {
     const a = q[0]; const b = q[1]; const c = q[2]; const d = q[3];
-    indices.push(a, c, b, b, c, d);
-    allQuads.push([a, c, d, b]);
-  });
-  conn.triangles.forEach((tr) => {
-    indices.push(tr[0], tr[1], tr[2]);
-    allTriangles.push([tr[0], tr[1], tr[2]]);
-  });
-  sweepQuads.forEach((q) => {
-    const a = q[0] + connectionCount; const b = q[1] + connectionCount;
-    const c = q[2] + connectionCount; const d = q[3] + connectionCount;
     indices.push(a, c, b, b, c, d);
     allQuads.push([a, c, d, b]);
   });
@@ -14090,10 +14057,8 @@ function createBranchChildGeometry(lock) {
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices);
   geometry.userData.quadFaces = allQuads;
-  geometry.userData.triangleFaces = allTriangles;
   geometry.userData.openSurface = false;
   geometry.computeVertexNormals();
-  // Sanitize zero-length normals (avoid NaN in the anime shader).
   const normalAttr = geometry.getAttribute("normal");
   for (let i = 0; i < normalAttr.count; i += 1) {
     const x = normalAttr.getX(i); const y = normalAttr.getY(i); const z = normalAttr.getZ(i);
@@ -14103,6 +14068,7 @@ function createBranchChildGeometry(lock) {
   geometry.computeBoundingSphere();
   return geometry;
 }
+
 function createHairGeometry(lock) {
   if (lock.branchRootRegion) {
     const branchChildGeometry = createBranchChildGeometry(lock);
@@ -30559,6 +30525,8 @@ hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
 });
+
+
 
 
 
