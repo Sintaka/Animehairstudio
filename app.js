@@ -11107,6 +11107,7 @@ function beginBrushSizeDrag(event) {
   };
   renderer.domElement.setPointerCapture?.(event.pointerId);
   refreshActiveBrushSizeCursor(event);
+  renderer.domElement.style.cursor = "none";
   updateInteractionLocks();
   event.preventDefault();
   event.stopImmediatePropagation();
@@ -11129,6 +11130,7 @@ function updateBrushSizeDrag(event) {
   input.value = String(nextValue);
   input.dispatchEvent(new Event("input", { bubbles: true }));
   refreshActiveBrushSizeScale();
+  refreshActiveBrushSizeCursor({ clientX: startX, clientY: startY });
   event.preventDefault();
   event.stopImmediatePropagation();
 }
@@ -11141,6 +11143,7 @@ function finishBrushSizeDrag(event) {
   const pointerId = brushSizeDrag.pointerId;
   brushSizeDrag = null;
   renderer.domElement.releasePointerCapture?.(pointerId);
+  renderer.domElement.style.cursor = "";
   updateInteractionLocks();
   event?.preventDefault();
   event?.stopImmediatePropagation();
