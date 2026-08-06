@@ -193,7 +193,7 @@ import {
   DEFAULT_LANGUAGE,
   LANGUAGE_STORAGE_KEY,
   normalizeLanguage
-} from "./modules/localization.js?v=20260806-2";
+} from "./modules/localization.js?v=20260806-3";
 import {
   emptyToolPresetLibrary,
   normalizeToolPresetLibrary,
@@ -3089,6 +3089,7 @@ let projectSaveInProgress = false;
 let quickSaveFileHandle = null;
 let quickSaveFileName = null;
 let lastExport = null;
+let quickExportFileHandle = null;
 let quickExportInProgress = false;
 let pendingFileAction = null;
 let importedHeadAsset = null;
@@ -17322,7 +17323,7 @@ function openFileActionDialog({ format, local }) {
   fileActionDialogTitle.textContent = isExport ? `Export ${definition.label}` : "Save Project";
   fileActionDescription.textContent = local
     ? "Name the file before opening the local Save As window."
-    : "Choose the name of the downloaded file.";
+    : "Choose the file name and location for the export.";
   fileActionNameInput.value = cleanFileBaseName(
     currentProjectName,
     isExport ? "anime-hair" : "Untitled Hair Project"
@@ -17407,17 +17408,25 @@ async function performFileAction(action, baseName, contents) {
       rootName: baseName
     });
   try {
-    if (action.local) await saveFileThroughLocalDialog(content, suggestedName, action.format);
-    else {
-      downloadTextFile(
-        content,
-        suggestedName,
-        action.format === "usda" ? "model/vnd.usda;charset=utf-8" : "text/plain;charset=utf-8"
-      );
+    let savedName = suggestedName;
+    if (action.local) {
+      await saveFileThroughLocalDialog(content, suggestedName, action.format);
+    } else {
+      const handle = await writeExportThroughFileSystem(content, suggestedName, action.format);
+      if (handle) {
+        quickExportFileHandle = handle;
+        savedName = fileNameForAction(handle.name, action.format);
+      } else {
+        downloadTextFile(
+          content,
+          suggestedName,
+          action.format === "usda" ? "model/vnd.usda;charset=utf-8" : "text/plain;charset=utf-8"
+        );
+      }
     }
     lastExport = {
       format: action.format,
-      fileName: suggestedName,
+      fileName: savedName,
       local: Boolean(action.local),
       contents: {
         mesh: contents.mesh,
@@ -33156,6 +33165,27 @@ function exportHairUsdaLocally() {
 function exportHairObjLocally() {
   openFileActionDialog({ format: "obj", local: true });
 }
+async function writeExportThroughFileSystem(content, suggestedName, format) {
+  if (!window.showSaveFilePicker) return null;
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName,
+      types: [{
+        description: format === "obj" ? "Wavefront OBJ" : "Universal Scene Description",
+        accept: format === "obj" ? { "text/plain": [".obj"] } : { "model/vnd.usda": [".usda"] }
+      }]
+    });
+    const writable = await handle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    return handle;
+  } catch (error) {
+    if (error?.name === "AbortError") return null;
+    console.error("Export could not write to the chosen file, falling back to download.", error);
+    return null;
+  }
+}
+
 async function exportHairProjectQuickly() {
   if (!lastExport) {
     openFileActionDialog({ format: "obj", local: false });
@@ -33184,6 +33214,31 @@ async function exportHairProjectQuickly() {
     } finally {
       quickExportInProgress = false;
     }
+    return;
+  }
+  if (quickExportFileHandle) {
+    quickExportInProgress = true;
+    try {
+      const writable = await quickExportFileHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      return;
+    } catch (error) {
+      console.error("Quick Export could not overwrite the last export file, choosing a new file instead.", error);
+      quickExportFileHandle = null;
+    } finally {
+      quickExportInProgress = false;
+    }
+  }
+  const handle = await writeExportThroughFileSystem(content, suggestedName, format);
+  if (handle) {
+    quickExportFileHandle = handle;
+    lastExport = {
+      format,
+      fileName: fileNameForAction(handle.name, format),
+      local: false,
+      contents
+    };
     return;
   }
   downloadTextFile(
