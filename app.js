@@ -14016,7 +14016,10 @@ function createBranchChildGeometry(lock) {
   const ring = squareChildRing(halfWidth, halfDepth);
   const rootCurve = new THREE.CatmullRomCurve3(lock.points);
   const rootPoint = rootCurve.getPoint(0);
-  const rootFrame = curveFrameAt(lock, 0);
+  // Orient the ring with the PARENT surface frame at the region center so the square
+  // sides line up with the hole sides (approximate completion per current orient).
+  const uCenter = (surface.rowMin + surface.rowMax) / 2 / Math.max(1, surface.rows - 1);
+  const rootFrame = curveFrameAt(parent, uCenter);
   const ringWorld = ring.points.map((p) => {
     const v = new THREE.Vector3();
     v.copy(rootPoint).addScaledVector(rootFrame.x, p.x).addScaledVector(rootFrame.z, p.z);
@@ -14028,9 +14031,10 @@ function createBranchChildGeometry(lock) {
   const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), 4), 4, 256);
   const curveParameters = strandCurveParameters(lock, curve, lengthSegments);
   const ringCount = ring.points.length;
-  // Sweep start is pushed away from the child root (along tangent) and eases to 0 at the tip,
-  // leaving room for the connection to be bridged cleanly later.
-  const sweepStartOffset = Math.max(0, Number(lock.branchSweepOffset ?? 0.08));
+  // Sweep start is pushed away from the child root by ~1.5 poly widths (hardcoded for now),
+  // easing to 0 at the tip, leaving room for the connection bridge.
+  const polyWidth = curve.getLength() / Math.max(1, curveParameters.length - 1);
+  const sweepStartOffset = Math.max(0, polyWidth * 1.5);
   const positions = [...conn.positions];
   const uvs = [];
   const colors = [];
@@ -14374,7 +14378,7 @@ function applyMaterialDefinitionToLock(lock) {
   if (lock.mesh.material.userData.hairShader !== definition.shader) {
     const previousMaterial = lock.mesh.material;
     lock.mesh.material = createHairMaterial(lock);
-    lock.mesh.material.side = lock.geometryType === "braid" || lock.hairCard
+    lock.mesh.material.side = lock.branchRootRegion || lock.geometryType === "braid" || lock.hairCard
       ? THREE.DoubleSide
       : THREE.FrontSide;
     previousMaterial.dispose();
@@ -16150,7 +16154,7 @@ function addLock(presetName, overrides = {}, options = {}) {
     createHairGeometry(lock),
     createHairMaterial(lock)
   );
-  lock.mesh.material.side = ["braid", "poly"].includes(lock.geometryType) || lock.hairCard
+  lock.mesh.material.side = lock.branchRootRegion || ["braid", "poly"].includes(lock.geometryType) || lock.hairCard
     ? THREE.DoubleSide
     : THREE.FrontSide;
   lock.selectionOutline = createStrandSelectionOutline(lock.mesh.geometry);
@@ -18305,7 +18309,7 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     createHairGeometry(lock),
     createHairMaterial(lock)
   );
-  lock.mesh.material.side = ["braid", "poly"].includes(lock.geometryType) || lock.hairCard
+  lock.mesh.material.side = lock.branchRootRegion || ["braid", "poly"].includes(lock.geometryType) || lock.hairCard
     ? THREE.DoubleSide
     : THREE.FrontSide;
   lock.selectionOutline = createStrandSelectionOutline(lock.mesh.geometry);
@@ -25211,7 +25215,7 @@ function rebuildLockGeometry(lock, options = {}) {
     lock.wireOverlay.geometry = createHairTopologyGeometry(lock.mesh.geometry);
   }
   setStrandSelectionVisual(lock);
-  lock.mesh.material.side = ["braid", "poly"].includes(lock.geometryType) || lock.hairCard
+  lock.mesh.material.side = lock.branchRootRegion || ["braid", "poly"].includes(lock.geometryType) || lock.hairCard
     ? THREE.DoubleSide
     : THREE.FrontSide;
   lock.mesh.material.needsUpdate = true;
@@ -30549,6 +30553,8 @@ hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
 });
+
+
 
 
 
