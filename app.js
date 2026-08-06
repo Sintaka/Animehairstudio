@@ -13999,8 +13999,9 @@ function createConnectedCurveCardGeometry(lock) {
 // Branch-child geometry: bridge the parent hole boundary (10 segs) to the child
 // square ring (8 pts) via the connection module, then sweep the square ring
 // along the child curve. Framework version — topology focus, not final visuals.
-// Branch-child geometry. The connection bridge is currently disabled to isolate the
-// child sweep rendering; re-enable BRANCH_CONNECTION_ENABLED once the sweep is clean.
+// Branch-child geometry — mirrors the original strand sweep construction (radial
+// normals + tangent + end caps) with the 8-point square ring instead of the profile,
+// so the anime shader sees the same attribute layout as the original hair.
 const BRANCH_CONNECTION_ENABLED = false;
 
 function createBranchChildGeometry(lock) {
@@ -14013,13 +14014,17 @@ function createBranchChildGeometry(lock) {
   const curve = strandGeometryCurve(lock);
   const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), 4), 4, 256);
   const curveParameters = strandCurveParameters(lock, curve, lengthSegments);
+  const actualLengthSegments = curveParameters.length - 1;
   const ringCount = ring.points.length;
-  const polyWidth = curve.getLength() / Math.max(1, curveParameters.length - 1);
+  const polyWidth = curve.getLength() / Math.max(1, actualLengthSegments);
   const sweepStartOffset = Math.max(0, polyWidth * 1.5);
-  const positions = [];
+  const vertices = [];
+  const normals = [];
+  const tangents = [];
   const uvs = [];
   const colors = [];
-  const quads = [];
+  const indices = [];
+  const quadFaces = [];
   let previousFrame = null;
   curveParameters.forEach((t, row) => {
     const point = curve.getPoint(t);
@@ -14028,43 +14033,61 @@ function createBranchChildGeometry(lock) {
     const offset = sweepStartOffset * (1 - t);
     const color = strandInfluenceColor(lock, t);
     ring.points.forEach((p, index) => {
-      const v = point.clone().addScaledVector(frame.x, p.x).addScaledVector(frame.z, p.z);
+      const ringVector = frame.x.clone().multiplyScalar(p.x).addScaledVector(frame.z, p.z);
+      const v = point.clone().add(ringVector);
       if (offset > 0) v.addScaledVector(frame.y, offset);
-      positions.push(v.x, v.y, v.z);
+      vertices.push(v.x, v.y, v.z);
+      normals.push(ringVector.x, ringVector.y, ringVector.z);
+      tangents.push(frame.y.x, frame.y.y, frame.y.z, 1);
       uvs.push(index / ringCount, t);
       colors.push(color.r, color.g, color.b);
     });
   });
-  for (let row = 0; row < curveParameters.length - 1; row += 1) {
+  // End caps (same as the original sweep).
+  const startPoint = curve.getPoint(0);
+  const endPoint = curve.getPoint(1);
+  const startCenter = vertices.length / 3;
+  vertices.push(startPoint.x, startPoint.y, startPoint.z);
+  normals.push(0, 1, 0);
+  const startFrame = strandGeometryFrameAt(lock, curve, 0);
+  tangents.push(startFrame.x.x, startFrame.x.y, startFrame.x.z, 1);
+  uvs.push(0.5, 0);
+  const startColor = strandInfluenceColor(lock, 0);
+  colors.push(startColor.r, startColor.g, startColor.b);
+  const endCenter = vertices.length / 3;
+  vertices.push(endPoint.x, endPoint.y, endPoint.z);
+  normals.push(0, -1, 0);
+  const endFrame = strandGeometryFrameAt(lock, curve, 1);
+  tangents.push(endFrame.x.x, endFrame.x.y, endFrame.x.z, 1);
+  uvs.push(0.5, 1);
+  const endColor = strandInfluenceColor(lock, 1);
+  colors.push(endColor.r, endColor.g, endColor.b);
+  for (let row = 0; row < actualLengthSegments; row += 1) {
     for (let s = 0; s < ringCount; s += 1) {
       const a = row * ringCount + s;
       const b = row * ringCount + ((s + 1) % ringCount);
       const c = (row + 1) * ringCount + s;
       const d = (row + 1) * ringCount + ((s + 1) % ringCount);
-      quads.push([a, c, d, b]);
+      indices.push(a, c, b, b, c, d);
+      quadFaces.push([a, c, d, b]);
     }
   }
-  const indices = [];
-  const allQuads = [];
-  quads.forEach((q) => {
-    const a = q[0]; const b = q[1]; const c = q[2]; const d = q[3];
-    indices.push(a, c, b, b, c, d);
-    allQuads.push([a, c, d, b]);
+  // Cap triangles (same winding as the original).
+  ring.points.forEach((p, s) => {
+    const a = s;
+    const b = (s + 1) % ringCount;
+    indices.push(a, b, startCenter, b, a, endCenter);
   });
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute("tangent", new THREE.Float32BufferAttribute(tangents, 4));
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices);
-  geometry.userData.quadFaces = allQuads;
+  geometry.userData.quadFaces = quadFaces;
+  geometry.userData.sideTriangleCount = actualLengthSegments * ringCount * 2;
   geometry.userData.openSurface = false;
-  geometry.computeVertexNormals();
-  const normalAttr = geometry.getAttribute("normal");
-  for (let i = 0; i < normalAttr.count; i += 1) {
-    const x = normalAttr.getX(i); const y = normalAttr.getY(i); const z = normalAttr.getZ(i);
-    if (x * x + y * y + z * z < 0.0001) normalAttr.setXYZ(i, 0, 1, 0);
-  }
-  normalAttr.needsUpdate = true;
   geometry.computeBoundingSphere();
   return geometry;
 }
@@ -30525,6 +30548,8 @@ hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
 });
+
+
 
 
 
