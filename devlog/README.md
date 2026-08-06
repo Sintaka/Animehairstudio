@@ -68,7 +68,7 @@ python -m http.server 8080 --bind 127.0.0.1
   - 选择遮罩：0.1.4 已内置雕刻笔刷选择遮罩（`sculptBrushSelectionAllows`），移除 brush-dev 的重复实现 `sculptBrushSelectionMask`。
   - Ctrl+Z 修复迁移到 0.1.4 的 modules/shortcut-registry.js（`focusedControlShouldYieldToShortcut` 对所有非文本输入控件放行 Ctrl+Z/Y/D）；`setActiveTool` 重置 `historyShortcutHeld`。
   - 语言：ZH 词典扩展覆盖 0.1.4 新增文案（导航方式 / 相机平滑 / 最近项目 / 拖放项目确认 / 选择集 / 锁定 / 隔离等，3D 名词保留英文）；JA 补充新笔刷 / ScaleMode / 保存等词条；`translateUiString` 按语言词典分发（JA / ZH），未收录回退英文。
-- **快捷导出（Ctrl+Alt+S）**：新增 `exportHairProjectQuickly`，记住上一次导出（`lastExport`：格式 / 文件名 / 本地标志），优先用 File System Access API 写盘并记住文件句柄（`quickExportFileHandle`），不支持时回退下载或本地保存；File 菜单新增「Quick Export（Ctrl+Alt+S）」；快捷键帮助「Sintaka Fork」分区新增 Ctrl+Alt+S 行。
+- **快捷导出（Ctrl+Alt+S）**：新增 `exportHairProjectQuickly`，完全复刻上一次导出（`lastExport`：格式 / 文件名 / 导出内容 / 本地标志）——上次是下载则同名重新下载、上次是本地保存则再次本地保存，不再弹文件选择；从未导出时回退到原导出对话框；File 菜单新增「Quick Export（Ctrl+Alt+S）」；快捷键帮助「Sintaka Fork」分区新增 Ctrl+Alt+S 行。
 - **快捷键帮助分区改名**：「Local Adaptation」分区改名为「Sintaka Fork」（专用名词，不随语言翻译）。
 - **index.html**：File 菜单新增 Quick Save（Ctrl+S）与 Save as（Ctrl+Shift+S）快捷键提示；快捷键帮助新增独立「Local Adaptation」分区。
 - **modules/localization.js**：新增 "Save as"、"Quick Save"、"Quick Save the project"、"Local Adaptation" 的日语翻译（含导航模式：Navigation mode / Alt + Middle Mouse 等）。
@@ -157,4 +157,5 @@ python -m http.server 8080 --bind 127.0.0.1
 - [x] 拖放 / 雕刻选择遮罩改用 0.1.4 内置实现，移除旧重复代码
 - [x] ZH 词典扩展覆盖 0.1.4 新增文案（约 107 条）
 - [x] 新增 Quick Export（Ctrl+Alt+S）快速重复上一次导出
+- [x] Quick Export 与原生导出兼容：完全复刻上次导出（格式 / 文件名 / 内容 / 目标），不再要求重新选择
 - [x] 快捷键帮助「Local Adaptation」分区改名为「Sintaka Fork」

@@ -3088,7 +3088,6 @@ let currentProjectName = "Untitled Hair Project";
 let projectSaveInProgress = false;
 let quickSaveFileHandle = null;
 let quickSaveFileName = null;
-let quickExportFileHandle = null;
 let lastExport = null;
 let quickExportInProgress = false;
 let pendingFileAction = null;
@@ -17416,7 +17415,17 @@ async function performFileAction(action, baseName, contents) {
         action.format === "usda" ? "model/vnd.usda;charset=utf-8" : "text/plain;charset=utf-8"
       );
     }
-    lastExport = { format: action.format, fileName: suggestedName, local: Boolean(action.local) };
+    lastExport = {
+      format: action.format,
+      fileName: suggestedName,
+      local: Boolean(action.local),
+      contents: {
+        mesh: contents.mesh,
+        curves: contents.curves,
+        bones: contents.bones,
+        weights: contents.weights
+      }
+    };
   } catch (error) {
     if (error?.name !== "AbortError") {
       console.error(error);
@@ -33148,11 +33157,15 @@ function exportHairObjLocally() {
   openFileActionDialog({ format: "obj", local: true });
 }
 async function exportHairProjectQuickly() {
+  if (!lastExport) {
+    openFileActionDialog({ format: "obj", local: false });
+    return;
+  }
   if (quickExportInProgress) return;
-  const format = lastExport?.format || "obj";
+  const format = lastExport.format;
   const baseName = cleanFileBaseName(currentProjectName, "anime-hair");
-  const suggestedName = lastExport?.fileName || fileNameForAction(baseName, format);
-  const contents = Object.fromEntries(
+  const suggestedName = lastExport.fileName || fileNameForAction(baseName, format);
+  const contents = lastExport.contents || Object.fromEntries(
     Object.entries(exportContentInputs).map(([key, input]) => [key, input.checked])
   );
   const content = format === "obj"
@@ -33164,42 +33177,13 @@ async function exportHairProjectQuickly() {
       includeWeights: contents.weights,
       rootName: baseName
     });
-  if (quickExportFileHandle) {
+  if (lastExport.local) {
     quickExportInProgress = true;
     try {
-      const writable = await quickExportFileHandle.createWritable();
-      await writable.write(content);
-      await writable.close();
-      return;
-    } catch (error) {
-      console.error("Quick Export could not overwrite the last export file, opening the export dialog instead.", error);
-      quickExportFileHandle = null;
+      await saveFileThroughLocalDialog(content, suggestedName, format);
     } finally {
       quickExportInProgress = false;
     }
-  }
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName,
-        types: [{
-          description: format === "obj" ? "Wavefront OBJ" : "Universal Scene Description",
-          accept: format === "obj" ? { "text/plain": [".obj"] } : { "model/vnd.usda": [".usda"] }
-        }]
-      });
-      const writable = await handle.createWritable();
-      await writable.write(content);
-      await writable.close();
-      quickExportFileHandle = handle;
-      lastExport = { format, fileName: cleanFileBaseName(handle.name, "anime-hair"), local: false };
-      return;
-    } catch (error) {
-      if (error?.name === "AbortError") return;
-      console.error("Quick Export could not write to the chosen file, falling back to download.", error);
-    }
-  }
-  if (lastExport?.local) {
-    await saveFileThroughLocalDialog(content, suggestedName, format);
     return;
   }
   downloadTextFile(
