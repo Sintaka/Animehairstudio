@@ -16356,6 +16356,7 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   partner.branchLocalSurfaceNormals = lock.branchLocalSurfaceNormals?.map((normal) => (
     normal ? new THREE.Vector3(-normal.x, normal.y, normal.z) : null
   )) || null;
+  partner.branchRootRegion = cloneBranchRootRegion(lock.branchRootRegion, { mirror: true });
   partner.pointScales = lock.pointScales.map((scale) => ({ x: scale.x, z: scale.z }));
   partner.pointWidths = [...lock.pointWidths];
   partner.pointTwists = lock.pointTwists.map((twist) => -twist);
@@ -16581,6 +16582,7 @@ function snapshotState() {
       branchParentParameter: THREE.MathUtils.clamp(Number(lock.branchParentParameter ?? 0), 0, 1),
       branchLocalPoints: lock.branchLocalPoints?.map(vectorToData) || null,
       branchLocalSurfaceNormals: lock.branchLocalSurfaceNormals?.map((normal) => normal ? vectorToData(normal) : null) || null,
+      branchRootRegion: cloneBranchRootRegion(lock.branchRootRegion),
       rootSurfacePoint: lock.rootSurfacePoint ? vectorToData(lock.rootSurfacePoint) : null,
       rootSurfaceNormal: lock.rootSurfaceNormal ? vectorToData(lock.rootSurfaceNormal) : null,
       rootAttachmentEnabled: lock.rootAttachmentEnabled !== false,
@@ -18167,6 +18169,7 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     branchParentParameter: THREE.MathUtils.clamp(Number(snapshot.branchParentParameter ?? 0), 0, 1),
     branchLocalPoints: snapshot.branchLocalPoints?.map(dataToVector) || null,
     branchLocalSurfaceNormals: snapshot.branchLocalSurfaceNormals?.map((normal) => normal ? dataToVector(normal) : null) || null,
+    branchRootRegion: cloneBranchRootRegion(snapshot.branchRootRegion),
     rootSurfacePoint: snapshot.rootSurfacePoint ? dataToVector(snapshot.rootSurfacePoint) : null,
     rootSurfaceNormal: snapshot.rootSurfaceNormal ? dataToVector(snapshot.rootSurfaceNormal).normalize() : null,
     groupLatticeBasePoints: snapshot.groupLatticeBasePoints?.map(dataToVector) || null,
@@ -20862,6 +20865,45 @@ function enforceBranchRootPosition(lock) {
   return frame;
 }
 
+const BRANCH_ROOT_REGION_DEFAULTS = Object.freeze({ upLength: 0.1, downLength: 0.08, leftWidth: 0.18, rightWidth: 0.18 });
+
+function clampRegionParam(value) {
+  return THREE.MathUtils.clamp(Number(value) || 0, 0, 1);
+}
+
+// 5 root-region control points on the parent surface (u = along length, v = across width).
+// center (RootCtrl) + cross {up,down,left,right}. Stored in parent-surface params so the
+// child rides the parent without recomputation on parent moves.
+function branchRootRegionFromParam(parameter) {
+  const u0 = clampRegionParam(parameter);
+  const { upLength, downLength, leftWidth, rightWidth } = BRANCH_ROOT_REGION_DEFAULTS;
+  return {
+    center: { u: u0, v: 0.5 },
+    cross: {
+      up: { u: clampRegionParam(u0 + upLength), v: 0.5 },
+      down: { u: clampRegionParam(u0 - downLength), v: 0.5 },
+      left: { u: u0, v: clampRegionParam(0.5 - leftWidth) },
+      right: { u: u0, v: clampRegionParam(0.5 + rightWidth) }
+    }
+  };
+}
+
+function cloneBranchRootRegion(region, { mirror = false } = {}) {
+  if (!region) return null;
+  const flip = (value) => (mirror ? 1 - clampRegionParam(value) : clampRegionParam(value));
+  const left = mirror ? region.cross?.right : region.cross?.left;
+  const right = mirror ? region.cross?.left : region.cross?.right;
+  return {
+    center: { u: clampRegionParam(region.center?.u), v: flip(region.center?.v) },
+    cross: {
+      up: { u: clampRegionParam(region.cross?.up?.u), v: flip(region.cross?.up?.v) },
+      down: { u: clampRegionParam(region.cross?.down?.u), v: flip(region.cross?.down?.v) },
+      left: { u: clampRegionParam(left?.u), v: flip(left?.v) },
+      right: { u: clampRegionParam(right?.u), v: flip(right?.v) }
+    }
+  };
+}
+
 function attachDrawnLocksAsBranches(stroke, created) {
   const parent = locks.find((lock) => lock.id === stroke.branchSourceLockId);
   if (!canBranchDrawFromLock(parent) || !created.length) return null;
@@ -20875,6 +20917,7 @@ function attachDrawnLocksAsBranches(stroke, created) {
     lock.branchParentId = parent.id;
     lock.branchParentParameter = parameter;
     delete lock.clumpShapeCurveInheritance;
+    lock.branchRootRegion = branchRootRegionFromParam(parameter);
     captureBranchLocalState(lock);
   });
   updateBranchChildren(parent);
@@ -20891,6 +20934,7 @@ function detachBranch(lock) {
   delete lock.branchParentParameter;
   delete lock.branchLocalPoints;
   delete lock.branchLocalSurfaceNormals;
+  delete lock.branchRootRegion;
 }
 
 function updateBranchChildren(parent) {
@@ -30292,6 +30336,8 @@ hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
 });
+
+
 dropImportForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await confirmDroppedApplicationFile();
