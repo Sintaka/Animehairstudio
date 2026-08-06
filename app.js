@@ -2563,6 +2563,7 @@ const cancelDropImport = document.querySelector("#cancelDropImport");
 const confirmDropImport = document.querySelector("#confirmDropImport");
 let pendingDroppedApplicationFile = null;
 let pendingDroppedApplicationKind = null;
+let pendingDroppedApplicationHandle = null;
 const importHeadMeshMenu = document.querySelector("#importHeadMeshMenu");
 const importFullBodyMeshMenu = document.querySelector("#importFullBodyMeshMenu");
 const undoButton = document.querySelector("#undoAction");
@@ -17490,7 +17491,7 @@ fileActionDialog.addEventListener("close", () => {
 });
 
 async function saveHairProjectFile() {
-  const baseName = cleanFileBaseName(currentProjectName, "Untitled Hair Project");
+  const baseName = cleanFileBaseName(quickSaveFileName || currentProjectName, "Untitled Hair Project");
   const suggestedName = fileNameForAction(baseName, "project", "Untitled Hair Project");
   if (window.showSaveFilePicker) {
     try {
@@ -17526,6 +17527,8 @@ async function saveHairProjectQuickly() {
     projectSaveInProgress = true;
     setProjectSaveButtonsDisabled(true);
     try {
+      const permission = await quickSaveFileHandle.requestPermission?.({ mode: "readwrite" });
+      if (permission === "denied") throw new Error("Write permission was denied.");
       const writable = await quickSaveFileHandle.createWritable();
       await writable.write(content);
       await writable.close();
@@ -17547,7 +17550,7 @@ async function saveHairProjectThroughLocalDialog() {
   openFileActionDialog({ format: "project", local: true });
 }
 
-async function openHairProjectFile(file) {
+async function openHairProjectFile(file, { handle = null } = {}) {
   try {
     const content = await file.text();
     const project = validateHairProject(JSON.parse(content));
@@ -17592,6 +17595,8 @@ async function openHairProjectFile(file) {
       frameViewportBounds(fullBodyScalpFocusBounds());
     }
     if (project.metadata?.name) currentProjectName = project.metadata.name;
+    quickSaveFileHandle = handle || null;
+    quickSaveFileName = cleanFileBaseName(file.name || `${project.metadata?.name || "Untitled Hair Project"}.ahs`, "Untitled Hair Project");
     presetLibraryStatus.textContent = `${project.metadata?.name || "Project"} opened`;
     setPresetLibraryOpen(false);
     await safelyRememberRecentProject(file.name || `${project.metadata?.name || "Untitled Hair Project"}.ahs`, content);
@@ -17653,11 +17658,12 @@ async function renderRecentProjectsMenu() {
   });
 }
 
-function openDroppedApplicationFilePrompt(file) {
+function openDroppedApplicationFilePrompt(file, { handle = null } = {}) {
   const kind = applicationDropFileKind(file);
   if (!kind) return false;
   pendingDroppedApplicationFile = file;
   pendingDroppedApplicationKind = kind;
+  pendingDroppedApplicationHandle = handle || null;
   dropImportFileName.textContent = file.name;
   const isProject = kind === "project";
   dropImportDialogTitle.textContent = isProject ? "Open Dropped Project?" : "Import Dropped OBJ?";
@@ -17690,7 +17696,7 @@ async function confirmDroppedApplicationFile() {
     : null;
   closeDroppedApplicationFilePrompt();
   if (kind === "project") {
-    await openHairProjectFile(file);
+    await openHairProjectFile(file, { handle: pendingDroppedApplicationHandle });
     return;
   }
   if (objTarget === "body") await importFullBodyMeshFile(file);
@@ -30262,7 +30268,26 @@ inputs.name.addEventListener("input", () => {
 
 presetLibraryToggle.addEventListener("click", () => setPresetLibraryOpen(presetLibrary.classList.contains("hidden")));
 document.querySelector("#closePresetLibrary").addEventListener("click", () => setPresetLibraryOpen(false));
-document.querySelector("#openHairProject").addEventListener("click", () => hairProjectFileInput.click());
+document.querySelector("#openHairProject").addEventListener("click", async () => {
+  if (window.showOpenFilePicker) {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        multiple: false,
+        types: [{
+          description: "Anime Hair Studio Project",
+          accept: { "application/json": [".ahs", ".animehair.json", ".json"] }
+        }]
+      });
+      const file = await handle.getFile();
+      await openHairProjectFile(file, { handle });
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      console.error("Open could not read the chosen file, falling back to the file picker.", error);
+    }
+  }
+  hairProjectFileInput.click();
+});
 hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
@@ -30277,6 +30302,7 @@ dropImportForm.addEventListener("submit", async (event) => {
 dropImportDialog.addEventListener("close", () => {
   pendingDroppedApplicationFile = null;
   pendingDroppedApplicationKind = null;
+  pendingDroppedApplicationHandle = null;
 });
 let enterHeadSetupAfterHeadImport = false;
 let enterHeadSetupAfterFullBodyImport = false;
@@ -32093,7 +32119,14 @@ window.addEventListener("drop", async (event) => {
       window.alert("Drop one .ahs or .obj file at a time.");
       return;
     }
-    openDroppedApplicationFilePrompt(applicationFiles[0]);
+    let handle = null;
+    const item = [...(event.dataTransfer?.items || [])].find(
+      (entry) => entry.kind === "file" && applicationDropFileKind(entry.getAsFile?.())
+    );
+    if (item?.getAsFileSystemHandle) {
+      try { handle = await item.getAsFileSystemHandle(); } catch { handle = null; }
+    }
+    openDroppedApplicationFilePrompt(applicationFiles[0], { handle });
     return;
   }
   const files = transferredFiles.filter(isSupportedReferenceImageFile);
