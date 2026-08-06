@@ -193,7 +193,7 @@ import {
   DEFAULT_LANGUAGE,
   LANGUAGE_STORAGE_KEY,
   normalizeLanguage
-} from "./modules/localization.js?v=20260806-1";
+} from "./modules/localization.js?v=20260806-2";
 import {
   emptyToolPresetLibrary,
   normalizeToolPresetLibrary,
@@ -3088,6 +3088,9 @@ let currentProjectName = "Untitled Hair Project";
 let projectSaveInProgress = false;
 let quickSaveFileHandle = null;
 let quickSaveFileName = null;
+let quickExportFileHandle = null;
+let lastExport = null;
+let quickExportInProgress = false;
 let pendingFileAction = null;
 let importedHeadAsset = null;
 
@@ -17413,6 +17416,7 @@ async function performFileAction(action, baseName, contents) {
         action.format === "usda" ? "model/vnd.usda;charset=utf-8" : "text/plain;charset=utf-8"
       );
     }
+    lastExport = { format: action.format, fileName: suggestedName, local: Boolean(action.local) };
   } catch (error) {
     if (error?.name !== "AbortError") {
       console.error(error);
@@ -32417,6 +32421,12 @@ proportionalLockRootInput.addEventListener("change", () => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.altKey && !event.shiftKey && event.key.toLowerCase() === "s") {
+    event.preventDefault();
+    if (event.repeat) return;
+    exportHairProjectQuickly();
+    return;
+  }
   if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
     event.preventDefault();
     if (event.repeat) return;
@@ -33002,6 +33012,7 @@ document.querySelector("#toggleWire").addEventListener("click", () => {
 
 document.querySelector("#exportObj").addEventListener("click", exportHairObj);
 document.querySelector("#exportUsda").addEventListener("click", exportHairUsda);
+document.querySelector("#quickExportProject").addEventListener("click", exportHairProjectQuickly);
 document.querySelector("#localExportObj").addEventListener("click", exportHairObjLocally);
 document.querySelector("#localExportUsda").addEventListener("click", exportHairUsdaLocally);
 
@@ -33135,6 +33146,67 @@ function exportHairUsdaLocally() {
 
 function exportHairObjLocally() {
   openFileActionDialog({ format: "obj", local: true });
+}
+async function exportHairProjectQuickly() {
+  if (quickExportInProgress) return;
+  const format = lastExport?.format || "obj";
+  const baseName = cleanFileBaseName(currentProjectName, "anime-hair");
+  const suggestedName = lastExport?.fileName || fileNameForAction(baseName, format);
+  const contents = Object.fromEntries(
+    Object.entries(exportContentInputs).map(([key, input]) => [key, input.checked])
+  );
+  const content = format === "obj"
+    ? buildHairObj({ includeMesh: contents.mesh, includeCurves: contents.curves })
+    : buildHairUsda({
+      includeMesh: contents.mesh,
+      includeCurves: contents.curves,
+      includeBones: contents.bones,
+      includeWeights: contents.weights,
+      rootName: baseName
+    });
+  if (quickExportFileHandle) {
+    quickExportInProgress = true;
+    try {
+      const writable = await quickExportFileHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      return;
+    } catch (error) {
+      console.error("Quick Export could not overwrite the last export file, opening the export dialog instead.", error);
+      quickExportFileHandle = null;
+    } finally {
+      quickExportInProgress = false;
+    }
+  }
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{
+          description: format === "obj" ? "Wavefront OBJ" : "Universal Scene Description",
+          accept: format === "obj" ? { "text/plain": [".obj"] } : { "model/vnd.usda": [".usda"] }
+        }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      quickExportFileHandle = handle;
+      lastExport = { format, fileName: cleanFileBaseName(handle.name, "anime-hair"), local: false };
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      console.error("Quick Export could not write to the chosen file, falling back to download.", error);
+    }
+  }
+  if (lastExport?.local) {
+    await saveFileThroughLocalDialog(content, suggestedName, format);
+    return;
+  }
+  downloadTextFile(
+    content,
+    suggestedName,
+    format === "usda" ? "model/vnd.usda;charset=utf-8" : "text/plain;charset=utf-8"
+  );
 }
 
 function resize() {
