@@ -1017,8 +1017,9 @@ button:focus-visible {
 }
 
 .studio-shell {
+  position: relative;
   display: grid;
-  grid-template-columns: 252px minmax(0, 1fr) 360px;
+  grid-template-columns: var(--outliner-width, 252px) minmax(0, 1fr) var(--attribute-width, 360px);
   grid-template-rows: 36px minmax(0, 1fr);
   height: 100vh;
 }
@@ -1893,6 +1894,7 @@ button:focus-visible {
   pointer-events: auto;
 }
 
+
 .reference-image-drop-shell {
   display: grid;
   gap: 8px;
@@ -2138,6 +2140,45 @@ body.reference-image-drag-active .reference-outliner-group-head.reference-drop-h
 .sculpt-inflate-icon::after {
   inset: 7px;
   background: currentColor;
+}
+
+.sculpt-slide-icon {
+  position: relative;
+  width: 17px;
+  height: 17px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.sculpt-slide-icon::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 9px;
+  height: 9px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.sculpt-scale-icon {
+  position: relative;
+  width: 17px;
+  height: 17px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+
+.sculpt-scale-icon::before {
+  content: "";
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid currentColor;
+  border-left: 2px solid currentColor;
 }
 
 .sculpt-brush-cursor {
@@ -3765,7 +3806,7 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
 }
 
 #hairMaterialAnimeControls .slider-input-row {
-  grid-template-columns: 46px minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(56px, 1fr) minmax(0, 2fr) 24px;
   width: 100%;
 }
 
@@ -5444,7 +5485,7 @@ input[type="range"] {
 
 .slider-input-row {
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(56px, 1fr) minmax(0, 2fr) 24px;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -5514,7 +5555,7 @@ input[type="range"] {
 
 .profile-offset-control.editable-slider-control .slider-input-row {
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(56px, 1fr) minmax(0, 2fr) 24px;
   margin-top: 4px;
 }
 
@@ -5548,7 +5589,7 @@ input[type="range"] {
 }
 
 .slider-number-pair.slider-input-row {
-  grid-template-columns: 54px minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(56px, 1fr) minmax(0, 2fr) 24px;
   gap: 6px;
 }
 
@@ -6510,4 +6551,148 @@ body.outliner-folder-colors-disabled .outliner-layer-items {
 
 #viewport canvas.curve-point-remove-cursor {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M3 2.5v22l5.4-5.1 4 9.1 4.2-1.9-4-8.9h7.4z' fill='%23fff' stroke='%23171319' stroke-width='1.8' stroke-linejoin='round'/%3E%3Ccircle cx='23' cy='22.5' r='7.5' fill='%23171319'/%3E%3Ccircle cx='23' cy='22.5' r='6' fill='%23ff9f61'/%3E%3Cpath d='M19 22.5h8' stroke='%23171319' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") 3 3, not-allowed !important;
+}
+.sculpt-push-icon {
+  position: relative;
+  width: 17px;
+  height: 17px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.sculpt-push-icon::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 3px;
+  width: 5px;
+  height: 9px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.sculpt-orient-icon {
+  position: relative;
+  width: 17px;
+  height: 17px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.sculpt-orient-icon::before,
+.sculpt-orient-icon::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.sculpt-orient-icon::before {
+  width: 7px;
+  height: 7px;
+}
+
+.sculpt-orient-icon::after {
+  width: 11px;
+  height: 11px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+
+.panel-resize-handle {
+  position: absolute;
+  top: 36px;
+  bottom: 0;
+  width: 6px;
+  z-index: 30;
+  cursor: col-resize;
+}
+
+.panel-resize-handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.panel-resize-handle:hover::after,
+.panel-resize-handle.dragging::after {
+  background: rgba(255, 210, 110, 0.55);
+}
+
+.outliner-resize-handle {
+  left: var(--outliner-width, 252px);
+  transform: translateX(-50%);
+}
+
+.attribute-resize-handle {
+  left: calc(100% - var(--attribute-width, 360px));
+  transform: translateX(-50%);
+}
+
+
+.profile-dialog.floating-snapped {
+  box-shadow: none;
+}
+.dialog-resize-handle {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 14px;
+  height: 14px;
+  z-index: 60;
+  cursor: nwse-resize;
+}
+
+.dialog-resize-handle::before {
+  content: "";
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid #8f8892;
+  border-bottom: 2px solid #8f8892;
+}
+
+.dialog-resize-handle:hover::before,
+.dialog-resize-handle.dragging::before {
+  border-color: #ffd26e;
+}
+
+.sculpt-brush-dock .brush-label {
+  white-space: nowrap;
+}
+
+.sculpt-brush-dock.dock-compact .sculpt-brush-button {
+  width: auto;
+  min-width: 44px;
+  padding: 0 7px;
+}
+
+.sculpt-brush-dock.dock-compact .sculpt-brush-button .brush-suffix {
+  display: none;
+}
+
+.sculpt-brush-dock.dock-icons .sculpt-brush-button {
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  justify-content: center;
+}
+
+.sculpt-brush-dock.dock-icons .sculpt-brush-button .brush-label {
+  display: none;
 }

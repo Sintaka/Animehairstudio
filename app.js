@@ -106,8 +106,9 @@ import {
   pointInCameraFacingHalfSpace,
   proportionalSculptWeights,
   sculptBrushWeight,
-  smoothSculptPointDeltas
-} from "./modules/sculpt-brush.js?v=20260805-10";
+  smoothSculptPointDeltas,
+  smoothSculptTwistDeltas
+} from "./modules/sculpt-brush.js?v=20260806-1";
 import {
   createHairProject,
   validateHairProject
@@ -192,7 +193,7 @@ import {
   DEFAULT_LANGUAGE,
   LANGUAGE_STORAGE_KEY,
   normalizeLanguage
-} from "./modules/localization.js?v=20260805-42";
+} from "./modules/localization.js?v=20260806-1";
 import {
   emptyToolPresetLibrary,
   normalizeToolPresetLibrary,
@@ -278,7 +279,7 @@ function normalizeSideNamingPerspective(value) {
 }
 
 function normalizeNavigationStyle(value) {
-  return value === "blender" ? "blender" : "anime-hair-studio";
+  return value === "blender" ? "blender" : value === "houdini" ? "houdini" : "anime-hair-studio";
 }
 
 let defaultHairShader = readStoredPreference(window, DEFAULT_HAIR_SHADER_PREFERENCE_KEY, {
@@ -396,7 +397,11 @@ const sculptBrushPlanePositionValue = document.querySelector("#sculptBrushPlaneP
 const sculptBrushStrengthByTool = {
   "sculpt-move": 0.2,
   "sculpt-smooth": 0.5,
-  "sculpt-inflate": 0.5
+  "sculpt-inflate": 0.5,
+  "sculpt-slide": 0.6,
+  "sculpt-scale": 0.5,
+  "sculpt-push": 1,
+  "sculpt-orient": 0.5
 };
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -2118,6 +2123,7 @@ let selectionMarqueeDrag = null;
 let altOrbitDrag = null;
 let blenderNavigationDrag = null;
 let pointRemovalCandidate = null;
+let houdiniZoomDrag = null;
 let curvePointInsertionCandidate = null;
 let selectPointerCapture = null;
 let scalpLatticeDrag = null;
@@ -2339,6 +2345,7 @@ const hairMaterialSelect = document.querySelector("#hairMaterialSelect");
 const newHairMaterialButton = document.querySelector("#newHairMaterial");
 const addProjectHairMaterialButton = document.querySelector("#addProjectHairMaterial");
 const hairMaterialOutliner = document.querySelector("#hairMaterialOutliner");
+const deleteProjectHairMaterialButton = document.querySelector("#deleteProjectHairMaterial");
 const hairMaterialNameInput = document.querySelector("#hairMaterialName");
 const hairMaterialShaderInput = document.querySelector("#hairMaterialShader");
 const hairMaterialStandardControls = document.querySelector("#hairMaterialStandardControls");
@@ -3079,6 +3086,8 @@ const presetCatalog = [
 let activePresetFilter = "full";
 let currentProjectName = "Untitled Hair Project";
 let projectSaveInProgress = false;
+let quickSaveFileHandle = null;
+let quickSaveFileName = null;
 let pendingFileAction = null;
 let importedHeadAsset = null;
 
@@ -7206,15 +7215,6 @@ function setReferenceImageDragActive(active) {
   if (!nextActive) setReferenceDropHover();
 }
 
-function prepareReferenceImageDrop() {
-  if (viewportEditMode !== "reference") {
-    setViewportEditMode("reference");
-    return;
-  }
-  if (activeOutlinerTab !== "references") setOutlinerTab("references");
-  if (referenceImagePanel.classList.contains("hidden")) setReferenceImagePanelOpen(true);
-}
-
 function referenceDropDestination(event) {
   const destination = event.target.closest?.("[data-reference-drop-target]")?.dataset.referenceDropTarget;
   if (["overlay", "front", "back", "left", "right"].includes(destination)) return destination;
@@ -10755,7 +10755,7 @@ function updateGuideGeometry(guide) {
 }
 
 function sculptBrushToolActive(tool = activeTool) {
-  return ["sculpt-move", "sculpt-smooth", "sculpt-inflate"].includes(tool);
+  return ["sculpt-move", "sculpt-smooth", "sculpt-inflate", "sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient"].includes(tool);
 }
 
 function sculptBrushSelectionMaskActive() {
@@ -10772,7 +10772,13 @@ function effectiveSculptBrushTool() {
     : activeTool;
 }
 
+function updateSculptScaleModeRow() {
+  const scaleModeRow = document.querySelector("#sculptScaleModeRow");
+  scaleModeRow?.classList.toggle("hidden", effectiveSculptBrushTool() !== "sculpt-scale");
+}
+
 function syncSculptBrushToolButtons() {
+
   const effectiveTool = effectiveSculptBrushTool();
   modeToolButtons.filter((button) => sculptBrushToolActive(button.dataset.tool)).forEach((button) => {
     const effective = button.dataset.tool === effectiveTool;
@@ -10786,6 +10792,7 @@ function syncSculptBrushToolButtons() {
   sculptBrushCursor.classList.toggle("smooth", effectiveTool === "sculpt-smooth");
   sculptBrushCursor.classList.toggle("inflate", effectiveTool === "sculpt-inflate");
   sculptSmoothPreserveTipsSetting.classList.toggle("hidden", effectiveTool !== "sculpt-smooth");
+  updateSculptScaleModeRow();
 }
 
 function setSculptBrushShiftSmoothHeld(held) {
@@ -10799,6 +10806,7 @@ function setSculptBrushShiftSmoothHeld(held) {
 
 function setActiveTool(tool) {
   clearCurvePointTopologyCursor();
+  historyShortcutHeld = false;
   const previousTool = activeTool;
   if (sculptBrushToolActive(previousTool) && tool !== previousTool) {
     finishSculptMoveStroke(null, { cancel: true });
@@ -11129,9 +11137,9 @@ function finishBrushSizeDrag(event) {
 function updateInteractionLocks() {
   const loftStrokeActive = Boolean(loftSurfaceDraft?.activeStroke);
   const curveSurfaceStrokeActive = Boolean(curveSurfaceDraft?.activeStroke);
-  controls.enabled = Boolean(altOrbitDrag) || (!toolRadialGesture && !strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !selectPointerCapture && !transformDragging && !relaxEdit && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpLatticeDrag && !scalpPaintDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !capsuleGuideDrawStroke && !polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !selectionMarqueeDrag && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag);
+  controls.enabled = Boolean(altOrbitDrag) || (!toolRadialGesture && !strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !selectPointerCapture && !transformDragging && !relaxEdit && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpLatticeDrag && !scalpPaintDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !capsuleGuideDrawStroke && !polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !selectionMarqueeDrag && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag && !houdiniZoomDrag);
   const branchMoveDisabled = branchMoveGizmoDisabled();
-  transformControls.enabled = !toolRadialGesture && !strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !altOrbitDrag && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !capsuleGuideDrawStroke && !polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag && !branchMoveDisabled;
+  transformControls.enabled = !toolRadialGesture && !strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !altOrbitDrag && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !capsuleGuideDrawStroke && !polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag && !branchMoveDisabled && !houdiniZoomDrag;
   setBranchMoveGizmoVisual(branchMoveDisabled);
 }
 
@@ -14311,6 +14319,7 @@ function renderHairMaterialOptions(selectedMaterialId = DEFAULT_HAIR_MATERIAL_ID
 function syncHairMaterialEditor(lock = null) {
   if (lock) activeHairMaterialId = materialForLock(lock).id;
   const definition = activeHairMaterialDefinition();
+  deleteProjectHairMaterialButton.disabled = definition.id === DEFAULT_HAIR_MATERIAL_ID;
   const assignedMaterialId = getSelectedLock()?.materialId || DEFAULT_HAIR_MATERIAL_ID;
   renderHairMaterialOptions(assignedMaterialId);
   renderHairMaterialOutliner();
@@ -14351,6 +14360,24 @@ function createProjectHairMaterial({ assignToSelected = false } = {}) {
   }
   syncHairMaterialEditor();
   renderLockList();
+}
+
+function deleteActiveHairMaterial() {
+  const material = activeHairMaterialDefinition();
+  if (material.id === DEFAULT_HAIR_MATERIAL_ID) return;
+  pushUndoState();
+  hairMaterialDefinitions.splice(hairMaterialDefinitions.indexOf(material), 1);
+  locks.forEach((lock) => {
+    if ((lock.materialId || DEFAULT_HAIR_MATERIAL_ID) === material.id) {
+      lock.materialId = DEFAULT_HAIR_MATERIAL_ID;
+      applyMaterialDefinitionToLock(lock);
+      syncActiveMirror(lock, { refreshUi: true });
+    }
+  });
+  activeHairMaterialId = DEFAULT_HAIR_MATERIAL_ID;
+  syncHairMaterialEditor();
+  renderLockList();
+  hairMaterialOutliner.querySelector(`[data-hair-material-id="${CSS.escape(DEFAULT_HAIR_MATERIAL_ID)}"]`)?.focus();
 }
 
 function createHairTopologyGeometry(sourceGeometry) {
@@ -15831,6 +15858,21 @@ function closeSweepProfileEditor() {
   updateViewportStatsVisibility();
 }
 
+function retargetFloatingStrandEditors() {
+  const lock = getSelectedLock();
+  if (!lock) return;
+  if (sweepProfileEditor.open && sweepProfileEdit?.type === "strand") {
+    sweepProfileEdit.id = lock.id;
+    sweepProfileTarget.textContent = lock.name || "Selected strand";
+    renderSweepProfileEditor();
+  }
+  if (taperCurveEditor.open && taperCurveEdit?.type === "strand") {
+    taperCurveEdit.id = lock.id;
+    taperCurveTarget.textContent = lock.name || "Selected strand";
+    renderTaperCurveEditor();
+  }
+}
+
 function addLock(presetName, overrides = {}, options = {}) {
   const base = { ...presets[presetName], ...overrides };
   const scalpRegion = base.scalpRegion || "unassigned";
@@ -17249,6 +17291,7 @@ async function handlePreferencesAndPresetsFile(event) {
 function setProjectSaveButtonsDisabled(disabled) {
   document.querySelector("#saveCurrentPreset").disabled = disabled;
   document.querySelector("#devSaveProject").disabled = disabled;
+  document.querySelector("#quickSaveProject").disabled = disabled;
 }
 
 const fileExportAvailability = Object.freeze({
@@ -17413,7 +17456,57 @@ fileActionDialog.addEventListener("close", () => {
 });
 
 async function saveHairProjectFile() {
+  const baseName = cleanFileBaseName(currentProjectName, "Untitled Hair Project");
+  const suggestedName = fileNameForAction(baseName, "project", "Untitled Hair Project");
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{
+          description: "Anime Hair Studio Project",
+          accept: { "application/json": [".ahs", ".animehair.json", ".json"] }
+        }]
+      });
+      const content = `${JSON.stringify(buildHairProjectFile(baseName))}\n`;
+      const writable = await handle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      quickSaveFileHandle = handle;
+      const savedName = cleanFileBaseName(handle.name, "Untitled Hair Project");
+      quickSaveFileName = savedName;
+      currentProjectName = savedName;
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      console.error("Save as could not write to the chosen file, falling back to download.", error);
+    }
+  }
   openFileActionDialog({ format: "project", local: false });
+}
+
+async function saveHairProjectQuickly() {
+  if (projectSaveInProgress) return;
+  if (quickSaveFileHandle) {
+    const baseName = cleanFileBaseName(quickSaveFileName || currentProjectName, "Untitled Hair Project");
+    const content = `${JSON.stringify(buildHairProjectFile(baseName))}\n`;
+    projectSaveInProgress = true;
+    setProjectSaveButtonsDisabled(true);
+    try {
+      const writable = await quickSaveFileHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      currentProjectName = baseName;
+      return;
+    } catch (error) {
+      console.error("Quick Save could not overwrite the last saved file, opening Save As instead.", error);
+      quickSaveFileHandle = null;
+      quickSaveFileName = null;
+    } finally {
+      projectSaveInProgress = false;
+      setProjectSaveButtonsDisabled(false);
+    }
+  }
+  await saveHairProjectFile();
 }
 
 async function saveHairProjectThroughLocalDialog() {
@@ -17588,6 +17681,7 @@ function undoLastAction() {
     restoringHistory = false;
     updateHistoryButtons();
   }
+  if (taperCurveEditor.open) renderTaperCurveEditor();
 }
 
 function redoLastAction() {
@@ -17601,6 +17695,7 @@ function redoLastAction() {
     restoringHistory = false;
     updateHistoryButtons();
   }
+  if (taperCurveEditor.open) renderTaperCurveEditor();
 }
 
 function updateHistoryButtons() {
@@ -23422,7 +23517,7 @@ function beginSelectionMarquee(event, surface = null, selectionMode = "replace")
 }
 
 function beginAltOrbit(event) {
-  if (navigationStyle !== "anime-hair-studio" || event.button !== 0 || !event.altKey) return;
+  if (!["anime-hair-studio", "houdini"].includes(navigationStyle) || event.button !== 0 || !event.altKey) return;
   altOrbitDrag = { pointerId: event.pointerId };
   controls.enableRotate = true;
   if (selectionMarqueeDrag) {
@@ -23502,6 +23597,68 @@ function endAltOrbit(event) {
   if (!altOrbitDrag || event.pointerId !== altOrbitDrag.pointerId) return;
   altOrbitDrag = null;
   controls.enableRotate = false;
+  updateInteractionLocks();
+}
+
+function dollyCameraByDrag(delta) {
+  const cam = controls.object;
+  const zoomScale = Math.pow(0.95, controls.zoomSpeed * Math.abs(delta) * 0.01);
+  if (cam.isPerspectiveCamera) {
+    const offset = cam.position.clone().sub(controls.target);
+    const distance = offset.length() || 1;
+    const nextDistance = THREE.MathUtils.clamp(
+      delta >= 0 ? distance / zoomScale : distance * zoomScale,
+      controls.minDistance,
+      controls.maxDistance
+    );
+    offset.setLength(nextDistance);
+    cam.position.copy(controls.target).add(offset);
+  } else if (cam.isOrthographicCamera) {
+    cam.zoom = THREE.MathUtils.clamp(
+      delta >= 0 ? cam.zoom * zoomScale : cam.zoom / zoomScale,
+      controls.minZoom,
+      controls.maxZoom
+    );
+    cam.updateProjectionMatrix();
+  }
+}
+
+function fastDragMagnitude(dx, dy) {
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  return ax > ay ? ax + ay * 0.4142 : ay + ax * 0.4142;
+}
+
+function beginHoudiniZoomDrag(event) {
+  if (navigationStyle !== "houdini" || event.button !== 2 || !event.altKey) return;
+  houdiniZoomDrag = { pointerId: event.pointerId, lastX: event.clientX, lastY: event.clientY };
+  renderer.domElement.setPointerCapture?.(event.pointerId);
+  updateInteractionLocks();
+  event.preventDefault();
+}
+
+function updateHoudiniZoomDrag(event) {
+  if (!houdiniZoomDrag || event.pointerId !== houdiniZoomDrag.pointerId) return;
+  const dx = event.clientX - houdiniZoomDrag.lastX;
+  const dy = event.clientY - houdiniZoomDrag.lastY;
+  houdiniZoomDrag.lastX = event.clientX;
+  houdiniZoomDrag.lastY = event.clientY;
+  if (dx === 0 && dy === 0) return;
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  const magnitude = fastDragMagnitude(dx, dy);
+  const sign = ay >= ax ? (dy < 0 ? -1 : 1) : (dx > 0 ? -1 : 1);
+  const delta = sign * magnitude;
+  dollyCameraByDrag(delta);
+  controls.update();
+  event.preventDefault();
+}
+
+function endHoudiniZoomDrag(event) {
+  if (!houdiniZoomDrag || (event?.pointerId !== undefined && event.pointerId !== houdiniZoomDrag.pointerId)) return;
+  const pointerId = houdiniZoomDrag.pointerId;
+  houdiniZoomDrag = null;
+  if (renderer.domElement.hasPointerCapture?.(pointerId)) renderer.domElement.releasePointerCapture(pointerId);
   updateInteractionLocks();
 }
 
@@ -25284,6 +25441,7 @@ function selectLock(id, options = {}) {
   refreshStrandSelectionConsumers({
     syncActiveInputs: true
   });
+  retargetFloatingStrandEditors();
 }
 
 function deselectStrandsForGuideEditor() {
@@ -25653,6 +25811,7 @@ function updateAttributeEditorMode() {
   drawBrushPresetInput.closest(".creation-preset-row")?.classList.toggle("hidden", activeTool === "procedural-draw");
   drawContinueFromTipInput.closest(".toggle-row")?.classList.toggle("hidden", activeTool === "procedural-draw");
   sculptMoveToolPanel.classList.toggle("hidden", !sculptBrushToolActive());
+  updateSculptScaleModeRow();
   polyBrushToolPanel.classList.toggle("hidden", activeTool !== "poly");
   loftSurfaceToolPanel.classList.toggle("hidden", activeTool !== "surface-loft");
   curveSurfaceToolPanel.classList.toggle("hidden", activeTool !== "curve-surface");
@@ -27370,8 +27529,10 @@ function configureNavigationMouseButtons() {
   controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
   controls.mouseButtons.MIDDLE = navigationStyle === "blender"
     ? THREE.MOUSE.ROTATE
-    : THREE.MOUSE.DOLLY;
-  controls.mouseButtons.RIGHT = navigationStyle === "blender"
+    : navigationStyle === "houdini"
+      ? THREE.MOUSE.PAN
+      : THREE.MOUSE.DOLLY;
+  controls.mouseButtons.RIGHT = navigationStyle === "blender" || navigationStyle === "houdini"
     ? null
     : THREE.MOUSE.PAN;
   syncNavigationModifierLocks();
@@ -29490,11 +29651,13 @@ newHairMaterialButton.addEventListener("click", () => {
 });
 
 addProjectHairMaterialButton.addEventListener("click", () => createProjectHairMaterial());
+deleteProjectHairMaterialButton.addEventListener("click", deleteActiveHairMaterial);
 hairMaterialOutliner.addEventListener("click", (event) => {
   const item = event.target.closest("[data-hair-material-id]");
   if (!item) return;
   activeHairMaterialId = item.dataset.hairMaterialId;
   syncHairMaterialEditor();
+  hairMaterialOutliner.querySelector(`[data-hair-material-id="${CSS.escape(item.dataset.hairMaterialId)}"]`)?.focus();
 });
 
 [
@@ -30133,6 +30296,7 @@ scalpGuideMeshFileInput.addEventListener("change", () => {
 });
 document.querySelector("#saveCurrentPreset").addEventListener("click", saveHairProjectFile);
 document.querySelector("#devSaveProject").addEventListener("click", saveHairProjectThroughLocalDialog);
+document.querySelector("#quickSaveProject").addEventListener("click", saveHairProjectQuickly);
 presetFilterButtons.forEach((button) => button.addEventListener("click", () => {
   activePresetFilter = button.dataset.presetFilter;
   renderPresetLibrary();
@@ -31495,7 +31659,7 @@ recentProjectsMenu.addEventListener("click", async (event) => {
 });
 appMenuDropdowns.forEach((menu) => {
   menu.addEventListener("click", (event) => {
-    if (event.target.closest("button")) closeAppMenus();
+    if (event.target.closest("button") && !event.target.closest("#toggleTurntable")) closeAppMenus();
   });
 });
 toggleTurntableButton.addEventListener("click", () => setTurntableActive(!turntableActive));
@@ -31519,6 +31683,177 @@ setOutlinerFolderColorsEnabled(outlinerFolderColorsEnabled, { persist: false });
 setControlPointDisplaySize(controlPointDisplaySize, { persist: false });
 setViewportBackgroundColor(viewportBackgroundColor, { persist: false });
 setDefaultHairShader(defaultHairShader, { persist: false });
+updateSculptScaleModeRow();
+
+function initPanelResizeHandles() {
+  const studioShell = document.querySelector(".studio-shell");
+  const outlinerHandle = document.querySelector("#outlinerResizeHandle");
+  const attributeHandle = document.querySelector("#attributeResizeHandle");
+  if (!studioShell || !outlinerHandle || !attributeHandle) return;
+
+  const applyWidth = (variable, storageKey, value, min, max) => {
+    const next = Math.max(min, Math.min(max, Math.round(value)));
+    studioShell.style.setProperty(variable, `${next}px`);
+    writeStoredPreference(window, storageKey, next);
+    resize();
+    updateSnappedFloatingPanels();
+  };
+  const restoreWidth = (variable, storageKey, fallback, min, max) => {
+    const saved = Number(readStoredPreference(window, storageKey, { fallback }));
+    applyWidth(variable, storageKey, Number.isFinite(saved) && saved > 0 ? saved : fallback, min, max);
+  };
+
+  restoreWidth("--outliner-width", "anime-hair-studio-outliner-width", 252, 160, 480);
+  restoreWidth("--attribute-width", "anime-hair-studio-attribute-width", 360, 280, 640);
+
+  const bindResize = (handle, variable, storageKey, min, max, invert) => {
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      handle.classList.add("dragging");
+      handle.setPointerCapture?.(event.pointerId);
+      const startX = event.clientX;
+      const startWidth = parseFloat(getComputedStyle(studioShell).getPropertyValue(variable)) || (variable === "--outliner-width" ? 252 : 360);
+      const onMove = (moveEvent) => {
+        const delta = moveEvent.clientX - startX;
+        applyWidth(variable, storageKey, startWidth + (invert ? -delta : delta), min, max);
+      };
+      const onUp = () => {
+        handle.classList.remove("dragging");
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onUp);
+        handle.removeEventListener("pointercancel", onUp);
+      };
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onUp);
+      handle.addEventListener("pointercancel", onUp);
+    });
+  };
+
+  bindResize(outlinerHandle, "--outliner-width", "anime-hair-studio-outliner-width", 160, 480, false);
+  bindResize(attributeHandle, "--attribute-width", "anime-hair-studio-attribute-width", 280, 640, true);
+}
+initPanelResizeHandles();
+
+function updateSnappedFloatingPanels() {
+  const snapTarget = document.querySelector(".tool-panel");
+  if (!snapTarget) return;
+  const targetLeft = snapTarget.getBoundingClientRect().left;
+  document.querySelectorAll(".profile-dialog.floating-snapped").forEach((dialog) => {
+    dialog.style.left = `${targetLeft - dialog.offsetWidth}px`;
+  });
+}
+
+function initFloatingPanelControls() {
+  const snapTarget = document.querySelector(".tool-panel");
+  const snapThreshold = 2;
+
+  document.querySelectorAll(".profile-dialog").forEach((dialog) => {
+    dialog.style.margin = "0";
+    const head = dialog.querySelector(".profile-dialog-head");
+    if (!head) return;
+
+    const detach = () => {
+      const rect = dialog.getBoundingClientRect();
+      dialog.style.right = "auto";
+      dialog.style.bottom = "auto";
+      dialog.style.left = `${rect.left}px`;
+      dialog.style.top = `${rect.top}px`;
+    };
+
+    // Drag to move (head as handle, excluding buttons), with right-edge snap to the attribute panel
+    let drag = null;
+    head.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || event.target.closest("button")) return;
+      const rect = dialog.getBoundingClientRect();
+      detach();
+      drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
+      head.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+    });
+    head.addEventListener("pointermove", (event) => {
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const maxLeft = Math.max(8, window.innerWidth - dialog.offsetWidth - 8);
+      const maxTop = Math.max(8, window.innerHeight - dialog.offsetHeight - 8);
+      let left = THREE.MathUtils.clamp(drag.left + event.clientX - drag.x, 8, maxLeft);
+      const top = THREE.MathUtils.clamp(drag.top + event.clientY - drag.y, 8, maxTop);
+      if (snapTarget) {
+        const targetLeft = snapTarget.getBoundingClientRect().left;
+        if (Math.abs(left + dialog.offsetWidth - targetLeft) <= snapThreshold) {
+          left = targetLeft - dialog.offsetWidth;
+          dialog.classList.add("floating-snapped");
+        } else {
+          dialog.classList.remove("floating-snapped");
+        }
+      } else {
+        dialog.classList.remove("floating-snapped");
+      }
+      dialog.style.left = `${left}px`;
+      dialog.style.top = `${top}px`;
+    });
+    const endDrag = (event) => {
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      head.releasePointerCapture?.(event.pointerId);
+      drag = null;
+    };
+    head.addEventListener("pointerup", endDrag);
+    head.addEventListener("pointercancel", endDrag);
+
+    // Resize via a bottom-right handle
+    let handle = dialog.querySelector(".dialog-resize-handle");
+    if (!handle) {
+      handle = document.createElement("div");
+      handle.className = "dialog-resize-handle";
+      dialog.appendChild(handle);
+    }
+    let resize = null;
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      const rect = dialog.getBoundingClientRect();
+      detach();
+      resize = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, width: rect.width, height: rect.height };
+      handle.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    handle.addEventListener("pointermove", (event) => {
+      if (!resize || resize.pointerId !== event.pointerId) return;
+      const width = THREE.MathUtils.clamp(resize.width + event.clientX - resize.x, 300, 720);
+      const height = THREE.MathUtils.clamp(resize.height + event.clientY - resize.y, 240, window.innerHeight - 16);
+      dialog.style.width = `${width}px`;
+      dialog.style.height = `${height}px`;
+    });
+    const endResize = (event) => {
+      if (!resize || resize.pointerId !== event.pointerId) return;
+      handle.releasePointerCapture?.(event.pointerId);
+      resize = null;
+    };
+    handle.addEventListener("pointerup", endResize);
+    handle.addEventListener("pointercancel", endResize);
+  });
+}
+initFloatingPanelControls();
+
+function updateSculptBrushDockCompact() {
+  const dock = document.querySelector("#sculptBrushDock");
+  if (!dock || !viewportPanel || dock.classList.contains("hidden")) return;
+  if (!dock.querySelector(".sculpt-brush-button")) return;
+
+  // Measure the dock's natural content width in each state (scrollWidth = max-content).
+  dock.classList.remove("dock-compact", "dock-icons");
+  const fullWidth = dock.scrollWidth;
+  dock.classList.add("dock-compact");
+  const compactWidth = dock.scrollWidth;
+  dock.classList.remove("dock-compact");
+  dock.classList.add("dock-icons");
+  const iconWidth = dock.scrollWidth;
+
+  const available = Math.max(0, viewportPanel.clientWidth - 16);
+  dock.classList.remove("dock-compact", "dock-icons");
+  if (available < compactWidth) dock.classList.add("dock-icons");
+  else if (available < fullWidth) dock.classList.add("dock-compact");
+}
+updateSculptBrushDockCompact();
 openPreferencesButton.addEventListener("click", openPreferencesDialog);
 preferenceCategoryButtons.forEach((button) => {
   button.addEventListener("click", () => setPreferenceCategory(button.dataset.preferenceCategory));
@@ -31694,7 +32029,6 @@ window.addEventListener("dragenter", (event) => {
   }
   if (!dragContainsReferenceImage(event)) return;
   event.preventDefault();
-  prepareReferenceImageDrop();
   setReferenceImageDragActive(true);
   setReferenceDropHover(event);
 });
@@ -31708,7 +32042,6 @@ window.addEventListener("dragover", (event) => {
   if (!dragContainsReferenceImage(event)) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = "copy";
-  prepareReferenceImageDrop();
   setReferenceImageDragActive(true);
   setReferenceDropHover(event);
 });
@@ -31735,6 +32068,7 @@ window.addEventListener("drop", async (event) => {
   setReferenceImageDragActive(false);
   if (!files.length) return;
   event.preventDefault();
+
   if (!destination) return;
   try {
     const type = destination === "overlay" ? "overlay" : "plane";
@@ -32083,6 +32417,13 @@ proportionalLockRootInput.addEventListener("change", () => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
+    event.preventDefault();
+    if (event.repeat) return;
+    if (event.shiftKey) saveHairProjectFile();
+    else saveHairProjectQuickly();
+    return;
+  }
   const tag = document.activeElement?.tagName?.toLowerCase();
   let editingField = tag === "input"
     || tag === "textarea"
@@ -32282,7 +32623,12 @@ window.addEventListener("keydown", (event) => {
   }
   if (event.key === "Delete") {
     event.preventDefault();
-    if (!event.repeat) deleteCurrentSelection();
+    if (event.repeat) return;
+    if (hairMaterialPanel.contains(document.activeElement)) {
+      deleteActiveHairMaterial();
+      return;
+    }
+    deleteCurrentSelection();
     return;
   }
   if (event.code === "Space") {
@@ -32795,6 +33141,7 @@ function resize() {
   const { clientWidth, clientHeight } = viewport;
   updateCameraProjectionForViewport();
   renderer.setSize(clientWidth, clientHeight, false);
+  updateSculptBrushDockCompact();
   referenceImages
     .filter((reference) => reference.type === "overlay")
     .forEach(applyReferenceImageRuntime);
@@ -33777,11 +34124,12 @@ function captureSculptMoveStrokeInfluence(
 }
 
 function beginSculptMoveStroke(event) {
+  const reverseTool = ["sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient"].includes(activeTool);
   if (
     !sculptBrushToolActive()
     || viewportEditMode !== "strand"
     || event.button !== 0
-    || event.ctrlKey
+    || (!reverseTool && event.ctrlKey)
     || event.altKey
     || event.metaKey
   ) return;
@@ -33812,6 +34160,9 @@ function beginSculptMoveStroke(event) {
           planeOffset
         )
       : new Map(),
+    reverse: Boolean(event.ctrlKey),
+    scaleMode: activeTool === "sculpt-scale" ? (document.querySelector("#sculptScaleMode")?.value || "scale") : null,
+    cutExtendOffset: 0,
     editedLockIds: new Set(),
     snapshots: snapshotLocks.map((lock) => ({
       lockId: lock.id,
@@ -33820,7 +34171,12 @@ function beginSculptMoveStroke(event) {
       pointScales: lock.pointScales.map((scale) => ({ ...scale })),
       pointWidths: [...lock.pointWidths],
       width: lock.width
-    }))
+    })),
+    originalCurves: new Map(
+      locks.filter(sculptBrushEditableLock)
+        .filter((lock) => lock.points.length >= 2)
+        .map((lock) => [lock.id, new THREE.CatmullRomCurve3(lock.points.map((point) => point.clone()))])
+    )
   };
   renderer.domElement.setPointerCapture?.(event.pointerId);
   updateInteractionLocks();
@@ -33845,7 +34201,12 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
   const falloff = Number(sculptBrushFalloffInput.value);
   const smoothBrushActive = effectiveSculptBrushTool() === "sculpt-smooth";
   const inflateBrushActive = effectiveSculptBrushTool() === "sculpt-inflate";
-  const fixedMoveBrushInfluence = !smoothBrushActive && !inflateBrushActive;
+  const slideBrushActive = effectiveSculptBrushTool() === "sculpt-slide";
+  const scaleBrushActive = effectiveSculptBrushTool() === "sculpt-scale";
+  const pushBrushActive = effectiveSculptBrushTool() === "sculpt-push";
+  const orientBrushActive = effectiveSculptBrushTool() === "sculpt-orient";
+  const reverse = Boolean(stroke.reverse);
+  const fixedMoveBrushInfluence = !smoothBrushActive && !inflateBrushActive && !slideBrushActive && !scaleBrushActive && !pushBrushActive && !orientBrushActive;
   const strokeDistance = Math.hypot(deltaX, deltaY);
   const changedSources = [];
 
@@ -33873,7 +34234,60 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
       const weight = Math.max(sourceWeight, partnerWeight);
       if (weight <= 0) continue;
       pointWeights[pointIndex] = weight;
-      if (smoothBrushActive) continue;
+      if (slideBrushActive) {
+        if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
+        const curve = stroke.originalCurves?.get(source.id);
+        if (curve) {
+          const t = pointIndex / Math.max(1, source.points.length - 1);
+          const tangent = curve.getTangent(t).normalize();
+          const dragWorld = sculptBrushWorldDelta(sourcePoint, deltaX, deltaY, rect);
+          const amount = (reverse ? -1 : 1) * weight * strength * dragWorld.dot(tangent);
+          sourcePoint.addScaledVector(tangent, amount);
+          const basePoint = source.groupLatticeBasePoints?.[pointIndex];
+          if (basePoint) basePoint.addScaledVector(tangent, amount);
+          sourceChanged = true;
+        }
+        continue;
+      }
+      if (pushBrushActive) {
+        if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
+        const curve = stroke.originalCurves?.get(source.id);
+        if (curve) {
+          const t = pointIndex / Math.max(1, source.points.length - 1);
+          const point = curve.getPoint(t);
+          const tangent = curve.getTangent(t).normalize();
+          const up = guidedNormalAt(source, point, tangent, t)
+            .applyAxisAngle(tangent, sampleArray(source.pointTwists || [], t))
+            .normalize();
+          const dragWorld = sculptBrushWorldDelta(sourcePoint, deltaX, deltaY, rect);
+          const amount = (reverse ? -1 : 1) * weight * strength * dragWorld.dot(up);
+          sourcePoint.addScaledVector(up, amount);
+          const basePoint = source.groupLatticeBasePoints?.[pointIndex];
+          if (basePoint) basePoint.addScaledVector(up, amount);
+          sourceChanged = true;
+        }
+        continue;
+      }
+      if (orientBrushActive) {
+        if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
+        if (!source.pointTwists) source.pointTwists = source.points.map(() => 0);
+        const curve = stroke.originalCurves?.get(source.id);
+        if (curve) {
+          const t = pointIndex / Math.max(1, source.points.length - 1);
+          const tangent = curve.getTangent(t).normalize();
+          const point = curve.getPoint(t);
+          let targetUp = camera.position.clone().sub(point).projectOnPlane(tangent);
+          if (targetUp.lengthSq() < 0.0001) targetUp.set(0, 1, 0).projectOnPlane(tangent);
+          targetUp.normalize();
+          const currentUp = curveFrameAt(source, t).z;
+          const angle = signedAngleAroundAxis(currentUp, targetUp, tangent);
+          source.pointTwists[pointIndex] += angle * weight * strength * 0.08;
+          sourceChanged = true;
+        }
+        continue;
+      }
+            if (smoothBrushActive) continue;
+      if (scaleBrushActive) continue;
       if (!stroke.undoCaptured) {
         pushUndoState();
         stroke.undoCaptured = true;
@@ -33900,7 +34314,45 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
         source.groupLatticeBasePoints[pointIndex].add(worldDelta);
       }
       sourceChanged = true;
+
     }
+    if (scaleBrushActive) {
+      const unitAffected = pointWeights.some((pointWeightValue) => pointWeightValue > 0);
+      if (unitAffected) {
+        if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
+        if (stroke.scaleMode === "cut-extend") {
+          // Whole-strand Cut/Extend: uniform parameter scaling preserves current spacing.
+          const curve = stroke.originalCurves?.get(source.id);
+          if (curve) {
+            stroke.cutExtendOffset += (reverse ? -1 : 1) * strength * strokeDistance * 0.01;
+            const factor = Math.max(0.02, 1 + stroke.cutExtendOffset);
+            for (let index = 1; index < source.points.length; index += 1) {
+              const t0 = index / Math.max(1, source.points.length - 1);
+              const t1 = t0 * factor;
+              let position;
+              if (t1 <= 1) {
+                position = curve.getPoint(Math.max(0, t1));
+              } else {
+                position = curve.getPoint(1).clone()
+                  .addScaledVector(curve.getTangent(1).normalize(), (t1 - 1) * curve.getLength());
+              }
+              source.points[index].copy(position);
+            }
+            sourceChanged = true;
+          }
+        } else {
+          // Scale mode: root-anchored uniform scaling, point order preserved (no scalp collision).
+          const anchor = source.points[0];
+          for (let index = 1; index < source.points.length; index += 1) {
+            const direction = source.points[index].clone().sub(anchor);
+            const factor = Math.max(0.02, 1 + (reverse ? -1 : 1) * strength * strokeDistance * 0.01);
+            source.points[index].copy(anchor).addScaledVector(direction, factor);
+          }
+          sourceChanged = true;
+        }
+      }
+    }
+
     if (smoothBrushActive) {
       const smoothingWeights = proportionalEditing
         ? proportionalSculptWeights(
@@ -33916,6 +34368,17 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
         0.04,
         { preserveTip: sculptSmoothPreserveTipsInput.checked }
       );
+      const smoothTwistDeltas = smoothSculptTwistDeltas(source.pointTwists || [], smoothingWeights, strength);
+      smoothTwistDeltas.forEach((delta, pointIndex) => {
+        if (delta === 0) return;
+        if (!stroke.undoCaptured) {
+          pushUndoState();
+          stroke.undoCaptured = true;
+        }
+        if (!source.pointTwists) source.pointTwists = source.points.map(() => 0);
+        source.pointTwists[pointIndex] += delta;
+        sourceChanged = true;
+      });
       smoothDeltas.forEach((delta, pointIndex) => {
         if (pointIndex === 0 || (delta.x === 0 && delta.y === 0 && delta.z === 0)) return;
         if (!stroke.undoCaptured) {
@@ -34359,6 +34822,7 @@ window.addEventListener("pointermove", updateScalpBuilderStroke);
 window.addEventListener("pointermove", updatePanelSplitHandleDrag);
 window.addEventListener("pointermove", updateCapsuleGuideLoopHover);
 window.addEventListener("pointermove", updateCapsuleGuideLoopDrag);
+window.addEventListener("pointermove", updateHoudiniZoomDrag, true);
 window.addEventListener("pointerup", endViewSnap);
 window.addEventListener("pointerup", finishTaperMeshPointDrag, true);
 window.addEventListener("pointerup", finishReferenceCrop, true);
@@ -34388,6 +34852,7 @@ window.addEventListener("pointerup", finishCurvePointInsertion, true);
 window.addEventListener("pointerup", finishPointRemoval, true);
 window.addEventListener("pointerup", endBlenderNavigation);
 window.addEventListener("pointerup", endAltOrbit);
+window.addEventListener("pointerup", endHoudiniZoomDrag);
 window.addEventListener("pointerup", endSelectPointerCapture);
 window.addEventListener("pointercancel", endViewSnap);
 window.addEventListener("pointercancel", (event) => finishTaperMeshPointDrag(event, { cancel: true }), true);
@@ -34419,6 +34884,7 @@ window.addEventListener("pointercancel", () => {
 });
 window.addEventListener("pointercancel", (event) => finishSelectionMarquee(event, { cancel: true }));
 window.addEventListener("pointercancel", endAltOrbit);
+window.addEventListener("pointercancel", endHoudiniZoomDrag);
 window.addEventListener("pointercancel", endSelectPointerCapture);
 window.addEventListener("pointerup", (event) => {
   if (activeTool === "place" && finishPlacementPointer(event)) {
@@ -34445,6 +34911,7 @@ renderer.domElement.addEventListener("pointerdown", beginPolyBrushPointer, true)
 renderer.domElement.addEventListener("pointerdown", beginBlenderNavigation, true);
 renderer.domElement.addEventListener("pointerdown", trackViewportPointerDown, true);
 renderer.domElement.addEventListener("pointerdown", prepareSelectPointerCapture, true);
+renderer.domElement.addEventListener("pointerdown", beginHoudiniZoomDrag, true);
 renderer.domElement.addEventListener("pointerdown", prepareCurvePointSelection, true);
 renderer.domElement.addEventListener("pointerdown", beginAltOrbit, true);
 renderer.domElement.addEventListener("pointerdown", prioritizeScalpBuilderPointSelection, true);

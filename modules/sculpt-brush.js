@@ -101,3 +101,22 @@ export function pointInCameraFacingHalfSpace(point, planeNormal, planeOffset = 0
     + (Number(point?.z) || 0) * normal.z;
   return dot - (Number(planeOffset) || 0) >= -Math.abs(Number(tolerance) || 0);
 }
+
+export function smoothSculptTwistDeltas(twists, weights, strength = 1, rate = 0.04) {
+  const source = Array.isArray(twists) ? twists : [];
+  const influence = Math.min(1, Math.max(0, Number(strength) || 0));
+  const smoothingRate = Math.min(1, Math.max(0, Number(rate) || 0));
+  return source.map((twist, index) => {
+    if (index === 0 || source.length < 2) return 0;
+    const weight = Math.min(1, Math.max(0, Number(weights?.[index]) || 0));
+    const amount = weight * influence * smoothingRate;
+    if (amount <= 0) return 0;
+    const previous = Number(source[index - 1]) || 0;
+    const next = Number(source[index + 1]) || 0;
+    const diff = ((next - previous + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+    const target = previous + diff * 0.5;
+    let delta = target - twist;
+    delta = ((delta + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+    return delta * amount;
+  });
+}

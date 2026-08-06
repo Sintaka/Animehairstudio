@@ -41,7 +41,10 @@ export function workspaceForShortcutKey(key) {
 
 export function focusedControlShouldYieldToShortcut(focused, event) {
   const tag = focused?.tagName?.toLowerCase();
-  const yieldsAppShortcuts = tag === "select" || (tag === "input" && focused.type === "range");
+  const textEntry = tag === "textarea"
+    || focused?.isContentEditable === true
+    || (tag === "input" && ["text", "search", "email", "password", "url", "tel"].includes(focused.type));
+  const yieldsAppShortcuts = !textEntry && (tag === "select" || tag === "input");
   if (!yieldsAppShortcuts) return false;
   const key = String(event?.key || "").toLowerCase();
   if (event?.ctrlKey || event?.metaKey) return key === "z" || key === "y" || key === "d";

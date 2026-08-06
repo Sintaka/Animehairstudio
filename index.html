@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anime Hair Studio</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=20260805-100" />
+    <link rel="stylesheet" href="./styles.css?v=20260806-1" />
   </head>
   <body>
     <main class="studio-shell">
@@ -23,7 +23,8 @@
                     <p class="app-menu-empty">No recent projects</p>
                   </div>
                 </div>
-                <button id="saveCurrentPreset" type="button" role="menuitem"><span>Save</span></button>
+                <button id="saveCurrentPreset" type="button" role="menuitem"><span>Save as</span><kbd>Ctrl+Shift+S</kbd></button>
+                <button id="quickSaveProject" type="button" role="menuitem"><span>Quick Save</span><kbd>Ctrl+S</kbd></button>
                 <button
                   id="devSaveProject"
                   class="local-save-menu-item"
@@ -113,6 +114,7 @@
                   <select id="languageSelect">
                     <option value="en">English</option>
                     <option value="ja">日本語</option>
+                    <option value="zh">简体中文</option>
                   </select>
                 </label>
                 <div class="app-menu-version"><span>Version</span><strong id="appVersionLabel"></strong></div>
@@ -204,6 +206,7 @@
             <span>2D Overlay</span>
           </div>
         </div>
+
         <div id="selectionMarquee" class="selection-marquee hidden" aria-hidden="true"></div>
         <div id="referenceCropHandles" class="reference-crop-handles hidden" aria-hidden="true">
           <span data-crop-anchor="nw"></span>
@@ -222,8 +225,13 @@
             <div class="hidden" data-navigation-style-tip="blender"><kbd>Ctrl + Middle Mouse</kbd><span>Zoom</span></div>
             <div class="hidden" data-navigation-style-tip="blender"><kbd>Scrollwheel</kbd><span>Zoom</span></div>
             <div class="hidden" data-navigation-style-tip="blender"><kbd>Alt + Middle Mouse</kbd><span>Snap to cardinal views</span></div>
+            <div class="hidden" data-navigation-style-tip="houdini"><kbd>Alt + Left Mouse</kbd><span>Orbit</span></div>
+            <div class="hidden" data-navigation-style-tip="houdini"><kbd>Alt + Middle Mouse</kbd><span>Pan</span></div>
+            <div class="hidden" data-navigation-style-tip="houdini"><kbd>Alt + Right Mouse</kbd><span>Zoom</span></div>
+            <div class="hidden" data-navigation-style-tip="houdini"><kbd>Scrollwheel</kbd><span>Zoom</span></div>
             <div><kbd>F</kbd><span>Cycle selected and full-scene framing</span></div>
           </div>
+
         </div>
         <div id="sculptBrushCursor" class="sculpt-brush-cursor hidden" aria-hidden="true">
           <span class="sculpt-brush-falloff"></span>
@@ -231,11 +239,27 @@
         <div id="sculptBrushDock" class="sculpt-brush-dock" aria-label="Sculpt brushes">
           <button class="tool-button sculpt-brush-button" data-tool="sculpt-move" type="button" title="Move multiple strand points with a soft brush" aria-label="Move Brush">
             <span class="sculpt-move-icon" aria-hidden="true"></span>
-            <span>Move Brush</span>
+            <span class="brush-label"><span class="brush-name">Move</span><span class="brush-suffix"> Brush</span></span>
           </button>
           <button class="tool-button sculpt-brush-button" data-tool="sculpt-smooth" type="button" title="Smooth nearby strand points with a soft brush" aria-label="Smooth Brush">
             <span class="sculpt-smooth-icon" aria-hidden="true"></span>
-            <span>Smooth Brush</span>
+            <span class="brush-label"><span class="brush-name">Smooth</span><span class="brush-suffix"> Brush</span></span>
+          </button>
+          <button class="tool-button sculpt-brush-button" data-tool="sculpt-slide" type="button" title="Slide strand points along the curve trajectory" aria-label="Slide Brush">
+            <span class="sculpt-slide-icon" aria-hidden="true"></span>
+            <span class="brush-label"><span class="brush-name">Slide</span><span class="brush-suffix"> Brush</span></span>
+          </button>
+          <button class="tool-button sculpt-brush-button" data-tool="sculpt-push" type="button" title="Push strand points away from the surface along their local up" aria-label="Push Brush">
+            <span class="sculpt-push-icon" aria-hidden="true"></span>
+            <span class="brush-label"><span class="brush-name">Push</span><span class="brush-suffix"> Brush</span></span>
+          </button>
+          <button class="tool-button sculpt-brush-button" data-tool="sculpt-scale" type="button" title="Scale or cut/extend strands" aria-label="Scale Brush">
+            <span class="sculpt-scale-icon" aria-hidden="true"></span>
+            <span class="brush-label"><span class="brush-name">Scale</span><span class="brush-suffix"> Brush</span></span>
+          </button>
+          <button class="tool-button sculpt-brush-button" data-tool="sculpt-orient" type="button" title="Orient strand up toward the viewport-orthogonal direction" aria-label="Orient Brush">
+            <span class="sculpt-orient-icon" aria-hidden="true"></span>
+            <span class="brush-label"><span class="brush-name">Orient</span><span class="brush-suffix"> Brush</span></span>
           </button>
         </div>
         <div id="viewportEditModeControl" class="viewport-edit-mode" aria-label="Viewport workspace and edit mode">
@@ -580,6 +604,7 @@
           <div class="section-head">
             <span>Project Materials</span>
             <button id="addProjectHairMaterial" class="compact-icon-button" type="button" title="Create material" aria-label="Create material">+</button>
+            <button id="deleteProjectHairMaterial" class="compact-icon-button" type="button" title="Delete material" aria-label="Delete material">−</button>
           </div>
           <div id="hairMaterialOutliner" class="material-outliner" role="listbox" aria-label="Project materials"></div>
           <div class="subsection-label">Material Properties</div>
@@ -745,6 +770,12 @@
           <label id="sculptSmoothPreserveTipsSetting" class="toggle-row hidden" for="sculptSmoothPreserveTips" title="Keep the final control point fixed while smoothing the rest of each curve.">
             <span>Preserve Tips</span>
             <input id="sculptSmoothPreserveTips" type="checkbox" checked />
+          <label id="sculptScaleModeRow" class="compact-select-row hidden" for="sculptScaleMode">
+            <span>Scale Mode</span>
+            <select id="sculptScaleMode">
+              <option value="scale">Scale</option>
+              <option value="cut-extend">Cut/Extend</option>
+            </select>
           </label>
           <details class="sculpt-brush-debug-settings">
             <summary>Debug</summary>
@@ -1062,6 +1093,8 @@
         </div>
 
       </aside>
+      <div id="outlinerResizeHandle" class="panel-resize-handle outliner-resize-handle" title="Drag to resize outliner width" aria-hidden="true"></div>
+      <div id="attributeResizeHandle" class="panel-resize-handle attribute-resize-handle" title="Drag to resize attribute panel width" aria-hidden="true"></div>
     </main>
 
     <div id="clumpContextMenu" class="outliner-context-menu hidden" role="menu" aria-label="Clump actions">
@@ -1185,6 +1218,11 @@
             <div class="shortcut-row"><kbd>X</kbd><span>Toggle X-axis mirror editing</span></div>
           </section>
           <section class="shortcuts-section">
+            <h3>Local Adaptation</h3>
+            <div class="shortcut-row"><span class="shortcut-key-group"><kbd>Ctrl</kbd><span>+</span><kbd>S</kbd></span><span>Quick Save the project</span></div>
+            <div class="shortcut-row"><span class="shortcut-key-group"><kbd>Ctrl</kbd><span>+</span><kbd>Shift</kbd><span>+</span><kbd>S</kbd></span><span>Save as</span></div>
+          </section>
+          <section class="shortcuts-section">
             <h3>General and Viewport</h3>
             <div class="shortcut-row"><span class="shortcut-key-group"><kbd>Ctrl</kbd><span>+</span><kbd>Z</kbd></span><span>Undo</span></div>
             <div class="shortcut-row"><span class="shortcut-key-group"><kbd>Ctrl</kbd><span>+</span><kbd>Y</kbd></span><span>Redo</span></div>
@@ -1198,6 +1236,10 @@
             <div class="shortcut-row hidden" data-navigation-style-shortcut="blender"><kbd>Ctrl + Middle Mouse</kbd><span>Zoom the camera</span></div>
             <div class="shortcut-row hidden" data-navigation-style-shortcut="blender"><kbd>Scrollwheel</kbd><span>Zoom the camera</span></div>
             <div class="shortcut-row hidden" data-navigation-style-shortcut="blender"><span class="shortcut-key-group"><kbd>Alt</kbd><span>+</span><span>Middle Mouse drag</span></span><span>Snap the camera to cardinal views</span></div>
+            <div class="shortcut-row hidden" data-navigation-style-shortcut="houdini"><span class="shortcut-key-group"><kbd>Alt</kbd><span>+</span><span>Left drag</span></span><span>Orbit the camera</span></div>
+            <div class="shortcut-row hidden" data-navigation-style-shortcut="houdini"><span class="shortcut-key-group"><kbd>Alt</kbd><span>+</span><span>Middle Mouse drag</span></span><span>Pan the camera</span></div>
+            <div class="shortcut-row hidden" data-navigation-style-shortcut="houdini"><span class="shortcut-key-group"><kbd>Alt</kbd><span>+</span><span>Right drag</span></span><span>Zoom the camera</span></div>
+            <div class="shortcut-row hidden" data-navigation-style-shortcut="houdini"><kbd>Scrollwheel</kbd><span>Zoom the camera</span></div>
             <div class="shortcut-row"><kbd>F</kbd><span>Cycle selected and full-scene framing</span></div>
             <div class="shortcut-row radial-shortcut-row"><kbd>Hold Spacebar</kbd><span>Choose from the contextual radial menu</span></div>
             <div class="shortcut-row radial-shortcut-row"><kbd>Hold Q / W / E / R</kbd><span>Choose options for that tool</span></div>
@@ -1629,6 +1671,7 @@
                     <select id="navigationStylePreference">
                       <option value="anime-hair-studio">Anime Hair Studio</option>
                       <option value="blender">Blender</option>
+                      <option value="houdini">Houdini</option>
                     </select>
                   </label>
                   <label class="preference-toggle" for="cameraSmoothingPreference">
@@ -1968,6 +2011,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260805-44"></script>
+    <script type="module" src="./app.js?v=20260806-1"></script>
   </body>
 </html>
