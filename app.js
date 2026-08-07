@@ -14143,7 +14143,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   if (collapsed.length >= 3) {
     const ringBottom = [ringWorld[3], ringWorld[4], ringWorld[5]];
     const bottomSegments = rootRow <= surface.rowMax
-      ? Math.max(1, surface.rowMax - rootRow + 1)
+      ? Math.max(1, surface.rowMax - rootRow)
       : holeHeight;
     const bottomMidCount = bottomSegments - 1;
     let bottomNormal = new THREE.Vector3(0, 0, 1);
@@ -25225,7 +25225,7 @@ function createCurveObjects(lock) {
   let branchSweepStartHandle = null;
   if (lock.branchRootRegion) {
     branchSweepStartHandle = createSplitControlHandle();
-    branchSweepStartHandle.scale.setScalar(1.2);
+    branchSweepStartHandle.scale.setScalar(0.6);
     branchSweepStartHandle.renderOrder = 40;
     branchSweepStartHandle.material = new THREE.MeshBasicMaterial({
       color: 0xffd84d,
