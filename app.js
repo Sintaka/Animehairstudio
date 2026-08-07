@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-8";
+} from "./modules/app-config.js?v=20260808-9";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -21509,13 +21509,22 @@ function updateBranchRootRegionCenter(lock, u, v) {
   const vc = clampRegionParam((cross.left.v + cross.right.v) / 2);
   const nu = clampRegionParam(u);
   const nv = clampRegionParam(v);
-  if (Math.abs(nu - uc) < 0.0005 && Math.abs(nv - vc) < 0.0005) return;
+  // Keep the region center's offset from the root bone: the user may have dragged
+  // the region (points or rect) away from the bone, and a later bone move should
+  // follow with that relative offset instead of snapping the center back to the bone.
+  const bone = region.boneSync || { u: nu, v: nv };
+  const targetU = clampRegionParam(nu + (uc - clampRegionParam(bone.u)));
+  const targetV = clampRegionParam(nv + (vc - clampRegionParam(bone.v)));
+  // Anchor the bone sync point even when the region does not move (first sync), so a
+  // later bone move applies the preserved center offset instead of snapping to the bone.
+  region.boneSync = { u: nu, v: nv };
+  if (Math.abs(targetU - uc) < 0.0005 && Math.abs(targetV - vc) < 0.0005) return;
   const offsets = region.edgeOffsets || syncBranchRootRegionOffsets(lock);
-  cross.up = { u: clampRegionParam(nu - offsets.up), v: nv };
-  cross.down = { u: clampRegionParam(nu + offsets.down), v: nv };
-  cross.left = { u: nu, v: clampRegionParam(nv + offsets.left) };
-  cross.right = { u: nu, v: clampRegionParam(nv - offsets.right) };
-  region.center = { u: nu, v: nv };
+  cross.up = { u: clampRegionParam(targetU - offsets.up), v: targetV };
+  cross.down = { u: clampRegionParam(targetU + offsets.down), v: targetV };
+  cross.left = { u: targetU, v: clampRegionParam(targetV + offsets.left) };
+  cross.right = { u: targetU, v: clampRegionParam(targetV - offsets.right) };
+  region.center = { u: targetU, v: targetV };
   normalizeBranchRootRegion(lock);
   const parent = locks.find((item) => item.id === lock?.branchParentId);
   if (parent) rebuildLockGeometry(parent);
@@ -21550,6 +21559,7 @@ function branchRootRegionFromParam(parameter) {
   return {
     center: { u: u0, v: v0 },
     edgeOffsets: { up: u0 - up, down: down - u0, left: left - v0, right: v0 - right },
+    boneSync: null,
     cross: {
       // up = region top (toward root, smaller u); down = bottom (toward tip, larger u).
       up: { u: up, v: v0 },
@@ -21582,6 +21592,9 @@ function cloneBranchRootRegion(region, { mirror = false } = {}) {
       left: Math.max(0, cross.left.v - centerV),
       right: Math.max(0, centerV - cross.right.v)
     },
+    boneSync: region.boneSync
+      ? { u: clampRegionParam(region.boneSync.u), v: flip(region.boneSync.v) }
+      : null,
     cross
   };
 }

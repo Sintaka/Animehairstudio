@@ -101,3 +101,4 @@
 - [x] Region 选区左右方向修正：回退面板 v 轴翻转（右后方视角下大 v=世界左本应在面板右侧），改修根骨骼 v 符号（0.5 - across/width），根拖动同步与选区对应主发片左右均正确
 - [x] sweep 起点黄色手柄选中修复：命中手柄后 stopImmediatePropagation（不再同时启动 WidthCurve 拖动）；mouse 无按键 pointermove 不移动（兜底残留拖拽状态）
 - [x] 桥接接缝法线平滑：父侧边界顶点法线恢复为父发片作者法线（computeVertexNormals 后回写），接缝处颜色/着色与父发片一致
+- [x] Region 选区记忆：编辑选区后移动子骨骼不再把中心吸附回根骨骼（boneSync 记录相对偏移，跟随骨骼时保留用户手动位置）
