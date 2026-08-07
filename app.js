@@ -21077,8 +21077,8 @@ function enforceBranchRootPosition(lock) {
 
 const BRANCH_ROOT_REGION_DEFAULTS = Object.freeze({
   centerV: 0.25,
-  upLength: 0,
-  downLength: 0,
+  upLength: 0.04,
+  downLength: 0.04,
   leftWidth: 0.05,
   rightWidth: 0.05
 });
