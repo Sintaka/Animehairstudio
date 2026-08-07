@@ -14091,10 +14091,30 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   const topInfo = { holeBase: -1, midBase: -1 };
   if (holeTop.length >= 3) {
     const ringTop = [ringWorld[0], ringWorld[1], ringWorld[2]];
-    const t = 0.5;
+    // Bridge round (smoothstep): the added middle row curves inward along the negative
+    // band normal (DCC bridge-round), instead of sitting on the straight midpoint. The
+    // band normal comes from the across/up of the child ring edge and the parent hole edge.
+    const BRIDGE_ROUND_FACTOR = 0.2;
+    const across = new THREE.Vector3().subVectors(ringTop[2], ringTop[0]);
+    const up = new THREE.Vector3()
+      .addVectors(
+        new THREE.Vector3().subVectors(holeTop[0], ringTop[0]),
+        new THREE.Vector3().subVectors(holeTop[2], ringTop[2])
+      )
+      .multiplyScalar(0.5);
+    const outward = new THREE.Vector3().crossVectors(across, up);
+    if (outward.lengthSq() < 1e-8) outward.set(0, 1, 0);
+    outward.normalize();
+    const inward = outward.clone().negate();
     const midRow = ringTop.map((p, i) => {
-      const s = THREE.MathUtils.smoothstep(t, 0, 1);
-      return { x: p.x + (holeTop[i].x - p.x) * s, y: p.y + (holeTop[i].y - p.y) * s, z: p.z + (holeTop[i].z - p.z) * s };
+      const h = holeTop[i];
+      const span = Math.hypot(h.x - p.x, h.y - p.y, h.z - p.z);
+      const amount = span * BRIDGE_ROUND_FACTOR;
+      return {
+        x: p.x + (h.x - p.x) * 0.5 + inward.x * amount,
+        y: p.y + (h.y - p.y) * 0.5 + inward.y * amount,
+        z: p.z + (h.z - p.z) * 0.5 + inward.z * amount
+      };
     });
     topInfo.holeBase = vertices.length / 3;
     holeTop.forEach(pushBoundary);
