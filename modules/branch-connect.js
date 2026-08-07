@@ -14,7 +14,7 @@ const clamp01 = (v) => Math.min(1, Math.max(0, Number(v) || 0));
 export function squareChildRing(halfWidth, halfDepth, widthSegments = 2) {
   const hw = Math.max(0.0001, Number(halfWidth) || 0.08);
   const hd = Math.max(0.0001, Number(halfDepth) || 0.08);
-  const w = Math.max(2, Math.round(Number(widthSegments) || 2));
+  const w = Math.max(1, Math.round(Number(widthSegments) || 2));
   const points = [];
   for (let i = 0; i <= w; i += 1) points.push({ x: hw - (2 * hw * i) / w, z: hd });   // top right->left (0..w)
   points.push({ x: -hw, z: -hd });                                                    // left-bottom (w+1)

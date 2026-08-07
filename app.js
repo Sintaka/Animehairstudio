@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-2";
+} from "./modules/app-config.js?v=20260808-3";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -250,6 +250,7 @@ const VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY = "anime-hair-studio-viewport-bac
 const DEFAULT_VIEWPORT_BACKGROUND_COLOR = "#2b2730";
 const SIDE_NAMING_PERSPECTIVE_PREFERENCE_KEY = "anime-hair-studio-side-naming-perspective";
 const DEFAULT_HAIR_SHADER_PREFERENCE_KEY = "anime-hair-studio-default-hair-shader";
+const TRANSFORM_SPACE_PREFERENCE_KEY = "anime-hair-studio-transform-space";
 
 function saveBooleanPreference(key, enabled) {
   writeStoredPreference(window, key, Boolean(enabled));
@@ -2074,7 +2075,7 @@ let pendingLockGeometryFrame = null;
 const sculptBrushGeometryUpdates = new Set();
 let sculptBrushGeometryFrame = null;
 const SCULPT_BRUSH_GEOMETRY_FRAME_BUDGET_MS = 6;
-let objectSpaceEditing = true;
+let objectSpaceEditing = readStoredBooleanPreference(window, TRANSFORM_SPACE_PREFERENCE_KEY, true);
 let hierarchyEditing = false;
 let mirrorXEditing = false;
 let recursiveHierarchyTransforms = false;
@@ -10971,6 +10972,7 @@ function setDrawStrandMode(mode) {
 
 function setObjectSpaceEditing(enabled) {
   objectSpaceEditing = enabled;
+  writeStoredPreference(window, TRANSFORM_SPACE_PREFERENCE_KEY, enabled);
   spaceToggle.classList.toggle("active", objectSpaceEditing);
   spaceToggle.title = objectSpaceEditing ? "Transform space: Object (O)" : "Transform space: World (O)";
   transformSpaceButtons.forEach((button) => {
@@ -14145,7 +14147,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   let bottomBoundaryBase = collapsed.length >= 2 ? vertices.length / 3 : -1;
   if (collapsed.length >= 2) collapsed.forEach(pushBoundary);
   const bottomInfo = { holeBase: -1, midBase: -1, midCount: 0, width: 0 };
-  if (collapsed.length >= 3) {
+  if (collapsed.length >= 2) {
     const ringBottom = ringWorld.slice(ringWidth + 1);
     const bottomSegments = rootRow <= surface.rowMax
       ? Math.max(1, surface.rowMax - rootRow)
@@ -14218,7 +14220,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     if (!prev || Math.abs(v.x - prev.x) > 1e-6 || Math.abs(v.y - prev.y) > 1e-6 || Math.abs(v.z - prev.z) > 1e-6) holeTop.push(v);
   });
   const topInfo = { holeBase: -1, midBase: -1, midCount: 0, width: 0, outward: null };
-  if (holeTop.length >= 3) {
+  if (holeTop.length >= 2) {
     const ringTop = ringWorld.slice(0, ringWidth + 1);
     // Segments are measured from the child root row to the hole top, not the full hole
     // height: extending the hole's bottom must not add top-band segments.
@@ -14226,11 +14228,11 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       ? Math.max(1, rootRow - surface.rowMin)
       : holeHeight;
     const midCount = topSegments - 1;
-    const across = new THREE.Vector3().subVectors(ringTop[2], ringTop[0]);
+    const across = new THREE.Vector3().subVectors(ringTop[ringWidth], ringTop[0]);
     const up = new THREE.Vector3()
       .addVectors(
         new THREE.Vector3().subVectors(holeTop[0], ringTop[0]),
-        new THREE.Vector3().subVectors(holeTop[2], ringTop[2])
+        new THREE.Vector3().subVectors(holeTop[holeTop.length - 1], ringTop[ringWidth])
       )
       .multiplyScalar(0.5);
     const outward = new THREE.Vector3().crossVectors(across, up);
@@ -14365,18 +14367,6 @@ function createBranchChildGeometry(lock) {
   const parent = locks.find((item) => item.id === lock?.branchParentId);
   const surface = branchRootRegionSurface(lock);
   if (!parent || !surface) return null;
-  // Child lateral topology (the 2x1 "2"): half-width derives from the parent hole's
-  // lateral cross-section (world span of the region's left/right edge columns) so the
-  // child ring matches the carved rectangular hole.
-  const pPos = parent.mesh?.geometry?.getAttribute?.("position");
-  const pCols = Number(parent.mesh?.geometry?.userData?.gridColumns || 0);
-  const latRow = Math.round((surface.rowMin + surface.rowMax) / 2);
-  let holeHalfWidth = 0;
-  if (pPos && pCols >= 2 && surface.colMax > surface.colMin) {
-    const pa = new THREE.Vector3(pPos.getX(latRow * pCols + surface.colMin), pPos.getY(latRow * pCols + surface.colMin), pPos.getZ(latRow * pCols + surface.colMin));
-    const pb = new THREE.Vector3(pPos.getX(latRow * pCols + surface.colMax), pPos.getY(latRow * pCols + surface.colMax), pPos.getZ(latRow * pCols + surface.colMax));
-    holeHalfWidth = pa.distanceTo(pb) * 0.5;
-  }
   // The child's width follows its own Width attribute (so the Width slider works);
   // only the lateral SEGMENT count follows the parent selection's topology.
   const halfWidth = Math.max(0.001, Number(lock.width ?? lock.baseWidth ?? 0.16) * 0.5);
@@ -18726,6 +18716,7 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     groupLatticeBasePoints: snapshot.groupLatticeBasePoints?.map(dataToVector) || null,
     placementFrame: snapshot.placementFrame ? frameFromData(snapshot.placementFrame) : null
   };
+  if (lock.branchRootRegion) normalizeBranchRootRegion(lock);
   lock.rootAttachment = lock.rootAttachmentEnabled && !deferRootAttachment
     ? rootAttachmentFromData(snapshot.rootAttachment || null, lock, {
       resolveSurface: remapRootAttachment
@@ -21454,9 +21445,12 @@ function updateBranchRootRegionCenter(lock, u, v) {
   region.cross.down.u = clampRegionParam(region.cross.down.u + du);
   region.cross.left.v = clampRegionParam(region.cross.left.v + dv);
   region.cross.right.v = clampRegionParam(region.cross.right.v + dv);
+  normalizeBranchRootRegion(lock);
   const parent = locks.find((item) => item.id === lock?.branchParentId);
   if (parent) rebuildLockGeometry(parent);
   else rebuildLockGeometry(lock);
+  renderBranchRegionEditor();
+  updateBranchRegionMeshPoints();
 }
 
 const BRANCH_ROOT_REGION_DEFAULTS = Object.freeze({
@@ -21510,12 +21504,46 @@ function cloneBranchRootRegion(region, { mirror = false } = {}) {
 
 // Update one region control point from parent-surface params, then rebuild the child
 // geometry and re-carve the parent.
+// Keep the region rectangle ordered so drag clamps never snap a point to the
+// opposite side: up must be smaller u than down, left larger v than right. Old
+// files (and boundary clamps) can leave inverted or collapsed pairs.
+function normalizeBranchRootRegion(lock) {
+  const cross = lock?.branchRootRegion?.cross;
+  if (!cross) return false;
+  const MIN_REGION_SPAN = 0.02;
+  let changed = false;
+  if (cross.up.u >= cross.down.u) {
+    const u = cross.up.u; cross.up.u = cross.down.u; cross.down.u = u;
+    const v = cross.up.v; cross.up.v = cross.down.v; cross.down.v = v;
+    changed = true;
+  }
+  if (cross.left.v <= cross.right.v) {
+    const u = cross.left.u; cross.left.u = cross.right.u; cross.right.u = u;
+    const v = cross.left.v; cross.left.v = cross.right.v; cross.right.v = v;
+    changed = true;
+  }
+  if (cross.down.u - cross.up.u < MIN_REGION_SPAN) {
+    cross.up.u = clampRegionParam(cross.down.u - MIN_REGION_SPAN);
+    if (cross.down.u - cross.up.u < MIN_REGION_SPAN) cross.down.u = clampRegionParam(cross.up.u + MIN_REGION_SPAN);
+    changed = true;
+  }
+  if (cross.left.v - cross.right.v < MIN_REGION_SPAN) {
+    cross.right.v = clampRegionParam(cross.left.v - MIN_REGION_SPAN);
+    if (cross.left.v - cross.right.v < MIN_REGION_SPAN) cross.left.v = clampRegionParam(cross.right.v + MIN_REGION_SPAN);
+    changed = true;
+  }
+  return changed;
+}
+
 function setBranchRootRegionPoint(lock, name, param) {
   const cross = lock?.branchRootRegion?.cross;
   if (!cross?.[name] || !param) return;
   const MIN_REGION_SPAN = 0.02;
   const u = clampRegionParam(param.u);
   const v = clampRegionParam(param.v);
+  // Normalize first: an inverted pair would make the clamps snap the dragged point
+  // to the opposite side (e.g. clicking a point that already crossed its partner).
+  normalizeBranchRootRegion(lock);
   if (name === "up") {
     cross.up = { u: clampRegionParam(Math.min(u, cross.down.u - MIN_REGION_SPAN)), v };
   } else if (name === "down") {
@@ -21862,7 +21890,7 @@ function branchRegionTopEdgeCount(lock) {
     const prev = distinct[distinct.length - 1];
     if (!prev || Math.hypot(x - prev.x, y - prev.y, z - prev.z) > 1e-6) distinct.push({ x, y, z });
   }
-  return Math.max(2, Math.min(distinct.length - 1, 8));
+  return Math.max(1, Math.min(distinct.length - 1, 8));
 }
 
 function branchRootRegionWorldPoints(lock) {
@@ -36112,7 +36140,7 @@ function updateControlPointHover(event) {
 window.addEventListener("resize", resize);
 updateGuideControlsVisibility();
 updateHistoryButtons();
-setObjectSpaceEditing(false);
+setObjectSpaceEditing(objectSpaceEditing);
 setViewPlaneMove(false);
 setHierarchyEditing(false);
 setProportionalEditing(false);
