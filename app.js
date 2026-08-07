@@ -21226,10 +21226,24 @@ function captureBranchLocalState(lock) {
 function enforceBranchRootPosition(lock) {
   const parent = locks.find((item) => item.id === lock?.branchParentId);
   if (!parent || !lock?.points?.length) return null;
+  // Root slides along the parent guide line (2D plane): recompute the parameter from
+  // the child root position, then snap the root onto the guide.
+  const curve = new THREE.CatmullRomCurve3(parent.points);
+  let bestT = THREE.MathUtils.clamp(Number(lock.branchParentParameter ?? 0), 0, 1);
+  let bestDist = Infinity;
+  for (let i = 0; i <= 64; i += 1) {
+    const t = i / 64;
+    const p = curve.getPoint(t);
+    const d = p.distanceToSquared(lock.points[0]);
+    if (d < bestDist) { bestDist = d; bestT = t; }
+  }
+  lock.branchParentParameter = clampRegionParam(bestT);
+  // Snap the root onto the smooth guide line (slide in the guide 2D plane).
+  const rootPoint = curve.getPoint(lock.branchParentParameter);
   const frame = branchParentFrame(parent, lock.branchParentParameter);
-  lock.points[0].copy(frame.point);
-  if (lock.groupLatticeBasePoints?.[0]) lock.groupLatticeBasePoints[0].copy(frame.point);
-  lock.rootSurfacePoint = frame.point.clone();
+  lock.points[0].copy(rootPoint);
+  if (lock.groupLatticeBasePoints?.[0]) lock.groupLatticeBasePoints[0].copy(rootPoint);
+  lock.rootSurfacePoint = rootPoint.clone();
   lock.rootSurfaceNormal = frame.z.clone();
   lock.rootAttachment = null;
   return frame;
@@ -21356,6 +21370,7 @@ function beginBranchRegionDrag(event) {
     name: hit.object.userData.regionHandle || "root",
     isRoot: Boolean(hit.object.userData.regionRootHandle)
   };
+  // Record the pre-drag state once so Ctrl+Z reverts the drag (not the project load).
   renderer.domElement.setPointerCapture?.(event.pointerId);
   event.stopPropagation();
   event.preventDefault();
@@ -21372,18 +21387,9 @@ function updateBranchRegionDrag(event) {
   if (!hit) return;
   const param = branchSurfaceParamAtWorld(lock, hit.point);
   if (!param) return;
-  if (branchRegionDrag.isRoot) {
-    // Root bone control: slide along the parent guide line (u only, center v).
-    const old = lock.branchParentParameter ?? 0;
-    lock.branchParentParameter = clampRegionParam(param.u);
-    enforceBranchRootPosition(lock);
-    rebuildLockGeometry(lock);
-    if (parent) applyBranchRootRegionCarving(parent, parent.mesh.geometry);
-    updateCurveObjects(lock);
-    if (Math.abs(lock.branchParentParameter - old) > 0.0001) pushUndoState();
-  } else {
-    setBranchRootRegionPoint(lock, branchRegionDrag.name, param);
-  }
+  // Root sliding is handled by the normal root-bone move (enforceBranchRootPosition
+  // recomputes the guide parameter); the region drag only moves the 4 edge points.
+  setBranchRootRegionPoint(lock, branchRegionDrag.name, param);
 }
 function endBranchRegionDrag(event) {
   if (!branchRegionDrag) return;
@@ -24890,7 +24896,6 @@ function createCurveObjects(lock) {
   // snap to the parent surface and define the rectangular carve region; a root handle
   // slides along the parent guide line.
   const regionHandles = [];
-  let regionRootHandle = null;
   if (lock.branchRootRegion) {
     const makeRegionHandle = (color) => {
       const handle = new THREE.Mesh(
@@ -24907,8 +24912,7 @@ function createCurveObjects(lock) {
       handle.userData.regionHandle = name;
       regionHandles.push(handle);
     });
-    regionRootHandle = makeRegionHandle(0xff9a5e);
-    regionRootHandle.userData.regionRootHandle = true;
+
   }
   group.visible = false;
   return {
@@ -24924,8 +24928,7 @@ function createCurveObjects(lock) {
     surfaceObjectAnchorHandle,
     surfaceObjectAnchorStem,
     widthEdgeLines,
-    regionHandles,
-    regionRootHandle
+    regionHandles
   };
 }
 
@@ -25363,19 +25366,11 @@ function updateCurveObjects(lock, options = {}) {
         if (regionWorld[name]) handle.position.copy(regionWorld[name]);
       });
     }
-    const regionParent = locks.find((item) => item.id === lock.branchParentId);
-    if (lock.curveObjects.regionRootHandle && regionParent) {
-      const rootFrame = branchParentFrame(regionParent, lock.branchParentParameter);
-      lock.curveObjects.regionRootHandle.position.copy(rootFrame.point);
-    }
     // Region selection handles show by default for branch children (no toggle).
     const regionVisible = strandVisibleForDisplay(lock) && !lock.locked;
     lock.curveObjects.regionHandles.forEach((handle) => {
       handle.visible = regionVisible;
     });
-    if (lock.curveObjects.regionRootHandle) {
-      lock.curveObjects.regionRootHandle.visible = regionVisible;
-    }
   }
   if ("visible" in options) {
     const brushCurveVisibilityAllowed = !sculptBrushToolActive() || sculptBrushShowCurvesInput.checked;
