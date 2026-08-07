@@ -14028,17 +14028,9 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     const bSide = boundary.sides.find((s) => s.name === ringSide.name) || boundary.sides[sideIndex];
     const bVerts = [];
     for (let i = 0; i <= bSide.count; i += 1) bVerts.push(boundary.vertices[(bSide.start + i) % boundary.vertices.length]);
-    // Collapse consecutive coincident boundary vertices: creased-profile seams
-    // create zero-length edges that would emit degenerate faces (NaN shader
-    // derivatives -> fragmented triangles).
-    const collapsed = [];
-    bVerts.forEach((v) => {
-      const prev = collapsed[collapsed.length - 1];
-      if (!prev || Math.abs(v.x - prev.x) > 1e-6 || Math.abs(v.y - prev.y) > 1e-6 || Math.abs(v.z - prev.z) > 1e-6) collapsed.push(v);
-    });
-    if (collapsed.length < 2) return;
+    if (bVerts.length < 2) return;
     const boundaryBase = vertices.length / 3;
-    collapsed.forEach((v) => {
+    bVerts.forEach((v) => {
       vertices.push(v.x, v.y, v.z);
       let nx = 0; let ny = 1; let nz = 0;
       if (normalAttr && v.index != null) {
@@ -14055,7 +14047,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     });
     const rVerts = [];
     for (let i = 0; i <= ringSide.count; i += 1) rVerts.push(ringWorld[(ringSide.start + i) % ringWorld.length]);
-    sideJobs.push({ bVerts: collapsed, rVerts, boundaryBase, ringStart: ringSide.start });
+    sideJobs.push({ bVerts, rVerts, boundaryBase, ringStart: ringSide.start });
   });
   // Ring-side vertices are the sweep's row-0 ring (reused by index, no copies).
   const ringBase = vertices.length / 3;
@@ -14135,8 +14127,8 @@ function createBranchChildGeometry(lock) {
   const tangents = bridge ? [...bridge.tangents] : [];
   const uvs = bridge ? [...bridge.uvs] : [];
   const colors = bridge ? [...bridge.colors] : [];
-  const indices = bridge ? [...bridge.indices] : [];
-  const quadFaces = bridge ? [...bridge.quads] : [];
+  const indices = [];
+  const quadFaces = [];
   vertices.push(...sweepVertices);
   normals.push(...sweepNormals);
   tangents.push(...sweepTangents);
@@ -14168,6 +14160,8 @@ function createBranchChildGeometry(lock) {
     indices.push(a, b, endCenter, b, a, endCenter);
   });
   if (bridge) {
+    indices.push(...bridge.indices);
+    bridge.quads.forEach((q) => quadFaces.push(q));
     bridge.triangles.forEach((tr) => quadFaces.push(tr));
   } else {
     // Root cap only when there is no bridge.

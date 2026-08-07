@@ -76,15 +76,29 @@ export function holeBoundary(region, positions, gridRows, gridCols) {
 
 // March one boundary side (bn vertices) to one ring side (rn vertices).
 // Equal counts -> pure quads. Mismatched counts -> quads + a few seam triangles
-// (the "appropriate triangle insertion" case, avoids degenerate/collapsed quads).
 export function connectSide(boundary, ring, boundaryBase, ringBase) {
   const quads = [];
   const triangles = [];
   const bn = boundary.length;
   const rn = ring.length;
+  const realEdge = (verts, i) => {
+    const a = verts[i];
+    const b = verts[i + 1];
+    return Math.abs(a.x - b.x) > 1e-6 || Math.abs(a.y - b.y) > 1e-6 || Math.abs(a.z - b.z) > 1e-6;
+  };
   if (bn === rn) {
     for (let i = 0; i < bn - 1; i += 1) {
-      quads.push([boundaryBase + i, boundaryBase + i + 1, ringBase + i + 1, ringBase + i]);
+      const bReal = realEdge(boundary, i);
+      const rReal = realEdge(ring, i);
+      if (bReal && rReal) {
+        quads.push([boundaryBase + i, boundaryBase + i + 1, ringBase + i + 1, ringBase + i]);
+      } else if (bReal) {
+        // ring edge collapsed to a point -> triangle.
+        triangles.push([boundaryBase + i, boundaryBase + i + 1, ringBase + i]);
+      } else {
+        // boundary edge collapsed to a point -> triangle.
+        triangles.push([boundaryBase + i, ringBase + i + 1, ringBase + i]);
+      }
     }
     return { quads, triangles };
   }
@@ -113,11 +127,13 @@ export function connectSide(boundary, ring, boundaryBase, ringBase) {
     const rFrac = rNext >= rn - 1 ? Infinity : rProg[rNext];
     const advanceB = bFrac === rFrac ? b < bn - 1 : bFrac < rFrac;
     if (advanceB) {
-      if (rNext === r) triangles.push([boundaryBase + b, boundaryBase + bNext, ringBase + r]);
+      if (!realEdge(boundary, b)) triangles.push([boundaryBase + b, ringBase + rNext, ringBase + r]);
+      else if (rNext === r) triangles.push([boundaryBase + b, boundaryBase + bNext, ringBase + r]);
       else quads.push([boundaryBase + b, boundaryBase + bNext, ringBase + rNext, ringBase + r]);
       b = bNext;
     } else {
-      if (bNext === b) triangles.push([boundaryBase + b, ringBase + rNext, ringBase + r]);
+      if (!realEdge(ring, r)) triangles.push([boundaryBase + b, boundaryBase + bNext, ringBase + r]);
+      else if (bNext === b) triangles.push([boundaryBase + b, ringBase + rNext, ringBase + r]);
       else quads.push([boundaryBase + b, boundaryBase + bNext, ringBase + rNext, ringBase + r]);
       r = rNext;
     }
