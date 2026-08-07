@@ -33,4 +33,4 @@ python -m http.server 8080 --bind 127.0.0.1
 
 ## 最近版本 / Latest
 
-- Phase 2.13：TransformMode 默认 object 并持久化；Branch Root Region 选区顺序归一化（点选不再跳变）；根滑动后选区面板/3D 标记跟随；选区宽度=1 支持（子环 1 宽 + 顶/底直接桥接）；版本 0.1.4-Sintaka.0.2.15（2.13 修正：顶/底桥接端点特殊操作对单段直连也触发）。
+- Phase 2.13：TransformMode 默认 object 并持久化；Branch Root Region 选区顺序归一化（点选不再跳变）；根滑动后选区面板/3D 标记跟随；选区宽度=1 支持（子环 1 宽 + 顶/底直接桥接）；版本 0.1.4-Sintaka.0.2.16（Phase 2.14：选区边界压缩后恢复原尺寸；骨骼点击选中增强）。

@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-4";
+} from "./modules/app-config.js?v=20260808-5";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -14162,6 +14162,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     bottomInfo.midBase = vertices.length / 3;
     const emitBottomMidRow = (f) => {
       ringBottom.forEach((p, i) => {
+        if (i >= collapsed.length) return;
         const h = collapsed[i];
         const p0 = new THREE.Vector3(p.x, p.y, p.z);
         const p1 = new THREE.Vector3(h.x, h.y, h.z);
@@ -14247,6 +14248,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     topInfo.midBase = vertices.length / 3;
     const emitTopMidRow = (f) => {
       ringTop.forEach((p, i) => {
+        if (i >= holeTop.length) return;
         const h = holeTop[i];
         const p0 = new THREE.Vector3(p.x, p.y, p.z);
         const p1 = new THREE.Vector3(h.x, h.y, h.z);
@@ -18716,7 +18718,10 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     groupLatticeBasePoints: snapshot.groupLatticeBasePoints?.map(dataToVector) || null,
     placementFrame: snapshot.placementFrame ? frameFromData(snapshot.placementFrame) : null
   };
-  if (lock.branchRootRegion) normalizeBranchRootRegion(lock);
+  if (lock.branchRootRegion) {
+    normalizeBranchRootRegion(lock);
+    syncBranchRootRegionOffsets(lock);
+  }
   lock.rootAttachment = lock.rootAttachmentEnabled && !deferRootAttachment
     ? rootAttachmentFromData(snapshot.rootAttachment || null, lock, {
       resolveSurface: remapRootAttachment
@@ -21431,20 +21436,43 @@ function enforceBranchRootPosition(lock) {
   return frame;
 }
 
+// Keep the region's intended center and edge offsets in sync with the cross points.
+// The offsets are what recenter (root slide / rect move) preserves, so clamping at
+// the [0,1] boundary during a drag cannot permanently collapse the region into a
+// thin line that needs to be re-dragged back open.
+function syncBranchRootRegionOffsets(lock) {
+  const region = lock?.branchRootRegion;
+  const cross = region?.cross;
+  if (!region || !cross) return null;
+  const centerU = (cross.up.u + cross.down.u) / 2;
+  const centerV = (cross.left.v + cross.right.v) / 2;
+  region.center = { u: clampRegionParam(centerU), v: clampRegionParam(centerV) };
+  region.edgeOffsets = {
+    up: Math.max(0, centerU - cross.up.u),
+    down: Math.max(0, cross.down.u - centerU),
+    left: Math.max(0, cross.left.v - centerV),
+    right: Math.max(0, centerV - cross.right.v)
+  };
+  return region.edgeOffsets;
+}
+
 // Shift the branch region's center to follow the child root (u and v), so the
 // selection panel's relative position and the direct-bridge region stay in sync.
 function updateBranchRootRegionCenter(lock, u, v) {
   const region = lock?.branchRootRegion;
-  if (!region?.cross) return;
-  const uc = clampRegionParam((region.cross.up.u + region.cross.down.u) / 2);
-  const vc = clampRegionParam((region.cross.left.v + region.cross.right.v) / 2);
-  const du = clampRegionParam(u) - uc;
-  const dv = clampRegionParam(v) - vc;
-  if (Math.abs(du) < 0.0005 && Math.abs(dv) < 0.0005) return;
-  region.cross.up.u = clampRegionParam(region.cross.up.u + du);
-  region.cross.down.u = clampRegionParam(region.cross.down.u + du);
-  region.cross.left.v = clampRegionParam(region.cross.left.v + dv);
-  region.cross.right.v = clampRegionParam(region.cross.right.v + dv);
+  const cross = region?.cross;
+  if (!region || !cross) return;
+  const uc = clampRegionParam((cross.up.u + cross.down.u) / 2);
+  const vc = clampRegionParam((cross.left.v + cross.right.v) / 2);
+  const nu = clampRegionParam(u);
+  const nv = clampRegionParam(v);
+  if (Math.abs(nu - uc) < 0.0005 && Math.abs(nv - vc) < 0.0005) return;
+  const offsets = region.edgeOffsets || syncBranchRootRegionOffsets(lock);
+  cross.up = { u: clampRegionParam(nu - offsets.up), v: nv };
+  cross.down = { u: clampRegionParam(nu + offsets.down), v: nv };
+  cross.left = { u: nu, v: clampRegionParam(nv + offsets.left) };
+  cross.right = { u: nu, v: clampRegionParam(nv - offsets.right) };
+  region.center = { u: nu, v: nv };
   normalizeBranchRootRegion(lock);
   const parent = locks.find((item) => item.id === lock?.branchParentId);
   if (parent) rebuildLockGeometry(parent);
@@ -21472,14 +21500,20 @@ function branchRootRegionFromParam(parameter) {
   const u0 = clampRegionParam(parameter);
   const { centerV, upLength, downLength, leftWidth, rightWidth } = BRANCH_ROOT_REGION_DEFAULTS;
   const v0 = clampRegionParam(centerV);
+  const up = clampRegionParam(u0 - upLength);
+  const down = clampRegionParam(u0 + downLength);
+  const left = clampRegionParam(v0 + leftWidth);
+  const right = clampRegionParam(v0 - rightWidth);
   return {
+    center: { u: u0, v: v0 },
+    edgeOffsets: { up: u0 - up, down: down - u0, left: left - v0, right: v0 - right },
     cross: {
       // up = region top (toward root, smaller u); down = bottom (toward tip, larger u).
-      up: { u: clampRegionParam(u0 - upLength), v: v0 },
-      down: { u: clampRegionParam(u0 + downLength), v: v0 },
+      up: { u: up, v: v0 },
+      down: { u: down, v: v0 },
       // left = larger v (world-left for a left-side strand), right = smaller v.
-      left: { u: u0, v: clampRegionParam(v0 + leftWidth) },
-      right: { u: u0, v: clampRegionParam(v0 - rightWidth) }
+      left: { u: u0, v: left },
+      right: { u: u0, v: right }
     }
   };
 }
@@ -21489,14 +21523,23 @@ function cloneBranchRootRegion(region, { mirror = false } = {}) {
   const flip = (value) => (mirror ? 1 - clampRegionParam(value) : clampRegionParam(value));
   const left = mirror ? region.cross?.right : region.cross?.left;
   const right = mirror ? region.cross?.left : region.cross?.right;
+  const cross = {
+    up: { u: clampRegionParam(region.cross?.up?.u), v: flip(region.cross?.up?.v) },
+    down: { u: clampRegionParam(region.cross?.down?.u), v: flip(region.cross?.down?.v) },
+    left: { u: clampRegionParam(left?.u), v: flip(left?.v) },
+    right: { u: clampRegionParam(right?.u), v: flip(right?.v) }
+  };
+  const centerU = (cross.up.u + cross.down.u) / 2;
+  const centerV = (cross.left.v + cross.right.v) / 2;
   return {
-    center: { u: clampRegionParam(region.center?.u), v: flip(region.center?.v) },
-    cross: {
-      up: { u: clampRegionParam(region.cross?.up?.u), v: flip(region.cross?.up?.v) },
-      down: { u: clampRegionParam(region.cross?.down?.u), v: flip(region.cross?.down?.v) },
-      left: { u: clampRegionParam(left?.u), v: flip(left?.v) },
-      right: { u: clampRegionParam(right?.u), v: flip(right?.v) }
-    }
+    center: { u: clampRegionParam(centerU), v: clampRegionParam(centerV) },
+    edgeOffsets: {
+      up: Math.max(0, centerU - cross.up.u),
+      down: Math.max(0, cross.down.u - centerU),
+      left: Math.max(0, cross.left.v - centerV),
+      right: Math.max(0, centerV - cross.right.v)
+    },
+    cross
   };
 }
 
@@ -21512,14 +21555,17 @@ function normalizeBranchRootRegion(lock) {
   if (!cross) return false;
   const MIN_REGION_SPAN = 0.02;
   let changed = false;
+  const offsets = lock?.branchRootRegion?.edgeOffsets;
   if (cross.up.u >= cross.down.u) {
     const u = cross.up.u; cross.up.u = cross.down.u; cross.down.u = u;
     const v = cross.up.v; cross.up.v = cross.down.v; cross.down.v = v;
+    if (offsets) { const t = offsets.up; offsets.up = offsets.down; offsets.down = t; }
     changed = true;
   }
   if (cross.left.v <= cross.right.v) {
     const u = cross.left.u; cross.left.u = cross.right.u; cross.right.u = u;
     const v = cross.left.v; cross.left.v = cross.right.v; cross.right.v = v;
+    if (offsets) { const t = offsets.left; offsets.left = offsets.right; offsets.right = t; }
     changed = true;
   }
   if (cross.down.u - cross.up.u < MIN_REGION_SPAN) {
@@ -21553,6 +21599,7 @@ function setBranchRootRegionPoint(lock, name, param) {
   } else {
     cross.right = { u, v: clampRegionParam(Math.min(v, cross.left.v - MIN_REGION_SPAN)) };
   }
+  syncBranchRootRegionOffsets(lock);
   // Rebuild the parent from scratch so carving always starts from the full grid:
   // carving mutates quadFaces, so re-carving an already-carved mesh drifts the
   // row/col mapping and deletes extra fragments on every pass (Reset accumulation).
@@ -21688,10 +21735,16 @@ function updateBranchRegionCanvasDrag(event) {
     if (!start) return;
     const du = uv.u - branchRegionCanvasDrag.startU;
     const dv = uv.v - branchRegionCanvasDrag.startV;
-    cross.up = { u: clampRegionParam(start.up.u + du), v: clampRegionParam(start.up.v + dv) };
-    cross.down = { u: clampRegionParam(start.down.u + du), v: clampRegionParam(start.down.v + dv) };
-    cross.left = { u: clampRegionParam(start.left.u + du), v: clampRegionParam(start.left.v + dv) };
-    cross.right = { u: clampRegionParam(start.right.u + du), v: clampRegionParam(start.right.v + dv) };
+    const region = lock.branchRootRegion;
+    const offsets = region.edgeOffsets || syncBranchRootRegionOffsets(lock);
+    const centerU = clampRegionParam((start.up.u + start.down.u) / 2 + du);
+    const centerV = clampRegionParam((start.left.v + start.right.v) / 2 + dv);
+    cross.up = { u: clampRegionParam(centerU - offsets.up), v: centerV };
+    cross.down = { u: clampRegionParam(centerU + offsets.down), v: centerV };
+    cross.left = { u: centerU, v: clampRegionParam(centerV + offsets.left) };
+    cross.right = { u: centerU, v: clampRegionParam(centerV - offsets.right) };
+    region.center = { u: centerU, v: centerV };
+    normalizeBranchRootRegion(lock);
     const parent = locks.find((item) => item.id === lock?.branchParentId);
     if (parent) rebuildLockGeometry(parent);
     else rebuildLockGeometry(lock);
@@ -25223,6 +25276,33 @@ function strandControlPointHitFromEvent(event, lock = getSelectedLock()) {
       object: handle
     };
   });
+  // A highlighted (hovered) control point is "in range" by definition: accept a click
+  // on the highlight even when its projected center is past the fixed screen-pixel
+  // radius (small handles / close camera), so it never falls through to a width-edge
+  // drag or the parent hair underneath.
+  const hovered = hoveredControlPoint;
+  if (hovered?.userData?.lockId === lock.id && hovered.visible) {
+    hovered.getWorldPosition(strandControlPointWorldPosition);
+    strandControlPointScreenPosition
+      .copy(strandControlPointWorldPosition)
+      .project(camera);
+    if (strandControlPointScreenPosition.z >= -1 && strandControlPointScreenPosition.z <= 1) {
+      const screenX = rect.left + (strandControlPointScreenPosition.x + 1) * rect.width * 0.5;
+      const screenY = rect.top + (1 - strandControlPointScreenPosition.y) * rect.height * 0.5;
+      const screenDistance = Math.hypot(event.clientX - screenX, event.clientY - screenY);
+      if (
+        screenDistance <= STRAND_CONTROL_POINT_MIN_PICK_PIXELS * 2
+        && screenDistance < (nearest?.screenDistance ?? Infinity)
+      ) {
+        nearest = {
+          distance: camera.position.distanceTo(strandControlPointWorldPosition),
+          screenDistance,
+          point: strandControlPointWorldPosition.clone(),
+          object: hovered
+        };
+      }
+    }
+  }
   return nearest;
 }
 
@@ -35006,7 +35086,19 @@ function updateCurvePointTopologyCursor(event) {
 
 function prepareCurvePointSelection(event) {
   if (event.button !== 0) return;
-  if (!componentEditModeActive()) return;
+  if (!componentEditModeActive()) {
+    // Object mode: a highlighted (hovered) control point still selects its strand, so
+    // clicking a bone never falls through to the parent hair that sits underneath it.
+    const hovered = hoveredControlPoint;
+    if (hovered?.userData?.lockId && hovered.userData.pointIndex !== undefined) {
+      selectLock(hovered.userData.lockId, {
+        individualClumpMember: hovered.userData.lockId === selectedId && !clumpViewportSelection
+      });
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+    return;
+  }
   const removingCurvePoint = event.shiftKey && event.ctrlKey && !event.altKey && !event.metaKey;
   const insertingCurvePoint = event.shiftKey && event.altKey && !event.ctrlKey && !event.metaKey;
   const addingSelection = event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;

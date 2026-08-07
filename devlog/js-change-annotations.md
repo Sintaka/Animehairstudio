@@ -50,6 +50,12 @@
   - **侧面直接桥接（2.4r 已修正）**：子环 left（世界左）↔ 父 colMax+1（世界左）、right（世界右）↔ colMin（世界右），按**世界侧**匹配（网格 left/right 在世界相反）；右面绕序 flip 朝外。
   - **顶部（本次三步）**：① 洞 top（row9，世界 右→左 col2→col5，折痕零边折叠成 2 实边）↔ 子环 top（环点 0/1/2，世界 右→左），2src↔2dst 直接桥接；② 对桥接边**分段**：观察洞侧面未桥接边数（每侧 2 段）→ 每条桥接边 1 段需增至 2 段（新增 1 段 = 中间等比切分，注释后续复杂侦测）；③ 上部 poly 走向从线性改 **smoothstep 平滑**，完成子→主桥接过渡。
   - 直接桥接概念：把子环边**直接投影**到主发片最接近的面/线段去匹配。
+- **子发片深度重置 2.14（选区边界不塌缩 + 骨骼点击选中增强）**
+  - **选区边界压缩恢复**：region 新增 `edgeOffsets`（center→up/down/left/right 的距离，随点拖拽/恢复/克隆同步）；`updateBranchRootRegionCenter` 与面板矩形整体拖动改为「center ± edgeOffsets」派生 4 点（原先逐点 += delta 并各自 clamp 到 [0,1]），根骨骼拖到边界触发压缩后回到中心时**恢复原始宽高**，不再残留一条窄竖线需要重新拖开。旧文件缺 edgeOffsets → 恢复时由 cross 点计算（兼容）。验证：v 边界 v=1 压缩 vSpan 0.24→0.12，回到 v=0.5 恢复 0.24；u 边界同理。
+  - **桥接网格边界守卫**：emitTopMidRow/emitBottomMidRow 对 `i >= holeTop.length / collapsed.length` 跳过——region 拖到网格最末行（u→1，孔洞底边坍缩成少于环点数）不再抛 TypeError 崩溃。
+  - **骨骼点击选中增强（接近高亮 = 在范围内）**：`strandControlPointHitFromEvent` 对当前 `hoveredControlPoint`（高亮控制点）用 2 倍拾取半径（24px）优先命中——点击高亮骨骼不再因 12px 固定半径不中而落到宽度拖动条或父发片；`prepareCurvePointSelection` 在非 component 模式下点击高亮控制点也 selectLock 其所属发片并阻止穿透（不再误选到父发片）。验证：hover 命中 18px 处骨骼 → handle:true；30px 外 → false。
+  - **版本**：0.1.4-Sintaka.0.2.16（dailybuild +1）+ app-config 缓存号 bump。
+
 - **子发片深度重置 2.13（Transform 空间持久化 + 选区健壮性 + 宽度=1 支持）**
   - **TransformMode 持久化**：新增偏好键 `anime-hair-studio-transform-space`（默认 object=true）；`setObjectSpaceEditing` 写回 localStorage，启动 `setObjectSpaceEditing(objectSpaceEditing)` 应用存储值（不再强制 world）。旧版本无该键 → 默认 object，保持 localStorage 兼容。验证：切 world → 刷新仍是 world；默认加载为 object。
   - **选区健壮性（修复"点一下选区点跳到另一侧"）**：新增 `normalizeBranchRootRegion`——up.u<down.u、left.v>right.v 顺序归一化 + 最小跨度 0.02；`restoreLock` 恢复存档时统一归一化（旧文件倒置选区不再跳变，洞行列不变），`setBranchRootRegionPoint` 先归一化再钳制，`updateBranchRootRegionCenter` 移位后也归一化。验证：v0040 Side Left 3 加载后 up/down、left/right 顺序正确且洞仍为 row9-11/col1-2；拖 up 点 30px 平滑跟随不跳变。
