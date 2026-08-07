@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-10";
+} from "./modules/app-config.js?v=20260808-11";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -14201,13 +14201,16 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       });
     };
     for (let j = 1; j <= bottomMidCount; j += 1) emitBottomMidRow(j / bottomSegments);
-    if (bottomMidCount > 0) {
+    if (rootRow !== surface.rowMax) {
       // Endpoint special op (mirrors top band): subdivide the last segment at 0.3 from
-      // the parent so the side fill has an extra loop. Fill (segmented) bridges only.
+      // the parent so the side fill has an extra loop. Fires whenever the root is not
+      // pinned to the region's bottom edge - i.e. any side gap (>=1 edge) below the
+      // direct bridge, including a 1-segment indirect band. Direct bridge (root at the
+      // bottom edge) is closed on its own and needs no extra loop.
       emitBottomMidRow(1 - 0.3 / bottomSegments);
       bottomInfo.midCount = bottomMidCount + 1;
     } else {
-      // Direct 1-segment band: bridge straight to the hole, no extra loop.
+      // Direct bridge: band touches the root-level side fill directly, no extra loop.
       bottomInfo.midCount = 0;
     }
     bottomInfo.width = collapsed.length;
@@ -14291,14 +14294,16 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       });
     };
     for (let j = 1; j <= midCount; j += 1) emitTopMidRow(j / topSegments);
-    if (midCount > 0) {
+    if (rootRow !== surface.rowMin) {
       // Special op: subdivide the last segment at 0.3 of its height from the parent so
       // the side fill always has an extra loop to attach quads (never ends in a triangle).
-      // Fill (segmented) bridges only.
+      // Fires whenever the root is not pinned to the region's top edge - i.e. any side
+      // gap (>=1 edge) above the direct bridge, including a 1-segment indirect band.
+      // Direct bridge (root at the top edge) is closed on its own and needs no extra loop.
       emitTopMidRow(1 - 0.3 / topSegments);
       topInfo.midCount = midCount + 1;
     } else {
-      // Direct 1-segment band: bridge straight to the hole, no extra loop.
+      // Direct bridge: band touches the root-level side fill directly, no extra loop.
       topInfo.midCount = 0;
     }
     topInfo.width = holeTop.length;
