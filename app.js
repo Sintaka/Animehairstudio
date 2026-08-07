@@ -14124,7 +14124,9 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       .addScaledVector(m1, h11);
   };
 
-  // Bottom bridge: ring bottom (3,4,5) <-> hole bottom, banded like the top with
+  // Ring lateral width (the W in Wx1): derived from the ring vertex count.
+  const ringWidth = (ringWorld.length - 2) / 2;
+  // Bottom bridge: ring bottom <-> hole bottom, banded like the top with
   // root-relative segments. The parent-end tangent keeps a sharp crease: half the
   // surface tangent plus half the reversed parent normal (not full tangent influence).
   const bottomSide = boundary.sides.find((s) => s.name === "bottom");
@@ -14141,7 +14143,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   if (collapsed.length >= 2) collapsed.forEach(pushBoundary);
   const bottomInfo = { holeBase: -1, midBase: -1, midCount: 0, width: 0 };
   if (collapsed.length >= 3) {
-    const ringBottom = [ringWorld[3], ringWorld[4], ringWorld[5]];
+    const ringBottom = ringWorld.slice(ringWidth + 1);
     const bottomSegments = rootRow <= surface.rowMax
       ? Math.max(1, surface.rowMax - rootRow)
       : holeHeight;
@@ -14153,8 +14155,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     bottomInfo.holeBase = vertices.length / 3;
     collapsed.forEach(pushBoundary);
     bottomInfo.midBase = vertices.length / 3;
-    for (let j = 1; j <= bottomMidCount; j += 1) {
-      const f = j / bottomSegments;
+    const emitBottomMidRow = (f) => {
       ringBottom.forEach((p, i) => {
         const h = collapsed[i];
         const p0 = new THREE.Vector3(p.x, p.y, p.z);
@@ -14173,8 +14174,11 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
         const mid = hermite(f, p0, p1, m0, m1);
         pushBoundary({ x: mid.x, y: mid.y, z: mid.z });
       });
-    }
-    bottomInfo.midCount = bottomMidCount;
+    };
+    for (let j = 1; j <= bottomMidCount; j += 1) emitBottomMidRow(j / bottomSegments);
+    const extraBottomLoop = bottomMidCount > 0 ? 1 : 0;
+    if (extraBottomLoop) emitBottomMidRow(1 - 0.3 / bottomSegments);
+    bottomInfo.midCount = bottomMidCount + extraBottomLoop;
     bottomInfo.width = collapsed.length;
   }
 
@@ -14182,8 +14186,8 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   // The strand grid columns are inverted vs the ring's left/right in world space
   // (ring-left is the more-negative-x side, matching parent colMax+1).
   const sideSpecs = [
-    { name: "left", col: surface.colMax + 1, ringTop: 2, ringBottom: 3 },
-    { name: "right", col: surface.colMin, ringTop: 0, ringBottom: 5, flip: true }
+    { name: "left", col: surface.colMax + 1, ringTop: ringWidth, ringBottom: ringWidth + 1 },
+    { name: "right", col: surface.colMin, ringTop: 0, ringBottom: 2 * ringWidth + 1, flip: true }
   ];
   const sideBases = {};
   sideSpecs.forEach((spec) => {
@@ -14212,7 +14216,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   });
   const topInfo = { holeBase: -1, midBase: -1, midCount: 0, width: 0, outward: null };
   if (holeTop.length >= 3) {
-    const ringTop = [ringWorld[0], ringWorld[1], ringWorld[2]];
+    const ringTop = ringWorld.slice(0, ringWidth + 1);
     // Segments are measured from the child root row to the hole top, not the full hole
     // height: extending the hole's bottom must not add top-band segments.
     const topSegments = rootRow >= surface.rowMin
@@ -14236,8 +14240,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     topInfo.holeBase = vertices.length / 3;
     holeTop.forEach(pushBoundary);
     topInfo.midBase = vertices.length / 3;
-    for (let j = 1; j <= midCount; j += 1) {
-      const f = j / topSegments;
+    const emitTopMidRow = (f) => {
       ringTop.forEach((p, i) => {
         const h = holeTop[i];
         const p0 = new THREE.Vector3(p.x, p.y, p.z);
@@ -14251,8 +14254,14 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
         const mid = hermite(f, p0, p1, m0, m1);
         pushBoundary({ x: mid.x, y: mid.y, z: mid.z });
       });
-    }
-    topInfo.midCount = midCount;
+    };
+    for (let j = 1; j <= midCount; j += 1) emitTopMidRow(j / topSegments);
+    // Special op: when bridge completion is triggered (segments > 1), subdivide the
+    // last segment at 0.3 of its height from the parent so the side fill always has an
+    // extra loop to attach quads (never ends in a triangle).
+    const extraTopLoop = midCount > 0 ? 1 : 0;
+    if (extraTopLoop) emitTopMidRow(1 - 0.3 / topSegments);
+    topInfo.midCount = midCount + extraTopLoop;
     topInfo.width = holeTop.length;
     topInfo.outward = outward;
   }
@@ -14279,7 +14288,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   if (bottomInfo.holeBase >= 0) {
     const W = bottomInfo.width;
     for (let i = 0; i < W - 1; i += 1) {
-      const column = [ringBase + 3 + i];
+      const column = [ringBase + ringWidth + 1 + i];
       for (let j = 1; j <= bottomInfo.midCount; j += 1) column.push(bottomInfo.midBase + (j - 1) * W + i);
       column.push(bottomInfo.holeBase + i);
       for (let k = 0; k < column.length - 1; k += 1) {
@@ -14304,7 +14313,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   // Top band faces (ring -> middle rows -> hole).
   if (topInfo.holeBase >= 0) {
     const W = topInfo.width;
-    for (let i = 0; i < W - 1; i += 1) {
+    for (let i = 0; i < W - 1 && i < ringWidth; i += 1) {
       const column = [ringBase + i];
       for (let j = 1; j <= topInfo.midCount; j += 1) column.push(topInfo.midBase + (j - 1) * W + i);
       column.push(topInfo.holeBase + i);
@@ -14366,9 +14375,13 @@ function createBranchChildGeometry(lock) {
     holeHalfWidth = pa.distanceTo(pb) * 0.5;
   }
   const halfWidth = Math.max(0.001, holeHalfWidth || Number(lock.width ?? lock.baseWidth ?? 0.08) * 0.5);
-  // 2:1 cross-section (width : height) per the normalized convention.
+  // 2:1 cross-section (width : height) per the normalized convention. The ring's
+  // lateral (width) topology follows the parent hole's top edge count, so the top/bottom
+  // bridge bands match 1:1 (dragging the region wider updates the child's lateral).
   const halfDepth = Math.max(0.001, halfWidth * 0.5);
-  const ring = squareChildRing(halfWidth, halfDepth);
+  const ringWidthSegments = branchRegionTopEdgeCount(lock);
+  const ring = squareChildRing(halfWidth, halfDepth, ringWidthSegments);
+  lock.branchRingWidthSegments = ringWidthSegments;
   const curve = strandGeometryCurve(lock);
   const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), 4), 4, 256);
   const curveParameters = strandCurveParameters(lock, curve, lengthSegments);
@@ -14492,6 +14505,7 @@ function createBranchChildGeometry(lock) {
   geometry.setIndex(indices);
   geometry.userData.quadFaces = quadFaces;
   geometry.userData.bridgeVertexCount = bridgeVertexCount;
+  geometry.userData.ringWidthSegments = ringWidthSegments;
   geometry.userData.actualLengthSegments = actualLengthSegments;
   geometry.userData.sideTriangleCount = actualLengthSegments * ringCount * 2;
   geometry.userData.triangleEdgeMasks = triangleEdgeMasks;
@@ -21564,11 +21578,36 @@ function renderBranchRegionEditor() {
 }
 function beginBranchRegionCanvasDrag(event) {
   if (!branchRegionEdit) return;
-  const target = event.target?.closest?.("circle[data-region-point]");
-  if (!target) return;
-  branchRegionCanvasDrag = { name: target.getAttribute("data-region-point"), pointerId: event.pointerId };
+  const point = event.target?.closest?.("circle[data-region-point]");
+  const rectTarget = event.target?.closest?.("#branchRegionRect");
+  if (!point && !rectTarget) return;
   // One undo for the whole drag.
   pushUndoState();
+  if (point) {
+    branchRegionCanvasDrag = { mode: "point", name: point.getAttribute("data-region-point"), pointerId: event.pointerId };
+  } else {
+    // Drag the rect body to translate the whole region.
+    const canvasRect = branchRegionCanvas.getBoundingClientRect();
+    const viewBox = branchRegionCanvas.viewBox.baseVal;
+    const lock = locks.find((item) => item.id === branchRegionEdit);
+    const cross = lock?.branchRootRegion?.cross;
+    if (!cross) return;
+    const svgX = (event.clientX - canvasRect.left) * (viewBox.width / canvasRect.width);
+    const svgY = (event.clientY - canvasRect.top) * (viewBox.height / canvasRect.height);
+    const startUV = branchRegionCanvasToUV(svgX, svgY);
+    branchRegionCanvasDrag = {
+      mode: "move",
+      pointerId: event.pointerId,
+      startU: startUV.u,
+      startV: startUV.v,
+      startRegion: {
+        up: { ...cross.up },
+        down: { ...cross.down },
+        left: { ...cross.left },
+        right: { ...cross.right }
+      }
+    };
+  }
   branchRegionCanvas.setPointerCapture?.(event.pointerId);
   event.preventDefault();
 }
@@ -21582,6 +21621,22 @@ function updateBranchRegionCanvasDrag(event) {
   const lock = locks.find((item) => item.id === branchRegionEdit);
   const cross = lock?.branchRootRegion?.cross;
   if (!cross) return;
+  if (branchRegionCanvasDrag.mode === "move") {
+    const start = branchRegionCanvasDrag.startRegion;
+    if (!start) return;
+    const du = uv.u - branchRegionCanvasDrag.startU;
+    const dv = uv.v - branchRegionCanvasDrag.startV;
+    cross.up = { u: clampRegionParam(start.up.u + du), v: clampRegionParam(start.up.v + dv) };
+    cross.down = { u: clampRegionParam(start.down.u + du), v: clampRegionParam(start.down.v + dv) };
+    cross.left = { u: clampRegionParam(start.left.u + du), v: clampRegionParam(start.left.v + dv) };
+    cross.right = { u: clampRegionParam(start.right.u + du), v: clampRegionParam(start.right.v + dv) };
+    const parent = locks.find((item) => item.id === lock?.branchParentId);
+    if (parent) rebuildLockGeometry(parent);
+    else rebuildLockGeometry(lock);
+    updateCurveObjects(lock);
+    renderBranchRegionEditor();
+    return;
+  }
   const vc = clampRegionParam((cross.left.v + cross.right.v) / 2);
   const uc = clampRegionParam((cross.up.u + cross.down.u) / 2);
   const name = branchRegionCanvasDrag.name;
@@ -21756,6 +21811,26 @@ function branchRootRegionSurface(lock) {
 }
 
 // World positions of the 4 region edge control points on the parent surface grid.
+// Number of real top edges of the carved region (dedupes crease columns). The
+// child ring's lateral topology follows this so the top/bottom bands match 1:1.
+function branchRegionTopEdgeCount(lock) {
+  const surface = branchRootRegionSurface(lock);
+  const parent = locks.find((item) => item.id === lock?.branchParentId);
+  const pos = parent?.mesh?.geometry?.getAttribute?.("position");
+  if (!surface || !pos) return 2;
+  const cols = surface.cols;
+  const row = surface.rowMin;
+  const distinct = [];
+  for (let c = surface.colMin; c <= Math.min(surface.colMax + 1, cols - 1); c += 1) {
+    const x = pos.getX(row * cols + c);
+    const y = pos.getY(row * cols + c);
+    const z = pos.getZ(row * cols + c);
+    const prev = distinct[distinct.length - 1];
+    if (!prev || Math.hypot(x - prev.x, y - prev.y, z - prev.z) > 1e-6) distinct.push({ x, y, z });
+  }
+  return Math.max(2, Math.min(distinct.length - 1, 8));
+}
+
 function branchRootRegionWorldPoints(lock) {
   const surface = branchRootRegionSurface(lock);
   const parent = locks.find((item) => item.id === lock?.branchParentId);

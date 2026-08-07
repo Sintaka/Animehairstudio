@@ -4646,7 +4646,7 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
   stroke: #8fd8ff;
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
-  pointer-events: none;
+  cursor: move;
 }
 
 .taper-canvas {

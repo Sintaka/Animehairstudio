@@ -7,25 +7,23 @@
 
 const clamp01 = (v) => Math.min(1, Math.max(0, Number(v) || 0));
 
-// 6-point ring for the 2x1 cross-section (width : height), CCW from right-top.
-// Top/bottom (width) sides have 2 segments, left/right (height) sides 1 segment.
-// Returns { points: [{x,z}x6], sides: [{ name, start, count }] } with count = edges per side.
-export function squareChildRing(halfWidth, halfDepth) {
+// Rectangular ring for the Wx1 cross-section (width : height), CCW from right-top.
+// Top/bottom (width) sides have `widthSegments` edges, left/right (height) sides 1 edge.
+// Returns { points: [{x,z}], sides: [{ name, start, count }] } with count = edges per side.
+// points: 0..W top (right->left), W+1 left-bottom, W+2..2W+1 bottom (left->right).
+export function squareChildRing(halfWidth, halfDepth, widthSegments = 2) {
   const hw = Math.max(0.0001, Number(halfWidth) || 0.08);
   const hd = Math.max(0.0001, Number(halfDepth) || 0.08);
-  const points = [
-    { x: hw, z: hd },     // 0 right-top corner
-    { x: 0, z: hd },      // 1 top mid
-    { x: -hw, z: hd },    // 2 left-top corner
-    { x: -hw, z: -hd },   // 3 left-bottom corner
-    { x: 0, z: -hd },     // 4 bottom mid
-    { x: hw, z: -hd }     // 5 right-bottom corner
-  ];
+  const w = Math.max(2, Math.round(Number(widthSegments) || 2));
+  const points = [];
+  for (let i = 0; i <= w; i += 1) points.push({ x: hw - (2 * hw * i) / w, z: hd });   // top right->left (0..w)
+  points.push({ x: -hw, z: -hd });                                                    // left-bottom (w+1)
+  for (let i = 1; i <= w; i += 1) points.push({ x: -hw + (2 * hw * i) / w, z: -hd }); // bottom left->right (w+2..2w+1)
   const sides = [
-    { name: "top", start: 0, count: 2 },
-    { name: "left", start: 2, count: 1 },
-    { name: "bottom", start: 3, count: 2 },
-    { name: "right", start: 5, count: 1 }
+    { name: "top", start: 0, count: w },
+    { name: "left", start: w, count: 1 },
+    { name: "bottom", start: w + 1, count: w },
+    { name: "right", start: 2 * w + 1, count: 1 }
   ];
   return { points, sides };
 }

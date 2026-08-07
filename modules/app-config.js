@@ -1,4 +1,4 @@
-export const APP_VERSION = "0.001.00001";
+export const APP_VERSION = "0.2.12-Sintaka.00001";
 
 export const SCALP_REGIONS = {
   bangs: { label: "Bangs Root", color: 0xef476f },
