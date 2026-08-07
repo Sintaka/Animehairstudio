@@ -21256,10 +21256,12 @@ function branchRootRegionFromParam(parameter) {
   const v0 = clampRegionParam(centerV);
   return {
     cross: {
-      up: { u: clampRegionParam(u0 + upLength), v: v0 },
-      down: { u: clampRegionParam(u0 - downLength), v: v0 },
-      left: { u: u0, v: clampRegionParam(v0 - leftWidth) },
-      right: { u: u0, v: clampRegionParam(v0 + rightWidth) }
+      // up = region top (toward root, smaller u); down = bottom (toward tip, larger u).
+      up: { u: clampRegionParam(u0 - upLength), v: v0 },
+      down: { u: clampRegionParam(u0 + downLength), v: v0 },
+      // left = larger v (world-left for a left-side strand), right = smaller v.
+      left: { u: u0, v: clampRegionParam(v0 + leftWidth) },
+      right: { u: u0, v: clampRegionParam(v0 - rightWidth) }
     }
   };
 }
@@ -21292,10 +21294,10 @@ function branchRootRegionWorldPoints(lock) {
   const rowC = Math.round((surface.rowMin + surface.rowMax) / 2);
   const colC = Math.round((surface.colMin + surface.colMax) / 2);
   return {
-    up: pointAt(surface.rowMax, colC),
-    down: pointAt(surface.rowMin, colC),
-    left: pointAt(rowC, surface.colMin),
-    right: pointAt(rowC, surface.colMax)
+    up: pointAt(surface.rowMin, colC),
+    down: pointAt(surface.rowMax, colC),
+    left: pointAt(rowC, surface.colMax),
+    right: pointAt(rowC, surface.colMin)
   };
 }
 
@@ -21342,10 +21344,9 @@ function pointerToNdc(event) {
   );
 }
 function beginBranchRegionDrag(event) {
-  if (viewportEditMode !== "strand" || !componentEditModeActive()) return false;
   const selected = locks.find((item) => item.id === selectedId);
   const handles = selected?.curveObjects?.regionHandles || [];
-  if (!handles.length) return false;
+  if (!handles.length || selected?.locked) return false;
   raycaster.setFromCamera(pointerToNdc(event), camera);
   const hits = raycaster.intersectObjects(handles, false);
   if (!hits.length) return false;
@@ -21419,6 +21420,12 @@ function branchRootRegionSurface(lock) {
   };
   const toRow = (u) => THREE.MathUtils.clamp(Math.round(clampRegionParam(u) * (rows - 1)), 0, rows - 1);
   const toCol = (v) => THREE.MathUtils.clamp(Math.round(clampRegionParam(v) * (colCount - 1)), 0, colCount - 1);
+  // Normalize with min/max so both pre-2.4u (old up/down, left/right order) and new
+  // regions produce the same rectangular carve region.
+  const rowA = toRow(region.cross.up.u);
+  const rowB = toRow(region.cross.down.u);
+  const colA = toGridCol(toCol(region.cross.left.v));
+  const colB = toGridCol(toCol(region.cross.right.v));
   return {
     rows,
     cols,
@@ -21426,10 +21433,10 @@ function branchRootRegionSurface(lock) {
     colCount,
     skipCol,
     toGridCol,
-    rowMin: toRow(region.cross.down.u),
-    rowMax: toRow(region.cross.up.u),
-    colMin: toGridCol(toCol(region.cross.left.v)),
-    colMax: toGridCol(toCol(region.cross.right.v))
+    rowMin: Math.min(rowA, rowB),
+    rowMax: Math.max(rowA, rowB),
+    colMin: Math.min(colA, colB),
+    colMax: Math.max(colA, colB)
   };
 }
 
@@ -24887,7 +24894,7 @@ function createCurveObjects(lock) {
   if (lock.branchRootRegion) {
     const makeRegionHandle = (color) => {
       const handle = new THREE.Mesh(
-        new THREE.SphereGeometry(0.045, 14, 10),
+        new THREE.SphereGeometry(0.02, 12, 8),
         new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 })
       );
       handle.renderOrder = 5;
@@ -25361,12 +25368,13 @@ function updateCurveObjects(lock, options = {}) {
       const rootFrame = branchParentFrame(regionParent, lock.branchParentParameter);
       lock.curveObjects.regionRootHandle.position.copy(rootFrame.point);
     }
-    const regionSelected = lock.id === selectedId || selectedStrandIds.has(lock.id);
+    // Region selection handles show by default for branch children (no toggle).
+    const regionVisible = strandVisibleForDisplay(lock) && !lock.locked;
     lock.curveObjects.regionHandles.forEach((handle) => {
-      handle.visible = regionSelected && !sculptBrushHelpersSuppressed && componentEditModeActive();
+      handle.visible = regionVisible;
     });
     if (lock.curveObjects.regionRootHandle) {
-      lock.curveObjects.regionRootHandle.visible = regionSelected && !sculptBrushHelpersSuppressed && componentEditModeActive();
+      lock.curveObjects.regionRootHandle.visible = regionVisible;
     }
   }
   if ("visible" in options) {
