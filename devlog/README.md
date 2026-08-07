@@ -120,6 +120,11 @@ python -m http.server 8080 --bind 127.0.0.1
   - **侧面直接桥接（2.4r 已修正）**：子环 left（世界左）↔ 父 colMax+1（世界左）、right（世界右）↔ colMin（世界右），按**世界侧**匹配（网格 left/right 在世界相反）；右面绕序 flip 朝外。
   - **顶部（本次三步）**：① 洞 top（row9，世界 右→左 col2→col5，折痕零边折叠成 2 实边）↔ 子环 top（环点 0/1/2，世界 右→左），2src↔2dst 直接桥接；② 对桥接边**分段**：观察洞侧面未桥接边数（每侧 2 段）→ 每条桥接边 1 段需增至 2 段（新增 1 段 = 中间等比切分，注释后续复杂侦测）；③ 上部 poly 走向从线性改 **smoothstep 平滑**，完成子→主桥接过渡。
   - 直接桥接概念：把子环边**直接投影**到主发片最接近的面/线段去匹配。
+- **子发片深度重置 2.5（拖拽修复 + width curve 持久化 + 桥接沿中心线）**
+  - **2D 面板拖拽漂移修复**：updateBranchRegionCanvasDrag 里指针->SVG 换算硬编码了旧 viewBox(520/220)，面板改竖长后(220/520)换算错误导致点被持续拖偏；改为动态读 `branchRegionCanvas.viewBox.baseVal`。验证：拖 left 点到画布 x=80 -> 点精确落在 x=80、v=0.333，无漂移。
+  - **width curve 联动确认 + 持久化**：子发片扫掠已应用 taper/depth curve（相对扫掠起点归一化，根环保持洞口宽）；实测真实 UI 拖拽 width curve（tip 0->0.706）子发片 tip 宽度 0->0.0538 生效。新增 `branchCurvesAuthored`：子发片自身曲线被编辑后标记，updateBranchChildren 不再用父级 remap 覆盖（编辑不再被冲掉）；序列化/恢复。
+  - **顶部桥接 Hermite 沿中心线**：原用孔洞顶点表面法线作终点切线，法线方向与桥接带方向(主要 -y)不一致(孔洞法线主要 -z)导致到达端横向摆动凹进主发片；改为两端切线都用 ring->hole 中心弦方向，带沿中心线走（后续可给中心线加 NURBS 控制点细化）。
+
 - **子发片深度重置 2.4z（选区显示/映射修正 + 顶部桥接绕序/Hermite + 手柄可见性）**
   - **控制点边界对齐**：branchRootRegionWorldPoints 的 down/left 点改为 rowMax+1 / colMax+1（洞底/洞左真实边界，原来停在最后一个面的边内 1 poly）。
   - **面板竖长**：Branch Root Region SVG 从 520x220 横躺改为 220x520 竖长（viewBox、UV 映射、CSS aspect-ratio 同步）。
@@ -285,3 +290,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - [x] v 映射：front 列居中环向弧映射（默认选区居中）+ 构建时固化 grid 元数据
 - [x] 顶部桥接绕序修复（线框可见）+ Hermite 平滑（主发片法线参与，不内凹）
 - [x] sweep 手柄放大/置顶（可见性）
+
+- [x] 2D 选区面板拖拽换算修复（动态 viewBox，不再漂移）
+- [x] width curve 联动确认 + branchCurvesAuthored 持久化
+- [x] 顶部桥接 Hermite 沿中心线（去除表面法线摆动）

@@ -14172,14 +14172,10 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     const outward = new THREE.Vector3().crossVectors(across, up);
     if (outward.lengthSq() < 1e-8) outward.set(0, 1, 0);
     outward.normalize();
-    const parentNormalAt = (v) => {
-      if (normalAttr && v.index != null) {
-        return new THREE.Vector3(normalAttr.getX(v.index), normalAttr.getY(v.index), normalAttr.getZ(v.index)).normalize();
-      }
-      return new THREE.Vector3(0, 1, 0);
-    };
-    // Hermite basis so the band leaves the child ring along its direction and arrives
-    // at the parent hole flat along the parent's surface normal (no dip into the parent).
+    // Hermite basis along the band's center line: both endpoint tangents follow the
+    // ring->hole chord direction, so the band tracks the bridge center line instead of
+    // swinging into the parent (the parent surface normal at the hole can point sideways
+    // from the band and pull it concave). A later NURBS center-line control will refine it.
     const hermite = (t, p0, p1, m0, m1) => {
       const t2 = t * t;
       const t3 = t2 * t;
@@ -14202,11 +14198,8 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
         const h = holeTop[i];
         const p0 = new THREE.Vector3(p.x, p.y, p.z);
         const p1 = new THREE.Vector3(h.x, h.y, h.z);
-        const span = p0.distanceTo(p1);
-        // Tangent at the ring follows the band direction; tangent at the hole follows the
-        // parent surface normal (scaled by the band span so both ends blend smoothly).
         const m0 = new THREE.Vector3().subVectors(p1, p0);
-        const m1 = parentNormalAt(h).multiplyScalar(span);
+        const m1 = m0.clone();
         const mid = hermite(f, p0, p1, m0, m1);
         pushBoundary({ x: mid.x, y: mid.y, z: mid.z });
       });
@@ -14446,6 +14439,7 @@ function createBranchChildGeometry(lock) {
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices);
   geometry.userData.quadFaces = quadFaces;
+  geometry.userData.bridgeVertexCount = bridgeVertexCount;
   geometry.userData.sideTriangleCount = actualLengthSegments * ringCount * 2;
   geometry.userData.triangleEdgeMasks = triangleEdgeMasks;
   geometry.userData.openSurface = false;
@@ -16096,6 +16090,9 @@ function applyTaperCurveEdit({ interactive = false } = {}) {
   } else {
     const lock = locks.find((item) => item.id === taperCurveEdit.id);
     if (lock) {
+      // A branch child's width/depth curves are normally remapped from the parent
+      // (updateBranchChildren). Mark them authored so the user's direct edits persist.
+      if (lock.branchParentId) lock.branchCurvesAuthored = true;
       const curveKey = taperCurveEdit.curveKey;
       const primaryCurve = cloneShapePresetValue(lock[curveKey]);
       if (editingTwist) {
@@ -17055,6 +17052,7 @@ function snapshotState() {
       branchLocalPoints: lock.branchLocalPoints?.map(vectorToData) || null,
       branchLocalSurfaceNormals: lock.branchLocalSurfaceNormals?.map((normal) => normal ? vectorToData(normal) : null) || null,
       branchRootRegion: cloneBranchRootRegion(lock.branchRootRegion),
+      branchCurvesAuthored: Boolean(lock.branchCurvesAuthored),
       branchSweepStartT: THREE.MathUtils.clamp(Number(lock.branchSweepStartT ?? 0.1), 0.02, 0.6),
       rootSurfacePoint: lock.rootSurfacePoint ? vectorToData(lock.rootSurfacePoint) : null,
       rootSurfaceNormal: lock.rootSurfaceNormal ? vectorToData(lock.rootSurfaceNormal) : null,
@@ -18649,6 +18647,7 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     branchLocalSurfaceNormals: snapshot.branchLocalSurfaceNormals?.map((normal) => normal ? dataToVector(normal) : null) || null,
     branchRootRegion: cloneBranchRootRegion(snapshot.branchRootRegion),
     branchRootRegion: cloneBranchRootRegion(snapshot.branchRootRegion) || (snapshot.branchParentId ? branchRootRegionFromParam(snapshot.branchParentParameter ?? 0) : null),
+    branchCurvesAuthored: Boolean(snapshot.branchCurvesAuthored),
     branchSweepStartT: THREE.MathUtils.clamp(Number(snapshot.branchSweepStartT ?? 0.1), 0.02, 0.6),
     rootSurfacePoint: snapshot.rootSurfacePoint ? dataToVector(snapshot.rootSurfacePoint) : null,
     rootSurfaceNormal: snapshot.rootSurfaceNormal ? dataToVector(snapshot.rootSurfaceNormal).normalize() : null,
@@ -21525,8 +21524,9 @@ function beginBranchRegionCanvasDrag(event) {
 function updateBranchRegionCanvasDrag(event) {
   if (!branchRegionCanvasDrag || !branchRegionEdit) return;
   const rect = branchRegionCanvas.getBoundingClientRect();
-  const svgX = (event.clientX - rect.left) * (520 / rect.width);
-  const svgY = (event.clientY - rect.top) * (220 / rect.height);
+  const viewBox = branchRegionCanvas.viewBox.baseVal;
+  const svgX = (event.clientX - rect.left) * (viewBox.width / rect.width);
+  const svgY = (event.clientY - rect.top) * (viewBox.height / rect.height);
   const uv = branchRegionCanvasToUV(svgX, svgY);
   const lock = locks.find((item) => item.id === branchRegionEdit);
   const cross = lock?.branchRootRegion?.cross;
@@ -21840,13 +21840,15 @@ function updateBranchChildren(parent) {
         }
       });
       const start = THREE.MathUtils.clamp(Number(child.branchParentParameter ?? 0), 0, 1);
-      child.taperCurve = remapEnvelopeCurveRange(parent.taperCurve, start, 1);
-      child.depthCurve = remapEnvelopeCurveRange(parent.depthCurve, start, 1);
-      child.taperCurveSecondary = remapEnvelopeCurveRange(parent.taperCurveSecondary || parent.taperCurve, start, 1);
-      child.depthCurveSecondary = remapEnvelopeCurveRange(parent.depthCurveSecondary || parent.depthCurve, start, 1);
-      child.asymmetricWidthCurve = Boolean(parent.asymmetricWidthCurve);
-      child.asymmetricDepthCurve = Boolean(parent.asymmetricDepthCurve);
-      child.centerAsymmetricProfile = Boolean(parent.centerAsymmetricProfile);
+      if (!child.branchCurvesAuthored) {
+        child.taperCurve = remapEnvelopeCurveRange(parent.taperCurve, start, 1);
+        child.depthCurve = remapEnvelopeCurveRange(parent.depthCurve, start, 1);
+        child.taperCurveSecondary = remapEnvelopeCurveRange(parent.taperCurveSecondary || parent.taperCurve, start, 1);
+        child.depthCurveSecondary = remapEnvelopeCurveRange(parent.depthCurveSecondary || parent.depthCurve, start, 1);
+        child.asymmetricWidthCurve = Boolean(parent.asymmetricWidthCurve);
+        child.asymmetricDepthCurve = Boolean(parent.asymmetricDepthCurve);
+        child.centerAsymmetricProfile = Boolean(parent.centerAsymmetricProfile);
+      }
       child.surfaceNormalInfluence = 1;
       child.rootSurfacePoint = frame.point.clone();
       child.rootSurfaceNormal = frame.z.clone();
