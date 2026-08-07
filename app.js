@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-9";
+} from "./modules/app-config.js?v=20260808-10";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -14201,9 +14201,15 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       });
     };
     for (let j = 1; j <= bottomMidCount; j += 1) emitBottomMidRow(j / bottomSegments);
-    // Endpoint special op (see top band): also fires for single-segment direct bands.
-    emitBottomMidRow(1 - 0.3 / bottomSegments);
-    bottomInfo.midCount = bottomMidCount + 1;
+    if (bottomMidCount > 0) {
+      // Endpoint special op (mirrors top band): subdivide the last segment at 0.3 from
+      // the parent so the side fill has an extra loop. Fill (segmented) bridges only.
+      emitBottomMidRow(1 - 0.3 / bottomSegments);
+      bottomInfo.midCount = bottomMidCount + 1;
+    } else {
+      // Direct 1-segment band: bridge straight to the hole, no extra loop.
+      bottomInfo.midCount = 0;
+    }
     bottomInfo.width = collapsed.length;
   }
 
@@ -14285,12 +14291,16 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       });
     };
     for (let j = 1; j <= midCount; j += 1) emitTopMidRow(j / topSegments);
-    // Special op: subdivide the last segment at 0.3 of its height from the parent so
-    // the side fill always has an extra loop to attach quads (never ends in a triangle).
-    // Also fires for single-segment (direct) bands, otherwise the endpoint loop is
-    // missing and the side area falls back to triangles.
-    emitTopMidRow(1 - 0.3 / topSegments);
-    topInfo.midCount = midCount + 1;
+    if (midCount > 0) {
+      // Special op: subdivide the last segment at 0.3 of its height from the parent so
+      // the side fill always has an extra loop to attach quads (never ends in a triangle).
+      // Fill (segmented) bridges only.
+      emitTopMidRow(1 - 0.3 / topSegments);
+      topInfo.midCount = midCount + 1;
+    } else {
+      // Direct 1-segment band: bridge straight to the hole, no extra loop.
+      topInfo.midCount = 0;
+    }
     topInfo.width = holeTop.length;
     topInfo.outward = outward;
   }
