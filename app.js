@@ -14074,6 +14074,33 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     pushBoundary(vTop);
     pushBoundary(vBottom);
   });
+  // Top bridge: the ring's top 2 edges face the hole's top edge (2 real edges).
+  // Split each column in the middle (equal ratio for now; later: projection-distance
+  // based complex detection) and place the middle row with smoothstep so the band
+  // direction transitions smoothly from the child to the parent.
+  const topSide = boundary.sides.find((s) => s.name === "top");
+  const topVerts = [];
+  for (let i = 0; i <= topSide.count; i += 1) {
+    topVerts.push(boundary.vertices[(topSide.start + i) % boundary.vertices.length]);
+  }
+  const holeTop = [];
+  topVerts.forEach((v) => {
+    const prev = holeTop[holeTop.length - 1];
+    if (!prev || Math.abs(v.x - prev.x) > 1e-6 || Math.abs(v.y - prev.y) > 1e-6 || Math.abs(v.z - prev.z) > 1e-6) holeTop.push(v);
+  });
+  const topInfo = { holeBase: -1, midBase: -1 };
+  if (holeTop.length >= 3) {
+    const ringTop = [ringWorld[0], ringWorld[1], ringWorld[2]];
+    const t = 0.5;
+    const midRow = ringTop.map((p, i) => {
+      const s = THREE.MathUtils.smoothstep(t, 0, 1);
+      return { x: p.x + (holeTop[i].x - p.x) * s, y: p.y + (holeTop[i].y - p.y) * s, z: p.z + (holeTop[i].z - p.z) * s };
+    });
+    topInfo.holeBase = vertices.length / 3;
+    holeTop.forEach(pushBoundary);
+    topInfo.midBase = vertices.length / 3;
+    midRow.forEach((m) => pushBoundary(m));
+  }
   // Ring-side vertices are the sweep's row-0 ring (reused by index, no copies).
   const ringBase = vertices.length / 3;
   if (bottomBoundaryBase >= 0) {
@@ -14102,6 +14129,18 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     quads.push(quad);
     indices.push(quad[0], quad[1], quad[3], quad[3], quad[1], quad[2]);
   });
+  if (topInfo.holeBase >= 0) {
+    // Top band rows: ring (reused row-0) -> middle (smoothstep) -> hole. The "a,b" row is
+    // the one closer to the hole (parent) so the winding stays outward, like the bottom bridge.
+    for (let i = 0; i < 2; i += 1) {
+      const qMid = [topInfo.holeBase + i, topInfo.midBase + i, topInfo.midBase + i + 1, topInfo.holeBase + i + 1];
+      quads.push(qMid);
+      indices.push(qMid[0], qMid[1], qMid[3], qMid[3], qMid[1], qMid[2]);
+      const qRing = [topInfo.midBase + i, ringBase + i, ringBase + i + 1, topInfo.midBase + i + 1];
+      quads.push(qRing);
+      indices.push(qRing[0], qRing[1], qRing[3], qRing[3], qRing[1], qRing[2]);
+    }
+  }
   return { vertices, normals, tangents, uvs, colors, indices, quads, triangles, ringBase };
 }
 
