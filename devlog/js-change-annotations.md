@@ -50,6 +50,11 @@
   - **侧面直接桥接（2.4r 已修正）**：子环 left（世界左）↔ 父 colMax+1（世界左）、right（世界右）↔ colMin（世界右），按**世界侧**匹配（网格 left/right 在世界相反）；右面绕序 flip 朝外。
   - **顶部（本次三步）**：① 洞 top（row9，世界 右→左 col2→col5，折痕零边折叠成 2 实边）↔ 子环 top（环点 0/1/2，世界 右→左），2src↔2dst 直接桥接；② 对桥接边**分段**：观察洞侧面未桥接边数（每侧 2 段）→ 每条桥接边 1 段需增至 2 段（新增 1 段 = 中间等比切分，注释后续复杂侦测）；③ 上部 poly 走向从线性改 **smoothstep 平滑**，完成子→主桥接过渡。
   - 直接桥接概念：把子环边**直接投影**到主发片最接近的面/线段去匹配。
+- **子发片深度重置 2.9（侧面直接桥接接到根部 + 顶部分段修正 + 手柄缩小）**
+  - **侧面直接桥接定位**：原 sideSpecs 连到洞底边（rowMax/rowMax+1），会跟着底部上下跑。改为连到**子发片根部所在行**（boundaryAt(rootRow, col) / rootRow+1）——子环 2x1 的 1（侧面）直接桥接到中间被删面的对应边，不随底部移动。
+  - **顶部分段多一段修正**：topSegments 原来 rootRow-rowMin+1 恒多一段（像光标在末尾）；改为 rootRow-rowMin（底部 rowMax-rootRow+1 本就对齐洞底边界，不动）。验证：rootRow=11/rowMin=9/rowMax=11 -> top 2、bottom 1；延长底部 -> top 不增、bottom 增。
+  - **sweep 手柄缩小**：scale 1.8 -> 1.2（用户确认好用易拖，只是太大）。
+
 - **子发片深度重置 2.8（恢复底部桥接：带状复刻顶部逻辑）**
   - 关闭 BRANCH_BRIDGE_DIAGNOSTIC；底部从 connectSide 直连改为与顶部一致的**带状桥接**：ring bottom(3,4,5) <-> 洞底(collapsed)，分段 bottomSegments=rowMax-rootRow+1（root 相对，与顶部对称），Hermite 复用共享的 hermite/rootRow。
   - **底部主发片端折痕**：m1 = 0.5*表面切线 + 0.5*反向父级法线（不顺着底部法线而是反一下、约 0.5 权重，非完全切线）——到达端形成尖锐折痕。

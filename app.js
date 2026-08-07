@@ -14187,8 +14187,10 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   ];
   const sideBases = {};
   sideSpecs.forEach((spec) => {
-    const vTop = boundaryAt(surface.rowMax, spec.col);
-    const vBottom = boundaryAt(surface.rowMax + 1, spec.col);
+    // The ring's 2x1 side (the "1") is the direct bridge: connect to the parent hole
+    // side edge at the child root level (the middle deleted face), not the bottom.
+    const vTop = boundaryAt(rootRow, spec.col);
+    const vBottom = boundaryAt(rootRow + 1, spec.col);
     if (!vTop || !vBottom) return;
     sideBases[spec.name] = vertices.length / 3;
     pushBoundary(vTop);
@@ -14214,7 +14216,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     // Segments are measured from the child root row to the hole top, not the full hole
     // height: extending the hole's bottom must not add top-band segments.
     const topSegments = rootRow >= surface.rowMin
-      ? Math.max(1, rootRow - surface.rowMin + 1)
+      ? Math.max(1, rootRow - surface.rowMin)
       : holeHeight;
     const midCount = topSegments - 1;
     const across = new THREE.Vector3().subVectors(ringTop[2], ringTop[0]);
@@ -25223,7 +25225,7 @@ function createCurveObjects(lock) {
   let branchSweepStartHandle = null;
   if (lock.branchRootRegion) {
     branchSweepStartHandle = createSplitControlHandle();
-    branchSweepStartHandle.scale.setScalar(1.8);
+    branchSweepStartHandle.scale.setScalar(1.2);
     branchSweepStartHandle.renderOrder = 40;
     branchSweepStartHandle.material = new THREE.MeshBasicMaterial({
       color: 0xffd84d,
