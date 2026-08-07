@@ -32,4 +32,4 @@ python -m http.server 8080 --bind 127.0.0.1
 
 ## 最近版本 / Latest
 
-- Phase 2.7：smoothstep 主发片端平行切线到达（不凸不凹）；Region 面板缩小+精简；sweep 手柄偏移出表面（可见）；刘海线框掩码确认正确（面板 split 开口折叠 quad 为着色折痕来源）。
+- Phase 2.8：恢复底部桥接（带状复刻顶部：分段相对 root、Hermite、反向法线 0.5 折痕）；侧填充继续禁用；刘海三角掩码记为已知问题。

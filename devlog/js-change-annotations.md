@@ -50,6 +50,12 @@
   - **侧面直接桥接（2.4r 已修正）**：子环 left（世界左）↔ 父 colMax+1（世界左）、right（世界右）↔ colMin（世界右），按**世界侧**匹配（网格 left/right 在世界相反）；右面绕序 flip 朝外。
   - **顶部（本次三步）**：① 洞 top（row9，世界 右→左 col2→col5，折痕零边折叠成 2 实边）↔ 子环 top（环点 0/1/2，世界 右→左），2src↔2dst 直接桥接；② 对桥接边**分段**：观察洞侧面未桥接边数（每侧 2 段）→ 每条桥接边 1 段需增至 2 段（新增 1 段 = 中间等比切分，注释后续复杂侦测）；③ 上部 poly 走向从线性改 **smoothstep 平滑**，完成子→主桥接过渡。
   - 直接桥接概念：把子环边**直接投影**到主发片最接近的面/线段去匹配。
+- **子发片深度重置 2.8（恢复底部桥接：带状复刻顶部逻辑）**
+  - 关闭 BRANCH_BRIDGE_DIAGNOSTIC；底部从 connectSide 直连改为与顶部一致的**带状桥接**：ring bottom(3,4,5) <-> 洞底(collapsed)，分段 bottomSegments=rowMax-rootRow+1（root 相对，与顶部对称），Hermite 复用共享的 hermite/rootRow。
+  - **底部主发片端折痕**：m1 = 0.5*表面切线 + 0.5*反向父级法线（不顺着底部法线而是反一下、约 0.5 权重，非完全切线）——到达端形成尖锐折痕。
+  - **拓扑/分段一致**：底部与顶部同样 2 列 × bottomSegments 行、绕序 [parentRow, childRow, childRow+1, parentRow+1]、掩码 [0,1,1]/[1,1,0]。验证：初始 20 bridge tris（顶 2+底 2 行+侧 2 quad），延长底部 -> 40 tris（底 7 行、顶 2 行不变）；法线全部朝外（dot>0），无 NaN、maskCount=triCount。
+  - 侧直接桥接恢复；三角剖分侧填充继续禁用（BRANCH_SIDE_FILL_ENABLED=false，待重做）。
+
 - **子发片深度重置 2.7（smoothstep 主发片端切线 + 面板缩小 + sweep 手柄可见 + 刘海排查）**
   - **顶部桥接主发片端切线修正**：原用弦方向做 Hermite 终点切线（带垂直到达、凸起），再加 sin 外凸更严重。改为 m1=弦方向投影到父级切平面（去掉父级法线分量）——带沿中心线走、到达端平行父级表面切线、不再凸起/凹进；去掉外凸 bow。
   - **Branch Root Region 面板缩小**：viewBox 220x520->220x400、SVG aspect 11/26->11/20、dialog 宽 280px（原 360）；移除 Show points on mesh toggle；Reset region 精简为 Reset。验证：SVG 254x462（原 334x789）。

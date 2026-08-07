@@ -14065,9 +14065,10 @@ function createConnectedCurveCardGeometry(lock) {
 // + side direct bridges (left/right, one quad each). Parent-side vertices reuse the
 // parent's authored normal/tangent by grid index; ring-side vertices reuse the sweep's
 // row-0 ring by index (no copies), so the bridge is watertight with the sweep.
-// TEMP DIAGNOSTIC: only the top band (bridge + segmentation) is emitted, the
-// bottom bridge / side direct bridges / side fill are disabled for isolation.
-const BRANCH_BRIDGE_DIAGNOSTIC = true;
+// Full bridge: bottom + top bands (banded, root-relative segments) + side direct
+// bridges. The triangulated side fill stays disabled until its topology is reworked.
+const BRANCH_BRIDGE_DIAGNOSTIC = false;
+const BRANCH_SIDE_FILL_ENABLED = false;
 function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom) {
   const positionAttr = parentGeom?.getAttribute?.("position");
   const normalAttr = parentGeom?.getAttribute?.("normal");
@@ -14107,22 +14108,74 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   // Hole height in faces (number of hole side edges per side). The top band gets one
   // segment per side edge so its corner column always matches the hole side topology.
   const holeHeight = Math.max(1, Math.round(surface.rowMax - surface.rowMin + 1));
+  // Child root row and the Hermite basis are shared by the top and bottom bands.
+  const rootRow = Math.round(THREE.MathUtils.clamp(Number(lock.branchParentParameter ?? 0.4), 0, 1) * Math.max(1, rows - 1));
+  const hermite = (t, p0, p1, m0, m1) => {
+    const t2 = t * t;
+    const t3 = t2 * t;
+    const h00 = 2 * t3 - 3 * t2 + 1;
+    const h10 = t3 - 2 * t2 + t;
+    const h01 = -2 * t3 + 3 * t2;
+    const h11 = t3 - t2;
+    return new THREE.Vector3()
+      .addScaledVector(p0, h00)
+      .addScaledVector(m0, h10)
+      .addScaledVector(p1, h01)
+      .addScaledVector(m1, h11);
+  };
 
-  // Bottom bridge: ring bottom (3,4,5) <-> hole bottom, 1:1 with crease-seam collapse.
-  let bottomBoundaryBase = -1;
-  if (!BRANCH_BRIDGE_DIAGNOSTIC) {
-    const bottomSide = boundary.sides.find((s) => s.name === "bottom");
-    const bottomVerts = [];
-    for (let i = 0; i <= bottomSide.count; i += 1) {
-      bottomVerts.push(boundary.vertices[(bottomSide.start + i) % boundary.vertices.length]);
+  // Bottom bridge: ring bottom (3,4,5) <-> hole bottom, banded like the top with
+  // root-relative segments. The parent-end tangent keeps a sharp crease: half the
+  // surface tangent plus half the reversed parent normal (not full tangent influence).
+  const bottomSide = boundary.sides.find((s) => s.name === "bottom");
+  const bottomVerts = [];
+  for (let i = 0; i <= bottomSide.count; i += 1) {
+    bottomVerts.push(boundary.vertices[(bottomSide.start + i) % boundary.vertices.length]);
+  }
+  const collapsed = [];
+  bottomVerts.forEach((v) => {
+    const prev = collapsed[collapsed.length - 1];
+    if (!prev || Math.abs(v.x - prev.x) > 1e-6 || Math.abs(v.y - prev.y) > 1e-6 || Math.abs(v.z - prev.z) > 1e-6) collapsed.push(v);
+  });
+  let bottomBoundaryBase = collapsed.length >= 2 ? vertices.length / 3 : -1;
+  if (collapsed.length >= 2) collapsed.forEach(pushBoundary);
+  const bottomInfo = { holeBase: -1, midBase: -1, midCount: 0, width: 0 };
+  if (collapsed.length >= 3) {
+    const ringBottom = [ringWorld[3], ringWorld[4], ringWorld[5]];
+    const bottomSegments = rootRow <= surface.rowMax
+      ? Math.max(1, surface.rowMax - rootRow + 1)
+      : holeHeight;
+    const bottomMidCount = bottomSegments - 1;
+    let bottomNormal = new THREE.Vector3(0, 0, 1);
+    try {
+      bottomNormal = curveFrameAt(parent, THREE.MathUtils.clamp(surface.rowMax / Math.max(1, rows - 1), 0, 1)).z.clone();
+    } catch (e) { /* keep default */ }
+    bottomInfo.holeBase = vertices.length / 3;
+    collapsed.forEach(pushBoundary);
+    bottomInfo.midBase = vertices.length / 3;
+    for (let j = 1; j <= bottomMidCount; j += 1) {
+      const f = j / bottomSegments;
+      ringBottom.forEach((p, i) => {
+        const h = collapsed[i];
+        const p0 = new THREE.Vector3(p.x, p.y, p.z);
+        const p1 = new THREE.Vector3(h.x, h.y, h.z);
+        const span = p0.distanceTo(p1);
+        const m0 = new THREE.Vector3().subVectors(p1, p0);
+        const dir = m0.clone().normalize();
+        const tangent = m0.clone().addScaledVector(bottomNormal, -m0.dot(bottomNormal));
+        const tangentDir = tangent.lengthSq() > 1e-8 ? tangent.normalize() : dir;
+        // Sharp crease at the parent: half surface tangent + half reversed parent normal.
+        const creaseDir = new THREE.Vector3()
+          .addScaledVector(tangentDir, 0.5)
+          .addScaledVector(bottomNormal.clone().negate(), 0.5)
+          .normalize();
+        const m1 = creaseDir.multiplyScalar(span);
+        const mid = hermite(f, p0, p1, m0, m1);
+        pushBoundary({ x: mid.x, y: mid.y, z: mid.z });
+      });
     }
-    const collapsed = [];
-    bottomVerts.forEach((v) => {
-      const prev = collapsed[collapsed.length - 1];
-      if (!prev || Math.abs(v.x - prev.x) > 1e-6 || Math.abs(v.y - prev.y) > 1e-6 || Math.abs(v.z - prev.z) > 1e-6) collapsed.push(v);
-    });
-    bottomBoundaryBase = collapsed.length >= 2 ? vertices.length / 3 : -1;
-    if (collapsed.length >= 2) collapsed.forEach(pushBoundary);
+    bottomInfo.midCount = bottomMidCount;
+    bottomInfo.width = collapsed.length;
   }
 
   // Side direct bridges: ring left/right (1 edge each) <-> hole side bottom edge.
@@ -14133,16 +14186,14 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     { name: "right", col: surface.colMin, ringTop: 0, ringBottom: 5, flip: true }
   ];
   const sideBases = {};
-  if (!BRANCH_BRIDGE_DIAGNOSTIC) {
-    sideSpecs.forEach((spec) => {
-      const vTop = boundaryAt(surface.rowMax, spec.col);
-      const vBottom = boundaryAt(surface.rowMax + 1, spec.col);
-      if (!vTop || !vBottom) return;
-      sideBases[spec.name] = vertices.length / 3;
-      pushBoundary(vTop);
-      pushBoundary(vBottom);
-    });
-  }
+  sideSpecs.forEach((spec) => {
+    const vTop = boundaryAt(surface.rowMax, spec.col);
+    const vBottom = boundaryAt(surface.rowMax + 1, spec.col);
+    if (!vTop || !vBottom) return;
+    sideBases[spec.name] = vertices.length / 3;
+    pushBoundary(vTop);
+    pushBoundary(vBottom);
+  });
 
   // Top band: ring top (0,1,2) <-> hole top, holeHeight segments per column. Middle
   // rows use smoothstep interpolation plus a tapered bridge-round (0 at both ends,
@@ -14161,9 +14212,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   if (holeTop.length >= 3) {
     const ringTop = [ringWorld[0], ringWorld[1], ringWorld[2]];
     // Segments are measured from the child root row to the hole top, not the full hole
-    // height: extending the hole's bottom must not add top-band segments. The side that
-    // sits at the root stays a direct bridge; the far side gets generative segments.
-    const rootRow = Math.round(THREE.MathUtils.clamp(Number(lock.branchParentParameter ?? 0.4), 0, 1) * Math.max(1, rows - 1));
+    // height: extending the hole's bottom must not add top-band segments.
     const topSegments = rootRow >= surface.rowMin
       ? Math.max(1, rootRow - surface.rowMin + 1)
       : holeHeight;
@@ -14178,22 +14227,6 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     const outward = new THREE.Vector3().crossVectors(across, up);
     if (outward.lengthSq() < 1e-8) outward.set(0, 1, 0);
     outward.normalize();
-    // Hermite basis along the band's center line (both endpoint tangents follow the
-    // ring->hole chord), plus a smoothstep bow along the parent's outward normal (projected
-    // perpendicular to the band) so the curve is visible but never dips into the parent.
-    const hermite = (t, p0, p1, m0, m1) => {
-      const t2 = t * t;
-      const t3 = t2 * t;
-      const h00 = 2 * t3 - 3 * t2 + 1;
-      const h10 = t3 - 2 * t2 + t;
-      const h01 = -2 * t3 + 3 * t2;
-      const h11 = t3 - t2;
-      return new THREE.Vector3()
-        .addScaledVector(p0, h00)
-        .addScaledVector(m0, h10)
-        .addScaledVector(p1, h01)
-        .addScaledVector(m1, h11);
-    };
     let parentNormal = new THREE.Vector3(0, 0, 1);
     try {
       parentNormal = curveFrameAt(parent, THREE.MathUtils.clamp(surface.rowMin / Math.max(1, rows - 1), 0, 1)).z.clone();
@@ -14225,32 +14258,34 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   // Side fill columns: hole side vertices S[1..H-2] (rows rowMin+1..rowMax-1).
   const sideFillBases = { left: -1, right: -1 };
   const sideFillCount = Math.max(0, holeHeight - 2);
-  sideSpecs.forEach((spec) => {
-    if (sideBases[spec.name] == null) return;
-    sideFillBases[spec.name] = vertices.length / 3;
-    for (let k = 0; k < sideFillCount; k += 1) {
-      const v = boundaryAt(surface.rowMin + 1 + k, spec.col);
-      if (!v) return;
-      pushBoundary(v);
-    }
-  });
+  if (BRANCH_SIDE_FILL_ENABLED) {
+    sideSpecs.forEach((spec) => {
+      if (sideBases[spec.name] == null) return;
+      sideFillBases[spec.name] = vertices.length / 3;
+      for (let k = 0; k < sideFillCount; k += 1) {
+        const v = boundaryAt(surface.rowMin + 1 + k, spec.col);
+        if (!v) return;
+        pushBoundary(v);
+      }
+    });
+  }
 
   // Ring-side vertices are the sweep's row-0 ring (reused by index, no copies).
   const ringBase = vertices.length / 3;
 
-  // Bottom bridge faces.
-  if (bottomBoundaryBase >= 0) {
-    const rVerts = [ringWorld[3], ringWorld[4], ringWorld[5]];
-    const result = connectSide(collapsed, rVerts, bottomBoundaryBase, ringBase + 3);
-    result.quads.forEach((q) => {
-      const ordered = [q[0], q[3], q[2], q[1]];
-      quads.push(ordered);
-      indices.push(ordered[0], ordered[1], ordered[3], ordered[3], ordered[1], ordered[2]);
-    });
-    result.triangles.forEach((tr) => {
-      triangles.push(tr);
-      indices.push(tr[0], tr[1], tr[2]);
-    });
+  // Bottom band faces (ring bottom -> mid rows -> hole bottom).
+  if (bottomInfo.holeBase >= 0) {
+    const W = bottomInfo.width;
+    for (let i = 0; i < W - 1; i += 1) {
+      const column = [ringBase + 3 + i];
+      for (let j = 1; j <= bottomInfo.midCount; j += 1) column.push(bottomInfo.midBase + (j - 1) * W + i);
+      column.push(bottomInfo.holeBase + i);
+      for (let k = 0; k < column.length - 1; k += 1) {
+        const q = [column[k + 1], column[k], column[k] + 1, column[k + 1] + 1];
+        quads.push(q);
+        indices.push(q[0], q[1], q[3], q[3], q[1], q[2]);
+      }
+    }
   }
 
   // Side direct bridge faces.
@@ -14288,6 +14323,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     { name: "left", col: surface.colMax + 1, ringTop: 2, corner: -1 },
     { name: "right", col: surface.colMin, ringTop: 0, corner: 0 }
   ];
+  if (BRANCH_SIDE_FILL_ENABLED) {
   sideFillSpecs.forEach((spec) => {
     if (topInfo.holeBase < 0 || sideBases[spec.name] == null) return;
     spec.corner = topInfo.width - 1; // left corner is the last top-band column
@@ -14304,6 +14340,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       indices.push(tr[0], tr[1], tr[2]);
     });
   });
+  }
 
   return { vertices, normals, tangents, uvs, colors, indices, quads, triangles, ringBase };
 }
