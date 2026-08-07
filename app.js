@@ -14209,7 +14209,19 @@ function createBranchChildGeometry(lock) {
   const parent = locks.find((item) => item.id === lock?.branchParentId);
   const surface = branchRootRegionSurface(lock);
   if (!parent || !surface) return null;
-  const halfWidth = Math.max(0.001, Number(lock.width ?? lock.baseWidth ?? 0.08) * 0.5);
+  // Child lateral topology (the 2x1 "2"): half-width derives from the parent hole's
+  // lateral cross-section (world span of the region's left/right edge columns) so the
+  // child ring matches the carved rectangular hole.
+  const pPos = parent.mesh?.geometry?.getAttribute?.("position");
+  const pCols = Number(parent.mesh?.geometry?.userData?.gridColumns || 0);
+  const latRow = Math.round((surface.rowMin + surface.rowMax) / 2);
+  let holeHalfWidth = 0;
+  if (pPos && pCols >= 2 && surface.colMax > surface.colMin) {
+    const pa = new THREE.Vector3(pPos.getX(latRow * pCols + surface.colMin), pPos.getY(latRow * pCols + surface.colMin), pPos.getZ(latRow * pCols + surface.colMin));
+    const pb = new THREE.Vector3(pPos.getX(latRow * pCols + surface.colMax), pPos.getY(latRow * pCols + surface.colMax), pPos.getZ(latRow * pCols + surface.colMax));
+    holeHalfWidth = pa.distanceTo(pb) * 0.5;
+  }
+  const halfWidth = Math.max(0.001, holeHalfWidth || Number(lock.width ?? lock.baseWidth ?? 0.08) * 0.5);
   // 2:1 cross-section (width : height) per the normalized convention.
   const halfDepth = Math.max(0.001, halfWidth * 0.5);
   const ring = squareChildRing(halfWidth, halfDepth);
@@ -21235,15 +21247,14 @@ function clampRegionParam(value) {
   return THREE.MathUtils.clamp(Number(value) || 0, 0, 1);
 }
 
-// 5 root-region control points on the parent surface (u = along length, v = across width).
-// center (RootCtrl) + cross {up,down,left,right}. Stored in parent-surface params so the
-// child rides the parent without recomputation on parent moves.
+// 4 edge control points (up/down/left/right) define the rectangular carve region on the
+// parent surface (u = along length, v = across width). The center RootCtrl point was
+// dropped in 2.4u - only the 4 light-blue boundary points select the rectangular region.
 function branchRootRegionFromParam(parameter) {
   const u0 = clampRegionParam(parameter);
   const { centerV, upLength, downLength, leftWidth, rightWidth } = BRANCH_ROOT_REGION_DEFAULTS;
   const v0 = clampRegionParam(centerV);
   return {
-    center: { u: u0, v: v0 },
     cross: {
       up: { u: clampRegionParam(u0 + upLength), v: v0 },
       down: { u: clampRegionParam(u0 - downLength), v: v0 },
@@ -21269,6 +21280,115 @@ function cloneBranchRootRegion(region, { mirror = false } = {}) {
   };
 }
 
+
+// World positions of the 4 region edge control points, snapped to the parent surface
+// (grid vertices at the region's edge midpoints). Used to render the selection handles.
+function branchRootRegionWorldPoints(lock) {
+  const surface = branchRootRegionSurface(lock);
+  const parent = locks.find((item) => item.id === lock?.branchParentId);
+  const pos = parent?.mesh?.geometry?.getAttribute?.("position");
+  if (!surface || !pos) return null;
+  const pointAt = (r, c) => new THREE.Vector3(pos.getX(r * surface.cols + c), pos.getY(r * surface.cols + c), pos.getZ(r * surface.cols + c));
+  const rowC = Math.round((surface.rowMin + surface.rowMax) / 2);
+  const colC = Math.round((surface.colMin + surface.colMax) / 2);
+  return {
+    up: pointAt(surface.rowMax, colC),
+    down: pointAt(surface.rowMin, colC),
+    left: pointAt(rowC, surface.colMin),
+    right: pointAt(rowC, surface.colMax)
+  };
+}
+
+// Map a world point to the parent-surface (u, v) used by the region control points:
+// u = nearest guide-line parameter, v = across-width fraction (0..1).
+function branchSurfaceParamAtWorld(lock, point) {
+  const parent = locks.find((item) => item.id === lock?.branchParentId);
+  if (!parent?.points?.length || !point) return null;
+  const curve = new THREE.CatmullRomCurve3(parent.points);
+  let bestT = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i <= 64; i += 1) {
+    const t = i / 64;
+    const p = curve.getPoint(t);
+    const d = p.distanceToSquared(point);
+    if (d < bestDist) { bestDist = d; bestT = t; }
+  }
+  const curvePoint = curve.getPoint(bestT);
+  const frame = curveFrameAt(parent, bestT);
+  const width = Math.max(0.0001, Number(parent.baseWidth ?? parent.width ?? 0.16));
+  const across = new THREE.Vector3().subVectors(point, curvePoint).dot(frame.x);
+  return { u: clampRegionParam(bestT), v: clampRegionParam(0.5 + across / width) };
+}
+
+// Update one region control point from parent-surface params, then rebuild the child
+// geometry and re-carve the parent.
+function setBranchRootRegionPoint(lock, name, param) {
+  const cross = lock?.branchRootRegion?.cross;
+  if (!cross?.[name] || !param) return;
+  cross[name] = { u: clampRegionParam(param.u), v: clampRegionParam(param.v) };
+  rebuildLockGeometry(lock);
+  const parent = locks.find((item) => item.id === lock?.branchParentId);
+  if (parent) applyBranchRootRegionCarving(parent, parent.mesh.geometry);
+  updateCurveObjects(lock);
+}
+
+// Drag state for the rectangular region controller (4 edge points + root slide).
+let branchRegionDrag = null;
+function pointerToNdc(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  return new THREE.Vector2(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1
+  );
+}
+function beginBranchRegionDrag(event) {
+  if (viewportEditMode !== "strand" || !componentEditModeActive()) return false;
+  const selected = locks.find((item) => item.id === selectedId);
+  const handles = selected?.curveObjects?.regionHandles || [];
+  if (!handles.length) return false;
+  raycaster.setFromCamera(pointerToNdc(event), camera);
+  const hits = raycaster.intersectObjects(handles, false);
+  if (!hits.length) return false;
+  const hit = hits[0];
+  branchRegionDrag = {
+    lockId: selected.id,
+    name: hit.object.userData.regionHandle || "root",
+    isRoot: Boolean(hit.object.userData.regionRootHandle)
+  };
+  renderer.domElement.setPointerCapture?.(event.pointerId);
+  event.stopPropagation();
+  event.preventDefault();
+  return true;
+}
+function updateBranchRegionDrag(event) {
+  if (!branchRegionDrag) return;
+  const lock = locks.find((item) => item.id === branchRegionDrag.lockId);
+  if (!lock?.branchRootRegion) { branchRegionDrag = null; return; }
+  const parent = locks.find((item) => item.id === lock.branchParentId);
+  if (!parent?.mesh) { branchRegionDrag = null; return; }
+  raycaster.setFromCamera(pointerToNdc(event), camera);
+  const hit = raycaster.intersectObject(parent.mesh, false)[0];
+  if (!hit) return;
+  const param = branchSurfaceParamAtWorld(lock, hit.point);
+  if (!param) return;
+  if (branchRegionDrag.isRoot) {
+    // Root bone control: slide along the parent guide line (u only, center v).
+    const old = lock.branchParentParameter ?? 0;
+    lock.branchParentParameter = clampRegionParam(param.u);
+    enforceBranchRootPosition(lock);
+    rebuildLockGeometry(lock);
+    if (parent) applyBranchRootRegionCarving(parent, parent.mesh.geometry);
+    updateCurveObjects(lock);
+    if (Math.abs(lock.branchParentParameter - old) > 0.0001) pushUndoState();
+  } else {
+    setBranchRootRegionPoint(lock, branchRegionDrag.name, param);
+  }
+}
+function endBranchRegionDrag(event) {
+  if (!branchRegionDrag) return;
+  renderer.domElement.releasePointerCapture?.(event.pointerId);
+  branchRegionDrag = null;
+}
 
 // Cache of the parent-surface grid region for a child's branchRootRegion.
 // Recomputed only when the control points change; parent moves never touch it.
@@ -24759,6 +24879,30 @@ function createCurveObjects(lock) {
     strandSplitHandle.userData.strandSplitHandle = true;
     group.add(strandSplitHandle);
   }
+  // Branch root region selection handles: 4 light-blue edge points (up/down/left/right)
+  // snap to the parent surface and define the rectangular carve region; a root handle
+  // slides along the parent guide line.
+  const regionHandles = [];
+  let regionRootHandle = null;
+  if (lock.branchRootRegion) {
+    const makeRegionHandle = (color) => {
+      const handle = new THREE.Mesh(
+        new THREE.SphereGeometry(0.045, 14, 10),
+        new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 })
+      );
+      handle.renderOrder = 5;
+      handle.userData.lockId = lock.id;
+      group.add(handle);
+      return handle;
+    };
+    ["up", "down", "left", "right"].forEach((name) => {
+      const handle = makeRegionHandle(0x8fd8ff);
+      handle.userData.regionHandle = name;
+      regionHandles.push(handle);
+    });
+    regionRootHandle = makeRegionHandle(0xff9a5e);
+    regionRootHandle.userData.regionRootHandle = true;
+  }
   group.visible = false;
   return {
     group,
@@ -24772,7 +24916,9 @@ function createCurveObjects(lock) {
     surfaceObjectAnchor,
     surfaceObjectAnchorHandle,
     surfaceObjectAnchorStem,
-    widthEdgeLines
+    widthEdgeLines,
+    regionHandles,
+    regionRootHandle
   };
 }
 
@@ -25201,6 +25347,28 @@ function updateCurveObjects(lock, options = {}) {
     }
   }
   if (strandSplitLine && !strandSplitVisible) strandSplitLine.visible = false;
+  // Branch root region handles: 4 light-blue edge points on the parent surface + root.
+  if (lock.branchRootRegion && lock.curveObjects.regionHandles?.length) {
+    const regionWorld = branchRootRegionWorldPoints(lock);
+    if (regionWorld) {
+      lock.curveObjects.regionHandles.forEach((handle) => {
+        const name = handle.userData.regionHandle;
+        if (regionWorld[name]) handle.position.copy(regionWorld[name]);
+      });
+    }
+    const regionParent = locks.find((item) => item.id === lock.branchParentId);
+    if (lock.curveObjects.regionRootHandle && regionParent) {
+      const rootFrame = branchParentFrame(regionParent, lock.branchParentParameter);
+      lock.curveObjects.regionRootHandle.position.copy(rootFrame.point);
+    }
+    const regionSelected = lock.id === selectedId || selectedStrandIds.has(lock.id);
+    lock.curveObjects.regionHandles.forEach((handle) => {
+      handle.visible = regionSelected && !sculptBrushHelpersSuppressed && componentEditModeActive();
+    });
+    if (lock.curveObjects.regionRootHandle) {
+      lock.curveObjects.regionRootHandle.visible = regionSelected && !sculptBrushHelpersSuppressed && componentEditModeActive();
+    }
+  }
   if ("visible" in options) {
     const brushCurveVisibilityAllowed = !sculptBrushToolActive() || sculptBrushShowCurvesInput.checked;
     lock.curveObjects.group.visible = brushCurveVisibilityAllowed
@@ -35619,6 +35787,9 @@ renderer.domElement.addEventListener("pointerdown", beginHoudiniZoomDrag, true);
 renderer.domElement.addEventListener("pointerdown", prepareCurvePointSelection, true);
 renderer.domElement.addEventListener("pointerdown", beginAltOrbit, true);
 renderer.domElement.addEventListener("pointerdown", prioritizeScalpBuilderPointSelection, true);
+renderer.domElement.addEventListener("pointerdown", beginBranchRegionDrag, true);
+renderer.domElement.addEventListener("pointermove", updateBranchRegionDrag);
+renderer.domElement.addEventListener("pointerup", endBranchRegionDrag);
 renderer.domElement.addEventListener("pointermove", updateControlPointHover);
 renderer.domElement.addEventListener("pointermove", updateCurveLatticeLoopHover);
 renderer.domElement.addEventListener("pointermove", updateReferenceOverlayCursor);
