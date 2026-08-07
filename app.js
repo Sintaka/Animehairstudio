@@ -14121,6 +14121,22 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     topInfo.midBase = vertices.length / 3;
     midRow.forEach((m) => pushBoundary(m));
   }
+  // Final side fill: close the remaining hole side edges between the top bridge and the
+  // side direct bridges. Pattern: the first poly next to the top cut edge is a triangle,
+  // the rest are quads - for each side, one triangle + one quad.
+  const sideFillBases = { left: -1, right: -1 };
+  if (topInfo.midBase >= 0) {
+    const sideFillSpecs = [
+      { name: "left", col: surface.colMax + 1 },
+      { name: "right", col: surface.colMin }
+    ];
+    sideFillSpecs.forEach((spec) => {
+      const vMid = boundaryAt(surface.rowMin + 1, spec.col);
+      if (!vMid) return;
+      sideFillBases[spec.name] = vertices.length / 3;
+      pushBoundary(vMid);
+    });
+  }
   // Ring-side vertices are the sweep's row-0 ring (reused by index, no copies).
   const ringBase = vertices.length / 3;
   if (bottomBoundaryBase >= 0) {
@@ -14160,6 +14176,29 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       quads.push(qRing);
       indices.push(qRing[0], qRing[1], qRing[3], qRing[3], qRing[1], qRing[2]);
     }
+  }
+  // Side fill faces (one triangle + one quad per side). The triangle fills the corner
+  // next to the top cut edge; the quad connects the middle hole-side segment to the ring.
+  if (topInfo.midBase >= 0) {
+    const sideFillSpecs = [
+      { name: "left", col: surface.colMax + 1, holeTop: 2, mid: 2, ringTop: 2, side: "left" },
+      { name: "right", col: surface.colMin, holeTop: 0, mid: 0, ringTop: 0, side: "right" }
+    ];
+    sideFillSpecs.forEach((spec) => {
+      if (sideFillBases[spec.name] < 0 || sideBases[spec.side] == null) return;
+      const vFill = sideFillBases[spec.name];
+      const midIdx = topInfo.midBase + spec.mid;
+      const ringIdx = ringBase + spec.ringTop;
+      const sideIdx = sideBases[spec.side];
+      const holeIdx = topInfo.holeBase + spec.holeTop;
+      const isLeft = spec.name === "left";
+      const tri = isLeft ? [holeIdx, midIdx, vFill] : [holeIdx, vFill, midIdx];
+      const quad = isLeft ? [vFill, midIdx, ringIdx, sideIdx] : [sideIdx, ringIdx, midIdx, vFill];
+      quads.push(tri);
+      indices.push(tri[0], tri[1], tri[2]);
+      quads.push(quad);
+      indices.push(quad[0], quad[1], quad[3], quad[3], quad[1], quad[2]);
+    });
   }
   return { vertices, normals, tangents, uvs, colors, indices, quads, triangles, ringBase };
 }
@@ -14259,7 +14298,10 @@ function createBranchChildGeometry(lock) {
     indices.push(...bridge.indices);
     bridge.quads.forEach((q) => quadFaces.push(q));
     bridge.triangles.forEach((tr) => quadFaces.push(tr));
-    bridge.quads.forEach(() => triangleEdgeMasks.push([0, 1, 1], [1, 1, 0]));
+    bridge.quads.forEach((q) => {
+      if (q.length === 3) triangleEdgeMasks.push([1, 1, 1]);
+      else triangleEdgeMasks.push([0, 1, 1], [1, 1, 0]);
+    });
     bridge.triangles.forEach(() => triangleEdgeMasks.push([1, 1, 1]));
   } else {
     // Root cap only when there is no bridge.
