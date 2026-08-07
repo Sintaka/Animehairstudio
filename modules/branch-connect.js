@@ -7,27 +7,25 @@
 
 const clamp01 = (v) => Math.min(1, Math.max(0, Number(v) || 0));
 
-// 8-point square ring in cross-section local space (x = across, z = up/out).
-// Order: start at +x mid, CCW around the cross-section.
-// Returns { points: [{x,z}x8], sides: [{ name, start, count }] } with count = edges per side.
+// 6-point ring for the 2x1 cross-section (width : height), CCW from right-top.
+// Top/bottom (width) sides have 2 segments, left/right (height) sides 1 segment.
+// Returns { points: [{x,z}x6], sides: [{ name, start, count }] } with count = edges per side.
 export function squareChildRing(halfWidth, halfDepth) {
   const hw = Math.max(0.0001, Number(halfWidth) || 0.08);
   const hd = Math.max(0.0001, Number(halfDepth) || 0.08);
   const points = [
-    { x: hw, z: 0 },      // 0 right mid
-    { x: hw, z: hd },     // 1 right-top corner
-    { x: 0, z: hd },      // 2 top mid
-    { x: -hw, z: hd },    // 3 left-top corner
-    { x: -hw, z: 0 },     // 4 left mid
-    { x: -hw, z: -hd },   // 5 left-bottom corner
-    { x: 0, z: -hd },     // 6 bottom mid
-    { x: hw, z: -hd }     // 7 right-bottom corner
+    { x: hw, z: hd },     // 0 right-top corner
+    { x: 0, z: hd },      // 1 top mid
+    { x: -hw, z: hd },    // 2 left-top corner
+    { x: -hw, z: -hd },   // 3 left-bottom corner
+    { x: 0, z: -hd },     // 4 bottom mid
+    { x: hw, z: -hd }     // 5 right-bottom corner
   ];
   const sides = [
-    { name: "right", start: 0, count: 2 },
-    { name: "top", start: 1, count: 2 },
-    { name: "left", start: 3, count: 2 },
-    { name: "bottom", start: 5, count: 2 }
+    { name: "top", start: 0, count: 2 },
+    { name: "left", start: 2, count: 1 },
+    { name: "bottom", start: 3, count: 2 },
+    { name: "right", start: 5, count: 1 }
   ];
   return { points, sides };
 }

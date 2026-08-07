@@ -14002,9 +14002,10 @@ function createConnectedCurveCardGeometry(lock) {
 // Branch-child geometry — mirrors the original strand sweep construction (radial
 // normals + tangent + end caps) with the 8-point square ring instead of the profile,
 // so the anime shader sees the same attribute layout as the original hair.
-// Build the parent-hole -> child-ring bridge (marching stitch, quads + seam triangles).
-// Bridge vertices use the parent surface normal (by grid index) for the hole side and
-// radial normals for the ring side, matching the original hair attribute layout.
+// Build the parent-hole -> child-ring bridge: bottom (2 quads, 1:1 real-edge mapping)
+// + side direct bridges (left/right, one quad each). Parent-side vertices reuse the
+// parent's authored normal/tangent by grid index; ring-side vertices reuse the sweep's
+// row-0 ring by index (no copies), so the bridge is watertight with the sweep.
 function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom) {
   const positionAttr = parentGeom?.getAttribute?.("position");
   const normalAttr = parentGeom?.getAttribute?.("normal");
@@ -14015,57 +14016,69 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   if (rows < 2 || cols < 2) return null;
   const boundary = holeBoundary(surface, positionAttr.array, rows, cols);
   if (!boundary) return null;
-  const ring = squareChildRing(0.001, 0.001);
   const vertices = [];
   const normals = [];
   const tangents = [];
   const uvs = [];
   const colors = [];
   const rootColor = strandInfluenceColor(lock, 0);
-  const sideJobs = [];
-  ring.sides.forEach((ringSide, sideIndex) => {
-    if (ringSide.name !== "bottom") return;
-    const bSide = boundary.sides.find((s) => s.name === ringSide.name) || boundary.sides[sideIndex];
-    const bVerts = [];
-    for (let i = 0; i <= bSide.count; i += 1) bVerts.push(boundary.vertices[(bSide.start + i) % boundary.vertices.length]);
-    // Collapse consecutive coincident boundary vertices (creased-profile seams
-    // produce zero-length edges) so the real edges map 1:1 to the ring edges.
-    const collapsed = [];
-    bVerts.forEach((v) => {
-      const prev = collapsed[collapsed.length - 1];
-      if (!prev || Math.abs(v.x - prev.x) > 1e-6 || Math.abs(v.y - prev.y) > 1e-6 || Math.abs(v.z - prev.z) > 1e-6) collapsed.push(v);
-    });
-    if (collapsed.length < 2) return;
-    const boundaryBase = vertices.length / 3;
-    collapsed.forEach((v) => {
-      vertices.push(v.x, v.y, v.z);
-      let nx = 0; let ny = 1; let nz = 0;
-      if (normalAttr && v.index != null) {
-        nx = normalAttr.getX(v.index); ny = normalAttr.getY(v.index); nz = normalAttr.getZ(v.index);
-      }
-      normals.push(nx, ny, nz);
-      let tx = 1; let ty = 0; let tz = 0;
-      if (tangentAttr && v.index != null) {
-        tx = tangentAttr.getX(v.index); ty = tangentAttr.getY(v.index); tz = tangentAttr.getZ(v.index);
-      }
-      tangents.push(tx, ty, tz, 1);
-      uvs.push(0.5, 0);
-      colors.push(rootColor.r, rootColor.g, rootColor.b);
-    });
-    const rVerts = [];
-    for (let i = 0; i <= ringSide.count; i += 1) rVerts.push(ringWorld[(ringSide.start + i) % ringWorld.length]);
-    sideJobs.push({ bVerts: collapsed, rVerts, boundaryBase, ringStart: ringSide.start });
-  });
-  // Ring-side vertices are the sweep's row-0 ring (reused by index, no copies).
-  const ringBase = vertices.length / 3;
+  const pushBoundary = (v) => {
+    vertices.push(v.x, v.y, v.z);
+    let nx = 0; let ny = 1; let nz = 0;
+    if (normalAttr && v.index != null) {
+      nx = normalAttr.getX(v.index); ny = normalAttr.getY(v.index); nz = normalAttr.getZ(v.index);
+    }
+    normals.push(nx, ny, nz);
+    let tx = 1; let ty = 0; let tz = 0;
+    if (tangentAttr && v.index != null) {
+      tx = tangentAttr.getX(v.index); ty = tangentAttr.getY(v.index); tz = tangentAttr.getZ(v.index);
+    }
+    tangents.push(tx, ty, tz, 1);
+    uvs.push(0.5, 0);
+    colors.push(rootColor.r, rootColor.g, rootColor.b);
+  };
+  const indexAt = (r, c) => r * cols + c;
+  const boundaryAt = (r, c) => boundary.vertices.find((v) => v.index === indexAt(r, c));
   const quads = [];
   const triangles = [];
   const indices = [];
-  sideJobs.forEach((job) => {
-    const result = connectSide(job.bVerts, job.rVerts, job.boundaryBase, ringBase + job.ringStart);
+  // Bottom side: collapse the crease-seam coincident column so each of the child
+  // ring's 2 bottom edges maps 1:1 to a real parent bottom edge.
+  const bottomSide = boundary.sides.find((s) => s.name === "bottom");
+  const bottomVerts = [];
+  for (let i = 0; i <= bottomSide.count; i += 1) {
+    bottomVerts.push(boundary.vertices[(bottomSide.start + i) % boundary.vertices.length]);
+  }
+  const collapsed = [];
+  bottomVerts.forEach((v) => {
+    const prev = collapsed[collapsed.length - 1];
+    if (!prev || Math.abs(v.x - prev.x) > 1e-6 || Math.abs(v.y - prev.y) > 1e-6 || Math.abs(v.z - prev.z) > 1e-6) collapsed.push(v);
+  });
+  const bottomBoundaryBase = collapsed.length >= 2 ? vertices.length / 3 : -1;
+  if (collapsed.length >= 2) collapsed.forEach(pushBoundary);
+  // Side direct bridges: the ring's 1-segment left/right sides connect straight to
+  // the parent side edges' bottom segment (rows rowMax..rowMax+1), one quad each.
+  const sideSpecs = [
+    { name: "left", col: surface.colMin, ringTop: 2, ringBottom: 3 },
+    { name: "right", col: surface.colMax + 1, ringTop: 0, ringBottom: 5 }
+  ];
+  const sideBases = {};
+  sideSpecs.forEach((spec) => {
+    const vTop = boundaryAt(surface.rowMax, spec.col);
+    const vBottom = boundaryAt(surface.rowMax + 1, spec.col);
+    if (!vTop || !vBottom) return;
+    sideBases[spec.name] = vertices.length / 3;
+    pushBoundary(vTop);
+    pushBoundary(vBottom);
+  });
+  // Ring-side vertices are the sweep's row-0 ring (reused by index, no copies).
+  const ringBase = vertices.length / 3;
+  if (bottomBoundaryBase >= 0) {
+    const rVerts = [ringWorld[3], ringWorld[4], ringWorld[5]];
+    const result = connectSide(collapsed, rVerts, bottomBoundaryBase, ringBase + 3);
     result.quads.forEach((q) => {
-      // Match the strand sweep's quad order [a, c, d, b] (bottom row, top row)
-      // and triangle split (a,c,b),(b,c,d) so the bridge blends with the sweep.
+      // Match the strand sweep quad order [a, c, d, b] and triangle split
+      // (a,c,b),(b,c,d) so the bridge blends with the sweep.
       const ordered = [q[0], q[3], q[2], q[1]];
       quads.push(ordered);
       indices.push(ordered[0], ordered[1], ordered[3], ordered[3], ordered[1], ordered[2]);
@@ -14074,6 +14087,13 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       triangles.push(tr);
       indices.push(tr[0], tr[1], tr[2]);
     });
+  }
+  sideSpecs.forEach((spec) => {
+    if (sideBases[spec.name] == null) return;
+    const base = sideBases[spec.name];
+    const quad = [base, ringBase + spec.ringTop, ringBase + spec.ringBottom, base + 1];
+    quads.push(quad);
+    indices.push(quad[0], quad[1], quad[3], quad[3], quad[1], quad[2]);
   });
   return { vertices, normals, tangents, uvs, colors, indices, quads, triangles, ringBase };
 }
