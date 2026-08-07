@@ -14074,7 +14074,8 @@ function createBranchChildGeometry(lock) {
   const surface = branchRootRegionSurface(lock);
   if (!parent || !surface) return null;
   const halfWidth = Math.max(0.001, Number(lock.width ?? lock.baseWidth ?? 0.08) * 0.5);
-  const halfDepth = Math.max(0.001, Number(lock.depth ?? 0.12) * 0.5);
+  // 2:1 cross-section (width : height) per the normalized convention.
+  const halfDepth = Math.max(0.001, halfWidth * 0.5);
   const ring = squareChildRing(halfWidth, halfDepth);
   const curve = strandGeometryCurve(lock);
   const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), 4), 4, 256);
@@ -14116,8 +14117,16 @@ function createBranchChildGeometry(lock) {
     const parentFrame = curveFrameAt(parent, attachParam);
     const point0 = parentCurve.getPoint(attachParam);
     const rootCenter = point0.clone();
+    // Rotate the parent frame +90deg around its side axis: child tangent = parent up,
+    // and the ring's bottom (-up) faces the parent tip (+tangent) so it bridges to the
+    // hole's bottom edge.
+    const ringFrame = {
+      x: parentFrame.x,
+      y: parentFrame.z,
+      z: parentFrame.y.clone().negate()
+    };
     const ringWorld = ring.points.map((p) => {
-      const v = point0.clone().addScaledVector(parentFrame.x, p.x).addScaledVector(parentFrame.z, p.z);
+      const v = point0.clone().addScaledVector(ringFrame.x, p.x).addScaledVector(ringFrame.z, p.z);
       return v;
     });
     return buildBranchBridgeGeometry(lock, parent, surface, ringWorld, rootCenter, parent.mesh.geometry);
@@ -30646,6 +30655,8 @@ hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
 });
+
+
 
 
 
