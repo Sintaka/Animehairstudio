@@ -67,3 +67,8 @@
 - [x] Branch Root Region 面板渲染修复（SVG aspect 正确、拖拽精确跟手）
 - [x] 顶部桥接 smoothstep 外凸可见 + 分段相对 root（延长底部不影响顶部段数）
 - [x] 刘海线框掩码核对（v0040 全对）+ devlog 拆分为索引字典
+
+- [x] 顶部桥接 smoothstep：主发片端平行表面切线到达（去掉法线分量，不凸不凹）
+- [x] Branch Root Region 面板缩小 + 移除 toggle + Reset 精简
+- [x] sweep 起始手柄偏移出毛发表面（可见）
+- [x] 刘海线框掩码确认正确（quad 重建法）；面板 split 开口折叠 quad 为着色折痕来源

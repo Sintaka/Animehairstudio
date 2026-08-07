@@ -14194,29 +14194,26 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
         .addScaledVector(p1, h01)
         .addScaledVector(m1, h11);
     };
-    const BRIDGE_ROUND_FACTOR = 0.3;
-    let parentOutward = new THREE.Vector3(0, 0, 1);
+    let parentNormal = new THREE.Vector3(0, 0, 1);
     try {
-      parentOutward = curveFrameAt(parent, THREE.MathUtils.clamp(surface.rowMin / Math.max(1, rows - 1), 0, 1)).z.clone();
+      parentNormal = curveFrameAt(parent, THREE.MathUtils.clamp(surface.rowMin / Math.max(1, rows - 1), 0, 1)).z.clone();
     } catch (e) { /* keep default */ }
     topInfo.holeBase = vertices.length / 3;
     holeTop.forEach(pushBoundary);
     topInfo.midBase = vertices.length / 3;
     for (let j = 1; j <= midCount; j += 1) {
       const f = j / topSegments;
-      const bump = Math.sin(Math.PI * f) * BRIDGE_ROUND_FACTOR;
       ringTop.forEach((p, i) => {
         const h = holeTop[i];
         const p0 = new THREE.Vector3(p.x, p.y, p.z);
         const p1 = new THREE.Vector3(h.x, h.y, h.z);
-        const span = p0.distanceTo(p1);
-        const dir = new THREE.Vector3().subVectors(p1, p0).normalize();
-        const bowDir = parentOutward.clone().addScaledVector(dir, -parentOutward.dot(dir));
-        if (bowDir.lengthSq() < 1e-8) bowDir.crossVectors(dir, across).normalize();
-        else bowDir.normalize();
+        // The band leaves the ring along the ring->hole chord, and arrives at the hole
+        // parallel to the parent surface (chord projected onto the surface tangent plane)
+        // instead of perpendicular, so it blends flatly without bulging.
         const m0 = new THREE.Vector3().subVectors(p1, p0);
-        const m1 = m0.clone();
-        const mid = hermite(f, p0, p1, m0, m1).addScaledVector(bowDir, span * bump);
+        const m1 = m0.clone().addScaledVector(parentNormal, -m0.dot(parentNormal));
+        if (m1.lengthSq() < 1e-8) m1.copy(m0);
+        const mid = hermite(f, p0, p1, m0, m1);
         pushBoundary({ x: mid.x, y: mid.y, z: mid.z });
       });
     }
@@ -21454,11 +21451,11 @@ function setBranchRootRegionPoint(lock, name, param) {
 let branchRegionEdit = null;
 let branchRegionCanvasDrag = null;
 function branchRegionUVToCanvas(u, v) {
-  return { x: 20 + v * 180, y: 20 + u * 480 };
+  return { x: 20 + v * 180, y: 20 + u * 360 };
 }
 function branchRegionCanvasToUV(cx, cy) {
   return {
-    u: THREE.MathUtils.clamp((cy - 20) / 480, 0, 1),
+    u: THREE.MathUtils.clamp((cy - 20) / 360, 0, 1),
     v: THREE.MathUtils.clamp((cx - 20) / 180, 0, 1)
   };
 }
@@ -21470,8 +21467,6 @@ function openBranchRegionEditor(lockId) {
   branchRegionEdit = lockId;
   const target = document.querySelector("#branchRegionTarget");
   if (target) target.textContent = lock.name || "Selected branch";
-  const toggle = document.querySelector("#branchRegionMeshPointsToggle");
-  if (toggle) toggle.checked = branchRegionMeshPointsVisible;
   renderBranchRegionEditor();
   updateBranchRegionMeshPoints();
   const dialog = document.querySelector("#branchRegionEditor");
@@ -25654,9 +25649,12 @@ function updateCurveObjects(lock, options = {}) {
     branchSweepStartHandle.visible = sweepStartVisible;
     branchSweepStartHandle.material.opacity = branchSweepStartDrag?.lockId === lock.id ? 0.9 : 0.68;
     if (sweepStartVisible) {
-      branchSweepStartHandle.position.copy(strandGeometryCurve(lock).getPoint(
-        THREE.MathUtils.clamp(Number(lock.branchSweepStartT ?? 0.1), 0.02, 0.6)
-      ));
+      // Sit the handle just off the guide (along the child's outward normal) so it is
+      // visible next to the hair instead of buried inside the root cross-section.
+      const sweepCurve = strandGeometryCurve(lock);
+      const sweepT = THREE.MathUtils.clamp(Number(lock.branchSweepStartT ?? 0.1), 0.02, 0.6);
+      const sweepFrame = strandGeometryFrameAt(lock, sweepCurve, sweepT);
+      branchSweepStartHandle.position.copy(sweepCurve.getPoint(sweepT)).addScaledVector(sweepFrame.z, 0.06);
     }
   }
 
@@ -31025,12 +31023,6 @@ branchRegionCanvas.addEventListener("pointerdown", beginBranchRegionCanvasDrag);
 branchRegionCanvas.addEventListener("pointermove", updateBranchRegionCanvasDrag);
 branchRegionCanvas.addEventListener("pointerup", endBranchRegionCanvasDrag);
 branchRegionCanvas.addEventListener("pointercancel", endBranchRegionCanvasDrag);
-document.querySelector("#branchRegionMeshPointsToggle").addEventListener("change", (event) => {
-  branchRegionMeshPointsVisible = event.target.checked;
-  updateBranchRegionMeshPoints();
-  const lock = locks.find((item) => item.id === branchRegionEdit);
-  if (lock) updateCurveObjects(lock);
-});
 
 function beginTaperMeshPointDrag(event) {
   if (

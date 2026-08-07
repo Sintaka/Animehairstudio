@@ -4660,7 +4660,11 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
 }
 
 #branchRegionCanvas {
-  aspect-ratio: 11 / 26;
+  aspect-ratio: 11 / 20;
+}
+
+#branchRegionEditor {
+  width: min(280px, calc(100vw - 400px));
 }
 
 .taper-point-controls {

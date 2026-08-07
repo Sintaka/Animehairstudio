@@ -32,4 +32,4 @@ python -m http.server 8080 --bind 127.0.0.1
 
 ## 最近版本 / Latest
 
-- Phase 2.6：Branch Root Region 面板渲染修复（SVG aspect 正确、拖拽跟手）；顶部桥接 smoothstep 外凸可见；桥接分段相对 root（延长底部不影响顶部段数）；刘海掩码核对；devlog 拆分（本索引）。
+- Phase 2.7：smoothstep 主发片端平行切线到达（不凸不凹）；Region 面板缩小+精简；sweep 手柄偏移出表面（可见）；刘海线框掩码确认正确（面板 split 开口折叠 quad 为着色折痕来源）。

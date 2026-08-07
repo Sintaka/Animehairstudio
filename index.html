@@ -1887,20 +1887,14 @@
           </div>
           <button id="closeBranchRegion" type="button" title="Close branch region editor" aria-label="Close branch region editor">&#10005;</button>
         </div>
-        <svg id="branchRegionCanvas" class="taper-canvas branch-region-canvas" viewBox="0 0 220 520" role="img" aria-label="Branch root region rectangle in parent-surface u/v space">
-          <line id="branchRegionBaseAxis" class="profile-axis" x1="20" y1="500" x2="200" y2="500"></line>
-          <line id="branchRegionValueAxis" class="profile-axis" x1="20" y1="20" x2="20" y2="500"></line>
+        <svg id="branchRegionCanvas" class="taper-canvas branch-region-canvas" viewBox="0 0 220 400" role="img" aria-label="Branch root region rectangle in parent-surface u/v space">
+          <line id="branchRegionBaseAxis" class="profile-axis" x1="20" y1="380" x2="200" y2="380"></line>
+          <line id="branchRegionValueAxis" class="profile-axis" x1="20" y1="20" x2="20" y2="380"></line>
           <rect id="branchRegionRect" class="branch-region-rect" fill="rgba(143,216,255,0.18)" stroke="#8fd8ff" stroke-width="1.5"></rect>
           <g id="branchRegionPoints"></g>
         </svg>
-        <label id="branchRegionMeshPointsToggleRow" class="profile-mesh-point-toggle">
-          <span>
-            <strong>Show points on mesh</strong>
-          </span>
-          <input id="branchRegionMeshPointsToggle" type="checkbox" />
-        </label>
         <div class="taper-point-controls">
-          <button id="resetBranchRegion" type="button">Reset region</button>
+          <button id="resetBranchRegion" type="button">Reset</button>
         </div>
       </div>
     </dialog>
@@ -2040,6 +2034,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260807-47"></script>
+    <script type="module" src="./app.js?v=20260807-48"></script>
   </body>
 </html>

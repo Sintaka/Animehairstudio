@@ -50,6 +50,12 @@
   - **侧面直接桥接（2.4r 已修正）**：子环 left（世界左）↔ 父 colMax+1（世界左）、right（世界右）↔ colMin（世界右），按**世界侧**匹配（网格 left/right 在世界相反）；右面绕序 flip 朝外。
   - **顶部（本次三步）**：① 洞 top（row9，世界 右→左 col2→col5，折痕零边折叠成 2 实边）↔ 子环 top（环点 0/1/2，世界 右→左），2src↔2dst 直接桥接；② 对桥接边**分段**：观察洞侧面未桥接边数（每侧 2 段）→ 每条桥接边 1 段需增至 2 段（新增 1 段 = 中间等比切分，注释后续复杂侦测）；③ 上部 poly 走向从线性改 **smoothstep 平滑**，完成子→主桥接过渡。
   - 直接桥接概念：把子环边**直接投影**到主发片最接近的面/线段去匹配。
+- **子发片深度重置 2.7（smoothstep 主发片端切线 + 面板缩小 + sweep 手柄可见 + 刘海排查）**
+  - **顶部桥接主发片端切线修正**：原用弦方向做 Hermite 终点切线（带垂直到达、凸起），再加 sin 外凸更严重。改为 m1=弦方向投影到父级切平面（去掉父级法线分量）——带沿中心线走、到达端平行父级表面切线、不再凸起/凹进；去掉外凸 bow。
+  - **Branch Root Region 面板缩小**：viewBox 220x520->220x400、SVG aspect 11/26->11/20、dialog 宽 280px（原 360）；移除 Show points on mesh toggle；Reset region 精简为 Reset。验证：SVG 254x462（原 334x789）。
+  - **sweep 起始手柄可见**：手柄沿子发片 guide 的 frame.z（朝外法线）偏移 0.06 摆到毛发表面外，不再埋在根部截面里。
+  - **刘海排查（线框掩码确认正确）**：split 发丝（Side Bangs 1/2）572 个扫掠 quad 用 quad 重建法检查 0 个显示对角线；面板（Front Bangs 1/2/3）掩码经焊接保序、隐藏对角线。但面板在 Split 开口处有折叠 quad（Front Bangs 1 22 个、3 52 个，二面角最高 180°/90°）——着色沿对角线出折痕是"三角面"观感来源（split 开口设计，非线框 bug）。
+
 - **子发片深度重置 2.6（面板渲染修复 + smoothstep 外凸 + 分段相对 root + devlog 拆分）**
   - **Branch Root Region 面板渲染修复**：.branch-region-canvas 的 aspect-ratio 规则写在 .taper-canvas 之前（同优先级后者胜出），SVG 按 26/11 宽渲染、竖长内容被 letterbox，导致左边界跑到中间偏左、右侧超出、拖拽比例错乱。改为 ID 选择器 #branchRegionCanvas 且放在 .taper-canvas 之后。验证：rect aspect 0.423 == viewBox 0.423，拖拽点精确跟手。
   - **顶部桥接 smoothstep 可见**：中心线 Hermite（两端切线=弦方向）退化成直线。新增沿父级孔洞处 frame.z（朝外法线）投影到带法平面的外凸：中间行 sin(pi*f)*0.3*span，两端为 0，可见且不凹进父级。
