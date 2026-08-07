@@ -54,6 +54,7 @@
   - **选区边界压缩恢复**：region 新增 `edgeOffsets`（center→up/down/left/right 的距离，随点拖拽/恢复/克隆同步）；`updateBranchRootRegionCenter` 与面板矩形整体拖动改为「center ± edgeOffsets」派生 4 点（原先逐点 += delta 并各自 clamp 到 [0,1]），根骨骼拖到边界触发压缩后回到中心时**恢复原始宽高**，不再残留一条窄竖线需要重新拖开。旧文件缺 edgeOffsets → 恢复时由 cross 点计算（兼容）。验证：v 边界 v=1 压缩 vSpan 0.24→0.12，回到 v=0.5 恢复 0.24；u 边界同理。
   - **桥接网格边界守卫**：emitTopMidRow/emitBottomMidRow 对 `i >= holeTop.length / collapsed.length` 跳过——region 拖到网格最末行（u→1，孔洞底边坍缩成少于环点数）不再抛 TypeError 崩溃。
   - **骨骼点击选中增强（接近高亮 = 在范围内）**：`strandControlPointHitFromEvent` 对当前 `hoveredControlPoint`（高亮控制点）用 2 倍拾取半径（24px）优先命中——点击高亮骨骼不再因 12px 固定半径不中而落到宽度拖动条或父发片；`prepareCurvePointSelection` 在非 component 模式下点击高亮控制点也 selectLock 其所属发片并阻止穿透（不再误选到父发片）。验证：hover 命中 18px 处骨骼 → handle:true；30px 外 → false。
+  - **smoothstep 双边法线（2.14 修正）**：上下桥接带的 Hermite 端点切线不再只在主发片端用法线——新增子发片根部环切法线（`strandGeometryFrameAt` 在 branchSweepStartT 的 frame.z），环切端切线 = 弦方向投影到**子发片切平面**、主发片端仍投影到父切平面（底部保留父端折痕），像 B 样条一样两端都平滑衔接。验证：首行中点法向分量 0.0415→0.0293（f=0 处导数为完全切向）；默认/3宽/1宽直连/分段均 0 NaN。版本 0.1.4-Sintaka.0.2.17。
   - **版本**：0.1.4-Sintaka.0.2.16（dailybuild +1）+ app-config 缓存号 bump。
 
 - **子发片深度重置 2.13（Transform 空间持久化 + 选区健壮性 + 宽度=1 支持）**

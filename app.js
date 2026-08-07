@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-5";
+} from "./modules/app-config.js?v=20260808-6";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -14084,6 +14084,15 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   if (rows < 2 || cols < 2) return null;
   const boundary = holeBoundary(surface, positionAttr.array, rows, cols);
   if (!boundary) return null;
+  // Child ring surface normal: the band must depart tangent to the child's surface at
+  // the root ring (B-spline-like smooth transition on both ends), not only arrive flat
+  // at the parent hole. The ring is the sweep's row-0 ring at branchSweepStartT.
+  let childRingNormal = new THREE.Vector3(0, 1, 0);
+  try {
+    const childCurve = strandGeometryCurve(lock);
+    const sweepStartT = THREE.MathUtils.clamp(Number(lock.branchSweepStartT ?? 0.1), 0.02, 0.6);
+    childRingNormal = strandGeometryFrameAt(lock, childCurve, sweepStartT).z.clone().normalize();
+  } catch (e) { /* keep default */ }
   const vertices = [];
   const normals = [];
   const tangents = [];
@@ -14169,6 +14178,10 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
         const span = p0.distanceTo(p1);
         const m0 = new THREE.Vector3().subVectors(p1, p0);
         const dir = m0.clone().normalize();
+        // Depart the ring tangent to the child surface (remove the child normal
+        // component) so the root-ring side connects smoothly like the top band.
+        const childTangent = m0.clone().addScaledVector(childRingNormal, -m0.dot(childRingNormal));
+        const m0Out = childTangent.lengthSq() > 1e-8 ? childTangent : m0;
         const tangent = m0.clone().addScaledVector(bottomNormal, -m0.dot(bottomNormal));
         const tangentDir = tangent.lengthSq() > 1e-8 ? tangent.normalize() : dir;
         // Sharp crease at the parent: half surface tangent + half reversed parent normal.
@@ -14177,7 +14190,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
           .addScaledVector(bottomNormal.clone().negate(), 0.5)
           .normalize();
         const m1 = creaseDir.multiplyScalar(span);
-        const mid = hermite(f, p0, p1, m0, m1);
+        const mid = hermite(f, p0, p1, m0Out, m1);
         pushBoundary({ x: mid.x, y: mid.y, z: mid.z });
       });
     };
@@ -14252,13 +14265,16 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
         const h = holeTop[i];
         const p0 = new THREE.Vector3(p.x, p.y, p.z);
         const p1 = new THREE.Vector3(h.x, h.y, h.z);
-        // The band leaves the ring along the ring->hole chord, and arrives at the hole
-        // parallel to the parent surface (chord projected onto the surface tangent plane)
-        // instead of perpendicular, so it blends flatly without bulging.
+        // Depart the ring tangent to the child surface and arrive at the hole tangent
+        // to the parent surface (chord projected onto each side's tangent plane), so
+        // the band blends flatly at both ends like a B-spline rather than only at the
+        // parent end.
         const m0 = new THREE.Vector3().subVectors(p1, p0);
+        const ringTangent = m0.clone().addScaledVector(childRingNormal, -m0.dot(childRingNormal));
+        if (ringTangent.lengthSq() < 1e-8) ringTangent.copy(m0);
         const m1 = m0.clone().addScaledVector(parentNormal, -m0.dot(parentNormal));
         if (m1.lengthSq() < 1e-8) m1.copy(m0);
-        const mid = hermite(f, p0, p1, m0, m1);
+        const mid = hermite(f, p0, p1, ringTangent, m1);
         pushBoundary({ x: mid.x, y: mid.y, z: mid.z });
       });
     };
