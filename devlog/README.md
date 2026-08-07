@@ -33,4 +33,5 @@ python -m http.server 8080 --bind 127.0.0.1
 
 ## 最近版本 / Latest
 
+- Phase 2.15：Region 面板左右镜像修复（v 轴翻转，根/面板左右同步一致）；sweep 起点黄色手柄选中修复（stopImmediatePropagation + buttons 兜底，不再残留拖拽）；桥接接缝边界顶点法线恢复父发片法线（接缝颜色一致）；版本 0.1.4-Sintaka.0.2.18。
 - Phase 2.13：TransformMode 默认 object 并持久化；Branch Root Region 选区顺序归一化（点选不再跳变）；根滑动后选区面板/3D 标记跟随；选区宽度=1 支持（子环 1 宽 + 顶/底直接桥接）；版本 0.1.4-Sintaka.0.2.17（Phase 2.14 修正：上下桥接 smoothstep 双边法线，子环切端平滑衔接）。

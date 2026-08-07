@@ -97,3 +97,7 @@
 - [x] 选区边界压缩后回到中心恢复原始宽高（edgeOffsets 保留意图尺寸）
 - [x] 骨骼点击选中增强：高亮控制点 2 倍拾取半径优先命中，object 模式点击骨骼选中其发片
 - [x] 上下桥接 smoothstep 双边法线（子环切端 + 父孔洞端），B 样条式平滑衔接
+
+- [x] Region 选区面板左右镜像修复：v 轴映射翻转（面板左 = 世界左），根骨骼左右拖动与面板选区左右同步一致
+- [x] sweep 起点黄色手柄选中修复：命中手柄后 stopImmediatePropagation（不再同时启动 WidthCurve 拖动）；mouse 无按键 pointermove 不移动（兜底残留拖拽状态）
+- [x] 桥接接缝法线平滑：父侧边界顶点法线恢复为父发片作者法线（computeVertexNormals 后回写），接缝处颜色/着色与父发片一致

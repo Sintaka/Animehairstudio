@@ -56,6 +56,10 @@
   - **骨骼点击选中增强（接近高亮 = 在范围内）**：`strandControlPointHitFromEvent` 对当前 `hoveredControlPoint`（高亮控制点）用 2 倍拾取半径（24px）优先命中——点击高亮骨骼不再因 12px 固定半径不中而落到宽度拖动条或父发片；`prepareCurvePointSelection` 在非 component 模式下点击高亮控制点也 selectLock 其所属发片并阻止穿透（不再误选到父发片）。验证：hover 命中 18px 处骨骼 → handle:true；30px 外 → false。
   - **smoothstep 双边法线（2.14 修正）**：上下桥接带的 Hermite 端点切线不再只在主发片端用法线——新增子发片根部环切法线（`strandGeometryFrameAt` 在 branchSweepStartT 的 frame.z），环切端切线 = 弦方向投影到**子发片切平面**、主发片端仍投影到父切平面（底部保留父端折痕），像 B 样条一样两端都平滑衔接。验证：首行中点法向分量 0.0415→0.0293（f=0 处导数为完全切向）；默认/3宽/1宽直连/分段均 0 NaN。版本 0.1.4-Sintaka.0.2.17。
   - **版本**：0.1.4-Sintaka.0.2.16（dailybuild +1）+ app-config 缓存号 bump。
+- **Phase 2.15（Region 选区左右方向 + sweep 手柄选中 + 桥接接缝法线）**：版本 0.1.4-Sintaka.0.2.18。
+  - **Region 面板左右镜像修复**：Branch Root Region 2D 面板的 v 轴与 3D 世界左右相反——left 点 = 较大 v = 世界左，但 branchRegionUVToCanvas 把大 v 画到面板右侧，导致根骨骼往左拖、面板选区往右跑（左右同步反转）。修复：v→x 映射翻转（x = 20 + (1 - v) * 180，branchRegionCanvasToUV 同步 v = 1 - clamp(...)），面板左 = 世界左，拖左选区左移、拖根左移选区左移。
+  - **sweep 起点黄色手柄选中/拖拽修复**：黄色手柄与粉色 WidthCurve 控制点重叠时，beginBranchSweepStartDrag（capture 最前）命中手柄后只 stopPropagation（不阻止同元素其它监听），beginTaperMeshPointDrag 仍同时启动——按下先控宽度、松开时 taper 的 finishTaperMeshPointDrag 用 stopImmediatePropagation 吞掉 pointerup，黄色 endBranchSweepStartDrag 不再执行 → branchSweepStartDrag 残留，之后不按鼠标也能拖动黄色手柄。修复：命中后改 stopImmediatePropagation（阻止宽度拖动同时启动）；updateBranchSweepStartDrag 增加 event.buttons 主键检测（无按键不移动，兜底残留状态）。
+  - **桥接接缝法线平滑（优化项，确认是法线问题）**：桥接父侧边界顶点在子几何里是独立顶点，computeVertexNormals() 只按子几何自身面平均（与父发片法线不一致，极端情况出零长度法线），接缝处着色/颜色不同。修复：buildBranchBridgeGeometry 记录边界顶点「子顶点索引 ↔ 父网格索引」（boundaryParentIndices），createBranchChildGeometry 在 computeVertexNormals 之后把父侧边界顶点法线恢复为父发片该网格顶点的作者法线（tangent 原本就按索引复制，保持一致）。验证：合成父网格 + 真 buildBranchBridgeGeometry，16 个边界顶点修复前 12 个法线不一致（最大 90°，含零长度 [0,0,0]），修复后 0 不一致。
 
 - **子发片深度重置 2.13（Transform 空间持久化 + 选区健壮性 + 宽度=1 支持）**
   - **TransformMode 持久化**：新增偏好键 `anime-hair-studio-transform-space`（默认 object=true）；`setObjectSpaceEditing` 写回 localStorage，启动 `setObjectSpaceEditing(objectSpaceEditing)` 应用存储值（不再强制 world）。旧版本无该键 → 默认 object，保持 localStorage 兼容。验证：切 world → 刷新仍是 world；默认加载为 object。

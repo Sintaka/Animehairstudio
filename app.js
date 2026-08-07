@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-6";
+} from "./modules/app-config.js?v=20260808-7";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -14099,11 +14099,17 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   const uvs = [];
   const colors = [];
   const rootColor = strandInfluenceColor(lock, 0);
+  // Bridge vertices sitting exactly on the parent hole boundary: keep child vertex
+  // index -> parent grid index so createBranchChildGeometry can restore the parent's
+  // authored normals after computeVertexNormals (smooths the seam shading).
+  const boundaryParentIndices = [];
   const pushBoundary = (v) => {
+    const childIndex = vertices.length / 3;
     vertices.push(v.x, v.y, v.z);
     let nx = 0; let ny = 1; let nz = 0;
     if (normalAttr && v.index != null) {
       nx = normalAttr.getX(v.index); ny = normalAttr.getY(v.index); nz = normalAttr.getZ(v.index);
+      boundaryParentIndices.push(childIndex, v.index);
     }
     normals.push(nx, ny, nz);
     let tx = 1; let ty = 0; let tz = 0;
@@ -14376,7 +14382,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   });
   }
 
-  return { vertices, normals, tangents, uvs, colors, indices, quads, triangles, ringBase };
+  return { vertices, normals, tangents, uvs, colors, indices, quads, triangles, ringBase, boundaryParentIndices };
 }
 
 const BRANCH_CONNECTION_ENABLED = true;
@@ -14524,6 +14530,27 @@ function createBranchChildGeometry(lock) {
   geometry.userData.triangleEdgeMasks = triangleEdgeMasks;
   geometry.userData.openSurface = false;
   geometry.computeVertexNormals();
+  // Restore the parent's authored normals on bridge vertices that sit on the parent
+  // hole boundary so the child blends into the parent's shading at the seam instead
+  // of keeping the child-only averaged normal (visible as a color band).
+  if (bridge?.boundaryParentIndices?.length) {
+    const parentNormalAttr = parent.mesh?.geometry?.getAttribute?.("normal");
+    if (parentNormalAttr) {
+      const childNormalAttr = geometry.getAttribute("normal");
+      const pairs = bridge.boundaryParentIndices;
+      for (let k = 0; k < pairs.length; k += 2) {
+        const childIdx = pairs[k];
+        const parentIdx = pairs[k + 1];
+        childNormalAttr.setXYZ(
+          childIdx,
+          parentNormalAttr.getX(parentIdx),
+          parentNormalAttr.getY(parentIdx),
+          parentNormalAttr.getZ(parentIdx)
+        );
+      }
+      childNormalAttr.needsUpdate = true;
+    }
+  }
   geometry.computeBoundingSphere();
   return geometry;
 }
@@ -21629,12 +21656,13 @@ function setBranchRootRegionPoint(lock, name, param) {
 let branchRegionEdit = null;
 let branchRegionCanvasDrag = null;
 function branchRegionUVToCanvas(u, v) {
-  return { x: 20 + v * 180, y: 20 + u * 360 };
+  // left = larger v = world-left; render world-left on the panel's left.
+  return { x: 20 + (1 - v) * 180, y: 20 + u * 360 };
 }
 function branchRegionCanvasToUV(cx, cy) {
   return {
     u: THREE.MathUtils.clamp((cy - 20) / 360, 0, 1),
-    v: THREE.MathUtils.clamp((cx - 20) / 180, 0, 1)
+    v: 1 - THREE.MathUtils.clamp((cx - 20) / 180, 0, 1)
   };
 }
 function openBranchRegionEditor(lockId) {
@@ -21803,12 +21831,14 @@ function beginBranchSweepStartDrag(event) {
   branchSweepStartDrag = { lockId: selected.id, pointerId: event.pointerId };
   pushUndoState();
   renderer.domElement.setPointerCapture?.(event.pointerId);
-  event.stopPropagation();
+  event.stopImmediatePropagation();
   event.preventDefault();
   return true;
 }
 function updateBranchSweepStartDrag(event) {
   if (!branchSweepStartDrag || event.pointerId !== branchSweepStartDrag.pointerId) return;
+  // Mouse: never move on button-less pointermove (guards a lingering drag state).
+  if (event.pointerType === "mouse" && (event.buttons & 1) === 0) return;
   const lock = locks.find((item) => item.id === branchSweepStartDrag.lockId);
   if (!lock?.branchRootRegion) { branchSweepStartDrag = null; return; }
   raycaster.setFromCamera(pointerToNdc(event), camera);
