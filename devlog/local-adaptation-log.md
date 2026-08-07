@@ -1,0 +1,69 @@
+# 本地适配进度
+
+<!-- 本文件由 devlog 拆分而来；入口见 README.md 索引 -->
+
+## 本地适配进度 / Local adaptation log
+
+> 记录相对 main 分支（原版本）的适配改动。
+
+- [x] 本地运行：Python 静态服务器启动脚本（start-dev-server.cmd，自动打开浏览器）
+- [x] 文件保存：Quick Save（Ctrl+S）/ Save as（Ctrl+Shift+S）
+- [x] 拖放统一分发：任何文件拖拽接受并恢复原始浮动框视觉；drop 按类型分发（.ahs → 打开项目，图片 → 参考图，其他 → 忽略）
+- [x] 雕刻笔刷选择遮罩：未选中只能雕刻可见头发，选中后只能雕刻选中头发
+- [x] 材质面板：删除多余材质（剩余头发自动改回默认材质，默认材质不可删除）
+- [x] 修复删除材质时误删发片：材质 outliner 重渲染后重新聚焦选中项，Delete 保持在材质上下文
+- [x] 左侧大纲 / 右侧属性面板支持左右拖拽调宽（宽度持久化到 localStorage）
+- [x] 滑杆数值框可随宽度变宽（minmax(56px,1fr)，滑杆占 2fr）
+- [x] 浮动面板（Width/Depth Curve、Strand Profile）支持拖动、右下角缩放、右缘吸附到属性面板左侧
+- [x] 底部笔刷栏自适应：空间窄隐藏 " Brush" 后缀，更窄只显示图标，不换行
+- [x] 浮动面板：跟随选中头发；show points on mesh 随雕刻/移动更新
+- [x] 视口导航模式：新增 Default / Houdini（默认 Houdini）；Houdini = Alt 左键旋转 / Alt 中键平移 / Alt 右键缩放（同时响应左右/上下并归一化），滚轮缩放保持
+- [x] 语言：Settings Language 新增简体中文（保留 3D 专业名词）
+- [x] devlog：维护开发规范 / JS 改动标注 / Bug 修复分类
+- [x] devlog 记录修改型笔刷开发规范（沿用 Move/Smooth 架构；Ctrl=反向、Shift=临时 Smooth、B=软选）
+- [x] devlog 记录许可证（source-available v1.2，非开源）与合规规范
+- [x] 实现 Slide / Scale 修改型笔刷（sculpt-slide / sculpt-scale，Scale·Cut/Extend 模式，Ctrl=反向）
+- [x] 笔刷细化：Slide 跟随拖拽方向（原曲线约束实时计算）、Cut/Extend 累计防抖、Scale 头皮碰撞、ScaleMode 仅缩放笔刷显示、笔刷名不汉化
+- [x] 笔刷修正：移除软选择；Scale 不做头皮碰撞；撤销后 Taper 控制点重同步；number 输入框 Ctrl+Z 可用
+- [x] 修复笔刷使用后 Ctrl+Z 失效（非文本控件放行快捷键 + setActiveTool 重置 historyShortcutHeld）
+- [x] Smooth 增加 twist 平滑；Scale 默认强度 0.5；导航默认 Default；Turntable 菜单不关闭
+- [x] ScaleMode 行仅 Scale Brush 显示
+- [x] 新增 Push / Orient 修改型笔刷（sculpt-push 沿本地 up 推离；sculpt-orient 绕切线单轴旋转，up 转向视口正交方向）
+- [x] v0.1.4 迁移：4 个自定义笔刷 / 简体中文 / Houdini 导航 / 浮动面板跟随 / Ctrl+S·Ctrl+Shift+S 保存全部迁移到 0.1.4 代码库（codex/branchdev_v0.1.4）
+- [x] Houdini 导航并入 0.1.4 Navigation style（Anime Hair Studio / Blender / Houdini）
+- [x] 拖放 / 雕刻选择遮罩改用 0.1.4 内置实现，移除旧重复代码
+- [x] ZH 词典扩展覆盖 0.1.4 新增文案（约 107 条）
+- [x] 新增 Quick Export（Ctrl+Alt+S）快速重复上一次导出
+- [x] Quick Export 与原生导出兼容：完全复刻上次导出（格式 / 文件名 / 内容 / 目标），不再要求重新选择
+- [x] 导出改用 File System Access API 写盘（支持时），快捷导出覆盖同一文件，不再产生 (1) 后缀；仅回退下载
+- [x] S+左键拖动笔刷大小扩展到雕刻修改型笔刷（Move/Smooth/Slide/Push/Scale/Orient）
+- [x] 拖动调笔刷大小时鼠标指针固定在起点（隐藏系统指针），松开后恢复
+- [x] Quick Save 记住打开的项目文件（Open/拖入可拿到 handle 时直接覆盖写回，无需再选）
+- [x] 快捷键帮助「Local Adaptation」分区改名为「Sintaka Fork」
+
+- [x] 子发片选区控制重写：3D 手柄 → 2D u/v 平面编辑器（4 点，up/down 改 u、left/right 改 v，选中自动开关，整次拖拽=一次撤销）
+- [x] 修复刘海（split 发丝）线框三角面：createSplitStrandGeometry 生成 authored edgeMask，0 对角线
+- [x] 修复 index.html dialog 嵌套 bug（branchRegionEditor 吃掉 taperCurveEditor 闭合标签，后续 dialog 全部 0 尺寸）
+
+- [x] 子发片选区面板：Reset 幂等（不再累积删面）、移除说明文字、新增 Show points on mesh toggle（3D 标记跟随 2D 拖拽）
+
+- [x] 桥接程序化：顶部条带分段=洞高 H、smoothstep+圆滑重算、侧面填充三角剖分(水密)
+- [x] 选区默认值居中竖长 + 拖拽归一化钳制(不飞出/翻转)
+- [x] 子发片 width/depth curve 联动(相对扫掠起点归一化，根环保持洞口宽)
+- [x] sweep 起点手柄：黄色控制点沿子引导线根->尾滑动，控制扫掠起始(0.02-0.6)
+
+- [x] 选区控制点越界修复（u/v 钳制到 [0,1] + 显示层兜底）
+- [x] 桥接诊断模式：仅顶部条带（BRANCH_BRIDGE_DIAGNOSTIC=true），底部/侧面/填充禁用
+
+- [x] 控制点边界对齐（down/left -> 洞真实边界）+ 面板竖长化
+- [x] v 映射：front 列居中环向弧映射（默认选区居中）+ 构建时固化 grid 元数据
+- [x] 顶部桥接绕序修复（线框可见）+ Hermite 平滑（主发片法线参与，不内凹）
+- [x] sweep 手柄放大/置顶（可见性）
+
+- [x] 2D 选区面板拖拽换算修复（动态 viewBox，不再漂移）
+- [x] width curve 联动确认 + branchCurvesAuthored 持久化
+- [x] 顶部桥接 Hermite 沿中心线（去除表面法线摆动）
+
+- [x] Branch Root Region 面板渲染修复（SVG aspect 正确、拖拽精确跟手）
+- [x] 顶部桥接 smoothstep 外凸可见 + 分段相对 root（延长底部不影响顶部段数）
+- [x] 刘海线框掩码核对（v0040 全对）+ devlog 拆分为索引字典

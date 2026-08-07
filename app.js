@@ -14160,7 +14160,13 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   const topInfo = { holeBase: -1, midBase: -1, midCount: 0, width: 0, outward: null };
   if (holeTop.length >= 3) {
     const ringTop = [ringWorld[0], ringWorld[1], ringWorld[2]];
-    const topSegments = holeHeight;
+    // Segments are measured from the child root row to the hole top, not the full hole
+    // height: extending the hole's bottom must not add top-band segments. The side that
+    // sits at the root stays a direct bridge; the far side gets generative segments.
+    const rootRow = Math.round(THREE.MathUtils.clamp(Number(lock.branchParentParameter ?? 0.4), 0, 1) * Math.max(1, rows - 1));
+    const topSegments = rootRow >= surface.rowMin
+      ? Math.max(1, rootRow - surface.rowMin + 1)
+      : holeHeight;
     const midCount = topSegments - 1;
     const across = new THREE.Vector3().subVectors(ringTop[2], ringTop[0]);
     const up = new THREE.Vector3()
@@ -14172,10 +14178,9 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     const outward = new THREE.Vector3().crossVectors(across, up);
     if (outward.lengthSq() < 1e-8) outward.set(0, 1, 0);
     outward.normalize();
-    // Hermite basis along the band's center line: both endpoint tangents follow the
-    // ring->hole chord direction, so the band tracks the bridge center line instead of
-    // swinging into the parent (the parent surface normal at the hole can point sideways
-    // from the band and pull it concave). A later NURBS center-line control will refine it.
+    // Hermite basis along the band's center line (both endpoint tangents follow the
+    // ring->hole chord), plus a smoothstep bow along the parent's outward normal (projected
+    // perpendicular to the band) so the curve is visible but never dips into the parent.
     const hermite = (t, p0, p1, m0, m1) => {
       const t2 = t * t;
       const t3 = t2 * t;
@@ -14189,18 +14194,29 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
         .addScaledVector(p1, h01)
         .addScaledVector(m1, h11);
     };
+    const BRIDGE_ROUND_FACTOR = 0.3;
+    let parentOutward = new THREE.Vector3(0, 0, 1);
+    try {
+      parentOutward = curveFrameAt(parent, THREE.MathUtils.clamp(surface.rowMin / Math.max(1, rows - 1), 0, 1)).z.clone();
+    } catch (e) { /* keep default */ }
     topInfo.holeBase = vertices.length / 3;
     holeTop.forEach(pushBoundary);
     topInfo.midBase = vertices.length / 3;
     for (let j = 1; j <= midCount; j += 1) {
       const f = j / topSegments;
+      const bump = Math.sin(Math.PI * f) * BRIDGE_ROUND_FACTOR;
       ringTop.forEach((p, i) => {
         const h = holeTop[i];
         const p0 = new THREE.Vector3(p.x, p.y, p.z);
         const p1 = new THREE.Vector3(h.x, h.y, h.z);
+        const span = p0.distanceTo(p1);
+        const dir = new THREE.Vector3().subVectors(p1, p0).normalize();
+        const bowDir = parentOutward.clone().addScaledVector(dir, -parentOutward.dot(dir));
+        if (bowDir.lengthSq() < 1e-8) bowDir.crossVectors(dir, across).normalize();
+        else bowDir.normalize();
         const m0 = new THREE.Vector3().subVectors(p1, p0);
         const m1 = m0.clone();
-        const mid = hermite(f, p0, p1, m0, m1);
+        const mid = hermite(f, p0, p1, m0, m1).addScaledVector(bowDir, span * bump);
         pushBoundary({ x: mid.x, y: mid.y, z: mid.z });
       });
     }
@@ -14440,6 +14456,7 @@ function createBranchChildGeometry(lock) {
   geometry.setIndex(indices);
   geometry.userData.quadFaces = quadFaces;
   geometry.userData.bridgeVertexCount = bridgeVertexCount;
+  geometry.userData.actualLengthSegments = actualLengthSegments;
   geometry.userData.sideTriangleCount = actualLengthSegments * ringCount * 2;
   geometry.userData.triangleEdgeMasks = triangleEdgeMasks;
   geometry.userData.openSurface = false;
