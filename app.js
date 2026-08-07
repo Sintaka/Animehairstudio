@@ -14058,9 +14058,12 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   if (collapsed.length >= 2) collapsed.forEach(pushBoundary);
   // Side direct bridges: the ring's 1-segment left/right sides connect straight to
   // the parent side edges' bottom segment (rows rowMax..rowMax+1), one quad each.
+  // The strand grid columns are inverted vs the ring's left/right in world space
+  // (ring-left is the more-negative-x side, matching parent colMax+1), so map
+  // ring-left -> parent right edge and ring-right -> parent left edge by world side.
   const sideSpecs = [
-    { name: "left", col: surface.colMin, ringTop: 2, ringBottom: 3 },
-    { name: "right", col: surface.colMax + 1, ringTop: 0, ringBottom: 5 }
+    { name: "left", col: surface.colMax + 1, ringTop: 2, ringBottom: 3 },
+    { name: "right", col: surface.colMin, ringTop: 0, ringBottom: 5, flip: true }
   ];
   const sideBases = {};
   sideSpecs.forEach((spec) => {
@@ -14091,7 +14094,11 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   sideSpecs.forEach((spec) => {
     if (sideBases[spec.name] == null) return;
     const base = sideBases[spec.name];
-    const quad = [base, ringBase + spec.ringTop, ringBase + spec.ringBottom, base + 1];
+    // Keep the side faces wound outward (the right face lies on the +x side of the
+    // child curve, opposite to the left face, so its winding is flipped).
+    const quad = spec.flip
+      ? [base + 1, ringBase + spec.ringBottom, ringBase + spec.ringTop, base]
+      : [base, ringBase + spec.ringTop, ringBase + spec.ringBottom, base + 1];
     quads.push(quad);
     indices.push(quad[0], quad[1], quad[3], quad[3], quad[1], quad[2]);
   });
