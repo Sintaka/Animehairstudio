@@ -14025,6 +14025,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, rootCenter,
   const triangles = [];
   const rootColor = strandInfluenceColor(lock, 0);
   ring.sides.forEach((ringSide, sideIndex) => {
+    if (ringSide.name !== "bottom") return;
     const bSide = boundary.sides.find((s) => s.name === ringSide.name) || boundary.sides[sideIndex];
     const bVerts = [];
     for (let i = 0; i <= bSide.count; i += 1) bVerts.push(boundary.vertices[(bSide.start + i) % boundary.vertices.length]);
@@ -14080,8 +14081,7 @@ function createBranchChildGeometry(lock) {
   const curveParameters = strandCurveParameters(lock, curve, lengthSegments);
   const actualLengthSegments = curveParameters.length - 1;
   const ringCount = ring.points.length;
-  const polyWidth = curve.getLength() / Math.max(1, actualLengthSegments);
-  const sweepStartOffset = Math.max(0, polyWidth * 1.5);
+  const sweepStartOffset = 0;
   const vertices = [];
   const normals = [];
   const tangents = [];
@@ -14109,12 +14109,13 @@ function createBranchChildGeometry(lock) {
   });
   // Bridge: parent hole -> child root ring (only when enabled).
   const bridge = BRANCH_CONNECTION_ENABLED ? (() => {
-    const frame0 = strandGeometryFrameAt(lock, curve, 0);
-    const point0 = curve.getPoint(0);
-    const rootCenter = point0.clone().addScaledVector(frame0.y, sweepStartOffset);
+    const attachParam = THREE.MathUtils.clamp(Number(lock.branchParentParameter ?? 0), 0, 1);
+    const parentCurve = new THREE.CatmullRomCurve3(parent.points);
+    const parentFrame = curveFrameAt(parent, attachParam);
+    const point0 = parentCurve.getPoint(attachParam);
+    const rootCenter = point0.clone();
     const ringWorld = ring.points.map((p) => {
-      const v = point0.clone().addScaledVector(frame0.x, p.x).addScaledVector(frame0.z, p.z);
-      if (sweepStartOffset > 0) v.addScaledVector(frame0.y, sweepStartOffset);
+      const v = point0.clone().addScaledVector(parentFrame.x, p.x).addScaledVector(parentFrame.z, p.z);
       return v;
     });
     return buildBranchBridgeGeometry(lock, parent, surface, ringWorld, rootCenter, parent.mesh.geometry);
@@ -21074,8 +21075,8 @@ function enforceBranchRootPosition(lock) {
 
 const BRANCH_ROOT_REGION_DEFAULTS = Object.freeze({
   centerV: 0.25,
-  upLength: 0.04,
-  downLength: 0.04,
+  upLength: 0,
+  downLength: 0,
   leftWidth: 0.05,
   rightWidth: 0.05
 });
@@ -21191,6 +21192,8 @@ function applyBranchRootRegionCarving(lock, geometry) {
 
 // Offset the child root to the center of its carved parent region (half-cell nudge).
 function applyBranchRootOffset(lock) {
+  // Root offset disabled: the child root stays on the parent guide line (middle).
+  return;
   const region = lock?.branchRootRegion;
   const parent = locks.find((item) => item.id === lock?.branchParentId);
   if (!region || !parent?.points?.length) return;
@@ -30641,6 +30644,8 @@ hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
 });
+
+
 
 
 
