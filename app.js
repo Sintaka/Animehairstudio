@@ -14028,9 +14028,16 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     const bSide = boundary.sides.find((s) => s.name === ringSide.name) || boundary.sides[sideIndex];
     const bVerts = [];
     for (let i = 0; i <= bSide.count; i += 1) bVerts.push(boundary.vertices[(bSide.start + i) % boundary.vertices.length]);
-    if (bVerts.length < 2) return;
-    const boundaryBase = vertices.length / 3;
+    // Collapse consecutive coincident boundary vertices (creased-profile seams
+    // produce zero-length edges) so the real edges map 1:1 to the ring edges.
+    const collapsed = [];
     bVerts.forEach((v) => {
+      const prev = collapsed[collapsed.length - 1];
+      if (!prev || Math.abs(v.x - prev.x) > 1e-6 || Math.abs(v.y - prev.y) > 1e-6 || Math.abs(v.z - prev.z) > 1e-6) collapsed.push(v);
+    });
+    if (collapsed.length < 2) return;
+    const boundaryBase = vertices.length / 3;
+    collapsed.forEach((v) => {
       vertices.push(v.x, v.y, v.z);
       let nx = 0; let ny = 1; let nz = 0;
       if (normalAttr && v.index != null) {
@@ -14047,7 +14054,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     });
     const rVerts = [];
     for (let i = 0; i <= ringSide.count; i += 1) rVerts.push(ringWorld[(ringSide.start + i) % ringWorld.length]);
-    sideJobs.push({ bVerts, rVerts, boundaryBase, ringStart: ringSide.start });
+    sideJobs.push({ bVerts: collapsed, rVerts, boundaryBase, ringStart: ringSide.start });
   });
   // Ring-side vertices are the sweep's row-0 ring (reused by index, no copies).
   const ringBase = vertices.length / 3;
@@ -21141,6 +21148,20 @@ function branchRootRegionSurface(lock) {
   const faces = geometry?.userData?.quadFaces;
   const facesPerRow = Array.isArray(faces) && faces.length ? Math.round(faces.length / Math.max(1, rows - 1)) : 0;
   const colCount = facesPerRow > 1 ? facesPerRow : cols - 1;
+  // A creased profile seam creates a grid column that no face starts at; map
+  // face-row columns to real grid columns so carving and the hole boundary agree.
+  let skipCol = -1;
+  if (facesPerRow > 1 && Array.isArray(faces) && faces.length >= facesPerRow) {
+    const faceStarts = new Set();
+    for (let i = 0; i < facesPerRow; i += 1) faceStarts.add(faces[i][0] % cols);
+    for (let c = 0; c < cols; c += 1) {
+      if (!faceStarts.has(c)) { skipCol = c; break; }
+    }
+  }
+  const toGridCol = (vc) => {
+    const g = skipCol >= 0 && vc >= skipCol ? vc + 1 : vc;
+    return THREE.MathUtils.clamp(g, 0, cols - 1);
+  };
   const toRow = (u) => THREE.MathUtils.clamp(Math.round(clampRegionParam(u) * (rows - 1)), 0, rows - 1);
   const toCol = (v) => THREE.MathUtils.clamp(Math.round(clampRegionParam(v) * (colCount - 1)), 0, colCount - 1);
   return {
@@ -21148,10 +21169,12 @@ function branchRootRegionSurface(lock) {
     cols,
     facesPerRow,
     colCount,
+    skipCol,
+    toGridCol,
     rowMin: toRow(region.cross.down.u),
     rowMax: toRow(region.cross.up.u),
-    colMin: toCol(region.cross.left.v),
-    colMax: toCol(region.cross.right.v)
+    colMin: toGridCol(toCol(region.cross.left.v)),
+    colMax: toGridCol(toCol(region.cross.right.v))
   };
 }
 
@@ -21173,7 +21196,8 @@ function applyBranchRootRegionCarving(lock, geometry) {
       if (removed.has(faceIndex)) return;
       const row = Math.floor(faceIndex / facesPerRow);
       const col = faceIndex % facesPerRow;
-      if (row >= surface.rowMin && row <= surface.rowMax && col >= surface.colMin && col <= surface.colMax) {
+      const gridCol = typeof surface.toGridCol === "function" ? surface.toGridCol(col) : col;
+      if (row >= surface.rowMin && row <= surface.rowMax && gridCol >= surface.colMin && gridCol <= surface.colMax) {
         removed.add(faceIndex);
       }
     });
