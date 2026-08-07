@@ -33,4 +33,4 @@ python -m http.server 8080 --bind 127.0.0.1
 
 ## 最近版本 / Latest
 
-- Phase 2.11：选区整体拖动；顶/底末端 0.3 循环线；子发片横向拓扑跟随选区宽度；版本 0.1.4-Sintaka.0.2.12。
+- Phase 2.12：TransformMode 默认 object；Show Points on Mesh 默认开；子发片宽度跟随 Width；RootCtrl 解锁（主骨骼 Width 平面滑动）；版本 0.1.4-Sintaka.0.2.13。

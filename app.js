@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-1";
+} from "./modules/app-config.js?v=20260808-2";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -2074,7 +2074,7 @@ let pendingLockGeometryFrame = null;
 const sculptBrushGeometryUpdates = new Set();
 let sculptBrushGeometryFrame = null;
 const SCULPT_BRUSH_GEOMETRY_FRAME_BUDGET_MS = 6;
-let objectSpaceEditing = false;
+let objectSpaceEditing = true;
 let hierarchyEditing = false;
 let mirrorXEditing = false;
 let recursiveHierarchyTransforms = false;
@@ -11174,11 +11174,12 @@ function updateInteractionLocks() {
 }
 
 function branchMoveGizmoDisabled() {
+  // Branch children can move their root bone in the parent's width plane; the
+  // position is constrained back onto the parent surface in enforceBranchRootPosition.
   if (activeTool !== "move" || viewportEditMode !== "strand") return false;
   const lock = getSelectedLock();
   if (!lock?.branchParentId) return false;
-  if (!componentEditModeActive()) return true;
-  return selectedPoint?.lockId === lock.id && selectedPoint.pointIndex === 0;
+  return !componentEditModeActive();
 }
 
 function setBranchMoveGizmoVisual(disabled) {
@@ -14376,7 +14377,9 @@ function createBranchChildGeometry(lock) {
     const pb = new THREE.Vector3(pPos.getX(latRow * pCols + surface.colMax), pPos.getY(latRow * pCols + surface.colMax), pPos.getZ(latRow * pCols + surface.colMax));
     holeHalfWidth = pa.distanceTo(pb) * 0.5;
   }
-  const halfWidth = Math.max(0.001, holeHalfWidth || Number(lock.width ?? lock.baseWidth ?? 0.08) * 0.5);
+  // The child's width follows its own Width attribute (so the Width slider works);
+  // only the lateral SEGMENT count follows the parent selection's topology.
+  const halfWidth = Math.max(0.001, Number(lock.width ?? lock.baseWidth ?? 0.16) * 0.5);
   // 2:1 cross-section (width : height) per the normalized convention. The ring's
   // lateral (width) topology follows the parent hole's top edge count, so the top/bottom
   // bridge bands match 1:1 (dragging the region wider updates the child's lateral).
@@ -16246,7 +16249,7 @@ function openTaperCurveEditor(curveKey = "taperCurve") {
     ? "New strand defaults"
     : nextEdit.type === "group" ? `${group ? strandRegionDisplayLabel(group.id) : "Group"} defaults`
       : multiCount > 1 ? `${multiCount} selected strands` : lock?.name || "Selected strand";
-  setTaperMeshPointsVisible(false);
+  setTaperMeshPointsVisible(curveKey !== "twistCurve");
   taperMeshPointsToggleRow.classList.toggle(
     "hidden",
     nextEdit.type !== "strand"
@@ -21404,8 +21407,6 @@ function captureBranchLocalState(lock) {
 function enforceBranchRootPosition(lock) {
   const parent = locks.find((item) => item.id === lock?.branchParentId);
   if (!parent || !lock?.points?.length) return null;
-  // Root slides along the parent guide line (2D plane): recompute the parameter from
-  // the child root position, then snap the root onto the guide.
   const curve = new THREE.CatmullRomCurve3(parent.points);
   let bestT = THREE.MathUtils.clamp(Number(lock.branchParentParameter ?? 0), 0, 1);
   let bestDist = Infinity;
@@ -21416,15 +21417,46 @@ function enforceBranchRootPosition(lock) {
     if (d < bestDist) { bestDist = d; bestT = t; }
   }
   lock.branchParentParameter = clampRegionParam(bestT);
-  // Snap the root onto the smooth guide line (slide in the guide 2D plane).
-  const rootPoint = curve.getPoint(lock.branchParentParameter);
   const frame = branchParentFrame(parent, lock.branchParentParameter);
+  // The root slides in the parent's width plane: keep the across-width (frame.x)
+  // component of the drag and project back onto the parent surface.
+  const width = Math.max(0.0001, Number(parent.baseWidth ?? parent.width ?? 0.16));
+  const across = new THREE.Vector3().subVectors(lock.points[0], frame.point).dot(frame.x);
+  const v = clampRegionParam(0.5 + across / width);
+  // Follow the selection region with the root (u and v centers).
+  updateBranchRootRegionCenter(lock, lock.branchParentParameter, v);
+  const rootPoint = frame.point.clone().addScaledVector(frame.x, across);
   lock.points[0].copy(rootPoint);
   if (lock.groupLatticeBasePoints?.[0]) lock.groupLatticeBasePoints[0].copy(rootPoint);
   lock.rootSurfacePoint = rootPoint.clone();
   lock.rootSurfaceNormal = frame.z.clone();
   lock.rootAttachment = null;
+  // Keep the local root offset in sync so updateBranchChildren holds it on the surface.
+  if (Array.isArray(lock.branchLocalPoints) && lock.branchLocalPoints[0]) {
+    lock.branchLocalPoints[0].x = across;
+    lock.branchLocalPoints[0].y = 0;
+    lock.branchLocalPoints[0].z = 0;
+  }
   return frame;
+}
+
+// Shift the branch region's center to follow the child root (u and v), so the
+// selection panel's relative position and the direct-bridge region stay in sync.
+function updateBranchRootRegionCenter(lock, u, v) {
+  const region = lock?.branchRootRegion;
+  if (!region?.cross) return;
+  const uc = clampRegionParam((region.cross.up.u + region.cross.down.u) / 2);
+  const vc = clampRegionParam((region.cross.left.v + region.cross.right.v) / 2);
+  const du = clampRegionParam(u) - uc;
+  const dv = clampRegionParam(v) - vc;
+  if (Math.abs(du) < 0.0005 && Math.abs(dv) < 0.0005) return;
+  region.cross.up.u = clampRegionParam(region.cross.up.u + du);
+  region.cross.down.u = clampRegionParam(region.cross.down.u + du);
+  region.cross.left.v = clampRegionParam(region.cross.left.v + dv);
+  region.cross.right.v = clampRegionParam(region.cross.right.v + dv);
+  const parent = locks.find((item) => item.id === lock?.branchParentId);
+  if (parent) rebuildLockGeometry(parent);
+  else rebuildLockGeometry(lock);
 }
 
 const BRANCH_ROOT_REGION_DEFAULTS = Object.freeze({
