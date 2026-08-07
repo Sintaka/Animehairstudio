@@ -120,6 +120,8 @@ python -m http.server 8080 --bind 127.0.0.1
   - **侧面直接桥接（2.4r 已修正）**：子环 left（世界左）↔ 父 colMax+1（世界左）、right（世界右）↔ colMin（世界右），按**世界侧**匹配（网格 left/right 在世界相反）；右面绕序 flip 朝外。
   - **顶部（本次三步）**：① 洞 top（row9，世界 右→左 col2→col5，折痕零边折叠成 2 实边）↔ 子环 top（环点 0/1/2，世界 右→左），2src↔2dst 直接桥接；② 对桥接边**分段**：观察洞侧面未桥接边数（每侧 2 段）→ 每条桥接边 1 段需增至 2 段（新增 1 段 = 中间等比切分，注释后续复杂侦测）；③ 上部 poly 走向从线性改 **smoothstep 平滑**，完成子→主桥接过渡。
   - 直接桥接概念：把子环边**直接投影**到主发片最接近的面/线段去匹配。
+- **子发片深度重置 2.4w（Reset 幂等修复 + 面板精简 + show points on mesh）**：① **Reset 累积删面修复**——根因：setBranchRootRegionPoint 之前只重建子发片、再对父级**已挖洞的旧网格**重复 applyBranchRootRegionCarving；挖洞会改写 quadFaces，重复作用在缩小后的数组上行列映射漂移，每次 Reset/拖拽多删几个碎面且不可恢复。修复：改为重建父级（rebuildLockGeometry(parent)，内部先 createHairGeometry 全新网格再挖洞一次），Reset/拖拽均幂等，多次 Reset 面数恒定。② 面板精简：删除说明文字（u=沿父级…），只留 Reset region 按钮。③ 新增 **Show points on mesh** toggle（同 Width/Depth Curve 面板）：在父发片表面显示 4 个选区点的 3D 标记（branchRegionMeshPointsGroup + branchRootRegionWorldPoints，沿 2D 拖拽实时跟随），关闭或取消选中时隐藏。
+
 - **子发片深度重置 2.4v（2D 矩形选区编辑器 + 刘海线框三角修复）**：① 坏的 3D 选区手柄（选不中、拖不动）整体删除，改为类似 Width/Depth Curve 的 **2D u/v 平面编辑器**——新增 `#branchRegionEditor` dialog（SVG 画布 520×220，u=沿父发片长度、v=沿宽度）；4 个浅蓝选区点 **up/down 只改 u、left/right 只改 v**（默认位置横竖方向沿用 2.4u 修正：up=朝根部较小 u、down=朝尖端较大 u、left=较大 v 世界左、right=较小 v 世界右）；选中分支子级自动打开、选中普通发片自动关闭（`retargetBranchRegionEditor` 挂入 selectLock）；拖拽开始 `pushUndoState()` 一次（整个拖拽=一次撤销，不再退回初始加载）；Reset 按钮恢复默认区域；新增 CSS `.branch-region-rect`。② **修复 index.html dialog 嵌套 bug**：branchRegionEditor 之前误插在 taperCurveEditor 内并吃掉它的闭合标签，导致其后所有 dialog（UV Inspector / Save / 预设等）全部嵌套进 taperCurveEditor、0 尺寸不可见——已恢复为 BODY 顶级并列，各面板回归正常。③ 刘海 split 发丝线框三角修复见「Bug 修复」。
 
 - **[TEMP] 子发片桥接基础版小结（2.4a→2.4q，验收完成，后续补动态补全）**：当前桥接 = **底部（2 quad）+ 侧面直接桥接（左/右各 1 quad）**，共 4 quad、0 三角（后续补 top 侧 + 动态补全）。约定与注意事项：
@@ -248,3 +250,5 @@ python -m http.server 8080 --bind 127.0.0.1
 - [x] 子发片选区控制重写：3D 手柄 → 2D u/v 平面编辑器（4 点，up/down 改 u、left/right 改 v，选中自动开关，整次拖拽=一次撤销）
 - [x] 修复刘海（split 发丝）线框三角面：createSplitStrandGeometry 生成 authored edgeMask，0 对角线
 - [x] 修复 index.html dialog 嵌套 bug（branchRegionEditor 吃掉 taperCurveEditor 闭合标签，后续 dialog 全部 0 尺寸）
+
+- [x] 子发片选区面板：Reset 幂等（不再累积删面）、移除说明文字、新增 Show points on mesh toggle（3D 标记跟随 2D 拖拽）

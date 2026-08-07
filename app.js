@@ -2265,6 +2265,17 @@ const taperMeshPointsGroup = new THREE.Group();
 taperMeshPointsGroup.name = "Shape curve mesh points";
 taperMeshPointsGroup.visible = false;
 scene.add(taperMeshPointsGroup);
+let branchRegionMeshPointsVisible = false;
+const branchRegionMeshPointGeometry = new THREE.SphereGeometry(0.014, 10, 8);
+const branchRegionMeshPointMaterial = new THREE.MeshBasicMaterial({
+  color: 0x8fd8ff,
+  depthTest: false,
+  depthWrite: false
+});
+const branchRegionMeshPointsGroup = new THREE.Group();
+branchRegionMeshPointsGroup.name = "Branch root region mesh points";
+branchRegionMeshPointsGroup.visible = false;
+scene.add(branchRegionMeshPointsGroup);
 const lastPointer = { x: 0, y: 0 };
 let pendingPlacedLockId = null;
 const locks = [];
@@ -21308,9 +21319,12 @@ function setBranchRootRegionPoint(lock, name, param) {
   const cross = lock?.branchRootRegion?.cross;
   if (!cross?.[name] || !param) return;
   cross[name] = { u: clampRegionParam(param.u), v: clampRegionParam(param.v) };
-  rebuildLockGeometry(lock);
+  // Rebuild the parent from scratch so carving always starts from the full grid:
+  // carving mutates quadFaces, so re-carving an already-carved mesh drifts the
+  // row/col mapping and deletes extra fragments on every pass (Reset accumulation).
   const parent = locks.find((item) => item.id === lock?.branchParentId);
-  if (parent) applyBranchRootRegionCarving(parent, parent.mesh.geometry);
+  if (parent) rebuildLockGeometry(parent);
+  else rebuildLockGeometry(lock);
   updateCurveObjects(lock);
 }
 
@@ -21334,12 +21348,16 @@ function openBranchRegionEditor(lockId) {
   branchRegionEdit = lockId;
   const target = document.querySelector("#branchRegionTarget");
   if (target) target.textContent = lock.name || "Selected branch";
+  const toggle = document.querySelector("#branchRegionMeshPointsToggle");
+  if (toggle) toggle.checked = branchRegionMeshPointsVisible;
   renderBranchRegionEditor();
+  updateBranchRegionMeshPoints();
   const dialog = document.querySelector("#branchRegionEditor");
   if (dialog && !dialog.open) dialog.show();
 }
 function closeBranchRegionEditor() {
   branchRegionEdit = null;
+  branchRegionMeshPointsGroup.visible = false;
   const dialog = document.querySelector("#branchRegionEditor");
   if (dialog?.open) dialog.close();
 }
@@ -21386,6 +21404,7 @@ function renderBranchRegionEditor() {
     circle.style.cursor = "move";
     g.appendChild(circle);
   });
+  updateBranchRegionMeshPoints();
 }
 function beginBranchRegionCanvasDrag(event) {
   if (!branchRegionEdit) return;
@@ -21419,6 +21438,28 @@ function endBranchRegionCanvasDrag(event) {
   if (!branchRegionCanvasDrag) return;
   branchRegionCanvas.releasePointerCapture?.(branchRegionCanvasDrag.pointerId);
   branchRegionCanvasDrag = null;
+}
+
+// 3D markers for the 4 region points on the parent surface (show points on mesh).
+function updateBranchRegionMeshPoints() {
+  branchRegionMeshPointsGroup.clear();
+  if (!branchRegionMeshPointsVisible) {
+    branchRegionMeshPointsGroup.visible = false;
+    return;
+  }
+  const lock = locks.find((item) => item.id === branchRegionEdit);
+  const world = lock ? branchRootRegionWorldPoints(lock) : null;
+  if (!world) {
+    branchRegionMeshPointsGroup.visible = false;
+    return;
+  }
+  Object.values(world).forEach((point) => {
+    const handle = new THREE.Mesh(branchRegionMeshPointGeometry, branchRegionMeshPointMaterial);
+    handle.position.copy(point);
+    handle.renderOrder = 35;
+    branchRegionMeshPointsGroup.add(handle);
+  });
+  branchRegionMeshPointsGroup.visible = true;
 }
 
 // Cache of the parent-surface grid region for a child's branchRootRegion.
@@ -21467,6 +21508,23 @@ function branchRootRegionSurface(lock) {
     rowMax: Math.max(rowA, rowB),
     colMin: Math.min(colA, colB),
     colMax: Math.max(colA, colB)
+  };
+}
+
+// World positions of the 4 region edge control points on the parent surface grid.
+function branchRootRegionWorldPoints(lock) {
+  const surface = branchRootRegionSurface(lock);
+  const parent = locks.find((item) => item.id === lock?.branchParentId);
+  const pos = parent?.mesh?.geometry?.getAttribute?.("position");
+  if (!surface || !pos) return null;
+  const pointAt = (r, c) => new THREE.Vector3(pos.getX(r * surface.cols + c), pos.getY(r * surface.cols + c), pos.getZ(r * surface.cols + c));
+  const rowC = Math.round((surface.rowMin + surface.rowMax) / 2);
+  const colC = Math.round((surface.colMin + surface.colMax) / 2);
+  return {
+    up: pointAt(surface.rowMin, colC),
+    down: pointAt(surface.rowMax, colC),
+    left: pointAt(rowC, surface.colMax),
+    right: pointAt(rowC, surface.colMin)
   };
 }
 
@@ -30724,6 +30782,12 @@ branchRegionCanvas.addEventListener("pointerdown", beginBranchRegionCanvasDrag);
 branchRegionCanvas.addEventListener("pointermove", updateBranchRegionCanvasDrag);
 branchRegionCanvas.addEventListener("pointerup", endBranchRegionCanvasDrag);
 branchRegionCanvas.addEventListener("pointercancel", endBranchRegionCanvasDrag);
+document.querySelector("#branchRegionMeshPointsToggle").addEventListener("change", (event) => {
+  branchRegionMeshPointsVisible = event.target.checked;
+  updateBranchRegionMeshPoints();
+  const lock = locks.find((item) => item.id === branchRegionEdit);
+  if (lock) updateCurveObjects(lock);
+});
 
 function beginTaperMeshPointDrag(event) {
   if (

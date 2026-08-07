@@ -1893,8 +1893,13 @@
           <rect id="branchRegionRect" class="branch-region-rect" fill="rgba(143,216,255,0.18)" stroke="#8fd8ff" stroke-width="1.5"></rect>
           <g id="branchRegionPoints"></g>
         </svg>
+        <label id="branchRegionMeshPointsToggleRow" class="profile-mesh-point-toggle">
+          <span>
+            <strong>Show points on mesh</strong>
+          </span>
+          <input id="branchRegionMeshPointsToggle" type="checkbox" />
+        </label>
         <div class="taper-point-controls">
-          <span>Drag the 4 points to select the carve region (u = along parent, v = across).</span>
           <button id="resetBranchRegion" type="button">Reset region</button>
         </div>
       </div>
@@ -2035,6 +2040,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260807-42"></script>
+    <script type="module" src="./app.js?v=20260807-43"></script>
   </body>
 </html>
