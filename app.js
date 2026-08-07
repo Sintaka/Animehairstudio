@@ -14136,6 +14136,7 @@ function createBranchChildGeometry(lock) {
   const colors = bridge ? [...bridge.colors] : [];
   const indices = [];
   const quadFaces = [];
+  const triangleEdgeMasks = [];
   vertices.push(...sweepVertices);
   normals.push(...sweepNormals);
   tangents.push(...sweepTangents);
@@ -14159,17 +14160,21 @@ function createBranchChildGeometry(lock) {
       const d = bridgeVertexCount + (row + 1) * ringCount + ((s + 1) % ringCount);
       indices.push(a, c, b, b, c, d);
       quadFaces.push([a, c, d, b]);
+      triangleEdgeMasks.push([0, 1, 1], [1, 1, 0]);
     }
   }
   ring.points.forEach((p, s) => {
     const a = bridgeVertexCount + actualLengthSegments * ringCount + s;
     const b = bridgeVertexCount + actualLengthSegments * ringCount + ((s + 1) % ringCount);
     indices.push(a, b, endCenter, b, a, endCenter);
+    triangleEdgeMasks.push([1, 1, 1], [1, 1, 1]);
   });
   if (bridge) {
     indices.push(...bridge.indices);
     bridge.quads.forEach((q) => quadFaces.push(q));
     bridge.triangles.forEach((tr) => quadFaces.push(tr));
+    bridge.quads.forEach(() => triangleEdgeMasks.push([0, 1, 1], [1, 1, 0]));
+    bridge.triangles.forEach(() => triangleEdgeMasks.push([1, 1, 1]));
   } else {
     // Root cap only when there is no bridge.
     const startPoint = curve.getPoint(0);
@@ -14196,7 +14201,9 @@ function createBranchChildGeometry(lock) {
   geometry.setIndex(indices);
   geometry.userData.quadFaces = quadFaces;
   geometry.userData.sideTriangleCount = actualLengthSegments * ringCount * 2;
+  geometry.userData.triangleEdgeMasks = triangleEdgeMasks;
   geometry.userData.openSurface = false;
+  geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
 }
