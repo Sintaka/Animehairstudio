@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-3";
+} from "./modules/app-config.js?v=20260808-4";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -14181,9 +14181,9 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       });
     };
     for (let j = 1; j <= bottomMidCount; j += 1) emitBottomMidRow(j / bottomSegments);
-    const extraBottomLoop = bottomMidCount > 0 ? 1 : 0;
-    if (extraBottomLoop) emitBottomMidRow(1 - 0.3 / bottomSegments);
-    bottomInfo.midCount = bottomMidCount + extraBottomLoop;
+    // Endpoint special op (see top band): also fires for single-segment direct bands.
+    emitBottomMidRow(1 - 0.3 / bottomSegments);
+    bottomInfo.midCount = bottomMidCount + 1;
     bottomInfo.width = collapsed.length;
   }
 
@@ -14261,12 +14261,12 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       });
     };
     for (let j = 1; j <= midCount; j += 1) emitTopMidRow(j / topSegments);
-    // Special op: when bridge completion is triggered (segments > 1), subdivide the
-    // last segment at 0.3 of its height from the parent so the side fill always has an
-    // extra loop to attach quads (never ends in a triangle).
-    const extraTopLoop = midCount > 0 ? 1 : 0;
-    if (extraTopLoop) emitTopMidRow(1 - 0.3 / topSegments);
-    topInfo.midCount = midCount + extraTopLoop;
+    // Special op: subdivide the last segment at 0.3 of its height from the parent so
+    // the side fill always has an extra loop to attach quads (never ends in a triangle).
+    // Also fires for single-segment (direct) bands, otherwise the endpoint loop is
+    // missing and the side area falls back to triangles.
+    emitTopMidRow(1 - 0.3 / topSegments);
+    topInfo.midCount = midCount + 1;
     topInfo.width = holeTop.length;
     topInfo.outward = outward;
   }

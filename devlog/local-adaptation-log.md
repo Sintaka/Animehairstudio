@@ -93,3 +93,4 @@
 - [x] TransformMode 默认 object 并持久化（anime-hair-studio-transform-space）；启动不再强制 world
 - [x] Branch Root Region 选区顺序归一化（旧文件倒置不再跳变）；根滑动后浮动面板/3D 标记跟随
 - [x] 选区宽度=1：子发片横向拓扑 1、顶部/底部直接桥接与补全可工作
+- [x] 顶/底桥接端点 0.3 额外循环线对单段直连也触发（避免侧面三角面）

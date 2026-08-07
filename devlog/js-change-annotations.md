@@ -55,6 +55,7 @@
   - **选区健壮性（修复"点一下选区点跳到另一侧"）**：新增 `normalizeBranchRootRegion`——up.u<down.u、left.v>right.v 顺序归一化 + 最小跨度 0.02；`restoreLock` 恢复存档时统一归一化（旧文件倒置选区不再跳变，洞行列不变），`setBranchRootRegionPoint` 先归一化再钳制，`updateBranchRootRegionCenter` 移位后也归一化。验证：v0040 Side Left 3 加载后 up/down、left/right 顺序正确且洞仍为 row9-11/col1-2；拖 up 点 30px 平滑跟随不跳变。
   - **根滑动跟随面板刷新**：`updateBranchRootRegionCenter` 末尾补 `renderBranchRegionEditor()` + `updateBranchRegionMeshPoints()`（原先只重建几何，浮动面板/3D 标记不更新，拖根后看不到选区跟随）。验证：moveRoot(0.05) 后面板圆点坐标更新。
   - **选区宽度=1 支持**：`branchRegionTopEdgeCount` 最小 1、`squareChildRing` 允许 widthSegments=1（4 点环）；桥接 top/bottom 带条件 `holeTop/collapsed.length>=3` → `>=2`，`ringTop[2]/holeTop[2]` 固定索引改 last-index（`ringTop[ringWidth]`/`holeTop[length-1]`），1 宽洞口顶部/底部补全与直接桥接可工作；顺带移除 `createBranchChildGeometry` 中已无用的 holeHalfWidth 死代码（Phase 2.12 后 halfWidth 跟随 Width 属性）。验证：left=0.52/right=0.48 → topEdges=1/ringW=1，桥接 8 quad（顶 3+底 3+侧 2），127 顶点 0 NaN。
+  - **端点特殊操作补全（2.13 修正）**：顶/底桥接端点 0.3 处额外循环线不再要求 `midCount>0`，单段直连（topSegments/bottomSegments=1）也会触发——否则 1 格直连带的端点在侧面收口时又退化成三角面。验证：1×1 直连 顶2+底2+侧2=6 quad（原 4）；分段/默认情况不变，maskCount=triCount、0 NaN。版本 0.1.4-Sintaka.0.2.15。
   - **版本**：0.1.4-Sintaka.0.2.14（dailybuild +1）+ app-config 缓存号 bump。
 
 - **子发片深度重置 2.12（体验优化 + Width 跟随 + RootCtrl 解锁）**
