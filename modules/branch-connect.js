@@ -55,21 +55,13 @@ export function holeBoundary(region, positions, gridRows, gridCols) {
   for (let r = rowMin + 1; r <= rowMax + 1; r += 1) order.push(indexOf(r, colMax + 1)); // right: H verts
   for (let c = colMax; c >= colMin; c -= 1) order.push(indexOf(rowMax + 1, c));        // bottom: W+1 verts (minus shared)
   for (let r = rowMax; r >= rowMin + 1; r -= 1) order.push(indexOf(r, colMin));         // left: H verts (minus shared)
-  // Dedupe shared corner vertices (last of one side == first of next).
+  // Dedupe shared corner vertices by grid index. A strand cross-section can
+  // legitimately contain coincident columns (creased-profile seams), so deduping
+  // by position would collapse the perimeter and corrupt the side layout.
   const vertices = [];
   const seen = new Set();
   order.forEach((p) => {
-    const key = `${p.x.toFixed(4)}|${p.y.toFixed(4)}|${p.z.toFixed(4)}`;
-    if (!seen.has(key)) { seen.add(key); vertices.push(p); }
-  });
-  // A boundary vertex's grid index is needed to look up parent normals; store the first hit.
-  const indexByKey = new Map();
-  order.forEach((p) => {
-    const key = `${p.x.toFixed(4)}|${p.y.toFixed(4)}|${p.z.toFixed(4)}`;
-    if (!indexByKey.has(key)) indexByKey.set(key, p.index);
-  });
-  vertices.forEach((v) => {
-    v.index = indexByKey.get(`${v.x.toFixed(4)}|${v.y.toFixed(4)}|${v.z.toFixed(4)}`) ?? null;
+    if (!seen.has(p.index)) { seen.add(p.index); vertices.push(p); }
   });
   const W = colMax - colMin + 1;
   const H = rowMax - rowMin + 1;
