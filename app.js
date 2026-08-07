@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-7";
+} from "./modules/app-config.js?v=20260808-8";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -21461,7 +21461,7 @@ function enforceBranchRootPosition(lock) {
   // component of the drag and project back onto the parent surface.
   const width = Math.max(0.0001, Number(parent.baseWidth ?? parent.width ?? 0.16));
   const across = new THREE.Vector3().subVectors(lock.points[0], frame.point).dot(frame.x);
-  const v = clampRegionParam(0.5 + across / width);
+  const v = clampRegionParam(0.5 - across / width);
   // Follow the selection region with the root (u and v centers).
   updateBranchRootRegionCenter(lock, lock.branchParentParameter, v);
   const rootPoint = frame.point.clone().addScaledVector(frame.x, across);
@@ -21656,13 +21656,12 @@ function setBranchRootRegionPoint(lock, name, param) {
 let branchRegionEdit = null;
 let branchRegionCanvasDrag = null;
 function branchRegionUVToCanvas(u, v) {
-  // left = larger v = world-left; render world-left on the panel's left.
-  return { x: 20 + (1 - v) * 180, y: 20 + u * 360 };
+  return { x: 20 + v * 180, y: 20 + u * 360 };
 }
 function branchRegionCanvasToUV(cx, cy) {
   return {
     u: THREE.MathUtils.clamp((cy - 20) / 360, 0, 1),
-    v: 1 - THREE.MathUtils.clamp((cx - 20) / 180, 0, 1)
+    v: THREE.MathUtils.clamp((cx - 20) / 180, 0, 1)
   };
 }
 function openBranchRegionEditor(lockId) {
