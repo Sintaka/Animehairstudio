@@ -14082,6 +14082,9 @@ function createBranchChildGeometry(lock) {
   const actualLengthSegments = curveParameters.length - 1;
   const ringCount = ring.points.length;
   const sweepStartOffset = 0;
+  // Sweep starts at 0.1 of the child guide line (hardcoded), normalized back to [0,1];
+  // the [0, 0.1] root portion is reserved for the bridge/connection.
+  const SWEEP_START_T = 0.1;
   const vertices = [];
   const normals = [];
   const tangents = [];
@@ -14091,19 +14094,18 @@ function createBranchChildGeometry(lock) {
   const quadFaces = [];
   let previousFrame = null;
   curveParameters.forEach((t, row) => {
-    const point = curve.getPoint(t);
-    const frame = strandGeometryFrameAt(lock, curve, t, previousFrame);
+    const guideT = SWEEP_START_T + (1 - SWEEP_START_T) * t;
+    const point = curve.getPoint(guideT);
+    const frame = strandGeometryFrameAt(lock, curve, guideT, previousFrame);
     previousFrame = frame;
-    const offset = sweepStartOffset * (1 - t);
-    const color = strandInfluenceColor(lock, t);
+    const color = strandInfluenceColor(lock, guideT);
     ring.points.forEach((p, index) => {
       const ringVector = frame.x.clone().multiplyScalar(p.x).addScaledVector(frame.z, p.z);
       const v = point.clone().add(ringVector);
-      if (offset > 0) v.addScaledVector(frame.y, offset);
       vertices.push(v.x, v.y, v.z);
       normals.push(ringVector.x, ringVector.y, ringVector.z);
       tangents.push(frame.y.x, frame.y.y, frame.y.z, 1);
-      uvs.push(index / ringCount, t);
+      uvs.push(index / ringCount, guideT);
       colors.push(color.r, color.g, color.b);
     });
   });
@@ -30644,6 +30646,8 @@ hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
   if (file) openHairProjectFile(file);
 });
+
+
 
 
 
