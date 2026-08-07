@@ -55,6 +55,17 @@ button:focus-visible {
 
 .shortcuts-dialog,
 .patch-notes-dialog,
+.preferences-dialog-version {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid #3d3840;
+  color: #aaa3ac;
+  font-size: 12px;
+}
+
 .preferences-dialog {
   width: min(760px, calc(100vw - 32px));
   max-height: min(760px, calc(100vh - 32px));
@@ -387,6 +398,17 @@ button:focus-visible {
 
 .radial-shortcut-row.hidden {
   display: none;
+}
+
+.preferences-dialog-version {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid #3d3840;
+  color: #aaa3ac;
+  font-size: 12px;
 }
 
 .preferences-dialog {
