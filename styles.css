@@ -4641,6 +4641,10 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
   border-left: 3px solid currentColor;
 }
 
+.branch-region-canvas {
+  aspect-ratio: 11 / 26;
+}
+
 .branch-region-rect {
   fill: rgba(143, 216, 255, 0.18);
   stroke: #8fd8ff;

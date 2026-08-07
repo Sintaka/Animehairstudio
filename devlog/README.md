@@ -120,6 +120,14 @@ python -m http.server 8080 --bind 127.0.0.1
   - **侧面直接桥接（2.4r 已修正）**：子环 left（世界左）↔ 父 colMax+1（世界左）、right（世界右）↔ colMin（世界右），按**世界侧**匹配（网格 left/right 在世界相反）；右面绕序 flip 朝外。
   - **顶部（本次三步）**：① 洞 top（row9，世界 右→左 col2→col5，折痕零边折叠成 2 实边）↔ 子环 top（环点 0/1/2，世界 右→左），2src↔2dst 直接桥接；② 对桥接边**分段**：观察洞侧面未桥接边数（每侧 2 段）→ 每条桥接边 1 段需增至 2 段（新增 1 段 = 中间等比切分，注释后续复杂侦测）；③ 上部 poly 走向从线性改 **smoothstep 平滑**，完成子→主桥接过渡。
   - 直接桥接概念：把子环边**直接投影**到主发片最接近的面/线段去匹配。
+- **子发片深度重置 2.4z（选区显示/映射修正 + 顶部桥接绕序/Hermite + 手柄可见性）**
+  - **控制点边界对齐**：branchRootRegionWorldPoints 的 down/left 点改为 rowMax+1 / colMax+1（洞底/洞左真实边界，原来停在最后一个面的边内 1 poly）。
+  - **面板竖长**：Branch Root Region SVG 从 520x220 横躺改为 220x520 竖长（viewBox、UV 映射、CSS aspect-ratio 同步）。
+  - **v 映射修正（居中）**：父发片截面是闭合环，按列索引线性映射时 v=0.5 落在环的远端（世界左极值）——这就是默认偏右的根因。改为以 probe 行 frame.z（朝外法线）投影最大的 front 列为基准的环向弧映射（v=0.5=front），并把默认 v 跨度 0.06->0.24 让区域有实际宽度；colCount/skipCol 改为构建时固化（gridFacesPerRow/gridSkipCol），不再从已挖洞的 quadFaces 推导（洞变大后曾漂移 10->9）。
+  - **顶部桥接绕序修复**：通用循环发出的 quad 绕序与原版相反（内翻），FrontSide 线框 overlay 把背面剔除 -> 顶部桥接看不到拓扑；改为 [parentRow, childRow, childRow+1, parentRow+1] 与原版一致。
+  - **smoothstep 改 Hermite**：只插值位置会在孔洞处凹进主发片；改为 Hermite 插值——起点切线沿桥接方向、终点切线用主发片表面法线（按跨度缩放），两端位置与法线都匹配，不再内凹。
+  - **sweep 手柄可见性**：放大 1.8x、renderOrder 40、depthTest false（原本被其它头发遮挡看不到）。
+
 - **子发片深度重置 2.4y（选区钳制修复 + 桥接诊断模式）**
   - **控制点越界修复**：setBranchRootRegionPoint 的 MIN_REGION_SPAN 钳制（Math.min/max）结果未再夹到 [0,1]，可产生负值/超 1（右/下点显示到 -1）；现统一用 clampRegionParam 包住；renderBranchRegionEditor 显示层也加钳制兜底（旧文件越界值不再画出画布）。验证：极值拖拽后 u/v 全在 [0,1]，控制点均在画布内。
   - **桥接诊断模式（临时）**：BRANCH_BRIDGE_DIAGNOSTIC=true —— 只输出顶部条带（顶部桥接 + 分段），底部桥接 / 侧面直接桥接 / 侧面三角剖分填充全部禁用，先隔离定位"全乱"。验证：仅顶部条带时 344 tris（扫掠 312 + 双面端盖 12 + 顶部条带 20），无 NaN。
@@ -272,3 +280,8 @@ python -m http.server 8080 --bind 127.0.0.1
 
 - [x] 选区控制点越界修复（u/v 钳制到 [0,1] + 显示层兜底）
 - [x] 桥接诊断模式：仅顶部条带（BRANCH_BRIDGE_DIAGNOSTIC=true），底部/侧面/填充禁用
+
+- [x] 控制点边界对齐（down/left -> 洞真实边界）+ 面板竖长化
+- [x] v 映射：front 列居中环向弧映射（默认选区居中）+ 构建时固化 grid 元数据
+- [x] 顶部桥接绕序修复（线框可见）+ Hermite 平滑（主发片法线参与，不内凹）
+- [x] sweep 手柄放大/置顶（可见性）

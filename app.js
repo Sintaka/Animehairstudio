@@ -13794,6 +13794,8 @@ function createHairCardGeometry(lock, curve, profilePoints) {
   geometry.userData.actualLengthSegments = actualLengthSegments;
   geometry.userData.gridRows = actualLengthSegments + 1;
   geometry.userData.gridColumns = profileVertexCount;
+  geometry.userData.gridFacesPerRow = profileEdges.length;
+  geometry.userData.gridSkipCol = gridProfileSkipCol(profileEdges, profileVertexCount);
   geometry.userData.openSurface = true;
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
@@ -14170,25 +14172,43 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     const outward = new THREE.Vector3().crossVectors(across, up);
     if (outward.lengthSq() < 1e-8) outward.set(0, 1, 0);
     outward.normalize();
-    const inward = outward.clone().negate();
-    const smooth = (t) => t * t * (3 - 2 * t);
-    const BRIDGE_ROUND_FACTOR = 0.2;
+    const parentNormalAt = (v) => {
+      if (normalAttr && v.index != null) {
+        return new THREE.Vector3(normalAttr.getX(v.index), normalAttr.getY(v.index), normalAttr.getZ(v.index)).normalize();
+      }
+      return new THREE.Vector3(0, 1, 0);
+    };
+    // Hermite basis so the band leaves the child ring along its direction and arrives
+    // at the parent hole flat along the parent's surface normal (no dip into the parent).
+    const hermite = (t, p0, p1, m0, m1) => {
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const h00 = 2 * t3 - 3 * t2 + 1;
+      const h10 = t3 - 2 * t2 + t;
+      const h01 = -2 * t3 + 3 * t2;
+      const h11 = t3 - t2;
+      return new THREE.Vector3()
+        .addScaledVector(p0, h00)
+        .addScaledVector(m0, h10)
+        .addScaledVector(p1, h01)
+        .addScaledVector(m1, h11);
+    };
     topInfo.holeBase = vertices.length / 3;
     holeTop.forEach(pushBoundary);
     topInfo.midBase = vertices.length / 3;
     for (let j = 1; j <= midCount; j += 1) {
       const f = j / topSegments;
-      const s = smooth(f);
-      const round = Math.sin(Math.PI * f) * BRIDGE_ROUND_FACTOR;
       ringTop.forEach((p, i) => {
         const h = holeTop[i];
-        const span = Math.hypot(h.x - p.x, h.y - p.y, h.z - p.z);
-        const amount = span * round;
-        pushBoundary({
-          x: p.x + (h.x - p.x) * s + inward.x * amount,
-          y: p.y + (h.y - p.y) * s + inward.y * amount,
-          z: p.z + (h.z - p.z) * s + inward.z * amount
-        });
+        const p0 = new THREE.Vector3(p.x, p.y, p.z);
+        const p1 = new THREE.Vector3(h.x, h.y, h.z);
+        const span = p0.distanceTo(p1);
+        // Tangent at the ring follows the band direction; tangent at the hole follows the
+        // parent surface normal (scaled by the band span so both ends blend smoothly).
+        const m0 = new THREE.Vector3().subVectors(p1, p0);
+        const m1 = parentNormalAt(h).multiplyScalar(span);
+        const mid = hermite(f, p0, p1, m0, m1);
+        pushBoundary({ x: mid.x, y: mid.y, z: mid.z });
       });
     }
     topInfo.midCount = midCount;
@@ -14246,7 +14266,10 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       for (let j = 1; j <= topInfo.midCount; j += 1) column.push(topInfo.midBase + (j - 1) * W + i);
       column.push(topInfo.holeBase + i);
       for (let k = 0; k < column.length - 1; k += 1) {
-        const q = [column[k], column[k + 1], column[k + 1] + 1, column[k] + 1];
+        // column[k] is the child-side row, column[k+1] the parent-side row; emit as
+        // [parentRow, childRow, childRow+1, parentRow+1] to keep outward winding (same
+        // as the accepted 2.4s band) so the FrontSide wireframe overlay does not cull it.
+        const q = [column[k + 1], column[k], column[k] + 1, column[k + 1] + 1];
         quads.push(q);
         indices.push(q[0], q[1], q[3], q[3], q[1], q[2]);
       }
@@ -14541,6 +14564,8 @@ function createHairGeometry(lock) {
   geometry.userData.actualLengthSegments = actualLengthSegments;
   geometry.userData.gridRows = actualLengthSegments + 1;
   geometry.userData.gridColumns = profileTopology.slots.length;
+  geometry.userData.gridFacesPerRow = profileTopology.edges.length;
+  geometry.userData.gridSkipCol = gridProfileSkipCol(profileTopology.edges, profileTopology.slots.length);
   geometry.userData.quadFaces = sweepQuadFaces;
   geometry.computeVertexNormals();
   return geometry;
@@ -21338,8 +21363,8 @@ const BRANCH_ROOT_REGION_DEFAULTS = Object.freeze({
   centerV: 0.5,
   upLength: 0.08,
   downLength: 0.08,
-  leftWidth: 0.03,
-  rightWidth: 0.03
+  leftWidth: 0.12,
+  rightWidth: 0.12
 });
 
 function clampRegionParam(value) {
@@ -21413,12 +21438,12 @@ function setBranchRootRegionPoint(lock, name, param) {
 let branchRegionEdit = null;
 let branchRegionCanvasDrag = null;
 function branchRegionUVToCanvas(u, v) {
-  return { x: 30 + v * 460, y: 20 + u * 180 };
+  return { x: 20 + v * 180, y: 20 + u * 480 };
 }
 function branchRegionCanvasToUV(cx, cy) {
   return {
-    u: THREE.MathUtils.clamp((cy - 20) / 180, 0, 1),
-    v: THREE.MathUtils.clamp((cx - 30) / 460, 0, 1)
+    u: THREE.MathUtils.clamp((cy - 20) / 480, 0, 1),
+    v: THREE.MathUtils.clamp((cx - 20) / 180, 0, 1)
   };
 }
 function openBranchRegionEditor(lockId) {
@@ -21596,6 +21621,16 @@ function updateBranchRegionMeshPoints() {
 
 // Cache of the parent-surface grid region for a child's branchRootRegion.
 // Recomputed only when the control points change; parent moves never touch it.
+// Grid metadata for creased profiles: the column that no face edge starts at.
+function gridProfileSkipCol(edges, vertexCount) {
+  const starts = new Set();
+  edges.forEach((edge) => starts.add(edge.start % vertexCount));
+  for (let c = 0; c < vertexCount; c += 1) {
+    if (!starts.has(c)) return c;
+  }
+  return -1;
+}
+
 function branchRootRegionSurface(lock) {
   const region = lock?.branchRootRegion;
   const parent = locks.find((item) => item.id === lock?.branchParentId);
@@ -21605,28 +21640,53 @@ function branchRootRegionSurface(lock) {
   const cols = Number(geometry?.userData?.gridColumns || 0);
   if (rows < 2 || cols < 2) return null;
   const faces = geometry?.userData?.quadFaces;
-  const facesPerRow = Array.isArray(faces) && faces.length ? Math.round(faces.length / Math.max(1, rows - 1)) : 0;
+  // facesPerRow / skipCol are grid properties fixed at build time (the carved
+  // quadFaces shrink, so deriving them from the carved list would drift).
+  const facesPerRow = Number(geometry?.userData?.gridFacesPerRow)
+    || (Array.isArray(faces) && faces.length ? Math.round(faces.length / Math.max(1, rows - 1)) : 0);
   const colCount = facesPerRow > 1 ? facesPerRow : cols - 1;
-  // A creased profile seam creates a grid column that no face starts at; map
-  // face-row columns to real grid columns so carving and the hole boundary agree.
-  let skipCol = -1;
-  if (facesPerRow > 1 && Array.isArray(faces) && faces.length >= facesPerRow) {
-    const faceStarts = new Set();
-    for (let i = 0; i < facesPerRow; i += 1) faceStarts.add(faces[i][0] % cols);
-    for (let c = 0; c < cols; c += 1) {
-      if (!faceStarts.has(c)) { skipCol = c; break; }
-    }
+  const skipCol = Number(geometry?.userData?.gridSkipCol ?? -1);
+  const faceStartCols = [];
+  if (colCount >= 1 && colCount <= cols) {
+    for (let f = 0; f < colCount; f += 1) faceStartCols.push(skipCol >= 0 && f >= skipCol ? f + 1 : f);
   }
   const toGridCol = (vc) => {
     const g = skipCol >= 0 && vc >= skipCol ? vc + 1 : vc;
     return THREE.MathUtils.clamp(g, 0, cols - 1);
   };
   const toRow = (u) => THREE.MathUtils.clamp(Math.round(clampRegionParam(u) * (rows - 1)), 0, rows - 1);
-  const toCol = (v) => THREE.MathUtils.clamp(Math.round(clampRegionParam(v) * (colCount - 1)), 0, colCount - 1);
-  // Normalize with min/max so both pre-2.4u (old up/down, left/right order) and new
-  // regions produce the same rectangular carve region.
   const rowA = toRow(region.cross.up.u);
   const rowB = toRow(region.cross.down.u);
+  // v follows the parent's lateral width (projection onto the guide's frame.x at the
+  // region's middle row), so v=0.5 lands on the hair's lateral center. A cross-section
+  // ring wraps around, so the ring-index middle column is the far side, not the center.
+  let toCol = (v) => THREE.MathUtils.clamp(Math.round(clampRegionParam(v) * (colCount - 1)), 0, colCount - 1);
+  const positionAttr = geometry?.getAttribute?.("position");
+  if (positionAttr && colCount >= 2 && faceStartCols.length === colCount) {
+    const probeRow = Math.round((Math.min(rowA, rowB) + Math.max(rowA, rowB)) / 2);
+    try {
+      // v maps to the ring arc centered on the column facing the guide's outward
+      // normal (frame.z): v=0.5 lands on the hair's lateral center from the up-vector
+      // view. A cross-section ring collapses under a width projection (front/back
+      // faces share the same width), so the arc avoids picking the wrong side.
+      const frame = curveFrameAt(parent, probeRow / Math.max(1, rows - 1));
+      const axis = frame.z;
+      let front = 0;
+      let bestD = -Infinity;
+      faceStartCols.forEach((gc, f) => {
+        const base = (probeRow * cols + gc) * 3;
+        const d = positionAttr.array[base] * axis.x + positionAttr.array[base + 1] * axis.y + positionAttr.array[base + 2] * axis.z;
+        if (d > bestD) { bestD = d; front = f; }
+      });
+      const arcScale = colCount * 0.6;
+      toCol = (v) => {
+        const offset = Math.round((clampRegionParam(v) - 0.5) * arcScale);
+        return ((front + offset) % colCount + colCount) % colCount;
+      };
+    } catch (e) {
+      // fall back to the linear column mapping
+    }
+  }
   const colA = toGridCol(toCol(region.cross.left.v));
   const colB = toGridCol(toCol(region.cross.right.v));
   return {
@@ -21636,6 +21696,7 @@ function branchRootRegionSurface(lock) {
     colCount,
     skipCol,
     toGridCol,
+    toCol,
     rowMin: Math.min(rowA, rowB),
     rowMax: Math.max(rowA, rowB),
     colMin: Math.min(colA, colB),
@@ -21652,10 +21713,12 @@ function branchRootRegionWorldPoints(lock) {
   const pointAt = (r, c) => new THREE.Vector3(pos.getX(r * surface.cols + c), pos.getY(r * surface.cols + c), pos.getZ(r * surface.cols + c));
   const rowC = Math.round((surface.rowMin + surface.rowMax) / 2);
   const colC = Math.round((surface.colMin + surface.colMax) / 2);
+  const bottomRow = Math.min(surface.rowMax + 1, surface.rows - 1);
+  const leftCol = Math.min(surface.colMax + 1, surface.cols - 1);
   return {
     up: pointAt(surface.rowMin, colC),
-    down: pointAt(surface.rowMax, colC),
-    left: pointAt(rowC, surface.colMax),
+    down: pointAt(bottomRow, colC),
+    left: pointAt(rowC, leftCol),
     right: pointAt(rowC, surface.colMin)
   };
 }
@@ -25109,12 +25172,14 @@ function createCurveObjects(lock) {
   let branchSweepStartHandle = null;
   if (lock.branchRootRegion) {
     branchSweepStartHandle = createSplitControlHandle();
+    branchSweepStartHandle.scale.setScalar(1.8);
+    branchSweepStartHandle.renderOrder = 40;
     branchSweepStartHandle.material = new THREE.MeshBasicMaterial({
       color: 0xffd84d,
       depthTest: false,
       depthWrite: false,
       transparent: true,
-      opacity: 0.9
+      opacity: 0.95
     });
     branchSweepStartHandle.userData.lockId = lock.id;
     branchSweepStartHandle.userData.branchSweepStartHandle = true;
