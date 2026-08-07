@@ -14063,6 +14063,9 @@ function createConnectedCurveCardGeometry(lock) {
 // + side direct bridges (left/right, one quad each). Parent-side vertices reuse the
 // parent's authored normal/tangent by grid index; ring-side vertices reuse the sweep's
 // row-0 ring by index (no copies), so the bridge is watertight with the sweep.
+// TEMP DIAGNOSTIC: only the top band (bridge + segmentation) is emitted, the
+// bottom bridge / side direct bridges / side fill are disabled for isolation.
+const BRANCH_BRIDGE_DIAGNOSTIC = true;
 function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom) {
   const positionAttr = parentGeom?.getAttribute?.("position");
   const normalAttr = parentGeom?.getAttribute?.("normal");
@@ -14104,18 +14107,21 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   const holeHeight = Math.max(1, Math.round(surface.rowMax - surface.rowMin + 1));
 
   // Bottom bridge: ring bottom (3,4,5) <-> hole bottom, 1:1 with crease-seam collapse.
-  const bottomSide = boundary.sides.find((s) => s.name === "bottom");
-  const bottomVerts = [];
-  for (let i = 0; i <= bottomSide.count; i += 1) {
-    bottomVerts.push(boundary.vertices[(bottomSide.start + i) % boundary.vertices.length]);
+  let bottomBoundaryBase = -1;
+  if (!BRANCH_BRIDGE_DIAGNOSTIC) {
+    const bottomSide = boundary.sides.find((s) => s.name === "bottom");
+    const bottomVerts = [];
+    for (let i = 0; i <= bottomSide.count; i += 1) {
+      bottomVerts.push(boundary.vertices[(bottomSide.start + i) % boundary.vertices.length]);
+    }
+    const collapsed = [];
+    bottomVerts.forEach((v) => {
+      const prev = collapsed[collapsed.length - 1];
+      if (!prev || Math.abs(v.x - prev.x) > 1e-6 || Math.abs(v.y - prev.y) > 1e-6 || Math.abs(v.z - prev.z) > 1e-6) collapsed.push(v);
+    });
+    bottomBoundaryBase = collapsed.length >= 2 ? vertices.length / 3 : -1;
+    if (collapsed.length >= 2) collapsed.forEach(pushBoundary);
   }
-  const collapsed = [];
-  bottomVerts.forEach((v) => {
-    const prev = collapsed[collapsed.length - 1];
-    if (!prev || Math.abs(v.x - prev.x) > 1e-6 || Math.abs(v.y - prev.y) > 1e-6 || Math.abs(v.z - prev.z) > 1e-6) collapsed.push(v);
-  });
-  const bottomBoundaryBase = collapsed.length >= 2 ? vertices.length / 3 : -1;
-  if (collapsed.length >= 2) collapsed.forEach(pushBoundary);
 
   // Side direct bridges: ring left/right (1 edge each) <-> hole side bottom edge.
   // The strand grid columns are inverted vs the ring's left/right in world space
@@ -14125,14 +14131,16 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     { name: "right", col: surface.colMin, ringTop: 0, ringBottom: 5, flip: true }
   ];
   const sideBases = {};
-  sideSpecs.forEach((spec) => {
-    const vTop = boundaryAt(surface.rowMax, spec.col);
-    const vBottom = boundaryAt(surface.rowMax + 1, spec.col);
-    if (!vTop || !vBottom) return;
-    sideBases[spec.name] = vertices.length / 3;
-    pushBoundary(vTop);
-    pushBoundary(vBottom);
-  });
+  if (!BRANCH_BRIDGE_DIAGNOSTIC) {
+    sideSpecs.forEach((spec) => {
+      const vTop = boundaryAt(surface.rowMax, spec.col);
+      const vBottom = boundaryAt(surface.rowMax + 1, spec.col);
+      if (!vTop || !vBottom) return;
+      sideBases[spec.name] = vertices.length / 3;
+      pushBoundary(vTop);
+      pushBoundary(vBottom);
+    });
+  }
 
   // Top band: ring top (0,1,2) <-> hole top, holeHeight segments per column. Middle
   // rows use smoothstep interpolation plus a tapered bridge-round (0 at both ends,
@@ -21384,13 +21392,13 @@ function setBranchRootRegionPoint(lock, name, param) {
   const u = clampRegionParam(param.u);
   const v = clampRegionParam(param.v);
   if (name === "up") {
-    cross.up = { u: Math.min(u, cross.down.u - MIN_REGION_SPAN), v };
+    cross.up = { u: clampRegionParam(Math.min(u, cross.down.u - MIN_REGION_SPAN)), v };
   } else if (name === "down") {
-    cross.down = { u: Math.max(u, cross.up.u + MIN_REGION_SPAN), v };
+    cross.down = { u: clampRegionParam(Math.max(u, cross.up.u + MIN_REGION_SPAN)), v };
   } else if (name === "left") {
-    cross.left = { u, v: Math.max(v, cross.right.v + MIN_REGION_SPAN) };
+    cross.left = { u, v: clampRegionParam(Math.max(v, cross.right.v + MIN_REGION_SPAN)) };
   } else {
-    cross.right = { u, v: Math.min(v, cross.left.v - MIN_REGION_SPAN) };
+    cross.right = { u, v: clampRegionParam(Math.min(v, cross.left.v - MIN_REGION_SPAN)) };
   }
   // Rebuild the parent from scratch so carving always starts from the full grid:
   // carving mutates quadFaces, so re-carving an already-carved mesh drifts the
@@ -21447,15 +21455,15 @@ function renderBranchRegionEditor() {
   const vc = clampRegionParam((cross.left.v + cross.right.v) / 2);
   const uc = clampRegionParam((cross.up.u + cross.down.u) / 2);
   const pts = {
-    up: branchRegionUVToCanvas(cross.up.u, vc),
-    down: branchRegionUVToCanvas(cross.down.u, vc),
-    left: branchRegionUVToCanvas(uc, cross.left.v),
-    right: branchRegionUVToCanvas(uc, cross.right.v)
+    up: branchRegionUVToCanvas(clampRegionParam(cross.up.u), vc),
+    down: branchRegionUVToCanvas(clampRegionParam(cross.down.u), vc),
+    left: branchRegionUVToCanvas(uc, clampRegionParam(cross.left.v)),
+    right: branchRegionUVToCanvas(uc, clampRegionParam(cross.right.v))
   };
   const rect = document.querySelector("#branchRegionRect");
-  const c1 = branchRegionUVToCanvas(cross.down.u, cross.left.v);
-  const c2 = branchRegionUVToCanvas(cross.down.u, cross.right.v);
-  const c3 = branchRegionUVToCanvas(cross.up.u, cross.left.v);
+  const c1 = branchRegionUVToCanvas(clampRegionParam(cross.down.u), clampRegionParam(cross.left.v));
+  const c2 = branchRegionUVToCanvas(clampRegionParam(cross.down.u), clampRegionParam(cross.right.v));
+  const c3 = branchRegionUVToCanvas(clampRegionParam(cross.up.u), clampRegionParam(cross.left.v));
   if (rect) {
     rect.setAttribute("x", Math.min(c1.x, c2.x));
     rect.setAttribute("y", Math.min(c1.y, c3.y));

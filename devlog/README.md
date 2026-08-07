@@ -120,6 +120,11 @@ python -m http.server 8080 --bind 127.0.0.1
   - **侧面直接桥接（2.4r 已修正）**：子环 left（世界左）↔ 父 colMax+1（世界左）、right（世界右）↔ colMin（世界右），按**世界侧**匹配（网格 left/right 在世界相反）；右面绕序 flip 朝外。
   - **顶部（本次三步）**：① 洞 top（row9，世界 右→左 col2→col5，折痕零边折叠成 2 实边）↔ 子环 top（环点 0/1/2，世界 右→左），2src↔2dst 直接桥接；② 对桥接边**分段**：观察洞侧面未桥接边数（每侧 2 段）→ 每条桥接边 1 段需增至 2 段（新增 1 段 = 中间等比切分，注释后续复杂侦测）；③ 上部 poly 走向从线性改 **smoothstep 平滑**，完成子→主桥接过渡。
   - 直接桥接概念：把子环边**直接投影**到主发片最接近的面/线段去匹配。
+- **子发片深度重置 2.4y（选区钳制修复 + 桥接诊断模式）**
+  - **控制点越界修复**：setBranchRootRegionPoint 的 MIN_REGION_SPAN 钳制（Math.min/max）结果未再夹到 [0,1]，可产生负值/超 1（右/下点显示到 -1）；现统一用 clampRegionParam 包住；renderBranchRegionEditor 显示层也加钳制兜底（旧文件越界值不再画出画布）。验证：极值拖拽后 u/v 全在 [0,1]，控制点均在画布内。
+  - **桥接诊断模式（临时）**：BRANCH_BRIDGE_DIAGNOSTIC=true —— 只输出顶部条带（顶部桥接 + 分段），底部桥接 / 侧面直接桥接 / 侧面三角剖分填充全部禁用，先隔离定位"全乱"。验证：仅顶部条带时 344 tris（扫掠 312 + 双面端盖 12 + 顶部条带 20），无 NaN。
+  - 待诊断结论：2.4x 的侧面三角剖分（triangulatePolygon3D）曾测出桥接区 count-4 非流形边（重叠面），为"全乱"最大嫌疑；顶部条带 smoothstep 圆滑（中间行内凹 0.2×跨度）是"整个面凹下去"的候选原因。
+
 - **子发片深度重置 2.4x（桥接动态分段 + 选区归一化 + width curve 联动 + sweep 起点手柄）**
   - **桥接程序化**：buildBranchBridgeGeometry 重写。顶部条带分段数改为洞高度 H(rowMax-rowMin+1) 驱动，不再写死 2 段；中间行用 smoothstep 插值 + 桥接圆滑(0.2 系数、两端为 0 中间最大、随重建实时重算)；侧面填充改为三角剖分(triangulatePolygon3D: Newell 法线 + ShapeUtils.triangulateShape)，任意洞高都水密；底部 connectSide、侧面直接桥接保留。
   - **Branch Root Region 默认值**：centerV 0.25->0.5(面板居中)，u 跨度 0.08->0.16、v 跨度 0.10->0.06(竖长)；setBranchRootRegionPoint 增加归一化钳制(up<=down、left>=right、最小跨度 0.02)，拖拽不再飞出/翻转。
@@ -264,3 +269,6 @@ python -m http.server 8080 --bind 127.0.0.1
 - [x] 选区默认值居中竖长 + 拖拽归一化钳制(不飞出/翻转)
 - [x] 子发片 width/depth curve 联动(相对扫掠起点归一化，根环保持洞口宽)
 - [x] sweep 起点手柄：黄色控制点沿子引导线根->尾滑动，控制扫掠起始(0.02-0.6)
+
+- [x] 选区控制点越界修复（u/v 钳制到 [0,1] + 显示层兜底）
+- [x] 桥接诊断模式：仅顶部条带（BRANCH_BRIDGE_DIAGNOSTIC=true），底部/侧面/填充禁用
