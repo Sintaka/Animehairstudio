@@ -120,6 +120,13 @@ python -m http.server 8080 --bind 127.0.0.1
   - **侧面直接桥接（2.4r 已修正）**：子环 left（世界左）↔ 父 colMax+1（世界左）、right（世界右）↔ colMin（世界右），按**世界侧**匹配（网格 left/right 在世界相反）；右面绕序 flip 朝外。
   - **顶部（本次三步）**：① 洞 top（row9，世界 右→左 col2→col5，折痕零边折叠成 2 实边）↔ 子环 top（环点 0/1/2，世界 右→左），2src↔2dst 直接桥接；② 对桥接边**分段**：观察洞侧面未桥接边数（每侧 2 段）→ 每条桥接边 1 段需增至 2 段（新增 1 段 = 中间等比切分，注释后续复杂侦测）；③ 上部 poly 走向从线性改 **smoothstep 平滑**，完成子→主桥接过渡。
   - 直接桥接概念：把子环边**直接投影**到主发片最接近的面/线段去匹配。
+- **子发片深度重置 2.4x（桥接动态分段 + 选区归一化 + width curve 联动 + sweep 起点手柄）**
+  - **桥接程序化**：buildBranchBridgeGeometry 重写。顶部条带分段数改为洞高度 H(rowMax-rowMin+1) 驱动，不再写死 2 段；中间行用 smoothstep 插值 + 桥接圆滑(0.2 系数、两端为 0 中间最大、随重建实时重算)；侧面填充改为三角剖分(triangulatePolygon3D: Newell 法线 + ShapeUtils.triangulateShape)，任意洞高都水密；底部 connectSide、侧面直接桥接保留。
+  - **Branch Root Region 默认值**：centerV 0.25->0.5(面板居中)，u 跨度 0.08->0.16、v 跨度 0.10->0.06(竖长)；setBranchRootRegionPoint 增加归一化钳制(up<=down、left>=right、最小跨度 0.02)，拖拽不再飞出/翻转。
+  - **width curve 联动**：子发片扫掠应用自己的 taper/depth curve(相对扫掠起点归一化，根环保持洞口宽度)；子发片宽度随自身或父级宽度曲线(updateBranchChildren 重映射)变化。
+  - **sweep 起点手柄**：子发片曲线对象新增黄色 branchSweepStartHandle(沿子引导线根->尾滑动，控制 branchSweepStartT 0.02-0.6，默认 0.1)；createBranchChildGeometry 用 branchSweepStartT 替代写死 0.1；指针拖拽(注册到 capture 最前，避免被其它 pointerdown 吞掉)+ 序列化/恢复 + 撤销。
+  - 验证：洞变高桥接面数随之增加(动态分段)；tip 宽度随 taper 形状 0.145->0.032->0.195；手柄拖拽 0.1->0.03；无 NaN/索引越界。
+
 - **子发片深度重置 2.4w（Reset 幂等修复 + 面板精简 + show points on mesh）**：① **Reset 累积删面修复**——根因：setBranchRootRegionPoint 之前只重建子发片、再对父级**已挖洞的旧网格**重复 applyBranchRootRegionCarving；挖洞会改写 quadFaces，重复作用在缩小后的数组上行列映射漂移，每次 Reset/拖拽多删几个碎面且不可恢复。修复：改为重建父级（rebuildLockGeometry(parent)，内部先 createHairGeometry 全新网格再挖洞一次），Reset/拖拽均幂等，多次 Reset 面数恒定。② 面板精简：删除说明文字（u=沿父级…），只留 Reset region 按钮。③ 新增 **Show points on mesh** toggle（同 Width/Depth Curve 面板）：在父发片表面显示 4 个选区点的 3D 标记（branchRegionMeshPointsGroup + branchRootRegionWorldPoints，沿 2D 拖拽实时跟随），关闭或取消选中时隐藏。
 
 - **子发片深度重置 2.4v（2D 矩形选区编辑器 + 刘海线框三角修复）**：① 坏的 3D 选区手柄（选不中、拖不动）整体删除，改为类似 Width/Depth Curve 的 **2D u/v 平面编辑器**——新增 `#branchRegionEditor` dialog（SVG 画布 520×220，u=沿父发片长度、v=沿宽度）；4 个浅蓝选区点 **up/down 只改 u、left/right 只改 v**（默认位置横竖方向沿用 2.4u 修正：up=朝根部较小 u、down=朝尖端较大 u、left=较大 v 世界左、right=较小 v 世界右）；选中分支子级自动打开、选中普通发片自动关闭（`retargetBranchRegionEditor` 挂入 selectLock）；拖拽开始 `pushUndoState()` 一次（整个拖拽=一次撤销，不再退回初始加载）；Reset 按钮恢复默认区域；新增 CSS `.branch-region-rect`。② **修复 index.html dialog 嵌套 bug**：branchRegionEditor 之前误插在 taperCurveEditor 内并吃掉它的闭合标签，导致其后所有 dialog（UV Inspector / Save / 预设等）全部嵌套进 taperCurveEditor、0 尺寸不可见——已恢复为 BODY 顶级并列，各面板回归正常。③ 刘海 split 发丝线框三角修复见「Bug 修复」。
@@ -252,3 +259,8 @@ python -m http.server 8080 --bind 127.0.0.1
 - [x] 修复 index.html dialog 嵌套 bug（branchRegionEditor 吃掉 taperCurveEditor 闭合标签，后续 dialog 全部 0 尺寸）
 
 - [x] 子发片选区面板：Reset 幂等（不再累积删面）、移除说明文字、新增 Show points on mesh toggle（3D 标记跟随 2D 拖拽）
+
+- [x] 桥接程序化：顶部条带分段=洞高 H、smoothstep+圆滑重算、侧面填充三角剖分(水密)
+- [x] 选区默认值居中竖长 + 拖拽归一化钳制(不飞出/翻转)
+- [x] 子发片 width/depth curve 联动(相对扫掠起点归一化，根环保持洞口宽)
+- [x] sweep 起点手柄：黄色控制点沿子引导线根->尾滑动，控制扫掠起始(0.02-0.6)

@@ -11165,9 +11165,9 @@ function finishBrushSizeDrag(event) {
 function updateInteractionLocks() {
   const loftStrokeActive = Boolean(loftSurfaceDraft?.activeStroke);
   const curveSurfaceStrokeActive = Boolean(curveSurfaceDraft?.activeStroke);
-  controls.enabled = Boolean(altOrbitDrag) || (!toolRadialGesture && !strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !selectPointerCapture && !transformDragging && !relaxEdit && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpLatticeDrag && !scalpPaintDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !capsuleGuideDrawStroke && !polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !selectionMarqueeDrag && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag && !houdiniZoomDrag);
+  controls.enabled = Boolean(altOrbitDrag) || (!toolRadialGesture && !strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !selectPointerCapture && !transformDragging && !relaxEdit && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpLatticeDrag && !scalpPaintDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !capsuleGuideDrawStroke && !polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !selectionMarqueeDrag && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag && !branchSweepStartDrag && !houdiniZoomDrag);
   const branchMoveDisabled = branchMoveGizmoDisabled();
-  transformControls.enabled = !toolRadialGesture && !strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !altOrbitDrag && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !capsuleGuideDrawStroke && !polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag && !branchMoveDisabled && !houdiniZoomDrag;
+  transformControls.enabled = !toolRadialGesture && !strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !altOrbitDrag && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !capsuleGuideDrawStroke && !polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag && !branchMoveDisabled && !branchSweepStartDrag && !houdiniZoomDrag;
   setBranchMoveGizmoVisual(branchMoveDisabled);
 }
 
@@ -13543,6 +13543,48 @@ function pushOrientedTriangle(indices, vertices, a, b, c, outward) {
   else indices.push(a, b, c);
 }
 
+// Triangulate a (possibly non-planar) 3D polygon with outward orientation.
+// Returns index triples into the input array.
+function triangulatePolygon3D(points, outward) {
+  if (points.length < 3) return [];
+  const normal = new THREE.Vector3();
+  for (let i = 0; i < points.length; i += 1) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    normal.x += (a.y - b.y) * (a.z + b.z);
+    normal.y += (a.z - b.z) * (a.x + b.x);
+    normal.z += (a.x - b.x) * (a.y + b.y);
+  }
+  if (normal.lengthSq() < 1e-10) {
+    const fan = [];
+    for (let i = 1; i < points.length - 1; i += 1) fan.push([0, i, i + 1]);
+    return fan;
+  }
+  normal.normalize();
+  const reference = Math.abs(normal.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+  const u = new THREE.Vector3().crossVectors(normal, reference).normalize();
+  const v = new THREE.Vector3().crossVectors(normal, u).normalize();
+  const flat = points.map((p) => new THREE.Vector2(u.dot(p), v.dot(p)));
+  let area = 0;
+  for (let i = 0; i < flat.length; i += 1) {
+    const a = flat[i];
+    const b = flat[(i + 1) % flat.length];
+    area += a.x * b.y - b.x * a.y;
+  }
+  if (area < 0) flat.reverse();
+  const triangles = THREE.ShapeUtils.triangulateShape(flat, []);
+  const out = [];
+  triangles.forEach(([a, b, c]) => {
+    const pa = points[a];
+    const pb = points[b];
+    const pc = points[c];
+    const n = new THREE.Vector3().subVectors(pb, pa).cross(new THREE.Vector3().subVectors(pc, pa));
+    if (n.dot(outward) < 0) out.push([a, c, b]);
+    else out.push([a, b, c]);
+  });
+  return out;
+}
+
 function createSplitStrandGeometry(lock, curve, profilePoints) {
   const radialSegments = THREE.MathUtils.clamp(Math.round(lock.radialSegments || 10), 6, 32);
   const profileCurve = createSmoothSweepProfileCurve(profilePoints);
@@ -14057,8 +14099,11 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   const quads = [];
   const triangles = [];
   const indices = [];
-  // Bottom side: collapse the crease-seam coincident column so each of the child
-  // ring's 2 bottom edges maps 1:1 to a real parent bottom edge.
+  // Hole height in faces (number of hole side edges per side). The top band gets one
+  // segment per side edge so its corner column always matches the hole side topology.
+  const holeHeight = Math.max(1, Math.round(surface.rowMax - surface.rowMin + 1));
+
+  // Bottom bridge: ring bottom (3,4,5) <-> hole bottom, 1:1 with crease-seam collapse.
   const bottomSide = boundary.sides.find((s) => s.name === "bottom");
   const bottomVerts = [];
   for (let i = 0; i <= bottomSide.count; i += 1) {
@@ -14071,11 +14116,10 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   });
   const bottomBoundaryBase = collapsed.length >= 2 ? vertices.length / 3 : -1;
   if (collapsed.length >= 2) collapsed.forEach(pushBoundary);
-  // Side direct bridges: the ring's 1-segment left/right sides connect straight to
-  // the parent side edges' bottom segment (rows rowMax..rowMax+1), one quad each.
+
+  // Side direct bridges: ring left/right (1 edge each) <-> hole side bottom edge.
   // The strand grid columns are inverted vs the ring's left/right in world space
-  // (ring-left is the more-negative-x side, matching parent colMax+1), so map
-  // ring-left -> parent right edge and ring-right -> parent left edge by world side.
+  // (ring-left is the more-negative-x side, matching parent colMax+1).
   const sideSpecs = [
     { name: "left", col: surface.colMax + 1, ringTop: 2, ringBottom: 3 },
     { name: "right", col: surface.colMin, ringTop: 0, ringBottom: 5, flip: true }
@@ -14089,10 +14133,10 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     pushBoundary(vTop);
     pushBoundary(vBottom);
   });
-  // Top bridge: the ring's top 2 edges face the hole's top edge (2 real edges).
-  // Split each column in the middle (equal ratio for now; later: projection-distance
-  // based complex detection) and place the middle row with smoothstep so the band
-  // direction transitions smoothly from the child to the parent.
+
+  // Top band: ring top (0,1,2) <-> hole top, holeHeight segments per column. Middle
+  // rows use smoothstep interpolation plus a tapered bridge-round (0 at both ends,
+  // max mid-band) so the band stays anchored at ring and hole and follows rebuilds.
   const topSide = boundary.sides.find((s) => s.name === "top");
   const topVerts = [];
   for (let i = 0; i <= topSide.count; i += 1) {
@@ -14103,13 +14147,11 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     const prev = holeTop[holeTop.length - 1];
     if (!prev || Math.abs(v.x - prev.x) > 1e-6 || Math.abs(v.y - prev.y) > 1e-6 || Math.abs(v.z - prev.z) > 1e-6) holeTop.push(v);
   });
-  const topInfo = { holeBase: -1, midBase: -1 };
+  const topInfo = { holeBase: -1, midBase: -1, midCount: 0, width: 0, outward: null };
   if (holeTop.length >= 3) {
     const ringTop = [ringWorld[0], ringWorld[1], ringWorld[2]];
-    // Bridge round (smoothstep): the added middle row curves inward along the negative
-    // band normal (DCC bridge-round), instead of sitting on the straight midpoint. The
-    // band normal comes from the across/up of the child ring edge and the parent hole edge.
-    const BRIDGE_ROUND_FACTOR = 0.2;
+    const topSegments = holeHeight;
+    const midCount = topSegments - 1;
     const across = new THREE.Vector3().subVectors(ringTop[2], ringTop[0]);
     const up = new THREE.Vector3()
       .addVectors(
@@ -14121,45 +14163,52 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     if (outward.lengthSq() < 1e-8) outward.set(0, 1, 0);
     outward.normalize();
     const inward = outward.clone().negate();
-    const midRow = ringTop.map((p, i) => {
-      const h = holeTop[i];
-      const span = Math.hypot(h.x - p.x, h.y - p.y, h.z - p.z);
-      const amount = span * BRIDGE_ROUND_FACTOR;
-      return {
-        x: p.x + (h.x - p.x) * 0.5 + inward.x * amount,
-        y: p.y + (h.y - p.y) * 0.5 + inward.y * amount,
-        z: p.z + (h.z - p.z) * 0.5 + inward.z * amount
-      };
-    });
+    const smooth = (t) => t * t * (3 - 2 * t);
+    const BRIDGE_ROUND_FACTOR = 0.2;
     topInfo.holeBase = vertices.length / 3;
     holeTop.forEach(pushBoundary);
     topInfo.midBase = vertices.length / 3;
-    midRow.forEach((m) => pushBoundary(m));
+    for (let j = 1; j <= midCount; j += 1) {
+      const f = j / topSegments;
+      const s = smooth(f);
+      const round = Math.sin(Math.PI * f) * BRIDGE_ROUND_FACTOR;
+      ringTop.forEach((p, i) => {
+        const h = holeTop[i];
+        const span = Math.hypot(h.x - p.x, h.y - p.y, h.z - p.z);
+        const amount = span * round;
+        pushBoundary({
+          x: p.x + (h.x - p.x) * s + inward.x * amount,
+          y: p.y + (h.y - p.y) * s + inward.y * amount,
+          z: p.z + (h.z - p.z) * s + inward.z * amount
+        });
+      });
+    }
+    topInfo.midCount = midCount;
+    topInfo.width = holeTop.length;
+    topInfo.outward = outward;
   }
-  // Final side fill: close the remaining hole side edges between the top bridge and the
-  // side direct bridges. Pattern: the first poly next to the top cut edge is a triangle,
-  // the rest are quads - for each side, one triangle + one quad.
+
+  // Side fill columns: hole side vertices S[1..H-2] (rows rowMin+1..rowMax-1).
   const sideFillBases = { left: -1, right: -1 };
-  if (topInfo.midBase >= 0) {
-    const sideFillSpecs = [
-      { name: "left", col: surface.colMax + 1 },
-      { name: "right", col: surface.colMin }
-    ];
-    sideFillSpecs.forEach((spec) => {
-      const vMid = boundaryAt(surface.rowMin + 1, spec.col);
-      if (!vMid) return;
-      sideFillBases[spec.name] = vertices.length / 3;
-      pushBoundary(vMid);
-    });
-  }
+  const sideFillCount = Math.max(0, holeHeight - 2);
+  sideSpecs.forEach((spec) => {
+    if (sideBases[spec.name] == null) return;
+    sideFillBases[spec.name] = vertices.length / 3;
+    for (let k = 0; k < sideFillCount; k += 1) {
+      const v = boundaryAt(surface.rowMin + 1 + k, spec.col);
+      if (!v) return;
+      pushBoundary(v);
+    }
+  });
+
   // Ring-side vertices are the sweep's row-0 ring (reused by index, no copies).
   const ringBase = vertices.length / 3;
+
+  // Bottom bridge faces.
   if (bottomBoundaryBase >= 0) {
     const rVerts = [ringWorld[3], ringWorld[4], ringWorld[5]];
     const result = connectSide(collapsed, rVerts, bottomBoundaryBase, ringBase + 3);
     result.quads.forEach((q) => {
-      // Match the strand sweep quad order [a, c, d, b] and triangle split
-      // (a,c,b),(b,c,d) so the bridge blends with the sweep.
       const ordered = [q[0], q[3], q[2], q[1]];
       quads.push(ordered);
       indices.push(ordered[0], ordered[1], ordered[3], ordered[3], ordered[1], ordered[2]);
@@ -14169,52 +14218,56 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       indices.push(tr[0], tr[1], tr[2]);
     });
   }
+
+  // Side direct bridge faces.
   sideSpecs.forEach((spec) => {
     if (sideBases[spec.name] == null) return;
     const base = sideBases[spec.name];
-    // Keep the side faces wound outward (the right face lies on the +x side of the
-    // child curve, opposite to the left face, so its winding is flipped).
     const quad = spec.flip
       ? [base + 1, ringBase + spec.ringBottom, ringBase + spec.ringTop, base]
       : [base, ringBase + spec.ringTop, ringBase + spec.ringBottom, base + 1];
     quads.push(quad);
     indices.push(quad[0], quad[1], quad[3], quad[3], quad[1], quad[2]);
   });
+
+  // Top band faces (ring -> middle rows -> hole).
   if (topInfo.holeBase >= 0) {
-    // Top band rows: ring (reused row-0) -> middle (smoothstep) -> hole. The "a,b" row is
-    // the one closer to the hole (parent) so the winding stays outward, like the bottom bridge.
-    for (let i = 0; i < 2; i += 1) {
-      const qMid = [topInfo.holeBase + i, topInfo.midBase + i, topInfo.midBase + i + 1, topInfo.holeBase + i + 1];
-      quads.push(qMid);
-      indices.push(qMid[0], qMid[1], qMid[3], qMid[3], qMid[1], qMid[2]);
-      const qRing = [topInfo.midBase + i, ringBase + i, ringBase + i + 1, topInfo.midBase + i + 1];
-      quads.push(qRing);
-      indices.push(qRing[0], qRing[1], qRing[3], qRing[3], qRing[1], qRing[2]);
+    const W = topInfo.width;
+    for (let i = 0; i < W - 1; i += 1) {
+      const column = [ringBase + i];
+      for (let j = 1; j <= topInfo.midCount; j += 1) column.push(topInfo.midBase + (j - 1) * W + i);
+      column.push(topInfo.holeBase + i);
+      for (let k = 0; k < column.length - 1; k += 1) {
+        const q = [column[k], column[k + 1], column[k + 1] + 1, column[k] + 1];
+        quads.push(q);
+        indices.push(q[0], q[1], q[3], q[3], q[1], q[2]);
+      }
     }
   }
-  // Side fill faces (one triangle + one quad per side). The triangle fills the corner
-  // next to the top cut edge; the quad connects the middle hole-side segment to the ring.
-  if (topInfo.midBase >= 0) {
-    const sideFillSpecs = [
-      { name: "left", col: surface.colMax + 1, holeTop: 2, mid: 2, ringTop: 2, side: "left" },
-      { name: "right", col: surface.colMin, holeTop: 0, mid: 0, ringTop: 0, side: "right" }
-    ];
-    sideFillSpecs.forEach((spec) => {
-      if (sideFillBases[spec.name] < 0 || sideBases[spec.side] == null) return;
-      const vFill = sideFillBases[spec.name];
-      const midIdx = topInfo.midBase + spec.mid;
-      const ringIdx = ringBase + spec.ringTop;
-      const sideIdx = sideBases[spec.side];
-      const holeIdx = topInfo.holeBase + spec.holeTop;
-      const isLeft = spec.name === "left";
-      const tri = isLeft ? [holeIdx, midIdx, vFill] : [holeIdx, vFill, midIdx];
-      const quad = isLeft ? [vFill, midIdx, ringIdx, sideIdx] : [sideIdx, ringIdx, midIdx, vFill];
-      quads.push(tri);
-      indices.push(tri[0], tri[1], tri[2]);
-      quads.push(quad);
-      indices.push(quad[0], quad[1], quad[3], quad[3], quad[1], quad[2]);
+
+  // Side fill: triangulate the polygon (ring corner, mid corners, hole corner, hole side
+  // S[1..H-1]) so it stays watertight for any hole height.
+  const sideFillSpecs = [
+    { name: "left", col: surface.colMax + 1, ringTop: 2, corner: -1 },
+    { name: "right", col: surface.colMin, ringTop: 0, corner: 0 }
+  ];
+  sideFillSpecs.forEach((spec) => {
+    if (topInfo.holeBase < 0 || sideBases[spec.name] == null) return;
+    spec.corner = topInfo.width - 1; // left corner is the last top-band column
+    const poly = [ringBase + spec.ringTop];
+    for (let j = 1; j <= topInfo.midCount; j += 1) poly.push(topInfo.midBase + (j - 1) * topInfo.width + spec.corner);
+    poly.push(topInfo.holeBase + spec.corner);
+    for (let k = 0; k < sideFillCount; k += 1) poly.push(sideFillBases[spec.name] + k);
+    poly.push(sideBases[spec.name]);
+    const points = poly.map((index) => new THREE.Vector3(vertices[index * 3], vertices[index * 3 + 1], vertices[index * 3 + 2]));
+    const triIndices = triangulatePolygon3D(points, topInfo.outward || new THREE.Vector3(0, 0, 1));
+    triIndices.forEach(([a, b, c]) => {
+      const tr = [poly[a], poly[b], poly[c]];
+      triangles.push(tr);
+      indices.push(tr[0], tr[1], tr[2]);
     });
-  }
+  });
+
   return { vertices, normals, tangents, uvs, colors, indices, quads, triangles, ringBase };
 }
 
@@ -14245,9 +14298,13 @@ function createBranchChildGeometry(lock) {
   const curveParameters = strandCurveParameters(lock, curve, lengthSegments);
   const actualLengthSegments = curveParameters.length - 1;
   const ringCount = ring.points.length;
-  // Sweep starts at 0.1 of the child guide line (hardcoded), normalized back to [0,1];
-  // the [0, 0.1] root portion is filled by the bridge (hole -> row-0 ring).
-  const SWEEP_START_T = 0.1;
+  // Sweep starts at branchSweepStartT of the child guide (default 0.1), normalized back
+  // to [0,1]; the [0, start] root portion is filled by the bridge (hole -> row-0 ring).
+  const SWEEP_START_T = THREE.MathUtils.clamp(Number(lock.branchSweepStartT ?? 0.1), 0.02, 0.6);
+  // Child taper/depth curves drive the sweep width (relative to the root) so editing the
+  // width/depth curve (child's own or the parent's, via updateBranchChildren remap) changes
+  // the child; the root ring stays matched to the carved parent hole.
+  const rootWarp = strandProfileTopologyAt(lock, SWEEP_START_T, ring.points, 1, 1);
   const sweepVertices = [];
   const sweepNormals = [];
   const sweepTangents = [];
@@ -14260,8 +14317,11 @@ function createBranchChildGeometry(lock) {
     const frame = strandGeometryFrameAt(lock, curve, guideT, previousFrame);
     previousFrame = frame;
     const color = strandInfluenceColor(lock, guideT);
+    const warped = strandProfileTopologyAt(lock, guideT, ring.points, 1, 1);
     ring.points.forEach((p, index) => {
-      const ringVector = frame.x.clone().multiplyScalar(p.x).addScaledVector(frame.z, p.z);
+      const sx = rootWarp[index]?.x ? warped[index].x / rootWarp[index].x : 1;
+      const sz = rootWarp[index]?.z ? warped[index].z / rootWarp[index].z : 1;
+      const ringVector = frame.x.clone().multiplyScalar(p.x * sx).addScaledVector(frame.z, p.z * sz);
       const v = point.clone().add(ringVector);
       sweepVertices.push(v.x, v.y, v.z);
       sweepNormals.push(ringVector.x, ringVector.y, ringVector.z);
@@ -16962,6 +17022,7 @@ function snapshotState() {
       branchLocalPoints: lock.branchLocalPoints?.map(vectorToData) || null,
       branchLocalSurfaceNormals: lock.branchLocalSurfaceNormals?.map((normal) => normal ? vectorToData(normal) : null) || null,
       branchRootRegion: cloneBranchRootRegion(lock.branchRootRegion),
+      branchSweepStartT: THREE.MathUtils.clamp(Number(lock.branchSweepStartT ?? 0.1), 0.02, 0.6),
       rootSurfacePoint: lock.rootSurfacePoint ? vectorToData(lock.rootSurfacePoint) : null,
       rootSurfaceNormal: lock.rootSurfaceNormal ? vectorToData(lock.rootSurfaceNormal) : null,
       rootAttachmentEnabled: lock.rootAttachmentEnabled !== false,
@@ -18555,6 +18616,7 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     branchLocalSurfaceNormals: snapshot.branchLocalSurfaceNormals?.map((normal) => normal ? dataToVector(normal) : null) || null,
     branchRootRegion: cloneBranchRootRegion(snapshot.branchRootRegion),
     branchRootRegion: cloneBranchRootRegion(snapshot.branchRootRegion) || (snapshot.branchParentId ? branchRootRegionFromParam(snapshot.branchParentParameter ?? 0) : null),
+    branchSweepStartT: THREE.MathUtils.clamp(Number(snapshot.branchSweepStartT ?? 0.1), 0.02, 0.6),
     rootSurfacePoint: snapshot.rootSurfacePoint ? dataToVector(snapshot.rootSurfacePoint) : null,
     rootSurfaceNormal: snapshot.rootSurfaceNormal ? dataToVector(snapshot.rootSurfaceNormal).normalize() : null,
     groupLatticeBasePoints: snapshot.groupLatticeBasePoints?.map(dataToVector) || null,
@@ -21265,11 +21327,11 @@ function enforceBranchRootPosition(lock) {
 }
 
 const BRANCH_ROOT_REGION_DEFAULTS = Object.freeze({
-  centerV: 0.25,
-  upLength: 0.04,
-  downLength: 0.04,
-  leftWidth: 0.05,
-  rightWidth: 0.05
+  centerV: 0.5,
+  upLength: 0.08,
+  downLength: 0.08,
+  leftWidth: 0.03,
+  rightWidth: 0.03
 });
 
 function clampRegionParam(value) {
@@ -21318,7 +21380,18 @@ function cloneBranchRootRegion(region, { mirror = false } = {}) {
 function setBranchRootRegionPoint(lock, name, param) {
   const cross = lock?.branchRootRegion?.cross;
   if (!cross?.[name] || !param) return;
-  cross[name] = { u: clampRegionParam(param.u), v: clampRegionParam(param.v) };
+  const MIN_REGION_SPAN = 0.02;
+  const u = clampRegionParam(param.u);
+  const v = clampRegionParam(param.v);
+  if (name === "up") {
+    cross.up = { u: Math.min(u, cross.down.u - MIN_REGION_SPAN), v };
+  } else if (name === "down") {
+    cross.down = { u: Math.max(u, cross.up.u + MIN_REGION_SPAN), v };
+  } else if (name === "left") {
+    cross.left = { u, v: Math.max(v, cross.right.v + MIN_REGION_SPAN) };
+  } else {
+    cross.right = { u, v: Math.min(v, cross.left.v - MIN_REGION_SPAN) };
+  }
   // Rebuild the parent from scratch so carving always starts from the full grid:
   // carving mutates quadFaces, so re-carving an already-carved mesh drifts the
   // row/col mapping and deletes extra fragments on every pass (Reset accumulation).
@@ -21438,6 +21511,57 @@ function endBranchRegionCanvasDrag(event) {
   if (!branchRegionCanvasDrag) return;
   branchRegionCanvas.releasePointerCapture?.(branchRegionCanvasDrag.pointerId);
   branchRegionCanvasDrag = null;
+}
+function pointerToNdc(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  return new THREE.Vector2(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1
+  );
+}
+
+// Sweep-start control: drag the yellow handle along the child guide to set where
+// the sweep (and therefore the bridge) starts.
+let branchSweepStartDrag = null;
+function beginBranchSweepStartDrag(event) {
+  const selected = locks.find((item) => item.id === selectedId);
+  const handle = selected?.curveObjects?.branchSweepStartHandle;
+  if (!handle || selected?.locked) return false;
+  raycaster.setFromCamera(pointerToNdc(event), camera);
+  const hits = raycaster.intersectObjects([handle], false);
+  if (!hits.length) return false;
+  branchSweepStartDrag = { lockId: selected.id, pointerId: event.pointerId };
+  pushUndoState();
+  renderer.domElement.setPointerCapture?.(event.pointerId);
+  event.stopPropagation();
+  event.preventDefault();
+  return true;
+}
+function updateBranchSweepStartDrag(event) {
+  if (!branchSweepStartDrag || event.pointerId !== branchSweepStartDrag.pointerId) return;
+  const lock = locks.find((item) => item.id === branchSweepStartDrag.lockId);
+  if (!lock?.branchRootRegion) { branchSweepStartDrag = null; return; }
+  raycaster.setFromCamera(pointerToNdc(event), camera);
+  const hit = raycaster.intersectObject(lock.mesh, false)[0];
+  if (!hit) return;
+  const curve = strandGeometryCurve(lock);
+  let bestT = Number(lock.branchSweepStartT ?? 0.1);
+  let bestDist = Infinity;
+  for (let i = 0; i <= 64; i += 1) {
+    const t = i / 64;
+    const d = curve.getPoint(t).distanceToSquared(hit.point);
+    if (d < bestDist) { bestDist = d; bestT = t; }
+  }
+  const clamped = THREE.MathUtils.clamp(bestT, 0.02, 0.6);
+  if (Math.abs(clamped - Number(lock.branchSweepStartT ?? 0.1)) < 0.001) return;
+  lock.branchSweepStartT = clamped;
+  rebuildLockGeometry(lock, { updateBranches: false });
+  updateCurveObjects(lock);
+}
+function endBranchSweepStartDrag(event) {
+  if (!branchSweepStartDrag || (event?.pointerId !== undefined && event.pointerId !== branchSweepStartDrag.pointerId)) return;
+  renderer.domElement.releasePointerCapture?.(branchSweepStartDrag.pointerId);
+  branchSweepStartDrag = null;
 }
 
 // 3D markers for the 4 region points on the parent surface (show points on mesh).
@@ -24974,6 +25098,20 @@ function createCurveObjects(lock) {
     strandSplitHandle.userData.strandSplitHandle = true;
     group.add(strandSplitHandle);
   }
+  let branchSweepStartHandle = null;
+  if (lock.branchRootRegion) {
+    branchSweepStartHandle = createSplitControlHandle();
+    branchSweepStartHandle.material = new THREE.MeshBasicMaterial({
+      color: 0xffd84d,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.9
+    });
+    branchSweepStartHandle.userData.lockId = lock.id;
+    branchSweepStartHandle.userData.branchSweepStartHandle = true;
+    group.add(branchSweepStartHandle);
+  }
   group.visible = false;
   return {
     group,
@@ -24984,6 +25122,7 @@ function createCurveObjects(lock) {
     panelSplitLines,
     strandSplitHandle,
     strandSplitLine,
+    branchSweepStartHandle,
     surfaceObjectAnchor,
     surfaceObjectAnchorHandle,
     surfaceObjectAnchorStem,
@@ -25063,6 +25202,7 @@ function populatePolyEditObjects(lock, target) {
     panelSplitLines: [],
     strandSplitHandle: null,
     strandSplitLine: null,
+    branchSweepStartHandle: null,
     surfaceObjectAnchor: null,
     surfaceObjectAnchorHandle: null,
     surfaceObjectAnchorStem: null
@@ -25416,6 +25556,17 @@ function updateCurveObjects(lock, options = {}) {
     }
   }
   if (strandSplitLine && !strandSplitVisible) strandSplitLine.visible = false;
+  const branchSweepStartHandle = lock.curveObjects.branchSweepStartHandle;
+  if (branchSweepStartHandle) {
+    const sweepStartVisible = !sculptBrushHelpersSuppressed && !lock.locked && lock.id === selectedId && lock.branchRootRegion;
+    branchSweepStartHandle.visible = sweepStartVisible;
+    branchSweepStartHandle.material.opacity = branchSweepStartDrag?.lockId === lock.id ? 0.9 : 0.68;
+    if (sweepStartVisible) {
+      branchSweepStartHandle.position.copy(strandGeometryCurve(lock).getPoint(
+        THREE.MathUtils.clamp(Number(lock.branchSweepStartT ?? 0.1), 0.02, 0.6)
+      ));
+    }
+  }
 
   if ("visible" in options) {
     const brushCurveVisibilityAllowed = !sculptBrushToolActive() || sculptBrushShowCurvesInput.checked;
@@ -33705,6 +33856,10 @@ function disposeCurveObjects(lock) {
     lock.curveObjects.strandSplitHandle.geometry.dispose();
     lock.curveObjects.strandSplitHandle.material.dispose();
   }
+  if (lock.curveObjects.branchSweepStartHandle) {
+    lock.curveObjects.branchSweepStartHandle.geometry.dispose();
+    lock.curveObjects.branchSweepStartHandle.material.dispose();
+  }
   if (lock.curveObjects.strandSplitLine) {
     lock.curveObjects.strandSplitLine.geometry.dispose();
     lock.curveObjects.strandSplitLine.material.dispose();
@@ -35841,6 +35996,10 @@ window.addEventListener("pointercancel", () => {
 });
 window.addEventListener("pointerup", clearViewportPointer);
 window.addEventListener("pointercancel", clearViewportPointer);
+renderer.domElement.addEventListener("pointerdown", beginBranchSweepStartDrag, true);
+renderer.domElement.addEventListener("pointermove", updateBranchSweepStartDrag);
+renderer.domElement.addEventListener("pointerup", endBranchSweepStartDrag);
+renderer.domElement.addEventListener("pointercancel", endBranchSweepStartDrag);
 ["pointerdown", "click", "dblclick"].forEach((eventName) => {
   renderer.domElement.addEventListener(eventName, blockProportionalSizingEvent, true);
 });
