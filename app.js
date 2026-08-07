@@ -13570,6 +13570,7 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   const uvs = [];
   const colors = [];
   const indices = [];
+  const triangleEdgeMasks = [];
   const splitHeight = THREE.MathUtils.clamp(Number(lock.strandSplitHeight ?? 0.3), 0.02, 0.8);
   const splitStart = 1 - splitHeight;
   const splitGap = THREE.MathUtils.clamp(Number(lock.strandSplitGap ?? 0.12), 0, 0.5);
@@ -13617,6 +13618,7 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
         const d = sectionStart + (row + 1) * ringSize + next;
         indices.push(a, c, b, b, c, d);
         sideTriangleCount += 2;
+        triangleEdgeMasks.push([0, 1, 1], [1, 1, 0]);
       }
     }
 
@@ -13630,6 +13632,7 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     capTriangles.forEach(([a, b, c]) => {
       pushOrientedTriangle(indices, vertices, sectionStart + a, sectionStart + b, sectionStart + c, startOutward);
       pushOrientedTriangle(indices, vertices, endOffset + a, endOffset + b, endOffset + c, endOutward);
+      triangleEdgeMasks.push([1, 1, 1], [1, 1, 1]);
     });
   });
 
@@ -13640,6 +13643,7 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices);
   geometry.userData.sideTriangleCount = sideTriangleCount;
+  geometry.userData.triangleEdgeMasks = triangleEdgeMasks;
   geometry.userData.actualLengthSegments = actualLengthSegments;
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
@@ -21297,44 +21301,6 @@ function cloneBranchRootRegion(region, { mirror = false } = {}) {
 }
 
 
-// World positions of the 4 region edge control points, snapped to the parent surface
-// (grid vertices at the region's edge midpoints). Used to render the selection handles.
-function branchRootRegionWorldPoints(lock) {
-  const surface = branchRootRegionSurface(lock);
-  const parent = locks.find((item) => item.id === lock?.branchParentId);
-  const pos = parent?.mesh?.geometry?.getAttribute?.("position");
-  if (!surface || !pos) return null;
-  const pointAt = (r, c) => new THREE.Vector3(pos.getX(r * surface.cols + c), pos.getY(r * surface.cols + c), pos.getZ(r * surface.cols + c));
-  const rowC = Math.round((surface.rowMin + surface.rowMax) / 2);
-  const colC = Math.round((surface.colMin + surface.colMax) / 2);
-  return {
-    up: pointAt(surface.rowMin, colC),
-    down: pointAt(surface.rowMax, colC),
-    left: pointAt(rowC, surface.colMax),
-    right: pointAt(rowC, surface.colMin)
-  };
-}
-
-// Map a world point to the parent-surface (u, v) used by the region control points:
-// u = nearest guide-line parameter, v = across-width fraction (0..1).
-function branchSurfaceParamAtWorld(lock, point) {
-  const parent = locks.find((item) => item.id === lock?.branchParentId);
-  if (!parent?.points?.length || !point) return null;
-  const curve = new THREE.CatmullRomCurve3(parent.points);
-  let bestT = 0;
-  let bestDist = Infinity;
-  for (let i = 0; i <= 64; i += 1) {
-    const t = i / 64;
-    const p = curve.getPoint(t);
-    const d = p.distanceToSquared(point);
-    if (d < bestDist) { bestDist = d; bestT = t; }
-  }
-  const curvePoint = curve.getPoint(bestT);
-  const frame = curveFrameAt(parent, bestT);
-  const width = Math.max(0.0001, Number(parent.baseWidth ?? parent.width ?? 0.16));
-  const across = new THREE.Vector3().subVectors(point, curvePoint).dot(frame.x);
-  return { u: clampRegionParam(bestT), v: clampRegionParam(0.5 + across / width) };
-}
 
 // Update one region control point from parent-surface params, then rebuild the child
 // geometry and re-carve the parent.
@@ -21348,53 +21314,111 @@ function setBranchRootRegionPoint(lock, name, param) {
   updateCurveObjects(lock);
 }
 
-// Drag state for the rectangular region controller (4 edge points + root slide).
-let branchRegionDrag = null;
-function pointerToNdc(event) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  return new THREE.Vector2(
-    ((event.clientX - rect.left) / rect.width) * 2 - 1,
-    -((event.clientY - rect.top) / rect.height) * 2 + 1
-  );
+// ---- 2D branch region editor (u/v plane, like the width/depth curve panel) ----
+let branchRegionEdit = null;
+let branchRegionCanvasDrag = null;
+function branchRegionUVToCanvas(u, v) {
+  return { x: 30 + v * 460, y: 20 + u * 180 };
 }
-function beginBranchRegionDrag(event) {
-  const selected = locks.find((item) => item.id === selectedId);
-  const handles = selected?.curveObjects?.regionHandles || [];
-  if (!handles.length || selected?.locked) return false;
-  raycaster.setFromCamera(pointerToNdc(event), camera);
-  const hits = raycaster.intersectObjects(handles, false);
-  if (!hits.length) return false;
-  const hit = hits[0];
-  branchRegionDrag = {
-    lockId: selected.id,
-    name: hit.object.userData.regionHandle || "root",
-    isRoot: Boolean(hit.object.userData.regionRootHandle)
+function branchRegionCanvasToUV(cx, cy) {
+  return {
+    u: THREE.MathUtils.clamp((cy - 20) / 180, 0, 1),
+    v: THREE.MathUtils.clamp((cx - 30) / 460, 0, 1)
   };
-  // Record the pre-drag state once so Ctrl+Z reverts the drag (not the project load).
-  renderer.domElement.setPointerCapture?.(event.pointerId);
-  event.stopPropagation();
+}
+function openBranchRegionEditor(lockId) {
+  const lock = locks.find((item) => item.id === lockId);
+  if (!lock?.branchRootRegion) return;
+  if (sweepProfileEditor?.open) closeSweepProfileEditor();
+  if (taperCurveEditor?.open) closeTaperCurveEditor();
+  branchRegionEdit = lockId;
+  const target = document.querySelector("#branchRegionTarget");
+  if (target) target.textContent = lock.name || "Selected branch";
+  renderBranchRegionEditor();
+  const dialog = document.querySelector("#branchRegionEditor");
+  if (dialog && !dialog.open) dialog.show();
+}
+function closeBranchRegionEditor() {
+  branchRegionEdit = null;
+  const dialog = document.querySelector("#branchRegionEditor");
+  if (dialog?.open) dialog.close();
+}
+function retargetBranchRegionEditor() {
+  const lock = getSelectedLock();
+  if (lock?.branchRootRegion) openBranchRegionEditor(lock.id);
+  else closeBranchRegionEditor();
+}
+function renderBranchRegionEditor() {
+  const lock = locks.find((item) => item.id === branchRegionEdit);
+  const region = lock?.branchRootRegion;
+  if (!region) return;
+  const cross = region.cross;
+  const vc = clampRegionParam((cross.left.v + cross.right.v) / 2);
+  const uc = clampRegionParam((cross.up.u + cross.down.u) / 2);
+  const pts = {
+    up: branchRegionUVToCanvas(cross.up.u, vc),
+    down: branchRegionUVToCanvas(cross.down.u, vc),
+    left: branchRegionUVToCanvas(uc, cross.left.v),
+    right: branchRegionUVToCanvas(uc, cross.right.v)
+  };
+  const rect = document.querySelector("#branchRegionRect");
+  const c1 = branchRegionUVToCanvas(cross.down.u, cross.left.v);
+  const c2 = branchRegionUVToCanvas(cross.down.u, cross.right.v);
+  const c3 = branchRegionUVToCanvas(cross.up.u, cross.left.v);
+  if (rect) {
+    rect.setAttribute("x", Math.min(c1.x, c2.x));
+    rect.setAttribute("y", Math.min(c1.y, c3.y));
+    rect.setAttribute("width", Math.abs(c2.x - c1.x));
+    rect.setAttribute("height", Math.abs(c3.y - c1.y));
+  }
+  const g = document.querySelector("#branchRegionPoints");
+  if (!g) return;
+  g.innerHTML = "";
+  Object.entries(pts).forEach(([name, p]) => {
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("cx", p.x);
+    circle.setAttribute("cy", p.y);
+    circle.setAttribute("r", 7);
+    circle.setAttribute("fill", "#8fd8ff");
+    circle.setAttribute("stroke", "#ffffff");
+    circle.setAttribute("stroke-width", "1.5");
+    circle.setAttribute("data-region-point", name);
+    circle.style.cursor = "move";
+    g.appendChild(circle);
+  });
+}
+function beginBranchRegionCanvasDrag(event) {
+  if (!branchRegionEdit) return;
+  const target = event.target?.closest?.("circle[data-region-point]");
+  if (!target) return;
+  branchRegionCanvasDrag = { name: target.getAttribute("data-region-point"), pointerId: event.pointerId };
+  // One undo for the whole drag.
+  pushUndoState();
+  branchRegionCanvas.setPointerCapture?.(event.pointerId);
   event.preventDefault();
-  return true;
 }
-function updateBranchRegionDrag(event) {
-  if (!branchRegionDrag) return;
-  const lock = locks.find((item) => item.id === branchRegionDrag.lockId);
-  if (!lock?.branchRootRegion) { branchRegionDrag = null; return; }
-  const parent = locks.find((item) => item.id === lock.branchParentId);
-  if (!parent?.mesh) { branchRegionDrag = null; return; }
-  raycaster.setFromCamera(pointerToNdc(event), camera);
-  const hit = raycaster.intersectObject(parent.mesh, false)[0];
-  if (!hit) return;
-  const param = branchSurfaceParamAtWorld(lock, hit.point);
-  if (!param) return;
-  // Root sliding is handled by the normal root-bone move (enforceBranchRootPosition
-  // recomputes the guide parameter); the region drag only moves the 4 edge points.
-  setBranchRootRegionPoint(lock, branchRegionDrag.name, param);
+function updateBranchRegionCanvasDrag(event) {
+  if (!branchRegionCanvasDrag || !branchRegionEdit) return;
+  const rect = branchRegionCanvas.getBoundingClientRect();
+  const svgX = (event.clientX - rect.left) * (520 / rect.width);
+  const svgY = (event.clientY - rect.top) * (220 / rect.height);
+  const uv = branchRegionCanvasToUV(svgX, svgY);
+  const lock = locks.find((item) => item.id === branchRegionEdit);
+  const cross = lock?.branchRootRegion?.cross;
+  if (!cross) return;
+  const vc = clampRegionParam((cross.left.v + cross.right.v) / 2);
+  const uc = clampRegionParam((cross.up.u + cross.down.u) / 2);
+  const name = branchRegionCanvasDrag.name;
+  const next = name === "up" || name === "down"
+    ? { u: uv.u, v: vc }
+    : { u: uc, v: uv.v };
+  setBranchRootRegionPoint(lock, name, next);
+  renderBranchRegionEditor();
 }
-function endBranchRegionDrag(event) {
-  if (!branchRegionDrag) return;
-  renderer.domElement.releasePointerCapture?.(event.pointerId);
-  branchRegionDrag = null;
+function endBranchRegionCanvasDrag(event) {
+  if (!branchRegionCanvasDrag) return;
+  branchRegionCanvas.releasePointerCapture?.(branchRegionCanvasDrag.pointerId);
+  branchRegionCanvasDrag = null;
 }
 
 // Cache of the parent-surface grid region for a child's branchRootRegion.
@@ -24892,28 +24916,6 @@ function createCurveObjects(lock) {
     strandSplitHandle.userData.strandSplitHandle = true;
     group.add(strandSplitHandle);
   }
-  // Branch root region selection handles: 4 light-blue edge points (up/down/left/right)
-  // snap to the parent surface and define the rectangular carve region; a root handle
-  // slides along the parent guide line.
-  const regionHandles = [];
-  if (lock.branchRootRegion) {
-    const makeRegionHandle = (color) => {
-      const handle = new THREE.Mesh(
-        new THREE.SphereGeometry(0.02, 12, 8),
-        new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 })
-      );
-      handle.renderOrder = 5;
-      handle.userData.lockId = lock.id;
-      group.add(handle);
-      return handle;
-    };
-    ["up", "down", "left", "right"].forEach((name) => {
-      const handle = makeRegionHandle(0x8fd8ff);
-      handle.userData.regionHandle = name;
-      regionHandles.push(handle);
-    });
-
-  }
   group.visible = false;
   return {
     group,
@@ -24927,8 +24929,7 @@ function createCurveObjects(lock) {
     surfaceObjectAnchor,
     surfaceObjectAnchorHandle,
     surfaceObjectAnchorStem,
-    widthEdgeLines,
-    regionHandles
+    widthEdgeLines
   };
 }
 
@@ -25357,21 +25358,7 @@ function updateCurveObjects(lock, options = {}) {
     }
   }
   if (strandSplitLine && !strandSplitVisible) strandSplitLine.visible = false;
-  // Branch root region handles: 4 light-blue edge points on the parent surface + root.
-  if (lock.branchRootRegion && lock.curveObjects.regionHandles?.length) {
-    const regionWorld = branchRootRegionWorldPoints(lock);
-    if (regionWorld) {
-      lock.curveObjects.regionHandles.forEach((handle) => {
-        const name = handle.userData.regionHandle;
-        if (regionWorld[name]) handle.position.copy(regionWorld[name]);
-      });
-    }
-    // Region selection handles show by default for branch children (no toggle).
-    const regionVisible = strandVisibleForDisplay(lock) && !lock.locked;
-    lock.curveObjects.regionHandles.forEach((handle) => {
-      handle.visible = regionVisible;
-    });
-  }
+
   if ("visible" in options) {
     const brushCurveVisibilityAllowed = !sculptBrushToolActive() || sculptBrushShowCurvesInput.checked;
     lock.curveObjects.group.visible = brushCurveVisibilityAllowed
@@ -26172,6 +26159,7 @@ function selectLock(id, options = {}) {
     syncActiveInputs: true
   });
   retargetFloatingStrandEditors();
+  retargetBranchRegionEditor();
 }
 
 function deselectStrandsForGuideEditor() {
@@ -30718,6 +30706,24 @@ function finishTaperCurveDrag(event) {
 }
 taperCurveCanvas.addEventListener("pointerup", finishTaperCurveDrag);
 taperCurveCanvas.addEventListener("pointercancel", finishTaperCurveDrag);
+// Branch root region editor (2D u/v rectangle).
+const branchRegionCanvas = document.querySelector("#branchRegionCanvas");
+const branchRegionDialog = document.querySelector("#branchRegionEditor");
+document.querySelector("#closeBranchRegion").addEventListener("click", closeBranchRegionEditor);
+document.querySelector("#resetBranchRegion").addEventListener("click", () => {
+  if (!branchRegionEdit) return;
+  const lock = locks.find((item) => item.id === branchRegionEdit);
+  if (!lock) return;
+  pushUndoState();
+  lock.branchRootRegion = branchRootRegionFromParam(lock.branchParentParameter ?? 0.4);
+  setBranchRootRegionPoint(lock, "up", lock.branchRootRegion.cross.up);
+  renderBranchRegionEditor();
+});
+branchRegionDialog.addEventListener("cancel", closeBranchRegionEditor);
+branchRegionCanvas.addEventListener("pointerdown", beginBranchRegionCanvasDrag);
+branchRegionCanvas.addEventListener("pointermove", updateBranchRegionCanvasDrag);
+branchRegionCanvas.addEventListener("pointerup", endBranchRegionCanvasDrag);
+branchRegionCanvas.addEventListener("pointercancel", endBranchRegionCanvasDrag);
 
 function beginTaperMeshPointDrag(event) {
   if (
@@ -35790,9 +35796,6 @@ renderer.domElement.addEventListener("pointerdown", beginHoudiniZoomDrag, true);
 renderer.domElement.addEventListener("pointerdown", prepareCurvePointSelection, true);
 renderer.domElement.addEventListener("pointerdown", beginAltOrbit, true);
 renderer.domElement.addEventListener("pointerdown", prioritizeScalpBuilderPointSelection, true);
-renderer.domElement.addEventListener("pointerdown", beginBranchRegionDrag, true);
-renderer.domElement.addEventListener("pointermove", updateBranchRegionDrag);
-renderer.domElement.addEventListener("pointerup", endBranchRegionDrag);
 renderer.domElement.addEventListener("pointermove", updateControlPointHover);
 renderer.domElement.addEventListener("pointermove", updateCurveLatticeLoopHover);
 renderer.domElement.addEventListener("pointermove", updateReferenceOverlayCursor);

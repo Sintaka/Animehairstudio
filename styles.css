@@ -4641,6 +4641,14 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
   border-left: 3px solid currentColor;
 }
 
+.branch-region-rect {
+  fill: rgba(143, 216, 255, 0.18);
+  stroke: #8fd8ff;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
 .taper-canvas {
   display: block;
   width: 100%;

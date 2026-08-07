@@ -1878,6 +1878,28 @@
       </div>
     </dialog>
 
+    <dialog id="branchRegionEditor" class="profile-dialog taper-dialog" aria-labelledby="branchRegionTitle">
+      <div class="profile-dialog-shell">
+        <div class="profile-dialog-head">
+          <div>
+            <h2 id="branchRegionTitle">Branch Root Region</h2>
+            <p id="branchRegionTarget">Selected branch</p>
+          </div>
+          <button id="closeBranchRegion" type="button" title="Close branch region editor" aria-label="Close branch region editor">&#10005;</button>
+        </div>
+        <svg id="branchRegionCanvas" class="taper-canvas" viewBox="0 0 520 220" role="img" aria-label="Branch root region rectangle in parent-surface u/v space">
+          <line id="branchRegionBaseAxis" class="profile-axis" x1="30" y1="200" x2="490" y2="200"></line>
+          <line id="branchRegionValueAxis" class="profile-axis" x1="30" y1="20" x2="30" y2="200"></line>
+          <rect id="branchRegionRect" class="branch-region-rect" fill="rgba(143,216,255,0.18)" stroke="#8fd8ff" stroke-width="1.5"></rect>
+          <g id="branchRegionPoints"></g>
+        </svg>
+        <div class="taper-point-controls">
+          <span>Drag the 4 points to select the carve region (u = along parent, v = across).</span>
+          <button id="resetBranchRegion" type="button">Reset region</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="uvInspectorWindow" class="uv-inspector-window" aria-labelledby="uvInspectorTitle">
       <header id="uvInspectorDragHandle" class="uv-inspector-head">
         <div>
@@ -2013,6 +2035,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260807-41"></script>
+    <script type="module" src="./app.js?v=20260807-42"></script>
   </body>
 </html>
