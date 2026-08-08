@@ -118,3 +118,23 @@
 - [x] 扫掠 up 圆柱体方案：cross(bitangent, normal) 纯平行传输，分支子级不向退化法线 roll、不施加 authored twist（修 120° 偏移与乱转）
 - [x] 扫掠 up = cross(父副切线, 子切线) + 完整 authored twist：保留 twist 且不乱转（弃用退化法线）
 - [x] 扫掠链式绑定根 gizmo + 完整 twist：种子=根 gizmo up，每帧平行传输 + 完整 authored twist，清理 untwistedX 杂乱代码
+- [x] 根骨骼 gizmo 携带用户 twist（0.2.38）：branchRootGizmoFrame = 管基准 + 完整用户 twist；W 重建手柄不再回默认/偏移；根骨骼 up 跟随 gizmo，热更新只作基准、用户手调 diff 保留
+- [x] 删除子发片后父发片补洞（0.2.39）：deleteLocks 重建存活父级，程序化挖洞按现存子级重算
+- [x] 直接桥接跟随 region 中心（0.2.39）：rootRow=round((rowMin+rowMax)/2)，侧面桥接不消失、顶/底不多段
+- [x] region 中心橙色控制点（0.2.39）：面板橙色圆点可拖动整体平移；3D 橙色 marker 定位
+- [x] 恢复 branch region 面板「Show points on mesh」开关并默认打开（0.2.39）
+- [x] 根骨骼随用户 twist 旋转（0.2.39）：种子含完整 pointTwists[0]，row0 直接用种子 frame，根环 1:1 跟随
+- [x] 左右移动根骨骼后点别处蹦回主发片中心修复（0.2.40）：captureBranchLocalState 保留根骨骼横向偏移 across（branchLocalPoints[0].x），不再置零
+- [x] region 橙色中心改为稳定锚点（0.2.41）：单边编辑不再移动中心/桥接；拖中心平移、Ctrl+拖中心镜像缩放；面板加提示小字
+- [x] gizmo 中心万向拾取恢复全尺寸（0.2.41）：translate XYZ 中心 picker 不再 deflate，可点半径 ±8px→±20px
+- [x] 已选中骨骼后点击 gizmo 不再被附近骨骼抢选（0.2.42）：pointerHitsTransformGizmo 为真即提前 return，点 gizmo 中心/附近不抢选到相邻骨骼
+- [x] 子发片封面侧面 4 边面填充（0.2.43，v0.1.4-Side-Topology 重写）：间接桥接时从直接桥接向洞顶/底 1:1 填 quad 条带（利用 0.3 预留段无三角），共享边一致性传播统一 winding；无 smooth
+- [x] 修复多行侧面填充扰乱顶部桥接（0.2.44）：洞侧中间顶点预推到 ringBase 固定前，环索引不再偏移；A/B 验证既有几何逐字节不变
+- [x] 桥接 Uniform Smooth（0.2.45）：Strength+Detail 滑杆，仅桥接部分、环/孔洞锚点固定
+- [x] Region 面板 Alt+右键局部缩放 + Reset Zoom（0.2.45）；4 侧蓝点不能越过橙色中心；4 角对角缩放
+
+- [x] Region 面板导航增强（0.2.46）：缩放方向反转（右上放大/左下缩小）、Alt+中键平移、滚轮缩放、Reset Zoom 共享钳制；手势按导航预设映射（Houdini Alt+MMB 平移/Alt+RMB 缩放，Blender Shift+MMB 平移/Ctrl+MMB 缩放，Anime Hair Studio Alt+RMB 平移），不再照搬 Houdini
+- [x] Region 面板 Ctrl+drag 反向镜像（0.2.46）：边点/角点按住 Ctrl 时被拖点跟随指针、对面点反向联动（成对镜像，橙色锚点不动），普通拖拽行为不变
+- [x] Bridge Smooth 滑杆归位（0.2.46）：Strength/Detail 移到独立 Branch Bridge 面板，仅选中子发片时显示（不再只在 H 模式）
+- [x] Branch Bridge 滑杆标准形式（0.2.47）：Strength/Detail 改用 range + 数值框 + 重置按钮（setupEditableSliderControls 自动升级），事件监听 input，重置回到默认并即时重建
+- [x] Region 面板中键平移（0.2.47）：任意导航预设下按住中键拖拽即可平移查看（与 Alt+中键一致）

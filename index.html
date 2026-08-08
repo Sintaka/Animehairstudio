@@ -933,6 +933,14 @@
           </label>
         </div>
 
+        <div id="branchBridgePanel" class="panel-section sliders hidden" data-attribute-panel="strands">
+          <div class="section-head">
+            <span>Branch Bridge</span>
+          </div>
+          <label class="topology-control" for="branchBridgeSmoothStrengthInput" title="Uniform Smooth strength applied to the branch bridge (the connection band + side fill). 0 = raw, 1 = fully relaxed each pass; anchors (ring + parent hole) stay fixed; default 0.5">Bridge Smooth Strength <input id="branchBridgeSmoothStrengthInput" type="range" min="0" max="1" step="0.05" value="0.5" /></label>
+          <label class="topology-control" for="branchBridgeSmoothDetailInput" title="Uniform Smooth detail: number of Laplacian passes over the bridge interior vertices. Higher = smoother; 0 = off; default 1">Bridge Smooth Detail <input id="branchBridgeSmoothDetailInput" type="range" min="0" max="8" step="1" value="1" /></label>
+        </div>
+
         <div id="strandShapePanel" class="panel-section sliders" data-attribute-panel="strands">
           <div class="section-head">
             <span id="strandShapeTitle">Shape</span>
@@ -1900,7 +1908,17 @@
         </svg>
         <div class="taper-point-controls">
           <button id="resetBranchRegion" type="button">Reset</button>
+          <button id="resetBranchRegionZoom" type="button">Reset Zoom</button>
         </div>
+        <div class="taper-toggle-stack">
+          <label id="branchRegionMeshPointsToggleRow" class="profile-mesh-point-toggle">
+            <span>
+              <strong>Show points on mesh</strong>
+            </span>
+            <input id="branchRegionMeshPointsToggle" type="checkbox" />
+          </label>
+        </div>
+        <p class="reference-plane-hint branch-region-hint">Orange center = bridge anchor; drag it to move the region. Ctrl+drag any point = mirror-scale the opposite side. Wheel = zoom; MMB / Alt+MMB drag = pan (per navigation style).</p>
       </div>
     </dialog>
 
@@ -2039,6 +2057,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260808-18"></script>
+    <script type="module" src="./app.js?v=20260808-25"></script>
   </body>
 </html>
