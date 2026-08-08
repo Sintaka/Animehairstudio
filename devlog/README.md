@@ -23,6 +23,7 @@ python -m http.server 8080 --bind 127.0.0.1
 | 修改型笔刷开发规范 | [brush-dev-spec.md](brush-dev-spec.md) |
 | 本地适配进度 | [local-adaptation-log.md](local-adaptation-log.md) |
 | 技术架构分析 & 复刻 DCC 参考 | [AnimeHairStudio_Tech_Architecture_and_DCC_Reference.md](AnimeHairStudio_Tech_Architecture_and_DCC_Reference.md) |
+| Main 同步冲突 / 决策记录（Local 选项移除、桥接区合并策略） | [main-sync-conflicts.md](main-sync-conflicts.md) |
 
 ## 常用查找 / Quick lookup
 
