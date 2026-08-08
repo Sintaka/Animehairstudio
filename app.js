@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-18";
+} from "./modules/app-config.js?v=20260808-19";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -2199,7 +2199,10 @@ let sideNamingPerspective = readStoredPreference(window, SIDE_NAMING_PERSPECTIVE
   normalize: normalizeSideNamingPerspective
 });
 // Branch root curvature compensation when dragging the root bone: 0 = rigid (no
-// swing), 1 = fully follow the parent surface curve, default 0.5.
+// swing), 1 = fully follow the parent surface curve, default 0.5. The rigid swing
+// is additionally capped at BRANCH_RIGID_SWING_LIMIT_DEG so the child never flips
+// or wildly swings (the lateral surface normal can tilt ~90 deg at the edge).
+const BRANCH_RIGID_SWING_LIMIT_DEG = 60;
 let branchRigidCurvatureBlend = readStoredPreference(window, BRANCH_RIGID_CURVATURE_BLEND_PREFERENCE_KEY, {
   fallback: 0.5,
   normalize: (value) => THREE.MathUtils.clamp(Number(value), 0, 1)
@@ -11956,9 +11959,19 @@ function applyBranchRigidRootMove(lock) {
   // (= fully straight, no rotation). The child's world shape is only rotated by this
   // relative swing, never by the parent frame's absolute orientation.
   const relative = frame.clone().multiply(rigid.frameQuat.clone().invert());
+  // Cap the total swing: the parent's lateral surface normal can tilt up to ~90 deg
+  // at the strand edge, which as a full rigid rotation reads as "axis wild / up
+  // flip" in Hierarchy mode. Clamp the relative rotation so the child never swings
+  // past the limit even at blend 1.0.
+  const identityQuat = new THREE.Quaternion();
+  const relAngle = relative.angleTo(identityQuat);
+  const maxSwing = THREE.MathUtils.degToRad(BRANCH_RIGID_SWING_LIMIT_DEG);
+  const cappedRelative = relAngle > maxSwing
+    ? relative.clone().slerp(identityQuat, 1 - maxSwing / relAngle)
+    : relative;
   const rotation = new THREE.Quaternion().slerpQuaternions(
-    new THREE.Quaternion(),
-    relative,
+    identityQuat,
+    cappedRelative,
     branchRigidCurvatureBlend
   );
   const root = lock.points[0];
