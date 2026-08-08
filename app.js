@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-22";
+} from "./modules/app-config.js?v=20260808-23";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -2280,10 +2280,16 @@ const taperMeshPointsGroup = new THREE.Group();
 taperMeshPointsGroup.name = "Shape curve mesh points";
 taperMeshPointsGroup.visible = false;
 scene.add(taperMeshPointsGroup);
-let branchRegionMeshPointsVisible = false;
+// Show points on mesh in the 3D viewport (branch region editor toggle, default ON).
+let branchRegionMeshPointsVisible = true;
 const branchRegionMeshPointGeometry = new THREE.SphereGeometry(0.014, 10, 8);
 const branchRegionMeshPointMaterial = new THREE.MeshBasicMaterial({
   color: 0x8fd8ff,
+  depthTest: false,
+  depthWrite: false
+});
+const branchRegionCenterMeshPointMaterial = new THREE.MeshBasicMaterial({
+  color: 0xff9a3c,
   depthTest: false,
   depthWrite: false
 });
@@ -14236,7 +14242,11 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   // segment per side edge so its corner column always matches the hole side topology.
   const holeHeight = Math.max(1, Math.round(surface.rowMax - surface.rowMin + 1));
   // Child root row and the Hermite basis are shared by the top and bottom bands.
-  const rootRow = Math.round(THREE.MathUtils.clamp(Number(lock.branchParentParameter ?? 0.4), 0, 1) * Math.max(1, rows - 1));
+  // Child root row follows the region CENTER (not the parent-bone parameter), so the
+  // direct bridge (side quads + top/bottom direct-bridge detection) updates when the
+  // region is moved in the panel even if the parent bone stays put. The center is always
+  // inside the carved hole, so side bridges never fall off the boundary.
+  const rootRow = Math.round((surface.rowMin + surface.rowMax) / 2);
   const hermite = (t, p0, p1, m0, m1) => {
     const t2 = t * t;
     const t3 = t2 * t;
@@ -14554,6 +14564,13 @@ function createBranchChildGeometry(lock) {
       const up = parentFrame.y.clone().negate().projectOnPlane(seedTangent);
       if (up.lengthSq() >= 0.0001) {
         up.normalize();
+        // Release the root bone's rotation to follow the user's authored root twist
+        // (rotate tool / pointTwists[0]) while keeping the constraint base (root stays
+        // on the parent surface, up seeded from the parent tangent). Without this the
+        // root ring stays pinned to the untwisted tube baseline and never rotates with
+        // the gizmo/offset the user adjusts.
+        const rootTwist = controlPointRotationAt(lock, 0);
+        if (rootTwist) up.applyAxisAngle(seedTangent, rootTwist).normalize();
         const x = new THREE.Vector3().crossVectors(seedTangent, up).normalize();
         const matrix = new THREE.Matrix4().makeBasis(x, seedTangent, up);
         previousFrame = {
@@ -14570,7 +14587,12 @@ function createBranchChildGeometry(lock) {
   curveParameters.forEach((t, row) => {
     const guideT = SWEEP_START_T + (1 - SWEEP_START_T) * t;
     const point = curve.getPoint(guideT);
-    const frame = strandGeometryFrameAt(lock, curve, guideT, previousFrame);
+    // Row 0 is the root ring: use the seeded frame directly (parent-tangent
+    // constraint + the user's full root twist) so the root bone rotates with the
+    // gizmo/offset 1:1, then parallel-transport along the curve from there.
+    const frame = row === 0 && previousFrame
+      ? previousFrame
+      : strandGeometryFrameAt(lock, curve, guideT, previousFrame);
     previousFrame = frame;
     const color = strandInfluenceColor(lock, guideT);
     const warped = strandProfileTopologyAt(lock, guideT, ring.points, 1, 1);
@@ -21908,6 +21930,19 @@ function renderBranchRegionEditor() {
     circle.style.cursor = "move";
     g.appendChild(circle);
   });
+  // Region center marker (orange): helps locate the carve center; dragging it
+  // translates the whole region like the rect body.
+  const centerCanvas = branchRegionUVToCanvas(uc, vc);
+  const centerCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  centerCircle.setAttribute("cx", centerCanvas.x);
+  centerCircle.setAttribute("cy", centerCanvas.y);
+  centerCircle.setAttribute("r", 5);
+  centerCircle.setAttribute("fill", "#ff9a3c");
+  centerCircle.setAttribute("stroke", "#ffffff");
+  centerCircle.setAttribute("stroke-width", "1.5");
+  centerCircle.setAttribute("data-region-point", "center");
+  centerCircle.style.cursor = "move";
+  g.appendChild(centerCircle);
   updateBranchRegionMeshPoints();
 }
 function beginBranchRegionCanvasDrag(event) {
@@ -21917,7 +21952,25 @@ function beginBranchRegionCanvasDrag(event) {
   if (!point && !rectTarget) return;
   // One undo for the whole drag.
   pushUndoState();
-  if (point) {
+  if (point && point.getAttribute("data-region-point") === "center") {
+    const lock = locks.find((item) => item.id === branchRegionEdit);
+    const cross = lock?.branchRootRegion?.cross;
+    if (!cross) return;
+    const centerU = clampRegionParam((cross.up.u + cross.down.u) / 2);
+    const centerV = clampRegionParam((cross.left.v + cross.right.v) / 2);
+    branchRegionCanvasDrag = {
+      mode: "move",
+      pointerId: event.pointerId,
+      startU: centerU,
+      startV: centerV,
+      startRegion: {
+        up: { ...cross.up },
+        down: { ...cross.down },
+        left: { ...cross.left },
+        right: { ...cross.right }
+      }
+    };
+  } else if (point) {
     branchRegionCanvasDrag = { mode: "point", name: point.getAttribute("data-region-point"), pointerId: event.pointerId };
   } else {
     // Drag the rect body to translate the whole region.
@@ -22058,9 +22111,12 @@ function updateBranchRegionMeshPoints() {
     branchRegionMeshPointsGroup.visible = false;
     return;
   }
-  Object.values(world).forEach((point) => {
-    const handle = new THREE.Mesh(branchRegionMeshPointGeometry, branchRegionMeshPointMaterial);
+  Object.entries(world).forEach(([name, point]) => {
+    const material = name === "center" ? branchRegionCenterMeshPointMaterial : branchRegionMeshPointMaterial;
+    const scale = name === "center" ? 1.6 : 1;
+    const handle = new THREE.Mesh(branchRegionMeshPointGeometry, material);
     handle.position.copy(point);
+    handle.scale.setScalar(scale);
     handle.renderOrder = 35;
     branchRegionMeshPointsGroup.add(handle);
   });
@@ -22187,7 +22243,8 @@ function branchRootRegionWorldPoints(lock) {
     up: pointAt(surface.rowMin, colC),
     down: pointAt(bottomRow, colC),
     left: pointAt(rowC, leftCol),
-    right: pointAt(rowC, surface.colMin)
+    right: pointAt(rowC, surface.colMin),
+    center: pointAt(rowC, colC)
   };
 }
 
@@ -31569,6 +31626,15 @@ document.querySelector("#resetBranchRegion").addEventListener("click", () => {
   renderBranchRegionEditor();
 });
 branchRegionDialog.addEventListener("cancel", closeBranchRegionEditor);
+const branchRegionMeshPointsToggle = document.querySelector("#branchRegionMeshPointsToggle");
+if (branchRegionMeshPointsToggle) {
+  branchRegionMeshPointsToggle.checked = branchRegionMeshPointsVisible;
+  branchRegionMeshPointsToggle.addEventListener("change", () => {
+    branchRegionMeshPointsVisible = branchRegionMeshPointsToggle.checked;
+    if (branchRegionMeshPointsVisible) updateBranchRegionMeshPoints();
+    else branchRegionMeshPointsGroup.visible = false;
+  });
+}
 branchRegionCanvas.addEventListener("pointerdown", beginBranchRegionCanvasDrag);
 branchRegionCanvas.addEventListener("pointermove", updateBranchRegionCanvasDrag);
 branchRegionCanvas.addEventListener("pointerup", endBranchRegionCanvasDrag);
@@ -34434,6 +34500,13 @@ function deleteLocks(targetLocks) {
     activeSurfaceObjectTransform = null;
     updateSelectedPointLabel();
   }
+  // Deleting a branch child must refill the parent's carved hole: the parent's
+  // mesh is carved procedurally from its live children (applyBranchRootRegionCarving),
+  // so rebuild every surviving parent after the children are removed.
+  const branchParentsToRebuild = new Set();
+  targets.forEach((item) => {
+    if (item.branchParentId) branchParentsToRebuild.add(item.branchParentId);
+  });
   targets.forEach((item) => {
     curveSurfaceOpen.delete(item.id);
     hairGroup.remove(item.mesh);
@@ -34446,6 +34519,10 @@ function deleteLocks(targetLocks) {
     item.wireOverlay?.material.dispose();
     disposeCurveObjects(item);
     locks.splice(locks.indexOf(item), 1);
+  });
+  branchParentsToRebuild.forEach((parentId) => {
+    const parent = locks.find((lock) => lock.id === parentId);
+    if (parent) updateLockGeometry(parent, { immediate: true });
   });
   cleanSelectionSets();
   if (isolatedStrandIds) {

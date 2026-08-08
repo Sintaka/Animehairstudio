@@ -116,3 +116,8 @@
 - [x] 分支根手柄/gizmo frame 稳定化：strandControlPointFrame 用父切线投影做 up，绿轴不再 120° 突跳
 - [x] H 模式拖根 gizmo 热更新：syncBranchRootHandleFrame 让手柄/gizmo 跟随骨骼与扫掠，拖动中不再分离
 - [x] 根骨骼 gizmo 携带用户 twist（0.2.38）：branchRootGizmoFrame = 管基准 + 完整用户 twist；W 重建手柄不再回默认/偏移；根骨骼 up 跟随 gizmo，热更新只作基准、用户手调 diff 保留
+- [x] 删除子发片后父发片补洞（0.2.39）：deleteLocks 重建存活父级，程序化挖洞按现存子级重算
+- [x] 直接桥接跟随 region 中心（0.2.39）：rootRow=round((rowMin+rowMax)/2)，侧面桥接不消失、顶/底不多段
+- [x] region 中心橙色控制点（0.2.39）：面板橙色圆点可拖动整体平移；3D 橙色 marker 定位
+- [x] 恢复 branch region 面板「Show points on mesh」开关并默认打开（0.2.39）
+- [x] 根骨骼随用户 twist 旋转（0.2.39）：种子含完整 pointTwists[0]，row0 直接用种子 frame，根环 1:1 跟随
