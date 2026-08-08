@@ -138,3 +138,4 @@
 - [x] Bridge Smooth 滑杆归位（0.2.46）：Strength/Detail 移到独立 Branch Bridge 面板，仅选中子发片时显示（不再只在 H 模式）
 - [x] Branch Bridge 滑杆标准形式（0.2.47）：Strength/Detail 改用 range + 数值框 + 重置按钮（setupEditableSliderControls 自动升级），事件监听 input，重置回到默认并即时重建
 - [x] Region 面板中键平移（0.2.47）：任意导航预设下按住中键拖拽即可平移查看（与 Alt+中键一致）
+- [x] main 合并（0.2.48）：移除三个 Local dev 选项（Local Save / Local Export OBJ/USDA），统一用快速保存/快速导出；吸收马尾/复合发丝预设；子发片桥接与 main 几何并存（createHairGeometry 按 branchRootRegion 分流）；sculpt 保留本地笔刷 + main preserve-tips；材质双面条件合并

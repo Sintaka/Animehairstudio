@@ -108,6 +108,13 @@
     1) **Branch Bridge 两参数改用已有的 float+滑动条+重置按钮形式**：Bridge Smooth Strength / Detail 从手写的 `<input type="number">` 改成标准 `topology-control` + `<input type="range">`（面板补上 `sliders` 容器类），由既有 `setupEditableSliderControls()` 自动升级成「数值框 + 滑杆 + ⟲ 重置按钮」一行（重置回到 value 默认 0.5 / 1 并派发 input）。事件从 change 改监听 input（滑杆拖动、数值框输入、重置按钮都能即时触发持久化 + 桥接重建）；启动时恢复存储值后同步自动生成的数值框。
     2) **Region 面板按住中键也能平移**：`branchRegionNavAction` 改为任意导航预设下 `button===1`（中键）都返回 pan（与 Alt+中键一致），不再要求 Alt；Houdini 下 Alt+右键缩放、Blender 下 Shift+中键平移 / Ctrl+中键缩放、Anime Hair Studio 下 Alt+右键平移均保持不变（面板提示文案更新为 MMB / Alt+MMB = pan）。
 
+  - **main 合并（0.2.48，codex/branchdev_v0.1.4 ← main d3358f6）**：
+    1) **移除三个 Local dev 选项**：Local Save / Local Export to OBJ / Local Export to USDA（原走 server.js 的 `/api/save-project` 本地服务）全部删除，保存/导出统一用快速保存（Ctrl+S）/ Save as（Ctrl+Shift+S）/ 快速导出（Ctrl+Alt+S）（File System Access API 直写盘、覆盖写同文件、无 `(1)` 后缀）；`server.js` 保留作静态文件服务，其保存端点成为死代码。
+    2) **吸收 main 新预设**：`PONYTAIL_CLUMP_TEMPLATE`（马尾 clump，12 strands）与 `createCompoundStrandGeometry`（复合发丝，多控制器 + 控制器间桥接带）、`procedural-draw.js` 程序化分支模板、`modules/compound-strand.js`、`server.js`、`favicon.svg` 全部并入；`createHairGeometry` 重构为 `createBaseHairGeometry`（按 compound 分派）。
+    3) **子发片桥接与 main 并存**：约 1000 行冲突实为同一插入点（`createConnectedCurveCardGeometry` 之后）各自新增——本地 `buildBranchBridgeGeometry`+`createBranchChildGeometry`（751 行）vs main `createCompoundStrandGeometry`（230 行），无功能重叠，两侧保留；`createHairGeometry` 入口先判 `lock.branchRootRegion` 走本地桥接，否则走 main 的 `createBaseHairGeometry`+程序化分支。子发片仍只支持单发丝默认预设（多发丝预设直接当子发片会有拓扑 bug，未做适配）。
+    4) **sculpt 笔刷融合**：Move/Smooth 采用 main 的 preserve-tips 重构（`sculptBrushPreserveTipsByTool`、`#sculptPreserveTips` 重命名），本地新增的 Slide/Scale/Push/Orient 笔刷分支保留（`activeBrushSizeInput` 等仍走 `sculptBrushToolActive()` 超集）；Scale Mode 行保留。
+    5) **材质双面判定**：合并为 `lock.branchRootRegion || strandUsesDoubleSidedMaterial(lock)`（覆盖子发片 + braid/poly/hairCard + compound），4 处调用点统一。验证（Sussurro_v1_0041，SL2/SL3）：子发片桥接 66 quads / 0 NaN（与基线一致）；普通发丝 `createBaseHairGeometry` 0 NaN；马尾预设存在（12 strands）；preserve-tips 按工具生效；App 启动 0 页面错误。
+
 - **Phase 2.17 子发片桥接实现详解（已验收，分支 v0.1.4-Side-Topology）**：
   - **整体结构（buildBranchBridgeGeometry）**：子发片 root 环（sweep row0，方形 2:1 截面）通过「底部带 + 侧面直接桥接 + 顶部带 + 侧面 4 边填充」与主发片挖洞边界封闭成水密管。底部/顶部带连接环的底/顶弧到洞的底/顶边（列数 = 环宽），侧面直接桥接把环的左/右 1 边接到洞侧 root 行（rootRow..rootRow+1）。
   - **侧面填充索引规律（顶/底分开、左右各执行一次）**：当某条带为间接桥接（顶部 rootRow > rowMin、底部 rootRow < rowMax，即至少一条侧边留空）时该侧启用填充。从侧面直接桥接出发，主发片孔洞的一条边 ↔ 顶/底带的一条边 1:1 对应，一直索引到洞角；剩余一条带边按既有拓扑规律作为收尾边 → 全部 4 边面、无三角。带的外侧 mid 列（bandEdge：环角 → mid_1..mid_M → 洞角）与洞侧（holePath：环角 → vTop(=rootRow) → ... → 洞角）等长（都 M+2），quad = [bandEdge[i], bandEdge[i+1], holePath[i+2], holePath[i+1]]，i=0..M-1。

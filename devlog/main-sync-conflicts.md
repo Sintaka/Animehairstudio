@@ -8,7 +8,8 @@
 - **（2026-08）移除三个现有 Local 选项，改用本 fork 的快速保存 / 快速导出**：
   三个现有的 Local 选项——`Local Save`（#devSaveProject）、`Local Export to OBJ`（#localExportObj）、`Local Export to USDA`（#localExportUsda），全部标注 ⚠ "for Dev purposes"、全部走 `server.js` 的 `POST /api/save-project`（Node 本地服务 + 原生 SaveFileDialog + 临时文件 rename 原子写）——**均应移除**，统一使用本 fork 开发的**快速保存 Quick Save（Ctrl+S）/ Save as（Ctrl+Shift+S）** 与**快速导出 Quick Export（Ctrl+Alt+S）**（浏览器 File System Access API 直写磁盘：覆盖写同一文件、不再产生 `(1)` 后缀）。
   - 依据：两者功能等价，我们的方案更优；server.js 只是把「外部本地小服务」收进了仓库（main d3358f6），本地架构文档第 90 行「服务不在本仓库」已过时，需在合并 main 时一并修订。
-  - 状态：**决策已定，尚未实施**——三个 Local 选项目前仍保留在本 fork 的 index.html/app.js 中，待 main 合并时删除（连同 server.js 的本地保存端点，若保留 server.js 则仅保留静态文件服务 / 原生导出路径，另议）。
+  - 状态：**已实施（0.2.48，main 合并完成）**——三个 Local 选项已从 File 菜单与代码中删除（`saveFileThroughLocalDialog` / `saveHairProjectThroughLocalDialog` / `exportHairObjLocally` / `exportHairUsdaLocally` 及其事件监听全部移除），保存/导出统一走快速保存（Ctrl+S）/ Save as（Ctrl+Shift+S）/ 快速导出（Ctrl+Alt+S）的 File System Access API 路径；`server.js` 保留（静态文件服务对部署有用），其 `/api/save-project` 端点因无调用方成为死代码（后续可裁）。
+  - 冲突解决结果（0.2.48）：按既定策略完成 main 合并——本地子发片桥接（`buildBranchBridgeGeometry`/`createBranchChildGeometry`）与 main 的 `createCompoundStrandGeometry`/`proceduralBranchGeometryLock` 并存；`createHairGeometry` 入口先判 `branchRootRegion` 走桥接、否则走 main 的 `createBaseHairGeometry`；材质双面判定合并为 `lock.branchRootRegion || strandUsesDoubleSidedMaterial(lock)`；sculpt 区保留本地 Slide/Scale/Push/Orient 笔刷并吸收 main 的 preserve-tips（`sculptBrushPreserveTipsByTool`）；马尾预设 `PONYTAIL_CLUMP_TEMPLATE` 直接吸收。子发片仍只走单发丝默认预设路径，未接入多发丝预设。
 
 ## Main 更新评估（d3358f6 "Add files via upload"，基线 0f34c27）
 
