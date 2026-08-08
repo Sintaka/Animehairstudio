@@ -927,6 +927,10 @@
             <span>Recursive Transform</span>
             <input id="hierarchyRecursiveTransform" type="checkbox" />
           </label>
+          <label class="branch-curve-follow-row" for="branchRigidCurvatureBlendInput" title="Child root curvature compensation when dragging the root bone (0 = rigid, no swing; 1 = fully follow the parent surface curve; default 0.5)">
+            <span>Branch Root Curve Follow</span>
+            <input id="branchRigidCurvatureBlendInput" type="number" min="0" max="1" step="0.05" value="0.5" />
+          </label>
         </div>
 
         <div id="strandShapePanel" class="panel-section sliders" data-attribute-panel="strands">
@@ -2035,6 +2039,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260808-10"></script>
+    <script type="module" src="./app.js?v=20260808-11"></script>
   </body>
 </html>

@@ -109,3 +109,5 @@
 - [x] 根骨骼切线方向平滑滑动：branchParentFrame 改连续 frame（curveFrameAt），保留横向（across）吸附，上下拖根不再吸附到控制点层级/跳变
 - [x] 切换 H 不再跳变：恢复存档后按当前 frame 重新捕获分支子级 branchLocalPoints，避免与旧 frame 不一致导致重建闪动
 - [x] 拖 Region 不再闪根部扫掠：captureBranchLocalState 保存真实 pointSurfaceNormals（回退 stable 法线），updateBranchChildren 重推时不再覆盖导致扫掠 frame 改变
+- [x] 根骨骼移到边缘 up 翻转修复：扫掠用父发片切线种子 previousFrame 平行传输稳定（分支子级法线与切线天然平行）
+- [x] 根骨骼旋转补偿可调：Hierarchy 面板 Branch Root Curve Follow（0~1，默认 0.5，localStorage 持久化）

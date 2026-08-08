@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-16";
+} from "./modules/app-config.js?v=20260808-17";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -251,6 +251,7 @@ const DEFAULT_VIEWPORT_BACKGROUND_COLOR = "#2b2730";
 const SIDE_NAMING_PERSPECTIVE_PREFERENCE_KEY = "anime-hair-studio-side-naming-perspective";
 const DEFAULT_HAIR_SHADER_PREFERENCE_KEY = "anime-hair-studio-default-hair-shader";
 const TRANSFORM_SPACE_PREFERENCE_KEY = "anime-hair-studio-transform-space";
+const BRANCH_RIGID_CURVATURE_BLEND_PREFERENCE_KEY = "anime-hair-studio-branch-rigid-curvature-blend";
 
 function saveBooleanPreference(key, enabled) {
   writeStoredPreference(window, key, Boolean(enabled));
@@ -2197,6 +2198,12 @@ let sideNamingPerspective = readStoredPreference(window, SIDE_NAMING_PERSPECTIVE
   fallback: "viewport",
   normalize: normalizeSideNamingPerspective
 });
+// Branch root curvature compensation when dragging the root bone: 0 = rigid (no
+// swing), 1 = fully follow the parent surface curve, default 0.5.
+let branchRigidCurvatureBlend = readStoredPreference(window, BRANCH_RIGID_CURVATURE_BLEND_PREFERENCE_KEY, {
+  fallback: 0.5,
+  normalize: (value) => THREE.MathUtils.clamp(Number(value), 0, 1)
+});
 let preferencesOpenSnapshot = null;
 let brushSizeDrag = null;
 let strandWidthEdgeDrag = null;
@@ -2699,6 +2706,7 @@ const proportionalPanel = document.querySelector("#proportionalPanel");
 const proportionalLockRootRow = document.querySelector("#proportionalLockRootRow");
 const hierarchyPanel = document.querySelector("#hierarchyPanel");
 const hierarchyRecursiveTransformInput = document.querySelector("#hierarchyRecursiveTransform");
+const branchRigidCurvatureBlendInput = document.querySelector("#branchRigidCurvatureBlendInput");
 const transformToolPanel = document.querySelector("#transformToolPanel");
 const transformToolTitle = document.querySelector("#transformToolTitle");
 const viewPlaneMoveSetting = document.querySelector("#viewPlaneMoveSetting");
@@ -11914,7 +11922,6 @@ function beginHandleEdit(handle = transformControls.object) {
 // Hierarchy editing on: place it at the new root and rotate the recorded world
 // shape by the parent frame's rotation change, blended 0.5 with fully straight,
 // so the tip swings slightly with the parent surface curvature but never bends.
-const BRANCH_RIGID_CURVATURE_BLEND = 0.5;
 // Parent-surface frame at (parameter, across): the continuous guide frame plus the
 // lateral normal tilt from a temporary elliptical cross-section (width x depth), so
 // both up/down (guide curvature) and left/right (cross-section curvature) root drags
@@ -11952,7 +11959,7 @@ function applyBranchRigidRootMove(lock) {
   const rotation = new THREE.Quaternion().slerpQuaternions(
     new THREE.Quaternion(),
     relative,
-    BRANCH_RIGID_CURVATURE_BLEND
+    branchRigidCurvatureBlend
   );
   const root = lock.points[0];
   lock.points.forEach((point, index) => {
@@ -14506,6 +14513,32 @@ function createBranchChildGeometry(lock) {
   const sweepUvs = [];
   const sweepColors = [];
   let previousFrame = null;
+  // Seed the sweep frames with a stable "up" (the parent surface tangent at the
+  // root, pointing toward the parent root). The child grows along the parent's
+  // normal, so its own surface normals are near-parallel to its tangent and
+  // guidedNormalAt degenerates (the sweep up flips when the root is dragged to an
+  // edge). Transporting from this seed keeps the sweep ring orientation stable.
+  const branchParentForSweep = locks.find((item) => item.id === lock?.branchParentId);
+  if (branchParentForSweep) {
+    try {
+      const seedTangent = curve.getTangent(SWEEP_START_T).normalize();
+      const parentFrame = branchParentFrame(branchParentForSweep, lock.branchParentParameter);
+      const up = parentFrame.y.clone().negate().projectOnPlane(seedTangent);
+      if (up.lengthSq() >= 0.0001) {
+        up.normalize();
+        const x = new THREE.Vector3().crossVectors(seedTangent, up).normalize();
+        const matrix = new THREE.Matrix4().makeBasis(x, seedTangent, up);
+        previousFrame = {
+          x,
+          y: seedTangent.clone(),
+          z: up,
+          quaternion: new THREE.Quaternion().setFromRotationMatrix(matrix),
+          point: curve.getPoint(SWEEP_START_T),
+          scale: { x: 1, z: 1 }
+        };
+      }
+    } catch (e) { /* keep null seed */ }
+  }
   curveParameters.forEach((t, row) => {
     const guideT = SWEEP_START_T + (1 - SWEEP_START_T) * t;
     const point = curve.getPoint(guideT);
@@ -33129,6 +33162,12 @@ braidMeshPresetInput.addEventListener("change", () => {
 hierarchyToggle.addEventListener("click", () => setHierarchyEditing(!hierarchyEditing));
 hierarchyRecursiveTransformInput.addEventListener("change", () => {
   recursiveHierarchyTransforms = hierarchyRecursiveTransformInput.checked;
+});
+branchRigidCurvatureBlendInput.value = branchRigidCurvatureBlend;
+branchRigidCurvatureBlendInput.addEventListener("change", () => {
+  branchRigidCurvatureBlend = THREE.MathUtils.clamp(Number(branchRigidCurvatureBlendInput.value) || 0.5, 0, 1);
+  branchRigidCurvatureBlendInput.value = branchRigidCurvatureBlend;
+  writeStoredPreference(window, BRANCH_RIGID_CURVATURE_BLEND_PREFERENCE_KEY, branchRigidCurvatureBlend);
 });
 proportionalToggle.addEventListener("click", () => setProportionalEditing(!proportionalEditing));
 appMenuTriggers.forEach((trigger) => {

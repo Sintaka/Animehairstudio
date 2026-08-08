@@ -4936,6 +4936,17 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
   cursor: pointer;
   position: relative;
 }
+.branch-curve-follow-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 6px 0;
+}
+.branch-curve-follow-row input[type="number"] {
+  width: 64px;
+  min-height: 24px;
+}
 
 .toggle-row input::after {
   content: "";
