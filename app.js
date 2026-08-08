@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-17";
+} from "./modules/app-config.js?v=20260808-18";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -21591,7 +21591,17 @@ function enforceBranchRootPosition(lock) {
   // The root slides in the parent's width plane: keep the across-width (frame.x)
   // component of the drag and project back onto the parent surface.
   const width = Math.max(0.0001, Number(parent.baseWidth ?? parent.width ?? 0.16));
-  const across = new THREE.Vector3().subVectors(lock.points[0], frame.point).dot(frame.x);
+  // Tube proxy constraint: the parent is a swept tube (guide curve + width), so the
+  // root slides along the lateral (frame.x) line but is clamped to the tube's half
+  // width. Dragging an arbitrary gizmo axis (e.g. the local X) can no longer push
+  // the root past the parent's edge / fly off the hair piece. The depth feeds the
+  // surface-frame orientation (branchSurfaceFrameQuat / sweep seed), not the clamp.
+  const halfWidth = width * 0.5;
+  const across = THREE.MathUtils.clamp(
+    new THREE.Vector3().subVectors(lock.points[0], frame.point).dot(frame.x),
+    -halfWidth,
+    halfWidth
+  );
   const v = clampRegionParam(0.5 - across / width);
   // Follow the selection region with the root (u and v centers).
   updateBranchRootRegionCenter(lock, lock.branchParentParameter, v);
