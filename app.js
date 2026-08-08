@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-20";
+} from "./modules/app-config.js?v=20260808-21";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -893,6 +893,7 @@ transformControls.addEventListener("objectChange", () => {
   enforceBranchRootPosition(lock);
   if (activeTool === "move" && hierarchyEditing && pointIndex === 0 && lock.branchParentId) {
     applyBranchRigidRootMove(lock);
+    syncBranchRootHandleFrame(lock);
   }
   syncUnifiedCurveSurfaceMirror(lock, pointIndex, activeTool);
   if (["move", "rotate"].includes(activeTool)) updateGroupLatticeBaseFromHandleEdit(lock);
@@ -11980,6 +11981,15 @@ function applyBranchRigidRootMove(lock) {
     point.copy(root).add(rigid.deltas[index].clone().applyQuaternion(rotation));
   });
 }
+// Keep the root handle (TransformControls gizmo) oriented with the stable bone
+// frame during a Hierarchy-mode root drag, so the gizmo follows the sweep instead
+// of staying frozen at the drag-start orientation (hot axis update).
+function syncBranchRootHandleFrame(lock) {
+  const handle = lock?.curveObjects?.handles?.[0];
+  if (!handle || !lock?.branchParentId) return;
+  const frame = strandControlPointFrame(lock, 0);
+  handle.quaternion.copy(frame.quaternion);
+}
 
 function updateGroupLatticeBaseFromHandleEdit(lock) {
   const edit = activeHandleEdit;
@@ -12363,6 +12373,7 @@ function updateViewPlaneMove(event) {
   enforceBranchRootPosition(lock);
   if (hierarchyEditing && viewPlaneMoveDrag.pointIndex === 0 && lock.branchParentId) {
     applyBranchRigidRootMove(lock);
+    syncBranchRootHandleFrame(lock);
   }
   syncUnifiedCurveSurfaceMirror(lock, viewPlaneMoveDrag.pointIndex, "move");
   updateGroupLatticeBaseFromHandleEdit(lock);
