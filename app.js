@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-11";
+} from "./modules/app-config.js?v=20260808-12";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -890,6 +890,9 @@ transformControls.addEventListener("objectChange", () => {
     lock.width = Math.max(0.04, lock.baseWidth * average(lock.pointWidths));
   }
   enforceBranchRootPosition(lock);
+  if (activeTool === "move" && hierarchyEditing && pointIndex === 0 && lock.branchParentId) {
+    applyBranchRigidRootMove(lock);
+  }
   syncUnifiedCurveSurfaceMirror(lock, pointIndex, activeTool);
   if (["move", "rotate"].includes(activeTool)) updateGroupLatticeBaseFromHandleEdit(lock);
   updateLockGeometry(lock);
@@ -11890,6 +11893,47 @@ function beginHandleEdit(handle = transformControls.object) {
     handleScale: handle.scale.clone(),
     selectedIndices
   };
+  // Record the child skeleton's orientation/shape before a root-bone drag so the
+  // rigid root move (Hierarchy editing) keeps the child's shape and only rotates it
+  // halfway toward the parent surface frame at the new root (curvature tip swing).
+  if (lock.branchParentId && handle.userData.pointIndex === 0) {
+    const branchParent = locks.find((item) => item.id === lock.branchParentId);
+    if (branchParent) {
+      const frame = curveFrameAt(branchParent, lock.branchParentParameter);
+      activeHandleEdit.branchRigid = {
+        frameQuat: frame.quaternion.clone(),
+        deltas: lock.points.map((point) => point.clone().sub(lock.points[0]))
+      };
+    }
+  }
+}
+
+// Treat the child skeleton as a rigid body when its root bone is dragged with
+// Hierarchy editing on: place it at the new root and rotate the recorded world
+// shape by the parent frame's rotation change, blended 0.5 with fully straight,
+// so the tip swings slightly with the parent surface curvature but never bends.
+const BRANCH_RIGID_CURVATURE_BLEND = 0.5;
+function applyBranchRigidRootMove(lock) {
+  const rigid = activeHandleEdit?.branchRigid;
+  if (!rigid?.deltas?.length || !rigid?.frameQuat || lock.points.length !== rigid.deltas.length) return;
+  const parent = locks.find((item) => item.id === lock?.branchParentId);
+  if (!parent || !lock.points.length) return;
+  const frame = curveFrameAt(parent, lock.branchParentParameter);
+  // Relative rotation from the recorded frame to the new frame (surface curvature
+  // delta), then blend halfway with identity (= fully straight, no rotation). The
+  // child's world shape is only rotated by this relative swing, never by the
+  // parent frame's absolute orientation.
+  const relative = frame.quaternion.clone().multiply(rigid.frameQuat.clone().invert());
+  const rotation = new THREE.Quaternion().slerpQuaternions(
+    new THREE.Quaternion(),
+    relative,
+    BRANCH_RIGID_CURVATURE_BLEND
+  );
+  const root = lock.points[0];
+  lock.points.forEach((point, index) => {
+    if (index === 0) return;
+    point.copy(root).add(rigid.deltas[index].clone().applyQuaternion(rotation));
+  });
 }
 
 function updateGroupLatticeBaseFromHandleEdit(lock) {
@@ -12272,6 +12316,9 @@ function updateViewPlaneMove(event) {
   else if (proportionalEditing) applyProportionalMove(lock, viewPlaneMoveDrag.pointIndex, viewPlaneMoveDrag.handle);
   else applySingleMove(lock, viewPlaneMoveDrag.pointIndex, viewPlaneMoveDrag.handle);
   enforceBranchRootPosition(lock);
+  if (hierarchyEditing && viewPlaneMoveDrag.pointIndex === 0 && lock.branchParentId) {
+    applyBranchRigidRootMove(lock);
+  }
   syncUnifiedCurveSurfaceMirror(lock, viewPlaneMoveDrag.pointIndex, "move");
   updateGroupLatticeBaseFromHandleEdit(lock);
   syncLockFromCurve(lock);
