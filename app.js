@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-30";
+} from "./modules/app-config.js?v=20260808-31";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -22270,15 +22270,14 @@ function branchRegionNavAction(event) {
   const mmb = event.button === 1;
   const rmb = event.button === 2;
   if (navigationStyle === "houdini") {
-    if (mmb && event.altKey) return "pan";
+    if (mmb) return "pan";
     if (rmb && event.altKey) return "zoom";
   } else if (navigationStyle === "blender") {
-    if (mmb && event.shiftKey) return "pan";
-    if (mmb && event.ctrlKey) return "zoom";
+    if (mmb) return event.ctrlKey ? "zoom" : "pan";
   } else if (rmb && event.altKey) {
     return "pan";
   }
-  if (mmb && event.altKey) return "pan";
+  if (mmb) return "pan";
   return null;
 }
 function beginBranchRegionCanvasNav(event) {
@@ -33934,14 +33933,22 @@ branchRigidCurvatureBlendInput.addEventListener("change", () => {
   writeStoredPreference(window, BRANCH_RIGID_CURVATURE_BLEND_PREFERENCE_KEY, branchRigidCurvatureBlend);
 });
 branchBridgeSmoothStrengthInput.value = branchBridgeSmoothStrength;
-branchBridgeSmoothStrengthInput.addEventListener("change", () => {
+{
+  const n = branchBridgeSmoothStrengthInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
+  if (n) n.value = branchBridgeSmoothStrength;
+}
+branchBridgeSmoothStrengthInput.addEventListener("input", () => {
   branchBridgeSmoothStrength = THREE.MathUtils.clamp(Number(branchBridgeSmoothStrengthInput.value) || 0, 0, 1);
   branchBridgeSmoothStrengthInput.value = branchBridgeSmoothStrength;
   writeStoredPreference(window, BRANCH_BRIDGE_SMOOTH_STRENGTH_PREFERENCE_KEY, branchBridgeSmoothStrength);
   locks.forEach((lock) => { if (lock?.branchRootRegion) rebuildLockGeometry(lock); });
 });
 branchBridgeSmoothDetailInput.value = branchBridgeSmoothDetail;
-branchBridgeSmoothDetailInput.addEventListener("change", () => {
+{
+  const n = branchBridgeSmoothDetailInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
+  if (n) n.value = branchBridgeSmoothDetail;
+}
+branchBridgeSmoothDetailInput.addEventListener("input", () => {
   branchBridgeSmoothDetail = THREE.MathUtils.clamp(Math.round(Number(branchBridgeSmoothDetailInput.value) || 1), 0, 8);
   branchBridgeSmoothDetailInput.value = branchBridgeSmoothDetail;
   writeStoredPreference(window, BRANCH_BRIDGE_SMOOTH_DETAIL_PREFERENCE_KEY, branchBridgeSmoothDetail);

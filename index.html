@@ -933,18 +933,12 @@
           </label>
         </div>
 
-        <div id="branchBridgePanel" class="panel-section hidden" data-attribute-panel="strands">
+        <div id="branchBridgePanel" class="panel-section sliders hidden" data-attribute-panel="strands">
           <div class="section-head">
             <span>Branch Bridge</span>
           </div>
-          <label class="branch-curve-follow-row" for="branchBridgeSmoothStrengthInput" title="Uniform Smooth strength applied to the branch bridge (the connection band + side fill). 0 = raw, 1 = fully relaxed each pass; anchors (ring + parent hole) stay fixed; default 0.5">
-            <span>Bridge Smooth Strength</span>
-            <input id="branchBridgeSmoothStrengthInput" type="number" min="0" max="1" step="0.05" value="0.5" />
-          </label>
-          <label class="branch-curve-follow-row" for="branchBridgeSmoothDetailInput" title="Uniform Smooth detail: number of Laplacian passes over the bridge interior vertices. Higher = smoother; 0 = off; default 1">
-            <span>Bridge Smooth Detail</span>
-            <input id="branchBridgeSmoothDetailInput" type="number" min="0" max="8" step="1" value="1" />
-          </label>
+          <label class="topology-control" for="branchBridgeSmoothStrengthInput" title="Uniform Smooth strength applied to the branch bridge (the connection band + side fill). 0 = raw, 1 = fully relaxed each pass; anchors (ring + parent hole) stay fixed; default 0.5">Bridge Smooth Strength <input id="branchBridgeSmoothStrengthInput" type="range" min="0" max="1" step="0.05" value="0.5" /></label>
+          <label class="topology-control" for="branchBridgeSmoothDetailInput" title="Uniform Smooth detail: number of Laplacian passes over the bridge interior vertices. Higher = smoother; 0 = off; default 1">Bridge Smooth Detail <input id="branchBridgeSmoothDetailInput" type="range" min="0" max="8" step="1" value="1" /></label>
         </div>
 
         <div id="strandShapePanel" class="panel-section sliders" data-attribute-panel="strands">
@@ -1924,7 +1918,7 @@
             <input id="branchRegionMeshPointsToggle" type="checkbox" />
           </label>
         </div>
-        <p class="reference-plane-hint branch-region-hint">Orange center = bridge anchor; drag it to move the region. Ctrl+drag any point = mirror-scale the opposite side. Wheel = zoom; Alt+MMB drag = pan (per navigation style).</p>
+        <p class="reference-plane-hint branch-region-hint">Orange center = bridge anchor; drag it to move the region. Ctrl+drag any point = mirror-scale the opposite side. Wheel = zoom; MMB / Alt+MMB drag = pan (per navigation style).</p>
       </div>
     </dialog>
 
@@ -2063,6 +2057,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260808-24"></script>
+    <script type="module" src="./app.js?v=20260808-25"></script>
   </body>
 </html>
