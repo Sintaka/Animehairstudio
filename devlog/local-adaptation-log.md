@@ -124,3 +124,4 @@
 - [x] 左右移动根骨骼后点别处蹦回主发片中心修复（0.2.40）：captureBranchLocalState 保留根骨骼横向偏移 across（branchLocalPoints[0].x），不再置零
 - [x] region 橙色中心改为稳定锚点（0.2.41）：单边编辑不再移动中心/桥接；拖中心平移、Ctrl+拖中心镜像缩放；面板加提示小字
 - [x] gizmo 中心万向拾取恢复全尺寸（0.2.41）：translate XYZ 中心 picker 不再 deflate，可点半径 ±8px→±20px
+- [x] 已选中骨骼后点击 gizmo 不再被附近骨骼抢选（0.2.42）：pointerHitsTransformGizmo 为真即提前 return，点 gizmo 中心/附近不抢选到相邻骨骼

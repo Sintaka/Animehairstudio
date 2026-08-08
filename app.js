@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-25";
+} from "./modules/app-config.js?v=20260808-26";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -35591,12 +35591,15 @@ function prepareCurvePointSelection(event) {
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
   const hit = strandControlPointHitFromEvent(event, selectedLock);
-  const attachedPointHit = hit?.object === transformControls.object;
+  // If the click is on the move/rotate/scale gizmo, let the gizmo win: once a bone
+  // is already selected (gizmo attached), clicking it again - or a nearby point that
+  // the gizmo picker overlaps - must not re-select / steal the point, otherwise the
+  // gizmo center becomes unclickable. Only the remove/insert curve-point modes keep
+  // point priority over the gizmo.
   if (
     !removingCurvePoint
     && !insertingCurvePoint
     && pointerHitsTransformGizmo(event)
-    && (!hit || attachedPointHit)
   ) return;
   if (activeTool === "poly") {
     if (!hit || hit.object === transformControls.object) return;
