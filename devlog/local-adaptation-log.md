@@ -140,4 +140,4 @@
 - [x] Region 面板中键平移（0.2.47）：任意导航预设下按住中键拖拽即可平移查看（与 Alt+中键一致）
 - [x] main 合并（0.2.48）：移除三个 Local dev 选项（Local Save / Local Export OBJ/USDA），统一用快速保存/快速导出；吸收马尾/复合发丝预设；子发片桥接与 main 几何并存（createHairGeometry 按 branchRootRegion 分流）；sculpt 保留本地笔刷 + main preserve-tips；材质双面条件合并
 - [x] 父发片 Split Geometry 时子发片退回直接生成（0.2.49）：显式守卫 parentSupportsTopologyConnect，无 gridRows/quadFaces 的父（split/hairCard）不再走桥接，子发片从根部直接扫掠；0041 桥接与 0042 回退均验证通过
-- [x] split 父发片支持子发片桥接（0.2.50）：createSplitStrandGeometry 改为融合单管（全截面一次扫掠 + 按列开口），输出 gridRows/quadFaces，split 父对子发片系统表现为普通网格，挖洞+桥接零改动工作
+- [x] split 父发片支持子发片桥接（0.2.51，索引侧拼接）：保留两管渲染，索引把两管拼成 fused 网格（gridIndexAt 读位置 + faceToRendered 挖洞映射 + 跨缝面=粘缝），非跨缝选区桥接干净、跨缝可桥接（顶部带少量重叠边，暴力粘第一版）

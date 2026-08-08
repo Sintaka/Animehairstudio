@@ -167,7 +167,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-34";
+} from "./modules/app-config.js?v=20260808-35";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -13967,7 +13967,7 @@ function orientedQuadFace(vertices, a, b, c, d, outward) {
   return normal.dot(outward) < 0 ? [a, d, c, b] : [a, b, c, d];
 }
 
-function createSplitStrandGeometry(lock, curve, profilePoints) {
+﻿function createSplitStrandGeometry(lock, curve, profilePoints) {
   const radialSegments = THREE.MathUtils.clamp(Math.round(lock.radialSegments || 10), 6, 32);
   const profileCurve = createSmoothSweepProfileCurve(profilePoints);
   const sampleParameters = [
@@ -13982,12 +13982,11 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   if (!Number.isFinite(minX) || maxX - minX < 0.0001) return null;
   const splitPosition = THREE.MathUtils.clamp(Number(lock.strandSplitPosition ?? 0), -0.8, 0.8);
   const splitX = THREE.MathUtils.lerp(minX, maxX, splitPosition * 0.5 + 0.5);
-  // Fused single ring: the split keeps ONE connected quad grid (full profile swept
-  // once) so a split strand can still be carved + bridged by the child-strand system.
-  // The opening applies per column (left half -x, right half +x), so the halves spread
-  // apart at the bottom while the ring stays one tube; vertex positions are unchanged.
-  const ring = polygon;
-  const ringSize = ring.length;
+  const sections = [
+    { points: clipStrandProfilePolygon(polygon, splitX, true), direction: -1 },
+    { points: clipStrandProfilePolygon(polygon, splitX, false), direction: 1 }
+  ].filter((section) => section.points.length >= 3);
+  if (sections.length !== 2) return null;
 
   const curlSegments = lock.curlEnabled ? Math.ceil(Number(lock.curlCount ?? 4) * 14) : 0;
   const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), curlSegments), 4, 256);
@@ -14007,62 +14006,145 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   const colors = [];
   const indices = [];
   const triangleEdgeMasks = [];
-  const quadFaces = [];
   const splitHeight = THREE.MathUtils.clamp(Number(lock.strandSplitHeight ?? 0.3), 0.02, 0.8);
   const splitStart = 1 - splitHeight;
   const splitGap = THREE.MathUtils.clamp(Number(lock.strandSplitGap ?? 0.12), 0, 0.5);
   const baseSeparation = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1) * splitGap;
   let sideTriangleCount = 0;
 
-  curveParameters.forEach((t, row) => {
-    const point = curve.getPoint(t);
-    const frame = frames[row];
-    const scaleX = sampleScale(lock.pointScales, t, "x");
-    const scaleZ = sampleScale(lock.pointScales, t, "z");
-    const warpedSection = strandProfileTopologyAt(lock, t, ring, scaleX, scaleZ, polygon);
-    const color = strandInfluenceColor(lock, t);
-    const opening = t <= splitStart
-      ? 0
-      : baseSeparation * THREE.MathUtils.smoothstep(t, splitStart, 1);
-    ring.forEach((profile, column) => {
-      const warped = warpedSection[column];
-      const direction = profile.x <= splitX ? -1 : 1;
-      const ringPoint = frame.x.clone().multiplyScalar(warped.x);
-      ringPoint.add(frame.z.clone().multiplyScalar(warped.z));
-      ringPoint.addScaledVector(frame.x, opening * direction);
-      vertices.push(point.x + ringPoint.x, point.y + ringPoint.y, point.z + ringPoint.z);
-      tangents.push(frame.y.x, frame.y.y, frame.y.z, 1);
-      uvs.push(column / ringSize, t);
-      colors.push(color.r, color.g, color.b);
+  // Per-section vertex/face bases so the child-strand bridge can address each tube.
+  const sectionBases = [];
+  let sectionVertexBase = 0;
+  let sectionFaceBase = 0;
+  sections.forEach((section) => {
+    sectionBases.push({
+      base: sectionVertexBase,
+      ringSize: section.points.length,
+      faceBase: sectionFaceBase
+    });
+    sectionVertexBase += (actualLengthSegments + 1) * section.points.length;
+    sectionFaceBase += actualLengthSegments * section.points.length;
+  });
+
+  // Sweep the two tubes (unchanged rendering), but emit ALL side faces before the
+  // end caps so quadFaces occupy the front of the index stream (carve-friendly).
+  sections.forEach((section, sectionIndex) => {
+    const ringSize = section.points.length;
+    const sectionStart = sectionBases[sectionIndex].base;
+    curveParameters.forEach((t, row) => {
+      const point = curve.getPoint(t);
+      const frame = frames[row];
+      const scaleX = sampleScale(lock.pointScales, t, "x");
+      const scaleZ = sampleScale(lock.pointScales, t, "z");
+      const warpedSection = strandProfileTopologyAt(
+        lock,
+        t,
+        section.points,
+        scaleX,
+        scaleZ,
+        polygon
+      );
+      const color = strandInfluenceColor(lock, t);
+      const opening = t <= splitStart
+        ? 0
+        : baseSeparation * THREE.MathUtils.smoothstep(t, splitStart, 1) * section.direction;
+      section.points.forEach((profile, column) => {
+        const warped = warpedSection[column];
+        const ringPoint = frame.x.clone().multiplyScalar(warped.x);
+        ringPoint.add(frame.z.clone().multiplyScalar(warped.z));
+        ringPoint.addScaledVector(frame.x, opening);
+        vertices.push(point.x + ringPoint.x, point.y + ringPoint.y, point.z + ringPoint.z);
+        tangents.push(frame.y.x, frame.y.y, frame.y.z, 1);
+        uvs.push(column / ringSize, t);
+        colors.push(color.r, color.g, color.b);
+      });
+    });
+
+    for (let row = 0; row < actualLengthSegments; row += 1) {
+      for (let column = 0; column < ringSize; column += 1) {
+        const next = (column + 1) % ringSize;
+        const a = sectionStart + row * ringSize + column;
+        const b = sectionStart + row * ringSize + next;
+        const c = sectionStart + (row + 1) * ringSize + column;
+        const d = sectionStart + (row + 1) * ringSize + next;
+        indices.push(a, c, b, b, c, d);
+        sideTriangleCount += 2;
+        triangleEdgeMasks.push([0, 1, 1], [1, 1, 0]);
+      }
+    }
+  });
+  const sideFaceCount = sectionFaceBase;
+  const quadFaces = [];
+  sections.forEach((section, sectionIndex) => {
+    const ringSize = section.points.length;
+    const sectionStart = sectionBases[sectionIndex].base;
+    for (let row = 0; row < actualLengthSegments; row += 1) {
+      for (let column = 0; column < ringSize; column += 1) {
+        const next = (column + 1) % ringSize;
+        const a = sectionStart + row * ringSize + column;
+        const b = sectionStart + row * ringSize + next;
+        const c = sectionStart + (row + 1) * ringSize + column;
+        const d = sectionStart + (row + 1) * ringSize + next;
+        quadFaces.push([a, c, d, b]);
+      }
+    }
+  });
+  // End caps (triangles) come AFTER every side face so the carve's "faces first" rule holds.
+  sections.forEach((section, sectionIndex) => {
+    const ringSize = section.points.length;
+    const sectionStart = sectionBases[sectionIndex].base;
+    const capTriangles = THREE.ShapeUtils.triangulateShape(
+      section.points.map((point) => new THREE.Vector2(point.x, point.z)),
+      []
+    );
+    const endOffset = sectionStart + actualLengthSegments * ringSize;
+    const startOutward = frames[0].y.clone().negate();
+    const endOutward = frames[actualLengthSegments].y;
+    capTriangles.forEach(([a, b, c]) => {
+      pushOrientedTriangle(indices, vertices, sectionStart + a, sectionStart + b, sectionStart + c, startOutward);
+      pushOrientedTriangle(indices, vertices, endOffset + a, endOffset + b, endOffset + c, endOutward);
+      triangleEdgeMasks.push([1, 1, 1], [1, 1, 1]);
     });
   });
 
+  // Fused grid metadata (index-side splice for the child-strand bridge): expose the
+  // two tubes as ONE connected quad grid (rows x fusedCols) without touching the
+  // rendered two-tube geometry. Each fused column maps to the section that owns that
+  // profile point (left -> section0, right -> section1); fused faces crossing from one
+  // section to the next are the glued seam quads (faceToRendered = -1).
+  const fusedCols = polygon.length;
+  const colToSection = [];
+  for (let c = 0; c < fusedCols; c += 1) {
+    const point = polygon[c];
+    const section = point.x <= splitX ? 0 : 1;
+    const ring = sections[section].points;
+    let col = -1;
+    for (let k = 0; k < ring.length; k += 1) {
+      if (Math.abs(ring[k].x - point.x) < 1e-4 && Math.abs(ring[k].z - point.z) < 1e-4) { col = k; break; }
+    }
+    colToSection.push({ section, col: col < 0 ? 0 : col });
+  }
+  const fusedIndexAt = (r, c) => {
+    const entry = colToSection[c];
+    const base = sectionBases[entry.section].base;
+    const ringSize = sectionBases[entry.section].ringSize;
+    return base + r * ringSize + entry.col;
+  };
+  const faceToRendered = [];
   for (let row = 0; row < actualLengthSegments; row += 1) {
-    for (let column = 0; column < ringSize; column += 1) {
-      const next = (column + 1) % ringSize;
-      const a = row * ringSize + column;
-      const b = row * ringSize + next;
-      const c = (row + 1) * ringSize + column;
-      const d = (row + 1) * ringSize + next;
-      indices.push(a, c, b, b, c, d);
-      sideTriangleCount += 2;
-      triangleEdgeMasks.push([0, 1, 1], [1, 1, 0]);
-      quadFaces.push([a, c, d, b]);
+    for (let c = 0; c < fusedCols; c += 1) {
+      const c2 = (c + 1) % fusedCols;
+      const same = colToSection[c].section === colToSection[c2].section;
+      if (same) {
+        const section = colToSection[c].section;
+        const localCol = colToSection[c].col;
+        faceToRendered.push(sectionBases[section].faceBase + row * sectionBases[section].ringSize + localCol);
+      } else {
+        faceToRendered.push(-1);
+      }
     }
   }
-
-  const capTriangles = THREE.ShapeUtils.triangulateShape(
-    ring.map((point) => new THREE.Vector2(point.x, point.z)),
-    []
-  );
-  const endOffset = actualLengthSegments * ringSize;
-  const startOutward = frames[0].y.clone().negate();
-  const endOutward = frames[actualLengthSegments].y;
-  capTriangles.forEach(([a, b, c]) => {
-    pushOrientedTriangle(indices, vertices, a, b, c, startOutward);
-    pushOrientedTriangle(indices, vertices, endOffset + a, endOffset + b, endOffset + c, endOutward);
-    triangleEdgeMasks.push([1, 1, 1], [1, 1, 1]);
-  });
+  const splitStartRow = Math.max(0, Math.min(actualLengthSegments, Math.round(splitStart * actualLengthSegments)));
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
@@ -14073,13 +14155,19 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   geometry.userData.sideTriangleCount = sideTriangleCount;
   geometry.userData.triangleEdgeMasks = triangleEdgeMasks;
   geometry.userData.actualLengthSegments = actualLengthSegments;
-  // Expose the fused grid so the child-strand bridge can carve + attach like a normal
-  // strand (split is one connected quad region with the seam fused).
-  geometry.userData.gridRows = actualLengthSegments + 1;
-  geometry.userData.gridColumns = ringSize;
-  geometry.userData.gridFacesPerRow = ringSize;
-  geometry.userData.gridSkipCol = -1;
   geometry.userData.quadFaces = quadFaces;
+  geometry.userData.gridRows = actualLengthSegments + 1;
+  geometry.userData.gridColumns = fusedCols;
+  geometry.userData.gridFacesPerRow = fusedCols;
+  geometry.userData.gridSkipCol = -1;
+  geometry.userData.splitSections = sectionBases;
+  geometry.userData.splitFusedGrid = {
+    cols: fusedCols,
+    colToSection,
+    faceToRendered,
+    fusedIndexAt,
+    splitStartRow
+  };
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
@@ -14459,7 +14547,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   const rows = Number(parentGeom.userData?.gridRows || 0);
   const cols = Number(parentGeom.userData?.gridColumns || 0);
   if (rows < 2 || cols < 2) return null;
-  const boundary = holeBoundary(surface, positionAttr.array, rows, cols);
+  const boundary = holeBoundary(surface, positionAttr.array, rows, cols, surface.gridIndexAt || ((r, c) => r * cols + c));
   if (!boundary) return null;
   // Child ring surface normal: the band must depart tangent to the child's surface at
   // the root ring (B-spline-like smooth transition on both ends), not only arrive flat
@@ -14497,7 +14585,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     uvs.push(0.5, 0);
     colors.push(rootColor.r, rootColor.g, rootColor.b);
   };
-  const indexAt = (r, c) => r * cols + c;
+  const indexAt = surface.gridIndexAt || ((r, c) => r * cols + c);
   const boundaryAt = (r, c) => boundary.vertices.find((v) => v.index === indexAt(r, c));
   const quads = [];
   const triangles = [];
@@ -23463,6 +23551,12 @@ function branchRootRegionSurface(lock) {
     || (Array.isArray(faces) && faces.length ? Math.round(faces.length / Math.max(1, rows - 1)) : 0);
   const colCount = facesPerRow > 1 ? facesPerRow : cols - 1;
   const skipCol = Number(geometry?.userData?.gridSkipCol ?? -1);
+  const splitFused = geometry?.userData?.splitFusedGrid || null;
+  // Split parents expose a fused single grid (rows x fusedCols) through a mapping;
+  // every parent-position read goes through gridIndexAt for them.
+  const gridIndexAt = splitFused && typeof splitFused.fusedIndexAt === "function"
+    ? splitFused.fusedIndexAt
+    : (r, c) => r * cols + c;
   const faceStartCols = [];
   if (colCount >= 1 && colCount <= cols) {
     for (let f = 0; f < colCount; f += 1) faceStartCols.push(skipCol >= 0 && f >= skipCol ? f + 1 : f);
@@ -23491,8 +23585,8 @@ function branchRootRegionSurface(lock) {
       let front = 0;
       let bestD = -Infinity;
       faceStartCols.forEach((gc, f) => {
-        const base = (probeRow * cols + gc) * 3;
-        const d = positionAttr.array[base] * axis.x + positionAttr.array[base + 1] * axis.y + positionAttr.array[base + 2] * axis.z;
+        const vi = gridIndexAt(probeRow, gc) * 3;
+        const d = positionAttr.array[vi] * axis.x + positionAttr.array[vi + 1] * axis.y + positionAttr.array[vi + 2] * axis.z;
         if (d > bestD) { bestD = d; front = f; }
       });
       const arcScale = colCount * 0.6;
@@ -23514,6 +23608,8 @@ function branchRootRegionSurface(lock) {
     skipCol,
     toGridCol,
     toCol,
+    gridIndexAt,
+    splitFused,
     rowMin: Math.min(rowA, rowB),
     rowMax: Math.max(rowA, rowB),
     colMin: Math.min(colA, colB),
@@ -23531,11 +23627,13 @@ function branchRegionTopEdgeCount(lock) {
   if (!surface || !pos) return 2;
   const cols = surface.cols;
   const row = surface.rowMin;
+  const indexAt = surface.gridIndexAt || ((r, c) => r * cols + c);
   const distinct = [];
   for (let c = surface.colMin; c <= Math.min(surface.colMax + 1, cols - 1); c += 1) {
-    const x = pos.getX(row * cols + c);
-    const y = pos.getY(row * cols + c);
-    const z = pos.getZ(row * cols + c);
+    const vi = indexAt(row, c);
+    const x = pos.getX(vi);
+    const y = pos.getY(vi);
+    const z = pos.getZ(vi);
     const prev = distinct[distinct.length - 1];
     if (!prev || Math.hypot(x - prev.x, y - prev.y, z - prev.z) > 1e-6) distinct.push({ x, y, z });
   }
@@ -23547,7 +23645,8 @@ function branchRootRegionWorldPoints(lock) {
   const parent = locks.find((item) => item.id === lock?.branchParentId);
   const pos = parent?.mesh?.geometry?.getAttribute?.("position");
   if (!surface || !pos) return null;
-  const pointAt = (r, c) => new THREE.Vector3(pos.getX(r * surface.cols + c), pos.getY(r * surface.cols + c), pos.getZ(r * surface.cols + c));
+  const indexAt = surface.gridIndexAt || ((r, c) => r * surface.cols + c);
+  const pointAt = (r, c) => { const vi = indexAt(r, c); return new THREE.Vector3(pos.getX(vi), pos.getY(vi), pos.getZ(vi)); };
   const rowC = Math.round((surface.rowMin + surface.rowMax) / 2);
   const colC = Math.round((surface.colMin + surface.colMax) / 2);
   const bottomRow = Math.min(surface.rowMax + 1, surface.rows - 1);
@@ -23580,12 +23679,27 @@ function applyBranchRootRegionCarving(lock, geometry) {
   const index = geometry?.index;
   const rows = Number(geometry?.userData?.gridRows || 0);
   if (!children.length || !Array.isArray(faces) || !faces.length || !index || rows < 2) return;
-  const facesPerRow = Math.round(faces.length / (rows - 1));
-  if (facesPerRow < 2) return;
+  const splitFused = geometry?.userData?.splitFusedGrid || null;
   const removed = new Set();
   children.forEach((child) => {
     const surface = branchRootRegionSurface(child);
     if (!surface) return;
+    if (splitFused && Array.isArray(splitFused.faceToRendered)) {
+      // Fused grid: walk fused faces inside the region and remove their rendered
+      // counterparts. Seam glue faces (faceToRendered === -1) have no rendered face.
+      const fusedCols = Math.max(1, Math.round(Number(splitFused.cols) || surface.colCount || surface.cols));
+      for (let row = Math.max(0, surface.rowMin); row <= Math.min(surface.rowMax, rows - 2); row += 1) {
+        for (let c = 0; c < fusedCols; c += 1) {
+          const gridCol = typeof surface.toGridCol === "function" ? surface.toGridCol(c) : c;
+          if (gridCol < surface.colMin || gridCol > surface.colMax) continue;
+          const rendered = splitFused.faceToRendered[row * fusedCols + c];
+          if (rendered >= 0) removed.add(rendered);
+        }
+      }
+      return;
+    }
+    const facesPerRow = Math.round(faces.length / Math.max(1, rows - 1));
+    if (facesPerRow < 2) return;
     faces.forEach((face, faceIndex) => {
       if (removed.has(faceIndex)) return;
       const row = Math.floor(faceIndex / facesPerRow);

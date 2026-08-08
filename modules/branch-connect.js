@@ -33,7 +33,7 @@ export function squareChildRing(halfWidth, halfDepth, widthSegments = 2) {
 // positions: flat number array (x,y,z triplets), gridRows x gridCols, vertex = r*cols + c.
 // Returns { vertices: [{x,y,z}xN], sides: [{ name, start, count }] } with N = perimeter edges,
 // sides named top/right/bottom/left (each with `count` edges; vertices[start..start+count]).
-export function holeBoundary(region, positions, gridRows, gridCols) {
+export function holeBoundary(region, positions, gridRows, gridCols, indexAt = null) {
   const rowMin = Math.round(Number(region?.rowMin) || 0);
   const rowMax = Math.round(Number(region?.rowMax) || 0);
   const colMin = Math.round(Number(region?.colMin) || 0);
@@ -42,8 +42,9 @@ export function holeBoundary(region, positions, gridRows, gridCols) {
   const indexOf = (r, c) => {
     const ri = Math.min(Math.max(r, 0), Math.max(0, gridRows - 1));
     const ci = Math.min(Math.max(c, 0), Math.max(0, gridCols - 1));
-    const base = (ri * gridCols + ci) * 3;
-    return { x: positions[base] || 0, y: positions[base + 1] || 0, z: positions[base + 2] || 0, index: ri * gridCols + ci };
+    const vi = indexAt ? indexAt(ri, ci) : (ri * gridCols + ci);
+    const base = vi * 3;
+    return { x: positions[base] || 0, y: positions[base + 1] || 0, z: positions[base + 2] || 0, index: vi };
   };
   // Walk the hole perimeter CCW: top (rowMin), right (colMax+1), bottom (rowMax+1), left (colMin).
   const order = [];
