@@ -116,3 +116,4 @@
 - [x] 分支根手柄/gizmo frame 稳定化：strandControlPointFrame 用父切线投影做 up，绿轴不再 120° 突跳
 - [x] H 模式拖根 gizmo 热更新：syncBranchRootHandleFrame 让手柄/gizmo 跟随骨骼与扫掠，拖动中不再分离
 - [x] 扫掠沿长度翻转修复：分支子级传输用 untwistedZ（骨骼 up）锚定 + 直接施加 authored twist，不再向退化法线累积 roll
+- [x] 扫掠跟随骨骼：分支子级传输子级 up + twist 增量（绝对 twist 吸收进初始 frame），静止态不横转

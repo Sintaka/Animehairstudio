@@ -33,5 +33,5 @@ python -m http.server 8080 --bind 127.0.0.1
 
 ## 最近版本 / Latest
 
-- Phase 2.15：Region 左右方向修正——回退面板 v 轴翻转（右后方视角下大 v=世界左本应在面板右侧），改修根骨骼 v 符号（0.5 - across/width），根拖动同步 + 选区对应主发片左右均正确；sweep 起点黄色手柄选中修复（stopImmediatePropagation + buttons 兜底）；桥接接缝边界顶点法线恢复父发片法线；版本 0.1.4-Sintaka.0.2.33（+ 扫掠沿长度翻转修复：分支子级锚定传输骨骼 up + authored twist，不再向退化法线 roll）。
+- Phase 2.15：Region 左右方向修正——回退面板 v 轴翻转（右后方视角下大 v=世界左本应在面板右侧），改修根骨骼 v 符号（0.5 - across/width），根拖动同步 + 选区对应主发片左右均正确；sweep 起点黄色手柄选中修复（stopImmediatePropagation + buttons 兜底）；桥接接缝边界顶点法线恢复父发片法线；版本 0.1.4-Sintaka.0.2.34（+ 扫掠跟随骨骼：传输子级 up + twist 增量，静止态不横转、拖根跟随）。
 - Phase 2.13：TransformMode 默认 object 并持久化；Branch Root Region 选区顺序归一化（点选不再跳变）；根滑动后选区面板/3D 标记跟随；选区宽度=1 支持（子环 1 宽 + 顶/底直接桥接）；版本 0.1.4-Sintaka.0.2.17（Phase 2.14 修正：上下桥接 smoothstep 双边法线，子环切端平滑衔接）。
