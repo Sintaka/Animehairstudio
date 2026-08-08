@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-12";
+} from "./modules/app-config.js?v=20260808-13";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -11899,9 +11899,11 @@ function beginHandleEdit(handle = transformControls.object) {
   if (lock.branchParentId && handle.userData.pointIndex === 0) {
     const branchParent = locks.find((item) => item.id === lock.branchParentId);
     if (branchParent) {
-      const frame = curveFrameAt(branchParent, lock.branchParentParameter);
+      const rootFrame = branchParentFrame(branchParent, lock.branchParentParameter);
+      const across = new THREE.Vector3().subVectors(lock.points[0], rootFrame.point).dot(rootFrame.x);
       activeHandleEdit.branchRigid = {
-        frameQuat: frame.quaternion.clone(),
+        frameQuat: branchSurfaceFrameQuat(branchParent, lock.branchParentParameter, across),
+        across,
         deltas: lock.points.map((point) => point.clone().sub(lock.points[0]))
       };
     }
@@ -11913,17 +11915,40 @@ function beginHandleEdit(handle = transformControls.object) {
 // shape by the parent frame's rotation change, blended 0.5 with fully straight,
 // so the tip swings slightly with the parent surface curvature but never bends.
 const BRANCH_RIGID_CURVATURE_BLEND = 0.5;
+// Parent-surface frame at (parameter, across): the continuous guide frame plus the
+// lateral normal tilt from a temporary elliptical cross-section (width x depth), so
+// both up/down (guide curvature) and left/right (cross-section curvature) root drags
+// rotate the child's tip.
+function branchSurfaceFrameQuat(parent, parameter, across) {
+  const base = curveFrameAt(parent, parameter);
+  const width = Math.max(0.0001, Number(parent.width ?? parent.baseWidth ?? 0.16));
+  const depth = Math.max(0.0001, Number(parent.depth ?? 0.16));
+  const a = width * 0.5;
+  const b = depth * 0.5;
+  const s = THREE.MathUtils.clamp(Number(across) || 0, -a, a);
+  const zSurf = b * Math.sqrt(Math.max(0, 1 - (s / a) * (s / a)));
+  // Outward normal of the ellipse x^2/a^2 + z^2/b^2 = 1 at (s, zSurf).
+  const nx = s / (a * a);
+  const nz = zSurf / (b * b);
+  const len = Math.sqrt(nx * nx + nz * nz) || 1;
+  const z = base.z.clone().multiplyScalar(nz / len).addScaledVector(base.x, nx / len).normalize();
+  const y = base.y.clone();
+  const x = new THREE.Vector3().crossVectors(y, z).normalize();
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+}
 function applyBranchRigidRootMove(lock) {
   const rigid = activeHandleEdit?.branchRigid;
   if (!rigid?.deltas?.length || !rigid?.frameQuat || lock.points.length !== rigid.deltas.length) return;
   const parent = locks.find((item) => item.id === lock?.branchParentId);
   if (!parent || !lock.points.length) return;
-  const frame = curveFrameAt(parent, lock.branchParentParameter);
-  // Relative rotation from the recorded frame to the new frame (surface curvature
-  // delta), then blend halfway with identity (= fully straight, no rotation). The
-  // child's world shape is only rotated by this relative swing, never by the
-  // parent frame's absolute orientation.
-  const relative = frame.quaternion.clone().multiply(rigid.frameQuat.clone().invert());
+  const rootFrame = branchParentFrame(parent, lock.branchParentParameter);
+  const across = new THREE.Vector3().subVectors(lock.points[0], rootFrame.point).dot(rootFrame.x);
+  const frame = branchSurfaceFrameQuat(parent, lock.branchParentParameter, across);
+  // Relative rotation from the recorded surface frame to the new surface frame
+  // (guide curvature + lateral cross-section tilt), then blend halfway with identity
+  // (= fully straight, no rotation). The child's world shape is only rotated by this
+  // relative swing, never by the parent frame's absolute orientation.
+  const relative = frame.clone().multiply(rigid.frameQuat.clone().invert());
   const rotation = new THREE.Quaternion().slerpQuaternions(
     new THREE.Quaternion(),
     relative,
