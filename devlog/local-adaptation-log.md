@@ -115,3 +115,4 @@
 - [x] H 模式刚性旋转摆幅上限（60°）：横向椭圆法线倾角大导致子发片 90° 乱甩/up 翻转，封顶后稳定
 - [x] 分支根手柄/gizmo frame 稳定化：strandControlPointFrame 用父切线投影做 up，绿轴不再 120° 突跳
 - [x] H 模式拖根 gizmo 热更新：syncBranchRootHandleFrame 让手柄/gizmo 跟随骨骼与扫掠，拖动中不再分离
+- [x] 扫掠 up 圆柱体方案：cross(bitangent, normal) 纯平行传输，分支子级不向退化法线 roll、不施加 authored twist（修 120° 偏移与乱转）

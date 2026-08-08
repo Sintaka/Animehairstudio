@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-21";
+} from "./modules/app-config.js?v=20260808-22";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -13234,11 +13234,22 @@ function strandGeometryFrameAt(
     const transportedZ = previousFrame.z.clone().applyQuaternion(transport).projectOnPlane(tangent);
     if (transportedZ.lengthSq() >= 0.0001) {
       transportedZ.normalize();
-      if (desiredZ.dot(transportedZ) < 0) desiredZ.negate();
-      const cross = new THREE.Vector3().crossVectors(transportedZ, desiredZ);
-      const roll = Math.atan2(cross.dot(tangent), THREE.MathUtils.clamp(transportedZ.dot(desiredZ), -1, 1));
-      const maxRollPerRing = THREE.MathUtils.degToRad(24);
-      z = transportedZ.applyAxisAngle(tangent, THREE.MathUtils.clamp(roll, -maxRollPerRing, maxRollPerRing));
+      if (lock.branchParentId) {
+        // Branch child: the profile up is derived from the parent cylinder
+        // (seed = cross(bitangent, normal) = -parent tangent) and only parallel-
+        // transported along the child. The child's own surface normals are
+        // degenerate (near-parallel to its tangent), so rolling toward them (or an
+        // authored twist on top) spins/flips the up and leaves a persistent
+        // tangent-direction offset. Pure transport keeps the up aligned with the
+        // bone and following the child without any roll.
+        z = transportedZ;
+      } else {
+        if (desiredZ.dot(transportedZ) < 0) desiredZ.negate();
+        const cross = new THREE.Vector3().crossVectors(transportedZ, desiredZ);
+        const roll = Math.atan2(cross.dot(tangent), THREE.MathUtils.clamp(transportedZ.dot(desiredZ), -1, 1));
+        const maxRollPerRing = THREE.MathUtils.degToRad(24);
+        z = transportedZ.applyAxisAngle(tangent, THREE.MathUtils.clamp(roll, -maxRollPerRing, maxRollPerRing));
+      }
     }
   }
   z.normalize();
