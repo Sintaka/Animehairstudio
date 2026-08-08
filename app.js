@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-13";
+} from "./modules/app-config.js?v=20260808-14";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -21492,13 +21492,14 @@ function ensureBranchParentNormalField(parent) {
 }
 
 function branchParentFrame(parent, parameter) {
-  const pointIndex = THREE.MathUtils.clamp(
-    Math.round(THREE.MathUtils.clamp(Number(parameter ?? 0), 0, 1) * Math.max(0, parent.points.length - 1)),
-    0,
-    Math.max(0, parent.points.length - 1)
-  );
-  const frame = curveFrameAtPoint(parent, pointIndex);
-  frame.point = parent.points[pointIndex].clone();
+  // Continuous parent-surface frame along the guide: the child root slides smoothly
+  // between guide control points (no discrete row snapping / jumps) while staying
+  // laterally aligned to the guide line (across along frame.x is preserved in
+  // enforceBranchRootPosition). Orientation matches curveFrameAtPoint at each
+  // control point, so this only smooths the interpolation.
+  const t = THREE.MathUtils.clamp(Number(parameter ?? 0), 0, 1);
+  const frame = curveFrameAt(parent, t);
+  frame.point = new THREE.CatmullRomCurve3(parent.points).getPoint(t);
   return frame;
 }
 
