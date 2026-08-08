@@ -22,7 +22,7 @@ python -m http.server 8080 --bind 127.0.0.1
 | Bug 修复 / 已知问题 | [bug-fixes.md](bug-fixes.md) |
 | 修改型笔刷开发规范 | [brush-dev-spec.md](brush-dev-spec.md) |
 | 本地适配进度 | [local-adaptation-log.md](local-adaptation-log.md) |
-| 技术架构分析 & 复刻 DCC 参考 | [技术架构与复刻参考.md](技术架构与复刻参考.md) |
+| 技术架构分析 & 复刻 DCC 参考 | [AnimeHairStudio_Tech_Architecture_and_DCC_Reference.md](AnimeHairStudio_Tech_Architecture_and_DCC_Reference.md) |
 
 ## 常用查找 / Quick lookup
 

@@ -1,4 +1,4 @@
-﻿# Anime Hair Studio — 技术架构分析 & 复刻 DCC 参考
+# Anime Hair Studio — 技术架构分析 & 复刻 DCC 参考
 
 > 整理日期：2026-08-07 ｜ 对象版本：0.1.4（本地 fork：0.1.4-Sintaka.N）
 > 用途：梳理本项目（网页端动画发片制作 App）的整体结构、前后端技术栈，以及后续复刻一个自研 DCC 时可以参考/借鉴的地方。
@@ -308,3 +308,103 @@ Houdini（hython）、Blender（bpy）、Maya（maya.cmds）、Nuke、Substance�
 
 > 一句话：**浏览器负责 UI/渲染/交互，WASM 负责性能内核，Python 负责脚本、自动化、节点图与对外桥接**——三者组合即可覆盖"轻量前端 + 快迭代 + 生态兼容（Python）+ 外部接口（MCP/LiveLink）"的全部诉求。
 
+
+---
+
+## 13. 单端口多命名工作区 + 浏览器直控方案评估
+
+> 目标：一个本地服务进程（单端口）管理多个命名工作区；页面保持 WebGL 前端；agent 通过终端/名字访问对应场景并直接操作页面；多实例并存。
+
+### 13.1 推荐架构
+
+```
+你的 Chrome（可开 N 个标签页 / 工作区）
+   │  打开 http://127.0.0.1:8080/ws/<名字>/   （同一套 WebGL 前端，URL 决定工作区）
+   │  WebSocket ←→ ws://127.0.0.1:8080/api/ws/<名字>/   （页面主动连上来）
+   ▼
+本地 Python 服务（单端口 8080）
+   ├─ 静态文件：index.html / app.js / modules（保持零构建）
+   ├─ 工作区管理器：./workspaces/<名字>/scene.ahs + meta.json
+   ├─ REST：GET/PUT /api/ws/<名字>/scene、/eval、/open、/save、/export
+   └─ WebSocket：每个工作区一条通道（场景变更推送 + agent 命令下发/回包）
+   ▲
+Agent（Codex）：
+   ahs ws list / ahs ws open <名字>
+   curl http://127.0.0.1:8080/api/ws/<名字>/eval ...
+   MCP 工具：workspace.open / scene.get / scene.set / browser.eval ...
+```
+
+核心思路：**页面主动连 WebSocket 到本地服务**（同源 localhost 完全允许），agent 不碰"你的 Chrome 进程"，只需向本地服务发命令，服务转给对应工作区的页面执行。
+
+### 13.2 三个关键问题怎么解
+- **一个端口多个命名工作区**：`/ws/<名字>/` 路由打开同一套前端；服务端把名字映射到 `./workspaces/<名字>/scene.ahs`；前端加一个薄"存储后端"（现在保存/打开有 File System Access 与下载两条路，项目已有 dev-only `POST /api/save-project` 先例，可改造成通用 API：打开 `GET /api/ws/<名字>/scene`、保存 `PUT`）。
+- **agent 终端按名字访问**：最简 `curl /api/ws/<名字>/...`；更好写一个小 CLI（typer/click 几十行）：`ahs ws list / open / eval / save`；再往上包一层 MCP server（workspace.open / scene.get / scene.set / eval / export）。
+- **Codex 直控"你 Chrome 里的页面"**：
+  1. 页面内控制通道（推荐，零额外依赖）：app 加"命令桥"——页面通过 WebSocket 监听 `/api/ws/<名字>/eval`，收到 JS/命令就在页面上下文执行并回包（读场景、改参数、触发保存/导出，甚至模拟点击）。
+  2. CDP 附加（适合全真 UI 自动化/截图验收）：你的 Chrome 以 `--remote-debugging-port=9222` 启动，Codex 用 Playwright `connectOverCDP` 附加到已开着的 Chrome（不是新开实例）。现成：`chrome-devtools-mcp`（Chrome 官方）、`playwright-mcp --cdp-endpoint`（微软）。
+
+### 13.3 现成方案对照
+| 需求 | 现成方案/参考 |
+|---|---|
+| 单端口多会话、名字寻址 | Jupyter 模型（一个服务、多个 kernel、REST+WebSocket）是现成范本 |
+| 本地 Python 服务 | FastAPI + uvicorn / aiohttp（REST+WebSocket 都简单）；纯 stdlib 也能写 |
+| 文件热更新/监听 | watchfiles（改动自动触发重载/保存） |
+| 跨标签页实时同步 | 浏览器原生 BroadcastChannel（同源即可，零服务器） |
+| 未来多人/跨机协作 | yjs/CRDT + WebSocket（现阶段不用上） |
+| agent 控制已开的 Chrome | Playwright connectOverCDP、chrome-devtools-mcp、playwright-mcp --cdp-endpoint |
+| 终端 CLI | typer / click 几十行 |
+| MCP 暴露 | 官方 MCP SDK（Python），或把 REST 包一层 tool schema |
+
+### 13.4 落地最小路径（保持 WebGL 前端不动）
+1. Python 服务（约 300 行）：静态文件 + `/api/ws/<name>/scene`(GET/PUT) + `/api/ws/<name>/eval` + WebSocket。
+2. 前端薄模块 `workspace-backend.js`：按 URL 工作区名 `GET scene` 载入；保存走 `PUT`；WebSocket 收外部命令/变更。（`saveFileThroughLocalDialog` 的 fetch 逻辑可直接改造）
+3. CLI `ahs ws ...`，再可选包 MCP。
+4. 场景 API 复用现有纯函数（buildHairProjectFile / restoreState / openHairProjectFile），不动渲染层。
+5. 保持零构建：改前端刷新即生效，不需要 Qt 式编译重启。
+
+### 13.5 风险 / 注意
+- eval 通道只绑 localhost，可加本地 token，避免同机其它网页调用。
+- 多标签写冲突：dev 工具用 last-write-wins + "外部已修改"提示即可，先别上 CRDT。
+- 页面关了不等于工作区没了（场景已落盘）；服务重启后按名字恢复。
+- WebGL 渲染仍在浏览器里，服务只做状态/命令中转，不碰热路径。
+- 日常 dev 用"页面内控制通道"最省事；只有需要真实点击/截图验收时才上 CDP。
+
+---
+
+## 14. 基于 WebGL 构建新 DCC 的可行性
+
+### 14.1 核心结论
+**可行，而且"开发期抛弃编译、发布期编译加速"完全成立。** WebGL/WebGPU + WASM 已经把性能、文件系统、多线程的短板补到"可用"，对个人/小团队做轻量 DCC，Web 是性价比最高的路线；编译并没有被抛弃，只是被**分层与推迟**。
+
+### 14.2 编译策略：dev 零构建 / release 编译
+- **开发期**：零构建、纯文本、改保存刷新即生效（本项目的形态），迭代速度远高于 Qt 编译重启。
+- **发布期**：
+  - JS 层：Vite/rollup/esbuild 打包压缩 + tree-shaking + code splitting，产出少量静态文件；
+  - 性能核心：C++/Rust → **WASM**（WASM 本身就是编译产物），"开发时用 JS 原型，发布时把热点重写为 Rust/C++/WASM"是标准路径；
+  - 可选桌面壳：Tauri（Rust）/ Electron 打包，或继续纯网页。
+
+### 14.3 Houdini 的 SOP 理念在 Web 的实现
+- SOP = 数据流节点网络（节点输入几何/数据 → 输出变换后的数据）。
+- Web 实现：**节点 = 纯函数**（输入 data → 输出 data）；UI 用 DOM/SVG/canvas 画节点图；执行器按 DAG 拓扑序跑；脏标记缓存；命令式/快照撤销。
+- 相对 Houdini 的优势：节点图 UI 完全自控、数据随时 JSON 序列化（桥接/外部接口友好）、执行器可跑 JS / WASM / 远端 Python 三种后端。
+- "手感"（框选连线、参数面板、预览）用 HTML/SVG/Canvas + 3D 视口完全可做。
+
+### 14.4 为什么现在的 DCC 还是本地前端框架/窗口
+- 历史包袱 + 原生性能/文件系统/插件生态；但 Web 的 WebGL2 / WebGPU / WASM / File System Access / Worker 已把短板补齐。
+- 结论：技术上已具备，缺的是生态与产品化；轻量 DCC 用 Web 能避开 Qt 式"编译重启 + 大量加载"的更新速度问题。
+
+### 14.5 ComfyUI 的启示
+- 它对：**节点图 + 动态加载后端**（按节点类型懒加载插件/模块），所以"支持很多后端"。
+- 它的"设计逻辑太简单"：节点只是一个图，缺少 DCC 需要的编辑手感（视口、选择、层级、面板、参数交互、资产管理），UI 粗糙、不顺手。
+- 借鉴：把 ComfyUI 的"节点图 + 动态后端加载"与本项目/传统 DCC 的"视口 + 面板 + 层级 + 资产管理"结合。
+
+### 14.6 动态加载后端模块（懒加载，对比 Houdini 全量加载）
+- Houdini 式"一下全部加载"的缺点：启动慢、内存大、耦合重。
+- Web 天然支持 **ESM 动态 import()**：按需加载 JS/WASM 模块；节点类型 → 模块 URL → 首次用到才 import；模块可本地文件或本地服务提供。
+- 也可对接 **Python 后端模块**：每个节点类型对应一个 Python 实现，本地 Python 进程按需 import（即 ComfyUI 模式：节点目录放 py 文件，按需加载）。
+- 具体设计：节点注册表（type → loader），loader 返回 { fn, meta }；节点图只显示元数据，执行时才加载实现。→ "核心永远轻，功能按需进内存"。
+
+### 14.7 可行性结论与分阶段建议
+- 先做"编辑器外壳 + 视口 + 基础节点"（纯 JS，零构建），再逐步加 WASM 核心、Python 后端、插件系统。
+- 关键架构：数据流节点图（纯函数）+ JSON 场景 + 懒加载模块 + 视口/渲染分离 + 撤销/重做 + MCP/桥。
+- 保留 WebGL 前端（迭代快），release 时 Vite 打包 + 热点 WASM。
