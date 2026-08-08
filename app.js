@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-27";
+} from "./modules/app-config.js?v=20260808-28";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -14441,6 +14441,65 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   }
 
 
+  // Side-fill hole-side vertex cache. Intermediate hole-side rows are PRE-PUSHED
+  // here, before ringBase is fixed: pushing them later (in the fill pass) would grow
+  // the bridge vertex array and shift every ring index already referenced by the band
+  // faces, corrupting the whole bridge (seen as the top band breaking for M>1).
+  const sideHoleCache = new Map();
+  const sideHoleVertex = (r, c) => {
+    const key = r + "," + c;
+    if (sideHoleCache.has(key)) return sideHoleCache.get(key);
+    const v = boundaryAt(r, c);
+    if (!v) return -1;
+    const idx = vertices.length / 3;
+    pushBoundary(v);
+    sideHoleCache.set(key, idx);
+    return idx;
+  };
+  // Pre-seed corners and direct-bridge rows (already pushed by the bands / direct
+  // bridge) so the fill never duplicates vertices (watertight with the bands).
+  if (topInfo.holeBase >= 0 && topInfo.width === ringWidth + 1) {
+    sideHoleCache.set(surface.rowMin + "," + (surface.colMax + 1), topInfo.holeBase + topInfo.width - 1);
+    sideHoleCache.set(surface.rowMin + "," + surface.colMin, topInfo.holeBase + 0);
+  }
+  if (bottomInfo.holeBase >= 0 && bottomInfo.width === ringWidth + 1) {
+    sideHoleCache.set((surface.rowMax + 1) + "," + (surface.colMax + 1), bottomInfo.holeBase + 0);
+    sideHoleCache.set((surface.rowMax + 1) + "," + surface.colMin, bottomInfo.holeBase + bottomInfo.width - 1);
+  }
+  if (sideBases.left != null) {
+    sideHoleCache.set(rootRow + "," + (surface.colMax + 1), sideBases.left);
+    sideHoleCache.set((rootRow + 1) + "," + (surface.colMax + 1), sideBases.left + 1);
+  }
+  if (sideBases.right != null) {
+    sideHoleCache.set(rootRow + "," + surface.colMin, sideBases.right);
+    sideHoleCache.set((rootRow + 1) + "," + surface.colMin, sideBases.right + 1);
+  }
+  if (BRANCH_SIDE_FILL_ENABLED) {
+    const topOk = topInfo.holeBase >= 0 && topInfo.width === ringWidth + 1
+      && rootRow > surface.rowMin && topInfo.midCount === rootRow - surface.rowMin;
+    const bottomOk = bottomInfo.holeBase >= 0 && bottomInfo.width === ringWidth + 1
+      && rootRow < surface.rowMax && bottomInfo.midCount === surface.rowMax - rootRow;
+    if (topOk) {
+      const M = rootRow - surface.rowMin;
+      for (let k = 1; k <= M - 1; k += 1) {
+        sideHoleVertex(surface.rowMin + k, surface.colMax + 1);
+        sideHoleVertex(surface.rowMin + k, surface.colMin);
+      }
+    }
+    if (bottomOk) {
+      const N = surface.rowMax - rootRow;
+      for (let k = 1; k <= N - 1; k += 1) {
+        sideHoleVertex(surface.rowMax + 1 - k, surface.colMax + 1);
+        sideHoleVertex(surface.rowMax + 1 - k, surface.colMin);
+      }
+    }
+  }
+  // Read-only hole-side lookup used by the fill pass (all needed rows are cached).
+  const cachedSideHoleVertex = (r, c) => {
+    const key = r + "," + c;
+    return sideHoleCache.has(key) ? sideHoleCache.get(key) : -1;
+  };
+
   // Ring-side vertices are the sweep's row-0 ring (reused by index, no copies).
   const ringBase = vertices.length / 3;
 
@@ -14498,35 +14557,6 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   // of the closing quad, so every fill face is a quad (no triangles). The reserved 0.3
   // extra loop in the bands (midCount === segments) guarantees the 1:1 counts.
   if (BRANCH_SIDE_FILL_ENABLED) {
-    const sideHoleCache = new Map();
-    const sideHoleVertex = (r, c) => {
-      const key = r + "," + c;
-      if (sideHoleCache.has(key)) return sideHoleCache.get(key);
-      const v = boundaryAt(r, c);
-      if (!v) return -1;
-      const idx = vertices.length / 3;
-      pushBoundary(v);
-      sideHoleCache.set(key, idx);
-      return idx;
-    };
-    // Pre-seed with already-pushed corners and direct-bridge rows so we never
-    // duplicate vertices (the fill stays watertight with the bands).
-    if (topInfo.holeBase >= 0 && topInfo.width === ringWidth + 1) {
-      sideHoleCache.set(surface.rowMin + "," + (surface.colMax + 1), topInfo.holeBase + topInfo.width - 1);
-      sideHoleCache.set(surface.rowMin + "," + surface.colMin, topInfo.holeBase + 0);
-    }
-    if (bottomInfo.holeBase >= 0 && bottomInfo.width === ringWidth + 1) {
-      sideHoleCache.set((surface.rowMax + 1) + "," + (surface.colMax + 1), bottomInfo.holeBase + 0);
-      sideHoleCache.set((surface.rowMax + 1) + "," + surface.colMin, bottomInfo.holeBase + bottomInfo.width - 1);
-    }
-    if (sideBases.left != null) {
-      sideHoleCache.set(rootRow + "," + (surface.colMax + 1), sideBases.left);
-      sideHoleCache.set((rootRow + 1) + "," + (surface.colMax + 1), sideBases.left + 1);
-    }
-    if (sideBases.right != null) {
-      sideHoleCache.set(rootRow + "," + surface.colMin, sideBases.right);
-      sideHoleCache.set((rootRow + 1) + "," + surface.colMin, sideBases.right + 1);
-    }
     // Quad strip between the band's outer mid column (bandEdge: ringCorner ->
     // mids -> holeCorner) and the hole side (holePath: ringCorner -> direct bridge
     // row -> ... -> holeCorner). Both share ringCorner/holeCorner; pair interior rows
@@ -14557,7 +14587,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
         for (let j = 1; j <= M; j += 1) bandEdge.push(topInfo.midBase + (j - 1) * topInfo.width + midCol);
         bandEdge.push(holeCorner);
         const holePath = [ringCorner];
-        for (let k = M; k >= 1; k -= 1) holePath.push(sideHoleVertex(surface.rowMin + k, col));
+        for (let k = M; k >= 1; k -= 1) holePath.push(cachedSideHoleVertex(surface.rowMin + k, col));
         holePath.push(holeCorner);
         if (holePath.some((v) => v < 0)) return;
         emitFillStrip(bandEdge, holePath);
@@ -14573,7 +14603,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
         for (let j = 1; j <= N; j += 1) bandEdge.push(bottomInfo.midBase + (j - 1) * bottomInfo.width + midCol);
         bandEdge.push(holeCorner);
         const holePath = [ringCorner];
-        for (let k = N; k >= 1; k -= 1) holePath.push(sideHoleVertex(surface.rowMax + 1 - k, col));
+        for (let k = N; k >= 1; k -= 1) holePath.push(cachedSideHoleVertex(surface.rowMax + 1 - k, col));
         holePath.push(holeCorner);
         if (holePath.some((v) => v < 0)) return;
         emitFillStrip(bandEdge, holePath);
