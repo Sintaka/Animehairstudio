@@ -142,4 +142,4 @@
 - [x] 父发片 Split Geometry 时子发片退回直接生成（0.2.49）：显式守卫 parentSupportsTopologyConnect，无 gridRows/quadFaces 的父（split/hairCard）不再走桥接，子发片从根部直接扫掠；0041 桥接与 0042 回退均验证通过
 - [x] split 父发片支持子发片桥接（0.2.51，索引侧拼接）：保留两管渲染，索引把两管拼成 fused 网格（gridIndexAt 读位置 + faceToRendered 挖洞映射 + 跨缝面=粘缝），非跨缝选区桥接干净、跨缝可桥接（顶部带少量重叠边，暴力粘第一版）
 - [x] 调研：H 拖根 Region 2 倍速度左右同步（0.2.52，无代码改动）——同步链路对 split/普通父完全一致，未复现 split 特有 2 倍；两种横向映射修复均因 fused 环列非横向单调产生非连续选区而回退
-- [x] Region 同步速度可调（0.2.52）：Branch Root Region 面板新增 Sync L/R（默认0.6）与 Sync U/D（默认1.0）滑杆（浮点+滑杆+重置），updateBranchRootRegionCenter 的 du/dv 按速度缩放
+- [x] Region 同步速度可调（0.2.52）：Branch Root Region 面板新增 Sync L/R（默认0.45，0.2.53 由 0.6 调低）与 Sync U/D（默认1.0）滑杆（浮点+滑杆+重置），updateBranchRootRegionCenter 的 du/dv 按速度缩放

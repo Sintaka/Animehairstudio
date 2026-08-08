@@ -167,7 +167,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-36";
+} from "./modules/app-config.js?v=20260808-37";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -2275,10 +2275,10 @@ let branchBridgeSmoothDetail = readStoredPreference(window, BRANCH_BRIDGE_SMOOTH
   normalize: (value) => THREE.MathUtils.clamp(Math.round(Number(value) || 1), 0, 8)
 });
 // How fast the region follows the root bone while dragging it in Hierarchy mode:
-// lateral (left-right / v) defaults to 0.6x, along-length (up-down / u) to 1.0x.
+// lateral (left-right / v) defaults to 0.45x, along-length (up-down / u) to 1.0x.
 let branchRegionSyncLateral = readStoredPreference(window, BRANCH_REGION_SYNC_LATERAL_PREFERENCE_KEY, {
-  fallback: 0.6,
-  normalize: (value) => THREE.MathUtils.clamp(Number(value) || 0.6, 0.1, 2)
+  fallback: 0.45,
+  normalize: (value) => THREE.MathUtils.clamp(Number(value) || 0.45, 0.1, 2)
 });
 let branchRegionSyncVertical = readStoredPreference(window, BRANCH_REGION_SYNC_VERTICAL_PREFERENCE_KEY, {
   fallback: 1,
@@ -35225,7 +35225,7 @@ branchBridgeSmoothDetailInput.addEventListener("input", () => {
 });
 branchRegionSyncLateralInput.value = branchRegionSyncLateral;
 branchRegionSyncLateralInput.addEventListener("input", () => {
-  branchRegionSyncLateral = THREE.MathUtils.clamp(Number(branchRegionSyncLateralInput.value) || 0.6, 0.1, 2);
+  branchRegionSyncLateral = THREE.MathUtils.clamp(Number(branchRegionSyncLateralInput.value) || 0.45, 0.1, 2);
   branchRegionSyncLateralInput.value = branchRegionSyncLateral;
   writeStoredPreference(window, BRANCH_REGION_SYNC_LATERAL_PREFERENCE_KEY, branchRegionSyncLateral);
 });

@@ -131,7 +131,7 @@
 
 
 
-  - **Region 同步速度可调（0.2.52）**：新增两个「同步速度」滑杆（用既有 `setupEditableSliderControls` 自动升级为 浮点+滑杆+⟲重置，位于 Branch Root Region 面板 Show points 下方）：**Sync L/R（左右/横向，默认 0.6）** 与 **Sync U/D（上下/沿长度，默认 1.0）**，范围 0.1~2.0、localStorage 持久化（`anime-hair-studio-branch-region-sync-{lateral,vertical}`）。作用：`updateBranchRootRegionCenter` 的 du/dv 分别乘以 `branchRegionSyncVertical`/`branchRegionSyncLateral`（该函数唯一调用方是根骨骼拖动同步，不影响选区手动编辑）。默认 0.6 使左右跟随变慢（约抵消既有 ~1.6-1.9 倍横向比例），上下保持 1:1。验证：bone v 0.5→0.3 时 region v 按 0.6/1.0/0.8 分别移动 -0.12/-0.20/-0.24（精确匹配）；滑杆 type=range 且自动带数值框+重置按钮。
+  - **Region 同步速度可调（0.2.52）**：新增两个「同步速度」滑杆（用既有 `setupEditableSliderControls` 自动升级为 浮点+滑杆+⟲重置，位于 Branch Root Region 面板 Show points 下方）：**Sync L/R（左右/横向，默认 0.45）** 与 **Sync U/D（上下/沿长度，默认 1.0）**，范围 0.1~2.0、localStorage 持久化（`anime-hair-studio-branch-region-sync-{lateral,vertical}`）。作用：`updateBranchRootRegionCenter` 的 du/dv 分别乘以 `branchRegionSyncVertical`/`branchRegionSyncLateral`（该函数唯一调用方是根骨骼拖动同步，不影响选区手动编辑）。左右默认 0.45（0.2.53 由 0.6 调低）、上下默认 1.0：0.45 使左右跟随明显变慢（更稳地抵消既有 ~1.6-1.9 倍横向比例），上下保持 1:1。验证：bone v 0.5→0.3 时 region v 按 0.6/1.0/0.8 分别移动 -0.12/-0.20/-0.24（精确匹配）；滑杆 type=range 且自动带数值框+重置按钮。
 
   - **调研：H 模式拖根时 Region 选区「2 倍速度左右同步」排查（0.2.52，无代码改动）**：
     1) 现象：开着 Hierarchy 移动子发片根部时，Region 选区看起来以约 2 倍速度左右同步、容易撞到边界；怀疑是 split 父发片「两根管」导致。
