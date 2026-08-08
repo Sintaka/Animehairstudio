@@ -121,3 +121,4 @@
 - [x] region 中心橙色控制点（0.2.39）：面板橙色圆点可拖动整体平移；3D 橙色 marker 定位
 - [x] 恢复 branch region 面板「Show points on mesh」开关并默认打开（0.2.39）
 - [x] 根骨骼随用户 twist 旋转（0.2.39）：种子含完整 pointTwists[0]，row0 直接用种子 frame，根环 1:1 跟随
+- [x] 左右移动根骨骼后点别处蹦回主发片中心修复（0.2.40）：captureBranchLocalState 保留根骨骼横向偏移 across（branchLocalPoints[0].x），不再置零

@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-23";
+} from "./modules/app-config.js?v=20260808-24";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -21605,7 +21605,12 @@ function captureBranchLocalState(lock) {
   const parent = locks.find((item) => item.id === lock?.branchParentId);
   if (!parent || !lock?.points?.length) return false;
   const frame = branchParentFrame(parent, lock.branchParentParameter);
-  lock.points[0].copy(frame.point);
+  // Preserve the root's lateral (across-width) offset instead of snapping it back to
+  // the parent guide-line center: capture runs at drag end (commitClumpMemberRestState)
+  // and on parent rebuilds, and zeroing it makes the root pop to the center on the next
+  // rebuild (click elsewhere / select another strand), distorting the child strand.
+  const across = new THREE.Vector3().subVectors(lock.points[0], frame.point).dot(frame.x);
+  lock.points[0].copy(frame.point).addScaledVector(frame.x, across);
   // Preserve the child's actual surface normals (the sweep frames read them) so
   // updateBranchChildren round-trips them unchanged when the parent frame is the
   // same; recomputed stable normals would override them and swing the root sweep.
@@ -21614,7 +21619,7 @@ function captureBranchLocalState(lock) {
     : stableBranchBaseNormals(lock);
   lock.branchLocalPoints = lock.points.map((point, index) => (
     index === 0
-      ? new THREE.Vector3()
+      ? new THREE.Vector3(across, 0, 0)
       : branchLocalVector(point.clone().sub(frame.point), frame)
   ));
   lock.branchLocalSurfaceNormals = childNormals.map((normal) => (
