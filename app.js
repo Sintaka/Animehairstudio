@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-21";
+} from "./modules/app-config.js?v=20260808-22";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -11987,8 +11987,12 @@ function applyBranchRigidRootMove(lock) {
 function syncBranchRootHandleFrame(lock) {
   const handle = lock?.curveObjects?.handles?.[0];
   if (!handle || !lock?.branchParentId) return;
-  const frame = strandControlPointFrame(lock, 0);
+  // Gizmo = tube-model baseline + the user's root twist (kept across hot-updates),
+  // and the same orientation is applied to the root bone so it follows the gizmo.
+  const frame = branchRootGizmoFrame(lock);
   handle.quaternion.copy(frame.quaternion);
+  if (lock.pointSurfaceNormals) lock.pointSurfaceNormals[0] = frame.z.clone();
+  lock.rootSurfaceNormal = frame.z.clone();
 }
 
 function updateGroupLatticeBaseFromHandleEdit(lock) {
@@ -25504,6 +25508,28 @@ function strandControlPointFrame(lock, index) {
   return curveFrameAtPoint(lock, index);
 }
 
+// Root gizmo frame for a branch child: the tube-model baseline plus the child's
+// authored root point twist (rotate tool writes pointTwists[0]), so the gizmo
+// reflects the user's hand rotation instead of always showing the untwisted
+// baseline. This is also the orientation applied to the root bone.
+function branchRootGizmoFrame(lock) {
+  const base = strandControlPointFrame(lock, 0);
+  const twist = controlPointRotationAt(lock, 0);
+  const z = base.z.clone().applyAxisAngle(base.y, twist).normalize();
+  const x = new THREE.Vector3().crossVectors(base.y, z).normalize();
+  const zz = new THREE.Vector3().crossVectors(x, base.y).normalize();
+  return {
+    x,
+    y: base.y.clone(),
+    z: zz,
+    quaternion: new THREE.Quaternion().setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(x, base.y, zz)
+    ),
+    point: base.point,
+    scale: base.scale
+  };
+}
+
 function strandControlPointHitFromEvent(event, lock = getSelectedLock()) {
   if (lock?.locked || !lock?.curveObjects?.group.visible) return null;
   const rect = renderer.domElement.getBoundingClientRect();
@@ -25631,7 +25657,8 @@ function createCurveObjects(lock) {
 
   const handles = lock.points.map((point, index) => {
     const pointScale = lock.pointScales?.[index] || { x: 1, z: 1 };
-    const frame = lock.geometryType === "surface" ? null : strandControlPointFrame(lock, index);
+    const frame = lock.geometryType === "surface" ? null
+      : (lock.branchParentId && index === 0 ? branchRootGizmoFrame(lock) : strandControlPointFrame(lock, index));
     const handle = new THREE.Mesh(
       new THREE.SphereGeometry(
         0.052 * STRAND_CONTROL_POINT_RADIUS_SCALE,
@@ -25642,6 +25669,11 @@ function createCurveObjects(lock) {
     );
     handle.position.copy(point);
     if (frame) handle.quaternion.copy(frame.quaternion);
+    // Apply the gizmo orientation to the root bone's up so it follows the
+    // user-adjustable gizmo (move, rotate, and rebuilds all go through here).
+    if (lock.branchParentId && index === 0 && frame && lock.pointSurfaceNormals) {
+      lock.pointSurfaceNormals[0] = frame.z.clone();
+    }
     handle.scale.set(
       ["surface", "curve-surface"].includes(lock.geometryType) ? 1 : pointScale.x || 1,
       1,
@@ -26020,7 +26052,8 @@ function updateCurveObjects(lock, options = {}) {
     const controllerIndex = activeCurveSurfaceControllerIndex(lock);
     handle.visible = lock.geometryType !== "curve-surface"
       || (controllerIndex !== null && Math.floor(index / lock.curveSurfaceRows) === controllerIndex);
-    const frame = lock.geometryType === "surface" ? null : strandControlPointFrame(lock, index);
+    const frame = lock.geometryType === "surface" ? null
+      : (lock.branchParentId && index === 0 ? branchRootGizmoFrame(lock) : strandControlPointFrame(lock, index));
     const pointScale = lock.pointScales?.[index] || { x: lock.pointWidths[index] || 1, z: lock.pointWidths[index] || 1 };
     const preserveDraggedObjectRotation = Boolean(
       transformDragging
@@ -26033,6 +26066,10 @@ function updateCurveObjects(lock, options = {}) {
     handle.position.copy(lock.points[index]);
     if (frame) {
       if (!preserveDraggedObjectRotation) handle.quaternion.copy(frame.quaternion);
+      // Keep the root bone's up following the (user-adjustable) gizmo.
+      if (lock.branchParentId && index === 0 && lock.pointSurfaceNormals) {
+        lock.pointSurfaceNormals[0] = frame.z.clone();
+      }
     } else {
       handle.quaternion.identity();
     }
@@ -26074,7 +26111,8 @@ function updateCurveObjects(lock, options = {}) {
       arrow.visible = false;
       return;
     }
-    const frame = lock.geometryType === "surface" ? null : strandControlPointFrame(lock, index);
+    const frame = lock.geometryType === "surface" ? null
+      : (lock.branchParentId && index === 0 ? branchRootGizmoFrame(lock) : strandControlPointFrame(lock, index));
     if (!frame) {
       arrow.visible = false;
       return;
