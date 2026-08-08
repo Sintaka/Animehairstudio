@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-22";
+} from "./modules/app-config.js?v=20260808-23";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -13227,6 +13227,7 @@ function strandGeometryFrameAt(
   desiredZ.normalize();
 
   let z = desiredZ;
+  let untwistedX = null;
   if (previousFrame) {
     // Transport the complete frame around the bend. Projection alone can
     // suddenly roll the profile when a curve passes through an inflection.
@@ -13235,14 +13236,20 @@ function strandGeometryFrameAt(
     if (transportedZ.lengthSq() >= 0.0001) {
       transportedZ.normalize();
       if (lock.branchParentId) {
-        // Branch child: the profile up is derived from the parent cylinder
-        // (seed = cross(bitangent, normal) = -parent tangent) and only parallel-
-        // transported along the child. The child's own surface normals are
-        // degenerate (near-parallel to its tangent), so rolling toward them (or an
-        // authored twist on top) spins/flips the up and leaves a persistent
-        // tangent-direction offset. Pure transport keeps the up aligned with the
-        // bone and following the child without any roll.
-        z = transportedZ;
+        // Branch child: the profile up is anchored by the parent cylinder's
+        // bitangent (frame.x, the transverse component), transported along the
+        // child: up = cross(transported bitangent, child tangent), then the full
+        // authored twist is applied around the child tangent (the user controls
+        // both the tangent and the twist). The child's own surface normals are
+        // degenerate (near-parallel to its tangent), so they are never used.
+        const refX = (previousFrame.untwistedX || previousFrame.x)
+          .clone().applyQuaternion(transport).projectOnPlane(tangent);
+        if (refX.lengthSq() >= 0.0001) {
+          refX.normalize();
+          untwistedX = refX;
+          z = new THREE.Vector3().crossVectors(refX, tangent).normalize();
+          z.applyAxisAngle(tangent, twist).normalize();
+        }
       } else {
         if (desiredZ.dot(transportedZ) < 0) desiredZ.negate();
         const cross = new THREE.Vector3().crossVectors(transportedZ, desiredZ);
@@ -13261,6 +13268,7 @@ function strandGeometryFrameAt(
     x,
     y: tangent,
     z,
+    untwistedX: untwistedX || x.clone(),
     quaternion: new THREE.Quaternion().setFromRotationMatrix(matrix),
     scale: { x: sampleScale(lock.pointScales, t, "x"), z: sampleScale(lock.pointScales, t, "z") }
   };
@@ -14558,15 +14566,19 @@ function createBranchChildGeometry(lock) {
     try {
       const seedTangent = curve.getTangent(SWEEP_START_T).normalize();
       const parentFrame = branchParentFrame(branchParentForSweep, lock.branchParentParameter);
-      const up = parentFrame.y.clone().negate().projectOnPlane(seedTangent);
-      if (up.lengthSq() >= 0.0001) {
-        up.normalize();
-        const x = new THREE.Vector3().crossVectors(seedTangent, up).normalize();
+      // Anchor the profile with the parent cylinder's bitangent (frame.x, the
+      // transverse component): up = cross(bitangent, child tangent). The authored
+      // twist is applied per sweep frame on top.
+      const x = parentFrame.x.clone().projectOnPlane(seedTangent);
+      if (x.lengthSq() >= 0.0001) {
+        x.normalize();
+        const up = new THREE.Vector3().crossVectors(x, seedTangent).normalize();
         const matrix = new THREE.Matrix4().makeBasis(x, seedTangent, up);
         previousFrame = {
           x,
           y: seedTangent.clone(),
           z: up,
+          untwistedX: x.clone(),
           quaternion: new THREE.Quaternion().setFromRotationMatrix(matrix),
           point: curve.getPoint(SWEEP_START_T),
           scale: { x: 1, z: 1 }

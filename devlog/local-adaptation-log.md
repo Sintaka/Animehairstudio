@@ -116,3 +116,4 @@
 - [x] 分支根手柄/gizmo frame 稳定化：strandControlPointFrame 用父切线投影做 up，绿轴不再 120° 突跳
 - [x] H 模式拖根 gizmo 热更新：syncBranchRootHandleFrame 让手柄/gizmo 跟随骨骼与扫掠，拖动中不再分离
 - [x] 扫掠 up 圆柱体方案：cross(bitangent, normal) 纯平行传输，分支子级不向退化法线 roll、不施加 authored twist（修 120° 偏移与乱转）
+- [x] 扫掠 up = cross(父副切线, 子切线) + 完整 authored twist：保留 twist 且不乱转（弃用退化法线）
