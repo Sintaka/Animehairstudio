@@ -131,6 +131,12 @@
 
 
 
+  - **调研：H 模式拖根时 Region 选区「2 倍速度左右同步」排查（0.2.52，无代码改动）**：
+    1) 现象：开着 Hierarchy 移动子发片根部时，Region 选区看起来以约 2 倍速度左右同步、容易撞到边界；怀疑是 split 父发片「两根管」导致。
+    2) 排查结论：Region 跟随链路（`enforceBranchRootPosition` → `v=0.5-across/width` → `updateBranchRootRegionCenter` → `branchRootRegionSurface.toCol` 弧形映射）对 split 与普通父发片**完全一致**——同一 v 公式、同一 parent.width、同一弧形 toCol、gizmo 手柄位置与骨骼重合（dist=0）。实测（0041 普通父 / 0042 split 父，SL3 子发片，根横向全行程 ±halfW）：两种父发片的 Region 世界位移量基本相同（centerZ 均横跨父发片横向全宽，约 -0.83↔-0.57），均在满行程才到边，**未复现 split 特有的 2 倍/半程撞边**。
+    3) 尝试过的修复（均已回退）：把 split 的 v→列改为按「世界 frame.x 横向」或「fused 环 profile.x 横向」直接映射（profileX 曾附加到 splitFusedGrid）。两者在**偏中心选区（v≈0.25）都会产生非连续列区间**（colMin 13/colMax 23），因为 fused 环的列序不是横向单调（环会绕回），会挖错区域 → 回退到弧形映射（连续、桥接正常）。
+    4) 结论：感知到的「2 倍」更可能是既有的横向映射特性（普通父发片同样存在），而非 split 两管引入；正确修复需要为 split 做「横向→连续弧形」映射（v 的两条横向边界对应到环上的一段连续前弧），工作量大且风险高，暂不改动以保证拓扑与单发丝兼容。若需继续，请提供可复现的具体操作（.ahs + 拖动方向/步数）以便定位。
+
 - **Phase 2.17 子发片桥接实现详解（已验收，分支 v0.1.4-Side-Topology）**：
   - **整体结构（buildBranchBridgeGeometry）**：子发片 root 环（sweep row0，方形 2:1 截面）通过「底部带 + 侧面直接桥接 + 顶部带 + 侧面 4 边填充」与主发片挖洞边界封闭成水密管。底部/顶部带连接环的底/顶弧到洞的底/顶边（列数 = 环宽），侧面直接桥接把环的左/右 1 边接到洞侧 root 行（rootRow..rootRow+1）。
   - **侧面填充索引规律（顶/底分开、左右各执行一次）**：当某条带为间接桥接（顶部 rootRow > rowMin、底部 rootRow < rowMax，即至少一条侧边留空）时该侧启用填充。从侧面直接桥接出发，主发片孔洞的一条边 ↔ 顶/底带的一条边 1:1 对应，一直索引到洞角；剩余一条带边按既有拓扑规律作为收尾边 → 全部 4 边面、无三角。带的外侧 mid 列（bandEdge：环角 → mid_1..mid_M → 洞角）与洞侧（holePath：环角 → vTop(=rootRow) → ... → 洞角）等长（都 M+2），quad = [bandEdge[i], bandEdge[i+1], holePath[i+2], holePath[i+1]]，i=0..M-1。

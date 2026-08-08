@@ -141,3 +141,4 @@
 - [x] main 合并（0.2.48）：移除三个 Local dev 选项（Local Save / Local Export OBJ/USDA），统一用快速保存/快速导出；吸收马尾/复合发丝预设；子发片桥接与 main 几何并存（createHairGeometry 按 branchRootRegion 分流）；sculpt 保留本地笔刷 + main preserve-tips；材质双面条件合并
 - [x] 父发片 Split Geometry 时子发片退回直接生成（0.2.49）：显式守卫 parentSupportsTopologyConnect，无 gridRows/quadFaces 的父（split/hairCard）不再走桥接，子发片从根部直接扫掠；0041 桥接与 0042 回退均验证通过
 - [x] split 父发片支持子发片桥接（0.2.51，索引侧拼接）：保留两管渲染，索引把两管拼成 fused 网格（gridIndexAt 读位置 + faceToRendered 挖洞映射 + 跨缝面=粘缝），非跨缝选区桥接干净、跨缝可桥接（顶部带少量重叠边，暴力粘第一版）
+- [x] 调研：H 拖根 Region 2 倍速度左右同步（0.2.52，无代码改动）——同步链路对 split/普通父完全一致，未复现 split 特有 2 倍；两种横向映射修复均因 fused 环列非横向单调产生非连续选区而回退
