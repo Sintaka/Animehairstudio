@@ -107,3 +107,4 @@
 - [x] 根骨骼移动手感：H 开启拖根时子骨骼刚体跟随 + 0.5 曲率摆动（记录移动前相对朝向/世界形状，相对旋转 0.5 blend）
 - [x] 根骨骼左右拖动也摆动：branchSurfaceFrameQuat 用父发片 width/depth 椭圆截面算横向法线倾角，与 u 曲率合成相对旋转后 0.5 blend
 - [x] 根骨骼切线方向平滑滑动：branchParentFrame 改连续 frame（curveFrameAt），保留横向（across）吸附，上下拖根不再吸附到控制点层级/跳变
+- [x] 切换 H 不再跳变：恢复存档后按当前 frame 重新捕获分支子级 branchLocalPoints，避免与旧 frame 不一致导致重建闪动

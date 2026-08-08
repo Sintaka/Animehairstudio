@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-14";
+} from "./modules/app-config.js?v=20260808-15";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -18562,6 +18562,11 @@ function restoreSceneCollectionsForStateRestore(restorePlan, {
     applyBranchRootRegionCarving(parent, parent.mesh.geometry);
   });
   locks.filter((lock) => lock.branchParentId).forEach((child) => applyBranchRootOffset(child));
+  // Re-capture branch local state from the restored guide points so branchLocalPoints
+  // matches the current parent frame. Stored branchLocalPoints can be stale relative
+  // to a changed frame (e.g. the continuous branchParentFrame), which made the first
+  // rebuild (e.g. toggling Hierarchy editing) re-derive/snap the child elsewhere.
+  locks.filter((lock) => lock.branchParentId).forEach((child) => captureBranchLocalState(child));
   selectionSets.push(...normalizeSelectionSets(
     restorePlan.scene.selectionSets,
     locks.map((lock) => lock.id)
