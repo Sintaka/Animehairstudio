@@ -125,3 +125,4 @@
 - [x] region 橙色中心改为稳定锚点（0.2.41）：单边编辑不再移动中心/桥接；拖中心平移、Ctrl+拖中心镜像缩放；面板加提示小字
 - [x] gizmo 中心万向拾取恢复全尺寸（0.2.41）：translate XYZ 中心 picker 不再 deflate，可点半径 ±8px→±20px
 - [x] 已选中骨骼后点击 gizmo 不再被附近骨骼抢选（0.2.42）：pointerHitsTransformGizmo 为真即提前 return，点 gizmo 中心/附近不抢选到相邻骨骼
+- [x] 子发片封面侧面 4 边面填充（0.2.43，v0.1.4-Side-Topology 重写）：间接桥接时从直接桥接向洞顶/底 1:1 填 quad 条带（利用 0.3 预留段无三角），共享边一致性传播统一 winding；无 smooth

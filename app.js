@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-26";
+} from "./modules/app-config.js?v=20260808-27";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -14188,9 +14188,9 @@ function createConnectedCurveCardGeometry(lock) {
 // parent's authored normal/tangent by grid index; ring-side vertices reuse the sweep's
 // row-0 ring by index (no copies), so the bridge is watertight with the sweep.
 // Full bridge: bottom + top bands (banded, root-relative segments) + side direct
-// bridges. The triangulated side fill stays disabled until its topology is reworked.
+// bridges + quad side fill that closes the side gaps above/below the direct bridge.
 const BRANCH_BRIDGE_DIAGNOSTIC = false;
-const BRANCH_SIDE_FILL_ENABLED = false;
+const BRANCH_SIDE_FILL_ENABLED = true;
 function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom) {
   const positionAttr = parentGeom?.getAttribute?.("position");
   const normalAttr = parentGeom?.getAttribute?.("normal");
@@ -14440,20 +14440,6 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     topInfo.outward = outward;
   }
 
-  // Side fill columns: hole side vertices S[1..H-2] (rows rowMin+1..rowMax-1).
-  const sideFillBases = { left: -1, right: -1 };
-  const sideFillCount = Math.max(0, holeHeight - 2);
-  if (BRANCH_SIDE_FILL_ENABLED) {
-    sideSpecs.forEach((spec) => {
-      if (sideBases[spec.name] == null) return;
-      sideFillBases[spec.name] = vertices.length / 3;
-      for (let k = 0; k < sideFillCount; k += 1) {
-        const v = boundaryAt(surface.rowMin + 1 + k, spec.col);
-        if (!v) return;
-        pushBoundary(v);
-      }
-    });
-  }
 
   // Ring-side vertices are the sweep's row-0 ring (reused by index, no copies).
   const ringBase = vertices.length / 3;
@@ -14502,30 +14488,178 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     }
   }
 
-  // Side fill: triangulate the polygon (ring corner, mid corners, hole corner, hole side
-  // S[1..H-1]) so it stays watertight for any hole height.
-  const sideFillSpecs = [
-    { name: "left", col: surface.colMax + 1, ringTop: 2, corner: -1 },
-    { name: "right", col: surface.colMin, ringTop: 0, corner: 0 }
-  ];
+  // Side fill: close the 4-sided gaps between the side direct bridges (at the child
+  // root level) and the hole's top/bottom edges with quads. Top and bottom are
+  // handled independently and each side (left/right) runs once: a fill fires when
+  // that band is indirect (rootRow !== rowMin for the top, rootRow !== rowMax for the
+  // bottom - at least one side edge left empty). Starting from the side's direct-fill
+  // region (the direct bridge), one parent-hole edge pairs 1:1 with one top-band
+  // edge until the hole corner; the one remaining band edge is simply used as a side
+  // of the closing quad, so every fill face is a quad (no triangles). The reserved 0.3
+  // extra loop in the bands (midCount === segments) guarantees the 1:1 counts.
   if (BRANCH_SIDE_FILL_ENABLED) {
-  sideFillSpecs.forEach((spec) => {
-    if (topInfo.holeBase < 0 || sideBases[spec.name] == null) return;
-    spec.corner = topInfo.width - 1; // left corner is the last top-band column
-    const poly = [ringBase + spec.ringTop];
-    for (let j = 1; j <= topInfo.midCount; j += 1) poly.push(topInfo.midBase + (j - 1) * topInfo.width + spec.corner);
-    poly.push(topInfo.holeBase + spec.corner);
-    for (let k = 0; k < sideFillCount; k += 1) poly.push(sideFillBases[spec.name] + k);
-    poly.push(sideBases[spec.name]);
-    const points = poly.map((index) => new THREE.Vector3(vertices[index * 3], vertices[index * 3 + 1], vertices[index * 3 + 2]));
-    const triIndices = triangulatePolygon3D(points, topInfo.outward || new THREE.Vector3(0, 0, 1));
-    triIndices.forEach(([a, b, c]) => {
-      const tr = [poly[a], poly[b], poly[c]];
-      triangles.push(tr);
-      indices.push(tr[0], tr[1], tr[2]);
-    });
-  });
+    const sideHoleCache = new Map();
+    const sideHoleVertex = (r, c) => {
+      const key = r + "," + c;
+      if (sideHoleCache.has(key)) return sideHoleCache.get(key);
+      const v = boundaryAt(r, c);
+      if (!v) return -1;
+      const idx = vertices.length / 3;
+      pushBoundary(v);
+      sideHoleCache.set(key, idx);
+      return idx;
+    };
+    // Pre-seed with already-pushed corners and direct-bridge rows so we never
+    // duplicate vertices (the fill stays watertight with the bands).
+    if (topInfo.holeBase >= 0 && topInfo.width === ringWidth + 1) {
+      sideHoleCache.set(surface.rowMin + "," + (surface.colMax + 1), topInfo.holeBase + topInfo.width - 1);
+      sideHoleCache.set(surface.rowMin + "," + surface.colMin, topInfo.holeBase + 0);
+    }
+    if (bottomInfo.holeBase >= 0 && bottomInfo.width === ringWidth + 1) {
+      sideHoleCache.set((surface.rowMax + 1) + "," + (surface.colMax + 1), bottomInfo.holeBase + 0);
+      sideHoleCache.set((surface.rowMax + 1) + "," + surface.colMin, bottomInfo.holeBase + bottomInfo.width - 1);
+    }
+    if (sideBases.left != null) {
+      sideHoleCache.set(rootRow + "," + (surface.colMax + 1), sideBases.left);
+      sideHoleCache.set((rootRow + 1) + "," + (surface.colMax + 1), sideBases.left + 1);
+    }
+    if (sideBases.right != null) {
+      sideHoleCache.set(rootRow + "," + surface.colMin, sideBases.right);
+      sideHoleCache.set((rootRow + 1) + "," + surface.colMin, sideBases.right + 1);
+    }
+    // Quad strip between the band's outer mid column (bandEdge: ringCorner ->
+    // mids -> holeCorner) and the hole side (holePath: ringCorner -> direct bridge
+    // row -> ... -> holeCorner). Both share ringCorner/holeCorner; pair interior rows
+    // 1:1 (one hole edge per band edge) and let the remaining band edge close the
+    // last quad, so all faces are quads.
+    const fillQuadStart = quads.length;
+    const emitFillStrip = (bandEdge, holePath) => {
+      const count = bandEdge.length - 2;
+      if (count < 1 || holePath.length !== bandEdge.length) return;
+      for (let i = 0; i < count; i += 1) {
+        const q = [bandEdge[i], bandEdge[i + 1], holePath[i + 2], holePath[i + 1]];
+        quads.push(q);
+        indices.push(q[0], q[1], q[3], q[3], q[1], q[2]);
+      }
+    };
+    const fillSide = (side) => {
+      const col = side.col;
+      const isLeft = side.name === "left";
+      if (sideBases[side.name] == null) return;
+      // ---- Top gap (only when the top band is indirect) ----
+      if (topInfo.holeBase >= 0 && topInfo.width === ringWidth + 1
+        && rootRow > surface.rowMin && topInfo.midCount === rootRow - surface.rowMin) {
+        const M = rootRow - surface.rowMin;
+        const midCol = isLeft ? topInfo.width - 1 : 0;
+        const ringCorner = isLeft ? ringBase + ringWidth : ringBase + 0;
+        const holeCorner = topInfo.holeBase + midCol;
+        const bandEdge = [ringCorner];
+        for (let j = 1; j <= M; j += 1) bandEdge.push(topInfo.midBase + (j - 1) * topInfo.width + midCol);
+        bandEdge.push(holeCorner);
+        const holePath = [ringCorner];
+        for (let k = M; k >= 1; k -= 1) holePath.push(sideHoleVertex(surface.rowMin + k, col));
+        holePath.push(holeCorner);
+        if (holePath.some((v) => v < 0)) return;
+        emitFillStrip(bandEdge, holePath);
+      }
+      // ---- Bottom gap (only when the bottom band is indirect) ----
+      if (bottomInfo.holeBase >= 0 && bottomInfo.width === ringWidth + 1
+        && rootRow < surface.rowMax && bottomInfo.midCount === surface.rowMax - rootRow) {
+        const N = surface.rowMax - rootRow;
+        const midCol = isLeft ? 0 : bottomInfo.width - 1;
+        const ringCorner = isLeft ? ringBase + ringWidth + 1 : ringBase + (2 * ringWidth + 1);
+        const holeCorner = bottomInfo.holeBase + midCol;
+        const bandEdge = [ringCorner];
+        for (let j = 1; j <= N; j += 1) bandEdge.push(bottomInfo.midBase + (j - 1) * bottomInfo.width + midCol);
+        bandEdge.push(holeCorner);
+        const holePath = [ringCorner];
+        for (let k = N; k >= 1; k -= 1) holePath.push(sideHoleVertex(surface.rowMax + 1 - k, col));
+        holePath.push(holeCorner);
+        if (holePath.some((v) => v < 0)) return;
+        emitFillStrip(bandEdge, holePath);
+      }
+    };
+    [{ name: "left", col: surface.colMax + 1 }, { name: "right", col: surface.colMin }].forEach(fillSide);
+    // Orient the fill faces consistently with the rest of the bridge: the direct
+    // bridge quads are the established correct reference, so propagate winding from
+    // them across shared edges (adjacent faces must traverse a shared edge in opposite
+    // directions). This handles multi-row strips whose inner quads do not touch the
+    // ring corner directly.
+    if (quads.length > fillQuadStart) {
+      const directBridgeQuadIndex = (base, ringTopIdx, ringBottomIdx) => {
+        if (base == null) return -1;
+        const want = new Set([base, base + 1, ringTopIdx, ringBottomIdx]);
+        for (let qi = 0; qi < fillQuadStart; qi += 1) {
+          const q = quads[qi];
+          if (q.length === 4 && q.every((v) => want.has(v)) && want.size === 4) return qi;
+        }
+        return -1;
+      };
+      const roots = [
+        directBridgeQuadIndex(sideBases.left, ringBase + ringWidth, ringBase + ringWidth + 1),
+        directBridgeQuadIndex(sideBases.right, ringBase + 0, ringBase + (2 * ringWidth + 1))
+      ].filter((qi) => qi >= 0);
+      if (roots.length) {
+        const edgeToQuads = new Map();
+        quads.forEach((q, qi) => {
+          for (let e = 0; e < 4; e += 1) {
+            const a = q[e];
+            const b = q[(e + 1) % 4];
+            const key = a < b ? a + "," + b : b + "," + a;
+            if (!edgeToQuads.has(key)) edgeToQuads.set(key, []);
+            edgeToQuads.get(key).push(qi);
+          }
+        });
+        const edgeDirection = (q, a, b) => {
+          for (let e = 0; e < 4; e += 1) {
+            if (q[e] === a && q[(e + 1) % 4] === b) return 1;
+            if (q[e] === b && q[(e + 1) % 4] === a) return -1;
+          }
+          return 0;
+        };
+        const sign = new Map();
+        roots.forEach((qi) => sign.set(qi, 1));
+        const queue = [...roots];
+        while (queue.length) {
+          const qi = queue.shift();
+          const q = quads[qi];
+          const si = sign.get(qi);
+          for (let e = 0; e < 4; e += 1) {
+            const a = q[e];
+            const b = q[(e + 1) % 4];
+            const key = a < b ? a + "," + b : b + "," + a;
+            (edgeToQuads.get(key) || []).forEach((nj) => {
+              if (nj === qi || sign.has(nj)) return;
+              const da = edgeDirection(quads[nj], a, b);
+              // If the neighbour traverses the edge the same way, it must be reversed.
+              sign.set(nj, si * (da === 1 ? -1 : 1));
+              queue.push(nj);
+            });
+          }
+        }
+        for (let qi = fillQuadStart; qi < quads.length; qi += 1) {
+          if (sign.get(qi) !== 1) {
+            const q = quads[qi];
+            quads[qi] = [q[3], q[2], q[1], q[0]];
+          }
+        }
+        // Rebuild indices for the fill quads (they are the last ones pushed).
+        for (let qi = fillQuadStart; qi < quads.length; qi += 1) {
+          const q = quads[qi];
+          const base = qi * 6;
+          indices[base] = q[0]; indices[base + 1] = q[1]; indices[base + 2] = q[3];
+          indices[base + 3] = q[3]; indices[base + 4] = q[1]; indices[base + 5] = q[2];
+        }
+      }
+    }
   }
+
+
+
+
+
+
+
 
   return { vertices, normals, tangents, uvs, colors, indices, quads, triangles, ringBase, boundaryParentIndices };
 }
