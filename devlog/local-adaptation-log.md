@@ -139,3 +139,4 @@
 - [x] Branch Bridge 滑杆标准形式（0.2.47）：Strength/Detail 改用 range + 数值框 + 重置按钮（setupEditableSliderControls 自动升级），事件监听 input，重置回到默认并即时重建
 - [x] Region 面板中键平移（0.2.47）：任意导航预设下按住中键拖拽即可平移查看（与 Alt+中键一致）
 - [x] main 合并（0.2.48）：移除三个 Local dev 选项（Local Save / Local Export OBJ/USDA），统一用快速保存/快速导出；吸收马尾/复合发丝预设；子发片桥接与 main 几何并存（createHairGeometry 按 branchRootRegion 分流）；sculpt 保留本地笔刷 + main preserve-tips；材质双面条件合并
+- [x] 父发片 Split Geometry 时子发片退回直接生成（0.2.49）：显式守卫 parentSupportsTopologyConnect，无 gridRows/quadFaces 的父（split/hairCard）不再走桥接，子发片从根部直接扫掠；0041 桥接与 0042 回退均验证通过

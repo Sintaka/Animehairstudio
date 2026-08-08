@@ -115,6 +115,8 @@
     4) **sculpt 笔刷融合**：Move/Smooth 采用 main 的 preserve-tips 重构（`sculptBrushPreserveTipsByTool`、`#sculptPreserveTips` 重命名），本地新增的 Slide/Scale/Push/Orient 笔刷分支保留（`activeBrushSizeInput` 等仍走 `sculptBrushToolActive()` 超集）；Scale Mode 行保留。
     5) **材质双面判定**：合并为 `lock.branchRootRegion || strandUsesDoubleSidedMaterial(lock)`（覆盖子发片 + braid/poly/hairCard + compound），4 处调用点统一。验证（Sussurro_v1_0041，SL2/SL3）：子发片桥接 66 quads / 0 NaN（与基线一致）；普通发丝 `createBaseHairGeometry` 0 NaN；马尾预设存在（12 strands）；preserve-tips 按工具生效；App 启动 0 页面错误。
 
+  - **父发片 Split Geometry 时子发片退回直接生成（0.2.49）**：父发片开启 Split Geometry 后其几何由 `createSplitStrandGeometry` 生成，不输出 `gridRows/gridColumns/quadFaces`——`applyBranchRootRegionCarving` 因无 quadFaces 直接跳过（不再挖洞），`branchRootRegionSurface` 返回 null，子发片桥接无法构建。这是正确行为：父发片未使用拓扑衔接时，子发片应退回原版直接生成模式（从根部扫掠）。为使该设计显式化，`createHairGeometry` 增加 `parentSupportsTopologyConnect` 守卫（父几何需有 gridRows>=2 且 quadFaces 非空才走 `createBranchChildGeometry`），否则直接走 `createBaseHairGeometry` 从根部扫掠。验证（Sussurro_v1_0041 正常父 / 0042 Split 父，SL2/SL3）：0041 子发片桥接 bridgeVertexCount=24 / 0 NaN；0042 子发片退回普通发丝（167 verts / gridRows 15 / 0 NaN），父无挖洞、0 页面错误；region 面板/3D 标记等辅助路径对 null surface 均安全。
+
 - **Phase 2.17 子发片桥接实现详解（已验收，分支 v0.1.4-Side-Topology）**：
   - **整体结构（buildBranchBridgeGeometry）**：子发片 root 环（sweep row0，方形 2:1 截面）通过「底部带 + 侧面直接桥接 + 顶部带 + 侧面 4 边填充」与主发片挖洞边界封闭成水密管。底部/顶部带连接环的底/顶弧到洞的底/顶边（列数 = 环宽），侧面直接桥接把环的左/右 1 边接到洞侧 root 行（rootRow..rootRow+1）。
   - **侧面填充索引规律（顶/底分开、左右各执行一次）**：当某条带为间接桥接（顶部 rootRow > rowMin、底部 rootRow < rowMax，即至少一条侧边留空）时该侧启用填充。从侧面直接桥接出发，主发片孔洞的一条边 ↔ 顶/底带的一条边 1:1 对应，一直索引到洞角；剩余一条带边按既有拓扑规律作为收尾边 → 全部 4 边面、无三角。带的外侧 mid 列（bandEdge：环角 → mid_1..mid_M → 洞角）与洞侧（holePath：环角 → vTop(=rootRow) → ... → 洞角）等长（都 M+2），quad = [bandEdge[i], bandEdge[i+1], holePath[i+2], holePath[i+1]]，i=0..M-1。

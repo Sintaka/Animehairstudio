@@ -167,7 +167,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-32";
+} from "./modules/app-config.js?v=20260808-33";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -15509,8 +15509,21 @@ function proceduralBranchGeometryLock(parent, template, index) {
 
 function createHairGeometry(lock) {
   if (lock.branchRootRegion) {
-    const branchChildGeometry = createBranchChildGeometry(lock);
-    if (branchChildGeometry) return branchChildGeometry;
+    const parent = locks.find((item) => item.id === lock?.branchParentId);
+    const parentGeometry = parent?.mesh?.geometry;
+    // Topology connect needs a carveable parent grid (normal strand sweep exposing
+    // quadFaces/gridRows). Split geometry / hair-card parents have no grid to carve,
+    // so the child falls back to direct generation: sweep straight from its root.
+    const parentSupportsTopologyConnect = Boolean(
+      parentGeometry
+      && Number(parentGeometry.userData?.gridRows || 0) >= 2
+      && Array.isArray(parentGeometry.userData?.quadFaces)
+      && parentGeometry.userData.quadFaces.length > 0
+    );
+    if (parentSupportsTopologyConnect) {
+      const branchChildGeometry = createBranchChildGeometry(lock);
+      if (branchChildGeometry) return branchChildGeometry;
+    }
   }
   const baseGeometry = createBaseHairGeometry(lock);
   if (!lock?.proceduralDrawGuide || Number(lock.proceduralBranchCount || 0) <= 0 || lock.points?.length < 3) {
