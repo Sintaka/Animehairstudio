@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-21";
+} from "./modules/app-config.js?v=20260808-22";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -13227,18 +13227,33 @@ function strandGeometryFrameAt(
   desiredZ.normalize();
 
   let z = desiredZ;
+  let untwistedZ = null;
   if (previousFrame) {
     // Transport the complete frame around the bend. Projection alone can
     // suddenly roll the profile when a curve passes through an inflection.
     const transport = new THREE.Quaternion().setFromUnitVectors(previousFrame.y, tangent);
-    const transportedZ = previousFrame.z.clone().applyQuaternion(transport).projectOnPlane(tangent);
-    if (transportedZ.lengthSq() >= 0.0001) {
-      transportedZ.normalize();
-      if (desiredZ.dot(transportedZ) < 0) desiredZ.negate();
-      const cross = new THREE.Vector3().crossVectors(transportedZ, desiredZ);
-      const roll = Math.atan2(cross.dot(tangent), THREE.MathUtils.clamp(transportedZ.dot(desiredZ), -1, 1));
-      const maxRollPerRing = THREE.MathUtils.degToRad(24);
-      z = transportedZ.applyAxisAngle(tangent, THREE.MathUtils.clamp(roll, -maxRollPerRing, maxRollPerRing));
+    if (lock.branchParentId) {
+      // Branch child: its own surface normals are degenerate (near-parallel to the
+      // tangent), so anchor the profile up to the transported bone up (the seed's
+      // untwistedZ) and roll it by the authored twist directly. Rolling toward the
+      // noisy projected normal accumulates a flip along the length.
+      const ref = (previousFrame.untwistedZ || previousFrame.z)
+        .clone().applyQuaternion(transport).projectOnPlane(tangent);
+      if (ref.lengthSq() >= 0.0001) {
+        ref.normalize();
+        untwistedZ = ref;
+        z = ref.clone().applyAxisAngle(tangent, twist);
+      }
+    } else {
+      const transportedZ = previousFrame.z.clone().applyQuaternion(transport).projectOnPlane(tangent);
+      if (transportedZ.lengthSq() >= 0.0001) {
+        transportedZ.normalize();
+        if (desiredZ.dot(transportedZ) < 0) desiredZ.negate();
+        const cross = new THREE.Vector3().crossVectors(transportedZ, desiredZ);
+        const roll = Math.atan2(cross.dot(tangent), THREE.MathUtils.clamp(transportedZ.dot(desiredZ), -1, 1));
+        const maxRollPerRing = THREE.MathUtils.degToRad(24);
+        z = transportedZ.applyAxisAngle(tangent, THREE.MathUtils.clamp(roll, -maxRollPerRing, maxRollPerRing));
+      }
     }
   }
   z.normalize();
@@ -13250,6 +13265,7 @@ function strandGeometryFrameAt(
     x,
     y: tangent,
     z,
+    untwistedZ: untwistedZ || z.clone(),
     quaternion: new THREE.Quaternion().setFromRotationMatrix(matrix),
     scale: { x: sampleScale(lock.pointScales, t, "x"), z: sampleScale(lock.pointScales, t, "z") }
   };
@@ -14556,6 +14572,7 @@ function createBranchChildGeometry(lock) {
           x,
           y: seedTangent.clone(),
           z: up,
+          untwistedZ: up.clone(),
           quaternion: new THREE.Quaternion().setFromRotationMatrix(matrix),
           point: curve.getPoint(SWEEP_START_T),
           scale: { x: 1, z: 1 }
