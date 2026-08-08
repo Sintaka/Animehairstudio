@@ -93,7 +93,19 @@
     1) **桥接 Uniform Smooth（仅作用于子发片桥接部分）**：右侧 Hierarchy 面板新增「Bridge Smooth Strength」(0~1，默认 0.5) 与「Bridge Smooth Detail」(0~8 次 Laplacian 迭代，默认 1) 两个滑杆（localStorage 持久化 anime-hair-studio-branch-bridge-smooth-{strength,detail}，改动重建分支子级）。算法：对侧面填充/桥接带的内侧 mid 顶点做迭代 Laplacian（detail=迭代次数，strength=每遍强度），环（sweep row0）与主发片孔洞边界保持固定锚点（不移动），每次迭代先按当前邻接平均计算目标再整体应用；只移动桥接部分顶点，不动扫掠/父发片。验证（Sussurro_v1_0041，SL3）：strength 0→1 移动 6 个填充 mid（最大 0.022），strength=1/detail=3 时 0 NaN、0 退化 quad、0 非流形（水密保持）。
     2) **Region 面板局部缩放（Houdini Alt+右键）+ Reset Zoom**：branchRegionCanvas 的 viewBox 支持局部视图缩放——Alt+右键拖拽按 Houdini 导航同款方向逻辑（垂直：上=缩小/下=放大，水平：右=缩小/左=放大；快速模长近似归一化）围绕指针内容点缩放（min 5.5x in / 0.5x out），控制点拖拽的坐标映射同步加 viewBox 原点偏移（缩放后拖点/角仍精确）。对话框新增「Reset Zoom」按钮恢复 220x400 满视图。
     3) **Region 4 侧蓝色控制器不能越过橙色中心**：setBranchRootRegionPoint 对 up/down/left/right 的钳制从只相对对侧边改为相对 region.center（橙色锚点）——up.u <= center.u-0.02、down.u >= center.u+0.02、left.v >= center.v+0.02、right.v <= center.v-0.02，蓝色点无法越过中心进入非法区。
-    4) **Region 4 角对角缩放**：面板新增 4 个角手柄（TL/TR/BL/BR，小方块，系统对角缩放光标 nwse/nesw-resize），拖角同时缩放 u 与 v（对角移动，对侧角固定），钳制仍以橙色中心为界；begin 拖拽同时匹配 circle 与 rect 手柄。- **桥接规律总结（供后续写「无子骨骼桥接对比 + 技术要求」md 参考）**：
+    4) **Region 4 角对角缩放**：面板新增 4 个角手柄（TL/TR/BL/BR，小方块，系统对角缩放光标 nwse/nesw-resize），拖角同时缩放 u 与 v（对角移动，对侧角固定），钳制仍以橙色中心为界；begin 拖拽同时匹配 circle 与 rect 手柄。
+
+- **Phase 2.17 子发片桥接实现详解（已验收，分支 v0.1.4-Side-Topology）**：
+  - **整体结构（buildBranchBridgeGeometry）**：子发片 root 环（sweep row0，方形 2:1 截面）通过「底部带 + 侧面直接桥接 + 顶部带 + 侧面 4 边填充」与主发片挖洞边界封闭成水密管。底部/顶部带连接环的底/顶弧到洞的底/顶边（列数 = 环宽），侧面直接桥接把环的左/右 1 边接到洞侧 root 行（rootRow..rootRow+1）。
+  - **侧面填充索引规律（顶/底分开、左右各执行一次）**：当某条带为间接桥接（顶部 rootRow > rowMin、底部 rootRow < rowMax，即至少一条侧边留空）时该侧启用填充。从侧面直接桥接出发，主发片孔洞的一条边 ↔ 顶/底带的一条边 1:1 对应，一直索引到洞角；剩余一条带边按既有拓扑规律作为收尾边 → 全部 4 边面、无三角。带的外侧 mid 列（bandEdge：环角 → mid_1..mid_M → 洞角）与洞侧（holePath：环角 → vTop(=rootRow) → ... → 洞角）等长（都 M+2），quad = [bandEdge[i], bandEdge[i+1], holePath[i+2], holePath[i+1]]，i=0..M-1。
+  - **0.3 末端预留段的作用**：顶/底带在 parent 端 0.3 处多插一条 mid 行（midCount === 段数），使带边与洞侧计数 1:1 匹配——没有它带边会比洞侧多 1 条边，填充只能出三角。这是「无三角」的关键前提，guard 里用 midCount === M 校验。
+  - **顶点共享与水密**：带/直接桥接的角点与直接桥接行（vTop/vBottom）预种到 sideHoleCache；洞侧中间行（rowMin+1..rootRow-1 等）必须在 ringBase 固定前 pushBoundary（否则推后会让环索引整体偏移，破坏整座桥——0.2.44 的关键 bug）。填充只读缓存，不新增顶点。带宽必须等于 ringWidth+1（无折痕列错配），否则该侧保守跳过。
+  - **法线朝向（winding）**：填充 quad 发射后用共享边一致性传播（BFS）统一 winding——从左右直接桥接（0.2.42 既有正确朝向）出发，相邻面必须反向遍历共享边（多行条带内侧 quad 也一致），最后重写 indices。
+  - **Uniform Smooth（0.2.45）**：对填充/桥接带内侧 mid 顶点做迭代 Laplacian（Bridge Smooth Strength 0~1 + Bridge Smooth Detail 0~8 次），环（sweep row0，位置从 ringWorld 读）与主发片孔洞边界为固定锚点；每次迭代先按邻接平均算目标再整体应用。只移动桥接部分，不动扫掠/父发片。
+  - **注意事项**：1) 千万别在 ringBase 固定后再往 vertices 里推顶点（任何 push 都要放在 ringBase 之前或用缓存）；2) 带宽/环宽错配（折痕列）时跳过填充而不是硬填；3) 平滑只动 bridgeVertexCount 内的非 boundaryParentIndices 顶点，且邻接读取用 positionAt（环索引从 ringWorld 解析，否则越界 NaN）；4) 填充/角/边拖拽都要以橙色中心为钳制边界，避免蓝点越界产生非法区。
+  - **验证基线**：Sussurro_v1_0041（SL3，区域 rowMin=11/rowMax=14、colMin=2/colMax=3、ringW=2）——基础 66 quads、拉高顶/底后按缺口数量增加；0 NaN、0 退化、0 非流形、全部共享边反向（全局一致 winding）；fill OFF 的顶点位置在 fill ON 中 0 缺失（既有几何不变）。
+
+- **桥接规律总结（供后续写「无子骨骼桥接对比 + 技术要求」md 参考）**：
   - **数据模型**：子级 branchRootRegion = 父发片表面 4 点选区（u=沿长度、v=沿宽度；up/down 只改 u、left/right 只改 v；left=较大 v=世界左、right=较小 v=世界右；右后方视角下面板大 v 在右侧）；edgeOffsets=中心到各边距离；boneSync=上次同步的根骨骼 u/v（编辑选区后移动骨骼保留手动偏移）。
   - **挖洞**：按 region 的 rowMin/rowMax/colMin/colMax（真实网格列，含折痕 skipCol 列映射）删父发片对应 quad；每次重建父级全新网格再挖一次（幂等，不累积删面）。
   - **桥接带**（buildBranchBridgeGeometry）：子环=2×1 方形截面（宽:高），W 段=父洞口顶部真实边数；扫掠从 branchSweepStartT（默认 0.1，黄色手柄 0.02-0.6）开始，根部环=扫掠行 0 环（复用顶点）。顶带 topSegments=rootRow-rowMin、底带 bottomSegments=rowMax-rootRow，每列 1:1 quad；两端切线分别贴合子环切平面与父表面切平面（Hermite/smoothstep，2.14 双边法线）。侧面直接桥接 left/right 各 1 quad 按世界侧匹配。
