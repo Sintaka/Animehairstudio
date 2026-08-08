@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-15";
+} from "./modules/app-config.js?v=20260808-16";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -21523,7 +21523,12 @@ function captureBranchLocalState(lock) {
   if (!parent || !lock?.points?.length) return false;
   const frame = branchParentFrame(parent, lock.branchParentParameter);
   lock.points[0].copy(frame.point);
-  const childNormals = stableBranchBaseNormals(lock);
+  // Preserve the child's actual surface normals (the sweep frames read them) so
+  // updateBranchChildren round-trips them unchanged when the parent frame is the
+  // same; recomputed stable normals would override them and swing the root sweep.
+  const childNormals = lock.pointSurfaceNormals?.some(Boolean)
+    ? lock.pointSurfaceNormals
+    : stableBranchBaseNormals(lock);
   lock.branchLocalPoints = lock.points.map((point, index) => (
     index === 0
       ? new THREE.Vector3()
