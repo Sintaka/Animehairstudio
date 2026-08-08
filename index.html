@@ -1923,6 +1923,10 @@
             <input id="branchRegionMeshPointsToggle" type="checkbox" />
           </label>
         </div>
+        <div class="sliders taper-sync-controls">
+          <label class="topology-control" for="branchRegionSyncLateralInput" title="How fast the region follows the root bone left-right (lateral). 1.0 = exact; 0.6 = 60% speed.">Sync L/R <input id="branchRegionSyncLateralInput" type="range" min="0.1" max="2" step="0.05" value="0.6" /></label>
+          <label class="topology-control" for="branchRegionSyncVerticalInput" title="How fast the region follows the root bone up-down (along the parent length). 1.0 = exact.">Sync U/D <input id="branchRegionSyncVerticalInput" type="range" min="0.1" max="2" step="0.05" value="1" /></label>
+        </div>
         <p class="reference-plane-hint branch-region-hint">Orange center = bridge anchor; drag it to move the region. Ctrl+drag any point = mirror-scale the opposite side. Wheel = zoom; MMB / Alt+MMB drag = pan (per navigation style).</p>
       </div>
     </dialog>
@@ -2062,6 +2066,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260808-29"></script>
+    <script type="module" src="./app.js?v=20260808-30"></script>
   </body>
 </html>

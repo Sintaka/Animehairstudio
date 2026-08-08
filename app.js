@@ -167,7 +167,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-35";
+} from "./modules/app-config.js?v=20260808-36";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -264,6 +264,8 @@ const TRANSFORM_SPACE_PREFERENCE_KEY = "anime-hair-studio-transform-space";
 const BRANCH_RIGID_CURVATURE_BLEND_PREFERENCE_KEY = "anime-hair-studio-branch-rigid-curvature-blend";
 const BRANCH_BRIDGE_SMOOTH_STRENGTH_PREFERENCE_KEY = "anime-hair-studio-branch-bridge-smooth-strength";
 const BRANCH_BRIDGE_SMOOTH_DETAIL_PREFERENCE_KEY = "anime-hair-studio-branch-bridge-smooth-detail";
+const BRANCH_REGION_SYNC_LATERAL_PREFERENCE_KEY = "anime-hair-studio-branch-region-sync-lateral";
+const BRANCH_REGION_SYNC_VERTICAL_PREFERENCE_KEY = "anime-hair-studio-branch-region-sync-vertical";
 
 function saveBooleanPreference(key, enabled) {
   writeStoredPreference(window, key, Boolean(enabled));
@@ -2272,6 +2274,16 @@ let branchBridgeSmoothDetail = readStoredPreference(window, BRANCH_BRIDGE_SMOOTH
   fallback: 1,
   normalize: (value) => THREE.MathUtils.clamp(Math.round(Number(value) || 1), 0, 8)
 });
+// How fast the region follows the root bone while dragging it in Hierarchy mode:
+// lateral (left-right / v) defaults to 0.6x, along-length (up-down / u) to 1.0x.
+let branchRegionSyncLateral = readStoredPreference(window, BRANCH_REGION_SYNC_LATERAL_PREFERENCE_KEY, {
+  fallback: 0.6,
+  normalize: (value) => THREE.MathUtils.clamp(Number(value) || 0.6, 0.1, 2)
+});
+let branchRegionSyncVertical = readStoredPreference(window, BRANCH_REGION_SYNC_VERTICAL_PREFERENCE_KEY, {
+  fallback: 1,
+  normalize: (value) => THREE.MathUtils.clamp(Number(value) || 1, 0.1, 2)
+});
 let preferencesOpenSnapshot = null;
 let brushSizeDrag = null;
 let strandWidthEdgeDrag = null;
@@ -2788,6 +2800,8 @@ const hierarchyRecursiveTransformInput = document.querySelector("#hierarchyRecur
 const branchRigidCurvatureBlendInput = document.querySelector("#branchRigidCurvatureBlendInput");
 const branchBridgeSmoothStrengthInput = document.querySelector("#branchBridgeSmoothStrengthInput");
 const branchBridgeSmoothDetailInput = document.querySelector("#branchBridgeSmoothDetailInput");
+const branchRegionSyncLateralInput = document.querySelector("#branchRegionSyncLateralInput");
+const branchRegionSyncVerticalInput = document.querySelector("#branchRegionSyncVerticalInput");
 const branchBridgePanel = document.querySelector("#branchBridgePanel");
 const transformToolPanel = document.querySelector("#transformToolPanel");
 const transformToolTitle = document.querySelector("#transformToolTitle");
@@ -22799,8 +22813,8 @@ function updateBranchRootRegionCenter(lock, u, v) {
   // Anchor the bone sync point even when the region does not move (first sync), so a
   // later bone move applies the preserved center offset instead of snapping to the bone.
   region.boneSync = { u: nu, v: nv };
-  const du = targetU - uc;
-  const dv = targetV - vc;
+  const du = (targetU - uc) * branchRegionSyncVertical;
+  const dv = (targetV - vc) * branchRegionSyncLateral;
   if (Math.abs(du) < 0.0005 && Math.abs(dv) < 0.0005) return;
   // Translate every edge AND the orange anchor by the same delta so the region keeps
   // its exact shape (the anchor may differ from the geometric center after a single-
@@ -35208,6 +35222,18 @@ branchBridgeSmoothDetailInput.addEventListener("input", () => {
   branchBridgeSmoothDetailInput.value = branchBridgeSmoothDetail;
   writeStoredPreference(window, BRANCH_BRIDGE_SMOOTH_DETAIL_PREFERENCE_KEY, branchBridgeSmoothDetail);
   locks.forEach((lock) => { if (lock?.branchRootRegion) rebuildLockGeometry(lock); });
+});
+branchRegionSyncLateralInput.value = branchRegionSyncLateral;
+branchRegionSyncLateralInput.addEventListener("input", () => {
+  branchRegionSyncLateral = THREE.MathUtils.clamp(Number(branchRegionSyncLateralInput.value) || 0.6, 0.1, 2);
+  branchRegionSyncLateralInput.value = branchRegionSyncLateral;
+  writeStoredPreference(window, BRANCH_REGION_SYNC_LATERAL_PREFERENCE_KEY, branchRegionSyncLateral);
+});
+branchRegionSyncVerticalInput.value = branchRegionSyncVertical;
+branchRegionSyncVerticalInput.addEventListener("input", () => {
+  branchRegionSyncVertical = THREE.MathUtils.clamp(Number(branchRegionSyncVerticalInput.value) || 1, 0.1, 2);
+  branchRegionSyncVerticalInput.value = branchRegionSyncVertical;
+  writeStoredPreference(window, BRANCH_REGION_SYNC_VERTICAL_PREFERENCE_KEY, branchRegionSyncVertical);
 });
 proportionalToggle.addEventListener("click", () => setProportionalEditing(!proportionalEditing));
 appMenuTriggers.forEach((trigger) => {
