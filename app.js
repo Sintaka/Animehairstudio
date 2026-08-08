@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-24";
+} from "./modules/app-config.js?v=20260808-25";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -628,6 +628,10 @@ function deflateTransformGizmoPickers(factor) {
           else position.setXYZ(index, x * radialScale, y * radialScale, z * factor);
         }
         position.needsUpdate = true;
+      } else if (pickerHandle.name === "XYZ") {
+        // Keep the free-move center picker at full size (matching the visible gizmo)
+        // so the center / universal move stays easy to grab even for large strands;
+        // only the axis pickers are deflated for precise grabbing.
       } else {
         geometry.computeBoundingBox();
         const center = geometry.boundingBox.getCenter(new THREE.Vector3());
@@ -14242,11 +14246,20 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   // segment per side edge so its corner column always matches the hole side topology.
   const holeHeight = Math.max(1, Math.round(surface.rowMax - surface.rowMin + 1));
   // Child root row and the Hermite basis are shared by the top and bottom bands.
-  // Child root row follows the region CENTER (not the parent-bone parameter), so the
-  // direct bridge (side quads + top/bottom direct-bridge detection) updates when the
-  // region is moved in the panel even if the parent bone stays put. The center is always
-  // inside the carved hole, so side bridges never fall off the boundary.
-  const rootRow = Math.round((surface.rowMin + surface.rowMax) / 2);
+  // Child root row follows the region CENTER ANCHOR (orange marker / region.center):
+  // moving the whole region or the root bone translates it, while editing a single
+  // edge (e.g. only the bottom) keeps the anchor and the bridge in place. It is
+  // clamped inside the hole so the side bridges never fall off the boundary.
+  const centerU = THREE.MathUtils.clamp(
+    Number(lock.branchRootRegion?.center?.u ?? (surface.rowMin + surface.rowMax) / 2 / Math.max(1, rows - 1)),
+    0,
+    1
+  );
+  const rootRow = THREE.MathUtils.clamp(
+    Math.round(centerU * Math.max(1, rows - 1)),
+    surface.rowMin,
+    surface.rowMax
+  );
   const hermite = (t, p0, p1, m0, m1) => {
     const t2 = t * t;
     const t3 = t2 * t;
@@ -21683,9 +21696,18 @@ function syncBranchRootRegionOffsets(lock) {
   const region = lock?.branchRootRegion;
   const cross = region?.cross;
   if (!region || !cross) return null;
-  const centerU = (cross.up.u + cross.down.u) / 2;
-  const centerV = (cross.left.v + cross.right.v) / 2;
-  region.center = { u: clampRegionParam(centerU), v: clampRegionParam(centerV) };
+  // The orange center is a stable anchor (where the direct bridge attaches), NOT a
+  // value recomputed from the edges: dragging a single edge (e.g. only the bottom)
+  // must not move the center. Initialize it once from the rectangle's geometric
+  // center when it is missing (new regions / old files).
+  if (!region.center) {
+    region.center = {
+      u: clampRegionParam((cross.up.u + cross.down.u) / 2),
+      v: clampRegionParam((cross.left.v + cross.right.v) / 2)
+    };
+  }
+  const centerU = clampRegionParam(region.center.u);
+  const centerV = clampRegionParam(region.center.v);
   region.edgeOffsets = {
     up: Math.max(0, centerU - cross.up.u),
     down: Math.max(0, cross.down.u - centerU),
@@ -21714,13 +21736,20 @@ function updateBranchRootRegionCenter(lock, u, v) {
   // Anchor the bone sync point even when the region does not move (first sync), so a
   // later bone move applies the preserved center offset instead of snapping to the bone.
   region.boneSync = { u: nu, v: nv };
-  if (Math.abs(targetU - uc) < 0.0005 && Math.abs(targetV - vc) < 0.0005) return;
-  const offsets = region.edgeOffsets || syncBranchRootRegionOffsets(lock);
-  cross.up = { u: clampRegionParam(targetU - offsets.up), v: targetV };
-  cross.down = { u: clampRegionParam(targetU + offsets.down), v: targetV };
-  cross.left = { u: targetU, v: clampRegionParam(targetV + offsets.left) };
-  cross.right = { u: targetU, v: clampRegionParam(targetV - offsets.right) };
-  region.center = { u: targetU, v: targetV };
+  const du = targetU - uc;
+  const dv = targetV - vc;
+  if (Math.abs(du) < 0.0005 && Math.abs(dv) < 0.0005) return;
+  // Translate every edge AND the orange anchor by the same delta so the region keeps
+  // its exact shape (the anchor may differ from the geometric center after a single-
+  // edge drag; reconstructing from center + offsets would shift it).
+  cross.up = { u: clampRegionParam(cross.up.u + du), v: clampRegionParam(cross.up.v + dv) };
+  cross.down = { u: clampRegionParam(cross.down.u + du), v: clampRegionParam(cross.down.v + dv) };
+  cross.left = { u: clampRegionParam(cross.left.u + du), v: clampRegionParam(cross.left.v + dv) };
+  cross.right = { u: clampRegionParam(cross.right.u + du), v: clampRegionParam(cross.right.v + dv) };
+  region.center = {
+    u: clampRegionParam((region.center?.u ?? uc) + du),
+    v: clampRegionParam((region.center?.v ?? vc) + dv)
+  };
   normalizeBranchRootRegion(lock);
   const parent = locks.find((item) => item.id === lock?.branchParentId);
   if (parent) rebuildLockGeometry(parent);
@@ -21935,9 +21964,13 @@ function renderBranchRegionEditor() {
     circle.style.cursor = "move";
     g.appendChild(circle);
   });
-  // Region center marker (orange): helps locate the carve center; dragging it
-  // translates the whole region like the rect body.
-  const centerCanvas = branchRegionUVToCanvas(uc, vc);
+  // Region center marker (orange): the bridge anchor. Dragging it translates the
+  // whole region; Ctrl+dragging mirror-scales both sides around it. It is drawn at
+  // the stable anchor (region.center), not the edge average, so editing a single
+  // edge does not move it.
+  const anchorU = clampRegionParam(region.center?.u ?? uc);
+  const anchorV = clampRegionParam(region.center?.v ?? vc);
+  const centerCanvas = branchRegionUVToCanvas(anchorU, anchorV);
   const centerCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
   centerCircle.setAttribute("cx", centerCanvas.x);
   centerCircle.setAttribute("cy", centerCanvas.y);
@@ -21961,13 +21994,16 @@ function beginBranchRegionCanvasDrag(event) {
     const lock = locks.find((item) => item.id === branchRegionEdit);
     const cross = lock?.branchRootRegion?.cross;
     if (!cross) return;
-    const centerU = clampRegionParam((cross.up.u + cross.down.u) / 2);
-    const centerV = clampRegionParam((cross.left.v + cross.right.v) / 2);
+    const centerU = clampRegionParam(lock.branchRootRegion.center?.u ?? (cross.up.u + cross.down.u) / 2);
+    const centerV = clampRegionParam(lock.branchRootRegion.center?.v ?? (cross.left.v + cross.right.v) / 2);
+    // Ctrl+drag the center = mirror-scale: the side you drag toward and the opposite
+    // side both move apart symmetrically around the fixed center.
     branchRegionCanvasDrag = {
-      mode: "move",
+      mode: event.ctrlKey ? "center-mirror" : "move",
       pointerId: event.pointerId,
       startU: centerU,
       startV: centerV,
+      startCenter: { u: centerU, v: centerV },
       startRegion: {
         up: { ...cross.up },
         down: { ...cross.down },
@@ -21987,11 +22023,15 @@ function beginBranchRegionCanvasDrag(event) {
     const svgX = (event.clientX - canvasRect.left) * (viewBox.width / canvasRect.width);
     const svgY = (event.clientY - canvasRect.top) * (viewBox.height / canvasRect.height);
     const startUV = branchRegionCanvasToUV(svgX, svgY);
+    const startCenter = lock?.branchRootRegion?.center
+      ? { u: clampRegionParam(lock.branchRootRegion.center.u), v: clampRegionParam(lock.branchRootRegion.center.v) }
+      : { u: clampRegionParam((cross.up.u + cross.down.u) / 2), v: clampRegionParam((cross.left.v + cross.right.v) / 2) };
     branchRegionCanvasDrag = {
       mode: "move",
       pointerId: event.pointerId,
       startU: startUV.u,
       startV: startUV.v,
+      startCenter,
       startRegion: {
         up: { ...cross.up },
         down: { ...cross.down },
@@ -22013,20 +22053,52 @@ function updateBranchRegionCanvasDrag(event) {
   const lock = locks.find((item) => item.id === branchRegionEdit);
   const cross = lock?.branchRootRegion?.cross;
   if (!cross) return;
+  if (branchRegionCanvasDrag.mode === "center-mirror") {
+    const start = branchRegionCanvasDrag.startRegion;
+    if (!start) return;
+    const region = lock.branchRootRegion;
+    const offsets = region.edgeOffsets || syncBranchRootRegionOffsets(lock);
+    const centerU = clampRegionParam(region.center?.u ?? (start.up.u + start.down.u) / 2);
+    const centerV = clampRegionParam(region.center?.v ?? (start.left.v + start.right.v) / 2);
+    const du = uv.u - branchRegionCanvasDrag.startU;
+    const dv = uv.v - branchRegionCanvasDrag.startV;
+    if (Math.abs(du) >= Math.abs(dv)) {
+      // Mirror along u (top/bottom): both edges move away from the fixed center.
+      cross.up.u = clampRegionParam(centerU - (offsets.up + du));
+      cross.down.u = clampRegionParam(centerU + (offsets.down + du));
+    } else {
+      // Mirror along v (left/right).
+      cross.left.v = clampRegionParam(centerV + (offsets.left + dv));
+      cross.right.v = clampRegionParam(centerV - (offsets.right + dv));
+    }
+    normalizeBranchRootRegion(lock);
+    syncBranchRootRegionOffsets(lock);
+    const parent = locks.find((item) => item.id === lock?.branchParentId);
+    if (parent) rebuildLockGeometry(parent);
+    else rebuildLockGeometry(lock);
+    updateCurveObjects(lock);
+    renderBranchRegionEditor();
+    return;
+  }
   if (branchRegionCanvasDrag.mode === "move") {
     const start = branchRegionCanvasDrag.startRegion;
     if (!start) return;
     const du = uv.u - branchRegionCanvasDrag.startU;
     const dv = uv.v - branchRegionCanvasDrag.startV;
     const region = lock.branchRootRegion;
-    const offsets = region.edgeOffsets || syncBranchRootRegionOffsets(lock);
-    const centerU = clampRegionParam((start.up.u + start.down.u) / 2 + du);
-    const centerV = clampRegionParam((start.left.v + start.right.v) / 2 + dv);
-    cross.up = { u: clampRegionParam(centerU - offsets.up), v: centerV };
-    cross.down = { u: clampRegionParam(centerU + offsets.down), v: centerV };
-    cross.left = { u: centerU, v: clampRegionParam(centerV + offsets.left) };
-    cross.right = { u: centerU, v: clampRegionParam(centerV - offsets.right) };
-    region.center = { u: centerU, v: centerV };
+    // Pure translate of every edge AND the orange anchor by the pointer delta: the
+    // anchor may differ from the geometric center after a single-edge drag, so
+    // reconstructing from center + offsets would shift the shape.
+    cross.up = { u: clampRegionParam(start.up.u + du), v: clampRegionParam(start.up.v + dv) };
+    cross.down = { u: clampRegionParam(start.down.u + du), v: clampRegionParam(start.down.v + dv) };
+    cross.left = { u: clampRegionParam(start.left.u + du), v: clampRegionParam(start.left.v + dv) };
+    cross.right = { u: clampRegionParam(start.right.u + du), v: clampRegionParam(start.right.v + dv) };
+    const startCenter = branchRegionCanvasDrag.startCenter
+      || { u: (start.up.u + start.down.u) / 2, v: (start.left.v + start.right.v) / 2 };
+    region.center = {
+      u: clampRegionParam(startCenter.u + du),
+      v: clampRegionParam(startCenter.v + dv)
+    };
     normalizeBranchRootRegion(lock);
     const parent = locks.find((item) => item.id === lock?.branchParentId);
     if (parent) rebuildLockGeometry(parent);
@@ -22244,12 +22316,23 @@ function branchRootRegionWorldPoints(lock) {
   const colC = Math.round((surface.colMin + surface.colMax) / 2);
   const bottomRow = Math.min(surface.rowMax + 1, surface.rows - 1);
   const leftCol = Math.min(surface.colMax + 1, surface.cols - 1);
+  // 3D center marker follows the stable anchor (region.center), clamped into the hole.
+  const anchor = lock?.branchRootRegion?.center;
+  const anchorRow = THREE.MathUtils.clamp(
+    Math.round(clampRegionParam(anchor?.u ?? rowC / Math.max(1, surface.rows - 1)) * (surface.rows - 1)),
+    surface.rowMin,
+    surface.rowMax
+  );
+  let anchorCol = colC;
+  if (anchor && typeof surface.toCol === "function" && typeof surface.toGridCol === "function") {
+    anchorCol = surface.toGridCol(surface.toCol(clampRegionParam(anchor.v)));
+  }
   return {
     up: pointAt(surface.rowMin, colC),
     down: pointAt(bottomRow, colC),
     left: pointAt(rowC, leftCol),
     right: pointAt(rowC, surface.colMin),
-    center: pointAt(rowC, colC)
+    center: pointAt(anchorRow, anchorCol)
   };
 }
 
