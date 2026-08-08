@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-19";
+} from "./modules/app-config.js?v=20260808-20";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -25460,6 +25460,39 @@ function strandControlPointRaycast(raycaster, intersections) {
   });
 }
 
+// Stable frame for a strand control point. For a branch child's root the child's
+// own surface normals are near-parallel to its tangent (it grows along the parent
+// normal), so curveFrameAtPoint's X/Z axes flip and the gizmo (green tangent axis)
+// appears to spin wildly when the root is dragged in Hierarchy mode. Use a stable
+// frame: tangent = child curve tangent, up (z) = parent root tangent (toward the
+// parent root) projected on the tangent plane - the same reference as the sweep seed.
+function strandControlPointFrame(lock, index) {
+  if (lock?.branchParentId && index === 0) {
+    try {
+      const curve = strandGeometryCurve(lock);
+      const tangent = curve.getTangent(0).normalize();
+      const parent = locks.find((item) => item.id === lock.branchParentId);
+      const parentFrame = branchParentFrame(parent, lock.branchParentParameter);
+      const up = parentFrame.y.clone().negate().projectOnPlane(tangent);
+      if (up.lengthSq() >= 0.0001) {
+        up.normalize();
+        const x = new THREE.Vector3().crossVectors(tangent, up).normalize();
+        return {
+          x,
+          y: tangent,
+          z: up,
+          quaternion: new THREE.Quaternion().setFromRotationMatrix(
+            new THREE.Matrix4().makeBasis(x, tangent, up)
+          ),
+          point: curve.getPoint(0),
+          scale: lock.pointScales?.[0] || { x: 1, z: 1 }
+        };
+      }
+    } catch (e) { /* fall through to curveFrameAtPoint */ }
+  }
+  return curveFrameAtPoint(lock, index);
+}
+
 function strandControlPointHitFromEvent(event, lock = getSelectedLock()) {
   if (lock?.locked || !lock?.curveObjects?.group.visible) return null;
   const rect = renderer.domElement.getBoundingClientRect();
@@ -25587,7 +25620,7 @@ function createCurveObjects(lock) {
 
   const handles = lock.points.map((point, index) => {
     const pointScale = lock.pointScales?.[index] || { x: 1, z: 1 };
-    const frame = lock.geometryType === "surface" ? null : curveFrameAtPoint(lock, index);
+    const frame = lock.geometryType === "surface" ? null : strandControlPointFrame(lock, index);
     const handle = new THREE.Mesh(
       new THREE.SphereGeometry(
         0.052 * STRAND_CONTROL_POINT_RADIUS_SCALE,
@@ -25976,7 +26009,7 @@ function updateCurveObjects(lock, options = {}) {
     const controllerIndex = activeCurveSurfaceControllerIndex(lock);
     handle.visible = lock.geometryType !== "curve-surface"
       || (controllerIndex !== null && Math.floor(index / lock.curveSurfaceRows) === controllerIndex);
-    const frame = lock.geometryType === "surface" ? null : curveFrameAtPoint(lock, index);
+    const frame = lock.geometryType === "surface" ? null : strandControlPointFrame(lock, index);
     const pointScale = lock.pointScales?.[index] || { x: lock.pointWidths[index] || 1, z: lock.pointWidths[index] || 1 };
     const preserveDraggedObjectRotation = Boolean(
       transformDragging
@@ -26030,7 +26063,7 @@ function updateCurveObjects(lock, options = {}) {
       arrow.visible = false;
       return;
     }
-    const frame = lock.geometryType === "surface" ? null : curveFrameAtPoint(lock, index);
+    const frame = lock.geometryType === "surface" ? null : strandControlPointFrame(lock, index);
     if (!frame) {
       arrow.visible = false;
       return;
