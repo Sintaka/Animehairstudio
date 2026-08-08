@@ -167,7 +167,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-33";
+} from "./modules/app-config.js?v=20260808-34";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -13982,11 +13982,12 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   if (!Number.isFinite(minX) || maxX - minX < 0.0001) return null;
   const splitPosition = THREE.MathUtils.clamp(Number(lock.strandSplitPosition ?? 0), -0.8, 0.8);
   const splitX = THREE.MathUtils.lerp(minX, maxX, splitPosition * 0.5 + 0.5);
-  const sections = [
-    { points: clipStrandProfilePolygon(polygon, splitX, true), direction: -1 },
-    { points: clipStrandProfilePolygon(polygon, splitX, false), direction: 1 }
-  ].filter((section) => section.points.length >= 3);
-  if (sections.length !== 2) return null;
+  // Fused single ring: the split keeps ONE connected quad grid (full profile swept
+  // once) so a split strand can still be carved + bridged by the child-strand system.
+  // The opening applies per column (left half -x, right half +x), so the halves spread
+  // apart at the bottom while the ring stays one tube; vertex positions are unchanged.
+  const ring = polygon;
+  const ringSize = ring.length;
 
   const curlSegments = lock.curlEnabled ? Math.ceil(Number(lock.curlCount ?? 4) * 14) : 0;
   const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), curlSegments), 4, 256);
@@ -14006,69 +14007,61 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   const colors = [];
   const indices = [];
   const triangleEdgeMasks = [];
+  const quadFaces = [];
   const splitHeight = THREE.MathUtils.clamp(Number(lock.strandSplitHeight ?? 0.3), 0.02, 0.8);
   const splitStart = 1 - splitHeight;
   const splitGap = THREE.MathUtils.clamp(Number(lock.strandSplitGap ?? 0.12), 0, 0.5);
   const baseSeparation = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1) * splitGap;
   let sideTriangleCount = 0;
 
-  sections.forEach((section) => {
-    const ringSize = section.points.length;
-    const sectionStart = vertices.length / 3;
-    curveParameters.forEach((t, row) => {
-      const point = curve.getPoint(t);
-      const frame = frames[row];
-      const scaleX = sampleScale(lock.pointScales, t, "x");
-      const scaleZ = sampleScale(lock.pointScales, t, "z");
-      const warpedSection = strandProfileTopologyAt(
-        lock,
-        t,
-        section.points,
-        scaleX,
-        scaleZ,
-        polygon
-      );
-      const color = strandInfluenceColor(lock, t);
-      const opening = t <= splitStart
-        ? 0
-        : baseSeparation * THREE.MathUtils.smoothstep(t, splitStart, 1) * section.direction;
-      section.points.forEach((profile, column) => {
-        const warped = warpedSection[column];
-        const ring = frame.x.clone().multiplyScalar(warped.x);
-        ring.add(frame.z.clone().multiplyScalar(warped.z));
-        ring.addScaledVector(frame.x, opening);
-        vertices.push(point.x + ring.x, point.y + ring.y, point.z + ring.z);
-        tangents.push(frame.y.x, frame.y.y, frame.y.z, 1);
-        uvs.push(column / ringSize, t);
-        colors.push(color.r, color.g, color.b);
-      });
+  curveParameters.forEach((t, row) => {
+    const point = curve.getPoint(t);
+    const frame = frames[row];
+    const scaleX = sampleScale(lock.pointScales, t, "x");
+    const scaleZ = sampleScale(lock.pointScales, t, "z");
+    const warpedSection = strandProfileTopologyAt(lock, t, ring, scaleX, scaleZ, polygon);
+    const color = strandInfluenceColor(lock, t);
+    const opening = t <= splitStart
+      ? 0
+      : baseSeparation * THREE.MathUtils.smoothstep(t, splitStart, 1);
+    ring.forEach((profile, column) => {
+      const warped = warpedSection[column];
+      const direction = profile.x <= splitX ? -1 : 1;
+      const ringPoint = frame.x.clone().multiplyScalar(warped.x);
+      ringPoint.add(frame.z.clone().multiplyScalar(warped.z));
+      ringPoint.addScaledVector(frame.x, opening * direction);
+      vertices.push(point.x + ringPoint.x, point.y + ringPoint.y, point.z + ringPoint.z);
+      tangents.push(frame.y.x, frame.y.y, frame.y.z, 1);
+      uvs.push(column / ringSize, t);
+      colors.push(color.r, color.g, color.b);
     });
+  });
 
-    for (let row = 0; row < actualLengthSegments; row += 1) {
-      for (let column = 0; column < ringSize; column += 1) {
-        const next = (column + 1) % ringSize;
-        const a = sectionStart + row * ringSize + column;
-        const b = sectionStart + row * ringSize + next;
-        const c = sectionStart + (row + 1) * ringSize + column;
-        const d = sectionStart + (row + 1) * ringSize + next;
-        indices.push(a, c, b, b, c, d);
-        sideTriangleCount += 2;
-        triangleEdgeMasks.push([0, 1, 1], [1, 1, 0]);
-      }
+  for (let row = 0; row < actualLengthSegments; row += 1) {
+    for (let column = 0; column < ringSize; column += 1) {
+      const next = (column + 1) % ringSize;
+      const a = row * ringSize + column;
+      const b = row * ringSize + next;
+      const c = (row + 1) * ringSize + column;
+      const d = (row + 1) * ringSize + next;
+      indices.push(a, c, b, b, c, d);
+      sideTriangleCount += 2;
+      triangleEdgeMasks.push([0, 1, 1], [1, 1, 0]);
+      quadFaces.push([a, c, d, b]);
     }
+  }
 
-    const capTriangles = THREE.ShapeUtils.triangulateShape(
-      section.points.map((point) => new THREE.Vector2(point.x, point.z)),
-      []
-    );
-    const endOffset = sectionStart + actualLengthSegments * ringSize;
-    const startOutward = frames[0].y.clone().negate();
-    const endOutward = frames[actualLengthSegments].y;
-    capTriangles.forEach(([a, b, c]) => {
-      pushOrientedTriangle(indices, vertices, sectionStart + a, sectionStart + b, sectionStart + c, startOutward);
-      pushOrientedTriangle(indices, vertices, endOffset + a, endOffset + b, endOffset + c, endOutward);
-      triangleEdgeMasks.push([1, 1, 1], [1, 1, 1]);
-    });
+  const capTriangles = THREE.ShapeUtils.triangulateShape(
+    ring.map((point) => new THREE.Vector2(point.x, point.z)),
+    []
+  );
+  const endOffset = actualLengthSegments * ringSize;
+  const startOutward = frames[0].y.clone().negate();
+  const endOutward = frames[actualLengthSegments].y;
+  capTriangles.forEach(([a, b, c]) => {
+    pushOrientedTriangle(indices, vertices, a, b, c, startOutward);
+    pushOrientedTriangle(indices, vertices, endOffset + a, endOffset + b, endOffset + c, endOutward);
+    triangleEdgeMasks.push([1, 1, 1], [1, 1, 1]);
   });
 
   const geometry = new THREE.BufferGeometry();
@@ -14080,6 +14073,13 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   geometry.userData.sideTriangleCount = sideTriangleCount;
   geometry.userData.triangleEdgeMasks = triangleEdgeMasks;
   geometry.userData.actualLengthSegments = actualLengthSegments;
+  // Expose the fused grid so the child-strand bridge can carve + attach like a normal
+  // strand (split is one connected quad region with the seam fused).
+  geometry.userData.gridRows = actualLengthSegments + 1;
+  geometry.userData.gridColumns = ringSize;
+  geometry.userData.gridFacesPerRow = ringSize;
+  geometry.userData.gridSkipCol = -1;
+  geometry.userData.quadFaces = quadFaces;
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
