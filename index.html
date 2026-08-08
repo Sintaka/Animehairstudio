@@ -931,6 +931,12 @@
             <span>Branch Root Curve Follow</span>
             <input id="branchRigidCurvatureBlendInput" type="number" min="0" max="1" step="0.05" value="0.5" />
           </label>
+        </div>
+
+        <div id="branchBridgePanel" class="panel-section hidden" data-attribute-panel="strands">
+          <div class="section-head">
+            <span>Branch Bridge</span>
+          </div>
           <label class="branch-curve-follow-row" for="branchBridgeSmoothStrengthInput" title="Uniform Smooth strength applied to the branch bridge (the connection band + side fill). 0 = raw, 1 = fully relaxed each pass; anchors (ring + parent hole) stay fixed; default 0.5">
             <span>Bridge Smooth Strength</span>
             <input id="branchBridgeSmoothStrengthInput" type="number" min="0" max="1" step="0.05" value="0.5" />
@@ -1918,7 +1924,7 @@
             <input id="branchRegionMeshPointsToggle" type="checkbox" />
           </label>
         </div>
-        <p class="reference-plane-hint branch-region-hint">Orange center = bridge anchor (edge drags don't move it). Drag center = move region; Ctrl+drag center = mirror-scale both sides.</p>
+        <p class="reference-plane-hint branch-region-hint">Orange center = bridge anchor; drag it to move the region. Ctrl+drag any point = mirror-scale the opposite side. Wheel = zoom; Alt+MMB drag = pan (per navigation style).</p>
       </div>
     </dialog>
 
@@ -2057,6 +2063,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260808-23"></script>
+    <script type="module" src="./app.js?v=20260808-24"></script>
   </body>
 </html>

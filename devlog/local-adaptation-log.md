@@ -129,3 +129,7 @@
 - [x] 修复多行侧面填充扰乱顶部桥接（0.2.44）：洞侧中间顶点预推到 ringBase 固定前，环索引不再偏移；A/B 验证既有几何逐字节不变
 - [x] 桥接 Uniform Smooth（0.2.45）：Strength+Detail 滑杆，仅桥接部分、环/孔洞锚点固定
 - [x] Region 面板 Alt+右键局部缩放 + Reset Zoom（0.2.45）；4 侧蓝点不能越过橙色中心；4 角对角缩放
+
+- [x] Region 面板导航增强（0.2.46）：缩放方向反转（右上放大/左下缩小）、Alt+中键平移、滚轮缩放、Reset Zoom 共享钳制；手势按导航预设映射（Houdini Alt+MMB 平移/Alt+RMB 缩放，Blender Shift+MMB 平移/Ctrl+MMB 缩放，Anime Hair Studio Alt+RMB 平移），不再照搬 Houdini
+- [x] Region 面板 Ctrl+drag 反向镜像（0.2.46）：边点/角点按住 Ctrl 时被拖点跟随指针、对面点反向联动（成对镜像，橙色锚点不动），普通拖拽行为不变
+- [x] Bridge Smooth 滑杆归位（0.2.46）：Strength/Detail 移到独立 Branch Bridge 面板，仅选中子发片时显示（不再只在 H 模式）

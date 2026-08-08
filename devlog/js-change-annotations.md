@@ -95,6 +95,12 @@
     3) **Region 4 侧蓝色控制器不能越过橙色中心**：setBranchRootRegionPoint 对 up/down/left/right 的钳制从只相对对侧边改为相对 region.center（橙色锚点）——up.u <= center.u-0.02、down.u >= center.u+0.02、left.v >= center.v+0.02、right.v <= center.v-0.02，蓝色点无法越过中心进入非法区。
     4) **Region 4 角对角缩放**：面板新增 4 个角手柄（TL/TR/BL/BR，小方块，系统对角缩放光标 nwse/nesw-resize），拖角同时缩放 u 与 v（对角移动，对侧角固定），钳制仍以橙色中心为界；begin 拖拽同时匹配 circle 与 rect 手柄。
 
+  - **Region 面板导航增强 + Ctrl 镜像 + 桥接滑杆归位（0.2.46，Phase 2.17 收尾）**：
+    1) **Region 面板缩放方向反转 + Alt+中键平移 + 滚轮缩放**：Alt+右键拖拽缩放方向反转为「右上角放大、左下角缩小」（垂直：上=放大/下=缩小，水平：右=放大/左=缩小；快速模长近似归一化），仍围绕指针内容点缩放；新增 Alt+中键拖拽平移查看（viewBox.x/y 按 viewBox/画布像素比例随指针位移）；新增滚轮缩放（以指针位置为中心，deltaY<0 放大 / >0 缩小，min 40×80 / max 440×800，与 Reset Zoom 共享钳制）。
+    2) **导航预设映射（不再照搬 Houdini）**：面板平移/缩放手势按当前 Navigation style 映射——Houdini：Alt+中键=平移、Alt+右键=缩放；Blender：Shift+中键=平移、Ctrl+中键=缩放；Anime Hair Studio：Alt+右键=平移。Alt+中键平移在任意预设下都可用；滚轮缩放始终可用；非左键按下不再误触发选区编辑（beginBranchRegionCanvasDrag 增加 event.button!==0 守卫，中键/右键只走导航）。
+    3) **Ctrl+drag 反向镜像（边点/角点）**：之前只有橙色中心支持 Ctrl 镜像缩放；现在 4 个边点与 4 个角点按住 Ctrl 拖拽时，被拖的点跟随指针、对面的点按相同增量反向移动（围绕成对中点镜像，橙色锚点不动）——up↔down、left↔right 成对；角点同时镜像 u/v 两个方向（对角线缩放），随后 normalizeBranchRootRegion + syncBranchRootRegionOffsets 保持有序与宽高意图。普通（无 Ctrl）边点/角点拖拽行为不变。
+    4) **Bridge Smooth 滑杆归位（仅子发片显示）**：Bridge Smooth Strength / Detail 两个滑杆从 hierarchyPanel（只在 H 模式显示）移到独立「Branch Bridge」面板（data-attribute-panel="strands"），当且仅当选中子发片（lock.branchParentId 存在）时显示；Recursive Transform / Branch Root Curve Follow 仍留在 Hierarchy Edit 面板。
+
 - **Phase 2.17 子发片桥接实现详解（已验收，分支 v0.1.4-Side-Topology）**：
   - **整体结构（buildBranchBridgeGeometry）**：子发片 root 环（sweep row0，方形 2:1 截面）通过「底部带 + 侧面直接桥接 + 顶部带 + 侧面 4 边填充」与主发片挖洞边界封闭成水密管。底部/顶部带连接环的底/顶弧到洞的底/顶边（列数 = 环宽），侧面直接桥接把环的左/右 1 边接到洞侧 root 行（rootRow..rootRow+1）。
   - **侧面填充索引规律（顶/底分开、左右各执行一次）**：当某条带为间接桥接（顶部 rootRow > rowMin、底部 rootRow < rowMax，即至少一条侧边留空）时该侧启用填充。从侧面直接桥接出发，主发片孔洞的一条边 ↔ 顶/底带的一条边 1:1 对应，一直索引到洞角；剩余一条带边按既有拓扑规律作为收尾边 → 全部 4 边面、无三角。带的外侧 mid 列（bandEdge：环角 → mid_1..mid_M → 洞角）与洞侧（holePath：环角 → vTop(=rootRow) → ... → 洞角）等长（都 M+2），quad = [bandEdge[i], bandEdge[i+1], holePath[i+2], holePath[i+1]]，i=0..M-1。

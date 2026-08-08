@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-29";
+} from "./modules/app-config.js?v=20260808-30";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -2733,6 +2733,7 @@ const hierarchyRecursiveTransformInput = document.querySelector("#hierarchyRecur
 const branchRigidCurvatureBlendInput = document.querySelector("#branchRigidCurvatureBlendInput");
 const branchBridgeSmoothStrengthInput = document.querySelector("#branchBridgeSmoothStrengthInput");
 const branchBridgeSmoothDetailInput = document.querySelector("#branchBridgeSmoothDetailInput");
+const branchBridgePanel = document.querySelector("#branchBridgePanel");
 const transformToolPanel = document.querySelector("#transformToolPanel");
 const transformToolTitle = document.querySelector("#transformToolTitle");
 const viewPlaneMoveSetting = document.querySelector("#viewPlaneMoveSetting");
@@ -22250,9 +22251,12 @@ function renderBranchRegionEditor() {
   });
   updateBranchRegionMeshPoints();
 }
-// ---- Branch region panel view zoom (Houdini Alt+right-drag), plus Reset Zoom ----
+// ---- Branch region panel view navigation: pan/zoom follow the active navigation
+// style (Houdini Alt+MMB pan + Alt+RMB zoom; Blender Shift/Ctrl+MMB; Anime Hair
+// Studio Alt+RMB pan); wheel always zooms; Reset Zoom restores. ----
 let branchRegionView = { x: 0, y: 0, w: 220, h: 400 };
 let branchRegionZoomDrag = null;
+let branchRegionPanDrag = null;
 function applyBranchRegionView() {
   branchRegionCanvas.setAttribute("viewBox", `${branchRegionView.x} ${branchRegionView.y} ${branchRegionView.w} ${branchRegionView.h}`);
 }
@@ -22260,20 +22264,46 @@ function resetBranchRegionZoom() {
   branchRegionView = { x: 0, y: 0, w: 220, h: 400 };
   applyBranchRegionView();
 }
-function beginBranchRegionCanvasZoom(event) {
-  if (event.button !== 2 || !event.altKey) return;
+// Map the viewport navigation style onto the 2D region panel instead of always
+// copying Houdini's Alt+RMB zoom. Alt+MMB pan stays available in every style.
+function branchRegionNavAction(event) {
+  const mmb = event.button === 1;
+  const rmb = event.button === 2;
+  if (navigationStyle === "houdini") {
+    if (mmb && event.altKey) return "pan";
+    if (rmb && event.altKey) return "zoom";
+  } else if (navigationStyle === "blender") {
+    if (mmb && event.shiftKey) return "pan";
+    if (mmb && event.ctrlKey) return "zoom";
+  } else if (rmb && event.altKey) {
+    return "pan";
+  }
+  if (mmb && event.altKey) return "pan";
+  return null;
+}
+function beginBranchRegionCanvasNav(event) {
+  const action = branchRegionNavAction(event);
+  if (!action) return;
   const rect = branchRegionCanvas.getBoundingClientRect();
   const viewBox = branchRegionCanvas.viewBox.baseVal;
-  branchRegionZoomDrag = {
-    pointerId: event.pointerId,
-    lastX: event.clientX,
-    lastY: event.clientY,
-    contentX: viewBox.x + (event.clientX - rect.left) * (viewBox.width / rect.width),
-    contentY: viewBox.y + (event.clientY - rect.top) * (viewBox.height / rect.height)
-  };
+  if (action === "zoom") {
+    branchRegionZoomDrag = {
+      pointerId: event.pointerId,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      contentX: viewBox.x + (event.clientX - rect.left) * (viewBox.width / rect.width),
+      contentY: viewBox.y + (event.clientY - rect.top) * (viewBox.height / rect.height)
+    };
+  } else {
+    branchRegionPanDrag = { pointerId: event.pointerId, lastX: event.clientX, lastY: event.clientY };
+  }
   try { branchRegionCanvas.setPointerCapture?.(event.pointerId); } catch (e) { /* synthetic */ }
   event.preventDefault();
   event.stopPropagation();
+}
+function updateBranchRegionCanvasNav(event) {
+  updateBranchRegionCanvasZoom(event);
+  updateBranchRegionCanvasPan(event);
 }
 function updateBranchRegionCanvasZoom(event) {
   if (!branchRegionZoomDrag || event.pointerId !== branchRegionZoomDrag.pointerId) return;
@@ -22285,7 +22315,8 @@ function updateBranchRegionCanvasZoom(event) {
   const ax = Math.abs(dx);
   const ay = Math.abs(dy);
   const magnitude = ax > ay ? ax + ay * 0.4142 : ay + ax * 0.4142;
-  const sign = ay >= ax ? (dy < 0 ? -1 : 1) : (dx > 0 ? -1 : 1);
+  // Reversed: dragging toward top-right zooms in, toward bottom-left zooms out.
+  const sign = ay >= ax ? (dy < 0 ? 1 : -1) : (dx > 0 ? 1 : -1);
   const factor = Math.pow(1.02, sign * magnitude);
   const nw = THREE.MathUtils.clamp(branchRegionView.w / factor, 40, 440);
   const nh = THREE.MathUtils.clamp(branchRegionView.h / factor, 80, 800);
@@ -22300,15 +22331,57 @@ function updateBranchRegionCanvasZoom(event) {
   applyBranchRegionView();
   event.preventDefault();
 }
-function endBranchRegionCanvasZoom(event) {
-  if (!branchRegionZoomDrag || (event?.pointerId !== undefined && event.pointerId !== branchRegionZoomDrag.pointerId)) return;
-  branchRegionZoomDrag = null;
+function updateBranchRegionCanvasPan(event) {
+  if (!branchRegionPanDrag || event.pointerId !== branchRegionPanDrag.pointerId) return;
+  const rect = branchRegionCanvas.getBoundingClientRect();
+  const viewBox = branchRegionCanvas.viewBox.baseVal;
+  const dx = (event.clientX - branchRegionPanDrag.lastX) * (viewBox.width / rect.width);
+  const dy = (event.clientY - branchRegionPanDrag.lastY) * (viewBox.height / rect.height);
+  branchRegionPanDrag.lastX = event.clientX;
+  branchRegionPanDrag.lastY = event.clientY;
+  branchRegionView = { ...branchRegionView, x: branchRegionView.x - dx, y: branchRegionView.y - dy };
+  applyBranchRegionView();
+  event.preventDefault();
 }
+function endBranchRegionCanvasNav(event) {
+  const pid = event?.pointerId;
+  if (branchRegionZoomDrag && (pid === undefined || pid === branchRegionZoomDrag.pointerId)) branchRegionZoomDrag = null;
+  if (branchRegionPanDrag && (pid === undefined || pid === branchRegionPanDrag.pointerId)) branchRegionPanDrag = null;
+}
+function onBranchRegionCanvasWheel(event) {
+  if (!branchRegionEdit) return;
+  event.preventDefault();
+  const rect = branchRegionCanvas.getBoundingClientRect();
+  const viewBox = branchRegionCanvas.viewBox.baseVal;
+  const px = viewBox.x + (event.clientX - rect.left) * (viewBox.width / rect.width);
+  const py = viewBox.y + (event.clientY - rect.top) * (viewBox.height / rect.height);
+  const factor = Math.pow(1.0015, -event.deltaY);
+  const nw = THREE.MathUtils.clamp(branchRegionView.w / factor, 40, 440);
+  const nh = THREE.MathUtils.clamp(branchRegionView.h / factor, 80, 800);
+  const kx = nw / branchRegionView.w;
+  const ky = nh / branchRegionView.h;
+  branchRegionView = {
+    x: px - (px - branchRegionView.x) * kx,
+    y: py - (py - branchRegionView.y) * ky,
+    w: nw,
+    h: nh
+  };
+  applyBranchRegionView();
+}
+function branchRegionEventUV(event) {
+  const canvasRect = branchRegionCanvas.getBoundingClientRect();
+  const viewBox = branchRegionCanvas.viewBox.baseVal;
+  const svgX = viewBox.x + (event.clientX - canvasRect.left) * (viewBox.width / canvasRect.width);
+  const svgY = viewBox.y + (event.clientY - canvasRect.top) * (viewBox.height / canvasRect.height);
+  return branchRegionCanvasToUV(svgX, svgY);
+}
+
 function beginBranchRegionCanvasDrag(event) {
   if (!branchRegionEdit) return;
   const point = event.target?.closest?.("circle[data-region-point], rect[data-region-point]");
   const rectTarget = event.target?.closest?.("#branchRegionRect");
   if (!point && !rectTarget) return;
+  if (event.button !== 0) return;
   // One undo for the whole drag.
   pushUndoState();
   if (point && point.getAttribute("data-region-point") === "center") {
@@ -22333,9 +22406,51 @@ function beginBranchRegionCanvasDrag(event) {
       }
     };
   } else if (point && ["topleft", "topright", "bottomleft", "bottomright"].includes(point.getAttribute("data-region-point"))) {
-    branchRegionCanvasDrag = { mode: "corner", name: point.getAttribute("data-region-point"), pointerId: event.pointerId };
+    const cornerName = point.getAttribute("data-region-point");
+    if (event.ctrlKey) {
+      const lock = locks.find((item) => item.id === branchRegionEdit);
+      const cross = lock?.branchRootRegion?.cross;
+      if (!cross) return;
+      const startUV = branchRegionEventUV(event);
+      branchRegionCanvasDrag = {
+        mode: "corner-mirror",
+        name: cornerName,
+        pointerId: event.pointerId,
+        startU: startUV.u,
+        startV: startUV.v,
+        startRegion: {
+          up: { ...cross.up },
+          down: { ...cross.down },
+          left: { ...cross.left },
+          right: { ...cross.right }
+        }
+      };
+    } else {
+      branchRegionCanvasDrag = { mode: "corner", name: cornerName, pointerId: event.pointerId };
+    }
   } else if (point) {
-    branchRegionCanvasDrag = { mode: "point", name: point.getAttribute("data-region-point"), pointerId: event.pointerId };
+    const pointName = point.getAttribute("data-region-point");
+    if (event.ctrlKey) {
+      const lock = locks.find((item) => item.id === branchRegionEdit);
+      const cross = lock?.branchRootRegion?.cross;
+      if (!cross) return;
+      const startUV = branchRegionEventUV(event);
+      branchRegionCanvasDrag = {
+        mode: "point-mirror",
+        name: pointName,
+        pointerId: event.pointerId,
+        startU: startUV.u,
+        startV: startUV.v,
+        startRegion: {
+          up: { ...cross.up },
+          down: { ...cross.down },
+          left: { ...cross.left },
+          right: { ...cross.right }
+        }
+      };
+    } else {
+      branchRegionCanvasDrag = { mode: "point", name: pointName, pointerId: event.pointerId };
+    }
   } else {
     // Drag the rect body to translate the whole region.
     const canvasRect = branchRegionCanvas.getBoundingClientRect();
@@ -22424,6 +22539,35 @@ function updateBranchRegionCanvasDrag(event) {
       // Mirror along v (left/right).
       cross.left.v = clampRegionParam(centerV + (offsets.left + dv));
       cross.right.v = clampRegionParam(centerV - (offsets.right + dv));
+    }
+    normalizeBranchRootRegion(lock);
+    syncBranchRootRegionOffsets(lock);
+    const parent = locks.find((item) => item.id === lock?.branchParentId);
+    if (parent) rebuildLockGeometry(parent);
+    else rebuildLockGeometry(lock);
+    updateCurveObjects(lock);
+    renderBranchRegionEditor();
+    return;
+  }
+  if (branchRegionCanvasDrag.mode === "point-mirror" || branchRegionCanvasDrag.mode === "corner-mirror") {
+    const start = branchRegionCanvasDrag.startRegion;
+    if (!start) return;
+    const name = branchRegionCanvasDrag.name;
+    const du = uv.u - branchRegionCanvasDrag.startU;
+    const dv = uv.v - branchRegionCanvasDrag.startV;
+    // Ctrl+drag: the dragged point follows the pointer, the opposite point moves
+    // in reverse, mirroring around the pair midpoint (the orange anchor stays put).
+    const mirrorU = branchRegionCanvasDrag.mode === "corner-mirror" || name === "up" || name === "down";
+    const mirrorV = branchRegionCanvasDrag.mode === "corner-mirror" || name === "left" || name === "right";
+    if (mirrorU) {
+      const upFollows = name === "up" || name.startsWith("top");
+      cross.up.u = clampRegionParam(start.up.u + (upFollows ? du : -du));
+      cross.down.u = clampRegionParam(start.down.u + (upFollows ? -du : du));
+    }
+    if (mirrorV) {
+      const leftFollows = name === "left" || name.endsWith("left");
+      cross.left.v = clampRegionParam(start.left.v + (leftFollows ? dv : -dv));
+      cross.right.v = clampRegionParam(start.right.v + (leftFollows ? -dv : dv));
     }
     normalizeBranchRootRegion(lock);
     syncBranchRootRegionOffsets(lock);
@@ -27965,6 +28109,7 @@ function updateAttributeEditorMode() {
     scalpBuilderEditing || capsuleGuideEditing || sculptProportionalToolActive
   );
   hierarchyPanel.classList.toggle("hidden", !editingStrand || !hierarchyToolActive || !hierarchyEditing);
+  branchBridgePanel.classList.toggle("hidden", !editingStrand || !getSelectedLock()?.branchParentId);
   strandLayerControl.classList.toggle("hidden", editingCreationShape && activeTool === "draw");
   strandShapePanel.classList.toggle("hidden", Boolean(selectedPoly) || (!editingStrand && !editingCreationShape));
   strandShapeTitle.textContent = editingCreationShape
@@ -32077,10 +32222,11 @@ if (branchRegionMeshPointsToggle) {
     else branchRegionMeshPointsGroup.visible = false;
   });
 }
-branchRegionCanvas.addEventListener("pointerdown", beginBranchRegionCanvasZoom, true);
-branchRegionCanvas.addEventListener("pointermove", updateBranchRegionCanvasZoom);
-branchRegionCanvas.addEventListener("pointerup", endBranchRegionCanvasZoom);
-branchRegionCanvas.addEventListener("pointercancel", endBranchRegionCanvasZoom);
+branchRegionCanvas.addEventListener("pointerdown", beginBranchRegionCanvasNav, true);
+branchRegionCanvas.addEventListener("pointermove", updateBranchRegionCanvasNav);
+branchRegionCanvas.addEventListener("pointerup", endBranchRegionCanvasNav);
+branchRegionCanvas.addEventListener("pointercancel", endBranchRegionCanvasNav);
+branchRegionCanvas.addEventListener("wheel", onBranchRegionCanvasWheel, { passive: false });
 branchRegionCanvas.addEventListener("pointerdown", beginBranchRegionCanvasDrag);
 branchRegionCanvas.addEventListener("pointermove", updateBranchRegionCanvasDrag);
 branchRegionCanvas.addEventListener("pointerup", endBranchRegionCanvasDrag);
