@@ -158,7 +158,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-23";
+} from "./modules/app-config.js?v=20260808-24";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -13227,7 +13227,7 @@ function strandGeometryFrameAt(
   desiredZ.normalize();
 
   let z = desiredZ;
-  let untwistedX = null;
+  let untwistedZ = null;
   if (previousFrame) {
     // Transport the complete frame around the bend. Projection alone can
     // suddenly roll the profile when a curve passes through an inflection.
@@ -13236,19 +13236,18 @@ function strandGeometryFrameAt(
     if (transportedZ.lengthSq() >= 0.0001) {
       transportedZ.normalize();
       if (lock.branchParentId) {
-        // Branch child: the profile up is anchored by the parent cylinder's
-        // bitangent (frame.x, the transverse component), transported along the
-        // child: up = cross(transported bitangent, child tangent), then the full
-        // authored twist is applied around the child tangent (the user controls
-        // both the tangent and the twist). The child's own surface normals are
-        // degenerate (near-parallel to its tangent), so they are never used.
-        const refX = (previousFrame.untwistedX || previousFrame.x)
+        // Branch child: chain the profile from the root gizmo frame. Transport
+        // the UNTWISTED up (which carries the child's rotation), then apply the
+        // child's authored twist fully around the tangent - the sweep follows the
+        // child bone and preserves its twist completely. The child's own surface
+        // normals are degenerate (near-parallel to its tangent), so they are never
+        // used.
+        const ref = (previousFrame.untwistedZ || previousFrame.z)
           .clone().applyQuaternion(transport).projectOnPlane(tangent);
-        if (refX.lengthSq() >= 0.0001) {
-          refX.normalize();
-          untwistedX = refX;
-          z = new THREE.Vector3().crossVectors(refX, tangent).normalize();
-          z.applyAxisAngle(tangent, twist).normalize();
+        if (ref.lengthSq() >= 0.0001) {
+          ref.normalize();
+          untwistedZ = ref;
+          z = ref.clone().applyAxisAngle(tangent, twist).normalize();
         }
       } else {
         if (desiredZ.dot(transportedZ) < 0) desiredZ.negate();
@@ -13268,7 +13267,7 @@ function strandGeometryFrameAt(
     x,
     y: tangent,
     z,
-    untwistedX: untwistedX || x.clone(),
+    untwistedZ: untwistedZ || z.clone(),
     quaternion: new THREE.Quaternion().setFromRotationMatrix(matrix),
     scale: { x: sampleScale(lock.pointScales, t, "x"), z: sampleScale(lock.pointScales, t, "z") }
   };
@@ -14565,20 +14564,20 @@ function createBranchChildGeometry(lock) {
   if (branchParentForSweep) {
     try {
       const seedTangent = curve.getTangent(SWEEP_START_T).normalize();
-      const parentFrame = branchParentFrame(branchParentForSweep, lock.branchParentParameter);
-      // Anchor the profile with the parent cylinder's bitangent (frame.x, the
-      // transverse component): up = cross(bitangent, child tangent). The authored
-      // twist is applied per sweep frame on top.
-      const x = parentFrame.x.clone().projectOnPlane(seedTangent);
-      if (x.lengthSq() >= 0.0001) {
-        x.normalize();
-        const up = new THREE.Vector3().crossVectors(x, seedTangent).normalize();
+      // Seed the sweep chain from the root gizmo frame (hot-updated, correct):
+      // the child bone's frame provides the up, re-based onto the sweep-start
+      // tangent. The authored twist is applied per sweep frame on top.
+      const gizmoFrame = strandControlPointFrame(lock, 0);
+      const up = gizmoFrame.z.clone().projectOnPlane(seedTangent);
+      if (up.lengthSq() >= 0.0001) {
+        up.normalize();
+        const x = new THREE.Vector3().crossVectors(seedTangent, up).normalize();
         const matrix = new THREE.Matrix4().makeBasis(x, seedTangent, up);
         previousFrame = {
           x,
           y: seedTangent.clone(),
           z: up,
-          untwistedX: x.clone(),
+          untwistedZ: up.clone(),
           quaternion: new THREE.Quaternion().setFromRotationMatrix(matrix),
           point: curve.getPoint(SWEEP_START_T),
           scale: { x: 1, z: 1 }
