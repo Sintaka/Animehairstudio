@@ -1,3 +1,4 @@
+import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260809-17";
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260809-16";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260809-15";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-14";
@@ -927,10 +928,10 @@ transformControls.addEventListener("objectChange", () => {
     else applySingleScale(lock, pointIndex, handle);
     lock.width = Math.max(0.04, lock.baseWidth * average(lock.pointWidths));
   }
-  enforceBranchRootPosition(lock);
+  branchRootBone.enforceBranchRootPosition(lock);
   if (sel.state.activeTool === "move" && sculptState.state.hierarchyEditing && pointIndex === 0 && lock.branchParentId) {
-    applyBranchRigidRootMove(lock);
-    syncBranchRootHandleFrame(lock);
+    branchRootBone.applyBranchRigidRootMove(lock);
+    branchRootBone.syncBranchRootHandleFrame(lock);
   }
   syncUnifiedCurveSurfaceMirror(lock, pointIndex, sel.state.activeTool);
   if (["move", "rotate"].includes(sel.state.activeTool)) updateGroupLatticeBaseFromHandleEdit(lock);
@@ -11155,50 +11156,12 @@ function updateInteractionLocks() {
   const loftStrokeActive = Boolean(miscState.state.loftSurfaceDraft?.activeStroke);
   const curveSurfaceStrokeActive = Boolean(sculptState.state.curveSurfaceDraft?.activeStroke);
   controls.enabled = Boolean(sculptState.state.altOrbitDrag) || (!miscState.state.toolRadialGesture && !hairState.state.strandRadialGesture && !sculptState.state.duplicatePlacement && !sculptState.state.referenceOverlayDrag && !sculptState.state.referenceCropDrag && !sculptState.state.selectPointerCapture && !sculptState.state.transformDragging && !sculptState.state.relaxEdit && !sculptState.state.sculptMoveStroke && !sculptState.state.proportionalSizeEdit && !sculptState.state.proportionalHotkeyPress && !sculptState.state.brushSizeDrag && !sculptState.state.strandWidthEdgeDrag && !scalpState.state.scalpLatticeDrag && !scalpState.state.scalpPaintDrag && !scalpState.state.scalpBuilderStroke && !sculptState.state.viewSnapDrag && !sculptState.state.viewPlaneMoveDrag && !sculptState.state.drawStrandStroke && !sculptState.state.capsuleGuideDrawStroke && !sculptState.state.polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !sculptState.state.selectionMarqueeDrag && !sculptState.state.panelSplitDrag && !sculptState.state.capsuleGuideLoopDrag && !sculptState.state.taperMeshPointDrag && !sculptState.state.branchSweepStartDrag && !sculptState.state.houdiniZoomDrag);
-  const branchMoveDisabled = branchMoveGizmoDisabled();
+  const branchMoveDisabled = branchRootBone.branchMoveGizmoDisabled();
   transformControls.enabled = !miscState.state.toolRadialGesture && !hairState.state.strandRadialGesture && !sculptState.state.duplicatePlacement && !sculptState.state.referenceOverlayDrag && !sculptState.state.referenceCropDrag && !sculptState.state.altOrbitDrag && !sculptState.state.sculptMoveStroke && !sculptState.state.proportionalSizeEdit && !sculptState.state.proportionalHotkeyPress && !sculptState.state.brushSizeDrag && !sculptState.state.strandWidthEdgeDrag && !scalpState.state.scalpBuilderStroke && !sculptState.state.viewSnapDrag && !sculptState.state.viewPlaneMoveDrag && !sculptState.state.drawStrandStroke && !sculptState.state.capsuleGuideDrawStroke && !sculptState.state.polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !sculptState.state.panelSplitDrag && !sculptState.state.capsuleGuideLoopDrag && !sculptState.state.taperMeshPointDrag && !branchMoveDisabled && !sculptState.state.branchSweepStartDrag && !sculptState.state.houdiniZoomDrag;
-  setBranchMoveGizmoVisual(branchMoveDisabled);
+  branchRootBone.setBranchMoveGizmoVisual(branchMoveDisabled);
 }
 
-function branchMoveGizmoDisabled() {
-  // Branch children can move their root bone in the parent's width plane; the
-  // position is constrained back onto the parent surface in enforceBranchRootPosition.
-  if (sel.state.activeTool !== "move" || sculptState.state.viewportEditMode !== "strand") return false;
-  const lock = getSelectedLock();
-  if (!lock?.branchParentId) return false;
-  return !componentEditModeActive();
-}
 
-function setBranchMoveGizmoVisual(disabled) {
-  const gizmoGroups = transformControls._gizmo?.gizmo;
-  if (!gizmoGroups) return;
-  const restoreMaterials = new Set();
-  Object.values(gizmoGroups).forEach((group) => group.traverse((item) => {
-    const materials = Array.isArray(item.material) ? item.material : [item.material];
-    materials.filter(Boolean).forEach((material) => restoreMaterials.add(material));
-  }));
-  restoreMaterials.forEach((material) => {
-    material.userData.branchMoveColor ||= material._color?.clone() || material.color?.clone() || null;
-    material.userData.branchMoveOpacity ??= Number(material._opacity ?? material.opacity);
-    if (material.userData.branchMoveColor) {
-      material._color?.copy(material.userData.branchMoveColor);
-      material.color?.copy(material.userData.branchMoveColor);
-    }
-    material._opacity = material.userData.branchMoveOpacity;
-    material.opacity = material.userData.branchMoveOpacity;
-  });
-  if (!disabled) return;
-  gizmoGroups.translate?.traverse((item) => {
-    const materials = Array.isArray(item.material) ? item.material : [item.material];
-    materials.filter(Boolean).forEach((material) => {
-      const disabledOpacity = Math.min(Number(material.userData.branchMoveOpacity ?? 1), 0.42);
-      material._color?.setHex(0x7c7c84);
-      material.color?.setHex(0x7c7c84);
-      material._opacity = disabledOpacity;
-      material.opacity = disabledOpacity;
-    });
-  });
-}
 
 function configureTransformControls(tool) {
   transformControls.setMode(toolModes[tool]);
@@ -11673,6 +11636,15 @@ function updateStrandObjectTransform(handle) {
   });
 }
 
+const branchRootBone = createBranchRootBoneApi({
+  commitClumpMemberRestState, componentEditModeActive, controlPointRotationAt,
+  curveFrameAt, curveFrameAtPoint, getSelectedLock, strandControlPointFrame,
+  transportedStrandFrameAt, updateBranchChildren, locks, transformControls,
+  updateBranchRootRegionCenter: (lock, u, v) => branchRegion.updateBranchRootRegionCenter(lock, u, v),
+  branchState: branch.state, selState: sel.state, sculptState: sculptState.state
+});
+
+
 function commitStrandObjectTransform(edit, handle) {
   if (!edit || handle !== strandObjectTransformHandle) return;
   const {
@@ -11708,8 +11680,8 @@ function commitStrandObjectTransform(edit, handle) {
       };
     }
     if (lock.branchParentId) {
-      enforceBranchRootPosition(lock);
-      captureBranchLocalState(lock);
+      branchRootBone.enforceBranchRootPosition(lock);
+      branchRootBone.captureBranchLocalState(lock);
     }
     syncLockFromCurve(lock);
     updateLockGeometry(lock, { immediate: true });
@@ -11899,10 +11871,10 @@ function beginHandleEdit(handle = transformControls.object) {
   if (lock.branchParentId && handle.userData.pointIndex === 0) {
     const branchParent = locks.find((item) => item.id === lock.branchParentId);
     if (branchParent) {
-      const rootFrame = branchParentFrame(branchParent, lock.branchParentParameter);
+      const rootFrame = branchRootBone.branchParentFrame(branchParent, lock.branchParentParameter);
       const across = new THREE.Vector3().subVectors(lock.points[0], rootFrame.point).dot(rootFrame.x);
       sculptState.state.activeHandleEdit.branchRigid = {
-        frameQuat: branchSurfaceFrameQuat(branchParent, lock.branchParentParameter, across),
+        frameQuat: branchRootBone.branchSurfaceFrameQuat(branchParent, lock.branchParentParameter, across),
         across,
         deltas: lock.points.map((point) => point.clone().sub(lock.points[0]))
       };
@@ -11918,70 +11890,9 @@ function beginHandleEdit(handle = transformControls.object) {
 // lateral normal tilt from a temporary elliptical cross-section (width x depth), so
 // both up/down (guide curvature) and left/right (cross-section curvature) root drags
 // rotate the child's tip.
-function branchSurfaceFrameQuat(parent, parameter, across) {
-  const base = curveFrameAt(parent, parameter);
-  const width = Math.max(0.0001, Number(parent.width ?? parent.baseWidth ?? 0.16));
-  const depth = Math.max(0.0001, Number(parent.depth ?? 0.16));
-  const a = width * 0.5;
-  const b = depth * 0.5;
-  const s = THREE.MathUtils.clamp(Number(across) || 0, -a, a);
-  const zSurf = b * Math.sqrt(Math.max(0, 1 - (s / a) * (s / a)));
-  // Outward normal of the ellipse x^2/a^2 + z^2/b^2 = 1 at (s, zSurf).
-  const nx = s / (a * a);
-  const nz = zSurf / (b * b);
-  const len = Math.sqrt(nx * nx + nz * nz) || 1;
-  const z = base.z.clone().multiplyScalar(nz / len).addScaledVector(base.x, nx / len).normalize();
-  const y = base.y.clone();
-  const x = new THREE.Vector3().crossVectors(y, z).normalize();
-  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
-}
-function applyBranchRigidRootMove(lock) {
-  const rigid = sculptState.state.activeHandleEdit?.branchRigid;
-  if (!rigid?.deltas?.length || !rigid?.frameQuat || lock.points.length !== rigid.deltas.length) return;
-  const parent = locks.find((item) => item.id === lock?.branchParentId);
-  if (!parent || !lock.points.length) return;
-  const rootFrame = branchParentFrame(parent, lock.branchParentParameter);
-  const across = new THREE.Vector3().subVectors(lock.points[0], rootFrame.point).dot(rootFrame.x);
-  const frame = branchSurfaceFrameQuat(parent, lock.branchParentParameter, across);
-  // Relative rotation from the recorded surface frame to the new surface frame
-  // (guide curvature + lateral cross-section tilt), then blend halfway with identity
-  // (= fully straight, no rotation). The child's world shape is only rotated by this
-  // relative swing, never by the parent frame's absolute orientation.
-  const relative = frame.clone().multiply(rigid.frameQuat.clone().invert());
-  // Cap the total swing: the parent's lateral surface normal can tilt up to ~90 deg
-  // at the strand edge, which as a full rigid rotation reads as "axis wild / up
-  // flip" in Hierarchy mode. Clamp the relative rotation so the child never swings
-  // past the limit even at blend 1.0.
-  const identityQuat = new THREE.Quaternion();
-  const relAngle = relative.angleTo(identityQuat);
-  const maxSwing = THREE.MathUtils.degToRad(BRANCH_RIGID_SWING_LIMIT_DEG);
-  const cappedRelative = relAngle > maxSwing
-    ? relative.clone().slerp(identityQuat, 1 - maxSwing / relAngle)
-    : relative;
-  const rotation = new THREE.Quaternion().slerpQuaternions(
-    identityQuat,
-    cappedRelative,
-    branch.state.branchRigidCurvatureBlend
-  );
-  const root = lock.points[0];
-  lock.points.forEach((point, index) => {
-    if (index === 0) return;
-    point.copy(root).add(rigid.deltas[index].clone().applyQuaternion(rotation));
-  });
-}
 // Keep the root handle (TransformControls gizmo) oriented with the stable bone
 // frame during a Hierarchy-mode root drag, so the gizmo follows the sweep instead
 // of staying frozen at the drag-start orientation (hot axis update).
-function syncBranchRootHandleFrame(lock) {
-  const handle = lock?.curveObjects?.handles?.[0];
-  if (!handle || !lock?.branchParentId) return;
-  // Gizmo = tube-model baseline + the user's root twist (kept across hot-updates),
-  // and the same orientation is applied to the root bone so it follows the gizmo.
-  const frame = branchRootGizmoFrame(lock);
-  handle.quaternion.copy(frame.quaternion);
-  if (lock.pointSurfaceNormals) lock.pointSurfaceNormals[0] = frame.z.clone();
-  lock.rootSurfaceNormal = frame.z.clone();
-}
 
 function updateGroupLatticeBaseFromHandleEdit(lock) {
   const edit = sculptState.state.activeHandleEdit;
@@ -12451,10 +12362,10 @@ function updateViewPlaneMove(event) {
   else if (sculptState.state.hierarchyEditing) applyHierarchicalMove(lock, sculptState.state.viewPlaneMoveDrag.pointIndex, sculptState.state.viewPlaneMoveDrag.handle);
   else if (sculptState.state.proportionalEditing) applyProportionalMove(lock, sculptState.state.viewPlaneMoveDrag.pointIndex, sculptState.state.viewPlaneMoveDrag.handle);
   else applySingleMove(lock, sculptState.state.viewPlaneMoveDrag.pointIndex, sculptState.state.viewPlaneMoveDrag.handle);
-  enforceBranchRootPosition(lock);
+  branchRootBone.enforceBranchRootPosition(lock);
   if (sculptState.state.hierarchyEditing && sculptState.state.viewPlaneMoveDrag.pointIndex === 0 && lock.branchParentId) {
-    applyBranchRigidRootMove(lock);
-    syncBranchRootHandleFrame(lock);
+    branchRootBone.applyBranchRigidRootMove(lock);
+    branchRootBone.syncBranchRootHandleFrame(lock);
   }
   syncUnifiedCurveSurfaceMirror(lock, sculptState.state.viewPlaneMoveDrag.pointIndex, "move");
   updateGroupLatticeBaseFromHandleEdit(lock);
@@ -14698,7 +14609,7 @@ function proceduralBranchGeometryLock(parent, template, index) {
     taperCurveSecondary: remapEnvelopeCurveRange(parent.taperCurveSecondary || parent.taperCurve, start, 1),
     depthCurveSecondary: remapEnvelopeCurveRange(parent.depthCurveSecondary || parent.depthCurve, start, 1)
   };
-  branch.pointSurfaceNormals = stableBranchBaseNormals(branch);
+  branch.pointSurfaceNormals = branchRootBone.stableBranchBaseNormals(branch);
   return branch;
 }
 
@@ -18535,9 +18446,9 @@ function restoreSceneCollectionsForStateRestore(restorePlan, {
   locks.filter((lock) => lock.branchParentId).forEach((child) => branchBridge.applyBranchRootOffset(child));
   // Re-capture branch local state from the restored guide points so branchLocalPoints
   // matches the current parent frame. Stored branchLocalPoints can be stale relative
-  // to a changed frame (e.g. the continuous branchParentFrame), which made the first
+  // to a changed frame (e.g. the continuous branchRootBone.branchParentFrame), which made the first
   // rebuild (e.g. toggling Hierarchy editing) re-derive/snap the child elsewhere.
-  locks.filter((lock) => lock.branchParentId).forEach((child) => captureBranchLocalState(child));
+  locks.filter((lock) => lock.branchParentId).forEach((child) => branchRootBone.captureBranchLocalState(child));
   selectionSets.push(...normalizeSelectionSets(
     restorePlan.scene.selectionSets,
     locks.map((lock) => lock.id)
@@ -21477,118 +21388,12 @@ function addLockToClump(lock, guide, options = {}) {
   return true;
 }
 
-function stableBranchBaseNormals(lock) {
-  if (!lock?.points?.length) return [];
-  const curve = new THREE.CatmullRomCurve3(lock.points);
-  return lock.points.map((point, index) => transportedStrandFrameAt(
-    lock,
-    curve,
-    index / Math.max(1, lock.points.length - 1),
-    { twistOverride: 0 }
-  ).z.clone().normalize());
-}
 
-function ensureBranchParentNormalField(parent) {
-  if (!parent?.points?.length) return;
-  parent.pointSurfaceNormals = stableBranchBaseNormals(parent);
-  parent.surfaceNormalInfluence = 1;
-}
 
-function branchParentFrame(parent, parameter) {
-  // Continuous parent-surface frame along the guide: the child root slides smoothly
-  // between guide control points (no discrete row snapping / jumps) while staying
-  // laterally aligned to the guide line (across along frame.x is preserved in
-  // enforceBranchRootPosition). Orientation matches curveFrameAtPoint at each
-  // control point, so this only smooths the interpolation.
-  const t = THREE.MathUtils.clamp(Number(parameter ?? 0), 0, 1);
-  const frame = curveFrameAt(parent, t);
-  frame.point = new THREE.CatmullRomCurve3(parent.points).getPoint(t);
-  return frame;
-}
 
-function branchLocalVector(vector, frame) {
-  return new THREE.Vector3(vector.dot(frame.x), vector.dot(frame.y), vector.dot(frame.z));
-}
 
-function branchWorldVector(vector, frame) {
-  return frame.x.clone().multiplyScalar(vector.x)
-    .addScaledVector(frame.y, vector.y)
-    .addScaledVector(frame.z, vector.z);
-}
 
-function captureBranchLocalState(lock) {
-  const parent = locks.find((item) => item.id === lock?.branchParentId);
-  if (!parent || !lock?.points?.length) return false;
-  const frame = branchParentFrame(parent, lock.branchParentParameter);
-  // Preserve the root's lateral (across-width) offset instead of snapping it back to
-  // the parent guide-line center: capture runs at drag end (commitClumpMemberRestState)
-  // and on parent rebuilds, and zeroing it makes the root pop to the center on the next
-  // rebuild (click elsewhere / select another strand), distorting the child strand.
-  const across = new THREE.Vector3().subVectors(lock.points[0], frame.point).dot(frame.x);
-  lock.points[0].copy(frame.point).addScaledVector(frame.x, across);
-  // Preserve the child's actual surface normals (the sweep frames read them) so
-  // updateBranchChildren round-trips them unchanged when the parent frame is the
-  // same; recomputed stable normals would override them and swing the root sweep.
-  const childNormals = lock.pointSurfaceNormals?.some(Boolean)
-    ? lock.pointSurfaceNormals
-    : stableBranchBaseNormals(lock);
-  lock.branchLocalPoints = lock.points.map((point, index) => (
-    index === 0
-      ? new THREE.Vector3(across, 0, 0)
-      : branchLocalVector(point.clone().sub(frame.point), frame)
-  ));
-  lock.branchLocalSurfaceNormals = childNormals.map((normal) => (
-    normal ? branchLocalVector(normal, frame).normalize() : null
-  ));
-  lock.surfaceNormalInfluence = 1;
-  return true;
-}
 
-function enforceBranchRootPosition(lock) {
-  const parent = locks.find((item) => item.id === lock?.branchParentId);
-  if (!parent || !lock?.points?.length) return null;
-  const curve = new THREE.CatmullRomCurve3(parent.points);
-  let bestT = THREE.MathUtils.clamp(Number(lock.branchParentParameter ?? 0), 0, 1);
-  let bestDist = Infinity;
-  for (let i = 0; i <= 64; i += 1) {
-    const t = i / 64;
-    const p = curve.getPoint(t);
-    const d = p.distanceToSquared(lock.points[0]);
-    if (d < bestDist) { bestDist = d; bestT = t; }
-  }
-  lock.branchParentParameter = branchRegion.clampRegionParam(bestT);
-  const frame = branchParentFrame(parent, lock.branchParentParameter);
-  // The root slides in the parent's width plane: keep the across-width (frame.x)
-  // component of the drag and project back onto the parent surface.
-  const width = Math.max(0.0001, Number(parent.baseWidth ?? parent.width ?? 0.16));
-  // Tube proxy constraint: the parent is a swept tube (guide curve + width), so the
-  // root slides along the lateral (frame.x) line but is clamped to the tube's half
-  // width. Dragging an arbitrary gizmo axis (e.g. the local X) can no longer push
-  // the root past the parent's edge / fly off the hair piece. The depth feeds the
-  // surface-frame orientation (branchSurfaceFrameQuat / sweep seed), not the clamp.
-  const halfWidth = width * 0.5;
-  const across = THREE.MathUtils.clamp(
-    new THREE.Vector3().subVectors(lock.points[0], frame.point).dot(frame.x),
-    -halfWidth,
-    halfWidth
-  );
-  const v = branchRegion.clampRegionParam(0.5 - across / width);
-  // Follow the selection region with the root (u and v centers).
-  branchRegion.updateBranchRootRegionCenter(lock, lock.branchParentParameter, v);
-  const rootPoint = frame.point.clone().addScaledVector(frame.x, across);
-  lock.points[0].copy(rootPoint);
-  if (lock.groupLatticeBasePoints?.[0]) lock.groupLatticeBasePoints[0].copy(rootPoint);
-  lock.rootSurfacePoint = rootPoint.clone();
-  lock.rootSurfaceNormal = frame.z.clone();
-  lock.rootAttachment = null;
-  // Keep the local root offset in sync so updateBranchChildren holds it on the surface.
-  if (Array.isArray(lock.branchLocalPoints) && lock.branchLocalPoints[0]) {
-    lock.branchLocalPoints[0].x = across;
-    lock.branchLocalPoints[0].y = 0;
-    lock.branchLocalPoints[0].z = 0;
-  }
-  return frame;
-}
 
 // Keep the region's intended center and edge offsets in sync with the cross points.
 // The offsets are what recenter (root slide / rect move) preserves, so clamping at
@@ -21667,7 +21472,7 @@ function gridProfileSkipCol(edges, vertexCount) {
 function attachDrawnLocksAsBranches(stroke, created) {
   const parent = locks.find((lock) => lock.id === stroke.branchSourceLockId);
   if (!canBranchDrawFromLock(parent) || !created.length) return null;
-  ensureBranchParentNormalField(parent);
+  branchRootBone.ensureBranchParentNormalField(parent);
   const parameter = THREE.MathUtils.clamp(
     Number(stroke.branchSourcePointIndex || 0) / Math.max(1, parent.points.length - 1),
     0,
@@ -21678,7 +21483,7 @@ function attachDrawnLocksAsBranches(stroke, created) {
     lock.branchParentParameter = parameter;
     delete lock.clumpShapeCurveInheritance;
     lock.branchRootRegion = branchRegion.branchRootRegionFromParam(parameter);
-    captureBranchLocalState(lock);
+    branchRootBone.captureBranchLocalState(lock);
   });
   updateBranchChildren(parent);
   return parent;
@@ -21706,16 +21511,16 @@ function updateBranchChildren(parent) {
   try {
     children.forEach((child) => {
       if (!child.branchLocalPoints?.length || !child.branchLocalSurfaceNormals?.length) {
-        captureBranchLocalState(child);
+        branchRootBone.captureBranchLocalState(child);
       }
-      const frame = branchParentFrame(parent, child.branchParentParameter);
+      const frame = branchRootBone.branchParentFrame(parent, child.branchParentParameter);
       child.pointSurfaceNormals ||= [];
       child.points.forEach((point, index) => {
         const local = child.branchLocalPoints?.[index] || child.branchLocalPoints?.at(-1) || new THREE.Vector3();
-        point.copy(frame.point).add(branchWorldVector(local, frame));
+        point.copy(frame.point).add(branchRootBone.branchWorldVector(local, frame));
         const localNormal = child.branchLocalSurfaceNormals?.[index];
         if (localNormal) {
-          child.pointSurfaceNormals[index] = branchWorldVector(localNormal, frame).normalize();
+          child.pointSurfaceNormals[index] = branchRootBone.branchWorldVector(localNormal, frame).normalize();
         }
       });
       const start = THREE.MathUtils.clamp(Number(child.branchParentParameter ?? 0), 0, 1);
@@ -21796,7 +21601,7 @@ function proceduralBranchWorldPoints(guide, template) {
     template.parameter,
     { twistOverride: 0 }
   );
-  return template.localPoints.map(([x, y, z]) => frame.point.clone().add(branchWorldVector(
+  return template.localPoints.map(([x, y, z]) => frame.point.clone().add(branchRootBone.branchWorldVector(
     new THREE.Vector3(x, y, z),
     frame
   )));
@@ -21984,7 +21789,7 @@ function clumpFrameAt(curve, t) {
 
 function commitClumpMemberRestState(lock) {
   if (lock?.branchParentId) {
-    captureBranchLocalState(lock);
+    branchRootBone.captureBranchLocalState(lock);
     return;
   }
   if (!lock?.clumpId || lock.clumpGuide || !lock.points?.length) return;
@@ -25045,7 +24850,7 @@ function strandControlPointFrame(lock, index) {
       const curve = strandGeometryCurve(lock);
       const tangent = curve.getTangent(0).normalize();
       const parent = locks.find((item) => item.id === lock.branchParentId);
-      const parentFrame = branchParentFrame(parent, lock.branchParentParameter);
+      const parentFrame = branchRootBone.branchParentFrame(parent, lock.branchParentParameter);
       const up = parentFrame.y.clone().negate().projectOnPlane(tangent);
       if (up.lengthSq() >= 0.0001) {
         up.normalize();
@@ -25070,23 +24875,6 @@ function strandControlPointFrame(lock, index) {
 // authored root point twist (rotate tool writes pointTwists[0]), so the gizmo
 // reflects the user's hand rotation instead of always showing the untwisted
 // baseline. This is also the orientation applied to the root bone.
-function branchRootGizmoFrame(lock) {
-  const base = strandControlPointFrame(lock, 0);
-  const twist = controlPointRotationAt(lock, 0);
-  const z = base.z.clone().applyAxisAngle(base.y, twist).normalize();
-  const x = new THREE.Vector3().crossVectors(base.y, z).normalize();
-  const zz = new THREE.Vector3().crossVectors(x, base.y).normalize();
-  return {
-    x,
-    y: base.y.clone(),
-    z: zz,
-    quaternion: new THREE.Quaternion().setFromRotationMatrix(
-      new THREE.Matrix4().makeBasis(x, base.y, zz)
-    ),
-    point: base.point,
-    scale: base.scale
-  };
-}
 
 function strandControlPointHitFromEvent(event, lock = getSelectedLock()) {
   if (lock?.locked || !lock?.curveObjects?.group.visible) return null;
@@ -25216,7 +25004,7 @@ function createCurveObjects(lock) {
   const handles = lock.points.map((point, index) => {
     const pointScale = lock.pointScales?.[index] || { x: 1, z: 1 };
     const frame = lock.geometryType === "surface" ? null
-      : (lock.branchParentId && index === 0 ? branchRootGizmoFrame(lock) : strandControlPointFrame(lock, index));
+      : (lock.branchParentId && index === 0 ? branchRootBone.branchRootGizmoFrame(lock) : strandControlPointFrame(lock, index));
     const handle = new THREE.Mesh(
       new THREE.SphereGeometry(
         0.052 * STRAND_CONTROL_POINT_RADIUS_SCALE,
@@ -25611,7 +25399,7 @@ function updateCurveObjects(lock, options = {}) {
     handle.visible = lock.geometryType !== "curve-surface"
       || (controllerIndex !== null && Math.floor(index / lock.curveSurfaceRows) === controllerIndex);
     const frame = lock.geometryType === "surface" ? null
-      : (lock.branchParentId && index === 0 ? branchRootGizmoFrame(lock) : strandControlPointFrame(lock, index));
+      : (lock.branchParentId && index === 0 ? branchRootBone.branchRootGizmoFrame(lock) : strandControlPointFrame(lock, index));
     const pointScale = lock.pointScales?.[index] || { x: lock.pointWidths[index] || 1, z: lock.pointWidths[index] || 1 };
     const preserveDraggedObjectRotation = Boolean(
       sculptState.state.transformDragging
@@ -25670,7 +25458,7 @@ function updateCurveObjects(lock, options = {}) {
       return;
     }
     const frame = lock.geometryType === "surface" ? null
-      : (lock.branchParentId && index === 0 ? branchRootGizmoFrame(lock) : strandControlPointFrame(lock, index));
+      : (lock.branchParentId && index === 0 ? branchRootBone.branchRootGizmoFrame(lock) : strandControlPointFrame(lock, index));
     if (!frame) {
       arrow.visible = false;
       return;
