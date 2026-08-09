@@ -27,7 +27,7 @@
 - [x] **阶段 2b：从 app.js 拆 IO 子系统**（save/export + 文件对话框 → `modules/io/project-files.js`，依赖注入 4 函数 + 8 状态 getter/setter；app.js 39,207→38,785 行；verify-smoke 8/8）
 - [x] **阶段 2c：全部模块按域归组落地**（core 5 / data 6 / edit 4 / geometry 14 / material 1 / sculpt 1 + io 9；扁平模块归零；material-state 跨域 import 改相对路径；verify-smoke 8/8）
 - [x] **阶段 3a：全局状态登记表**（scripts/gen-let-inventory.js → GLOBAL_LET_INVENTORY.md/.json；241 个 let，按 refs/bucket/span 排序；核心状态集中在 app.js L2059-2422 场景状态带）
-- [ ] **阶段 3b：核心场景 store**（selection/outliner/sculpt/edit 的 ~40 个高频 let → modules/core/scene-store.js，复用 io/project-state.js 快照机制；app.js 保留 getter/setter 兼容层；独立 commit + verify）
+- [x] **阶段 3b：核心场景 store（选择集）**（12 个高频 let → modules/core/scene-store.js + modules/edit/selection-store.js；selectionSnapshot() 对接 io/project-state.js 快照；app.js 全局 let 241→229；verify-smoke 12/12 含选择交互点击）
 - [ ] **阶段 3c：子系统 store 逐域落地**（scalp / camera / guide / branch / draw / reference 等，每域一个 store，每域独立 commit + verify）
 - [ ] **阶段 3d：app.js 瘦身为编排层**（业务逻辑迁入模块，模块显式依赖 store；IO 的 createProjectSaveApi(deps) 从 25 个散装依赖收敛为单个 store）
 

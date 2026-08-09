@@ -1,3 +1,4 @@
+import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
 import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260809-4";
 ﻿import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -2093,28 +2094,28 @@ const GUIDE_VIEW_MODES = [
 ];
 let headMeshVisible = true;
 let bodyMeshVisible = true;
-let selectedId;
-let selectedStrandIds = new Set();
+const sel = createSelectionStore();
+
 let isolatedStrandIds = null;
 
 function currentStrandSelectionState() {
-  return { activeId: selectedId, selectedIds: [...selectedStrandIds] };
+  return { activeId: sel.state.selectedId, selectedIds: [...sel.state.selectedStrandIds] };
 }
 
 function applyStrandSelectionState(selection) {
-  selectedId = selection?.activeId;
-  selectedStrandIds = new Set(selection?.selectedIds || []);
+  sel.state.selectedId = selection?.activeId;
+  sel.state.selectedStrandIds = new Set(selection?.selectedIds || []);
 }
 
 function clearStrandSelectionState() {
   applyStrandSelectionState(emptyStrandSelection());
 }
-let clumpViewportSelection = false;
-let selectedGuideId;
-let activeCurveLatticeGuideId = null;
+
+
+
 let lockIndex = 1;
 let referenceImageIndex = 1;
-let selectedReferenceImageId = null;
+
 let pendingReferenceImageType = null;
 let referenceScaleDrag = null;
 let referenceOverlayDrag = null;
@@ -2178,8 +2179,8 @@ const scalpBuilderContours = new Array(SCALP_BUILDER_STEPS.length).fill(null);
 let scalpPaintDrag = null;
 let activeScalpRegion = "bangs";
 let selectedScalpLatticeIndex = null;
-let selectedCurveLatticePoint = null;
-let selectedControlPoints = [];
+
+
 let selectionMarqueeDrag = null;
 let altOrbitDrag = null;
 let blenderNavigationDrag = null;
@@ -2188,10 +2189,10 @@ let houdiniZoomDrag = null;
 let curvePointInsertionCandidate = null;
 let selectPointerCapture = null;
 let scalpLatticeDrag = null;
-let selectedPoint = null;
-let selectedCurveSurfaceController = null;
+
+
 let selectedSurfaceObjectAnchorId = null;
-let selectedStrandGroup = null;
+
 let relaxEdit = null;
 let placeEdit = null;
 let drawStrandStroke = null;
@@ -2376,7 +2377,7 @@ branchRegionMeshPointsGroup.name = "Branch root region mesh points";
 branchRegionMeshPointsGroup.visible = false;
 scene.add(branchRegionMeshPointsGroup);
 const lastPointer = { x: 0, y: 0 };
-let pendingPlacedLockId = null;
+
 const locks = [];
 const selectionSets = [];
 const guides = [];
@@ -6224,7 +6225,7 @@ function setCapsuleGuideEditing(enabled) {
     ) transformControls.detach();
   }
   guides.filter((guide) => guide.type === "capsule").forEach((guide) => {
-    const visible = capsuleGuideEditing && guide.id === selectedGuideId;
+    const visible = capsuleGuideEditing && guide.id === sel.state.selectedGuideId;
     if (guide.handlesGroup) guide.handlesGroup.visible = visible;
     if (guide.loopLinesGroup) guide.loopLinesGroup.visible = visible;
   });
@@ -6271,7 +6272,7 @@ function setScalpSetupMenuOpen(open) {
 }
 
 function selectedReferenceImage() {
-  return referenceImages.find((reference) => reference.id === selectedReferenceImageId) || null;
+  return referenceImages.find((reference) => reference.id === sel.state.selectedReferenceImageId) || null;
 }
 
 const MIN_REFERENCE_CROP_SPAN = 0.02;
@@ -6405,7 +6406,7 @@ function updateReferencePlaneVisibility() {
     reference.mesh.visible = nextVisible;
     if (!nextVisible && transformControls.object === reference.mesh) {
       transformControls.detach();
-    } else if (nextVisible && reference.id === selectedReferenceImageId) {
+    } else if (nextVisible && reference.id === sel.state.selectedReferenceImageId) {
       attachReferenceImageTransform();
     }
   });
@@ -6456,7 +6457,7 @@ function applyReferenceImageRuntime(reference) {
 
 function updateReferenceSelectionVisuals() {
   referenceImages.forEach((reference) => {
-    const selected = reference.id === selectedReferenceImageId;
+    const selected = reference.id === sel.state.selectedReferenceImageId;
     reference.element?.classList.toggle("selected-reference", selected);
     if (reference.selectionOutline) reference.selectionOutline.visible = selected;
   });
@@ -6609,7 +6610,7 @@ function disposeReferenceImage(reference) {
 function clearReferenceImages() {
   referenceImages.forEach(disposeReferenceImage);
   referenceImages.length = 0;
-  selectedReferenceImageId = null;
+  sel.state.selectedReferenceImageId = null;
   if (referenceImagePanel) renderReferenceImagePanel();
 }
 
@@ -6701,11 +6702,11 @@ function attachReferenceImageTransform() {
 
 function selectReferenceImage(id) {
   setViewportEditMode("reference", { clearSelection: false, activateSelect: false });
-  selectedReferenceImageId = referenceImages.some((reference) => reference.id === id) ? id : null;
+  sel.state.selectedReferenceImageId = referenceImages.some((reference) => reference.id === id) ? id : null;
   clearStrandSelectionState();
-  selectedCurveSurfaceController = null;
-  selectedGuideId = undefined;
-  selectedStrandGroup = null;
+  sel.state.selectedCurveSurfaceController = null;
+  sel.state.selectedGuideId = undefined;
+  sel.state.selectedStrandGroup = null;
   clearMultiPointSelection();
   transformControls.detach();
   updateReferenceSelectionVisuals();
@@ -6768,7 +6769,7 @@ function renderReferenceImagePanel() {
   referenceImages.forEach((reference) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.classList.toggle("active", reference.id === selectedReferenceImageId);
+    button.classList.toggle("active", reference.id === sel.state.selectedReferenceImageId);
     const name = document.createElement("span");
     name.textContent = reference.name;
     const kind = document.createElement("small");
@@ -6863,12 +6864,12 @@ function refreshSelectionModeVisuals() {
   activeStrandObjectTransform = null;
   activeGuideObjectTransform = null;
   clearMultiPointSelection();
-  selectedPoint = null;
-  selectedCurveLatticePoint = null;
+  sel.state.selectedPoint = null;
+  sel.state.selectedCurveLatticePoint = null;
   selectedSurfaceObjectAnchorId = null;
-  locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === selectedId }));
+  locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
   guides.forEach((guide) => {
-    const selected = guide.id === selectedGuideId;
+    const selected = guide.id === sel.state.selectedGuideId;
     if (guide.handlesGroup) {
       guide.handlesGroup.visible = componentMode
         && selected
@@ -6916,13 +6917,13 @@ function setViewportEditMode(mode, options = {}) {
 
   if (clearSelection) {
     const selectionMatchesMode = (
-      (nextMode === "strand" && Boolean(selectedId || selectedStrandGroup))
-      || (nextMode === "guide" && Boolean(selectedGuideId))
-      || (nextMode === "reference" && Boolean(selectedReferenceImageId))
+      (nextMode === "strand" && Boolean(sel.state.selectedId || sel.state.selectedStrandGroup))
+      || (nextMode === "guide" && Boolean(sel.state.selectedGuideId))
+      || (nextMode === "reference" && Boolean(sel.state.selectedReferenceImageId))
     );
     if (!selectionMatchesMode) {
       deselectStrands();
-      selectedReferenceImageId = null;
+      sel.state.selectedReferenceImageId = null;
       updateReferenceSelectionVisuals();
       renderReferenceImagePanel();
     }
@@ -7096,10 +7097,10 @@ function renderGuideOutliner() {
       }
     });
     const item = document.createElement("button");
-    item.className = `guide-outliner-item${guide.id === selectedGuideId ? " active" : ""}`;
+    item.className = `guide-outliner-item${guide.id === sel.state.selectedGuideId ? " active" : ""}`;
     item.type = "button";
     item.title = label;
-    item.setAttribute("aria-pressed", String(guide.id === selectedGuideId));
+    item.setAttribute("aria-pressed", String(guide.id === sel.state.selectedGuideId));
     const icon = document.createElement("span");
     icon.className = `guide-outliner-icon${guide.type === "capsule" ? "" : guide.type === "curve-lattice" ? " lattice-guide" : " curve-guide"}`;
     if (guide.type === "capsule") icon.style.background = normalizeCapsuleGuideColor(guide.color);
@@ -7116,7 +7117,7 @@ function renderGuideOutliner() {
       onSelect: () => selectGuide(guide.id),
       onCommit: (nextName) => {
         guide.name = nextName;
-        if (guide.type === "capsule" && guide.id === selectedGuideId) {
+        if (guide.type === "capsule" && guide.id === sel.state.selectedGuideId) {
           surfaceGuideNameInput.value = nextName;
         }
         refreshLiveSurfaceOptions();
@@ -7142,7 +7143,7 @@ function renderReferenceOutliner() {
     const groupLabel = referenceViewDisplayLabel(group.id);
     const references = referenceImages.filter((reference) => referenceOutlinerGroup(reference) === group.id);
     const isOpen = referenceGroupOpen.get(group.id) !== false
-      || references.some((reference) => reference.id === selectedReferenceImageId);
+      || references.some((reference) => reference.id === sel.state.selectedReferenceImageId);
     const groupElement = document.createElement("div");
     groupElement.className = `reference-outliner-group${isOpen ? " open" : ""}`;
     groupElement.dataset.referenceGroup = group.id;
@@ -7195,7 +7196,7 @@ function renderReferenceOutliner() {
     }
     references.forEach((reference) => {
       const item = document.createElement("div");
-      item.className = `reference-outliner-item${reference.id === selectedReferenceImageId ? " active" : ""}`;
+      item.className = `reference-outliner-item${reference.id === sel.state.selectedReferenceImageId ? " active" : ""}`;
       const visibility = createOutlinerVisibilityToggle({
         visible: reference.visible,
         label: reference.name,
@@ -7964,17 +7965,17 @@ function applyStrandDisplayVisibility() {
     const visible = strandVisibleForDisplay(lock);
     lock.mesh.visible = visible;
     if (!visible && lock.curveObjects) lock.curveObjects.group.visible = false;
-    if (!strandPassesDisplayFilters(lock)) selectedStrandIds.delete(lock.id);
+    if (!strandPassesDisplayFilters(lock)) sel.state.selectedStrandIds.delete(lock.id);
   });
   const selectedLock = getSelectedLock();
   if (
     selectedLock
     && !strandPassesDisplayFilters(selectedLock)
   ) {
-    const fallback = locks.find((lock) => selectedStrandIds.has(lock.id));
+    const fallback = locks.find((lock) => sel.state.selectedStrandIds.has(lock.id));
     selectLock(fallback?.id, {
       individualClumpMember: true,
-      selectedIds: fallback ? [...selectedStrandIds] : undefined
+      selectedIds: fallback ? [...sel.state.selectedStrandIds] : undefined
     });
   }
 }
@@ -7987,12 +7988,12 @@ function applyCapsuleGuideDisplayVisibility() {
     if (guide.controlWire) guide.controlWire.visible = visible;
     if (guide.handlesGroup) {
       guide.handlesGroup.visible = visible
-        && guide.id === selectedGuideId
+        && guide.id === sel.state.selectedGuideId
         && capsuleGuideEditing;
     }
     if (guide.loopLinesGroup) {
       guide.loopLinesGroup.visible = visible
-        && guide.id === selectedGuideId
+        && guide.id === sel.state.selectedGuideId
         && capsuleGuideEditing;
     }
   });
@@ -8011,7 +8012,7 @@ function applyOtherGuideDisplayVisibility() {
 }
 
 function applyCurveLatticeGuideDisplayVisibility() {
-  filterCurveLatticesToGroup(selectedGuideId);
+  filterCurveLatticesToGroup(sel.state.selectedGuideId);
   if (!curveLatticeGuidesVisible && getSelectedGuide()?.type === "curve-lattice") {
     transformControls.detach();
   }
@@ -8048,8 +8049,8 @@ function setScalpShapeEditing(enabled) {
   if (enabled && scalpBuilderEditing) setScalpBuilderEditing(false);
   if (enabled && scalpPaintEditing) setScalpPaintEditing(false);
   if (enabled && headSetupEditing) headSetupEditing = false;
-  if (enabled && selectedStrandGroup) {
-    selectedStrandGroup = null;
+  if (enabled && sel.state.selectedStrandGroup) {
+    sel.state.selectedStrandGroup = null;
     updateAttributeEditorMode();
     renderLockList();
   }
@@ -8066,8 +8067,8 @@ function setScalpPaintEditing(enabled) {
   if (enabled && scalpBuilderEditing) setScalpBuilderEditing(false);
   if (enabled && scalpShapeEditing) setScalpShapeEditing(false);
   if (enabled && headSetupEditing) headSetupEditing = false;
-  if (enabled && selectedStrandGroup) {
-    selectedStrandGroup = null;
+  if (enabled && sel.state.selectedStrandGroup) {
+    sel.state.selectedStrandGroup = null;
     updateAttributeEditorMode();
     renderLockList();
   }
@@ -8518,9 +8519,9 @@ function curveLatticeRestPoint(guide, pointIndex) {
 }
 
 function editingCurveLatticeDeformation(guide) {
-  if ((!CURVE_LATTICE_FEATURE_ENABLED && !GROUP_CURVE_FEATURE_ENABLED) || !selectedStrandGroup || !guide) return false;
-  return guide.scalpRegion === selectedStrandGroup
-    || (mirrorXEditing && guide.scalpRegion === mirroredScalpRegion(selectedStrandGroup));
+  if ((!CURVE_LATTICE_FEATURE_ENABLED && !GROUP_CURVE_FEATURE_ENABLED) || !sel.state.selectedStrandGroup || !guide) return false;
+  return guide.scalpRegion === sel.state.selectedStrandGroup
+    || (mirrorXEditing && guide.scalpRegion === mirroredScalpRegion(sel.state.selectedStrandGroup));
 }
 
 function curveLatticeRootColumns(guide) {
@@ -8615,8 +8616,8 @@ function rebuildCurveLatticeHandles(guide) {
       handle.material.dispose();
     });
   }
-  selectedCurveLatticePoint = null;
-  selectedControlPoints = selectedControlPoints.filter((point) => point.type !== "lattice" || point.guideId !== guide.id);
+  sel.state.selectedCurveLatticePoint = null;
+  sel.state.selectedControlPoints = sel.state.selectedControlPoints.filter((point) => point.type !== "lattice" || point.guideId !== guide.id);
   guide.handlesGroup = createCurveLatticeHandles(guide);
   guide.handlesGroup.visible = wasVisible;
   guideSurfaceGroup.add(guide.handlesGroup);
@@ -8660,7 +8661,7 @@ function resampleCurveLatticeGuide(guide, nextColumns, nextRows) {
 }
 
 function controlPointIsSelected(type, ownerId, pointIndex) {
-  return selectedControlPoints.some((point) => (
+  return sel.state.selectedControlPoints.some((point) => (
     point.type === type
     && (type === "lattice" ? point.guideId === ownerId : point.lockId === ownerId)
     && point.pointIndex === pointIndex
@@ -8668,7 +8669,7 @@ function controlPointIsSelected(type, ownerId, pointIndex) {
 }
 
 function clearMultiPointSelection() {
-  selectedControlPoints = [];
+  sel.state.selectedControlPoints = [];
 }
 
 function createCurveLatticeHandles(guide) {
@@ -8827,8 +8828,8 @@ function updateCurveLatticeGeometry(guide, options = {}) {
     });
   }
   updateGroupCurveDisplay(guide);
-  if (GROUP_CURVE_FEATURE_ENABLED && selectedStrandGroup) {
-    filterCurveLatticesToGroup(activeCurveLatticeGuideId);
+  if (GROUP_CURVE_FEATURE_ENABLED && sel.state.selectedStrandGroup) {
+    filterCurveLatticesToGroup(sel.state.activeCurveLatticeGuideId);
   }
   updateBoundCurveLatticeStrands(guide);
 }
@@ -8880,14 +8881,14 @@ function mirroredCurveLatticeTarget(guide, pointIndex) {
 
 function updateCurveLatticeHandleColors(guide) {
   if (!guide?.handlesGroup) return;
-  const selectedIndex = selectedCurveLatticePoint?.guideId === guide.id
-    ? selectedCurveLatticePoint.pointIndex
+  const selectedIndex = sel.state.selectedCurveLatticePoint?.guideId === guide.id
+    ? sel.state.selectedCurveLatticePoint.pointIndex
     : -1;
-  const selectedGuide = selectedCurveLatticePoint
-    ? guides.find((item) => item.id === selectedCurveLatticePoint.guideId)
+  const selectedGuide = sel.state.selectedCurveLatticePoint
+    ? guides.find((item) => item.id === sel.state.selectedCurveLatticePoint.guideId)
     : null;
   const mirroredTarget = mirrorXEditing && selectedGuide
-    ? mirroredCurveLatticeTarget(selectedGuide, selectedCurveLatticePoint.pointIndex)
+    ? mirroredCurveLatticeTarget(selectedGuide, sel.state.selectedCurveLatticePoint.pointIndex)
     : null;
   const mirroredIndex = mirroredTarget?.guide.id === guide.id ? mirroredTarget.pointIndex : -1;
 
@@ -8959,13 +8960,13 @@ function selectCurveLatticeLoop(guide, axis, loopIndex) {
     loopIndex
   );
   if (!guide || indices.length < 2) return false;
-  selectedControlPoints = indices.map((pointIndex) => ({
+  sel.state.selectedControlPoints = indices.map((pointIndex) => ({
     type: "lattice",
     guideId: guide.id,
     pointIndex
   }));
-  selectedCurveLatticePoint = { guideId: guide.id, pointIndex: indices[0] };
-  selectedPoint = null;
+  sel.state.selectedCurveLatticePoint = { guideId: guide.id, pointIndex: indices[0] };
+  sel.state.selectedPoint = null;
   guides.filter((item) => item.type === "curve-lattice").forEach(updateCurveLatticeHandleColors);
   transformControls.detach();
   if (
@@ -8982,9 +8983,9 @@ function selectCurveLatticeLoop(guide, axis, loopIndex) {
 
 function selectCurveLatticePoint(guide, pointIndex, attachTransform = activeTool === "move", preserveMulti = false) {
   if (!guide?.handlesGroup?.children[pointIndex]) return;
-  selectedCurveLatticePoint = { guideId: guide.id, pointIndex };
-  selectedPoint = null;
-  if (!preserveMulti) selectedControlPoints = [{ type: "lattice", guideId: guide.id, pointIndex }];
+  sel.state.selectedCurveLatticePoint = { guideId: guide.id, pointIndex };
+  sel.state.selectedPoint = null;
+  if (!preserveMulti) sel.state.selectedControlPoints = [{ type: "lattice", guideId: guide.id, pointIndex }];
   guides.filter((item) => item.type === "curve-lattice").forEach(updateCurveLatticeHandleColors);
   if (attachTransform) {
     transformControls.setMode("translate");
@@ -9040,7 +9041,7 @@ function updateCurveLatticeFromHandle(handle) {
 function beginCurveLatticeMultiEdit(handle) {
   const guide = guides.find((item) => item.id === handle?.userData.curveLatticeGuideId);
   if (!guide) return;
-  const selectedIndices = selectedControlPoints
+  const selectedIndices = sel.state.selectedControlPoints
     .filter((point) => point.type === "lattice" && point.guideId === guide.id)
     .map((point) => point.pointIndex);
   if (selectedIndices.length < 2 || !selectedIndices.includes(handle.userData.curveLatticePointIndex)) {
@@ -9812,7 +9813,7 @@ function rebuildCapsuleGuideLoopLines(guide) {
   guide.loopLinesGroup = group;
   guideSurfaceGroup.add(group);
   updateCapsuleGuideLoopLines(guide);
-  group.visible = capsuleGuideEditing && selectedGuideId === guide.id;
+  group.visible = capsuleGuideEditing && sel.state.selectedGuideId === guide.id;
 }
 
 function createCapsuleGuideHandles(guide) {
@@ -9834,7 +9835,7 @@ function createCapsuleGuideHandles(guide) {
     handle.userData.capsuleGuidePointIndex = pointIndex;
     group.add(handle);
   });
-  group.visible = capsuleGuideEditing && selectedGuideId === guide.id;
+  group.visible = capsuleGuideEditing && sel.state.selectedGuideId === guide.id;
   return group;
 }
 
@@ -9851,7 +9852,7 @@ function rebuildCapsuleGuideHandles(guide) {
   guide.handlesGroup = createCapsuleGuideHandles(guide);
   guide.handlesGroup.visible = componentEditModeActive()
     && capsuleGuideEditing
-    && guide.id === selectedGuideId;
+    && guide.id === sel.state.selectedGuideId;
   guideSurfaceGroup.add(guide.handlesGroup);
   rebuildCapsuleGuideLoopLines(guide);
   if (guide.loopLinesGroup) guide.loopLinesGroup.visible = guide.handlesGroup.visible;
@@ -9970,8 +9971,8 @@ function selectCapsuleGuidePoint(guide, pointIndex) {
   if (!handle) return;
   capsuleGuideLoopSelection = null;
   activeCapsuleGuideLoopTransform = null;
-  selectedCurveLatticePoint = null;
-  selectedControlPoints = [];
+  sel.state.selectedCurveLatticePoint = null;
+  sel.state.selectedControlPoints = [];
   guide.selectedPointIndex = pointIndex;
   updateCapsuleGuideHandleColors(guide, pointIndex);
   if (activeTool === "select") {
@@ -10018,8 +10019,8 @@ function attachCapsuleGuideLoopTransform() {
 function selectCapsuleGuideLoop(guide, loopIndex) {
   if (!guide?.controlLoops?.[loopIndex]?.length) return;
   guide.selectedPointIndex = -1;
-  selectedCurveLatticePoint = null;
-  selectedControlPoints = [];
+  sel.state.selectedCurveLatticePoint = null;
+  sel.state.selectedControlPoints = [];
   capsuleGuideLoopSelection = { guideId: guide.id, loopIndex };
   activeCapsuleGuideLoopTransform = null;
   updateCapsuleGuideHandleColors(guide);
@@ -10428,7 +10429,7 @@ function createCapsuleGuideMaterial(guide) {
   return material;
 }
 
-function updateCapsuleGuideWireOpacity(guide, selected = guide?.id === selectedGuideId) {
+function updateCapsuleGuideWireOpacity(guide, selected = guide?.id === sel.state.selectedGuideId) {
   if (!guide || guide.type !== "capsule") return;
   const centerVisibility = THREE.MathUtils.clamp(Number(guide.centerVisibility ?? 0.5), 0, 1);
   const fade = guide.fresnel && !selected
@@ -10638,18 +10639,18 @@ function selectGuide(id) {
   activeCapsuleGuideLoopTransform = null;
   clearMultiPointSelection();
   clearStrandSelectionState();
-  selectedCurveSurfaceController = null;
-  clumpViewportSelection = false;
-  selectedStrandGroup = null;
-  selectedGuideId = id;
-  selectedReferenceImageId = null;
-  selectedPoint = null;
+  sel.state.selectedCurveSurfaceController = null;
+  sel.state.clumpViewportSelection = false;
+  sel.state.selectedStrandGroup = null;
+  sel.state.selectedGuideId = id;
+  sel.state.selectedReferenceImageId = null;
+  sel.state.selectedPoint = null;
   selectedSurfaceObjectAnchorId = null;
-  selectedCurveLatticePoint = null;
+  sel.state.selectedCurveLatticePoint = null;
   setOutlinerTab("guides");
   updateSelectedPointLabel();
   const guide = getSelectedGuide();
-  if (guide?.type === "curve-lattice") activeCurveLatticeGuideId = guide.id;
+  if (guide?.type === "curve-lattice") sel.state.activeCurveLatticeGuideId = guide.id;
   const editingCurveLattice = guide?.type === "curve-lattice";
   if (componentEditModeActive() && editingCurveLattice && ["rotate", "scale"].includes(activeTool)) setActiveTool("move");
   curveLatticeToggle.classList.toggle("active", editingCurveLattice);
@@ -10756,7 +10757,7 @@ function updateViewportToolVisibility() {
 }
 
 function getSelectedGuide() {
-  return guides.find((guide) => guide.id === selectedGuideId);
+  return guides.find((guide) => guide.id === sel.state.selectedGuideId);
 }
 
 function selectedViewportFocusBounds() {
@@ -10826,10 +10827,10 @@ let viewportFrameSelectionKey = "";
 
 function currentViewportFrameSelectionKey() {
   return [
-    selectedId || "",
-    selectedGuideId || "",
-    selectedReferenceImageId || "",
-    [...selectedStrandIds].sort().join(",")
+    sel.state.selectedId || "",
+    sel.state.selectedGuideId || "",
+    sel.state.selectedReferenceImageId || "",
+    [...sel.state.selectedStrandIds].sort().join(",")
   ].join("|");
 }
 
@@ -10920,11 +10921,11 @@ function sculptBrushToolActive(tool = activeTool) {
 }
 
 function sculptBrushSelectionMaskActive() {
-  return sculptBrushToolActive() && selectedStrandIds.size > 0;
+  return sculptBrushToolActive() && sel.state.selectedStrandIds.size > 0;
 }
 
 function sculptBrushSelectionAllows(lock) {
-  return !sculptBrushSelectionMaskActive() || selectedStrandIds.has(lock?.id);
+  return !sculptBrushSelectionMaskActive() || sel.state.selectedStrandIds.has(lock?.id);
 }
 
 function effectiveSculptBrushTool() {
@@ -11045,7 +11046,7 @@ function setActiveTool(tool) {
     && ["move", "rotate", "scale", "relax"].includes(previousTool)
       !== ["move", "rotate", "scale", "relax"].includes(activeTool);
   if (proportionalVisualStateChanged) {
-    const proportionalLock = locks.find((lock) => lock.id === selectedPoint?.lockId);
+    const proportionalLock = locks.find((lock) => lock.id === sel.state.selectedPoint?.lockId);
     if (proportionalLock) updateLockGeometry(proportionalLock, { immediate: true });
   }
   if (enteringLoftSurface) resetLoftSurfaceDraft();
@@ -11060,7 +11061,7 @@ function setActiveTool(tool) {
   syncSculptBrushToolButtons();
   transformControls.detach();
   guides.filter((guide) => guide.type === "capsule" && guide.handlesGroup).forEach((guide) => {
-    const visible = componentEditModeActive() && capsuleGuideEditing && guide.id === selectedGuideId;
+    const visible = componentEditModeActive() && capsuleGuideEditing && guide.id === sel.state.selectedGuideId;
     guide.handlesGroup.visible = visible;
     if (guide.loopLinesGroup) guide.loopLinesGroup.visible = visible;
     if (!capsuleGuideEditing) updateCapsuleGuideHandleColors(guide);
@@ -11074,7 +11075,7 @@ function setActiveTool(tool) {
     if (handle) transformControls.attach(handle);
   }
   if (capsuleGuideEditing && capsuleGuideLoopSelection) attachCapsuleGuideLoopTransform();
-  locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === selectedId }));
+  locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
   if (!componentEditModeActive() && viewportEditMode === "strand") {
     attachStrandObjectTransform();
   }
@@ -11085,18 +11086,18 @@ function setActiveTool(tool) {
   if (componentEditModeActive() && ["move", "rotate", "scale"].includes(tool) && selectedSurfaceAnchorLock) {
     attachSurfaceObjectAnchorTransform(selectedSurfaceAnchorLock);
   }
-  if (componentEditModeActive() && ["move", "rotate", "scale"].includes(tool) && selectedControlPoints.length) {
-    const strandSelection = selectedControlPoints.find((point) => point.type === "strand");
-    const latticeSelection = selectedControlPoints.find((point) => point.type === "lattice");
+  if (componentEditModeActive() && ["move", "rotate", "scale"].includes(tool) && sel.state.selectedControlPoints.length) {
+    const strandSelection = sel.state.selectedControlPoints.find((point) => point.type === "strand");
+    const latticeSelection = sel.state.selectedControlPoints.find((point) => point.type === "lattice");
     if (strandSelection) {
-      selectedPoint = { lockId: strandSelection.lockId, pointIndex: strandSelection.pointIndex };
+      sel.state.selectedPoint = { lockId: strandSelection.lockId, pointIndex: strandSelection.pointIndex };
       const lock = locks.find((item) => item.id === strandSelection.lockId);
       const handle = lock?.curveObjects?.handles[strandSelection.pointIndex];
       if (handle && !(tool === "move" && viewPlaneMoveActiveForView())) {
         attachTransformForCurvePoint(lock, strandSelection.pointIndex, handle);
       }
     } else if (latticeSelection && tool === "move") {
-      selectedCurveLatticePoint = { guideId: latticeSelection.guideId, pointIndex: latticeSelection.pointIndex };
+      sel.state.selectedCurveLatticePoint = { guideId: latticeSelection.guideId, pointIndex: latticeSelection.pointIndex };
       const guide = guides.find((item) => item.id === latticeSelection.guideId);
       const handle = guide?.handlesGroup?.children[latticeSelection.pointIndex];
       if (handle && !(tool === "move" && viewPlaneMoveActiveForView())) transformControls.attach(handle);
@@ -11140,7 +11141,7 @@ function setHierarchyEditing(enabled) {
   hierarchyToggle.classList.toggle("active", hierarchyEditing);
   proportionalToggle.classList.toggle("active", proportionalEditing);
   locks.forEach((lock) => updateLockGeometry(lock));
-  locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === selectedId }));
+  locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
   updateAttributeEditorMode();
   updatePlacementStatus();
 }
@@ -11152,7 +11153,7 @@ function setProportionalEditing(enabled) {
   hierarchyToggle.classList.toggle("active", hierarchyEditing);
   if (!sculptBrushToolActive()) {
     locks.forEach((lock) => updateLockGeometry(lock));
-    locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === selectedId }));
+    locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
   }
   updateScalpBuilderHandleColors();
   const capsule = getSelectedGuide();
@@ -11205,7 +11206,7 @@ function activateProportionalHotkeyHold() {
 function refreshProportionalPreview() {
   if (sculptBrushToolActive()) return;
   locks.forEach((lock) => updateLockGeometry(lock));
-  locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === selectedId }));
+  locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
   updateScalpBuilderHandleColors();
   const capsule = getSelectedGuide();
   if (capsule?.type === "capsule") updateCapsuleGuideHandleColors(capsule, capsule.selectedPointIndex ?? -1);
@@ -11760,7 +11761,7 @@ function beginStrandObjectTransform(handle) {
   const targets = selectedTargets.filter((lock) => (
     !lock.branchParentId || !selectedTargetIds.has(lock.branchParentId)
   ));
-  const sharedClumpPivot = clumpViewportSelection ? strandObjectRoot(activeLock)?.clone() : null;
+  const sharedClumpPivot = sel.state.clumpViewportSelection ? strandObjectRoot(activeLock)?.clone() : null;
   const previewLocks = new Set(targets);
   targets.forEach((lock) => {
     branchChildrenFor(lock).forEach((child) => previewLocks.add(child));
@@ -11938,12 +11939,12 @@ function attachSurfaceObjectAnchorTransform(lock) {
 function selectSurfaceObjectAnchor(lock, attachTransform = ["move", "rotate", "scale"].includes(activeTool)) {
   if (lock?.geometryType !== "surface" || !lock.curveObjects?.surfaceObjectAnchor) return false;
   selectedSurfaceObjectAnchorId = lock.id;
-  selectedPoint = null;
-  selectedCurveLatticePoint = null;
+  sel.state.selectedPoint = null;
+  sel.state.selectedCurveLatticePoint = null;
   clearMultiPointSelection();
   updateSelectedPointLabel();
   updateViewportToolVisibility();
-  updateCurveObjects(lock, { visible: lock.id === selectedId });
+  updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
   transformControls.detach();
   if (attachTransform) attachSurfaceObjectAnchorTransform(lock);
   updatePlacementStatus();
@@ -12029,7 +12030,7 @@ function finishSurfaceObjectTransform() {
   const lock = locks.find((item) => item.id === activeSurfaceObjectTransform?.lockId);
   activeSurfaceObjectTransform = null;
   if (!lock) return;
-  updateCurveObjects(lock, { visible: lock.id === selectedId });
+  updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
   attachSurfaceObjectAnchorTransform(lock);
   flushPendingLockGeometryUpdates();
 }
@@ -12040,7 +12041,7 @@ function beginHandleEdit(handle = transformControls.object) {
   if (!lock) return;
   const hadMirrorPartner = Boolean(mirrorPartnerFor(lock));
   syncActiveMirror(lock, { refreshUi: !hadMirrorPartner });
-  const selectedIndices = selectedControlPoints
+  const selectedIndices = sel.state.selectedControlPoints
     .filter((point) => point.type === "strand" && point.lockId === lock.id)
     .map((point) => point.pointIndex);
   if (!selectedIndices.includes(handle.userData.pointIndex)) selectedIndices.splice(0, selectedIndices.length, handle.userData.pointIndex);
@@ -12359,20 +12360,20 @@ function viewPlaneMoveActiveForView() {
 }
 
 function updateViewPlaneGrid() {
-  const lock = selectedPoint
-    ? locks.find((item) => item.id === selectedPoint.lockId)
+  const lock = sel.state.selectedPoint
+    ? locks.find((item) => item.id === sel.state.selectedPoint.lockId)
     : null;
-  const point = lock?.points[selectedPoint?.pointIndex];
-  const latticeGuide = selectedCurveLatticePoint
-    ? guides.find((item) => item.id === selectedCurveLatticePoint.guideId)
+  const point = lock?.points[sel.state.selectedPoint?.pointIndex];
+  const latticeGuide = sel.state.selectedCurveLatticePoint
+    ? guides.find((item) => item.id === sel.state.selectedCurveLatticePoint.guideId)
     : null;
-  const latticePoint = latticeGuide && selectedCurveLatticePoint
-    ? curveLatticeEditablePoint(latticeGuide, selectedCurveLatticePoint.pointIndex)
+  const latticePoint = latticeGuide && sel.state.selectedCurveLatticePoint
+    ? curveLatticeEditablePoint(latticeGuide, sel.state.selectedCurveLatticePoint.pointIndex)
     : null;
   const selectedMovePoint = latticePoint || point;
   const selectedMoveHandle = latticePoint
-    ? latticeGuide?.handlesGroup?.children[selectedCurveLatticePoint.pointIndex]
-    : lock?.curveObjects?.handles[selectedPoint?.pointIndex];
+    ? latticeGuide?.handlesGroup?.children[sel.state.selectedCurveLatticePoint.pointIndex]
+    : lock?.curveObjects?.handles[sel.state.selectedPoint?.pointIndex];
   const directMoveActive = viewPlaneMoveActiveForView() && activeTool === "move";
   const strokeToolActive = ["draw", "procedural-draw", "braid", "panel", "surface-loft", "curve-surface"].includes(activeTool);
   const activeFreePlane = activeTool === "surface-loft"
@@ -12382,8 +12383,8 @@ function updateViewPlaneGrid() {
       : drawStrandStroke?.freePlane;
   const freeDrawActive = strokeToolActive && Boolean(activeFreePlane);
   const originPlaneActive = strokeToolActive && activeStrokeSurfaceValue() === "contextual-plane";
-  const strandPointActive = Boolean(point) && lock.id === selectedId;
-  const latticePointActive = Boolean(latticePoint) && latticeGuide.id === activeCurveLatticeGuideId;
+  const strandPointActive = Boolean(point) && lock.id === sel.state.selectedId;
+  const latticePointActive = Boolean(latticePoint) && latticeGuide.id === sel.state.activeCurveLatticeGuideId;
   const expectedMoveHandle = strandPointActive && pullMoveActive() ? pullTarget : selectedMoveHandle;
   const visible = originPlaneActive || freeDrawActive || (directMoveActive && (strandPointActive || latticePointActive));
   viewPlaneFill.visible = visible;
@@ -12398,7 +12399,7 @@ function updateViewPlaneGrid() {
     ) {
       if (selectedMoveHandle) {
         configureTransformControls("move");
-        if (strandPointActive) attachTransformForCurvePoint(lock, selectedPoint.pointIndex, selectedMoveHandle);
+        if (strandPointActive) attachTransformForCurvePoint(lock, sel.state.selectedPoint.pointIndex, selectedMoveHandle);
         else transformControls.attach(selectedMoveHandle);
       }
     }
@@ -12773,7 +12774,7 @@ function proportionalWeight(index, originIndex) {
 function proportionalStrandVisualsActive(lock) {
   return proportionalEditing
     && ["move", "rotate", "scale", "relax"].includes(activeTool)
-    && selectedPoint?.lockId === lock.id;
+    && sel.state.selectedPoint?.lockId === lock.id;
 }
 
 function strandInfluenceColor(lock, t) {
@@ -12781,7 +12782,7 @@ function strandInfluenceColor(lock, t) {
     return new THREE.Color(1, 1, 1);
   }
   const scaledIndex = t * (lock.points.length - 1);
-  const weight = proportionalWeight(scaledIndex, selectedPoint.pointIndex);
+  const weight = proportionalWeight(scaledIndex, sel.state.selectedPoint.pointIndex);
   const stops = [
     { weight: 0, color: new THREE.Color(0x77777d) },
     { weight: 0.16, color: new THREE.Color(0x4d84ff) },
@@ -14424,9 +14425,9 @@ function sampledCurveSurfaceControllerSides(lock, rowCount) {
 function activeCurveSurfaceControllerIndex(lock) {
   if (
     lock?.geometryType !== "curve-surface"
-    || selectedCurveSurfaceController?.lockId !== lock.id
+    || sel.state.selectedCurveSurfaceController?.lockId !== lock.id
   ) return null;
-  const index = Math.round(Number(selectedCurveSurfaceController.index));
+  const index = Math.round(Number(sel.state.selectedCurveSurfaceController.index));
   return index >= 0 && index < lock.curveSurfaceColumns ? index : null;
 }
 
@@ -16349,8 +16350,8 @@ function applyGroupDefaultsToExistingStrands(region) {
 }
 
 function requestGroupDefaultsWarning(event) {
-  if (groupDefaultsWarningAcknowledged || !selectedStrandGroup) return;
-  const hasExistingStrands = locks.some((lock) => (lock.scalpRegion || "unassigned") === selectedStrandGroup);
+  if (groupDefaultsWarningAcknowledged || !sel.state.selectedStrandGroup) return;
+  const hasExistingStrands = locks.some((lock) => (lock.scalpRegion || "unassigned") === sel.state.selectedStrandGroup);
   if (!hasExistingStrands) return;
   event.preventDefault();
   event.stopImmediatePropagation();
@@ -16685,7 +16686,7 @@ function shapeValuesMatch(left, right) {
 }
 
 function shapeTargetForSelect(select) {
-  if (select.closest("#groupSettingsPanel")) return selectedStrandGroup ? strandGroupDefaults[selectedStrandGroup] : null;
+  if (select.closest("#groupSettingsPanel")) return sel.state.selectedStrandGroup ? strandGroupDefaults[sel.state.selectedStrandGroup] : null;
   return activeStrandShapeTarget();
 }
 
@@ -16812,7 +16813,7 @@ function applyShapePreset(select) {
     target[taperAsymmetryKey(key)] = Boolean(preset.asymmetric);
   }
   if (select.closest("#groupSettingsPanel")) {
-    applyGroupDefaultsToExistingStrands(selectedStrandGroup);
+    applyGroupDefaultsToExistingStrands(sel.state.selectedStrandGroup);
     syncGroupInputs();
   } else if (target === strandCreationDefaults || target === braidCreationDefaults || target === panelCreationDefaults) {
     syncCreationShapeInputs();
@@ -17494,7 +17495,7 @@ function openTaperCurveEditor(curveKey = "taperCurve") {
     proceduralGuide[curveKey] = normalizeTaperCurve(proceduralGuide[curveKey] || defaultCurve);
     nextEdit = { type: "strand", id: proceduralGuide.id, curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
   } else if (selectedLock && !proceduralBranchCurveEditing(curveKey)) nextEdit = { type: "strand", id: selectedLock.id, curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
-  else if (!proceduralBranchCurveEditing(curveKey) && selectedStrandGroup && curveKey !== "twistCurve") nextEdit = { type: "group", id: selectedStrandGroup, curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
+  else if (!proceduralBranchCurveEditing(curveKey) && sel.state.selectedStrandGroup && curveKey !== "twistCurve") nextEdit = { type: "group", id: sel.state.selectedStrandGroup, curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
   else if (!proceduralBranchCurveEditing(curveKey) && creationToolActive()) nextEdit = { type: "creation", id: "new-strand", curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
   if (!nextEdit) return;
   if (sweepProfileEditor.open) closeSweepProfileEditor();
@@ -17643,8 +17644,8 @@ function openSweepProfileEditor() {
   const selectedLock = getSelectedLock();
   if (selectedLock) {
     nextEdit = { type: "strand", id: selectedLock.id, selectedIndex: 0, dragPointerId: null };
-  } else if (selectedStrandGroup) {
-    nextEdit = { type: "group", id: selectedStrandGroup, selectedIndex: 0, dragPointerId: null };
+  } else if (sel.state.selectedStrandGroup) {
+    nextEdit = { type: "group", id: sel.state.selectedStrandGroup, selectedIndex: 0, dragPointerId: null };
   } else if (creationToolActive()) {
     nextEdit = { type: "creation", id: "new-strand", selectedIndex: 0, dragPointerId: null };
   }
@@ -18290,20 +18291,7 @@ function snapshotState() {
     referenceImageIndex,
     hairMaterialIndex,
     hairMaterials: hairMaterialDefinitions.map((material) => ({ ...material })),
-    ...createProjectSelectionSnapshot({
-      selectedId,
-      selectedStrandIds,
-      clumpViewportSelection,
-      selectedGuideId,
-      selectedReferenceImageId,
-      activeCurveLatticeGuideId,
-      selectedStrandGroup,
-      selectedPoint,
-      selectedCurveSurfaceController,
-      selectedCurveLatticePoint,
-      selectedControlPoints,
-      pendingPlacedLockId
-    }),
+        ...createProjectSelectionSnapshot(sel.selectionSnapshot()),
     mirrorXEditing,
     headTransform: { ...headTransform },
     scalpRoughScale: { ...scalpRoughScale },
@@ -18942,7 +18930,7 @@ function remapLegacyPresetToActiveScalp() {
     lock.y = lock.points[0].y;
     lock.z = lock.points[0].z;
     updateLockGeometry(lock);
-    updateCurveObjects(lock, { visible: lock.id === selectedId });
+    updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
   });
   renderLockList();
   updateCount();
@@ -19407,15 +19395,15 @@ function restoreSharedStateForStateRestore(state, restorePlan, { preserveMirrorM
     ? activeHairMaterialId
     : hairMaterialDefinitions[0].id;
   applyStrandSelectionState(restoreStrandSelection(restorePlan.strandSelection));
-  clumpViewportSelection = restorePlan.selection.clumpViewport;
-  selectedGuideId = restorePlan.selection.guideId;
-  selectedReferenceImageId = restorePlan.selection.referenceImageId;
-  activeCurveLatticeGuideId = restorePlan.selection.activeCurveLatticeGuideId;
-  selectedStrandGroup = restorePlan.selection.strandGroup;
-  selectedPoint = restorePlan.selection.point;
-  selectedCurveSurfaceController = restorePlan.selection.curveSurfaceController;
-  selectedCurveLatticePoint = restorePlan.selection.curveLatticePoint;
-  pendingPlacedLockId = restorePlan.selection.pendingPlacedLockId;
+  sel.state.clumpViewportSelection = restorePlan.selection.clumpViewport;
+  sel.state.selectedGuideId = restorePlan.selection.guideId;
+  sel.state.selectedReferenceImageId = restorePlan.selection.referenceImageId;
+  sel.state.activeCurveLatticeGuideId = restorePlan.selection.activeCurveLatticeGuideId;
+  sel.state.selectedStrandGroup = restorePlan.selection.strandGroup;
+  sel.state.selectedPoint = restorePlan.selection.point;
+  sel.state.selectedCurveSurfaceController = restorePlan.selection.curveSurfaceController;
+  sel.state.selectedCurveLatticePoint = restorePlan.selection.curveLatticePoint;
+  sel.state.pendingPlacedLockId = restorePlan.selection.pendingPlacedLockId;
   setMirrorXEditing(preserveMirrorMode ? mirrorXEditing : Boolean(state.mirrorXEditing));
 }
 
@@ -19523,54 +19511,54 @@ function restoreSceneCollectionsForStateRestore(restorePlan, {
 }
 
 function validateSelectionAfterStateRestore() {
-  if (!locks.some((lock) => lock.id === selectedId)) {
+  if (!locks.some((lock) => lock.id === sel.state.selectedId)) {
     clearStrandSelectionState();
-    clumpViewportSelection = false;
+    sel.state.clumpViewportSelection = false;
   }
   const unlockedIds = new Set(locks.filter((lock) => !lock.locked).map((lock) => lock.id));
-  if (selectedId && !unlockedIds.has(selectedId)) {
+  if (sel.state.selectedId && !unlockedIds.has(sel.state.selectedId)) {
     clearStrandSelectionState();
-    clumpViewportSelection = false;
+    sel.state.clumpViewportSelection = false;
   } else {
-    selectedStrandIds = new Set([...selectedStrandIds].filter((id) => unlockedIds.has(id)));
+    sel.state.selectedStrandIds = new Set([...sel.state.selectedStrandIds].filter((id) => unlockedIds.has(id)));
   }
-  if (!guides.some((guide) => guide.id === selectedGuideId)) selectedGuideId = undefined;
-  if (!referenceImages.some((reference) => reference.id === selectedReferenceImageId)) selectedReferenceImageId = null;
-  if (!guides.some((guide) => guide.id === activeCurveLatticeGuideId && guide.type === "curve-lattice")) activeCurveLatticeGuideId = null;
+  if (!guides.some((guide) => guide.id === sel.state.selectedGuideId)) sel.state.selectedGuideId = undefined;
+  if (!referenceImages.some((reference) => reference.id === sel.state.selectedReferenceImageId)) sel.state.selectedReferenceImageId = null;
+  if (!guides.some((guide) => guide.id === sel.state.activeCurveLatticeGuideId && guide.type === "curve-lattice")) sel.state.activeCurveLatticeGuideId = null;
   if (!CURVE_LATTICE_FEATURE_ENABLED) {
-    if (guides.some((guide) => guide.id === selectedGuideId && guide.type === "curve-lattice")) {
-      selectedGuideId = undefined;
+    if (guides.some((guide) => guide.id === sel.state.selectedGuideId && guide.type === "curve-lattice")) {
+      sel.state.selectedGuideId = undefined;
     }
-    activeCurveLatticeGuideId = null;
-    selectedCurveLatticePoint = null;
+    sel.state.activeCurveLatticeGuideId = null;
+    sel.state.selectedCurveLatticePoint = null;
   }
-  if (!locks.some((lock) => lock.id === selectedPoint?.lockId && !lock.locked)) selectedPoint = null;
+  if (!locks.some((lock) => lock.id === sel.state.selectedPoint?.lockId && !lock.locked)) sel.state.selectedPoint = null;
   if (!locks.some((lock) => (
-    lock.id === selectedCurveSurfaceController?.lockId
+    lock.id === sel.state.selectedCurveSurfaceController?.lockId
     && lock.geometryType === "curve-surface"
-    && selectedCurveSurfaceController.index >= 0
-    && selectedCurveSurfaceController.index < lock.curveSurfaceColumns
-  ))) selectedCurveSurfaceController = null;
-  if (!locks.some((lock) => lock.id === pendingPlacedLockId)) pendingPlacedLockId = null;
+    && sel.state.selectedCurveSurfaceController.index >= 0
+    && sel.state.selectedCurveSurfaceController.index < lock.curveSurfaceColumns
+  ))) sel.state.selectedCurveSurfaceController = null;
+  if (!locks.some((lock) => lock.id === sel.state.pendingPlacedLockId)) sel.state.pendingPlacedLockId = null;
 }
 
 function reapplySelectionAfterStateRestore(restorePlan) {
-  const pointToRestore = selectedPoint ? { ...selectedPoint } : null;
-  const latticePointToRestore = selectedCurveLatticePoint ? { ...selectedCurveLatticePoint } : null;
+  const pointToRestore = sel.state.selectedPoint ? { ...sel.state.selectedPoint } : null;
+  const latticePointToRestore = sel.state.selectedCurveLatticePoint ? { ...sel.state.selectedCurveLatticePoint } : null;
   const controlsToRestore = restorePlan.selection.controlPoints;
-  if (selectedReferenceImageId) selectReferenceImage(selectedReferenceImageId);
-  else if (selectedId) selectLock(selectedId, {
-    individualClumpMember: !clumpViewportSelection,
-    selectedIds: [...selectedStrandIds],
-    curveSurfaceControllerIndex: selectedCurveSurfaceController?.lockId === selectedId
-      ? selectedCurveSurfaceController.index
+  if (sel.state.selectedReferenceImageId) selectReferenceImage(sel.state.selectedReferenceImageId);
+  else if (sel.state.selectedId) selectLock(sel.state.selectedId, {
+    individualClumpMember: !sel.state.clumpViewportSelection,
+    selectedIds: [...sel.state.selectedStrandIds],
+    curveSurfaceControllerIndex: sel.state.selectedCurveSurfaceController?.lockId === sel.state.selectedId
+      ? sel.state.selectedCurveSurfaceController.index
       : undefined
   });
-  else if (selectedStrandGroup) {
-    const groupToRestore = selectedStrandGroup;
-    selectedStrandGroup = null;
+  else if (sel.state.selectedStrandGroup) {
+    const groupToRestore = sel.state.selectedStrandGroup;
+    sel.state.selectedStrandGroup = null;
     selectStrandGroup(groupToRestore);
-  } else if (selectedGuideId) selectGuide(selectedGuideId);
+  } else if (sel.state.selectedGuideId) selectGuide(sel.state.selectedGuideId);
   else {
     updateGuideControlsVisibility();
     renderLockList();
@@ -19584,12 +19572,12 @@ function reapplySelectionAfterStateRestore(restorePlan) {
     if (guide) selectCurveLatticePoint(guide, latticePointToRestore.pointIndex, false);
   }
   if (controlsToRestore.length > 1) {
-    selectedControlPoints = controlsToRestore.filter((point) => (
+    sel.state.selectedControlPoints = controlsToRestore.filter((point) => (
       point.type === "strand"
         ? locks.some((lock) => lock.id === point.lockId && !lock.locked && point.pointIndex < lock.points.length)
         : guides.some((guide) => guide.id === point.guideId && curveLatticeEditablePoint(guide, point.pointIndex))
     ));
-    locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === selectedId }));
+    locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
     guides.filter((guide) => guide.type === "curve-lattice").forEach(updateCurveLatticeHandleColors);
     updateSelectedPointLabel();
   }
@@ -20270,7 +20258,7 @@ function rebuildCurveObjects(lock) {
   }
   lock.curveObjects = createCurveObjects(lock);
   curveGroup.add(lock.curveObjects.group);
-  updateCurveObjects(lock, { visible: lock.id === selectedId });
+  updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
   if (selectedSurfaceObjectAnchorId === lock.id) attachSurfaceObjectAnchorTransform(lock);
 }
 
@@ -21355,9 +21343,9 @@ function scalpRegionNearestWorldPoint(worldPoint) {
 }
 
 function selectedCurveLatticeGuide() {
-  const guide = guides.find((item) => item.id === activeCurveLatticeGuideId && item.type === "curve-lattice") || null;
+  const guide = guides.find((item) => item.id === sel.state.activeCurveLatticeGuideId && item.type === "curve-lattice") || null;
   if (guide?.standalone) return guide;
-  if (!CURVE_LATTICE_FEATURE_ENABLED && !(GROUP_CURVE_FEATURE_ENABLED && selectedStrandGroup)) return null;
+  if (!CURVE_LATTICE_FEATURE_ENABLED && !(GROUP_CURVE_FEATURE_ENABLED && sel.state.selectedStrandGroup)) return null;
   return guide;
 }
 
@@ -23272,7 +23260,7 @@ function pointerToNdc(event) {
 // the sweep (and therefore the bridge) starts.
 let branchSweepStartDrag = null;
 function beginBranchSweepStartDrag(event) {
-  const selected = locks.find((item) => item.id === selectedId);
+  const selected = locks.find((item) => item.id === sel.state.selectedId);
   const handle = selected?.curveObjects?.branchSweepStartHandle;
   if (!handle || selected?.locked) return false;
   raycaster.setFromCamera(pointerToNdc(event), camera);
@@ -26004,7 +25992,7 @@ function createPlacedStrand(hit) {
   placed.placementFrame.root.copy(placed.points[0]);
   applyPlacedStrandScaleProfile(placed);
   updateLockGeometry(placed);
-  pendingPlacedLockId = placed.id;
+  sel.state.pendingPlacedLockId = placed.id;
   if (createMirrorPartnerForNewLock(placed)) {
     renderLockList();
     updateCount();
@@ -26082,7 +26070,7 @@ function resizePlacedStrand(lock, length, width, options = {}) {
   updateLockGeometry(lock);
   syncActiveMirror(lock);
   syncInputs(lock);
-  selectCurvePoint(lock.id, Math.min(selectedPoint?.pointIndex || 0, lock.points.length - 1));
+  selectCurvePoint(lock.id, Math.min(sel.state.selectedPoint?.pointIndex || 0, lock.points.length - 1));
 }
 
 function applyPlacedStrandScaleProfile(lock) {
@@ -26166,17 +26154,17 @@ function endPlaceEdit(event) {
 }
 
 function confirmPendingPlacedStrand(options = {}) {
-  if (!pendingPlacedLockId) return;
-  const confirmedId = pendingPlacedLockId;
-  pendingPlacedLockId = null;
-  if (options.deselect && selectedId === confirmedId) {
+  if (!sel.state.pendingPlacedLockId) return;
+  const confirmedId = sel.state.pendingPlacedLockId;
+  sel.state.pendingPlacedLockId = null;
+  if (options.deselect && sel.state.selectedId === confirmedId) {
     deselectStrands();
   }
   updatePlacementStatus();
 }
 
 function pendingPlacedLock() {
-  return locks.find((lock) => lock.id === pendingPlacedLockId);
+  return locks.find((lock) => lock.id === sel.state.pendingPlacedLockId);
 }
 
 function beginPlacementPointer(event, headHit) {
@@ -26237,11 +26225,11 @@ function confirmPlacementStep(event) {
 }
 
 function finishPlacementFlow(options = {}) {
-  const placedId = pendingPlacedLockId;
+  const placedId = sel.state.pendingPlacedLockId;
   placeEdit = null;
-  pendingPlacedLockId = null;
+  sel.state.pendingPlacedLockId = null;
   updateInteractionLocks();
-  if (options.deselect && selectedId === placedId) {
+  if (options.deselect && sel.state.selectedId === placedId) {
     deselectStrands();
   } else if (options.keepSelected && placedId) {
     selectLock(placedId);
@@ -26365,7 +26353,7 @@ function updatePlacementStatus() {
   } else if (capsuleGuideEditing) {
     message = "Capsule guide: select a horizontal loop, then use Move, Rotate, or Scale to edit the entire loop.";
   } else if (["select", "move", "rotate", "scale"].includes(activeTool) && selectedCurveLatticeGuide()) {
-    message = selectedStrandGroup
+    message = sel.state.selectedStrandGroup
       ? "Group curve: move a cyan control point to reshape every strand in the selected group."
       : "Curve lattice guide: click a control point, or click an edge to select its full horizontal or vertical loop.";
   } else if (pullMoveActive()) {
@@ -26391,12 +26379,12 @@ function updatePlacementStatus() {
 function deselectStrands() {
   clearMultiPointSelection();
   clearStrandSelectionState();
-  selectedCurveSurfaceController = null;
-  clumpViewportSelection = false;
-  selectedStrandGroup = null;
-  selectedGuideId = undefined;
-  selectedPoint = null;
-  selectedCurveLatticePoint = null;
+  sel.state.selectedCurveSurfaceController = null;
+  sel.state.clumpViewportSelection = false;
+  sel.state.selectedStrandGroup = null;
+  sel.state.selectedGuideId = undefined;
+  sel.state.selectedPoint = null;
+  sel.state.selectedCurveLatticePoint = null;
   curveLatticeToggle.classList.remove("active");
   curveLatticeToggle.setAttribute("aria-pressed", "false");
   filterCurveLatticesToGroup(null);
@@ -26627,30 +26615,30 @@ function selectPointsInMarquee(drag) {
   const pointKey = (point) => `${point.type}:${point.lockId || point.guideId}:${point.pointIndex}`;
   const matchKeys = new Set(matches.map(pointKey));
   if (drag.selectionMode === "add") {
-    const existingKeys = new Set(selectedControlPoints.map(pointKey));
-    selectedControlPoints = [
-      ...selectedControlPoints,
+    const existingKeys = new Set(sel.state.selectedControlPoints.map(pointKey));
+    sel.state.selectedControlPoints = [
+      ...sel.state.selectedControlPoints,
       ...matches.filter((point) => !existingKeys.has(pointKey(point)))
     ];
   } else if (drag.selectionMode === "remove") {
-    selectedControlPoints = selectedControlPoints.filter((point) => !matchKeys.has(pointKey(point)));
+    sel.state.selectedControlPoints = sel.state.selectedControlPoints.filter((point) => !matchKeys.has(pointKey(point)));
   } else {
-    selectedControlPoints = matches;
+    sel.state.selectedControlPoints = matches;
   }
-  const primary = selectedControlPoints[0];
+  const primary = sel.state.selectedControlPoints[0];
   transformControls.detach();
   if (primary?.type === "lattice") {
-    selectedCurveLatticePoint = { guideId: primary.guideId, pointIndex: primary.pointIndex };
-    selectedPoint = null;
+    sel.state.selectedCurveLatticePoint = { guideId: primary.guideId, pointIndex: primary.pointIndex };
+    sel.state.selectedPoint = null;
   } else if (primary?.type === "strand") {
-    selectedPoint = { lockId: primary.lockId, pointIndex: primary.pointIndex };
-    selectedCurveLatticePoint = null;
+    sel.state.selectedPoint = { lockId: primary.lockId, pointIndex: primary.pointIndex };
+    sel.state.selectedCurveLatticePoint = null;
   } else {
-    selectedPoint = null;
-    selectedCurveLatticePoint = null;
+    sel.state.selectedPoint = null;
+    sel.state.selectedCurveLatticePoint = null;
   }
   guides.filter((guide) => guide.type === "curve-lattice").forEach(updateCurveLatticeHandleColors);
-  locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === selectedId }));
+  locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
   updateSelectedPointLabel();
   updateViewPlaneGrid();
 }
@@ -27317,7 +27305,7 @@ function createPolyEditObjects(lock) {
   const target = { group: new THREE.Group() };
   target.group.userData.lockId = lock.id;
   populatePolyEditObjects(lock, target);
-  target.group.visible = activeTool === "poly" && selectedId === lock.id;
+  target.group.visible = activeTool === "poly" && sel.state.selectedId === lock.id;
   return target;
 }
 
@@ -27330,7 +27318,7 @@ function rebuildPolyEditObjects(lock, options = {}) {
   });
   target.group.clear();
   populatePolyEditObjects(lock, target);
-  target.group.visible = ("visible" in options ? options.visible : selectedId === lock.id)
+  target.group.visible = ("visible" in options ? options.visible : sel.state.selectedId === lock.id)
     && activeTool === "poly"
     && strandVisibleForDisplay(lock);
 }
@@ -27413,7 +27401,7 @@ function sculptBrushDebugCurveVisible(lock) {
 
 function refreshSculptBrushDebugView() {
   if (!sculptBrushToolActive()) return;
-  locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === selectedId }));
+  locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
 }
 
 function refreshSculptBrushDebugAfterStateRestore() {
@@ -27447,11 +27435,11 @@ function updateCurveObjects(lock, options = {}) {
   const sculptBrushHelpersSuppressed = sculptBrushToolActive()
     && viewportEditMode === "strand";
   lock.curveObjects.line.material.color.set(
-    brushDebugVisible && lock.id !== selectedId
+    brushDebugVisible && lock.id !== sel.state.selectedId
       ? 0x58f6ff
       : lock.clumpGuide ? 0x58f6ff : 0xe7a95d
   );
-  lock.curveObjects.line.material.opacity = brushDebugVisible && lock.id !== selectedId ? 0.42 : 0.78;
+  lock.curveObjects.line.material.opacity = brushDebugVisible && lock.id !== sel.state.selectedId ? 0.42 : 0.78;
   lock.curveObjects.line.material.depthTest = false;
   lock.curveObjects.line.material.depthWrite = !brushDebugVisible;
   lock.curveObjects.line.material.stencilWrite = brushDebugVisible;
@@ -27502,9 +27490,9 @@ function updateCurveObjects(lock, options = {}) {
     const hovered = hoveredStrandWidthEdge === edge;
     edge.material.color.set(active || hovered ? 0xff42cf : 0xe7a95d);
     edge.material.opacity = active ? 0.95 : hovered ? 0.82 : 0.22;
-    edge.visible = lock.id === selectedId
+    edge.visible = lock.id === sel.state.selectedId
       && !sculptBrushHelpersSuppressed
-      && !clumpViewportSelection
+      && !sel.state.clumpViewportSelection
       && lock.geometryType === "strand"
       && viewportEditMode === "strand"
       && componentEditModeActive()
@@ -27546,7 +27534,7 @@ function updateCurveObjects(lock, options = {}) {
     } else {
       handle.quaternion.identity();
     }
-    const selectedHandle = (selectedPoint?.lockId === lock.id && selectedPoint.pointIndex === index)
+    const selectedHandle = (sel.state.selectedPoint?.lockId === lock.id && sel.state.selectedPoint.pointIndex === index)
       || controlPointIsSelected("strand", lock.id, index);
     handle.scale.set(
       (["surface", "curve-surface"].includes(lock.geometryType) ? 1 : pointScale.x || 1) * controlPointDisplayScale,
@@ -27601,7 +27589,7 @@ function updateCurveObjects(lock, options = {}) {
     arrow.visible = componentEditModeActive()
       && !sculptBrushHelpersSuppressed
       && controllerVisible
-      && lock.id === selectedId
+      && lock.id === sel.state.selectedId
       && ["rotate", "relax"].includes(activeTool);
   });
   const splits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
@@ -27668,7 +27656,7 @@ function updateCurveObjects(lock, options = {}) {
   if (strandSplitLine && !strandSplitVisible) strandSplitLine.visible = false;
   const branchSweepStartHandle = lock.curveObjects.branchSweepStartHandle;
   if (branchSweepStartHandle) {
-    const sweepStartVisible = !sculptBrushHelpersSuppressed && !lock.locked && lock.id === selectedId && lock.branchRootRegion;
+    const sweepStartVisible = !sculptBrushHelpersSuppressed && !lock.locked && lock.id === sel.state.selectedId && lock.branchRootRegion;
     branchSweepStartHandle.visible = sweepStartVisible;
     branchSweepStartHandle.material.opacity = branchSweepStartDrag?.lockId === lock.id ? 0.9 : 0.68;
     if (sweepStartVisible) {
@@ -27880,14 +27868,14 @@ function signedAngleAroundAxis(from, to, axis) {
 }
 
 function handleColor(lock, index) {
-  const selectedLock = lock.id === selectedId;
+  const selectedLock = lock.id === sel.state.selectedId;
   if (!selectedLock) return 0x476472;
-  const selectedHandle = (selectedPoint?.lockId === lock.id && selectedPoint.pointIndex === index)
+  const selectedHandle = (sel.state.selectedPoint?.lockId === lock.id && sel.state.selectedPoint.pointIndex === index)
     || controlPointIsSelected("strand", lock.id, index);
   const sameCurve = lock.geometryType !== "curve-surface"
-    || Math.floor(index / lock.curveSurfaceRows) === Math.floor(selectedPoint?.pointIndex / lock.curveSurfaceRows);
-  const hierarchyAffected = hierarchyEditing && selectedPoint?.lockId === lock.id && sameCurve && index > selectedPoint.pointIndex;
-  const proportionalAffected = proportionalStrandVisualsActive(lock) && proportionalWeight(index, selectedPoint.pointIndex) > 0;
+    || Math.floor(index / lock.curveSurfaceRows) === Math.floor(sel.state.selectedPoint?.pointIndex / lock.curveSurfaceRows);
+  const hierarchyAffected = hierarchyEditing && sel.state.selectedPoint?.lockId === lock.id && sameCurve && index > sel.state.selectedPoint.pointIndex;
+  const proportionalAffected = proportionalStrandVisualsActive(lock) && proportionalWeight(index, sel.state.selectedPoint.pointIndex) > 0;
   const endpointIndex = lock.geometryType === "curve-surface" ? index % lock.curveSurfaceRows : index;
   const endpointCount = lock.geometryType === "curve-surface" ? lock.curveSurfaceRows : lock.points.length;
   const endpointColor = endpointIndex === 0
@@ -27903,9 +27891,9 @@ function handleColor(lock, index) {
 }
 
 function isAffectedCurvePoint(lock, index) {
-  if (selectedPoint?.lockId !== lock.id) return false;
-  if (hierarchyEditing && index > selectedPoint.pointIndex) return true;
-  return proportionalStrandVisualsActive(lock) && proportionalWeight(index, selectedPoint.pointIndex) > 0;
+  if (sel.state.selectedPoint?.lockId !== lock.id) return false;
+  if (hierarchyEditing && index > sel.state.selectedPoint.pointIndex) return true;
+  return proportionalStrandVisualsActive(lock) && proportionalWeight(index, sel.state.selectedPoint.pointIndex) > 0;
 }
 
 function syncLockFromCurve(lock) {
@@ -28249,10 +28237,10 @@ function renderUvInspector(timestamp = performance.now(), force = false) {
   const transform = uvViewTransform(bounds, width, height, 32);
   drawUvInspectorGrid(context, bounds, transform, width, height);
   const orderedRecords = [...records].sort((a, b) => (
-    Number(a.lock.id === selectedId) - Number(b.lock.id === selectedId)
+    Number(a.lock.id === sel.state.selectedId) - Number(b.lock.id === sel.state.selectedId)
   ));
   orderedRecords.forEach(({ lock, points, faces }) => {
-    const selected = lock.id === selectedId || selectedStrandIds.has(lock.id);
+    const selected = lock.id === sel.state.selectedId || sel.state.selectedStrandIds.has(lock.id);
     context.fillStyle = selected ? "rgba(255, 79, 216, 0.12)" : "rgba(221, 215, 226, 0.025)";
     context.strokeStyle = selected ? "#ff4fd8" : "rgba(221, 215, 226, 0.46)";
     context.lineWidth = selected ? 1.5 : 0.75;
@@ -28304,15 +28292,15 @@ function strandViewportBaseColor(lock) {
   }
   if (proportionalStrandVisualsActive(lock)) return 0xffffff;
   const selectedLock = getSelectedLock();
-  const selectedClumpId = clumpViewportSelection ? selectedLock?.clumpId : null;
+  const selectedClumpId = sel.state.clumpViewportSelection ? selectedLock?.clumpId : null;
   const inSelectedClump = selectedClumpId && lock.clumpId === selectedClumpId;
-  if (inSelectedClump) return lock.id === selectedId ? 0x76d4d9 : 0x5bbec4;
-  if (lock.id === selectedId) {
+  if (inSelectedClump) return lock.id === sel.state.selectedId ? 0x76d4d9 : 0x5bbec4;
+  if (lock.id === sel.state.selectedId) {
     const selectedColor = new THREE.Color(strandDisplayColor(lock));
     selectedColor.lerp(new THREE.Color(STRAND_SELECTION_OUTLINE_COLOR), 0.12);
     return `#${selectedColor.getHexString()}`;
   }
-  if (selectedStrandIds.has(lock.id)) {
+  if (sel.state.selectedStrandIds.has(lock.id)) {
     const selectedColor = new THREE.Color(strandDisplayColor(lock));
     selectedColor.lerp(new THREE.Color(STRAND_SELECTION_OUTLINE_COLOR), 0.08);
     return `#${selectedColor.getHexString()}`;
@@ -28326,15 +28314,15 @@ function strandViewportBaseColor(lock) {
 }
 
 function strandMirrorPartnerHighlighted(lock) {
-  if (!lock || selectedStrandIds.has(lock.id)) return false;
+  if (!lock || sel.state.selectedStrandIds.has(lock.id)) return false;
   const partner = mirrorPartnerFor(lock);
-  return Boolean(partner && selectedStrandIds.has(partner.id));
+  return Boolean(partner && sel.state.selectedStrandIds.has(partner.id));
 }
 
 function syncStrandSelectionOutline(lock) {
   const outline = lock?.selectionOutline;
   if (!outline?.material?.uniforms?.uColor) return;
-  const selected = selectedStrandIds.has(lock.id);
+  const selected = sel.state.selectedStrandIds.has(lock.id);
   const mirrorPartnerHighlighted = strandMirrorPartnerHighlighted(lock);
   outline.visible = Boolean(selected || mirrorPartnerHighlighted);
   outline.material.uniforms.uColor.value.set(
@@ -28379,7 +28367,7 @@ function setStrandSelectionVisual(lock) {
 function proceduralParentOutlineVisible(lock) {
   return Boolean(
     lock?.proceduralParentHidden
-    && (lock.id === selectedId || selectedStrandIds.has(lock.id))
+    && (lock.id === sel.state.selectedId || sel.state.selectedStrandIds.has(lock.id))
   );
 }
 
@@ -28410,7 +28398,7 @@ function refreshStrandCurveSelectionVisuals() {
     });
     return;
   }
-  locks.forEach((item) => updateCurveObjects(item, { visible: item.id === selectedId }));
+  locks.forEach((item) => updateCurveObjects(item, { visible: item.id === sel.state.selectedId }));
 }
 
 function resetGuideSelectionVisuals() {
@@ -28449,7 +28437,7 @@ function refreshStrandSelectionConsumers({
     && transformControls.object === strandObjectTransformHandle;
   if (!lock?.curveObjects?.handles.includes(transformControls.object) && !validStrandObjectTransform) {
     transformControls.detach();
-    selectedPoint = null;
+    sel.state.selectedPoint = null;
   }
   if (updateGeometry) locks.forEach((item) => updateLockGeometry(item));
   renderLockList();
@@ -28488,20 +28476,20 @@ function selectLock(id, options = {}) {
   applyStrandSelectionState(nextSelection);
   id = nextSelection.activeId;
   clearMultiPointSelection();
-  const selectedCurveSurfaceLock = locks.find((item) => item.id === selectedId && item.geometryType === "curve-surface");
+  const selectedCurveSurfaceLock = locks.find((item) => item.id === sel.state.selectedId && item.geometryType === "curve-surface");
   const requestedControllerIndex = Math.round(Number(options.curveSurfaceControllerIndex));
-  selectedCurveSurfaceController = selectedCurveSurfaceLock
+  sel.state.selectedCurveSurfaceController = selectedCurveSurfaceLock
     && Number.isInteger(requestedControllerIndex)
     && requestedControllerIndex >= 0
     && requestedControllerIndex < selectedCurveSurfaceLock.curveSurfaceColumns
       ? { lockId: selectedCurveSurfaceLock.id, index: requestedControllerIndex }
       : null;
-  clumpViewportSelection = selectWholeClump && !selectionMode;
-  selectedStrandGroup = null;
-  selectedGuideId = undefined;
-  selectedReferenceImageId = null;
+  sel.state.clumpViewportSelection = selectWholeClump && !selectionMode;
+  sel.state.selectedStrandGroup = null;
+  sel.state.selectedGuideId = undefined;
+  sel.state.selectedReferenceImageId = null;
   selectedSurfaceObjectAnchorId = null;
-  selectedCurveLatticePoint = null;
+  sel.state.selectedCurveLatticePoint = null;
   curveLatticeToggle.classList.remove("active");
   curveLatticeToggle.setAttribute("aria-pressed", "false");
   filterCurveLatticesToGroup(null);
@@ -28521,18 +28509,18 @@ function selectLock(id, options = {}) {
 
 function deselectStrandsForGuideEditor() {
   const hasStrandSelection = Boolean(
-    selectedId
-    || selectedStrandGroup
-    || selectedPoint
-    || selectedControlPoints.some((point) => point.type === "strand")
+    sel.state.selectedId
+    || sel.state.selectedStrandGroup
+    || sel.state.selectedPoint
+    || sel.state.selectedControlPoints.some((point) => point.type === "strand")
   );
   if (!hasStrandSelection) return;
   selectLock(undefined);
 }
 
 function syncGroupInputs() {
-  if (!selectedStrandGroup) return;
-  const defaults = groupDefaultsFor(selectedStrandGroup);
+  if (!sel.state.selectedStrandGroup) return;
+  const defaults = groupDefaultsFor(sel.state.selectedStrandGroup);
   Object.entries(groupInputs).forEach(([key, input]) => {
     input.value = defaults[key];
   });
@@ -28557,7 +28545,7 @@ function syncGroupInputs() {
   renderProfilePreview(profilePreviewPaths.group, defaults.sweepProfile, defaults.profileOffset, defaults);
   renderTaperPreview(taperPreviewPaths.group, defaults, "taperCurve");
   renderTaperPreview(taperPreviewPaths.groupDepth, defaults, "depthCurve");
-  const group = STRAND_GROUPS.find((item) => item.id === selectedStrandGroup);
+  const group = STRAND_GROUPS.find((item) => item.id === sel.state.selectedStrandGroup);
   groupSettingsTitle.textContent = group ? strandRegionDisplayLabel(group.id) : "Group Settings";
   updateTopologyStats();
   syncShapePresetSelects();
@@ -28599,7 +28587,7 @@ function updateTopologyStats() {
   viewportTotalStats.textContent = formatTopologyStats(totalStats.vertices, totalStats.triangles);
 
   const groupStats = locks
-    .filter((lock) => (lock.scalpRegion || "unassigned") === selectedStrandGroup)
+    .filter((lock) => (lock.scalpRegion || "unassigned") === sel.state.selectedStrandGroup)
     .reduce((totals, lock) => {
       const stats = topologyStatsForLock(lock);
       totals.vertices += stats.vertices;
@@ -28865,7 +28853,7 @@ function syncProceduralAccessoryEditControls(guide = proceduralGuideForLock(getS
 }
 
 function updateAttributeEditorMode() {
-  const editingGroup = Boolean(selectedStrandGroup);
+  const editingGroup = Boolean(sel.state.selectedStrandGroup);
   const editingStrand = Boolean(getSelectedLock());
   const selectedGuide = getSelectedGuide();
   const editingGuide = viewportEditMode === "guide" && Boolean(selectedGuide);
@@ -29074,7 +29062,7 @@ function filterCurveLatticesToGroup(selectedGuideId = null) {
       && (!filtering || guide.id === selectedGuideId);
     const groupCurveVisible = REGION_CURVE_VISUALIZATION_ENABLED
       && GROUP_CURVE_FEATURE_ENABLED
-      && Boolean(selectedStrandGroup)
+      && Boolean(sel.state.selectedStrandGroup)
       && guide.id === selectedGuideId;
     guide.viewportGroupVisible = latticeVisible;
     guide.mesh.visible = latticeVisible;
@@ -29118,9 +29106,9 @@ function createStandaloneCurveLatticeGuide() {
 
 function showCurveLatticeForGroup(region) {
   const guide = curveLatticeForGroup(region, true);
-  selectedGuideId = guide?.id;
-  activeCurveLatticeGuideId = guide?.id || activeCurveLatticeGuideId;
-  selectedCurveLatticePoint = null;
+  sel.state.selectedGuideId = guide?.id;
+  sel.state.activeCurveLatticeGuideId = guide?.id || sel.state.activeCurveLatticeGuideId;
+  sel.state.selectedCurveLatticePoint = null;
   curveLatticeToggle.classList.toggle("active", Boolean(guide));
   curveLatticeToggle.setAttribute("aria-pressed", String(Boolean(guide)));
   filterCurveLatticesToGroup(guide?.id || null);
@@ -29143,7 +29131,7 @@ function showCurveLatticeForGroup(region) {
         item.standalone
           ? item.viewportGroupVisible !== false
           : REGION_CURVE_VISUALIZATION_ENABLED
-            && (item.viewportGroupVisible !== false || (GROUP_CURVE_FEATURE_ENABLED && Boolean(selectedStrandGroup)))
+            && (item.viewportGroupVisible !== false || (GROUP_CURVE_FEATURE_ENABLED && Boolean(sel.state.selectedStrandGroup)))
       );
     }
     if (item.loopLinesGroup) item.loopLinesGroup.visible = false;
@@ -29156,10 +29144,10 @@ function showCurveLatticeForGroup(region) {
 function selectStrandGroup(region) {
   if (!strandGroupDefaults[region]) return;
   setOutlinerTab("strands");
-  if (selectedStrandGroup === region) {
-    selectedStrandGroup = null;
-    selectedGuideId = undefined;
-    selectedCurveLatticePoint = null;
+  if (sel.state.selectedStrandGroup === region) {
+    sel.state.selectedStrandGroup = null;
+    sel.state.selectedGuideId = undefined;
+    sel.state.selectedCurveLatticePoint = null;
     transformControls.detach();
     guides.forEach((guide) => {
       if (guide.handlesGroup) guide.handlesGroup.visible = false;
@@ -29175,12 +29163,12 @@ function selectStrandGroup(region) {
     refreshRebuildCurveDialog();
     return;
   }
-  selectedStrandGroup = region;
+  sel.state.selectedStrandGroup = region;
   clearMultiPointSelection();
   clearStrandSelectionState();
-  selectedCurveSurfaceController = null;
-  clumpViewportSelection = false;
-  selectedPoint = null;
+  sel.state.selectedCurveSurfaceController = null;
+  sel.state.clumpViewportSelection = false;
+  sel.state.selectedPoint = null;
   transformControls.detach();
   locks.forEach((lock) => {
     setStrandSelectionVisual(lock);
@@ -29196,14 +29184,14 @@ function selectStrandGroup(region) {
 }
 
 function selectCurvePoint(lockId, pointIndex, preserveMulti = false) {
-  selectedPoint = { lockId, pointIndex };
+  sel.state.selectedPoint = { lockId, pointIndex };
   selectedSurfaceObjectAnchorId = null;
-  selectedCurveLatticePoint = null;
-  if (!preserveMulti) selectedControlPoints = [{ type: "strand", lockId, pointIndex }];
+  sel.state.selectedCurveLatticePoint = null;
+  if (!preserveMulti) sel.state.selectedControlPoints = [{ type: "strand", lockId, pointIndex }];
   updateSelectedPointLabel();
   locks.forEach((lock) => {
     if (proportionalEditing) updateLockGeometry(lock);
-    updateCurveObjects(lock, { visible: lock.id === selectedId });
+    updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
   });
   updateViewPlaneGrid();
   updateViewportToolVisibility();
@@ -29211,14 +29199,14 @@ function selectCurvePoint(lockId, pointIndex, preserveMulti = false) {
 
 function updateSelectedPointLabel() {
   if (!selectedPointLabel) return;
-  selectedPointLabel.textContent = selectedControlPoints.length > 1
-    ? `${selectedControlPoints.length} selected`
+  selectedPointLabel.textContent = sel.state.selectedControlPoints.length > 1
+    ? `${sel.state.selectedControlPoints.length} selected`
     : selectedSurfaceObjectAnchorId
       ? "Object"
-    : selectedPoint
-      ? String(selectedPoint.pointIndex + 1)
-      : selectedCurveLatticePoint
-        ? String(selectedCurveLatticePoint.pointIndex + 1)
+    : sel.state.selectedPoint
+      ? String(sel.state.selectedPoint.pointIndex + 1)
+      : sel.state.selectedCurveLatticePoint
+        ? String(sel.state.selectedCurveLatticePoint.pointIndex + 1)
         : "None";
 }
 
@@ -29296,11 +29284,11 @@ function syncClumpGuidePanel(lock = getSelectedLock()) {
 }
 
 function getSelectedLock() {
-  return locks.find((lock) => lock.id === selectedId);
+  return locks.find((lock) => lock.id === sel.state.selectedId);
 }
 
 function selectedLocksInOrder() {
-  return [...selectedStrandIds]
+  return [...sel.state.selectedStrandIds]
     .map((id) => locks.find((lock) => lock.id === id))
     .filter(Boolean);
 }
@@ -29310,13 +29298,13 @@ function lockStrands(targets) {
     .filter((lock) => lock && !lock.locked && !lock.proceduralDuplicatePreview)
     .map((lock) => [lock.id, lock])).values()];
   const targetIds = new Set(uniqueTargets.map((lock) => lock.id));
-  const remainingSelectedIds = [...selectedStrandIds].filter((id) => !targetIds.has(id));
+  const remainingSelectedIds = [...sel.state.selectedStrandIds].filter((id) => !targetIds.has(id));
   if (!uniqueTargets.length) return false;
   pushUndoState();
   uniqueTargets.forEach((lock) => {
     lock.locked = true;
   });
-  if (targetIds.has(selectedId)) {
+  if (targetIds.has(sel.state.selectedId)) {
     if (remainingSelectedIds.length) {
       selectLock(remainingSelectedIds[0], {
         individualClumpMember: true,
@@ -29325,8 +29313,8 @@ function lockStrands(targets) {
     } else {
       deselectStrands();
     }
-  } else if (remainingSelectedIds.length !== selectedStrandIds.size) {
-    selectLock(selectedId, {
+  } else if (remainingSelectedIds.length !== sel.state.selectedStrandIds.size) {
+    selectLock(sel.state.selectedId, {
       individualClumpMember: true,
       selectedIds: remainingSelectedIds
     });
@@ -29402,7 +29390,7 @@ function editSelectedLocks(mutator, options = {}) {
       updateClump: options.updateClump
     });
     if (options.updateCurveObjects !== false) {
-      updateCurveObjects(lock, { visible: lock.id === selectedId });
+      updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
     }
     const partner = mirrorPartnerFor(lock);
     if (!partner || !targetIds.has(partner.id)) {
@@ -29780,8 +29768,8 @@ function deleteGuide(guide) {
   locks.forEach((lock) => {
     if (lock.curveLatticeBinding?.guideId === guide.id) lock.curveLatticeBinding = null;
   });
-  if (activeCurveLatticeGuideId === guide.id) {
-    activeCurveLatticeGuideId = null;
+  if (sel.state.activeCurveLatticeGuideId === guide.id) {
+    sel.state.activeCurveLatticeGuideId = null;
     curveLatticeToggle.classList.remove("active");
   }
   removeGuideObjects(guide);
@@ -29804,8 +29792,8 @@ function deleteSelectedReferenceImage() {
   transformControls.detach();
   disposeReferenceImage(reference);
   referenceImages.splice(referenceImages.indexOf(reference), 1);
-  selectedReferenceImageId = referenceImages.at(-1)?.id || null;
-  if (selectedReferenceImageId) selectReferenceImage(selectedReferenceImageId);
+  sel.state.selectedReferenceImageId = referenceImages.at(-1)?.id || null;
+  if (sel.state.selectedReferenceImageId) selectReferenceImage(sel.state.selectedReferenceImageId);
   else renderReferenceImagePanel();
   return true;
 }
@@ -29876,12 +29864,12 @@ function showOutlinerContextMenu(event, target) {
   const clumpHasMirrorPartners = mirroredClumpPartners(clumpGuide).length > 0;
   const canCreateSelectionClump = Boolean(
     strand
-    && selectedStrandIds.has(strand.id)
+    && sel.state.selectedStrandIds.has(strand.id)
     && selectionCanBecomeClump()
   );
   const canCreateSelectionSet = Boolean(
     strand
-    && selectedStrandIds.has(strand.id)
+    && sel.state.selectedStrandIds.has(strand.id)
     && selectedLocksInOrder().length >= 2
   );
   editScalpOutlinerAction.classList.toggle("hidden", !isScalpGuide);
@@ -30189,7 +30177,7 @@ function contextualRadialOptions(kind) {
     ];
   }
   if (kind === "clump") {
-    const guide = clumpViewportSelection ? clumpGuideForLock(getSelectedLock()) : null;
+    const guide = sel.state.clumpViewportSelection ? clumpGuideForLock(getSelectedLock()) : null;
     return [
       ...clumpMirrorRadialOptions(guide),
       { action: "create-clump-preset", label: "Create Brush Preset", list: true },
@@ -30367,9 +30355,9 @@ function configureContextualRadialMenu(kind, options, listOptions = []) {
 function beginStrandRadialGesture() {
   if (!radialMenusEnabled || strandRadialGesture || duplicatePlacement) return false;
   const lock = getSelectedLock();
-  const hasOtherSelection = Boolean(selectedStrandGroup || getSelectedGuide() || selectedReferenceImage());
+  const hasOtherSelection = Boolean(sel.state.selectedStrandGroup || getSelectedGuide() || selectedReferenceImage());
   if (!lock && hasOtherSelection) return false;
-  const selectedClumpGuide = clumpViewportSelection ? clumpGuideForLock(lock) : null;
+  const selectedClumpGuide = sel.state.clumpViewportSelection ? clumpGuideForLock(lock) : null;
   const kind = selectedClumpGuide
     ? "clump"
     : selectedLocksInOrder().length > 1 ? "selection"
@@ -30516,7 +30504,7 @@ function performStrandRadialAction(action, lockId) {
   if (action === "toggle-isolate-selection") return toggleSelectedStrandIsolation();
   if (action === "delete-selection") return deleteSelectedStrands();
   if (action === "mirror-selected-strands") {
-    const originalIds = [...selectedStrandIds];
+    const originalIds = [...sel.state.selectedStrandIds];
     const { mirrorable } = mirrorSelectionTargets(selectedLocksInOrder(), mirrorPartnerFor);
     if (!mirrorable.length) return false;
     pushUndoState();
@@ -30564,7 +30552,7 @@ function performStrandRadialAction(action, lockId) {
     if (!clumpGuide?.clumpId) return false;
     pushUndoState();
     dissolveClump(clumpGuide.clumpId);
-    clumpViewportSelection = false;
+    sel.state.clumpViewportSelection = false;
     selectLock(clumpGuide.id);
     return true;
   }
@@ -30950,7 +30938,7 @@ function updateSideNamingLabels() {
   });
   renderReferenceImagePanel();
   renderLockList();
-  const selectedGroup = STRAND_GROUPS.find((group) => group.id === selectedStrandGroup);
+  const selectedGroup = STRAND_GROUPS.find((group) => group.id === sel.state.selectedStrandGroup);
   groupSettingsTitle.textContent = selectedGroup
     ? strandRegionDisplayLabel(selectedGroup.id)
     : "Group Settings";
@@ -31943,10 +31931,10 @@ function createOutlinerStrandButton(lock, options = {}) {
   });
   const button = document.createElement("button");
   const selectedLock = getSelectedLock();
-  const clumpHighlighted = clumpViewportSelection
+  const clumpHighlighted = sel.state.clumpViewportSelection
     && selectedLock?.clumpId
     && lock.clumpId === selectedLock.clumpId;
-  button.className = `lock-item${selectedStrandIds.has(lock.id) || clumpHighlighted ? " active" : ""}`;
+  button.className = `lock-item${sel.state.selectedStrandIds.has(lock.id) || clumpHighlighted ? " active" : ""}`;
   button.type = "button";
   button.draggable = !lock.clumpGuide;
   const mirrorPartner = mirrorPartnerFor(lock);
@@ -31985,7 +31973,7 @@ function createOutlinerStrandButton(lock, options = {}) {
     }),
     onCommit: (nextName) => {
       lock.name = nextName;
-      if (lock.id === selectedId) inputs.name.value = nextName;
+      if (lock.id === sel.state.selectedId) inputs.name.value = nextName;
       refreshLiveSurfaceOptions();
     },
     rerender: renderLockList
@@ -32020,7 +32008,7 @@ function createOutlinerCurveSurface(lock) {
   const compound = Boolean(lock.curveSurfaceCompoundProfile);
   const entityLabel = compound ? "Compound Strand" : "Curve Surface";
   const isOpen = curveSurfaceOpen.get(lock.id) !== false;
-  const containsSelection = selectedId === lock.id;
+  const containsSelection = sel.state.selectedId === lock.id;
   const activeController = activeCurveSurfaceControllerIndex(lock);
   const container = document.createElement("div");
   container.className = `outliner-clump outliner-curve-surface${isOpen ? " open" : ""}${containsSelection ? " selected" : ""}`;
@@ -32068,7 +32056,7 @@ function createOutlinerCurveSurface(lock) {
     onSelect: () => selectLock(lock.id),
     onCommit: (nextName) => {
       lock.name = nextName;
-      if (lock.id === selectedId) inputs.name.value = nextName;
+      if (lock.id === sel.state.selectedId) inputs.name.value = nextName;
       refreshLiveSurfaceOptions();
     },
     rerender: renderLockList
@@ -32115,7 +32103,7 @@ function createOutlinerClump(guide) {
   const clumpLocks = outlinerClumpLocks(guide);
   const isOpen = clumpOpen.get(guide.clumpId) === true;
   const selectedLock = getSelectedLock();
-  const containsSelection = clumpLocks.some((lock) => selectedStrandIds.has(lock.id));
+  const containsSelection = clumpLocks.some((lock) => sel.state.selectedStrandIds.has(lock.id));
   const container = document.createElement("div");
   container.className = `outliner-clump${isOpen ? " open" : ""}${containsSelection ? " selected" : ""}`;
   const header = document.createElement("div");
@@ -32196,8 +32184,8 @@ function createOutlinerClump(guide) {
 function selectionSetMatchesCurrentSelection(selectionSet) {
   const memberIds = selectionSet.strandIds.filter((id) => locks.some((lock) => lock.id === id));
   return memberIds.length > 0
-    && memberIds.length === selectedStrandIds.size
-    && memberIds.every((id) => selectedStrandIds.has(id));
+    && memberIds.length === sel.state.selectedStrandIds.size
+    && memberIds.every((id) => sel.state.selectedStrandIds.has(id));
 }
 
 function createSelectionSetsOutlinerFolder() {
@@ -32291,14 +32279,14 @@ function renderLockList() {
     });
     const groupLocks = groupRoots.flatMap((lock) => lock.clumpGuide ? outlinerClumpLocks(lock) : [lock]);
     const groupElement = document.createElement("div");
-    const isOpen = strandGroupOpen.get(group.id) || groupLocks.some((lock) => selectedStrandIds.has(lock.id));
+    const isOpen = strandGroupOpen.get(group.id) || groupLocks.some((lock) => sel.state.selectedStrandIds.has(lock.id));
     groupElement.className = `outliner-group${isOpen ? " open" : ""}`;
     groupElement.dataset.strandGroup = group.id;
     const groupColor = `#${new THREE.Color(SCALP_REGIONS[group.id].color).getHexString()}`;
     groupElement.style.setProperty("--outliner-region-color", groupColor);
 
     const header = document.createElement("div");
-    header.className = `outliner-group-head${selectedStrandGroup === group.id ? " selected" : ""}`;
+    header.className = `outliner-group-head${sel.state.selectedStrandGroup === group.id ? " selected" : ""}`;
     const disclosure = document.createElement("button");
     disclosure.className = "outliner-disclosure";
     disclosure.type = "button";
@@ -32330,7 +32318,7 @@ function renderLockList() {
     const selectGroup = document.createElement("button");
     selectGroup.className = "outliner-group-select";
     selectGroup.type = "button";
-    selectGroup.setAttribute("aria-pressed", String(selectedStrandGroup === group.id));
+    selectGroup.setAttribute("aria-pressed", String(sel.state.selectedStrandGroup === group.id));
     selectGroup.addEventListener("click", () => selectStrandGroup(group.id));
     const groupSwatch = document.createElement("span");
     groupSwatch.className = "outliner-group-swatch";
@@ -32363,8 +32351,8 @@ function renderLockList() {
       const layerLockCount = layerRoots.reduce((total, lock) => total + (lock.clumpGuide ? outlinerClumpLocks(lock).length : 1), 0);
       const layerKey = `${group.id}:${layer.id}`;
       const layerOpen = strandLayerOpen.get(layerKey) !== false || layerRoots.some((lock) => (
-        selectedStrandIds.has(lock.id)
-        || (lock.clumpId && outlinerClumpLocks(lock).some((item) => selectedStrandIds.has(item.id)))
+        sel.state.selectedStrandIds.has(lock.id)
+        || (lock.clumpId && outlinerClumpLocks(lock).some((item) => sel.state.selectedStrandIds.has(item.id)))
       ));
       const layerElement = document.createElement("div");
       layerElement.className = `outliner-layer${layerOpen ? " open" : ""}`;
@@ -32707,7 +32695,7 @@ dissolveClumpAction.addEventListener("click", () => {
   if (!guide?.clumpId) return;
   pushUndoState();
   dissolveClump(guide.clumpId);
-  clumpViewportSelection = false;
+  sel.state.clumpViewportSelection = false;
   hideOutlinerContextMenu();
   selectLock(guide.id);
 });
@@ -33003,47 +32991,47 @@ Object.entries(groupInputs).forEach(([key, input]) => {
   input.addEventListener("pointerdown", requestGroupDefaultsWarning, { capture: true });
   bindUndoCapture(input);
   input.addEventListener("input", () => {
-    if (!selectedStrandGroup) return;
+    if (!sel.state.selectedStrandGroup) return;
     if (key === "lengthScale") {
-      setGroupLengthScale(selectedStrandGroup, Number(input.value));
+      setGroupLengthScale(sel.state.selectedStrandGroup, Number(input.value));
       document.querySelector("#groupLengthScaleValue").textContent = Number(input.value).toFixed(2);
       return;
     }
-    strandGroupDefaults[selectedStrandGroup][key] = Number(input.value);
+    strandGroupDefaults[sel.state.selectedStrandGroup][key] = Number(input.value);
     if (key === "radialSegments") topologyValues.groupRadialSegments.textContent = input.value;
     if (key === "lengthSegments") topologyValues.groupLengthSegments.textContent = input.value;
     if (key === "densityAggression") topologyValues.groupDensityAggression.textContent = Number(input.value).toFixed(2);
     if (key === "twistDensity") topologyValues.groupTwistDensity.textContent = Number(input.value).toFixed(2);
     if (key === "profileOffset") {
       document.querySelector("#groupProfileOffsetValue").textContent = Number(input.value).toFixed(2);
-      renderProfilePreview(profilePreviewPaths.group, strandGroupDefaults[selectedStrandGroup].sweepProfile, Number(input.value), strandGroupDefaults[selectedStrandGroup]);
+      renderProfilePreview(profilePreviewPaths.group, strandGroupDefaults[sel.state.selectedStrandGroup].sweepProfile, Number(input.value), strandGroupDefaults[sel.state.selectedStrandGroup]);
       if (sweepProfileEditor.open) renderSweepProfileEditor();
     }
     if (key === "rootScalpOffset") document.querySelector("#groupRootScalpOffsetValue").textContent = Number(input.value).toFixed(2);
     if (key === "widthScale") document.querySelector("#groupWidthScaleValue").textContent = Number(input.value).toFixed(2);
     if (key === "depthScale") document.querySelector("#groupDepthScaleValue").textContent = Number(input.value).toFixed(2);
-    applyGroupDefaultsToExistingStrands(selectedStrandGroup);
+    applyGroupDefaultsToExistingStrands(sel.state.selectedStrandGroup);
   });
 });
 Object.entries(groupLayerInputs).forEach(([layerId, input]) => {
   bindUndoCapture(input);
   input.addEventListener("input", () => {
-    if (!selectedStrandGroup) return;
+    if (!sel.state.selectedStrandGroup) return;
     const value = Number(input.value);
     document.querySelector(`#${input.id}Value`).textContent = value.toFixed(2);
-    setGroupLayerOffset(selectedStrandGroup, layerId, value);
+    setGroupLayerOffset(sel.state.selectedStrandGroup, layerId, value);
     updateTopologyStats();
   });
 });
 groupDynamicDensityInput.addEventListener("pointerdown", requestGroupDefaultsWarning, { capture: true });
 groupDynamicDensityInput.addEventListener("change", () => {
-  if (!selectedStrandGroup) return;
+  if (!sel.state.selectedStrandGroup) return;
   pushUndoState();
-  const defaults = strandGroupDefaults[selectedStrandGroup];
+  const defaults = strandGroupDefaults[sel.state.selectedStrandGroup];
   defaults.dynamicDensity = groupDynamicDensityInput.checked;
   groupInputs.densityAggression.disabled = !defaults.dynamicDensity;
   groupInputs.twistDensity.disabled = !defaults.dynamicDensity;
-  applyGroupDefaultsToExistingStrands(selectedStrandGroup);
+  applyGroupDefaultsToExistingStrands(sel.state.selectedStrandGroup);
 });
 confirmGroupDefaultsChange.addEventListener("click", () => {
   groupDefaultsWarningAcknowledged = true;
@@ -34291,7 +34279,7 @@ function resampleSurfaceLock(lock, nextColumns, nextRows) {
   lock.curve = lock.points.at(-1).x - lock.points[0].x;
   rebuildCurveObjects(lock);
   updateLockGeometry(lock, { immediate: true });
-  updateCurveObjects(lock, { visible: lock.id === selectedId });
+  updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
   syncActiveMirror(lock, { refreshUi: true });
   updateTopologyStats();
   return true;
@@ -36207,7 +36195,7 @@ function deleteLocks(targetLocks) {
   const targets = [...new Set(targetLocks)].filter((lock) => locks.includes(lock));
   if (!targets.length) return;
   const targetIds = new Set(targets.map((lock) => lock.id));
-  targetIds.forEach((id) => selectedStrandIds.delete(id));
+  targetIds.forEach((id) => sel.state.selectedStrandIds.delete(id));
   targets.forEach((lock) => {
     const partner = mirrorPartnerFor(lock);
     if (partner && !targetIds.has(partner.id) && partner.mirrorPartnerId === lock.id) {
@@ -36225,8 +36213,8 @@ function deleteLocks(targetLocks) {
   });
   if (targets.some((item) => item.curveObjects?.handles.includes(transformControls.object))) transformControls.detach();
   if (targets.some((item) => item.curveObjects?.surfaceObjectAnchor === transformControls.object)) transformControls.detach();
-  if (targets.some((item) => selectedPoint?.lockId === item.id)) {
-    selectedPoint = null;
+  if (targets.some((item) => sel.state.selectedPoint?.lockId === item.id)) {
+    sel.state.selectedPoint = null;
     updateSelectedPointLabel();
   }
   if (targets.some((item) => selectedSurfaceObjectAnchorId === item.id)) {
@@ -36263,12 +36251,12 @@ function deleteLocks(targetLocks) {
     targetIds.forEach((id) => isolatedStrandIds.delete(id));
     if (!isolatedStrandIds.size) isolatedStrandIds = null;
   }
-  if (targets.some((item) => item.id === selectedId)) {
-    selectedCurveSurfaceController = null;
-    const fallback = locks.find((lock) => selectedStrandIds.has(lock.id)) || locks.at(-1);
+  if (targets.some((item) => item.id === sel.state.selectedId)) {
+    sel.state.selectedCurveSurfaceController = null;
+    const fallback = locks.find((lock) => sel.state.selectedStrandIds.has(lock.id)) || locks.at(-1);
     if (fallback) selectLock(fallback.id, {
       individualClumpMember: true,
-      selectedIds: selectedStrandIds.size ? [...selectedStrandIds] : undefined
+      selectedIds: sel.state.selectedStrandIds.size ? [...sel.state.selectedStrandIds] : undefined
     });
     else deselectStrands();
   }
@@ -36446,7 +36434,7 @@ function endPanelSplitHandleDrag(event) {
   if (renderer.domElement.hasPointerCapture?.(pointerId)) renderer.domElement.releasePointerCapture(pointerId);
   renderer.domElement.style.cursor = "";
   const lock = locks.find((item) => item.id === lockId);
-  if (lock) updateCurveObjects(lock, { visible: lock.id === selectedId });
+  if (lock) updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
   updateInteractionLocks();
 }
 
@@ -36688,14 +36676,14 @@ function activateStrandControlPoint(handle, event) {
     removeStrandControlPointSelection(handle.userData.lockId, handle.userData.pointIndex);
     return true;
   }
-  const preserveMulti = selectedControlPoints.length > 1
+  const preserveMulti = sel.state.selectedControlPoints.length > 1
     && controlPointIsSelected("strand", handle.userData.lockId, handle.userData.pointIndex);
   transformControls.detach();
   activeHandleEdit = null;
   transformDragging = false;
   updateInteractionLocks();
   if (!preserveMulti) {
-    const keepIndividualMember = handle.userData.lockId === selectedId && !clumpViewportSelection;
+    const keepIndividualMember = handle.userData.lockId === sel.state.selectedId && !sel.state.clumpViewportSelection;
     selectLock(handle.userData.lockId, { individualClumpMember: keepIndividualMember });
   } else {
     applyStrandSelectionState(activateStrandSelection(
@@ -36727,17 +36715,17 @@ function activateStrandControlPoint(handle, event) {
 }
 
 function refreshStrandControlPointSelection(lock) {
-  const primary = selectedControlPoints.find((point) => (
+  const primary = sel.state.selectedControlPoints.find((point) => (
     point.type === "strand" && point.lockId === lock.id
   )) || null;
-  selectedPoint = primary ? { lockId: primary.lockId, pointIndex: primary.pointIndex } : null;
+  sel.state.selectedPoint = primary ? { lockId: primary.lockId, pointIndex: primary.pointIndex } : null;
   selectedSurfaceObjectAnchorId = null;
-  selectedCurveLatticePoint = null;
+  sel.state.selectedCurveLatticePoint = null;
   transformControls.detach();
   activeHandleEdit = null;
   transformDragging = false;
   if (proportionalEditing) updateLockGeometry(lock);
-  locks.forEach((item) => updateCurveObjects(item, { visible: item.id === selectedId }));
+  locks.forEach((item) => updateCurveObjects(item, { visible: item.id === sel.state.selectedId }));
 
   if (primary && ["move", "rotate", "scale"].includes(activeTool)) {
     const primaryHandle = lock.curveObjects?.handles[primary.pointIndex];
@@ -36757,29 +36745,29 @@ function addStrandControlPointSelection(handle) {
   const lockId = handle?.userData?.lockId;
   const pointIndex = handle?.userData?.pointIndex;
   const lock = locks.find((item) => item.id === lockId);
-  if (!lock || pointIndex === undefined || lock.id !== selectedId) return false;
+  if (!lock || pointIndex === undefined || lock.id !== sel.state.selectedId) return false;
 
-  const selectionIndex = selectedControlPoints.findIndex((point) => (
+  const selectionIndex = sel.state.selectedControlPoints.findIndex((point) => (
     point.type === "strand"
     && point.lockId === lockId
     && point.pointIndex === pointIndex
   ));
   if (selectionIndex >= 0) return true;
-  selectedControlPoints.push({ type: "strand", lockId, pointIndex });
+  sel.state.selectedControlPoints.push({ type: "strand", lockId, pointIndex });
   refreshStrandControlPointSelection(lock);
   return true;
 }
 
 function removeStrandControlPointSelection(lockId, pointIndex) {
   const lock = locks.find((item) => item.id === lockId);
-  if (!lock || lock.id !== selectedId) return false;
-  const selectionIndex = selectedControlPoints.findIndex((point) => (
+  if (!lock || lock.id !== sel.state.selectedId) return false;
+  const selectionIndex = sel.state.selectedControlPoints.findIndex((point) => (
     point.type === "strand"
     && point.lockId === lockId
     && point.pointIndex === pointIndex
   ));
   if (selectionIndex < 0) return false;
-  selectedControlPoints.splice(selectionIndex, 1);
+  sel.state.selectedControlPoints.splice(selectionIndex, 1);
   refreshStrandControlPointSelection(lock);
   return true;
 }
@@ -36801,7 +36789,7 @@ function sampleStrandPointVectors(points, parameters) {
 }
 
 function remapStrandPointSelectionAfterRemoval(lockId, removedIndex) {
-  selectedControlPoints = selectedControlPoints.flatMap((point) => {
+  sel.state.selectedControlPoints = sel.state.selectedControlPoints.flatMap((point) => {
     if (point.type !== "strand" || point.lockId !== lockId) return [point];
     if (point.pointIndex === removedIndex) return [];
     return [{
@@ -36917,7 +36905,7 @@ function insertStrandCurvePoint(lockId, parameter) {
 
   pushUndoState();
   resampleStrandCurveData(lock, plan.parameters);
-  selectedControlPoints = [{
+  sel.state.selectedControlPoints = [{
     type: "strand",
     lockId: lock.id,
     pointIndex: plan.insertionIndex
@@ -36989,7 +36977,7 @@ function prepareCurvePointSelection(event) {
     const hovered = hoveredControlPoint;
     if (hovered?.userData?.lockId && hovered.userData.pointIndex !== undefined) {
       selectLock(hovered.userData.lockId, {
-        individualClumpMember: hovered.userData.lockId === selectedId && !clumpViewportSelection
+        individualClumpMember: hovered.userData.lockId === sel.state.selectedId && !sel.state.clumpViewportSelection
       });
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -37375,7 +37363,7 @@ function updateSculptBrushViabilityPlane() {
   if (!changedLockIds.size) return;
   locks.forEach((lock) => {
     if (changedLockIds.has(lock.id)) {
-      updateCurveObjects(lock, { visible: lock.id === selectedId });
+      updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
     }
   });
 }
@@ -37959,7 +37947,7 @@ function updateStrandWidthEdgeDrag(event) {
     applyEditableStrandWidth(target, snapshot.startWidth + widthDelta, snapshot);
     syncLockFromCurve(target);
     updateLockGeometry(target, { immediate: true });
-    updateCurveObjects(target, { visible: target.id === selectedId });
+    updateCurveObjects(target, { visible: target.id === sel.state.selectedId });
     const partner = mirrorPartnerFor(target);
     if (!partner || !targetIds.has(partner.id)) syncActiveMirror(target);
   });
@@ -37995,7 +37983,7 @@ function finishStrandWidthEdgeDrag(event, { cancel = false } = {}) {
     if (!target) return;
     syncLockFromCurve(target);
     updateLockGeometry(target, { immediate: true });
-    updateCurveObjects(target, { visible: target.id === selectedId });
+    updateCurveObjects(target, { visible: target.id === sel.state.selectedId });
     const partner = mirrorPartnerFor(target);
     if (!partner || !targetIds.has(partner.id)) syncActiveMirror(target, { refreshUi: true });
   });
@@ -38422,7 +38410,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
         false
       )[0] || null;
       const capsuleGuideId = capsuleHit?.object?.userData?.guideId;
-      if (capsuleGuideId && capsuleGuideId !== selectedGuideId) {
+      if (capsuleGuideId && capsuleGuideId !== sel.state.selectedGuideId) {
         selectGuide(capsuleGuideId);
         event.preventDefault();
         return;
@@ -38461,7 +38449,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
       return;
     }
     const pendingLock = pendingPlacedLock();
-    if (pendingPlacedLockId && !pendingLock) {
+    if (sel.state.pendingPlacedLockId && !pendingLock) {
       finishPlacementFlow();
     } else if (pendingLock) {
       finishPlacementFlow({ keepSelected: true });
@@ -38568,7 +38556,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     if (latticePointHit) {
       const directMove = activeTool === "move" && viewPlaneMoveActiveForView();
       const pointIndex = latticePointHit.object.userData.curveLatticePointIndex;
-      const preserveMulti = selectedControlPoints.length > 1
+      const preserveMulti = sel.state.selectedControlPoints.length > 1
         && controlPointIsSelected("lattice", selectedLattice.id, pointIndex);
       selectCurveLatticePoint(
         selectedLattice,
@@ -38638,14 +38626,14 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
 
     if (selectedSurface?.type === "guide") {
       const guideId = selectedSurface.hit.object.userData.guideId;
-      if (guideId && guideId !== selectedGuideId) {
+      if (guideId && guideId !== sel.state.selectedGuideId) {
         selectGuide(guideId);
         event.preventDefault();
         return;
       }
     } else if (selectedSurface?.type === "strand") {
       const lockId = selectedSurface.hit.object.userData.lockId;
-      if (lockId && lockId !== selectedId) {
+      if (lockId && lockId !== sel.state.selectedId) {
         selectLock(lockId);
         event.preventDefault();
         return;
@@ -38654,8 +38642,8 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   }
 
   if (!hit) {
-    if (modelingClick && activeTool === "relax" && selectedLock && selectedPoint?.lockId === selectedLock.id) {
-      if (beginRelaxEdit(selectedLock, selectedPoint.pointIndex, event)) {
+    if (modelingClick && activeTool === "relax" && selectedLock && sel.state.selectedPoint?.lockId === selectedLock.id) {
+      if (beginRelaxEdit(selectedLock, sel.state.selectedPoint.pointIndex, event)) {
         event.preventDefault();
       }
     }

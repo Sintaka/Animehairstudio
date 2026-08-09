@@ -13,7 +13,9 @@ import os from "node:os";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
-const ahsFile = args.find((a) => !a.startsWith("--"));
+const VALUE_OPTS = new Set(["--port", "--cdp-port"]);
+const ahsFiles = [];
+for (let i = 0; i < args.length; i++) { if (args[i].startsWith("--")) { if (VALUE_OPTS.has(args[i])) i++; continue; } ahsFiles.push(args[i]); }
 const port = Number(args[args.indexOf("--port") + 1] || 8080);
 const cdpPort = Number(args[args.indexOf("--cdp-port") + 1] || 9223);
 const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
@@ -113,6 +115,14 @@ try {
     e.method === "Runtime.exceptionThrown" ||
     (e.method === "Log.entryAdded" && ["error", "warning"].includes(e.params?.entry?.level) && /unpkg|ERR_|Uncaught|TypeError|ReferenceError|SyntaxError/i.test(e.params?.entry?.text || ""))
   );
+  if (errors.length) {
+    for (const e of errors) {
+      const det = e.params?.exceptionDetails || {};
+      const loc = det.url ? ` @${det.url}:${det.lineNumber}:${det.columnNumber}` : "";
+      const txt = (det.exception?.description || det.text || e.params?.entry?.text || JSON.stringify(e).slice(0, 300)) + loc;
+      console.log("  [boot-exception]", txt.slice(0, 300));
+    }
+  }
   check("zero boot exceptions", errors.length === 0, `${errors.length} captured`);
 
   // localization data-layer check inside the browser (real import chain with ?v=)
@@ -133,7 +143,8 @@ try {
   check("en fallback stays English", locR.enFallback === "Project Contents", locR.enFallback);
   console.log(`  dict sizes: JA=${locR.jaKeys} ZH=${locR.zhKeys}`);
 
-  if (ahsFile && fs.existsSync(ahsFile)) {
+  for (const ahsFile of ahsFiles) {
+    if (!fs.existsSync(ahsFile)) { check("ahs exists " + ahsFile, false, "missing"); continue; }
     const data = fs.readFileSync(ahsFile, "base64");
     const loadRes = await evalJS(cdp, `(async () => {
       try {
@@ -146,12 +157,28 @@ try {
         dt.items.add(file);
         const evt = new DragEvent('drop', { bubbles: true, dataTransfer: dt });
         document.body.dispatchEvent(evt);
-        return 'dropped';
+        await new Promise(r => setTimeout(r, 600));
+        const dlg = document.querySelector('#dropImportDialog');
+        const openedBefore = !!(dlg && dlg.open);
+        if (dlg && dlg.open) {
+          const btn = document.querySelector('#confirmDropImport');
+          if (btn) btn.click();
+        }
+        return 'dropped+' + (openedBefore ? 'dialog-opened-confirmed' : 'dialog-never-opened');
       } catch (e) { return 'ERR ' + (e && e.message ? e.message : e); }
     })()`);
-    await sleep(6000);
-    const afterErrors = cdp.events.filter((e) => e.method === "Runtime.exceptionThrown");
-    check("ahs drop + rebuild no exceptions", afterErrors.length === 0, `${loadRes} / ${afterErrors.length} exceptions`);
+    await sleep(7000);
+    const loadState = await evalJS(cdp, `JSON.stringify({
+      dialogOpen: document.querySelector('#dropImportDialog')?.open ?? 'no-el',
+      groupCounts: [...document.querySelectorAll('.outliner-group-count')].map(e=>e.textContent).join(','),
+      lockItems: document.querySelectorAll('.lock-item').length,
+      empty: document.querySelectorAll('.outliner-empty').length,
+      status: (document.querySelector('#presetLibraryStatus')||{}).textContent || ''
+    })`);
+    console.log("  [load]", path.basename(ahsFile), loadState);
+    const before = cdp.events.length;
+    const afterErrors = cdp.events.slice(before).filter((e) => e.method === "Runtime.exceptionThrown");
+    check("ahs load+rebuild 0 exceptions (" + path.basename(ahsFile) + ")", afterErrors.length === 0, `${loadRes} / ${afterErrors.length} exceptions`);
   }
 
   // IO subsystem: export + save dialogs must open via the extracted modules
@@ -173,6 +200,22 @@ try {
   const ioR = JSON.parse(io);
   check("export dialog opens (IO module)", ioR.exportOpen && /Export/.test(ioR.exportTitle), ioR.exportTitle);
   check("save dialog opens (IO module)", ioR.saveOpen && /Save/.test(ioR.saveTitle), ioR.saveTitle);
+
+  // selection store interaction: clicking an outliner lock item must select it (store write -> DOM)
+  const selR = await evalJS(cdp, `(async () => {
+    const items = document.querySelectorAll(".lock-item");
+    if (!items.length) return JSON.stringify({ ok: false, reason: "no .lock-item in outliner" });
+    const btn = items[0];
+    const before = btn.className;
+    btn.click();
+    await new Promise(r => setTimeout(r, 500));
+    const activeEl = document.querySelector('.lock-item.active');
+    const after = (activeEl ? activeEl.className : btn.className);
+    const active = !!activeEl || (after.includes(" active") && !before.includes(" active"));
+    return JSON.stringify({ ok: active, active, before: before.slice(0, 40), after: after.slice(0, 60) });
+  })()`);
+  const selParse = JSON.parse(selR);
+  check("selection store: click lock item selects it", selParse.ok, selParse.reason || selParse.after);
 
   cdp.ws.close();
 } catch (e) {
