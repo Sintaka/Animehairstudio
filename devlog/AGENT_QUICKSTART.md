@@ -9,7 +9,7 @@
 2. `devlog/README.md` —— devlog 索引字典（各专题文件入口）
 3. `devlog/development-standards.md` —— 开发规范 + 「持续修改功能」清单（main 更新后要优先同步的本地功能）+ 许可证
 4. `devlog/main-sync-conflicts.md` —— 与 main 合并的全部决策（Local 选项移除、桥接区与 compound 并存策略、17 处冲突分类）
-5. 按需跳读：`devlog/js-change-annotations.md`（文首有**子系统索引表**）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）
+5. 按需跳读：`devlog/js-change-annotations.md`（子系统索引表 + 指向 6 个 `annotations-*.md` 专题文件）、`devlog/FUNCTION_INDEX.md`（机器生成的函数目录）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）
 
 ## 1. 仓库结构速览
 
@@ -49,8 +49,8 @@
 
 | 决策 | 内容 | 为什么 | 详见 |
 |---|---|---|---|
-| 桥接坐标方向 | 底部按位；侧面/顶部按**世界侧**（网格 left/right 在世界相反）；顶部 2src↔2dst + 中间分段 + smoothstep | 2.4l/2.4r 两次方向反了的教训 | js-change-annotations 2.4l / 2.4r |
-| 折痕接缝 | 区域列是**虚拟列**，需从父 `quadFaces` 推导 skipCol 映射到真实网格列 | linear 控制点让某列重合、无面起始 | 2.4o / 2.4q |
+| 桥接坐标方向 | 底部按位；侧面/顶部按**世界侧**（网格 left/right 在世界相反）；顶部 2src↔2dst + 中间分段 + smoothstep | 2.4l/2.4r 两次方向反了的教训 | annotations-bridge.md（2.4l / 2.4r） |
+| 折痕接缝 | 区域列是**虚拟列**，需从父 `quadFaces` 推导 skipCol 映射到真实网格列 | linear 控制点让某列重合、无面起始 | annotations-bridge.md（2.4o / 2.4q） |
 | 直接 vs 间接桥接 | 直接：直接封闭、无需侧面填充；间接：侧面填充从直接桥接向洞顶/底 1:1 填 quad 条带 | 避免三角面；顶/底分开处理互不干扰 | 2.4t / 2.4u、0.2.43–0.2.44 |
 | split 父退回直接生成 | 父无拓扑衔接能力时子发片从根部扫掠 | 避免无效挖洞 | 0.2.49 |
 | main 合并策略 | 桥接区**保留本地** + 按需吸收 main 预设；`createHairGeometry` 按 branchRootRegion 分流；材质双面条件合并 | 两套代码同插入点但无功能重叠（约 1000 行大冲突=误读） | main-sync-conflicts.md |

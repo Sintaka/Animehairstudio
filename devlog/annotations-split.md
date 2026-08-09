@@ -1,0 +1,25 @@
+# split 父发片兼容
+
+> 由 devlog/js-change-annotations.md 拆分而来；入口见 devlog/README.md。
+
+> 相关函数/关键词：createSplitStrandGeometry、splitFusedGrid、parentSupportsTopologyConnect、splitSections、faceToRendered、fusedIndexAt、0.2.49–0.2.51、退回直接生成
+
+> 说明：条目按子系统归类，同一开发阶段（2.x / Phase 2.15 等）的条目可能分散到多个文件，请按关键词跳读。
+
+  - **父发片 Split Geometry 时子发片退回直接生成（0.2.49）**：父发片开启 Split Geometry 后其几何由 `createSplitStrandGeometry` 生成，不输出 `gridRows/gridColumns/quadFaces`——`applyBranchRootRegionCarving` 因无 quadFaces 直接跳过（不再挖洞），`branchRootRegionSurface` 返回 null，子发片桥接无法构建。这是正确行为：父发片未使用拓扑衔接时，子发片应退回原版直接生成模式（从根部扫掠）。为使该设计显式化，`createHairGeometry` 增加 `parentSupportsTopologyConnect` 守卫（父几何需有 gridRows>=2 且 quadFaces 非空才走 `createBranchChildGeometry`），否则直接走 `createBaseHairGeometry` 从根部扫掠。验证（Sussurro_v1_0041 正常父 / 0042 Split 父，SL2/SL3）：0041 子发片桥接 bridgeVertexCount=24 / 0 NaN；0042 子发片退回普通发丝（167 verts / gridRows 15 / 0 NaN），父无挖洞、0 页面错误；region 面板/3D 标记等辅助路径对 null surface 均安全。
+
+> 相关：另见 annotations-bridge.md（子发片桥接退回直接生成）。
+
+  - **调研记录：预设/Split 主骨骼数据 + 刘海三角化（0.2.49 复盘，无代码改动）**：
+    1) **主骨骼数据检测（各发丝类型）**：子发片系统读取的父级主骨骼 = `points` + `pointSurfaceNormals(+surfaceNormalInfluence)` + `pointTwists` + `pointScales` + `baseWidth/width` + 几何衔接用的 `mesh.geometry.userData.gridRows/quadFaces`。实测（Sussurro_v1_0042）：**Split 单发丝主骨骼字段全在**（points/法线/twists/scales/widths/baseWidth/width/depth 一个不少，split 只换几何生成器 `createSplitStrandGeometry`，lock 字段照常生成），唯一缺的是几何 userData 的 gridRows/quadFaces → 子发片退回直接扫掠（0.2.49 显式守卫）；**预设 clump 成员**每成员独立拥有完整主骨骼，但 `canBranchDrawFromLock` 只放行 clump guide 作父级（普通成员被拒），分支绘制产物恒为普通 strand（不带 clumpId）；**复合发丝/curve-surface** 的 points 是扁平多控制器数组，`branchParentFrame` 无法直接使用（会串出之字形帧），且 geometryType≠strand 被准入拒绝，不能作父级也不能作子级；0042 存档另有 6 条 strand `pointSurfaceNormals=[]`（attach 时会用 `ensureBranchParentNormalField` 重算，可恢复）。
+    2) **刘海（split）三角化分析**：split 单发丝**侧面是四边面**（每 quad 6 索引 a,c,b/b,c,d，与普通扫掠同构，可从索引流无歧义恢复 quadFaces）；**真正的三角只有端盖**（`triangulateShape` ear-clipping，裁剪后截面多边形 N>4 必须三角化）；split 接缝处两管各自闭合、无跨 section 三角。端盖三角**无法从当前生成结果恢复成 N-gon**（ear-clipping 无公共中心、未记录顶点顺序、mask 全 [1,1,1]）；若要在生成时做标记以便日后回四边面，需改用中心 fan（`fanTriangleEdgeMasks` 已有约定）或额外记录 cap 顶点顺序（改动小，但与桥接无关）。
+    3) **面板（Front Bangs）折叠 quad 三角观感**：非平面 quad 按固定对角 a-c 拆两三角，开口 smoothstep 段墙 quad 二面角最高 180°/90°，法线平均后沿对角出折痕呈三角观感（原版同样存在）。改善可行（中~高）：凹 quad 换落在形内的对角、开口段细分/拉平、加折线顶点标 mask；完全消除可行性低。
+    4) **split 父发片能否支持子发片桥接（可行性：中 → 0.2.51 已实现，索引侧拼接）**：保留两管渲染，从索引把两管拼成 fused 网格（faceToRendered 映射挖洞、gridIndexAt 读位置、跨缝面即粘缝），子发片系统经 gridIndexAt/faceToRendered 适配。：被阻止的根因不是三角面，而是 `createSplitStrandGeometry` 不输出 gridRows/quadFaces + 索引流为 `[s0侧][s0盖][s1侧][s1盖]`（端盖插在两侧扫掠中间，破坏挖洞假设 facesPerRow）。最小改动方案：侧扫掠同时写 quadFaces、输出 per-section grid 元数据（gridRows=段数+1、splitSections=[{sectionBase, ringSize, gridFacesPerRow}]）、把端盖移到两个 section 之后使索引流变 `[s0侧][s1侧][s0盖][s1盖]`；`branchRootRegionSurface`/`applyBranchRootRegionCarving`/`buildBranchBridgeGeometry` 按 sectionBase 寻址、facesPerRow 用 surface 值；单根子发片只挖进一根管的洞，region 不能横跨 split 接缝（行为约束）。
+
+  - **split 父发片支持子发片桥接（0.2.51，分支 codex/split-parent-bridge，索引侧拼接）**：保留 split 两管渲染，改从**索引入手**把两管拼合成一个 quad 区域给子发片系统：
+  1) `createSplitStrandGeometry` 保持两段独立闭合管不变（渲染/顶点不变），仅做**渲染中性的索引重排**（端盖移到所有侧面之后，使 quadFaces 占据索引流前段、满足挖洞假设）并输出网格元数据：`quadFaces`（两管侧面）、`gridRows/gridColumns/gridFacesPerRow/gridSkipCol`、`splitSections`（每管 base/ringSize/faceBase）、`splitFusedGrid`（fused 列映射 `colToSection`、fused 面→渲染面映射 `faceToRendered`、`fusedIndexAt`、`splitStartRow`）。fused 列 = 完整截面环（`polygon`）顺序，左半→section0、右半→section1；跨 section 的 fused 面即「粘缝」面（faceToRendered=-1）。
+  2) 寻址穿透：`branchRootRegionSurface` 返回 `gridIndexAt`（split 用 fusedIndexAt，普通发丝为 r*cols+c），`branchRootRegionWorldPoints` / `branchRegionTopEdgeCount` / `buildBranchBridgeGeometry` / `holeBoundary`（新增可选 indexAt 参数）全部经 gridIndexAt 读父顶点；`applyBranchRootRegionCarving` 对 split 按 fused 面遍历选区并把 `faceToRendered` 映射回渲染面删除。
+  3) 行为：选区不跨缝（默认）时只挖所选 section 的面，桥接干净（0 非流形）；选区跨缝（进入 split 分开区）时两管面都被挖、桥接跨缝粘合（0 NaN 可渲染，顶部带处有少量重叠边——与普通发丝宽选区既有非流形同类，属「暴力粘」第一版的已知瑕疵，后续可在 band 处按位置去重/折叠退化 quad）。验证（Sussurro_v1_0042，SL2=split 父 / SL3 子）：默认选区 SL2 quadFaces 832→823（挖 9）、SL3 桥接 bridgeVC=24 / 0 NaN / 桥接 0 非流形；跨缝宽选区（v 0.08~0.92）SL2 quadFaces 832→790（挖 42，两管都挖）、SL3 桥接 bridgeVC=70 / 0 NaN / 桥接 4 非流形边（顶部带重叠）；split 自身渲染保持两管（864 verts）；0041 普通父回归不变；0 页面错误。
+  4) 说明：早期尝试的「融合单管」方案（把 split 重写为单根管，0.2.50 已提交）会把 split 底部连成网、违背 split 本意，已回退；本方案保留两管渲染、仅索引拼接。
+
+> 相关：另见 annotations-bridge.md（桥接经 gridIndexAt 适配 split 父发片）。
