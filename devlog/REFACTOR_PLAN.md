@@ -47,6 +47,23 @@
 2. 文档类改动：改完 `Select-String` 抽查渲染/链接。
 3. 拆分只允许「独立 commit + 失败回滚」，不允许「拆完未验证」。
 
+## 阶段 3d：app.js 瘦身为编排层（进行中）
+
+目标：把 app.js（38,605 行）的业务逻辑按子系统迁入模块，app.js 只保留「初始化 + store 装配 + 事件绑定」。
+模式：依赖注入（如 IO 的 createProjectSaveApi(deps)）——迁出函数通过 deps 接收 app.js 函数引用 + store。
+候选批次（按独立性排序）：
+1. creation preset 系统（L34276-34708，~15 函数）✅ 第一批
+2. shape preset 系统（L16395-16850，~15 函数）
+3. 子发片桥接几何（buildBranchBridgeGeometry/createBranchChildGeometry/applyBranchRootRegionCarving，~1000 行）
+4. scalp 系统函数
+5. curve/guide 系统函数
+每批独立 commit + verify-smoke 13/13 回归；依赖注入 deps 随迁移逐步收敛为「store + 少量核心函数」。
+
+## 待办（用户反馈，3d 后统一修）
+
+- **UI 小毛病**（未具体化）：store 化后某处 UI 状态/显示不同步，待用户复述或调研。
+- **撤销队列小毛病**（未具体化）：undo/redo 快照链路在 store 化后的边缘问题，待定位。
+
 ## 目标文件夹架构（modules/）
 
 ```
@@ -73,3 +90,10 @@ app.js 仍有 **241 个顶层 `let`**（全局可变状态），这是它无法�
 5. **渐进、可回滚**：按 3a→3d 分步，每步只收敛一个子系统的 let，独立 commit + verify-smoke 回归；getter/setter 兼容层保证中间态功能不回退。
 
 > 风险与红线：不做「大爆炸重写」；不追求一步到位；每步收敛前先看 GLOBAL_LET_INVENTORY 的 refs 数，从高频（最核心）开始，避免低频冷状态拖慢进度。
+
+
+## 待办（用户反馈，阶段 3 后统一修）
+
+- **UI 小毛病**（未具体化）：store 化后某处 UI 状态/显示不同步，待用户复述或调研（候选：偏好对话框、面板显隐、视图/工具切换）。
+- **撤销队列小毛病**（未具体化）：undo/redo 快照链路在 store 化后的边缘问题，待定位（候选：某状态未进快照、restore 顺序、pushUndoState 时机）。
+- 处理顺序：先完成 3d（app.js 瘦身），再统一修这两类。
