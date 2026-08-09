@@ -6,7 +6,7 @@
 ## 目标（三个问题的答案摘要）
 
 1. **文档检索**：三层金字塔——入口层（AGENT_QUICKSTART/README 字典）→ 检索层（机器生成的 FUNCTION_INDEX）→ 详情层（按子系统拆的专题 + VERSIONS.json）。
-2. **项目结构**：app.js（39,207 行 / 1319 函数 / 237 全局 let）依赖图驱动、三阶段渐进拆分，不以「文件变小」为目标，以「子系统边界清晰」为目标。
+2. **项目结构**：app.js（36,064 行 / 1314 函数 / 1 全局 let，modules 63 个文件共 1738 函数）依赖图驱动、三阶段渐进拆分，不以「文件变小」为目标，以「子系统边界清晰」为目标。
 3. **并行方式**：子 agent 在隔离副本工作、主 agent 整合；git 冲突取决于改动边界是否重叠；main 分支即原版跟踪，加 upstream remote，不另存原版文件夹。
 
 ## 现状基线（2026-08-09，0.2.56）
@@ -19,7 +19,7 @@
 ## 执行状态
 
 - [x] **阶段 0：函数索引与依赖图脚本**（scripts/gen-function-index.js → FUNCTION_INDEX.md + FUNCTION_INDEX.json；1712 个函数，2026-08-09）
-- [x] **阶段 1a：localization 词典拆数据文件**（modules/loc-ja.js + loc-zh.js，本地化逻辑零改动；JA/ZH key 数与拆分前完全一致 667/653；verify-smoke.mjs 6/6 通过）
+- [x] **阶段 1a：localization 词典拆数据文件**（modules/data/loc-ja.js + loc-zh.js，本地化逻辑零改动；JA/ZH key 数与拆分前完全一致 667/653；verify-smoke.mjs 6/6 通过）
 - [x] **阶段 1b：bug-fixes 拆独立条目**（#3 拆为 #3/#4/#5，每版含根因/修复/验证/保留判断）
 - [x] **阶段 1c：js-change-annotations 按子系统拆文件**（195 条目 → annotations-bridge/region-panel/root-bone/split/display-fixes/adapt 6 文件，原文件为 42 行索引；local-adaptation-log 保持唯一时间线）
 - [x] **阶段 1d：加 upstream remote，核对 main 与上游同步**（upstream = Ludetools/Animehairstudio；main == upstream/main == d3358f6，完全同步）
@@ -37,6 +37,14 @@
 - [x] **阶段 3c（大块·scalp）**：modules/scalp/scalp-store.js（35 let，4 个依赖表达式保留原位；全局 let 139→104；verify 13/13）
 - [x] **阶段 3c（大块·selection 剩余）**：activeTool/lockIndex/outliner 等 12 个并入 sel store；全局 let 104→92；verify 13/13
 - [x] **阶段 3c（大块·sculpt/edit）**：modules/edit/sculpt-edit-store.js 收敛 72 个状态；全局 let 92→20；verify 13/13
+- [x] **阶段 3d（第一批）**：creation preset 系统迁出（modules/io/creation-presets.js，10 个核心逻辑函数，依赖注入 createCreationPresetsApi(deps)；app.js 38,605→38,437 行）
+- [x] **阶段 3d-2**：shape preset 系统迁出（modules/io/shape-presets.js，8 个核心逻辑；app.js 38,437→38,386 行）
+- [x] **阶段 3d-3a**：region-panel 迁出（modules/geometry/branch-region-panel.js，31 个 Branch Root Region 面板/选区函数）
+- [x] **阶段 3d-3b**：桥接几何迁出（modules/geometry/branch-bridge.js，7 函数：buildBranchBridgeGeometry/createBranchChildGeometry/applyBranchRootRegionCarving…）
+- [x] **阶段 3d-3c**：root-bone 迁出（modules/geometry/branch-root-bone.js，13 函数）
+- [x] **阶段 3d-3d-a**：hierarchy 迁出（modules/geometry/branch-hierarchy.js，6 函数：attachDrawnLocksAsBranches/updateBranchRigidTransform…）
+- [x] **阶段 3d-3d-b**：sweep-profile 迁出（modules/geometry/branch-sweep.js，20 函数）
+- [ ] **阶段 3d（剩余）**：scalp 系统函数、curve/guide 系统函数迁出；app.js 最终瘦身为编排层
 
 > 批量替换验证清单（3b/3c 教训，替换后必须逐项扫）：(1) 双重替换 `.store.state.`（对象属性名被误替换，曾致项目加载静默失败）；(2) 函数参数/绑定位置（`function f(store.state.x)`）；(3) 对象简写残留（含**跨行** `{ x,\n store.state.y,`，单行正则会漏，曾致 SyntaxError）；(4) 对象属性访问 `obj.name`（用 `(?<!\.)` 排除）；(5) `name:` key 位置（用 `(?!\s*:)` 排除）；(6) 字符串/选择器字面量（`document.querySelector("#name")` 曾把 `"#viewPlaneMoveSnappedOnly"` 误改成 `"#ui.state.viewPlaneMoveSnappedOnly"`，需用精确字符串字面量扫描）；(7) getter/setter 方法名（`get importedHeadAsset()` 曾被误改成 `get head.state.importedHeadAsset()`，对象字面量 get/set 方法名位置要排除）；(8) 无逗号简写（对象最后一项 `X,`→修复成 `X: v` 时若函数参数最后一项也会误伤——需按括号上下文判断：`(` 内回退为 `v`、`{` 内保留 `X: v`，含带逗号与不带逗号两种；三目/表达式分支也可能漏替换，替换后必须全文件扫裸引用）。每步替换后先跑这 5 项扫描再 node --check + verify-smoke 全量。
 - [ ] **阶段 3d：app.js 瘦身为编排层**（业务逻辑迁入模块，模块显式依赖 store；IO 的 createProjectSaveApi(deps) 从 25 个散装依赖收敛为单个 store）
@@ -49,12 +57,16 @@
 
 ## 阶段 3d：app.js 瘦身为编排层（进行中）
 
-目标：把 app.js（38,605 行）的业务逻辑按子系统迁入模块，app.js 只保留「初始化 + store 装配 + 事件绑定」。
+目标：把 app.js（36,064 行）的业务逻辑按子系统迁入模块，app.js 只保留「初始化 + store 装配 + 事件绑定」。
 模式：依赖注入（如 IO 的 createProjectSaveApi(deps)）——迁出函数通过 deps 接收 app.js 函数引用 + store。
 候选批次（按独立性排序）：
 1. creation preset 系统（L34276-34708，~15 函数）✅ 第一批（迁出 10 个核心逻辑函数 → modules/io/creation-presets.js，依赖注入 createCreationPresetsApi(deps)，app.js 38,605→38,437 行）
 2. shape preset 系统（L16395-16850，~15 函数）✅ 3d-2（迁出 8 个核心逻辑 → modules/io/shape-presets.js；cloneShapePresetValue 改模块级导出，creation-presets 改模块间 import；app.js 38,437→38,386 行）
-3. 子发片桥接几何（buildBranchBridgeGeometry/createBranchChildGeometry/applyBranchRootRegionCarving，~1000 行）
+3. 子发片桥接几何（buildBranchBridgeGeometry/createBranchChildGeometry/applyBranchRootRegionCarving，~1000 行）✅ 3d-3b（7 函数 → modules/geometry/branch-bridge.js）
+3a. region-panel（Branch Root Region 面板/选区 31 函数 → modules/geometry/branch-region-panel.js）✅ 3d-3a
+3b. root-bone（13 函数 → modules/geometry/branch-root-bone.js）✅ 3d-3c
+3c. hierarchy（attachDrawnLocksAsBranches/updateBranchRigidTransform 等 6 函数 → modules/geometry/branch-hierarchy.js）✅ 3d-3d-a
+3d. sweep-profile（20 函数 → modules/geometry/branch-sweep.js）✅ 3d-3d-b
 4. scalp 系统函数
 5. curve/guide 系统函数
 每批独立 commit + verify-smoke 13/13 回归；依赖注入 deps 随迁移逐步收敛为「store + 少量核心函数」。

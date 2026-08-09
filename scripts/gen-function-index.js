@@ -50,6 +50,10 @@ for (const full of collectJs(MODULES)) {
 }
 
 const total = files.reduce((n, f) => n + f.functions.length, 0);
+function localDate(d) {
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+const genDate = localDate(new Date());
 const data = {
   generatedAt: new Date().toISOString(),
   totalFunctions: total,
@@ -62,7 +66,7 @@ fs.writeFileSync(OUT_JSON, JSON.stringify(data, null, 2));
 const md = [];
 md.push("# 函数索引 / FUNCTION INDEX");
 md.push("");
-md.push(`> 机器生成（${data.generatedAt.slice(0, 10)}），由 \`node scripts/gen-function-index.js\` 产出。共 **${total}** 个函数。`);
+md.push(`> 机器生成（${genDate}），由 \`node scripts/gen-function-index.js\` 产出。共 **${total}** 个函数。`);
 md.push("> 用途：agent 先 `Select-String`/`grep` 函数名定位，再跳读对应文件/行号；`calls` 列 = 整个文件内 `name(` 出现次数（hub 指标，越大越核心）。");
 md.push("");
 for (const f of files) {

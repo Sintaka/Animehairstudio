@@ -202,7 +202,7 @@ Animehairstudio/
 - **迭代工具链**：保持无构建或引入极轻量 dev server（Vite 也行）；加 TypeScript 提升可维护性。
 
 ### 8.4 可以立刻从本仓库"抄思路"的最小集合
-1. `modules/curve-math.js` 的曲线采样/混合/twist 处理（纯函数，可平移成你想要的数学库）。
+1. `modules/geometry/curve-math.js` 的曲线采样/混合/twist 处理（纯函数，可平移成你想要的数学库）。
 2. 雕刻笔刷的 mask 装配 + 分支管线。
 3. 快照式撤销 + 场景 JSON 序列化。
 4. import map + CDN 加载 three 的零构建姿势。

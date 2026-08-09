@@ -13,7 +13,7 @@
 
 ## 1. 仓库结构速览
 
-- `app.js`（≈1.7MB 单体）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 全部在这里。
+- `app.js`（≈1.6MB 单体）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 全部在这里。
 - `modules/*.js` —— 按域分目录（core/data/geometry/io/edit/sculpt/material/branch/scalp）；**全局状态已收敛到 15 个 store**（见 `devlog/STATE_MANAGEMENT.md`），不要再新增 app.js 全局 let。
 - `index.html` / `styles.css` —— UI。
 - `server.js` —— main 带来的静态文件服务；`/api/save-project` 已是**死代码**（三个 Local 选项已移除，勿再调用）。
@@ -26,7 +26,7 @@
 ### 2.1 子发片拓扑衔接系统（本 fork 最大特性，main 完全没有）
 - **入口分流**：`createHairGeometry` → `if (lock.branchRootRegion && parentSupportsTopologyConnect) createBranchChildGeometry`，否则 `createBaseHairGeometry`（退回直接扫掠）。
 - **父发片挖洞**：`applyBranchRootRegionCarving`（程序化删面 + **同步裁剪 `triangleEdgeMasks`**）。
-- **桥接几何**：`buildBranchBridgeGeometry`（≈751 行）+ `modules/branch-connect.js`（`squareChildRing` / `holeBoundary` / `connectSide` / `connectBoundaryToRing`）。
+- **桥接几何**：`buildBranchBridgeGeometry`（≈751 行）+ `modules/geometry/branch-connect.js`（`squareChildRing` / `holeBoundary` / `connectSide` / `connectBoundaryToRing`）。
 - **Region 选区**：`branchRootRegion`（u/v 数据模型）、`normalizeBranchRootRegion` / `syncBranchRootRegionOffsets` / `updateBranchRootRegionCenter` / `branchRootRegionSurface` / `branchRootRegionFromParam`（旧档回填）、`branchRegionNavAction`（面板导航）。
 - **根骨骼工作流**：`captureBranchLocalState`（记住横向偏移）、H 模式刚性移动 + 曲率摆动、gizmo 携带 twist、sweep 起始黄色手柄。
 - **Region 同步速度**：Sync L/R（默认 0.45）/ Sync U/D（默认 1.0）滑杆。
@@ -63,7 +63,7 @@
 - **查代码**：先用 `Select-String` / `git grep` 按函数名定点搜（第 2 节已列关键函数名），**不要整文件读**。
 - **记 devlog**：每 commit 一句话 + 指向详细文件；新条目追加到对应专题文件，不重复全文。
 - **验证**：Playwright headless + 静态服务器 `127.0.0.1:8080` + `D:/Downloads/Sussurro_v1_004*.ahs`（当前常用 0043）；不要用 `file://` 打开。
-- **版本/缓存号**：改 `modules/app-config.js` 的 `APP_VERSION` 与 `index.html` 缓存号 `?v=YYYYMMDD-N`，与 devlog「最近版本」保持一致。
+- **版本/缓存号**：改 `modules/core/app-config.js` 的 `APP_VERSION` 与 `index.html` 缓存号 `?v=YYYYMMDD-N`，与 devlog「最近版本」保持一致。
 
 ## 5. 常见坑（吸取过的教训）
 

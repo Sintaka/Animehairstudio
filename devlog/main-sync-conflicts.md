@@ -1,4 +1,4 @@
-# Main 同步冲突记录 / Main sync conflict log
+﻿# Main 同步冲突记录 / Main sync conflict log
 
 > 本文件专门管理「main 上游更新 ↔ 本地 fork」之间的冲突、决策与合并记录。
 > 新增 main 同步/合并工作时，把决策与冲突处理追加到本文件，并在 devlog/README.md 索引补一行。
@@ -17,10 +17,10 @@
 - **main 实际新增**：
   - 发丝预设 `PONYTAIL_CLUMP_TEMPLATE`（12 条 strands 的马尾预设，app.js:1020）挂入 `DRAW_CLUMP_TEMPLATES["ponytail-clump"]`；
   - 复合发丝几何 `createCompoundStrandGeometry`（app.js:14210，多控制器 + 控制器间桥接带，由 `lock.curveSurfaceCompoundProfile` 触发）；
-  - `modules/compound-strand.js`（130 行）、`modules/procedural-draw.js` 程序化分支模板（`proceduralBranchGeometryLock`）；
+  - `modules/geometry/compound-strand.js`（130 行）、`modules/geometry/procedural-draw.js` 程序化分支模板（`proceduralBranchGeometryLock`）；
   - 几何入口重构 `createHairGeometry` → `createBaseHairGeometry`（内部按 compound 分派）；
   - sculpt 画笔 preserve-tips 重构（`sculptBrushPreserveTipsByTool`）、材质双面判定统一为 `strandUsesDoubleSidedMaterial`；
-  - `modules/radial-layout.js` / `modules/curve-math.js` / `modules/localization.js` / `modules/usda-export.js` 小改、`server.js` 原生保存对话框、`favicon.svg`。
+  - `modules/geometry/radial-layout.js` / `modules/geometry/curve-math.js` / `modules/data/localization.js` / `modules/io/usda-export.js` 小改、`server.js` 原生保存对话框、`favicon.svg`。
 
 ## app.js 17 处冲突分类（git merge main 复现，坐标 = 冲突解析时行号）
 

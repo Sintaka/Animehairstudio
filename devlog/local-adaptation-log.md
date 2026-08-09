@@ -146,7 +146,7 @@
 - [x] 刘海 split 父发片线框三角面修复（0.2.54）：applyBranchRootRegionCarving 挖洞后同步裁剪 triangleEdgeMasks（按被删面去 2 条侧面 mask、保留端盖），线框不再画错误对角线；导出一直是四边面不受影响
 - [x] Front Bangs 1-3 视口三角观感修复（0.2.55）：createPanelStrandGeometry 的 addQuad 跳过退化（角点重合）与反射折叠（两三角法线相反）quad，最大二面角 180/90° → ≤10.7°；导出一直是四边面不受影响
 - [x] 面板线框三角面真正修复（0.2.56）：绕序翻转后同步交换 triangleEdgeMasks 的 [1]/[2]，quad 对角线不再被描边；0.2.55 的退化/反射折叠清理保留
-- [x] 重构：localization 词典拆数据文件（0.2.57）：JA/ZH 词典从 modules/localization.js 拆到 modules/loc-ja.js / loc-zh.js（export default Object.freeze），localization.js 改 import 两词典，逻辑零改动；拆分前后 key 数一致（JA 667 / ZH 653）；verify-smoke.mjs 6/6 通过（页面加载 0 异常、zh/ja/en 翻译正常、0043.ahs 加载重建无异常）
+- [x] 重构：localization 词典拆数据文件（0.2.57）：JA/ZH 词典从 modules/data/localization.js 拆到 modules/data/loc-ja.js / loc-zh.js（export default Object.freeze），localization.js 改 import 两词典，逻辑零改动；拆分前后 key 数一致（JA 667 / ZH 653）；verify-smoke.mjs 6/6 通过（页面加载 0 异常、zh/ja/en 翻译正常、0043.ahs 加载重建无异常）
 - [x] Region 面板 cursor 规范（0.2.57）：边点 move→按方向 ns-resize（up/down）/ew-resize（left/right）；四角 cursor 翻转（topleft=nesw / topright=nwse / bottomleft=nwse / bottomright=nesw）——**SVG/Canvas 坐标 y 向下（左上原点），角点对角线 cursor 按「拖拽角相对对角点的实际位移方向」约定，与部分 DCC（y 向上）直觉相反**，此为项目规范（勿再翻回）；踩坑：上轮 CRLF 导致按行替换未生效（边点仍 move）
 - [x] Bug 修复批次 2（0.2.57，子智能体并行深挖）：
   - Ctrl+Z 真正根因：restoreState L18028 裸 `mirrorXEditing`（store 化漏改，undo/redo 恢复崩溃→空场景）→ 改 sculptState.state.mirrorXEditing；undo/redo restore 包 try/catch（失败提示不静默空场景）；applyPresetSelection 同样加固（删 push + 加载后清栈）；verify 加「加载后 undo 栈空」回归（14/14）

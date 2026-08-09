@@ -1,4 +1,4 @@
-# 日常适配（保存/导出、语言、导航、笔刷、拖放、材质、快捷键等）
+﻿# 日常适配（保存/导出、语言、导航、笔刷、拖放、材质、快捷键等）
 
 > 由 devlog/js-change-annotations.md 拆分而来；入口见 devlog/README.md。
 
@@ -22,7 +22,7 @@
 
 - **v0.1.4 迁移（codex/branchdev_v0.1.4）**：本地适配整体从旧 main 迁移到 0.1.4 代码库，功能保持一致，冲突与重复实现按 0.1.4 新架构收口。
 
-  - 雕刻笔刷：Slide / Scale（Cut·Extend）/ Push / Orient 四个自定义笔刷接入 0.1.4 雕刻管线（`sculptBrushToolActive` / `sculptBrushStrengthByTool` / `beginSculptMoveStroke` Ctrl=反向 / `applySculptMoveStrokeSample` 新增分支）；Smooth 增加 twist 平滑（`smoothSculptTwistDeltas` 在 modules/sculpt-brush.js）；ScaleMode 行仅 Scale 笔刷显示。
+  - 雕刻笔刷：Slide / Scale（Cut·Extend）/ Push / Orient 四个自定义笔刷接入 0.1.4 雕刻管线（`sculptBrushToolActive` / `sculptBrushStrengthByTool` / `beginSculptMoveStroke` Ctrl=反向 / `applySculptMoveStrokeSample` 新增分支）；Smooth 增加 twist 平滑（`smoothSculptTwistDeltas` 在 modules/sculpt/sculpt-brush.js）；ScaleMode 行仅 Scale 笔刷显示。
 
   - 导航：Houdini 并入 0.1.4 已有的 Navigation style（Anime Hair Studio / Blender / Houdini 三选一），不再用独立的 navigationMode；Houdini = Alt+左键旋转 / Alt+中键平移 / Alt+右键拖拽缩放（快速模长近似归一化，右上放大、左下缩小），滚轮缩放；导航提示与快捷键帮助随模式切换（`data-navigation-style-tip` / `data-navigation-style-shortcut` 行）。
 
@@ -34,7 +34,7 @@
 
   - 选择遮罩：0.1.4 已内置雕刻笔刷选择遮罩（`sculptBrushSelectionAllows`），移除 brush-dev 的重复实现 `sculptBrushSelectionMask`。
 
-  - Ctrl+Z 修复迁移到 0.1.4 的 modules/shortcut-registry.js（`focusedControlShouldYieldToShortcut` 对所有非文本输入控件放行 Ctrl+Z/Y/D）；`setActiveTool` 重置 `historyShortcutHeld`。
+  - Ctrl+Z 修复迁移到 0.1.4 的 modules/core/shortcut-registry.js（`focusedControlShouldYieldToShortcut` 对所有非文本输入控件放行 Ctrl+Z/Y/D）；`setActiveTool` 重置 `historyShortcutHeld`。
 
   - 语言：ZH 词典扩展覆盖 0.1.4 新增文案（导航方式 / 相机平滑 / 最近项目 / 拖放项目确认 / 选择集 / 锁定 / 隔离等，3D 名词保留英文）；JA 补充新笔刷 / ScaleMode / 保存等词条；`translateUiString` 按语言词典分发（JA / ZH），未收录回退英文。
 
@@ -46,7 +46,7 @@
 
   - **main 合并（0.2.48，codex/branchdev_v0.1.4 ← main d3358f6）**：
     1) **移除三个 Local dev 选项**：Local Save / Local Export to OBJ / Local Export to USDA（原走 server.js 的 `/api/save-project` 本地服务）全部删除，保存/导出统一用快速保存（Ctrl+S）/ Save as（Ctrl+Shift+S）/ 快速导出（Ctrl+Alt+S）（File System Access API 直写盘、覆盖写同文件、无 `(1)` 后缀）；`server.js` 保留作静态文件服务，其保存端点成为死代码。
-    2) **吸收 main 新预设**：`PONYTAIL_CLUMP_TEMPLATE`（马尾 clump，12 strands）与 `createCompoundStrandGeometry`（复合发丝，多控制器 + 控制器间桥接带）、`procedural-draw.js` 程序化分支模板、`modules/compound-strand.js`、`server.js`、`favicon.svg` 全部并入；`createHairGeometry` 重构为 `createBaseHairGeometry`（按 compound 分派）。
+    2) **吸收 main 新预设**：`PONYTAIL_CLUMP_TEMPLATE`（马尾 clump，12 strands）与 `createCompoundStrandGeometry`（复合发丝，多控制器 + 控制器间桥接带）、`procedural-draw.js` 程序化分支模板、`modules/geometry/compound-strand.js`、`server.js`、`favicon.svg` 全部并入；`createHairGeometry` 重构为 `createBaseHairGeometry`（按 compound 分派）。
     3) **子发片桥接与 main 并存**：约 1000 行冲突实为同一插入点（`createConnectedCurveCardGeometry` 之后）各自新增——本地 `buildBranchBridgeGeometry`+`createBranchChildGeometry`（751 行）vs main `createCompoundStrandGeometry`（230 行），无功能重叠，两侧保留；`createHairGeometry` 入口先判 `lock.branchRootRegion` 走本地桥接，否则走 main 的 `createBaseHairGeometry`+程序化分支。子发片仍只支持单发丝默认预设（多发丝预设直接当子发片会有拓扑 bug，未做适配）。
     4) **sculpt 笔刷融合**：Move/Smooth 采用 main 的 preserve-tips 重构（`sculptBrushPreserveTipsByTool`、`#sculptPreserveTips` 重命名），本地新增的 Slide/Scale/Push/Orient 笔刷分支保留（`activeBrushSizeInput` 等仍走 `sculptBrushToolActive()` 超集）；Scale Mode 行保留。
     5) **材质双面判定**：合并为 `lock.branchRootRegion || strandUsesDoubleSidedMaterial(lock)`（覆盖子发片 + braid/poly/hairCard + compound），4 处调用点统一。验证（Sussurro_v1_0041，SL2/SL3）：子发片桥接 66 quads / 0 NaN（与基线一致）；普通发丝 `createBaseHairGeometry` 0 NaN；马尾预设存在（12 strands）；preserve-tips 按工具生效；App 启动 0 页面错误。
@@ -63,7 +63,7 @@
 
 - **index.html**：File 菜单新增 Quick Save（Ctrl+S）与 Save as（Ctrl+Shift+S）快捷键提示；快捷键帮助新增独立「Local Adaptation」分区。
 
-- **modules/localization.js**：新增 "Save as"、"Quick Save"、"Quick Save the project"、"Local Adaptation" 的日语翻译（含导航模式：Navigation mode / Alt + Middle Mouse 等）。
+- **modules/data/localization.js**：新增 "Save as"、"Quick Save"、"Quick Save the project"、"Local Adaptation" 的日语翻译（含导航模式：Navigation mode / Alt + Middle Mouse 等）。
 
   - 新增简体中文（zh）：SUPPORTED_LANGUAGES 增加 `{ id: "zh", label: "简体中文" }`；新增完整 ZH 词典（约 540 条）；translateUiString 改为按语言词典分发（JA / ZH），未收录文案回退英文；3D 专业名词（strand / clump / braid / mesh / shader / UV / lattice / verts / tris 等）保留英文。
 

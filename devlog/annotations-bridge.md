@@ -186,7 +186,7 @@
 
 - **子发片深度重置 2.4b（子几何显示修复 + 扫掠偏移）**：分支子级几何补齐 uv / color 属性（anime 各向异性是裸 ShaderMaterial，缺属性导致每 quad 只渲染一半三角形）+ 法线零长度兜底；扫掠起点沿子级切线前移（branchSweepOffset，默认 0.08）并随 t 平滑过渡到末端 0，为对接留出空间。验证：Side Left 3 242 顶点 / 216 quad，position/normal/uv/color 齐全 0 NaN，0 报错。对接条带（10→8）后续再修。
 
-- **子发片深度重置 2.4a（对接框架）**：新增 modules/branch-connect.js —— 方形横截面环（4 面×2 段=8 点 8 段）、父级洞边界提取（10 段，含各边段数）、逐侧对接（段数多的一侧做顶点坍缩，只出 quad 不出三角面）。分支子级几何改用 createBranchChildGeometry：父洞边界(10) → 方形环(8) 对接条带 + 方形环沿子级曲线扫掠。验证：Side Left 3 拓扑 242 顶点 / 216 quad（8 对接 + 26×8 扫掠），0 报错；拓扑框架已就绪，视觉细节后续迭代。
+- **子发片深度重置 2.4a（对接框架）**：新增 modules/geometry/branch-connect.js —— 方形横截面环（4 面×2 段=8 点 8 段）、父级洞边界提取（10 段，含各边段数）、逐侧对接（段数多的一侧做顶点坍缩，只出 quad 不出三角面）。分支子级几何改用 createBranchChildGeometry：父洞边界(10) → 方形环(8) 对接条带 + 方形环沿子级曲线扫掠。验证：Side Left 3 拓扑 242 顶点 / 216 quad（8 对接 + 26×8 扫掠），0 报错；拓扑框架已就绪，视觉细节后续迭代。
 
 - **子发片深度重置 2.2b（挖洞索引修复）**：挖洞改为只删除对应面片的 6 个索引，保留两端封口三角形与原作者法线（不再 computeVertexNormals 覆盖），并同步更新 sideTriangleCount，避免 shader/高亮因索引与法线不一致而只渲染每 quad 一半三角形。验证：Side Left 2 index 1584 = 254 面×6 + 60 封口，maxIndex 298，quadFaces 254。
 

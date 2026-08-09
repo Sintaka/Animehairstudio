@@ -52,6 +52,10 @@ const inv = lets.map(({ name, line }) => {
 });
 
 inv.sort((a, b) => b.refs - a.refs);
+function localDate(d) {
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+const genDate = localDate(new Date());
 const data = { generatedAt: new Date().toISOString(), total: inv.length, lets: inv };
 fs.writeFileSync(path.join(ROOT, "devlog", "GLOBAL_LET_INVENTORY.json"), JSON.stringify(data, null, 2));
 
@@ -61,7 +65,7 @@ for (const x of inv) (byBucket[x.bucket] ||= []).push(x);
 const md = [];
 md.push("# 全局状态登记表 / GLOBAL LET INVENTORY");
 md.push("");
-md.push(`> 机器生成（${data.generatedAt.slice(0,10)}），由 \`node scripts/gen-let-inventory.js\` 产出。共 **${inv.length}** 个顶层 \`let\`（app.js 全局可变状态）。`);
+md.push(`> 机器生成（${genDate}），由 \`node scripts/gen-let-inventory.js\` 产出。共 **${inv.length}** 个顶层 \`let\`（app.js 全局可变状态）。`);
 md.push("> 用途：阶段 3（全局状态收敛）的地图——按 refs 排序找最核心状态，按 bucket 找子系统边界。`refs`=读写点总数，`span`=首末引用行距。");
 md.push("");
 md.push("## 按子系统桶（bucket）汇总");
