@@ -19,6 +19,7 @@ for (let i = 0; i < args.length; i++) { if (args[i].startsWith("--")) { if (VALU
 const port = Number(args[args.indexOf("--port") + 1] || 8080);
 const cdpPort = Number(args[args.indexOf("--cdp-port") + 1] || 9223);
 const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
+const THREE_VENDOR = path.join(os.tmpdir(), "ahs-verify-three", "vendor");
 const profileDir = path.join(os.tmpdir(), "ahs-smoke-profile-" + cdpPort);
 
 const MIME = {
@@ -65,6 +66,7 @@ async function connectCDP() {
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
     if (m.id && pending.has(m.id)) { pending.get(m.id)(m.result); pending.delete(m.id); }
+    else if (m.method === "Fetch.requestPaused") { void handleFetch(m.params); }
     else if (m.method) events.push(m);
   };
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
@@ -73,6 +75,19 @@ async function connectCDP() {
     pending.set(id, res);
     ws.send(JSON.stringify({ id, method, params }));
   });
+  async function handleFetch(params) {
+    const url = params.request?.url || "";
+    const m = url.match(/^https:\/\/unpkg\.com\/three@0\.165\.0\/(.+)$/);
+    if (!m) { await send("Fetch.continueRequest", { requestId: params.requestId }); return; }
+    const file = path.join(THREE_VENDOR, "three", decodeURIComponent(m[1]));
+    if (fs.existsSync(file)) {
+      const body = fs.readFileSync(file).toString("base64");
+      const ct = file.endsWith(".js") || file.endsWith(".mjs") ? "text/javascript" : path.extname(file) === ".json" ? "application/json" : "text/plain";
+      await send("Fetch.fulfillRequest", { requestId: params.requestId, responseCode: 200, responseHeaders: [{ name: "Content-Type", value: ct }, { name: "Access-Control-Allow-Origin", value: "*" }], body });
+    } else {
+      await send("Fetch.continueRequest", { requestId: params.requestId });
+    }
+  }
   return { ws, send, events };
 }
 
@@ -103,6 +118,7 @@ try {
   await cdp.send("Page.enable");
   await cdp.send("Runtime.enable");
   await cdp.send("Log.enable");
+  await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "https://unpkg.com/*", requestStage: "Request" }] });
 
   await cdp.send("Page.navigate", { url: `http://127.0.0.1:${port}/` });
   await sleep(9000); // allow boot + three CDN fetch
