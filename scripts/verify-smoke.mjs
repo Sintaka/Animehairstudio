@@ -176,6 +176,10 @@ try {
       status: (document.querySelector('#presetLibraryStatus')||{}).textContent || ''
     })`);
     console.log("  [load]", path.basename(ahsFile), loadState);
+    const errEvents = cdp.events.filter(e => e.method === "Log.entryAdded" && e.params?.entry?.level === "error");
+    if (errEvents.length) {
+      for (const e of errEvents.slice(-5)) console.log("  [console-error]", (e.params.entry.text || "").slice(0, 300));
+    }
     const before = cdp.events.length;
     const afterErrors = cdp.events.slice(before).filter((e) => e.method === "Runtime.exceptionThrown");
     check("ahs load+rebuild 0 exceptions (" + path.basename(ahsFile) + ")", afterErrors.length === 0, `${loadRes} / ${afterErrors.length} exceptions`);

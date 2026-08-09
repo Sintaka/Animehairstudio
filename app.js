@@ -1,3 +1,6 @@
+import { createHairStore } from "./modules/core/hair-store.js?v=20260809-8";
+import { createGuideStore } from "./modules/core/guide-store.js?v=20260809-8";
+import { createCameraStore } from "./modules/core/camera-store.js?v=20260809-8";
 import { createTransformStore } from "./modules/core/transform-store.js?v=20260809-7";
 import { createUndoStore } from "./modules/core/undo-store.js?v=20260809-7";
 import { createHeadStore } from "./modules/core/head-store.js?v=20260809-7";
@@ -308,7 +311,8 @@ function normalizeNavigationStyle(value) {
   return value === "blender" ? "blender" : value === "houdini" ? "houdini" : "anime-hair-studio";
 }
 
-let defaultHairShader = readStoredPreference(window, DEFAULT_HAIR_SHADER_PREFERENCE_KEY, {
+const hairState = createHairStore();
+hairState.state.defaultHairShader = readStoredPreference(window, DEFAULT_HAIR_SHADER_PREFERENCE_KEY, {
   fallback: STANDARD_ANISOTROPIC_SHADER,
   normalize: normalizeHairShader
 });
@@ -468,10 +472,6 @@ scene.add(sculptBrushViabilityPlane);
 const perspectiveCamera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
 const orthographicCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
 let camera = perspectiveCamera;
-let orthographicView = false;
-let orthographicHalfHeight = 1;
-let turntableActive = false;
-let turntableSpeed = 1;
 const turntableAxis = new THREE.Vector3(0, 1, 0);
 const TURNTABLE_RADIANS_PER_SECOND = THREE.MathUtils.degToRad(24);
 camera.position.set(0, 1.15, 5.2);
@@ -498,29 +498,29 @@ function updateCameraProjectionForViewport() {
   const aspect = width / height;
   perspectiveCamera.aspect = aspect;
   perspectiveCamera.updateProjectionMatrix();
-  orthographicCamera.left = -orthographicHalfHeight * aspect;
-  orthographicCamera.right = orthographicHalfHeight * aspect;
-  orthographicCamera.top = orthographicHalfHeight;
-  orthographicCamera.bottom = -orthographicHalfHeight;
+  orthographicCamera.left = -viewportState.state.orthographicHalfHeight * aspect;
+  orthographicCamera.right = viewportState.state.orthographicHalfHeight * aspect;
+  orthographicCamera.top = viewportState.state.orthographicHalfHeight;
+  orthographicCamera.bottom = -viewportState.state.orthographicHalfHeight;
   orthographicCamera.updateProjectionMatrix();
 }
 
 function syncOrthographicFramingFromDistance() {
   const distance = Math.max(0.01, camera.position.distanceTo(controls.target));
-  orthographicHalfHeight = distance * Math.tan(THREE.MathUtils.degToRad(perspectiveCamera.fov * 0.5));
+  viewportState.state.orthographicHalfHeight = distance * Math.tan(THREE.MathUtils.degToRad(perspectiveCamera.fov * 0.5));
   orthographicCamera.zoom = 1;
 }
 
 function setOrthographicView(enabled) {
   const nextOrthographic = Boolean(enabled);
-  if (nextOrthographic === orthographicView) return;
+  if (nextOrthographic === viewportState.state.orthographicView) return;
   const previousCamera = camera;
   if (nextOrthographic) {
     syncOrthographicFramingFromDistance();
     copyCameraPose(previousCamera, orthographicCamera);
     camera = orthographicCamera;
   } else {
-    const visibleHalfHeight = orthographicHalfHeight / Math.max(0.0001, orthographicCamera.zoom);
+    const visibleHalfHeight = viewportState.state.orthographicHalfHeight / Math.max(0.0001, orthographicCamera.zoom);
     const distance = visibleHalfHeight / Math.tan(THREE.MathUtils.degToRad(perspectiveCamera.fov * 0.5));
     copyCameraPose(previousCamera, perspectiveCamera);
     const direction = new THREE.Vector3();
@@ -528,13 +528,13 @@ function setOrthographicView(enabled) {
     perspectiveCamera.position.copy(controls.target).addScaledVector(direction, -distance);
     camera = perspectiveCamera;
   }
-  orthographicView = nextOrthographic;
+  viewportState.state.orthographicView = nextOrthographic;
   controls.object = camera;
   transformControls.camera = camera;
   updateCameraProjectionForViewport();
-  orthographicViewToggle.classList.toggle("active", orthographicView);
-  orthographicViewToggle.setAttribute("aria-pressed", String(orthographicView));
-  orthographicViewToggle.title = orthographicView
+  orthographicViewToggle.classList.toggle("active", viewportState.state.orthographicView);
+  orthographicViewToggle.setAttribute("aria-pressed", String(viewportState.state.orthographicView));
+  orthographicViewToggle.title = viewportState.state.orthographicView
     ? "Switch to perspective view"
     : "Switch to orthographic view";
   controls.update();
@@ -686,6 +686,7 @@ let transformScaleDrag = null;
 let transformPrecisionDrag = null;
 const transform = createTransformStore();
 let selectionRemoveHeld = false;
+const viewportState = createCameraStore();
 const TRANSFORM_PRECISION_MULTIPLIER = 0.2;
 const MIN_UNIFORM_SCALE_RATIO = 0.05;
 const MAX_UNIFORM_SCALE_RATIO = 4;
@@ -714,12 +715,12 @@ transformControls.addEventListener("dragging-changed", (event) => {
     transformPrecisionDrag = null;
   }
   if (event.value && transformControls.mode === "scale") {
-    const pointerX = activeViewportPointer?.x ?? lastPointer.x;
-    const pointerY = activeViewportPointer?.y ?? lastPointer.y;
+    const pointerX = viewportState.state.activeViewportPointer?.x ?? lastPointer.x;
+    const pointerY = viewportState.state.activeViewportPointer?.y ?? lastPointer.y;
     transformScaleDrag = {
       axis: transformControls.axis,
       startScale: transformControls.object?.scale.clone() || null,
-      pointerId: activeViewportPointer?.pointerId ?? null,
+      pointerId: viewportState.state.activeViewportPointer?.pointerId ?? null,
       startPointerX: pointerX,
       startPointerY: pointerY,
       pointerX,
@@ -791,7 +792,7 @@ transformControls.addEventListener("dragging-changed", (event) => {
       pushUndoState();
       beginCapsuleGuideLoopTransform();
     } else {
-      activeCapsuleGuideLoopTransform = null;
+      guideState.state.activeCapsuleGuideLoopTransform = null;
       capsuleGuideLoopHandle.scale.set(1, 1, 1);
     }
     return;
@@ -997,10 +998,8 @@ const hairMaterialDefinitions = [{
   id: DEFAULT_HAIR_MATERIAL_ID,
   name: "Default Purple",
   ...DEFAULT_HAIR_MATERIAL_SETTINGS,
-  shader: defaultHairShader
+  shader: hairState.state.defaultHairShader
 }];
-let hairMaterialIndex = 1;
-let activeHairMaterialId = DEFAULT_HAIR_MATERIAL_ID;
 function nextStrandName(region = "unassigned") {
   const group = STRAND_GROUPS.find((item) => item.id === region) || STRAND_GROUPS.at(-1);
   const usedNumbers = new Set(
@@ -1088,7 +1087,7 @@ const DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE = Object.freeze([
 
 function activeDrawClumpTemplate(stroke = null) {
   if (activeTool === "procedural-draw") return proceduralDrawClumpTemplate(stroke);
-  return draw.state.activeCustomDrawClumpTemplate || DRAW_CLUMP_TEMPLATES[drawStrandMode] || null;
+  return draw.state.activeCustomDrawClumpTemplate || DRAW_CLUMP_TEMPLATES[hairState.state.drawStrandMode] || null;
 }
 
 function proceduralDrawClumpTemplate(stroke = null) {
@@ -2064,7 +2063,7 @@ const polyRelaxProjectionRaycaster = new THREE.Raycaster();
 raycaster.params.Line.threshold = 0.045;
 const pointer = new THREE.Vector2();
 
-let guideModel;
+const guideState = createGuideStore();
 let authoredScalpGuideMatrix = null;
 const headTransform = {
   positionX: 0,
@@ -2080,18 +2079,11 @@ const scalpRoughScalePivot = new THREE.Vector3();
 let braidSegmentTemplate = null;
 let braidSegmentBounds = null;
 const braidMeshPresets = new Map();
-let hairTopologyVisible = false;
-let showGroupColors = false;
-let uvCheckerEnabled = false;
-let uvCheckerTexture = null;
-let uvInspectorDirty = true;
 const uvInspectorRecordCache = new WeakMap();
 let uvInspectorDrag = null;
 let scalpGuideVisible = false;
 const visibleStrandRegions = new Set(STRAND_GROUPS.map((group) => group.id));
 const visibleStrandLayers = new Set(HAIR_LAYERS.map((layer) => layer.id));
-let capsuleGuidesVisible = true;
-let curveLatticeGuidesVisible = true;
 const GUIDE_VIEW_MODES = [
   { id: "all", label: "All Guides", scalp: true, capsules: true, lattices: true },
   { id: "hide-scalp", label: "Scalp Hidden", scalp: false, capsules: true, lattices: true },
@@ -2099,8 +2091,6 @@ const GUIDE_VIEW_MODES = [
   { id: "hide-lattices", label: "Lattices Hidden", scalp: true, capsules: true, lattices: false },
   { id: "none", label: "All Hidden", scalp: false, capsules: false, lattices: false }
 ];
-let headMeshVisible = true;
-let bodyMeshVisible = true;
 const sel = createSelectionStore();
 
 let isolatedStrandIds = null;
@@ -2131,12 +2121,9 @@ let viewportSelectionMode = "component";
 let sculptMoveStroke = null;
 let sculptBrushShiftSmoothHeld = false;
 let activeHandleEdit = null;
-let activeStrandObjectTransform = null;
-let activeGuideObjectTransform = null;
 let activeLatticeMultiEdit = null;
 let transformDragging = false;
 const pendingLockGeometryUpdates = new Set();
-let pendingLockGeometryFrame = null;
 const sculptBrushGeometryUpdates = new Set();
 let sculptBrushGeometryFrame = null;
 const SCULPT_BRUSH_GEOMETRY_FRAME_BUDGET_MS = 6;
@@ -2151,11 +2138,8 @@ let scalpPaintEditing = false;
 let headSetupEditing = false;
 let scalpBuilderEditing = false;
 let capsuleGuideEditing = false;
-let capsuleGuideLoopHover = null;
 let capsuleGuideLoopSelection = null;
 let capsuleGuideLoopDrag = null;
-let activeCapsuleGuideLoopTransform = null;
-let curveLatticeLoopHover = null;
 let scalpBuilderStep = 0;
 let scalpBuilderStroke = null;
 let scalpBuilderPlane = null;
@@ -2207,7 +2191,6 @@ let loftSurfaceDraft = null;
 let curveSurfaceDraft = null;
 let panelSplitDrag = null;
 let activeCapsuleGuideEdit = null;
-let drawStrandMode = "standard";
 let clumpUpdateInProgress = false;
 const branch = createBranchStore();
 let placementPointer = null;
@@ -2216,38 +2199,38 @@ let proportionalSizeEdit = null;
 let proportionalHotkeyPress = null;
 let toolShortcutPress = null;
 const ui = createUiStore();
-let navigationTipsEnabled = readStoredBooleanPreference(window, NAVIGATION_TIPS_PREFERENCE_KEY, true);
-let navigationStyle = readStoredPreference(window, NAVIGATION_STYLE_PREFERENCE_KEY, {
+viewportState.state.navigationTipsEnabled = readStoredBooleanPreference(window, NAVIGATION_TIPS_PREFERENCE_KEY, true);
+viewportState.state.navigationStyle = readStoredPreference(window, NAVIGATION_STYLE_PREFERENCE_KEY, {
   fallback: "anime-hair-studio",
   normalize: normalizeNavigationStyle
 });
-let cameraSmoothingEnabled = readStoredBooleanPreference(window, CAMERA_SMOOTHING_ENABLED_PREFERENCE_KEY, false);
-let cameraSmoothingStrength = readStoredPreference(window, CAMERA_SMOOTHING_STRENGTH_PREFERENCE_KEY, {
+viewportState.state.cameraSmoothingEnabled = readStoredBooleanPreference(window, CAMERA_SMOOTHING_ENABLED_PREFERENCE_KEY, false);
+viewportState.state.cameraSmoothingStrength = readStoredPreference(window, CAMERA_SMOOTHING_STRENGTH_PREFERENCE_KEY, {
   fallback: 0.5,
   normalize: normalizeCameraSmoothingStrength
 });
 let scaleSensitivity = 0.3;
 let toolTipsEnabled = readStoredBooleanPreference(window, TOOL_TIPS_PREFERENCE_KEY, true);
 let compactToolButtonsEnabled = readStoredBooleanPreference(window, COMPACT_TOOL_BUTTONS_PREFERENCE_KEY, false);
-let viewportStatisticsEnabled = readStoredBooleanPreference(window, VIEWPORT_STATISTICS_PREFERENCE_KEY, true);
-let twistCurveAllStrandsPreviewEnabled = readStoredBooleanPreference(
+viewportState.state.viewportStatisticsEnabled = readStoredBooleanPreference(window, VIEWPORT_STATISTICS_PREFERENCE_KEY, true);
+hairState.state.twistCurveAllStrandsPreviewEnabled = readStoredBooleanPreference(
   window,
   TWIST_CURVE_ALL_STRANDS_PREVIEW_PREFERENCE_KEY,
   true
 );
 let layerColorShiftsEnabled = readStoredBooleanPreference(window, LAYER_COLOR_SHIFTS_PREFERENCE_KEY, true);
 let outlinerFolderColorsEnabled = readStoredBooleanPreference(window, OUTLINER_FOLDER_COLORS_PREFERENCE_KEY, true);
-let controlPointDisplaySize = readStoredPreference(window, CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY, {
+guideState.state.controlPointDisplaySize = readStoredPreference(window, CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY, {
   fallback: 1,
   normalize: normalizeControlPointDisplaySize
 });
-let viewportBackgroundColor = readStoredPreference(window, VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY, {
+viewportState.state.viewportBackgroundColor = readStoredPreference(window, VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY, {
   fallback: DEFAULT_VIEWPORT_BACKGROUND_COLOR,
   normalize: normalizeViewportBackgroundColor
 });
-if (viewportBackgroundColor === "#17151c") {
-  viewportBackgroundColor = DEFAULT_VIEWPORT_BACKGROUND_COLOR;
-  writeStoredPreference(window, VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY, viewportBackgroundColor);
+if (viewportState.state.viewportBackgroundColor === "#17151c") {
+  viewportState.state.viewportBackgroundColor = DEFAULT_VIEWPORT_BACKGROUND_COLOR;
+  writeStoredPreference(window, VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY, viewportState.state.viewportBackgroundColor);
 }
 let sideNamingPerspective = readStoredPreference(window, SIDE_NAMING_PERSPECTIVE_PREFERENCE_KEY, {
   fallback: "viewport",
@@ -2262,10 +2245,8 @@ const BRANCH_RIGID_SWING_LIMIT_DEG = 60;
 // lateral (left-right / v) defaults to 0.45x, along-length (up-down / u) to 1.0x.
 let brushSizeDrag = null;
 let strandWidthEdgeDrag = null;
-let hoveredStrandWidthEdge = null;
 let brushSizeHotkeyHeld = false;
 let viewSnapDrag = null;
-let activeViewportPointer = null;
 let viewPlaneMoveEnabled = false;
 let viewPlaneNormalMoveHeld = false;
 let viewPlaneMoveDrag = null;
@@ -2278,7 +2259,6 @@ const CARDINAL_VIEW_DRAG_GRACE = 48;
 let sweepProfileEdit = null;
 let sweepProfileMirrorEnabled = false;
 let taperCurveEdit = null;
-let taperMeshPointsVisible = false;
 let taperMeshPointDrag = null;
 const taperMeshPointGeometry = new THREE.SphereGeometry(0.016, 12, 8);
 const taperMeshPointMaterial = new THREE.MeshBasicMaterial({
@@ -2331,7 +2311,6 @@ taperMeshPointsGroup.name = "Shape curve mesh points";
 taperMeshPointsGroup.visible = false;
 scene.add(taperMeshPointsGroup);
 // Show points on mesh in the 3D viewport (branch region editor toggle, default ON).
-let branchRegionMeshPointsVisible = true;
 const branchRegionMeshPointGeometry = new THREE.SphereGeometry(0.014, 10, 8);
 const branchRegionMeshPointMaterial = new THREE.MeshBasicMaterial({
   color: 0x8fd8ff,
@@ -2388,8 +2367,6 @@ const clumpOpen = new Map();
 const curveSurfaceOpen = new Map();
 let activeOutlinerTab = "strands";
 let outlinerContextTarget = null;
-let strandRadialTargetId = null;
-let strandRadialGesture = null;
 let toolRadialGesture = null;
 let viewportEditMode = "strand";
 let duplicatePlacement = null;
@@ -2749,7 +2726,7 @@ const dissolveClumpAction = document.querySelector("#dissolveClumpAction");
 const mirrorInstanceAction = document.querySelector("#mirrorInstanceAction");
 const deleteOutlinerAction = document.querySelector("#deleteOutlinerAction");
 const strandRadialMenu = document.querySelector("#strandRadialMenu");
-let strandRadialActions = [...strandRadialMenu.querySelectorAll("[data-strand-radial-action]")];
+hairState.state.strandRadialActions = [...strandRadialMenu.querySelectorAll("[data-strand-radial-action]")];
 const strandRadialActionList = document.querySelector("#strandRadialActionList");
 const strandRadialLine = document.querySelector("#strandRadialLine");
 const strandRadialCenter = document.querySelector("#strandRadialCenter");
@@ -3246,21 +3223,21 @@ function syncHeadTransformInputs() {
 }
 
 function applyHeadTransform() {
-  if (!guideModel) return;
-  const sourceCenter = guideModel.userData.sourceCenter;
-  const fittedCenter = guideModel.userData.fittedCenter;
-  const baseScale = Number(guideModel.userData.baseScale);
+  if (!guideState.state.guideModel) return;
+  const sourceCenter = guideState.state.guideModel.userData.sourceCenter;
+  const fittedCenter = guideState.state.guideModel.userData.fittedCenter;
+  const baseScale = Number(guideState.state.guideModel.userData.baseScale);
   if (!sourceCenter || !fittedCenter || !Number.isFinite(baseScale)) return;
   const scaleX = baseScale * headTransform.uniformScale * headTransform.scaleX;
   const scaleY = baseScale * headTransform.uniformScale * headTransform.scaleY;
   const scaleZ = baseScale * headTransform.uniformScale * headTransform.scaleZ;
-  guideModel.scale.set(scaleX, scaleY, scaleZ);
-  guideModel.position.set(
+  guideState.state.guideModel.scale.set(scaleX, scaleY, scaleZ);
+  guideState.state.guideModel.position.set(
     fittedCenter.x + headTransform.positionX - sourceCenter.x * scaleX,
     fittedCenter.y + headTransform.positionY - sourceCenter.y * scaleY,
     fittedCenter.z + headTransform.positionZ - sourceCenter.z * scaleZ
   );
-  guideModel.updateMatrixWorld(true);
+  guideState.state.guideModel.updateMatrixWorld(true);
 }
 
 function syncScalpRoughScaleInputs() {
@@ -3301,14 +3278,14 @@ function resetHeadTransform() {
 }
 
 function realignFullBodyGuideToScalpTop() {
-  if (!guideModel?.userData?.fullBodyReference) return;
-  const sourceHeight = Number(guideModel.userData.sourceHeight);
-  const baseScale = Number(guideModel.userData.baseScale);
+  if (!guideState.state.guideModel?.userData?.fullBodyReference) return;
+  const sourceHeight = Number(guideState.state.guideModel.userData.sourceHeight);
+  const baseScale = Number(guideState.state.guideModel.userData.baseScale);
   if (!Number.isFinite(sourceHeight) || !Number.isFinite(baseScale)) return;
   scalpSurfaceGroup.updateMatrixWorld(true);
   const scalpBounds = new THREE.Box3().setFromObject(activeScalpSurfaceMesh());
   const scalpCenter = scalpBounds.getCenter(new THREE.Vector3());
-  guideModel.userData.fittedCenter.set(
+  guideState.state.guideModel.userData.fittedCenter.set(
     scalpCenter.x,
     scalpBounds.max.y - (sourceHeight * baseScale * 0.5),
     scalpCenter.z
@@ -3378,8 +3355,8 @@ function installGuideModel(obj, options = {}) {
     });
   });
   if (!meshCount) throw new Error("Head OBJ does not contain any mesh geometry");
-  disposeGuideModel(guideModel);
-  guideModel = obj;
+  disposeGuideModel(guideState.state.guideModel);
+  guideState.state.guideModel = obj;
   scene.add(obj);
   resetHeadTransform();
   setHeadReferenceTransparency(false);
@@ -3639,14 +3616,14 @@ function createSplitControlHandle() {
 function frameGuideModel({
   distanceScale = 1,
   targetYOffset = 0.18,
-  fullBody = Boolean(guideModel?.userData?.fullBodyReference)
+  fullBody = Boolean(guideState.state.guideModel?.userData?.fullBodyReference)
 } = {}) {
   if (fullBody) {
     frameViewportBounds(fullBodyScalpFocusBounds());
     return;
   }
   ui.state.shiftSnappedViewActive = false;
-  const box = guideHeadBounds(guideModel);
+  const box = guideHeadBounds(guideState.state.guideModel);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
   const radius = Math.max(size.x, size.y, size.z) * 0.62;
@@ -3656,7 +3633,7 @@ function frameGuideModel({
   camera.position.set(center.x, center.y + 0.28, center.z + Math.max(4.2, radius * 2.8) * distanceScale);
   camera.near = 0.05;
   camera.far = 100;
-  if (orthographicView) syncOrthographicFramingFromDistance();
+  if (viewportState.state.orthographicView) syncOrthographicFramingFromDistance();
   updateCameraProjectionForViewport();
   camera.updateProjectionMatrix();
 }
@@ -4163,7 +4140,7 @@ function endScalpLatticeDrag() {
 }
 
 function setHeadReferenceTransparency(enabled, opacity = 0.76) {
-  guideModel?.traverse((child) => {
+  guideState.state.guideModel?.traverse((child) => {
     if (!child.isMesh) return;
     child.material.transparent = enabled;
     child.material.opacity = enabled ? opacity : 1;
@@ -4293,7 +4270,7 @@ function rebuildScalpBuilderIntersection(group, step) {
 
 function createScalpBuilderPlaneVisual(position, stepIndex, active = false) {
   const step = SCALP_BUILDER_STEPS[stepIndex];
-  const bounds = guideHeadBounds(guideModel);
+  const bounds = guideHeadBounds(guideState.state.guideModel);
   const center = bounds.getCenter(new THREE.Vector3());
   const group = new THREE.Group();
   group.userData.scalpBuilderCalibrationPlane = true;
@@ -4308,8 +4285,8 @@ function createScalpBuilderPlaneVisual(position, stepIndex, active = false) {
 
 function createScalpBuilderPlanes() {
   disposeScalpBuilderVisuals();
-  if (!guideModel) return;
-  const bounds = guideHeadBounds(guideModel);
+  if (!guideState.state.guideModel) return;
+  const bounds = guideHeadBounds(guideState.state.guideModel);
   const size = bounds.getSize(new THREE.Vector3());
   for (let index = 0; index < Math.min(scalpBuilderStep, SCALP_BUILDER_STEPS.length); index += 1) {
     if (Number.isFinite(scalpBuilderPlanePositions[index])) {
@@ -4425,7 +4402,7 @@ function loadScalpBuilderCurveLatticeTemplate() {
 }
 
 function scalpBuilderCurveLatticeWorldPoints(template) {
-  const authoredMatrix = authoredScalpGuideMatrix || guideModel.matrixWorld;
+  const authoredMatrix = authoredScalpGuideMatrix || guideState.state.guideModel.matrixWorld;
   return template.vertices.map((vertex) => vertex.clone().applyMatrix4(authoredMatrix));
 }
 
@@ -4663,7 +4640,7 @@ function syncEditedScalpSurface(subdivided) {
 }
 
 async function ensureEditedScalpSurface() {
-  if (!guideModel) return;
+  if (!guideState.state.guideModel) return;
   const template = await loadScalpBuilderCurveLatticeTemplate();
   const defaultPoints = scalpBuilderCurveLatticeWorldPoints(template);
   const points = scalpBuilderEditedPoints?.length === defaultPoints.length
@@ -4931,7 +4908,7 @@ function updateScalpBuilderCurveLatticeFromHandle(handle) {
 function scalpBuilderCurveLatticePointHit() {
   if (!scalpBuilderEditing || !scalpBuilderCurveLattice) return null;
   const selectThroughHead = scalpBuilderEditing && scalpBuilderTransparentHeadInput.checked;
-  const headHit = !selectThroughHead && guideModel ? raycaster.intersectObject(guideModel, true)[0] : null;
+  const headHit = !selectThroughHead && guideState.state.guideModel ? raycaster.intersectObject(guideState.state.guideModel, true)[0] : null;
   return raycaster.intersectObjects(scalpBuilderCurveLattice.handles, false)
     .find((candidate) => !headHit || candidate.distance <= headHit.distance
       + scalpBuilderCurveLattice.handleRadius * 0.75) || null;
@@ -4973,7 +4950,7 @@ function prioritizeScalpBuilderPointSelection(event) {
 
 async function createScalpBuilderCurveLattice() {
   disposeScalpBuilderVisuals();
-  if (!guideModel || !(scalpBuilderEditing || headSetupEditing)) return;
+  if (!guideState.state.guideModel || !(scalpBuilderEditing || headSetupEditing)) return;
   const loadToken = scalpBuilderCurveLatticeLoadToken;
   scalpBuilderStepLabel.textContent = "Curve Lattice";
   scalpBuilderStepName.textContent = "Loading Scalp Guide";
@@ -5322,8 +5299,8 @@ function displayScalpBuilderConstructionCurves() {
     scalpBuilderTemplateOverlay.visible = false;
     return;
   }
-  if (!guideModel || scalpBuilderPlanePositions.some((value) => !Number.isFinite(value))) return;
-  const bounds = guideHeadBounds(guideModel);
+  if (!guideState.state.guideModel || scalpBuilderPlanePositions.some((value) => !Number.isFinite(value))) return;
+  const bounds = guideHeadBounds(guideState.state.guideModel);
   const center = bounds.getCenter(new THREE.Vector3());
   const size = bounds.getSize(new THREE.Vector3());
   const clearance = Math.max(size.x, size.y, size.z) * 0.015;
@@ -5739,7 +5716,7 @@ async function rebuildScalpBuilderTemplateOverlay() {
   clearScalpBuilderTemplateOverlay();
   if (
     !SCALP_REGION_CURVE_VISUALIZATION_ENABLED
-    || !guideModel
+    || !guideState.state.guideModel
     || !scalpBuilderEditing
     || !scalpBuilderShowTemplateInput.checked
   ) {
@@ -5749,16 +5726,16 @@ async function rebuildScalpBuilderTemplateOverlay() {
   try {
     const template = await loadScalpTopologyTemplate();
     if (!scalpBuilderEditing || !scalpBuilderShowTemplateInput.checked) return;
-    guideModel.updateMatrixWorld(true);
+    guideState.state.guideModel.updateMatrixWorld(true);
     const templateBounds = new THREE.Box3().setFromPoints(template.vertices);
     const templateCenter = templateBounds.getCenter(new THREE.Vector3());
     const templateSize = templateBounds.getSize(new THREE.Vector3());
-    const headBounds = guideHeadBounds(guideModel);
+    const headBounds = guideHeadBounds(guideState.state.guideModel);
     const headCenter = headBounds.getCenter(new THREE.Vector3());
     const headSize = headBounds.getSize(new THREE.Vector3());
     const useAuthoredCoordinates = !head.state.importedHeadAsset;
     const mappedPoints = template.vertices.map((vertex) => {
-      if (useAuthoredCoordinates) return vertex.clone().applyMatrix4(guideModel.matrixWorld);
+      if (useAuthoredCoordinates) return vertex.clone().applyMatrix4(guideState.state.guideModel.matrixWorld);
       return new THREE.Vector3(
         headCenter.x + ((vertex.x - templateCenter.x) / Math.max(0.0001, templateSize.x * 0.5)) * headSize.x * 0.51,
         THREE.MathUtils.lerp(
@@ -5840,13 +5817,13 @@ function generatedScalpObjContent(points, faces) {
 }
 
 async function generateScalpFromBuilder() {
-  if (!guideModel || scalpBuilderPlanePositions.some((value) => !Number.isFinite(value))) return;
+  if (!guideState.state.guideModel || scalpBuilderPlanePositions.some((value) => !Number.isFinite(value))) return;
   generateScalpBuilderButton.disabled = true;
   generateScalpBuilderButton.textContent = "Generating...";
   try {
     const template = await loadScalpTopologyTemplate();
     pushUndoState();
-    const bounds = guideHeadBounds(guideModel);
+    const bounds = guideHeadBounds(guideState.state.guideModel);
     const center = bounds.getCenter(new THREE.Vector3());
     const size = bounds.getSize(new THREE.Vector3());
     const templateBounds = new THREE.Box3().setFromPoints(template.vertices);
@@ -5886,7 +5863,7 @@ async function generateScalpFromBuilder() {
       unassigned: orderedDepthRange(bounds.min.z, bounds.max.z)
     };
     const shellClearance = Math.max(size.x, size.y, size.z) * 0.003;
-    guideModel.updateMatrixWorld(true);
+    guideState.state.guideModel.updateMatrixWorld(true);
     scalpSurfaceGroup.updateMatrixWorld(true);
     const inset = size.z * 0.018;
     const targetStations = [
@@ -6183,7 +6160,7 @@ function setCapsuleGuideEditing(enabled) {
   } else {
     capsuleGuideLoopDrag = null;
     capsuleGuideLoopSelection = null;
-    activeCapsuleGuideLoopTransform = null;
+    guideState.state.activeCapsuleGuideLoopTransform = null;
     setCapsuleGuideLoopHover(null);
     renderer.domElement.style.cursor = "";
     if (
@@ -6226,12 +6203,12 @@ function setAppMenuOpen(trigger, menu, open) {
 }
 
 function setTurntableActive(enabled) {
-  turntableActive = Boolean(enabled);
-  toggleTurntableButton.classList.toggle("active", turntableActive);
-  toggleTurntableButton.setAttribute("aria-pressed", String(turntableActive));
-  turntableMenuState.textContent = turntableActive ? "On" : "Off";
-  turntablePanel.classList.toggle("hidden", !turntableActive);
-  if (turntableActive) setAttributeEditorTab("main");
+  viewportState.state.turntableActive = Boolean(enabled);
+  toggleTurntableButton.classList.toggle("active", viewportState.state.turntableActive);
+  toggleTurntableButton.setAttribute("aria-pressed", String(viewportState.state.turntableActive));
+  turntableMenuState.textContent = viewportState.state.turntableActive ? "On" : "Off";
+  turntablePanel.classList.toggle("hidden", !viewportState.state.turntableActive);
+  if (viewportState.state.turntableActive) setAttributeEditorTab("main");
 }
 
 function setScalpSetupMenuOpen(open) {
@@ -6359,7 +6336,7 @@ const REFERENCE_VIEW_BY_CAMERA_AXIS = Object.freeze({
 
 function snappedReferenceImageView() {
   const snapped = isCameraInSnappedView();
-  if (!orthographicView || !snapped) return null;
+  if (!viewportState.state.orthographicView || !snapped) return null;
   return REFERENCE_VIEW_BY_CAMERA_AXIS[cardinalAxisKey(viewPlaneNormal())] || null;
 }
 
@@ -6828,8 +6805,8 @@ function refreshSelectionModeVisuals() {
   const componentMode = componentEditModeActive();
   transformControls.detach();
   activeHandleEdit = null;
-  activeStrandObjectTransform = null;
-  activeGuideObjectTransform = null;
+  hairState.state.activeStrandObjectTransform = null;
+  guideState.state.activeGuideObjectTransform = null;
   clearMultiPointSelection();
   sel.state.selectedPoint = null;
   sel.state.selectedCurveLatticePoint = null;
@@ -7051,14 +7028,14 @@ function renderGuideOutliner() {
     const row = document.createElement("div");
     row.className = "guide-outliner-row";
     const visible = guide.outlinerVisible !== false
-      && (guide.type !== "capsule" || capsuleGuidesVisible);
+      && (guide.type !== "capsule" || guideState.state.capsuleGuidesVisible);
     const visibility = createOutlinerVisibilityToggle({
       visible,
       label,
       onToggle: () => {
         pushUndoState();
         guide.outlinerVisible = !visible;
-        if (guide.outlinerVisible && guide.type === "capsule") capsuleGuidesVisible = true;
+        if (guide.outlinerVisible && guide.type === "capsule") guideState.state.capsuleGuidesVisible = true;
         applyDisplayVisibilityFilters();
         renderGuideOutliner();
       }
@@ -7758,15 +7735,15 @@ function setScalpGuideVisibility(visible) {
 function currentGuideViewMode() {
   return GUIDE_VIEW_MODES.find((mode) => (
     mode.scalp === scalpGuideVisible
-    && mode.capsules === capsuleGuidesVisible
-    && mode.lattices === curveLatticeGuidesVisible
+    && mode.capsules === guideState.state.capsuleGuidesVisible
+    && mode.lattices === guideState.state.curveLatticeGuidesVisible
   )) || null;
 }
 
 function updateGuideViewToggle() {
   const mode = currentGuideViewMode();
   const label = mode?.label || "Custom Guide View";
-  const anyVisible = scalpGuideVisible || capsuleGuidesVisible || curveLatticeGuidesVisible;
+  const anyVisible = scalpGuideVisible || guideState.state.capsuleGuidesVisible || guideState.state.curveLatticeGuidesVisible;
   scalpGuideVisibilityToggle.classList.toggle("active", anyVisible);
   scalpGuideVisibilityToggle.setAttribute("aria-pressed", String(anyVisible));
   scalpGuideVisibilityToggle.dataset.guideViewMode = mode?.id || "custom";
@@ -7781,8 +7758,8 @@ function updateGuideViewToggle() {
 
 function setGuideViewMode(modeId) {
   const mode = GUIDE_VIEW_MODES.find((item) => item.id === modeId) || GUIDE_VIEW_MODES[0];
-  capsuleGuidesVisible = mode.capsules;
-  curveLatticeGuidesVisible = mode.lattices;
+  guideState.state.capsuleGuidesVisible = mode.capsules;
+  guideState.state.curveLatticeGuidesVisible = mode.lattices;
   setScalpGuideVisibility(mode.scalp);
   applyCapsuleGuideDisplayVisibility();
   applyCurveLatticeGuideDisplayVisibility();
@@ -7899,16 +7876,16 @@ function syncDisplayVisibilityInputs() {
     input.checked = visibleStrandLayers.has(input.dataset.layerVisibility);
   });
   if (scalpDisplayVisibilityInput) scalpDisplayVisibilityInput.checked = scalpGuideVisible;
-  if (capsuleDisplayVisibilityInput) capsuleDisplayVisibilityInput.checked = capsuleGuidesVisible;
-  if (curveLatticeDisplayVisibilityInput) curveLatticeDisplayVisibilityInput.checked = curveLatticeGuidesVisible;
-  const hasCharacterMesh = Boolean(guideModel);
-  const hasBodyMesh = Boolean(guideModel?.userData?.fullBodyReference);
+  if (capsuleDisplayVisibilityInput) capsuleDisplayVisibilityInput.checked = guideState.state.capsuleGuidesVisible;
+  if (curveLatticeDisplayVisibilityInput) curveLatticeDisplayVisibilityInput.checked = guideState.state.curveLatticeGuidesVisible;
+  const hasCharacterMesh = Boolean(guideState.state.guideModel);
+  const hasBodyMesh = Boolean(guideState.state.guideModel?.userData?.fullBodyReference);
   if (headMeshDisplayVisibilityInput) {
-    headMeshDisplayVisibilityInput.checked = headMeshVisible;
+    headMeshDisplayVisibilityInput.checked = hairState.state.headMeshVisible;
     headMeshDisplayVisibilityInput.disabled = !hasCharacterMesh || hasBodyMesh;
   }
   if (bodyMeshDisplayVisibilityInput) {
-    bodyMeshDisplayVisibilityInput.checked = bodyMeshVisible;
+    bodyMeshDisplayVisibilityInput.checked = hairState.state.bodyMeshVisible;
     bodyMeshDisplayVisibilityInput.disabled = !hasCharacterMesh || !hasBodyMesh;
   }
   syncVisibilityParent(allRegionsVisibilityInput, regionVisibilityInputs);
@@ -7921,10 +7898,10 @@ function syncDisplayVisibilityInputs() {
 }
 
 function applyCharacterMeshDisplayVisibility() {
-  if (!guideModel) return;
-  guideModel.visible = guideModel.userData.fullBodyReference
+  if (!guideState.state.guideModel) return;
+  guideState.state.guideModel.visible = guideState.state.guideModel.userData.fullBodyReference
     ? bodyMeshVisible
-    : headMeshVisible;
+    : hairState.state.headMeshVisible;
 }
 
 function applyStrandDisplayVisibility() {
@@ -7949,7 +7926,7 @@ function applyStrandDisplayVisibility() {
 
 function applyCapsuleGuideDisplayVisibility() {
   guides.filter((guide) => guide.type === "capsule").forEach((guide) => {
-    const visible = capsuleGuidesVisible && guide.outlinerVisible !== false;
+    const visible = guideState.state.capsuleGuidesVisible && guide.outlinerVisible !== false;
     guide.mesh.visible = visible;
     if (guide.wire) guide.wire.visible = visible;
     if (guide.controlWire) guide.controlWire.visible = visible;
@@ -7965,7 +7942,7 @@ function applyCapsuleGuideDisplayVisibility() {
     }
   });
   const selected = getSelectedGuide();
-  if (selected?.type === "capsule" && (!capsuleGuidesVisible || selected.outlinerVisible === false)) {
+  if (selected?.type === "capsule" && (!guideState.state.capsuleGuidesVisible || selected.outlinerVisible === false)) {
     transformControls.detach();
   }
 }
@@ -7980,7 +7957,7 @@ function applyOtherGuideDisplayVisibility() {
 
 function applyCurveLatticeGuideDisplayVisibility() {
   filterCurveLatticesToGroup(sel.state.selectedGuideId);
-  if (!curveLatticeGuidesVisible && getSelectedGuide()?.type === "curve-lattice") {
+  if (!guideState.state.curveLatticeGuidesVisible && getSelectedGuide()?.type === "curve-lattice") {
     transformControls.detach();
   }
 }
@@ -8886,15 +8863,15 @@ function curveLatticeLoopHitFromEvent(event, guide = selectedCurveLatticeGuide()
 
 function refreshCurveLatticeLoopHover() {
   guides.forEach((guide) => guide.loopPickersGroup?.children.forEach((picker) => {
-    const hovered = curveLatticeLoopHover?.guideId === guide.id
-      && curveLatticeLoopHover.axis === picker.userData.curveLatticeLoopAxis
-      && curveLatticeLoopHover.loopIndex === picker.userData.curveLatticeLoopIndex;
+    const hovered = guideState.state.curveLatticeLoopHover?.guideId === guide.id
+      && guideState.state.curveLatticeLoopHover.axis === picker.userData.curveLatticeLoopAxis
+      && guideState.state.curveLatticeLoopHover.loopIndex === picker.userData.curveLatticeLoopIndex;
     picker.material.opacity = hovered ? 0.96 : 0;
   }));
 }
 
 function setCurveLatticeLoopHover(result = null) {
-  curveLatticeLoopHover = result
+  guideState.state.curveLatticeLoopHover = result
     ? { guideId: result.guide.id, axis: result.axis, loopIndex: result.loopIndex }
     : null;
   refreshCurveLatticeLoopHover();
@@ -8910,7 +8887,7 @@ function updateCurveLatticeLoopHover(event) {
     || event.ctrlKey
     || event.altKey
     || event.metaKey
-    || hoveredControlPoint
+    || guideState.state.hoveredControlPoint
     || pointerHitsTransformGizmo(event);
   const result = blocked ? null : curveLatticeLoopHitFromEvent(event);
   setCurveLatticeLoopHover(result);
@@ -9576,7 +9553,7 @@ function retopologizeCapsuleGuide(guide, radialLoops, lengthLoops) {
   );
   guide.selectedPointIndex = -1;
   capsuleGuideLoopSelection = null;
-  activeCapsuleGuideLoopTransform = null;
+  guideState.state.activeCapsuleGuideLoopTransform = null;
   updateCapsuleGuideGeometry(guide, { preserveControlPoints: true });
   refreshCapsuleGuideLoopInfluence();
 }
@@ -9735,7 +9712,7 @@ function updateCapsuleGuideDisplayColor(guide) {
   guide.wire?.material.color.copy(capsuleGuideAccentColor(guide));
   guide.controlWire?.material.color.copy(capsuleGuideAccentColor(guide, 0.3));
   updateCapsuleGuideHandleColors(guide, guide.selectedPointIndex ?? -1);
-  const active = capsuleGuideLoopDrag || capsuleGuideLoopSelection || capsuleGuideLoopHover;
+  const active = capsuleGuideLoopDrag || capsuleGuideLoopSelection || guideState.state.capsuleGuideLoopHover;
   refreshCapsuleGuideFillInfluence(guide, active);
 }
 
@@ -9937,7 +9914,7 @@ function selectCapsuleGuidePoint(guide, pointIndex) {
   const handle = guide?.handlesGroup?.children[pointIndex];
   if (!handle) return;
   capsuleGuideLoopSelection = null;
-  activeCapsuleGuideLoopTransform = null;
+  guideState.state.activeCapsuleGuideLoopTransform = null;
   sel.state.selectedCurveLatticePoint = null;
   sel.state.selectedControlPoints = [];
   guide.selectedPointIndex = pointIndex;
@@ -9989,7 +9966,7 @@ function selectCapsuleGuideLoop(guide, loopIndex) {
   sel.state.selectedCurveLatticePoint = null;
   sel.state.selectedControlPoints = [];
   capsuleGuideLoopSelection = { guideId: guide.id, loopIndex };
-  activeCapsuleGuideLoopTransform = null;
+  guideState.state.activeCapsuleGuideLoopTransform = null;
   updateCapsuleGuideHandleColors(guide);
   setCapsuleGuideLoopHover(guide, loopIndex);
   attachCapsuleGuideLoopTransform();
@@ -10000,7 +9977,7 @@ function beginCapsuleGuideLoopTransform() {
   const loopIndex = capsuleGuideLoopSelection?.loopIndex;
   if (!guide?.controlLoops?.[loopIndex]?.length || !["move", "rotate", "scale"].includes(activeTool)) return;
   guide.mesh.updateMatrixWorld(true);
-  activeCapsuleGuideLoopTransform = {
+  guideState.state.activeCapsuleGuideLoopTransform = {
     guideId: guide.id,
     loopIndex,
     mode: activeTool,
@@ -10015,7 +9992,7 @@ function beginCapsuleGuideLoopTransform() {
 }
 
 function updateCapsuleGuideLoopTransform() {
-  const edit = activeCapsuleGuideLoopTransform;
+  const edit = guideState.state.activeCapsuleGuideLoopTransform;
   if (!edit) return;
   const guide = guides.find((item) => item.id === edit.guideId && item.type === "capsule");
   if (!guide) return;
@@ -10095,7 +10072,7 @@ function refreshCapsuleGuideFillInfluence(guide, active) {
 }
 
 function refreshCapsuleGuideLoopInfluence() {
-  const active = capsuleGuideLoopDrag || capsuleGuideLoopSelection || capsuleGuideLoopHover;
+  const active = capsuleGuideLoopDrag || capsuleGuideLoopSelection || guideState.state.capsuleGuideLoopHover;
   guides.forEach((guide) => guide.loopLinesGroup?.children.forEach((line) => {
     const loopIndex = line.userData.capsuleGuideLoopIndex;
     const matchesGuide = active && guide.id === active.guideId;
@@ -10110,7 +10087,7 @@ function refreshCapsuleGuideLoopInfluence() {
 
 function setCapsuleGuideLoopHover(guide, loopIndex = -1) {
   const next = guide && loopIndex >= 0 ? { guideId: guide.id, loopIndex } : null;
-  capsuleGuideLoopHover = next;
+  guideState.state.capsuleGuideLoopHover = next;
   refreshCapsuleGuideLoopInfluence();
 }
 
@@ -10353,7 +10330,7 @@ function updateCapsuleGuideGeometry(guide, { preserveControlPoints = false, rebu
   updateCapsuleGuideFresnelMaterial(guide);
   refreshCapsuleGuideFillInfluence(
     guide,
-    capsuleGuideLoopDrag || capsuleGuideLoopSelection || capsuleGuideLoopHover
+    capsuleGuideLoopDrag || capsuleGuideLoopSelection || guideState.state.capsuleGuideLoopHover
   );
   if (rebuildHandles) rebuildCapsuleGuideHandles(guide);
 }
@@ -10603,7 +10580,7 @@ function selectGuide(id) {
   setViewportEditMode("guide", { clearSelection: false, activateSelect: false });
   setCurveLatticeLoopHover(null);
   capsuleGuideLoopSelection = null;
-  activeCapsuleGuideLoopTransform = null;
+  guideState.state.activeCapsuleGuideLoopTransform = null;
   clearMultiPointSelection();
   clearStrandSelectionState();
   sel.state.selectedCurveSurfaceController = null;
@@ -10755,8 +10732,8 @@ function frameViewportBounds(bounds) {
   viewDirection.normalize();
   ui.state.shiftSnappedViewActive = false;
   controls.target.copy(center);
-  if (orthographicView) {
-    orthographicHalfHeight = radius * 1.16;
+  if (viewportState.state.orthographicView) {
+    viewportState.state.orthographicHalfHeight = radius * 1.16;
     orthographicCamera.zoom = 1;
     camera.position.copy(center).addScaledVector(viewDirection, currentDistance);
     updateCameraProjectionForViewport();
@@ -10776,7 +10753,7 @@ function centerViewportOnSelectedItem() {
 }
 
 function fullSceneFocusBounds() {
-  if (guideModel?.userData?.fullBodyReference) return fullBodyScalpFocusBounds();
+  if (guideState.state.guideModel?.userData?.fullBodyReference) return fullBodyScalpFocusBounds();
   const objects = [
     ...locks.map((lock) => lock.mesh),
     ...guides.flatMap((guide) => [guide.mesh, guide.rootMesh]),
@@ -10789,7 +10766,6 @@ function fullSceneFocusBounds() {
   return bounds.isEmpty() ? null : bounds;
 }
 
-let viewportFrameCycleStep = 0;
 let viewportFrameSelectionKey = "";
 
 function currentViewportFrameSelectionKey() {
@@ -10802,20 +10778,20 @@ function currentViewportFrameSelectionKey() {
 }
 
 function cycleViewportFraming() {
-  if (guideModel?.userData?.fullBodyReference) {
-    viewportFrameCycleStep = 0;
+  if (guideState.state.guideModel?.userData?.fullBodyReference) {
+    viewportState.state.viewportFrameCycleStep = 0;
     viewportFrameSelectionKey = currentViewportFrameSelectionKey();
     return frameViewportBounds(fullBodyScalpFocusBounds());
   }
   const selectionKey = currentViewportFrameSelectionKey();
   if (selectionKey !== viewportFrameSelectionKey) {
     viewportFrameSelectionKey = selectionKey;
-    viewportFrameCycleStep = 0;
+    viewportState.state.viewportFrameCycleStep = 0;
   }
-  const framed = viewportFrameCycleStep === 0
+  const framed = viewportState.state.viewportFrameCycleStep === 0
     ? centerViewportOnSelectedItem()
     : frameViewportBounds(fullSceneFocusBounds());
-  viewportFrameCycleStep = (viewportFrameCycleStep + 1) % 2;
+  viewportState.state.viewportFrameCycleStep = (viewportState.state.viewportFrameCycleStep + 1) % 2;
   return framed;
 }
 
@@ -11078,7 +11054,7 @@ function setActiveTool(tool) {
 function setDrawStrandMode(mode) {
   if (!["standard", "clump", "ponytail-clump", "coil"].includes(mode)) return;
   finishDrawStrandStroke(null, { cancel: true });
-  drawStrandMode = mode;
+  hairState.state.drawStrandMode = mode;
   draw.state.activeCustomDrawClumpTemplate = null;
   drawBrushPresetInput.value = mode;
   syncDrawCurlControls();
@@ -11287,9 +11263,9 @@ function finishBrushSizeDrag(event) {
 function updateInteractionLocks() {
   const loftStrokeActive = Boolean(loftSurfaceDraft?.activeStroke);
   const curveSurfaceStrokeActive = Boolean(curveSurfaceDraft?.activeStroke);
-  controls.enabled = Boolean(altOrbitDrag) || (!toolRadialGesture && !strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !selectPointerCapture && !transformDragging && !relaxEdit && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpLatticeDrag && !scalpPaintDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !capsuleGuideDrawStroke && !polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !selectionMarqueeDrag && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag && !branchSweepStartDrag && !houdiniZoomDrag);
+  controls.enabled = Boolean(altOrbitDrag) || (!toolRadialGesture && !hairState.state.strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !selectPointerCapture && !transformDragging && !relaxEdit && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpLatticeDrag && !scalpPaintDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !capsuleGuideDrawStroke && !polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !selectionMarqueeDrag && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag && !branchSweepStartDrag && !houdiniZoomDrag);
   const branchMoveDisabled = branchMoveGizmoDisabled();
-  transformControls.enabled = !toolRadialGesture && !strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !altOrbitDrag && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !capsuleGuideDrawStroke && !polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag && !branchMoveDisabled && !branchSweepStartDrag && !houdiniZoomDrag;
+  transformControls.enabled = !toolRadialGesture && !hairState.state.strandRadialGesture && !duplicatePlacement && !referenceOverlayDrag && !referenceCropDrag && !altOrbitDrag && !sculptMoveStroke && !proportionalSizeEdit && !proportionalHotkeyPress && !brushSizeDrag && !strandWidthEdgeDrag && !scalpBuilderStroke && !viewSnapDrag && !viewPlaneMoveDrag && !drawStrandStroke && !capsuleGuideDrawStroke && !polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !panelSplitDrag && !capsuleGuideLoopDrag && !taperMeshPointDrag && !branchMoveDisabled && !branchSweepStartDrag && !houdiniZoomDrag;
   setBranchMoveGizmoVisual(branchMoveDisabled);
 }
 
@@ -11509,7 +11485,7 @@ function beginGuideObjectTransform(handle) {
   if (handle !== guideObjectTransformHandle || componentEditModeActive()) return;
   const guide = getSelectedGuide();
   if (!guide || handle.userData.guideId !== guide.id) return;
-  activeGuideObjectTransform = guideObjectTransformSnapshot(guide, handle);
+  guideState.state.activeGuideObjectTransform = guideObjectTransformSnapshot(guide, handle);
 }
 
 function updateLegacyGuideObjectTransform(snapshot, worldDelta) {
@@ -11535,7 +11511,7 @@ function updateLegacyGuideObjectTransform(snapshot, worldDelta) {
 }
 
 function updateGuideObjectTransform(handle) {
-  const snapshot = activeGuideObjectTransform;
+  const snapshot = guideState.state.activeGuideObjectTransform;
   const guide = snapshot?.guide;
   if (!snapshot || !guide || handle !== guideObjectTransformHandle) return;
   const { transformPoint, worldMatrixForPivot } = strandObjectTransformOperators(snapshot, handle);
@@ -11568,8 +11544,8 @@ function updateGuideObjectTransform(handle) {
 }
 
 function finishGuideObjectTransform() {
-  const snapshot = activeGuideObjectTransform;
-  activeGuideObjectTransform = null;
+  const snapshot = guideState.state.activeGuideObjectTransform;
+  guideState.state.activeGuideObjectTransform = null;
   if (!snapshot?.guide) return;
   syncGuideInputs(snapshot.guide);
   refreshLiveSurfaceOptions();
@@ -11739,10 +11715,10 @@ function beginStrandObjectTransform(handle) {
     }
   });
   const targetSnapshots = targets.map((lock) => strandObjectTransformSnapshot(lock, sharedClumpPivot));
-  const taperPreviewLockId = taperMeshPointsVisible && taperCurveEdit?.type === "strand"
+  const taperPreviewLockId = hairState.state.taperMeshPointsVisible && taperCurveEdit?.type === "strand"
     ? taperCurveEdit.id
     : null;
-  activeStrandObjectTransform = {
+  hairState.state.activeStrandObjectTransform = {
     position: handle.position.clone(),
     quaternion: handle.quaternion.clone(),
     scale: handle.scale.clone(),
@@ -11752,13 +11728,13 @@ function beginStrandObjectTransform(handle) {
       ? strandObjectPreviewMeshSnapshot({ id: taperPreviewLockId, mesh: taperMeshPointsGroup })
       : null
   };
-  activeStrandObjectTransform.previewMeshByLockId = new Map(
-    activeStrandObjectTransform.previewMeshes.map((snapshot) => [snapshot.lockId, snapshot])
+  hairState.state.activeStrandObjectTransform.previewMeshByLockId = new Map(
+    hairState.state.activeStrandObjectTransform.previewMeshes.map((snapshot) => [snapshot.lockId, snapshot])
   );
 }
 
 function updateStrandObjectTransform(handle) {
-  const edit = activeStrandObjectTransform;
+  const edit = hairState.state.activeStrandObjectTransform;
   if (!edit || handle !== strandObjectTransformHandle) return;
   const { worldMatrixForPivot, worldMatrixForFixedPivot } = strandObjectTransformOperators(edit, handle);
   const targetIds = new Set(edit.targets.map((target) => target.lockId));
@@ -11854,11 +11830,11 @@ function commitStrandObjectTransform(edit, handle) {
 }
 
 function finishStrandObjectTransform() {
-  const edit = activeStrandObjectTransform;
+  const edit = hairState.state.activeStrandObjectTransform;
   const editedIds = edit?.targets?.map((target) => target.lockId) || [];
   restoreStrandObjectPreviewMeshes(edit);
   commitStrandObjectTransform(edit, strandObjectTransformHandle);
-  activeStrandObjectTransform = null;
+  hairState.state.activeStrandObjectTransform = null;
   flushPendingLockGeometryUpdates();
   editedIds.forEach((id) => {
     const lock = locks.find((item) => item.id === id);
@@ -15784,8 +15760,8 @@ function materialForLock(lock) {
 }
 
 function activeHairMaterialDefinition() {
-  const definition = hairMaterialDefinition(activeHairMaterialId);
-  activeHairMaterialId = definition.id;
+  const definition = hairMaterialDefinition(hairState.state.activeHairMaterialId);
+  hairState.state.activeHairMaterialId = definition.id;
   return definition;
 }
 
@@ -15796,11 +15772,11 @@ function strandDisplayColor(lock) {
   const materialColor = definition.shader === ANIME_ANISOTROPIC_SHADER
     ? definition.animeBaseColor
     : definition.color;
-  const color = new THREE.Color(showGroupColors ? region.color : materialColor);
-  const adjustedFactor = showGroupColors
+  const color = new THREE.Color(hairState.state.showGroupColors ? region.color : materialColor);
+  const adjustedFactor = hairState.state.showGroupColors
     ? layer.colorFactor
     : layerColorShiftsEnabled ? Number(MATERIAL_LAYER_COLOR_FACTORS[layer.id] ?? 1) : 1;
-  if (showGroupColors || layerColorShiftsEnabled) {
+  if (hairState.state.showGroupColors || layerColorShiftsEnabled) {
     color.offsetHSL(Number(LAYER_HUE_SHIFTS[layer.id] ?? 0), 0, 0);
   }
   color.multiplyScalar(adjustedFactor);
@@ -15969,7 +15945,7 @@ function applyMaterialDefinitionToLock(lock) {
     });
   }
   updateStrandSelectionHighlightForLock(lock);
-  if (uvCheckerEnabled) ensureUvCheckerForLock(lock);
+  if (hairState.state.uvCheckerEnabled) ensureUvCheckerForLock(lock);
 }
 
 function refreshMaterialUsers(materialId) {
@@ -16022,7 +15998,7 @@ function renderHairMaterialOptions(selectedMaterialId = DEFAULT_HAIR_MATERIAL_ID
 }
 
 function syncHairMaterialEditor(lock = null) {
-  if (lock) activeHairMaterialId = materialForLock(lock).id;
+  if (lock) hairState.state.activeHairMaterialId = materialForLock(lock).id;
   const definition = activeHairMaterialDefinition();
   deleteProjectHairMaterialButton.disabled = definition.id === DEFAULT_HAIR_MATERIAL_ID;
   const assignedMaterialId = getSelectedLock()?.materialId || DEFAULT_HAIR_MATERIAL_ID;
@@ -16051,12 +16027,12 @@ function createProjectHairMaterial({ assignToSelected = false } = {}) {
   const lock = getSelectedLock();
   pushUndoState();
   const source = assignToSelected && lock ? materialForLock(lock) : activeHairMaterialDefinition();
-  hairMaterialIndex += 1;
+  hairState.state.hairMaterialIndex += 1;
   const material = normalizeHairMaterialDefinition({ ...source });
   material.id = `hair-material-${crypto.randomUUID()}`;
-  material.name = `Hair Material ${hairMaterialIndex}`;
+  material.name = `Hair Material ${hairState.state.hairMaterialIndex}`;
   hairMaterialDefinitions.push(material);
-  activeHairMaterialId = material.id;
+  hairState.state.activeHairMaterialId = material.id;
   if (assignToSelected && lock) {
     editSelectedLocks((item) => {
       item.materialId = material.id;
@@ -16079,7 +16055,7 @@ function deleteActiveHairMaterial() {
       syncActiveMirror(lock, { refreshUi: true });
     }
   });
-  activeHairMaterialId = DEFAULT_HAIR_MATERIAL_ID;
+  hairState.state.activeHairMaterialId = DEFAULT_HAIR_MATERIAL_ID;
   syncHairMaterialEditor();
   renderLockList();
   hairMaterialOutliner.querySelector(`[data-hair-material-id="${CSS.escape(DEFAULT_HAIR_MATERIAL_ID)}"]`)?.focus();
@@ -16148,7 +16124,7 @@ function createHairTopologyOverlay(sourceGeometry) {
       extensions: { derivatives: true }
     })
   );
-  overlay.visible = hairTopologyVisible;
+  overlay.visible = hairState.state.hairTopologyVisible;
   overlay.renderOrder = 3;
   return overlay;
 }
@@ -17088,7 +17064,7 @@ function updateTaperMeshPoints() {
   const target = activeTaperTarget();
   const curvePoints = activeTaperCurve();
   const applicable = Boolean(
-    taperMeshPointsVisible
+    hairState.state.taperMeshPointsVisible
     && ["taperCurve", "depthCurve", "twistCurve"].includes(taperCurveEdit?.curveKey)
     && lock
     && curvePoints?.length
@@ -17160,21 +17136,21 @@ function updateTaperMeshPoints() {
 }
 
 function setTaperMeshPointsVisible(visible) {
-  taperMeshPointsVisible = Boolean(
+  hairState.state.taperMeshPointsVisible = Boolean(
     visible
     && taperCurveEdit?.type === "strand"
     && ["taperCurve", "depthCurve", "twistCurve"].includes(taperCurveEdit?.curveKey)
   );
-  if (taperMeshPointsVisible && ["draw", "procedural-draw", "braid", "panel"].includes(activeTool)) {
+  if (hairState.state.taperMeshPointsVisible && ["draw", "procedural-draw", "braid", "panel"].includes(activeTool)) {
     setActiveTool("select");
   }
-  taperMeshPointsToggle.checked = taperMeshPointsVisible;
+  taperMeshPointsToggle.checked = hairState.state.taperMeshPointsVisible;
   updateTaperMeshPoints();
   const lock = taperCurveEdit?.type === "strand"
     ? locks.find((item) => item.id === taperCurveEdit.id)
     : null;
   if (lock) updateCurveObjects(lock, { visible: true });
-  if (taperMeshPointsVisible && twistCurveEditing()) setHoveredStrandWidthEdge(null);
+  if (hairState.state.taperMeshPointsVisible && twistCurveEditing()) setHoveredStrandWidthEdge(null);
 }
 
 function renderTaperCurveEditor() {
@@ -17397,7 +17373,7 @@ function applyTaperCurveEdit({ interactive = false } = {}) {
       const primaryCurve = cloneShapePresetValue(lock[curveKey]);
       if (editingTwist) {
         if (interactive) {
-          if (twistCurveAllStrandsPreviewEnabled) {
+          if (hairState.state.twistCurveAllStrandsPreviewEnabled) {
             editSelectedLocks((item) => {
               if (item !== lock) item.twistCurve = cloneShapePresetValue(primaryCurve);
             }, {
@@ -17509,7 +17485,7 @@ function closeTaperCurveEditor() {
 
 function updateViewportStatsVisibility() {
   const curveEditorOpen = taperCurveEditor.open;
-  const hidden = !viewportStatisticsEnabled
+  const hidden = !viewportState.state.viewportStatisticsEnabled
     || sweepProfileEditor.open
     || !presetLibrary.classList.contains("hidden");
   viewportStats.classList.toggle("hidden", hidden);
@@ -18250,13 +18226,13 @@ function snapshotState() {
     scalpAttachmentVersion: 4,
     visibleStrandRegions: [...visibleStrandRegions],
     visibleStrandLayers: [...visibleStrandLayers],
-    capsuleGuidesVisible,
-    curveLatticeGuidesVisible,
-    headMeshVisible,
-    bodyMeshVisible,
+    capsuleGuidesVisible: guideState.state.capsuleGuidesVisible,
+    curveLatticeGuidesVisible: guideState.state.curveLatticeGuidesVisible,
+    headMeshVisible: hairState.state.headMeshVisible,
+    bodyMeshVisible: hairState.state.bodyMeshVisible,
     lockIndex,
     referenceImageIndex: ref.state.referenceImageIndex,
-    hairMaterialIndex,
+    hairMaterialIndex: hairState.state.hairMaterialIndex,
     hairMaterials: hairMaterialDefinitions.map((material) => ({ ...material })),
         ...createProjectSelectionSnapshot(sel.selectionSnapshot()),
     mirrorXEditing,
@@ -18976,22 +18952,22 @@ function downloadPreferencesAndPresets() {
     exportedAt: exportedAt.toISOString(),
     preferences: {
       language: documentLocalizer.language,
-      navigationTips: navigationTipsEnabled,
-      navigationStyle,
-      cameraSmoothingEnabled,
-      cameraSmoothingStrength,
+      navigationTips: viewportState.state.navigationTipsEnabled,
+      navigationStyle: viewportState.state.navigationStyle,
+      cameraSmoothingEnabled: viewportState.state.cameraSmoothingEnabled,
+      cameraSmoothingStrength: viewportState.state.cameraSmoothingStrength,
       toolTips: toolTipsEnabled,
       compactToolButtons: compactToolButtonsEnabled,
-      viewportStatistics: viewportStatisticsEnabled,
-      twistCurveAllStrandsPreview: twistCurveAllStrandsPreviewEnabled,
+      viewportStatistics: viewportState.state.viewportStatisticsEnabled,
+      twistCurveAllStrandsPreview: hairState.state.twistCurveAllStrandsPreviewEnabled,
       layerColorShifts: layerColorShiftsEnabled,
       outlinerFolderColors: outlinerFolderColorsEnabled,
       sideNamingPerspective,
-      controlPointDisplaySize,
-      viewportBackgroundColor,
+      controlPointDisplaySize: guideState.state.controlPointDisplaySize,
+      viewportBackgroundColor: viewportState.state.viewportBackgroundColor,
       radialMenus: ui.state.radialMenusEnabled,
       proceduralDrawExperimental: draw.state.proceduralDrawExperimentalEnabled,
-      defaultShader: defaultHairShader
+      defaultShader: hairState.state.defaultHairShader
     },
     presets: customCreationPresets,
     shapePresets: customShapePresets
@@ -19009,18 +18985,18 @@ function importedBooleanPreference(value, fallback) {
 async function loadPreferencesAndPresets(file) {
   const backup = normalizePreferencesBackup(JSON.parse(await file.text()));
   const preferences = backup.preferences;
-  setNavigationTipsEnabled(importedBooleanPreference(preferences.navigationTips, navigationTipsEnabled));
+  setNavigationTipsEnabled(importedBooleanPreference(preferences.navigationTips, viewportState.state.navigationTipsEnabled));
   if (preferences.navigationStyle != null) setNavigationStyle(preferences.navigationStyle);
-  setCameraSmoothingEnabled(importedBooleanPreference(preferences.cameraSmoothingEnabled, cameraSmoothingEnabled));
+  setCameraSmoothingEnabled(importedBooleanPreference(preferences.cameraSmoothingEnabled, viewportState.state.cameraSmoothingEnabled));
   if (preferences.cameraSmoothingStrength != null) {
     setCameraSmoothingStrength(preferences.cameraSmoothingStrength);
   }
   setToolTipsEnabled(importedBooleanPreference(preferences.toolTips, toolTipsEnabled));
   setCompactToolButtonsEnabled(importedBooleanPreference(preferences.compactToolButtons, compactToolButtonsEnabled));
-  setViewportStatisticsEnabled(importedBooleanPreference(preferences.viewportStatistics, viewportStatisticsEnabled));
+  setViewportStatisticsEnabled(importedBooleanPreference(preferences.viewportStatistics, viewportState.state.viewportStatisticsEnabled));
   setTwistCurveAllStrandsPreviewEnabled(importedBooleanPreference(
     preferences.twistCurveAllStrandsPreview,
-    twistCurveAllStrandsPreviewEnabled
+    hairState.state.twistCurveAllStrandsPreviewEnabled
   ));
   setLayerColorShiftsEnabled(importedBooleanPreference(preferences.layerColorShifts, layerColorShiftsEnabled));
   setOutlinerFolderColorsEnabled(importedBooleanPreference(preferences.outlinerFolderColors, outlinerFolderColorsEnabled));
@@ -19049,7 +19025,7 @@ async function loadPreferencesAndPresets(file) {
   customShapePresets = normalizeShapePresetLibrary(backup.shapePresets);
   saveCustomShapePresets();
   populateShapePresetSelects();
-  populateDrawBrushPresetSelect(drawStrandMode);
+  populateDrawBrushPresetSelect(hairState.state.drawStrandMode);
   populateCreationPresetSelect(
     braidToolPresetInput,
     "braid",
@@ -19058,20 +19034,20 @@ async function loadPreferencesAndPresets(file) {
   ui.state.preferencesOpenSnapshot = {
     radialMenusEnabled: ui.state.radialMenusEnabled,
     proceduralDrawExperimentalEnabled: draw.state.proceduralDrawExperimentalEnabled,
-    navigationTipsEnabled,
-    navigationStyle,
-    cameraSmoothingEnabled,
-    cameraSmoothingStrength,
+    navigationTipsEnabled: viewportState.state.navigationTipsEnabled,
+    navigationStyle: viewportState.state.navigationStyle,
+    cameraSmoothingEnabled: viewportState.state.cameraSmoothingEnabled,
+    cameraSmoothingStrength: viewportState.state.cameraSmoothingStrength,
     toolTipsEnabled,
     compactToolButtonsEnabled,
-    viewportStatisticsEnabled,
-    twistCurveAllStrandsPreviewEnabled,
+    viewportStatisticsEnabled: viewportState.state.viewportStatisticsEnabled,
+    twistCurveAllStrandsPreviewEnabled: hairState.state.twistCurveAllStrandsPreviewEnabled,
     layerColorShiftsEnabled,
     outlinerFolderColorsEnabled,
     sideNamingPerspective,
-    controlPointDisplaySize,
-    viewportBackgroundColor,
-    defaultHairShader
+    controlPointDisplaySize: guideState.state.controlPointDisplaySize,
+    viewportBackgroundColor: viewportState.state.viewportBackgroundColor,
+    defaultHairShader: hairState.state.defaultHairShader
   };
   preferencesBackupStatus.textContent = "Preferences and presets loaded.";
 }
@@ -19124,8 +19100,8 @@ async function openHairProjectFile(file, { handle = null } = {}) {
     const content = await file.text();
     const project = validateHairProject(JSON.parse(content));
     if (project.headAssetOmitted === true) {
-      disposeGuideModel(guideModel);
-      guideModel = null;
+      disposeGuideModel(guideState.state.guideModel);
+      guideState.state.guideModel = null;
       head.state.importedHeadAsset = null;
       document.querySelector("#importHeadMesh").title = "Import head mesh from an OBJ file";
       document.querySelector("#importFullBodyMesh").title = "Import a full body OBJ, scale it to seven head heights, and align its top to the scalp guide";
@@ -19160,7 +19136,7 @@ async function openHairProjectFile(file, { handle = null } = {}) {
     pushUndoState();
     restoreState(project.state);
     realignFullBodyGuideToScalpTop();
-    if (guideModel?.userData?.fullBodyReference) {
+    if (guideState.state.guideModel?.userData?.fullBodyReference) {
       frameViewportBounds(fullBodyScalpFocusBounds());
     }
     if (project.metadata?.name) currentProjectName = project.metadata.name;
@@ -19343,11 +19319,11 @@ function restoreSharedStateForStateRestore(state, restorePlan, { preserveMirrorM
   restorePlan.visibility.strandRegions.forEach((region) => visibleStrandRegions.add(region));
   visibleStrandLayers.clear();
   restorePlan.visibility.strandLayers.forEach((layer) => visibleStrandLayers.add(layer));
-  capsuleGuidesVisible = restorePlan.visibility.capsuleGuides;
-  curveLatticeGuidesVisible = restorePlan.visibility.curveLatticeGuides;
-  headMeshVisible = restorePlan.visibility.headMesh;
-  bodyMeshVisible = restorePlan.visibility.bodyMesh;
-  hairMaterialIndex = restorePlan.counters.hairMaterialIndex;
+  guideState.state.capsuleGuidesVisible = restorePlan.visibility.capsuleGuides;
+  guideState.state.curveLatticeGuidesVisible = restorePlan.visibility.curveLatticeGuides;
+  hairState.state.headMeshVisible = restorePlan.visibility.headMesh;
+  hairState.state.bodyMeshVisible = restorePlan.visibility.bodyMesh;
+  hairState.state.hairMaterialIndex = restorePlan.counters.hairMaterialIndex;
   hairMaterialDefinitions.splice(
     0,
     hairMaterialDefinitions.length,
@@ -19355,11 +19331,11 @@ function restoreSharedStateForStateRestore(state, restorePlan, { preserveMirrorM
       id: DEFAULT_HAIR_MATERIAL_ID,
       name: "Default Purple",
       ...DEFAULT_HAIR_MATERIAL_SETTINGS,
-      shader: defaultHairShader
+      shader: hairState.state.defaultHairShader
     }]).map((material) => normalizeHairMaterialDefinition({ ...material }))
   );
-  activeHairMaterialId = hairMaterialDefinitions.some((material) => material.id === activeHairMaterialId)
-    ? activeHairMaterialId
+  hairState.state.activeHairMaterialId = hairMaterialDefinitions.some((material) => material.id === hairState.state.activeHairMaterialId)
+    ? hairState.state.activeHairMaterialId
     : hairMaterialDefinitions[0].id;
   applyStrandSelectionState(restoreStrandSelection(restorePlan.strandSelection));
   sel.state.clumpViewportSelection = restorePlan.selection.clumpViewport;
@@ -21526,7 +21502,7 @@ function addPolyLock() {
     polyFaces: [],
     scalpRegion: "unassigned",
     hairLayer: normalizeHairLayer(viewportDrawLayerInput.value),
-    materialId: activeHairMaterialId,
+    materialId: hairState.state.activeHairMaterialId,
     rootAttachmentEnabled: false,
     width: Number(polyBrushWidthInput.value),
     depth: 0.01
@@ -22865,10 +22841,10 @@ function resetBranchRegionZoom() {
 function branchRegionNavAction(event) {
   const mmb = event.button === 1;
   const rmb = event.button === 2;
-  if (navigationStyle === "houdini") {
+  if (viewportState.state.navigationStyle === "houdini") {
     if (mmb) return "pan";
     if (rmb && event.altKey) return "zoom";
-  } else if (navigationStyle === "blender") {
+  } else if (viewportState.state.navigationStyle === "blender") {
     if (mmb) return event.ctrlKey ? "zoom" : "pan";
   } else if (rmb && event.altKey) {
     return "pan";
@@ -23271,7 +23247,7 @@ function endBranchSweepStartDrag(event) {
 // 3D markers for the 4 region points on the parent surface (show points on mesh).
 function updateBranchRegionMeshPoints() {
   branchRegionMeshPointsGroup.clear();
-  if (!branchRegionMeshPointsVisible) {
+  if (!hairState.state.branchRegionMeshPointsVisible) {
     branchRegionMeshPointsGroup.visible = false;
     return;
   }
@@ -24477,7 +24453,7 @@ function beginDrawStrandStroke(event, hit, extensionLock = null, branchStart = n
     panelSplitHeight: Number(panelCreationDefaults.panelSplitHeight),
     panelSplits: clonePanelSplits(panelCreationDefaults.panelSplits, panelCreationDefaults.panelSplitHeight),
     panelSplitGap: Number(panelCreationDefaults.panelSplitGap),
-    curlEnabled: !drawingBraid && !drawingProcedural && drawStrandMode === "coil",
+    curlEnabled: !drawingBraid && !drawingProcedural && hairState.state.drawStrandMode === "coil",
     curlCount: Number(strandCreationDefaults.curlCount),
     curlDisplacement: Number(strandCreationDefaults.curlDisplacement),
     smoothing: Number(drawingBraid ? braidSmoothingInput.value : drawingPanel ? panelSmoothingInput.value : drawStrandSmoothingInput.value),
@@ -26247,10 +26223,10 @@ function updatePlacementStatus() {
   } else if (["draw", "procedural-draw"].includes(activeTool)) {
     const drawLabel = activeTool === "procedural-draw"
       ? "Draw procedural strand"
-      : drawStrandMode === "clump"
+      : hairState.state.drawStrandMode === "clump"
       ? "Draw 3 strand clump"
-      : drawStrandMode === "ponytail-clump" ? "Draw ponytail clump"
-      : drawStrandMode === "coil" ? "Draw coil" : "Draw strand";
+      : hairState.state.drawStrandMode === "ponytail-clump" ? "Draw ponytail clump"
+      : hairState.state.drawStrandMode === "coil" ? "Draw coil" : "Draw strand";
     const surfaceMode = activeStrokeSurfaceValue();
     const dynamicSurface = activeStrokeDynamicEnabled(surfaceMode);
     if (surfaceMode === "contextual-plane") {
@@ -26382,7 +26358,7 @@ function beginSelectionMarquee(event, surface = null, selectionMode = "replace")
 }
 
 function beginAltOrbit(event) {
-  if (!["anime-hair-studio", "houdini"].includes(navigationStyle) || event.button !== 0 || !event.altKey) return;
+  if (!["anime-hair-studio", "houdini"].includes(viewportState.state.navigationStyle) || event.button !== 0 || !event.altKey) return;
   altOrbitDrag = { pointerId: event.pointerId };
   controls.enableRotate = true;
   if (selectionMarqueeDrag) {
@@ -26394,7 +26370,7 @@ function beginAltOrbit(event) {
 }
 
 function beginBlenderNavigation(event) {
-  if (navigationStyle !== "blender" || event.button !== 1 || event.metaKey) return;
+  if (viewportState.state.navigationStyle !== "blender" || event.button !== 1 || event.metaKey) return;
   const modifierCount = Number(event.shiftKey) + Number(event.ctrlKey) + Number(event.altKey);
   if (modifierCount > 1) return;
   const action = event.altKey
@@ -26405,7 +26381,7 @@ function beginBlenderNavigation(event) {
         ? "zoom"
         : "orbit";
   blenderNavigationDrag = { pointerId: event.pointerId, action };
-  activeViewportPointer = {
+  viewportState.state.activeViewportPointer = {
     pointerId: event.pointerId,
     x: event.clientX,
     y: event.clientY,
@@ -26495,7 +26471,7 @@ function fastDragMagnitude(dx, dy) {
 }
 
 function beginHoudiniZoomDrag(event) {
-  if (navigationStyle !== "houdini" || event.button !== 2 || !event.altKey) return;
+  if (viewportState.state.navigationStyle !== "houdini" || event.button !== 2 || !event.altKey) return;
   houdiniZoomDrag = { pointerId: event.pointerId, lastX: event.clientX, lastY: event.clientY };
   renderer.domElement.setPointerCapture?.(event.pointerId);
   updateInteractionLocks();
@@ -26762,7 +26738,7 @@ function finishSelectionMarquee(event, options = {}) {
 
 function headMeshes() {
   const meshes = [];
-  guideModel?.traverse((child) => {
+  guideState.state.guideModel?.traverse((child) => {
     if (child.isMesh) meshes.push(child);
   });
   return meshes;
@@ -26989,7 +26965,7 @@ function strandControlPointHitFromEvent(event, lock = getSelectedLock()) {
   // on the highlight even when its projected center is past the fixed screen-pixel
   // radius (small handles / close camera), so it never falls through to a width-edge
   // drag or the parent hair underneath.
-  const hovered = hoveredControlPoint;
+  const hovered = guideState.state.hoveredControlPoint;
   if (hovered?.userData?.lockId === lock.id && hovered.visible) {
     hovered.getWorldPosition(strandControlPointWorldPosition);
     strandControlPointScreenPosition
@@ -27453,7 +27429,7 @@ function updateCurveObjects(lock, options = {}) {
     );
     const active = strandWidthEdgeDrag?.lockId === lock.id
       && strandWidthEdgeDrag.side === edge.userData.side;
-    const hovered = hoveredStrandWidthEdge === edge;
+    const hovered = hairState.state.hoveredStrandWidthEdge === edge;
     edge.material.color.set(active || hovered ? 0xff42cf : 0xe7a95d);
     edge.material.opacity = active ? 0.95 : hovered ? 0.82 : 0.22;
     edge.visible = lock.id === sel.state.selectedId
@@ -27462,11 +27438,11 @@ function updateCurveObjects(lock, options = {}) {
       && lock.geometryType === "strand"
       && viewportEditMode === "strand"
       && componentEditModeActive()
-      && !(taperMeshPointsVisible && twistCurveEditing())
+      && !(hairState.state.taperMeshPointsVisible && twistCurveEditing())
       && ["select", "move"].includes(activeTool);
   });
   const deEmphasizeControlPoints = ["draw", "procedural-draw", "braid", "panel"].includes(activeTool);
-  const controlPointDisplayScale = controlPointDisplaySize * (
+  const controlPointDisplayScale = guideState.state.controlPointDisplaySize * (
     deEmphasizeControlPoints
       ? STRAND_CONTROL_POINT_DRAW_TOOL_SCALE
       : brushDebugVisible ? 0.65 : 1
@@ -27902,7 +27878,7 @@ function rebuildLockGeometry(lock, options = {}) {
   applyBranchRootRegionCarving(lock, lock.mesh.geometry);
   if (lock.selectionOutline) lock.selectionOutline.geometry = lock.mesh.geometry;
   previousGeometry.dispose();
-  if ((hairTopologyVisible || lock.proceduralParentHidden || lock.locked) && lock.wireOverlay) {
+  if ((hairState.state.hairTopologyVisible || lock.proceduralParentHidden || lock.locked) && lock.wireOverlay) {
     lock.wireOverlay.geometry.dispose();
     lock.wireOverlay.geometry = createHairTopologyGeometry(lock.mesh.geometry);
   }
@@ -27914,7 +27890,7 @@ function rebuildLockGeometry(lock, options = {}) {
   syncProceduralParentVisibility(lock);
   if (options.updateCurveObjects !== false) updateCurveObjects(lock);
   if (
-    taperMeshPointsVisible
+    hairState.state.taperMeshPointsVisible
     && taperCurveEdit?.type === "strand"
     && taperCurveEdit.id === lock.id
   ) updateTaperMeshPoints();
@@ -27960,9 +27936,9 @@ function flushSculptBrushGeometryUpdates({ all = false } = {}) {
 }
 
 function flushPendingLockGeometryUpdates() {
-  if (pendingLockGeometryFrame !== null) {
-    cancelAnimationFrame(pendingLockGeometryFrame);
-    pendingLockGeometryFrame = null;
+  if (hairState.state.pendingLockGeometryFrame !== null) {
+    cancelAnimationFrame(hairState.state.pendingLockGeometryFrame);
+    hairState.state.pendingLockGeometryFrame = null;
   }
   const queuedLocks = [...pendingLockGeometryUpdates];
   pendingLockGeometryUpdates.clear();
@@ -27977,9 +27953,9 @@ function updateLockGeometry(lock, options = {}) {
   const deferUpdate = options.defer || transformDragging || viewPlaneMoveDrag || relaxEdit;
   if (deferUpdate && !options.immediate) {
     pendingLockGeometryUpdates.add(lock);
-    if (pendingLockGeometryFrame === null) {
-      pendingLockGeometryFrame = requestAnimationFrame(() => {
-        pendingLockGeometryFrame = null;
+    if (hairState.state.pendingLockGeometryFrame === null) {
+      hairState.state.pendingLockGeometryFrame = requestAnimationFrame(() => {
+        hairState.state.pendingLockGeometryFrame = null;
         const queuedLocks = [...pendingLockGeometryUpdates];
         pendingLockGeometryUpdates.clear();
         queuedLocks.forEach((queuedLock) => {
@@ -27994,10 +27970,10 @@ function updateLockGeometry(lock, options = {}) {
 }
 
 function setGroupColorView(enabled) {
-  showGroupColors = Boolean(enabled);
-  groupColorToggle.classList.toggle("active", showGroupColors);
-  groupColorToggle.setAttribute("aria-pressed", String(showGroupColors));
-  groupColorToggle.title = showGroupColors ? "Show default hair color" : "Show strand group colors";
+  hairState.state.showGroupColors = Boolean(enabled);
+  groupColorToggle.classList.toggle("active", hairState.state.showGroupColors);
+  groupColorToggle.setAttribute("aria-pressed", String(hairState.state.showGroupColors));
+  groupColorToggle.title = hairState.state.showGroupColors ? "Show default hair color" : "Show strand group colors";
   groupColorToggle.setAttribute("aria-label", groupColorToggle.title);
   locks.forEach(setStrandSelectionVisual);
   renderLockList();
@@ -28040,7 +28016,7 @@ function createUvCheckerTexture() {
 }
 
 function ensureUvCheckerForLock(lock) {
-  if (!uvCheckerEnabled || !lock?.mesh) return;
+  if (!hairState.state.uvCheckerEnabled || !lock?.mesh) return;
   const currentMaterial = lock.mesh.material;
   let checkerMaterial = lock.uvCheckerMaterial;
   if (currentMaterial !== checkerMaterial && currentMaterial?.userData?.uvChecker !== true) {
@@ -28048,7 +28024,7 @@ function ensureUvCheckerForLock(lock) {
   }
   if (!checkerMaterial || checkerMaterial.userData.disposed) {
     checkerMaterial = new THREE.MeshBasicMaterial({
-      map: uvCheckerTexture || (uvCheckerTexture = createUvCheckerTexture()),
+      map: hairState.state.uvCheckerTexture || (hairState.state.uvCheckerTexture = createUvCheckerTexture()),
       color: 0xffffff,
       side: currentMaterial?.side ?? THREE.FrontSide,
       toneMapped: false
@@ -28088,7 +28064,7 @@ function removeUvCheckerFromLock(lock) {
 }
 
 function invalidateUvInspector() {
-  uvInspectorDirty = true;
+  hairState.state.uvInspectorDirty = true;
 }
 
 function uvInspectorRecord(lock) {
@@ -28169,9 +28145,9 @@ function drawUvInspectorGrid(context, bounds, transform, width, height) {
 }
 
 function renderUvInspector(timestamp = performance.now(), force = false) {
-  if (!uvCheckerEnabled || !uvInspectorWindow.open) return;
-  if (!force && !uvInspectorDirty) return;
-  uvInspectorDirty = false;
+  if (!hairState.state.uvCheckerEnabled || !uvInspectorWindow.open) return;
+  if (!force && !hairState.state.uvInspectorDirty) return;
+  hairState.state.uvInspectorDirty = false;
   const width = Math.max(240, Math.round(uvInspectorCanvas.clientWidth));
   const height = Math.max(220, Math.round(uvInspectorCanvas.clientHeight));
   const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
@@ -28228,10 +28204,10 @@ function renderUvInspector(timestamp = performance.now(), force = false) {
 }
 
 function setUvCheckerEnabled(enabled) {
-  uvCheckerEnabled = Boolean(enabled);
+  hairState.state.uvCheckerEnabled = Boolean(enabled);
   invalidateUvInspector();
-  if (uvCheckerEnabled) {
-    if (!uvCheckerTexture) uvCheckerTexture = createUvCheckerTexture();
+  if (hairState.state.uvCheckerEnabled) {
+    if (!hairState.state.uvCheckerTexture) hairState.state.uvCheckerTexture = createUvCheckerTexture();
     locks.forEach(ensureUvCheckerForLock);
     if (!uvInspectorWindow.open) uvInspectorWindow.show();
     renderUvInspector(performance.now(), true);
@@ -28239,9 +28215,9 @@ function setUvCheckerEnabled(enabled) {
     locks.forEach(removeUvCheckerFromLock);
     if (uvInspectorWindow.open) uvInspectorWindow.close();
   }
-  toggleUvCheckerButton.classList.toggle("active", uvCheckerEnabled);
-  toggleUvCheckerButton.setAttribute("aria-pressed", String(uvCheckerEnabled));
-  uvCheckerMenuState.textContent = uvCheckerEnabled ? "On" : "Off";
+  toggleUvCheckerButton.classList.toggle("active", hairState.state.uvCheckerEnabled);
+  toggleUvCheckerButton.setAttribute("aria-pressed", String(hairState.state.uvCheckerEnabled));
+  uvCheckerMenuState.textContent = hairState.state.uvCheckerEnabled ? "On" : "Off";
 }
 
 function strandViewportBaseColor(lock) {
@@ -28311,7 +28287,7 @@ function syncLockedStrandWireVisual(lock) {
   if (!uniforms) return;
   uniforms.lineColor.value.set(lock.locked ? 0xff4fd8 : 0x66f5ff);
   uniforms.opacity.value = lock.locked ? 0.25 : 0.72;
-  overlay.visible = Boolean(lock.locked || hairTopologyVisible || proceduralParentOutlineVisible(lock));
+  overlay.visible = Boolean(lock.locked || hairState.state.hairTopologyVisible || proceduralParentOutlineVisible(lock));
 }
 
 function setStrandSelectionVisual(lock) {
@@ -29013,7 +28989,7 @@ function filterCurveLatticesToGroup(selectedGuideId = null) {
   const filtering = Boolean(selectedGuideId);
   guides.filter((guide) => guide.type === "curve-lattice").forEach((guide) => {
     if (guide.standalone) {
-      const visible = curveLatticeGuidesVisible && guide.outlinerVisible !== false;
+      const visible = guideState.state.curveLatticeGuidesVisible && guide.outlinerVisible !== false;
       guide.viewportGroupVisible = visible;
       guide.mesh.visible = visible;
       guide.wire.visible = visible;
@@ -29025,7 +29001,7 @@ function filterCurveLatticesToGroup(selectedGuideId = null) {
     }
     const latticeVisible = REGION_CURVE_VISUALIZATION_ENABLED
       && CURVE_LATTICE_FEATURE_ENABLED
-      && curveLatticeGuidesVisible
+      && guideState.state.curveLatticeGuidesVisible
       && (!filtering || guide.id === selectedGuideId);
     const groupCurveVisible = REGION_CURVE_VISUALIZATION_ENABLED
       && GROUP_CURVE_FEATURE_ENABLED
@@ -29894,10 +29870,10 @@ function showOutlinerContextMenu(event, target) {
 }
 
 function hideStrandRadialMenu() {
-  strandRadialTargetId = null;
-  strandRadialGesture = null;
+  hairState.state.strandRadialTargetId = null;
+  hairState.state.strandRadialGesture = null;
   strandRadialMenu.classList.add("hidden");
-  strandRadialActions.forEach((button) => button.classList.remove("selected"));
+  hairState.state.strandRadialActions.forEach((button) => button.classList.remove("selected"));
   strandRadialActionList.replaceChildren();
   strandRadialActionList.classList.add("hidden");
   strandRadialLine.style.width = "0px";
@@ -30286,16 +30262,16 @@ function configureContextualRadialMenu(kind, options, listOptions = []) {
     : kind === "clump" ? "Clump"
     : kind === "selection" ? "Selection"
     : "Strand";
-  strandRadialActions = ensureRadialButtonCapacity(
+  hairState.state.strandRadialActions = ensureRadialButtonCapacity(
     strandRadialMenu,
-    strandRadialActions,
+    hairState.state.strandRadialActions,
     options.length,
     "strandRadialAction",
     strandRadialLine
   );
   renderRadialActionList(strandRadialActionList, listOptions);
-  applyRadialMenuDimensions(strandRadialMenu, options.length, strandRadialGesture?.frameDimensions);
-  strandRadialActions.forEach((button, index) => {
+  applyRadialMenuDimensions(strandRadialMenu, options.length, hairState.state.strandRadialGesture?.frameDimensions);
+  hairState.state.strandRadialActions.forEach((button, index) => {
     const option = options[index];
     button.classList.toggle("hidden", !option);
     button.disabled = !option || option.enabled === false;
@@ -30320,7 +30296,7 @@ function configureContextualRadialMenu(kind, options, listOptions = []) {
 }
 
 function beginStrandRadialGesture() {
-  if (!ui.state.radialMenusEnabled || strandRadialGesture || duplicatePlacement) return false;
+  if (!ui.state.radialMenusEnabled || hairState.state.strandRadialGesture || duplicatePlacement) return false;
   const lock = getSelectedLock();
   const hasOtherSelection = Boolean(sel.state.selectedStrandGroup || getSelectedGuide() || selectedReferenceImage());
   if (!lock && hasOtherSelection) return false;
@@ -30332,8 +30308,8 @@ function beginStrandRadialGesture() {
     : "root";
   const { radialOptions: options, listOptions } = layoutContextualRadialOptions(kind);
   hideOutlinerContextMenu();
-  strandRadialTargetId = lock?.id || null;
-  strandRadialGesture = {
+  hairState.state.strandRadialTargetId = lock?.id || null;
+  hairState.state.strandRadialGesture = {
     centerX: lastPointer.x,
     centerY: lastPointer.y,
     action: null,
@@ -30346,7 +30322,7 @@ function beginStrandRadialGesture() {
   strandRadialMenu.classList.remove("hidden");
   strandRadialMenu.style.left = `${lastPointer.x}px`;
   strandRadialMenu.style.top = `${lastPointer.y}px`;
-  strandRadialActions.forEach((button) => button.classList.remove("selected"));
+  hairState.state.strandRadialActions.forEach((button) => button.classList.remove("selected"));
   strandRadialLine.style.width = "0px";
   strandRadialLine.style.opacity = "0";
   updateInteractionLocks();
@@ -30354,7 +30330,7 @@ function beginStrandRadialGesture() {
 }
 
 function enterStrandRadialSubmenu(option, pointer) {
-  const gesture = strandRadialGesture;
+  const gesture = hairState.state.strandRadialGesture;
   if (!gesture || !option?.submenu) return false;
   const returningToParent = option.action === "back-to-main";
   let nextMenuOptions;
@@ -30393,14 +30369,14 @@ function enterStrandRadialSubmenu(option, pointer) {
   configureContextualRadialMenu(option.submenu, gesture.options, gesture.listOptions);
   strandRadialMenu.style.left = `${gesture.centerX}px`;
   strandRadialMenu.style.top = `${gesture.centerY}px`;
-  strandRadialActions.forEach((button) => button.classList.remove("selected"));
+  hairState.state.strandRadialActions.forEach((button) => button.classList.remove("selected"));
   strandRadialLine.style.width = "0px";
   strandRadialLine.style.opacity = "0";
   return true;
 }
 
 function updateStrandRadialGesture(event) {
-  const gesture = strandRadialGesture;
+  const gesture = hairState.state.strandRadialGesture;
   if (!gesture) return;
   const dx = event.clientX - gesture.centerX;
   const dy = event.clientY - gesture.centerY;
@@ -30422,7 +30398,7 @@ function updateStrandRadialGesture(event) {
         : closest;
     }, null);
   gesture.action = listOption?.action || closestOption?.action || null;
-  strandRadialActions.forEach((button) => {
+  hairState.state.strandRadialActions.forEach((button) => {
     button.classList.toggle("selected", button.dataset.strandRadialAction === gesture.action);
   });
   syncRadialListHighlight(strandRadialActionList, gesture.action);
@@ -30542,9 +30518,9 @@ function performStrandRadialAction(action, lockId) {
 }
 
 function finishStrandRadialGesture() {
-  if (!strandRadialGesture) return false;
-  const action = strandRadialGesture.action;
-  const lockId = strandRadialTargetId;
+  if (!hairState.state.strandRadialGesture) return false;
+  const action = hairState.state.strandRadialGesture.action;
+  const lockId = hairState.state.strandRadialTargetId;
   hideStrandRadialMenu();
   updateInteractionLocks();
   if (action) performStrandRadialAction(action, lockId);
@@ -30552,14 +30528,14 @@ function finishStrandRadialGesture() {
 }
 
 function cancelStrandRadialGesture() {
-  if (!strandRadialGesture) return false;
+  if (!hairState.state.strandRadialGesture) return false;
   hideStrandRadialMenu();
   updateInteractionLocks();
   return true;
 }
 
 function blockPointerDuringStrandRadialGesture(event) {
-  if (!strandRadialGesture && !toolRadialGesture) return;
+  if (!hairState.state.strandRadialGesture && !toolRadialGesture) return;
   event.preventDefault();
   event.stopImmediatePropagation();
 }
@@ -30611,7 +30587,7 @@ function hideToolRadialMenu() {
 }
 
 function beginToolRadialGesture() {
-  if (!ui.state.radialMenusEnabled || toolRadialGesture || strandRadialGesture || duplicatePlacement) return false;
+  if (!ui.state.radialMenusEnabled || toolRadialGesture || hairState.state.strandRadialGesture || duplicatePlacement) return false;
   const partitioned = partitionRadialOptions(toolRadialOptions(), MAX_RADIAL_OPTIONS);
   const options = layoutRadialOptions(partitioned.radialOptions);
   const listOptions = partitioned.listOptions;
@@ -30651,7 +30627,7 @@ function beginToolRadialGesture() {
 }
 
 function beginToolShortcutPress(key, tool) {
-  if (toolShortcutPress || toolRadialGesture || strandRadialGesture || duplicatePlacement) return;
+  if (toolShortcutPress || toolRadialGesture || hairState.state.strandRadialGesture || duplicatePlacement) return;
   setActiveTool(tool);
   if (!ui.state.radialMenusEnabled) return;
   toolShortcutPress = {
@@ -30711,72 +30687,72 @@ function setProceduralDrawExperimentalEnabled(enabled, { persist = true } = {}) 
 }
 
 function setNavigationTipsEnabled(enabled, { persist = true } = {}) {
-  navigationTipsEnabled = Boolean(enabled);
-  navigationTipsPreferenceInput.checked = navigationTipsEnabled;
-  viewportNavigationTips.classList.toggle("hidden", !navigationTipsEnabled);
-  if (persist) saveBooleanPreference(NAVIGATION_TIPS_PREFERENCE_KEY, navigationTipsEnabled);
+  viewportState.state.navigationTipsEnabled = Boolean(enabled);
+  navigationTipsPreferenceInput.checked = viewportState.state.navigationTipsEnabled;
+  viewportNavigationTips.classList.toggle("hidden", !viewportState.state.navigationTipsEnabled);
+  if (persist) saveBooleanPreference(NAVIGATION_TIPS_PREFERENCE_KEY, viewportState.state.navigationTipsEnabled);
 }
 
 function configureNavigationMouseButtons() {
   controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
-  controls.mouseButtons.MIDDLE = navigationStyle === "blender"
+  controls.mouseButtons.MIDDLE = viewportState.state.navigationStyle === "blender"
     ? THREE.MOUSE.ROTATE
-    : navigationStyle === "houdini"
+    : viewportState.state.navigationStyle === "houdini"
       ? THREE.MOUSE.PAN
       : THREE.MOUSE.DOLLY;
-  controls.mouseButtons.RIGHT = navigationStyle === "blender" || navigationStyle === "houdini"
+  controls.mouseButtons.RIGHT = viewportState.state.navigationStyle === "blender" || viewportState.state.navigationStyle === "houdini"
     ? null
     : THREE.MOUSE.PAN;
   syncNavigationModifierLocks();
 }
 
 function syncNavigationModifierLocks() {
-  controls.enablePan = navigationStyle !== "anime-hair-studio"
+  controls.enablePan = viewportState.state.navigationStyle !== "anime-hair-studio"
     || (!transform.state.transformPrecisionHeld && !selectionRemoveHeld);
 }
 
 function setNavigationStyle(value, { persist = true } = {}) {
-  navigationStyle = normalizeNavigationStyle(value);
-  navigationStylePreferenceInput.value = navigationStyle;
-  document.body.dataset.navigationStyle = navigationStyle;
+  viewportState.state.navigationStyle = normalizeNavigationStyle(value);
+  navigationStylePreferenceInput.value = viewportState.state.navigationStyle;
+  document.body.dataset.navigationStyle = viewportState.state.navigationStyle;
   navigationStyleTipRows.forEach((row) => {
-    row.classList.toggle("hidden", row.dataset.navigationStyleTip !== navigationStyle);
+    row.classList.toggle("hidden", row.dataset.navigationStyleTip !== viewportState.state.navigationStyle);
   });
   navigationStyleShortcutRows.forEach((row) => {
-    row.classList.toggle("hidden", row.dataset.navigationStyleShortcut !== navigationStyle);
+    row.classList.toggle("hidden", row.dataset.navigationStyleShortcut !== viewportState.state.navigationStyle);
   });
   configureNavigationMouseButtons();
   if (persist) {
-    writeStoredPreference(window, NAVIGATION_STYLE_PREFERENCE_KEY, navigationStyle);
+    writeStoredPreference(window, NAVIGATION_STYLE_PREFERENCE_KEY, viewportState.state.navigationStyle);
   }
 }
 
 function applyCameraSmoothingPreference() {
-  controls.enableDamping = cameraSmoothingEnabled;
-  controls.dampingFactor = THREE.MathUtils.lerp(0.12, 0.01, cameraSmoothingStrength);
-  cameraSmoothingPreferenceInput.checked = cameraSmoothingEnabled;
-  cameraSmoothingStrengthPreferenceInput.value = String(cameraSmoothingStrength);
+  controls.enableDamping = viewportState.state.cameraSmoothingEnabled;
+  controls.dampingFactor = THREE.MathUtils.lerp(0.12, 0.01, viewportState.state.cameraSmoothingStrength);
+  cameraSmoothingPreferenceInput.checked = viewportState.state.cameraSmoothingEnabled;
+  cameraSmoothingStrengthPreferenceInput.value = String(viewportState.state.cameraSmoothingStrength);
   const sliderRow = cameraSmoothingStrengthPreferenceInput.closest(".slider-input-row");
   const numberInput = sliderRow?.querySelector('input[type="number"]');
-  if (numberInput) numberInput.value = String(cameraSmoothingStrength);
+  if (numberInput) numberInput.value = String(viewportState.state.cameraSmoothingStrength);
   sliderRow?.querySelectorAll("input, button").forEach((control) => {
-    control.disabled = !cameraSmoothingEnabled;
+    control.disabled = !viewportState.state.cameraSmoothingEnabled;
   });
   cameraSmoothingStrengthPreferenceInput.closest("label")
-    ?.setAttribute("aria-disabled", String(!cameraSmoothingEnabled));
+    ?.setAttribute("aria-disabled", String(!viewportState.state.cameraSmoothingEnabled));
 }
 
 function setCameraSmoothingEnabled(enabled, { persist = true } = {}) {
-  cameraSmoothingEnabled = Boolean(enabled);
+  viewportState.state.cameraSmoothingEnabled = Boolean(enabled);
   applyCameraSmoothingPreference();
-  if (persist) saveBooleanPreference(CAMERA_SMOOTHING_ENABLED_PREFERENCE_KEY, cameraSmoothingEnabled);
+  if (persist) saveBooleanPreference(CAMERA_SMOOTHING_ENABLED_PREFERENCE_KEY, viewportState.state.cameraSmoothingEnabled);
 }
 
 function setCameraSmoothingStrength(value, { persist = true } = {}) {
-  cameraSmoothingStrength = normalizeCameraSmoothingStrength(value);
+  viewportState.state.cameraSmoothingStrength = normalizeCameraSmoothingStrength(value);
   applyCameraSmoothingPreference();
   if (persist) {
-    writeStoredPreference(window, CAMERA_SMOOTHING_STRENGTH_PREFERENCE_KEY, cameraSmoothingStrength);
+    writeStoredPreference(window, CAMERA_SMOOTHING_STRENGTH_PREFERENCE_KEY, viewportState.state.cameraSmoothingStrength);
   }
 }
 
@@ -30805,24 +30781,24 @@ function setCompactToolButtonsEnabled(enabled, { persist = true } = {}) {
 }
 
 function setViewportStatisticsEnabled(enabled, { persist = true } = {}) {
-  viewportStatisticsEnabled = Boolean(enabled);
-  viewportStatisticsPreferenceInput.checked = viewportStatisticsEnabled;
-  viewportStats.classList.toggle("hidden", !viewportStatisticsEnabled);
-  viewportStats.setAttribute("aria-hidden", String(!viewportStatisticsEnabled));
-  if (persist) saveBooleanPreference(VIEWPORT_STATISTICS_PREFERENCE_KEY, viewportStatisticsEnabled);
+  viewportState.state.viewportStatisticsEnabled = Boolean(enabled);
+  viewportStatisticsPreferenceInput.checked = viewportState.state.viewportStatisticsEnabled;
+  viewportStats.classList.toggle("hidden", !viewportState.state.viewportStatisticsEnabled);
+  viewportStats.setAttribute("aria-hidden", String(!viewportState.state.viewportStatisticsEnabled));
+  if (persist) saveBooleanPreference(VIEWPORT_STATISTICS_PREFERENCE_KEY, viewportState.state.viewportStatisticsEnabled);
 }
 
 function setTwistCurveAllStrandsPreviewEnabled(enabled, { persist = true } = {}) {
-  twistCurveAllStrandsPreviewEnabled = Boolean(enabled);
+  hairState.state.twistCurveAllStrandsPreviewEnabled = Boolean(enabled);
   twistCurvePreviewPreferenceButtons.forEach((button) => {
-    const active = (button.dataset.twistCurvePreview === "all") === twistCurveAllStrandsPreviewEnabled;
+    const active = (button.dataset.twistCurvePreview === "all") === hairState.state.twistCurveAllStrandsPreviewEnabled;
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
   if (persist) {
     saveBooleanPreference(
       TWIST_CURVE_ALL_STRANDS_PREVIEW_PREFERENCE_KEY,
-      twistCurveAllStrandsPreviewEnabled
+      hairState.state.twistCurveAllStrandsPreviewEnabled
     );
   }
 }
@@ -30922,14 +30898,14 @@ function setSideNamingPerspective(value, { persist = true } = {}) {
 }
 
 function setControlPointDisplaySize(value, { persist = true } = {}) {
-  controlPointDisplaySize = normalizeControlPointDisplaySize(value);
-  controlPointDisplaySizePreferenceInput.value = String(controlPointDisplaySize);
+  guideState.state.controlPointDisplaySize = normalizeControlPointDisplaySize(value);
+  controlPointDisplaySizePreferenceInput.value = String(guideState.state.controlPointDisplaySize);
   if (controlPointDisplaySizePreferenceNumberInput) {
-    controlPointDisplaySizePreferenceNumberInput.value = String(controlPointDisplaySize);
+    controlPointDisplaySizePreferenceNumberInput.value = String(guideState.state.controlPointDisplaySize);
   }
   locks.forEach((lock) => updateCurveObjects(lock));
   if (persist) {
-    writeStoredPreference(window, CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY, controlPointDisplaySize);
+    writeStoredPreference(window, CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY, guideState.state.controlPointDisplaySize);
   }
 }
 
@@ -30939,31 +30915,31 @@ function scaleHexColor(hex, factor) {
 }
 
 function setViewportBackgroundColor(value, { persist = true } = {}) {
-  viewportBackgroundColor = normalizeViewportBackgroundColor(value);
-  viewportBackgroundColorPreferenceInput.value = viewportBackgroundColor;
-  viewportBackgroundColorPreferenceValue.textContent = viewportBackgroundColor.toUpperCase();
-  viewportPanel.style.setProperty("--viewport-background-center", viewportBackgroundColor);
+  viewportState.state.viewportBackgroundColor = normalizeViewportBackgroundColor(value);
+  viewportBackgroundColorPreferenceInput.value = viewportState.state.viewportBackgroundColor;
+  viewportBackgroundColorPreferenceValue.textContent = viewportState.state.viewportBackgroundColor.toUpperCase();
+  viewportPanel.style.setProperty("--viewport-background-center", viewportState.state.viewportBackgroundColor);
   viewportPanel.style.setProperty(
     "--viewport-background-middle",
-    viewportBackgroundColor === DEFAULT_VIEWPORT_BACKGROUND_COLOR
+    viewportState.state.viewportBackgroundColor === DEFAULT_VIEWPORT_BACKGROUND_COLOR
       ? "#16151a"
-      : scaleHexColor(viewportBackgroundColor, 0.52)
+      : scaleHexColor(viewportState.state.viewportBackgroundColor, 0.52)
   );
   viewportPanel.style.setProperty(
     "--viewport-background-edge",
-    viewportBackgroundColor === DEFAULT_VIEWPORT_BACKGROUND_COLOR
+    viewportState.state.viewportBackgroundColor === DEFAULT_VIEWPORT_BACKGROUND_COLOR
       ? "#0c0b0f"
-      : scaleHexColor(viewportBackgroundColor, 0.28)
+      : scaleHexColor(viewportState.state.viewportBackgroundColor, 0.28)
   );
   if (persist) {
-    writeStoredPreference(window, VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY, viewportBackgroundColor);
+    writeStoredPreference(window, VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY, viewportState.state.viewportBackgroundColor);
   }
 }
 
 function setDefaultHairShader(shader, { persist = true } = {}) {
-  defaultHairShader = normalizeHairShader(shader);
-  defaultHairShaderPreferenceInput.value = defaultHairShader;
-  if (persist) writeStoredPreference(window, DEFAULT_HAIR_SHADER_PREFERENCE_KEY, defaultHairShader);
+  hairState.state.defaultHairShader = normalizeHairShader(shader);
+  defaultHairShaderPreferenceInput.value = hairState.state.defaultHairShader;
+  if (persist) writeStoredPreference(window, DEFAULT_HAIR_SHADER_PREFERENCE_KEY, hairState.state.defaultHairShader);
 }
 
 function setPreferenceCategory(category) {
@@ -30997,25 +30973,25 @@ function openPreferencesDialog() {
   ui.state.preferencesOpenSnapshot = {
     radialMenusEnabled: ui.state.radialMenusEnabled,
     proceduralDrawExperimentalEnabled: draw.state.proceduralDrawExperimentalEnabled,
-    navigationTipsEnabled,
-    navigationStyle,
-    cameraSmoothingEnabled,
-    cameraSmoothingStrength,
+    navigationTipsEnabled: viewportState.state.navigationTipsEnabled,
+    navigationStyle: viewportState.state.navigationStyle,
+    cameraSmoothingEnabled: viewportState.state.cameraSmoothingEnabled,
+    cameraSmoothingStrength: viewportState.state.cameraSmoothingStrength,
     toolTipsEnabled,
     compactToolButtonsEnabled,
-    viewportStatisticsEnabled,
-    twistCurveAllStrandsPreviewEnabled,
+    viewportStatisticsEnabled: viewportState.state.viewportStatisticsEnabled,
+    twistCurveAllStrandsPreviewEnabled: hairState.state.twistCurveAllStrandsPreviewEnabled,
     layerColorShiftsEnabled,
     outlinerFolderColorsEnabled,
     sideNamingPerspective,
-    controlPointDisplaySize,
-    viewportBackgroundColor,
-    defaultHairShader
+    controlPointDisplaySize: guideState.state.controlPointDisplaySize,
+    viewportBackgroundColor: viewportState.state.viewportBackgroundColor,
+    defaultHairShader: hairState.state.defaultHairShader
   };
-  defaultHairShaderPreferenceInput.value = defaultHairShader;
+  defaultHairShaderPreferenceInput.value = hairState.state.defaultHairShader;
   applyCameraSmoothingPreference();
-  setControlPointDisplaySize(controlPointDisplaySize, { persist: false });
-  setViewportBackgroundColor(viewportBackgroundColor, { persist: false });
+  setControlPointDisplaySize(guideState.state.controlPointDisplaySize, { persist: false });
+  setViewportBackgroundColor(viewportState.state.viewportBackgroundColor, { persist: false });
   preferencesBackupStatus.textContent = "";
   setPreferenceCategory("viewport");
   preferencesDialog.showModal();
@@ -31024,23 +31000,23 @@ function openPreferencesDialog() {
 function savePreferencesDialog() {
   saveBooleanPreference(RADIAL_MENUS_PREFERENCE_KEY, ui.state.radialMenusEnabled);
   saveBooleanPreference(PROCEDURAL_DRAW_EXPERIMENTAL_PREFERENCE_KEY, draw.state.proceduralDrawExperimentalEnabled);
-  saveBooleanPreference(NAVIGATION_TIPS_PREFERENCE_KEY, navigationTipsEnabled);
-  writeStoredPreference(window, NAVIGATION_STYLE_PREFERENCE_KEY, navigationStyle);
-  saveBooleanPreference(CAMERA_SMOOTHING_ENABLED_PREFERENCE_KEY, cameraSmoothingEnabled);
-  writeStoredPreference(window, CAMERA_SMOOTHING_STRENGTH_PREFERENCE_KEY, cameraSmoothingStrength);
+  saveBooleanPreference(NAVIGATION_TIPS_PREFERENCE_KEY, viewportState.state.navigationTipsEnabled);
+  writeStoredPreference(window, NAVIGATION_STYLE_PREFERENCE_KEY, viewportState.state.navigationStyle);
+  saveBooleanPreference(CAMERA_SMOOTHING_ENABLED_PREFERENCE_KEY, viewportState.state.cameraSmoothingEnabled);
+  writeStoredPreference(window, CAMERA_SMOOTHING_STRENGTH_PREFERENCE_KEY, viewportState.state.cameraSmoothingStrength);
   saveBooleanPreference(TOOL_TIPS_PREFERENCE_KEY, toolTipsEnabled);
   saveBooleanPreference(COMPACT_TOOL_BUTTONS_PREFERENCE_KEY, compactToolButtonsEnabled);
-  saveBooleanPreference(VIEWPORT_STATISTICS_PREFERENCE_KEY, viewportStatisticsEnabled);
+  saveBooleanPreference(VIEWPORT_STATISTICS_PREFERENCE_KEY, viewportState.state.viewportStatisticsEnabled);
   saveBooleanPreference(
     TWIST_CURVE_ALL_STRANDS_PREVIEW_PREFERENCE_KEY,
-    twistCurveAllStrandsPreviewEnabled
+    hairState.state.twistCurveAllStrandsPreviewEnabled
   );
   saveBooleanPreference(LAYER_COLOR_SHIFTS_PREFERENCE_KEY, layerColorShiftsEnabled);
   saveBooleanPreference(OUTLINER_FOLDER_COLORS_PREFERENCE_KEY, outlinerFolderColorsEnabled);
   writeStoredPreference(window, SIDE_NAMING_PERSPECTIVE_PREFERENCE_KEY, sideNamingPerspective);
-  writeStoredPreference(window, CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY, controlPointDisplaySize);
-  writeStoredPreference(window, VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY, viewportBackgroundColor);
-  writeStoredPreference(window, DEFAULT_HAIR_SHADER_PREFERENCE_KEY, defaultHairShader);
+  writeStoredPreference(window, CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY, guideState.state.controlPointDisplaySize);
+  writeStoredPreference(window, VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY, viewportState.state.viewportBackgroundColor);
+  writeStoredPreference(window, DEFAULT_HAIR_SHADER_PREFERENCE_KEY, hairState.state.defaultHairShader);
   ui.state.preferencesOpenSnapshot = null;
   preferencesDialog.close();
 }
@@ -32900,7 +32876,7 @@ deleteProjectHairMaterialButton.addEventListener("click", deleteActiveHairMateri
 hairMaterialOutliner.addEventListener("click", (event) => {
   const item = event.target.closest("[data-hair-material-id]");
   if (!item) return;
-  activeHairMaterialId = item.dataset.hairMaterialId;
+  hairState.state.activeHairMaterialId = item.dataset.hairMaterialId;
   syncHairMaterialEditor();
   hairMaterialOutliner.querySelector(`[data-hair-material-id="${CSS.escape(item.dataset.hairMaterialId)}"]`)?.focus();
 });
@@ -33249,10 +33225,10 @@ document.querySelector("#resetBranchRegion").addEventListener("click", () => {
 branchRegionDialog.addEventListener("cancel", closeBranchRegionEditor);
 const branchRegionMeshPointsToggle = document.querySelector("#branchRegionMeshPointsToggle");
 if (branchRegionMeshPointsToggle) {
-  branchRegionMeshPointsToggle.checked = branchRegionMeshPointsVisible;
+  branchRegionMeshPointsToggle.checked = hairState.state.branchRegionMeshPointsVisible;
   branchRegionMeshPointsToggle.addEventListener("change", () => {
-    branchRegionMeshPointsVisible = branchRegionMeshPointsToggle.checked;
-    if (branchRegionMeshPointsVisible) updateBranchRegionMeshPoints();
+    hairState.state.branchRegionMeshPointsVisible = branchRegionMeshPointsToggle.checked;
+    if (hairState.state.branchRegionMeshPointsVisible) updateBranchRegionMeshPoints();
     else branchRegionMeshPointsGroup.visible = false;
   });
 }
@@ -33270,7 +33246,7 @@ document.querySelector("#resetBranchRegionZoom").addEventListener("click", reset
 function beginTaperMeshPointDrag(event) {
   if (
     event.button !== 0
-    || !taperMeshPointsVisible
+    || !hairState.state.taperMeshPointsVisible
     || !taperMeshPointsGroup.visible
     || taperMeshPointDrag
     || event.shiftKey
@@ -34062,7 +34038,7 @@ proceduralAccessoryEditParentVisibleInput.addEventListener("change", () => {
 function syncDrawCurlControls() {
   const selectedLock = getSelectedLock();
   const selectedCoil = selectedLock?.geometryType === "strand" && selectedLock?.curlEnabled;
-  const enabled = drawStrandMode === "coil" || Boolean(selectedCoil);
+  const enabled = hairState.state.drawStrandMode === "coil" || Boolean(selectedCoil);
   const curlCount = Number(drawStrandCurlCountInput.value);
   const curlDisplacement = Number(drawStrandCurlDisplacementInput.value);
   drawStrandCurlCountInput.disabled = !enabled;
@@ -34685,7 +34661,7 @@ function populateDrawBrushPresetSelect(selectedValue = drawBrushPresetInput.valu
   if ([...drawBrushPresetInput.options].some((option) => option.value === selectedValue)) {
     drawBrushPresetInput.value = selectedValue;
   } else {
-    drawBrushPresetInput.value = drawStrandMode;
+    drawBrushPresetInput.value = hairState.state.drawStrandMode;
   }
   syncCreationPresetRemoveButtons();
 }
@@ -34724,7 +34700,7 @@ function applyCustomCreationPreset(type, value) {
   });
   if (type === "strand") {
     draw.state.activeCustomDrawClumpTemplate = normalizeClumpBrushTemplate(preset.value.clumpTemplate);
-    if (draw.state.activeCustomDrawClumpTemplate) drawStrandMode = "clump";
+    if (draw.state.activeCustomDrawClumpTemplate) hairState.state.drawStrandMode = "clump";
   }
   if (!getSelectedLock() && ((type === "braid" && activeTool === "braid") || (type === "strand" && activeTool === "draw"))) {
     syncCreationShapeInputs();
@@ -34734,12 +34710,11 @@ function applyCustomCreationPreset(type, value) {
 
 let pendingCreationPresetType = null;
 let pendingCreationPresetRemoval = null;
-let pendingClumpPresetGuideId = null;
 
 function createCustomCreationPreset(type) {
   pendingShapePresetSave = null;
   pendingCreationPresetType = type;
-  pendingClumpPresetGuideId = null;
+  guideState.state.pendingClumpPresetGuideId = null;
   const label = type === "braid" ? "Braid" : "Brush";
   creationPresetDialogTitle.textContent = `Create ${label} Preset`;
   creationPresetDescription.textContent = "Save the current brush, curve, and profile settings in this browser.";
@@ -34755,7 +34730,7 @@ function createCustomClumpPreset(guide) {
   if (!guide?.clumpGuide || !guide.clumpId) return;
   pendingShapePresetSave = null;
   pendingCreationPresetType = "clump";
-  pendingClumpPresetGuideId = guide.id;
+  guideState.state.pendingClumpPresetGuideId = guide.id;
   creationPresetDialogTitle.textContent = "Create Brush Preset";
   creationPresetDescription.textContent = "Save this clump as a reusable Draw Strand brush in this browser.";
   creationPresetNameInput.value = `${guide.clumpName || "Clump"} Brush`;
@@ -34772,7 +34747,7 @@ function commitCustomCreationPreset() {
   const name = creationPresetNameInput.value.trim();
   if (!type || !name) return;
   if (type === "clump") {
-    const guide = locks.find((lock) => lock.id === pendingClumpPresetGuideId);
+    const guide = locks.find((lock) => lock.id === guideState.state.pendingClumpPresetGuideId);
     if (!guide?.clumpGuide || !guide.clumpId) return;
     const state = snapshotState();
     const clumpLocks = state.locks.filter((lock) => lock.clumpId === guide.clumpId);
@@ -34794,10 +34769,10 @@ function commitCustomCreationPreset() {
     customCreationPresets.strand.push(preset);
     saveCustomCreationPresets();
     draw.state.activeCustomDrawClumpTemplate = clumpTemplate;
-    drawStrandMode = "clump";
+    hairState.state.drawStrandMode = "clump";
     populateDrawBrushPresetSelect(`custom:${preset.id}`);
     pendingCreationPresetType = null;
-    pendingClumpPresetGuideId = null;
+    guideState.state.pendingClumpPresetGuideId = null;
     creationPresetDialog.close();
     return;
   }
@@ -34851,7 +34826,7 @@ function commitRemoveCreationPreset() {
     populateCreationPresetSelect(braidToolPresetInput, "braid", fallback);
   } else {
     draw.state.activeCustomDrawClumpTemplate = null;
-    populateDrawBrushPresetSelect(drawStrandMode);
+    populateDrawBrushPresetSelect(hairState.state.drawStrandMode);
   }
   pendingCreationPresetRemoval = null;
   removeCreationPresetDialog.close();
@@ -34931,7 +34906,7 @@ creationPresetForm.addEventListener("submit", (event) => {
 });
 creationPresetDialog.addEventListener("close", () => {
   pendingCreationPresetType = null;
-  pendingClumpPresetGuideId = null;
+  guideState.state.pendingClumpPresetGuideId = null;
   pendingShapePresetSave = null;
 });
 cancelRemoveCreationPresetButton.addEventListener("click", () => removeCreationPresetDialog.close());
@@ -35055,28 +35030,28 @@ appMenuDropdowns.forEach((menu) => {
     if (event.target.closest("button") && !event.target.closest("#toggleTurntable")) closeAppMenus();
   });
 });
-toggleTurntableButton.addEventListener("click", () => setTurntableActive(!turntableActive));
+toggleTurntableButton.addEventListener("click", () => setTurntableActive(!viewportState.state.turntableActive));
 turntableSpeedInput.addEventListener("input", () => {
-  turntableSpeed = THREE.MathUtils.clamp(Number(turntableSpeedInput.value) || 1, 0.1, 3);
-  turntableSpeedValue.textContent = `${turntableSpeed.toFixed(1)}x`;
+  viewportState.state.turntableSpeed = THREE.MathUtils.clamp(Number(turntableSpeedInput.value) || 1, 0.1, 3);
+  turntableSpeedValue.textContent = `${viewportState.state.turntableSpeed.toFixed(1)}x`;
 });
 setTurntableActive(false);
 setRadialMenusEnabled(ui.state.radialMenusEnabled, { persist: false });
 setProceduralDrawExperimentalEnabled(draw.state.proceduralDrawExperimentalEnabled, { persist: false });
-setNavigationTipsEnabled(navigationTipsEnabled, { persist: false });
-setNavigationStyle(navigationStyle, { persist: false });
-setCameraSmoothingEnabled(cameraSmoothingEnabled, { persist: false });
-setCameraSmoothingStrength(cameraSmoothingStrength, { persist: false });
+setNavigationTipsEnabled(viewportState.state.navigationTipsEnabled, { persist: false });
+setNavigationStyle(viewportState.state.navigationStyle, { persist: false });
+setCameraSmoothingEnabled(viewportState.state.cameraSmoothingEnabled, { persist: false });
+setCameraSmoothingStrength(viewportState.state.cameraSmoothingStrength, { persist: false });
 setScaleSensitivity(scaleSensitivity);
 setToolTipsEnabled(toolTipsEnabled, { persist: false });
 setCompactToolButtonsEnabled(compactToolButtonsEnabled, { persist: false });
-setViewportStatisticsEnabled(viewportStatisticsEnabled, { persist: false });
-setTwistCurveAllStrandsPreviewEnabled(twistCurveAllStrandsPreviewEnabled, { persist: false });
+setViewportStatisticsEnabled(viewportState.state.viewportStatisticsEnabled, { persist: false });
+setTwistCurveAllStrandsPreviewEnabled(hairState.state.twistCurveAllStrandsPreviewEnabled, { persist: false });
 setLayerColorShiftsEnabled(layerColorShiftsEnabled, { persist: false });
 setOutlinerFolderColorsEnabled(outlinerFolderColorsEnabled, { persist: false });
-setControlPointDisplaySize(controlPointDisplaySize, { persist: false });
-setViewportBackgroundColor(viewportBackgroundColor, { persist: false });
-setDefaultHairShader(defaultHairShader, { persist: false });
+setControlPointDisplaySize(guideState.state.controlPointDisplaySize, { persist: false });
+setViewportBackgroundColor(viewportState.state.viewportBackgroundColor, { persist: false });
+setDefaultHairShader(hairState.state.defaultHairShader, { persist: false });
 updateSculptScaleModeRow();
 
 function initPanelResizeHandles() {
@@ -35688,8 +35663,8 @@ layerVisibilityInputs.forEach((input) => {
 });
 allGuidesVisibilityInput.addEventListener("change", () => {
   const visible = allGuidesVisibilityInput.checked;
-  capsuleGuidesVisible = visible;
-  curveLatticeGuidesVisible = visible;
+  guideState.state.capsuleGuidesVisible = visible;
+  guideState.state.curveLatticeGuidesVisible = visible;
   setScalpGuideVisibility(visible);
   applyCapsuleGuideDisplayVisibility();
   applyCurveLatticeGuideDisplayVisibility();
@@ -35699,22 +35674,22 @@ scalpDisplayVisibilityInput.addEventListener("change", () => {
   setScalpGuideVisibility(scalpDisplayVisibilityInput.checked);
 });
 capsuleDisplayVisibilityInput.addEventListener("change", () => {
-  capsuleGuidesVisible = capsuleDisplayVisibilityInput.checked;
+  guideState.state.capsuleGuidesVisible = capsuleDisplayVisibilityInput.checked;
   applyCapsuleGuideDisplayVisibility();
   syncDisplayVisibilityInputs();
 });
 curveLatticeDisplayVisibilityInput.addEventListener("change", () => {
-  curveLatticeGuidesVisible = curveLatticeDisplayVisibilityInput.checked;
+  guideState.state.curveLatticeGuidesVisible = curveLatticeDisplayVisibilityInput.checked;
   applyCurveLatticeGuideDisplayVisibility();
   syncDisplayVisibilityInputs();
 });
 headMeshDisplayVisibilityInput.addEventListener("change", () => {
-  headMeshVisible = headMeshDisplayVisibilityInput.checked;
+  hairState.state.headMeshVisible = headMeshDisplayVisibilityInput.checked;
   applyCharacterMeshDisplayVisibility();
   syncDisplayVisibilityInputs();
 });
 bodyMeshDisplayVisibilityInput.addEventListener("change", () => {
-  bodyMeshVisible = bodyMeshDisplayVisibilityInput.checked;
+  hairState.state.bodyMeshVisible = bodyMeshDisplayVisibilityInput.checked;
   applyCharacterMeshDisplayVisibility();
   syncDisplayVisibilityInputs();
 });
@@ -35723,8 +35698,8 @@ bodyMeshDisplayVisibilityInput.addEventListener("change", () => {
     if (input.checked) autoShowScalpGuideForActiveTool();
   });
 });
-groupColorToggle.addEventListener("click", () => setGroupColorView(!showGroupColors));
-toggleUvCheckerButton.addEventListener("click", () => setUvCheckerEnabled(!uvCheckerEnabled));
+groupColorToggle.addEventListener("click", () => setGroupColorView(!hairState.state.showGroupColors));
+toggleUvCheckerButton.addEventListener("click", () => setUvCheckerEnabled(!hairState.state.uvCheckerEnabled));
 closeUvInspectorButton.addEventListener("click", () => setUvCheckerEnabled(false));
 uvInspectorDragHandle.addEventListener("pointerdown", (event) => {
   if (event.target.closest("button")) return;
@@ -35953,7 +35928,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (
-    navigationStyle === "anime-hair-studio"
+    viewportState.state.navigationStyle === "anime-hair-studio"
     && event.key === "Shift"
     && !event.repeat
     && beginViewSnapFromActiveOrbit()
@@ -35962,7 +35937,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (
-    navigationStyle === "blender"
+    viewportState.state.navigationStyle === "blender"
     && event.key === "Alt"
     && !event.repeat
     && beginViewSnapFromActiveOrbit()
@@ -35971,10 +35946,10 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (
-    navigationStyle === "blender"
+    viewportState.state.navigationStyle === "blender"
     && event.key === "Shift"
-    && activeViewportPointer?.buttonMask === 4
-    && (activeViewportPointer.buttons & 4)
+    && viewportState.state.activeViewportPointer?.buttonMask === 4
+    && (viewportState.state.activeViewportPointer.buttons & 4)
   ) {
     event.preventDefault();
     return;
@@ -36121,13 +36096,13 @@ window.addEventListener("keyup", (event) => {
     setSculptBrushShiftSmoothHeld(false);
     draw.state.polyShiftPreviewHeld = false;
     clearPolyFillPreview();
-    if (navigationStyle === "anime-hair-studio") endViewSnap();
+    if (viewportState.state.navigationStyle === "anime-hair-studio") endViewSnap();
   }
   if (event.key === "Control") {
     selectionRemoveHeld = false;
     syncNavigationModifierLocks();
   }
-  if (event.key === "Alt" && navigationStyle === "blender") {
+  if (event.key === "Alt" && viewportState.state.navigationStyle === "blender") {
     endViewSnap();
   }
   if (finishToolShortcutPress(event.key.toLowerCase())) {
@@ -36155,7 +36130,7 @@ window.addEventListener("blur", () => {
   selectionRemoveHeld = false;
   setViewPlaneNormalMoveHeld(false);
   syncNavigationModifierLocks();
-  activeViewportPointer = null;
+  viewportState.state.activeViewportPointer = null;
   pointRemovalCandidate = null;
   draw.state.polyShiftPreviewHeld = false;
   clearPolyFillPreview();
@@ -36426,21 +36401,21 @@ function endPanelSplitHandleDrag(event) {
   updateInteractionLocks();
 }
 
-orthographicViewToggle.addEventListener("click", () => setOrthographicView(!orthographicView));
+orthographicViewToggle.addEventListener("click", () => setOrthographicView(!viewportState.state.orthographicView));
 
 document.querySelector("#toggleWire").addEventListener("click", () => {
-  hairTopologyVisible = !hairTopologyVisible;
+  hairState.state.hairTopologyVisible = !hairState.state.hairTopologyVisible;
   locks.forEach((lock) => {
     if (!lock.wireOverlay) return;
-    if (hairTopologyVisible) {
+    if (hairState.state.hairTopologyVisible) {
       lock.wireOverlay.geometry.dispose();
       lock.wireOverlay.geometry = createHairTopologyGeometry(lock.mesh.geometry);
     }
     syncLockedStrandWireVisual(lock);
   });
   const button = document.querySelector("#toggleWire");
-  button.classList.toggle("active", hairTopologyVisible);
-  button.setAttribute("aria-pressed", String(hairTopologyVisible));
+  button.classList.toggle("active", hairState.state.hairTopologyVisible);
+  button.setAttribute("aria-pressed", String(hairState.state.hairTopologyVisible));
 });
 
 document.querySelector("#exportObj").addEventListener("click", fileApi.exportHairObj);
@@ -36521,8 +36496,8 @@ function startViewSnap(pointerId, startX, startY) {
 }
 
 function beginViewSnapFromActiveOrbit() {
-  const pointer = activeViewportPointer;
-  const activeButtonMask = navigationStyle === "blender" ? 4 : 1;
+  const pointer = viewportState.state.activeViewportPointer;
+  const activeButtonMask = viewportState.state.navigationStyle === "blender" ? 4 : 1;
   if (
     !altOrbitDrag
     || !pointer
@@ -36540,11 +36515,11 @@ function beginViewSnapFromActiveOrbit() {
 function trackViewportPointerDown(event) {
   const buttonMask = event.button === 0
     ? 1
-    : navigationStyle === "blender" && event.button === 1
+    : viewportState.state.navigationStyle === "blender" && event.button === 1
       ? 4
       : 0;
   if (!buttonMask) return;
-  activeViewportPointer = {
+  viewportState.state.activeViewportPointer = {
     pointerId: event.pointerId,
     x: event.clientX,
     y: event.clientY,
@@ -36554,16 +36529,16 @@ function trackViewportPointerDown(event) {
 }
 
 function trackViewportPointerMove(event) {
-  if (!activeViewportPointer || activeViewportPointer.pointerId !== event.pointerId) return;
-  activeViewportPointer.x = event.clientX;
-  activeViewportPointer.y = event.clientY;
-  activeViewportPointer.buttons = event.buttons;
-  if (!(event.buttons & activeViewportPointer.buttonMask)) activeViewportPointer = null;
+  if (!viewportState.state.activeViewportPointer || viewportState.state.activeViewportPointer.pointerId !== event.pointerId) return;
+  viewportState.state.activeViewportPointer.x = event.clientX;
+  viewportState.state.activeViewportPointer.y = event.clientY;
+  viewportState.state.activeViewportPointer.buttons = event.buttons;
+  if (!(event.buttons & viewportState.state.activeViewportPointer.buttonMask)) viewportState.state.activeViewportPointer = null;
 }
 
 function clearViewportPointer(event) {
-  if (!activeViewportPointer || activeViewportPointer.pointerId !== event.pointerId) return;
-  activeViewportPointer = null;
+  if (!viewportState.state.activeViewportPointer || viewportState.state.activeViewportPointer.pointerId !== event.pointerId) return;
+  viewportState.state.activeViewportPointer = null;
 }
 
 function updateViewSnap(event) {
@@ -36962,7 +36937,7 @@ function prepareCurvePointSelection(event) {
   if (!componentEditModeActive()) {
     // Object mode: a highlighted (hovered) control point still selects its strand, so
     // clicking a bone never falls through to the parent hair that sits underneath it.
-    const hovered = hoveredControlPoint;
+    const hovered = guideState.state.hoveredControlPoint;
     if (hovered?.userData?.lockId && hovered.userData.pointIndex !== undefined) {
       selectLock(hovered.userData.lockId, {
         individualClumpMember: hovered.userData.lockId === sel.state.selectedId && !sel.state.clumpViewportSelection
@@ -37986,13 +37961,13 @@ function finishStrandWidthEdgeDrag(event, { cancel = false } = {}) {
 }
 
 function setHoveredStrandWidthEdge(edge = null) {
-  if (hoveredStrandWidthEdge === edge) return;
-  const previous = hoveredStrandWidthEdge;
-  hoveredStrandWidthEdge = edge;
-  [previous, hoveredStrandWidthEdge].filter(Boolean).forEach((item) => {
+  if (hairState.state.hoveredStrandWidthEdge === edge) return;
+  const previous = hairState.state.hoveredStrandWidthEdge;
+  hairState.state.hoveredStrandWidthEdge = edge;
+  [previous, hairState.state.hoveredStrandWidthEdge].filter(Boolean).forEach((item) => {
     const active = strandWidthEdgeDrag?.lockId === item.userData.lockId
       && strandWidthEdgeDrag.side === item.userData.side;
-    const hovered = hoveredStrandWidthEdge === item;
+    const hovered = hairState.state.hoveredStrandWidthEdge === item;
     item.material.color.set(active || hovered ? 0xff42cf : 0xe7a95d);
     item.material.opacity = active ? 0.95 : hovered ? 0.82 : 0.22;
   });
@@ -38036,19 +38011,18 @@ const controlPointHoverOverlay = new THREE.Mesh(
 );
 controlPointHoverOverlay.renderOrder = 30;
 controlPointHoverOverlay.raycast = () => {};
-let hoveredControlPoint = null;
 
 function setHoveredControlPoint(handle) {
-  if (handle === hoveredControlPoint) return;
+  if (handle === guideState.state.hoveredControlPoint) return;
   controlPointHoverOverlay.parent?.remove(controlPointHoverOverlay);
-  hoveredControlPoint = handle || null;
-  if (!hoveredControlPoint) return;
-  controlPointHoverOverlay.geometry = hoveredControlPoint.geometry;
-  controlPointHoverOverlay.material.color.copy(hoveredControlPoint.material.color);
+  guideState.state.hoveredControlPoint = handle || null;
+  if (!guideState.state.hoveredControlPoint) return;
+  controlPointHoverOverlay.geometry = guideState.state.hoveredControlPoint.geometry;
+  controlPointHoverOverlay.material.color.copy(guideState.state.hoveredControlPoint.material.color);
   controlPointHoverOverlay.position.set(0, 0, 0);
   controlPointHoverOverlay.quaternion.identity();
   controlPointHoverOverlay.scale.setScalar(1.06);
-  hoveredControlPoint.add(controlPointHoverOverlay);
+  guideState.state.hoveredControlPoint.add(controlPointHoverOverlay);
 }
 
 function visibleControlPointHoverTargets() {
@@ -38654,11 +38628,11 @@ function animate(timestamp = performance.now()) {
     fpsFrameCount = 0;
     fpsSampleStart = timestamp;
   }
-  if (turntableActive && !altOrbitDrag && !viewSnapDrag) {
+  if (viewportState.state.turntableActive && !altOrbitDrag && !viewSnapDrag) {
     const cameraOffset = camera.position.clone().sub(controls.target);
     cameraOffset.applyAxisAngle(
       turntableAxis,
-      TURNTABLE_RADIANS_PER_SECOND * turntableSpeed * deltaSeconds
+      TURNTABLE_RADIANS_PER_SECOND * viewportState.state.turntableSpeed * deltaSeconds
     );
     camera.position.copy(controls.target).add(cameraOffset);
     camera.lookAt(controls.target);

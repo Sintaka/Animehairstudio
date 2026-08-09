@@ -32,9 +32,11 @@
 - [x] **阶段 3c（第二批）：draw/poly store**（modules/edit/draw-store.js；6 个 let / 41 refs；全局 let 221→215；verify 13/13）
 - [x] **阶段 3c（第三批）：reference + ui-panel store**（modules/edit/reference-store.js + modules/core/ui-store.js；9 个 let；全局 let 213→206；verify 13/13）
 - [x] **阶段 3c（第四批）：undo/transform/head store**（modules/core/undo-store.js + transform-store.js + head-store.js；8 个 let，含 IO fileApi 的 importedHeadAsset getter 兼容；全局 let 206→198；verify 13/13）
-- [ ] **阶段 3c（后续）**：scalp / camera / guide / sculpt 等逐域落地（每域独立 commit + verify）
+- [x] **阶段 3c（第五批）：camera/guide/hair store**（modules/core/camera-store.js + guide-store.js + hair-store.js；42 个 let，camera 对象本身保留全局；全局 let 198→156；verify 13/13）
+- [ ] **阶段 3c（第六批）：save/project store**（17 个 let，含 8 个 IO deps getter/setter 收编）
+- [ ] **阶段 3c（最后大块）**：scalp / sculpt-edit 剩余 / selection 剩余（activeTool 等）
 
-> 批量替换验证清单（3b/3c 教训，替换后必须逐项扫）：(1) 双重替换 `.store.state.`（对象属性名被误替换，曾致项目加载静默失败）；(2) 函数参数/绑定位置（`function f(store.state.x)`）；(3) 对象简写残留（含**跨行** `{ x,\n store.state.y,`，单行正则会漏，曾致 SyntaxError）；(4) 对象属性访问 `obj.name`（用 `(?<!\.)` 排除）；(5) `name:` key 位置（用 `(?!\s*:)` 排除）；(6) 字符串/选择器字面量（`document.querySelector("#name")` 曾把 `"#viewPlaneMoveSnappedOnly"` 误改成 `"#ui.state.viewPlaneMoveSnappedOnly"`，需用精确字符串字面量扫描）；(7) getter/setter 方法名（`get importedHeadAsset()` 曾被误改成 `get head.state.importedHeadAsset()`，对象字面量 get/set 方法名位置要排除）。每步替换后先跑这 5 项扫描再 node --check + verify-smoke 全量。
+> 批量替换验证清单（3b/3c 教训，替换后必须逐项扫）：(1) 双重替换 `.store.state.`（对象属性名被误替换，曾致项目加载静默失败）；(2) 函数参数/绑定位置（`function f(store.state.x)`）；(3) 对象简写残留（含**跨行** `{ x,\n store.state.y,`，单行正则会漏，曾致 SyntaxError）；(4) 对象属性访问 `obj.name`（用 `(?<!\.)` 排除）；(5) `name:` key 位置（用 `(?!\s*:)` 排除）；(6) 字符串/选择器字面量（`document.querySelector("#name")` 曾把 `"#viewPlaneMoveSnappedOnly"` 误改成 `"#ui.state.viewPlaneMoveSnappedOnly"`，需用精确字符串字面量扫描）；(7) getter/setter 方法名（`get importedHeadAsset()` 曾被误改成 `get head.state.importedHeadAsset()`，对象字面量 get/set 方法名位置要排除）；(8) 无逗号简写（对象最后一项 `X,`→修复成 `X: v` 时若函数参数最后一项也会误伤——需按括号上下文判断：`(` 内回退为 `v`、`{` 内保留 `X: v`，含带逗号与不带逗号两种；三目/表达式分支也可能漏替换，替换后必须全文件扫裸引用）。每步替换后先跑这 5 项扫描再 node --check + verify-smoke 全量。
 - [ ] **阶段 3d：app.js 瘦身为编排层**（业务逻辑迁入模块，模块显式依赖 store；IO 的 createProjectSaveApi(deps) 从 25 个散装依赖收敛为单个 store）
 
 ## 验证策略（每条铁律）
