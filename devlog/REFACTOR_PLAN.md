@@ -22,7 +22,7 @@
 - [x] **阶段 1a：localization 词典拆数据文件**（modules/loc-ja.js + loc-zh.js，本地化逻辑零改动；JA/ZH key 数与拆分前完全一致 667/653；verify-smoke.mjs 6/6 通过）
 - [x] **阶段 1b：bug-fixes 拆独立条目**（#3 拆为 #3/#4/#5，每版含根因/修复/验证/保留判断）
 - [x] **阶段 1c：js-change-annotations 按子系统拆文件**（195 条目 → annotations-bridge/region-panel/root-bone/split/display-fixes/adapt 6 文件，原文件为 42 行索引；local-adaptation-log 保持唯一时间线）
-- [ ] **阶段 1d：加 upstream remote，核对 main 与上游同步**
+- [x] **阶段 1d：加 upstream remote，核对 main 与上游同步**（upstream = Ludetools/Animehairstudio；main == upstream/main == d3358f6，完全同步）
 - [ ] **阶段 2：按依赖图拆第一个子系统**（候选：save/export、子发片桥接）
 - [ ] **阶段 3（可选）：全局状态收敛**（237 个 let → 按子系统 store）
 
