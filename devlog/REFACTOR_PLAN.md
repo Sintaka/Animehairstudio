@@ -25,7 +25,7 @@
 - [x] **阶段 1d：加 upstream remote，核对 main 与上游同步**（upstream = Ludetools/Animehairstudio；main == upstream/main == d3358f6，完全同步）
 - [x] **阶段 2a：目标文件夹架构落地（IO 域）**——新建 `modules/io/`，把 8 个现有 IO 模块移入（file-actions / file-drop / obj-export / obj-import / usda-export / project-schema / project-state / recent-projects），更新 app.js 8 处 import（纯路径，逻辑零改动）
 - [x] **阶段 2b：从 app.js 拆 IO 子系统**（save/export + 文件对话框 → `modules/io/project-files.js`，依赖注入 4 函数 + 8 状态 getter/setter；app.js 39,207→38,785 行；verify-smoke 8/8）
-- [ ] **阶段 2c（后续域）**：core/ data/ geometry/ edit/ sculpt/ material/ 归组（按依赖图逐域落地）
+- [x] **阶段 2c：全部模块按域归组落地**（core 5 / data 6 / edit 4 / geometry 14 / material 1 / sculpt 1 + io 9；扁平模块归零；material-state 跨域 import 改相对路径；verify-smoke 8/8）
 - [ ] **阶段 3（可选）：全局状态收敛**（237 个 let → 按子系统 store）
 
 ## 验证策略（每条铁律）
@@ -38,13 +38,13 @@
 
 ```
 modules/
-  io/          ← 已落地（2a）：project-files.js(计划) file-actions file-drop obj-export obj-import usda-export project-schema project-state recent-projects
-  core/        ← 计划：app-config preference-storage shortcut-registry history
-  data/        ← 计划：loc-ja loc-zh localization clump-brush-presets shape-presets tool-presets
-  geometry/    ← 计划：curve-math curve-surface curve-lattice surface-lattice poly-topology topology strand-constraints capsule-curve branch-connect compound-strand procedural-draw radial-layout anime-hair-shaders uv-inspector
-  edit/        ← 计划：selection-state selection-sets mirror-selection multi-edit
-  sculpt/      ← 计划：sculpt-brush
-  material/    ← 计划：material-state
+  core/      app-config preference-storage preferences-backup shortcut-registry history
+  data/      loc-ja loc-zh localization clump-brush-presets shape-presets tool-presets
+  geometry/  curve-math curve-surface curve-lattice surface-lattice poly-topology topology strand-constraints capsule-curve branch-connect compound-strand procedural-draw radial-layout anime-hair-shaders uv-inspector
+  io/        project-files file-actions file-drop obj-export obj-import usda-export project-schema project-state recent-projects
+  edit/      selection-state selection-sets mirror-selection multi-edit
+  sculpt/    sculpt-brush
+  material/  material-state
 ```
 
 > 归组原则：按功能域分目录；模块间保持扁平（不互相 import，只被 app.js import）；每个域落地独立 commit + verify-smoke 回归。

@@ -1,8 +1,8 @@
-import { DEFAULT_HAIR_MATERIAL_SETTINGS } from "./app-config.js";
+import { DEFAULT_HAIR_MATERIAL_SETTINGS } from "../core/app-config.js";
 import {
   normalizeAnimeAnisotropicSettings,
   normalizeHairShader
-} from "./anime-hair-shaders.js";
+} from "../geometry/anime-hair-shaders.js";
 
 const LEGACY_CUSTOM_HAIR_MATERIAL_FIELDS = Object.freeze([
   "shadowColor",

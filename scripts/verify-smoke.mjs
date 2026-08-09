@@ -117,9 +117,9 @@ try {
 
   // localization data-layer check inside the browser (real import chain with ?v=)
   const loc = await evalJS(cdp, `(async () => {
-    const m = await import('./modules/localization.js?v=20260809-1');
-    const ja = await import('./modules/loc-ja.js?v=20260809-1');
-    const zh = await import('./modules/loc-zh.js?v=20260809-1');
+    const m = await import('./modules/data/localization.js?v=20260809-1');
+    const ja = await import('./modules/data/loc-ja.js?v=20260809-1');
+    const zh = await import('./modules/data/loc-zh.js?v=20260809-1');
     const zhHit = m.translateUiString('Project Contents', 'zh');
     const jaHit = m.translateUiString('Project Contents', 'ja');
     const enFallback = m.translateUiString('Project Contents', 'en');

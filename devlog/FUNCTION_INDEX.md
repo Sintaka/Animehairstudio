@@ -1435,7 +1435,129 @@
 | `setAttributeEditorPanelCollapsed` | 38729 | function |  | 3 |
 | `setAttributeEditorTab` | 38735 | function |  | 6 |
 
-## modules/anime-hair-shaders.js（286 行）
+## modules/core/app-config.js（92 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+
+## modules/core/history.js（45 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+
+## modules/core/preference-storage.js（33 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `readStoredPreference` | 1 | function | export | 2 |
+| `readStoredBooleanPreference` | 14 | function | export | 1 |
+| `writeStoredPreference` | 25 | function | export | 1 |
+
+## modules/core/preferences-backup.js（73 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `createPreferencesBackup` | 4 | function | export | 1 |
+| `normalizePreferencesBackup` | 29 | function | export | 1 |
+| `preferencesBackupFileName` | 66 | function | export | 1 |
+
+## modules/core/shortcut-registry.js（54 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `shortcutToolForKey` | 34 | function | export | 1 |
+| `workspaceForShortcutKey` | 38 | function | export | 1 |
+| `focusedControlShouldYieldToShortcut` | 42 | function | export | 1 |
+
+## modules/data/clump-brush-presets.js（144 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `cloneJsonValue` | 1 | arrow |  | 4 |
+| `finitePoint` | 46 | function |  | 1 |
+| `normalizePoints` | 53 | function |  | 2 |
+| `normalizeStrand` | 62 | function |  | 1 |
+| `normalizeClumpBrushTemplate` | 82 | function | export | 2 |
+| `createClumpBrushTemplate` | 107 | function | export | 1 |
+
+## modules/data/loc-ja.js（673 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+
+## modules/data/loc-zh.js（660 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+
+## modules/data/localization.js（151 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `normalizeLanguage` | 14 | function | export | 3 |
+| `translateUiString` | 19 | function | export | 6 |
+| `createDocumentLocalizer` | 54 | function | export | 1 |
+| `localizeTextNode` | 61 | function |  | 4 |
+| `localizeElement` | 78 | function |  | 4 |
+| `localizeSubtree` | 97 | function |  | 2 |
+| `setLanguage` | 121 | function |  | 2 |
+
+## modules/data/shape-presets.js（56 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `emptyShapePresetLibrary` | 3 | function | export | 2 |
+| `normalizedPoints` | 7 | function |  | 3 |
+| `normalizeShapePresetLibrary` | 23 | function | export | 1 |
+| `removeShapePreset` | 47 | function | export | 1 |
+
+## modules/data/tool-presets.js（45 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `emptyToolPresetLibrary` | 3 | function | export | 2 |
+| `normalizeToolPresetLibrary` | 7 | function | export | 1 |
+| `removeToolPreset` | 36 | function | export | 1 |
+
+## modules/edit/mirror-selection.js（21 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `mirrorSelectionTargets` | 1 | function | export | 1 |
+
+## modules/edit/multi-edit.js（10 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `relativeEditValue` | 1 | function | export | 1 |
+
+## modules/edit/selection-sets.js（55 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `uniqueStrandIds` | 1 | function |  | 5 |
+| `nextSelectionSetName` | 8 | function | export | 2 |
+| `normalizeSelectionSets` | 15 | function | export | 1 |
+| `createSelectionSetRecord` | 32 | function | export | 1 |
+| `updateSelectionSetMembers` | 42 | function | export | 1 |
+
+## modules/edit/selection-state.js（125 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `uniqueValidIds` | 1 | function |  | 6 |
+| `screenBoundsOverlap` | 6 | function | export | 3 |
+| `pointInsideScreenBounds` | 14 | function |  | 2 |
+| `screenCross` | 19 | function |  | 8 |
+| `pointInsideScreenTriangle` | 23 | function |  | 2 |
+| `screenSegmentsIntersect` | 31 | function |  | 2 |
+| `triangleIntersectsScreenBounds` | 44 | function | export | 1 |
+| `emptyStrandSelection` | 66 | function | export | 2 |
+| `resolveStrandSelection` | 70 | function | export | 1 |
+| `restoreStrandSelection` | 108 | function | export | 1 |
+| `activateStrandSelection` | 119 | function | export | 1 |
+
+## modules/geometry/anime-hair-shaders.js（286 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -1443,12 +1565,7 @@
 | `normalizedHexColor` | 52 | function |  | 6 |
 | `normalizeAnimeAnisotropicSettings` | 56 | function | export | 1 |
 
-## modules/app-config.js（92 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-
-## modules/branch-connect.js（163 行）
+## modules/geometry/branch-connect.js（163 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -1461,7 +1578,7 @@
 | `progress` | 102 | arrow |  | 2 |
 | `connectBoundaryToRing` | 143 | function | export | 1 |
 
-## modules/capsule-curve.js（215 行）
+## modules/geometry/capsule-curve.js（215 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -1485,18 +1602,7 @@
 | `scaleCapsuleRadialLoops` | 172 | function | export | 1 |
 | `curveDeformedCapsulePoints` | 191 | function | export | 1 |
 
-## modules/clump-brush-presets.js（144 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `cloneJsonValue` | 1 | arrow |  | 4 |
-| `finitePoint` | 46 | function |  | 1 |
-| `normalizePoints` | 53 | function |  | 2 |
-| `normalizeStrand` | 62 | function |  | 1 |
-| `normalizeClumpBrushTemplate` | 82 | function | export | 2 |
-| `createClumpBrushTemplate` | 107 | function | export | 1 |
-
-## modules/compound-strand.js（131 行）
+## modules/geometry/compound-strand.js（131 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -1510,7 +1616,7 @@
 | `compoundBridgeArchWeight` | 47 | function | export | 1 |
 | `compoundProfileBridgePlan` | 61 | function | export | 1 |
 
-## modules/curve-lattice.js（102 行）
+## modules/geometry/curve-lattice.js（102 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -1520,7 +1626,7 @@
 | `resampleCurveLatticeLineData` | 79 | function | export | 1 |
 | `curveLatticeLoopPointIndices` | 90 | function | export | 1 |
 
-## modules/curve-math.js（1163 行）
+## modules/geometry/curve-math.js（1163 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -1591,7 +1697,7 @@
 | `cyclicPath` | 1146 | arrow |  | 2 |
 | `averageHeight` | 1157 | arrow |  | 2 |
 
-## modules/curve-surface.js（313 行）
+## modules/geometry/curve-surface.js（313 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -1612,10 +1718,88 @@
 | `buildConnectedCurveCardGrid` | 254 | function | export | 1 |
 | `curveSurfaceCurveLateralScore` | 302 | function | export | 2 |
 
-## modules/history.js（45 行）
+## modules/geometry/poly-topology.js（340 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
+| `validVertexIndex` | 1 | function |  | 4 |
+| `edgeKey` | 5 | function |  | 5 |
+| `normalizePolyFaces` | 9 | function | export | 15 |
+| `appendPolyQuad` | 24 | function | export | 3 |
+| `polyBoundaryEdges` | 28 | function | export | 2 |
+| `relaxPolyPoints` | 43 | function | export | 1 |
+| `squaredDistance` | 106 | function |  | 12 |
+| `midpoint` | 113 | function |  | 3 |
+| `orderedVerticesAroundTarget` | 121 | function |  | 2 |
+| `bridgePolyEdges` | 169 | function | export | 2 |
+| `polyFillCandidate` | 183 | function | export | 1 |
+| `deletePolyFace` | 249 | function | export | 1 |
+| `deletePolyFaceAndOrphans` | 253 | function | export | 1 |
+| `deletePolyEdge` | 282 | function | export | 1 |
+| `deletePolyVertex` | 290 | function | export | 1 |
+| `polyMeshBuffers` | 304 | function | export | 1 |
+
+## modules/geometry/procedural-draw.js（107 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `proceduralAccessoryTaperScale` | 3 | function | export | 1 |
+| `proceduralAccessoryTemplateData` | 24 | function | export | 1 |
+| `longitudinalPoints` | 30 | arrow |  | 2 |
+| `proceduralBranchTemplateData` | 52 | function | export | 1 |
+
+## modules/geometry/radial-layout.js（169 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `radialMenuAngles` | 3 | function | export | 3 |
+| `buttonsOverlapAtRadius` | 20 | function |  | 2 |
+| `radialMenuDimensions` | 36 | function | export | 1 |
+| `radialButtonRayExtent` | 57 | function | export | 2 |
+| `radialButtonEntryDistance` | 72 | function | export | 1 |
+| `layoutRadialOptions` | 83 | function | export | 1 |
+| `angularDistanceFromBottom` | 108 | arrow |  | 3 |
+| `radialListCorridorContains` | 141 | function | export | 1 |
+| `partitionRadialOptions` | 153 | function | export | 1 |
+
+## modules/geometry/strand-constraints.js（120 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `clamp` | 1 | function |  | 3 |
+| `solvePulledStrand` | 5 | function | export | 1 |
+
+## modules/geometry/surface-lattice.js（236 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `normalizeSurfaceLatticeCount` | 5 | function | export | 19 |
+| `surfaceLatticePointOrder` | 10 | function |  | 3 |
+| `surfaceLatticePointIndex` | 23 | function | export | 6 |
+| `mirroredSurfaceLatticePointIndex` | 36 | function | export | 1 |
+| `pointComponent` | 56 | function |  | 2 |
+| `catmullRomComponent` | 60 | function |  | 2 |
+| `catmullRomDerivativeComponent` | 71 | function |  | 2 |
+| `sampleCatmullRomLine` | 80 | function |  | 7 |
+| `sampleSurfaceLattice` | 100 | function | export | 6 |
+| `createSurfaceLatticePointData` | 125 | function | export | 1 |
+| `createLoftSurfaceLatticePointData` | 151 | function | export | 1 |
+| `resampleSurfaceLatticePointData` | 177 | function | export | 1 |
+| `surfaceLatticeWireSegments` | 206 | function | export | 1 |
+
+## modules/geometry/topology.js（21 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `parseObjFaceVertexCounts` | 1 | function | export | 1 |
+| `fanTriangleEdgeMasks` | 10 | function | export | 1 |
+
+## modules/geometry/uv-inspector.js（43 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `uvCoordinateBounds` | 1 | function | export | 1 |
+| `uvViewTransform` | 23 | function | export | 1 |
 
 ## modules/io/file-actions.js（47 行）
 
@@ -1717,29 +1901,7 @@
 | `curveBlock` | 106 | function |  | 2 |
 | `exportAnimeHairUsda` | 124 | function | export | 1 |
 
-## modules/loc-ja.js（673 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-
-## modules/loc-zh.js（660 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-
-## modules/localization.js（151 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `normalizeLanguage` | 14 | function | export | 3 |
-| `translateUiString` | 19 | function | export | 6 |
-| `createDocumentLocalizer` | 54 | function | export | 1 |
-| `localizeTextNode` | 61 | function |  | 4 |
-| `localizeElement` | 78 | function |  | 4 |
-| `localizeSubtree` | 97 | function |  | 2 |
-| `setLanguage` | 121 | function |  | 2 |
-
-## modules/material-state.js（49 行）
+## modules/material/material-state.js（49 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -1747,79 +1909,7 @@
 | `resolveHairMaterialDefinition` | 34 | function | export | 2 |
 | `hairMaterialUsageCounts` | 40 | function | export | 1 |
 
-## modules/mirror-selection.js（21 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `mirrorSelectionTargets` | 1 | function | export | 1 |
-
-## modules/multi-edit.js（10 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `relativeEditValue` | 1 | function | export | 1 |
-
-## modules/poly-topology.js（340 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `validVertexIndex` | 1 | function |  | 4 |
-| `edgeKey` | 5 | function |  | 5 |
-| `normalizePolyFaces` | 9 | function | export | 15 |
-| `appendPolyQuad` | 24 | function | export | 3 |
-| `polyBoundaryEdges` | 28 | function | export | 2 |
-| `relaxPolyPoints` | 43 | function | export | 1 |
-| `squaredDistance` | 106 | function |  | 12 |
-| `midpoint` | 113 | function |  | 3 |
-| `orderedVerticesAroundTarget` | 121 | function |  | 2 |
-| `bridgePolyEdges` | 169 | function | export | 2 |
-| `polyFillCandidate` | 183 | function | export | 1 |
-| `deletePolyFace` | 249 | function | export | 1 |
-| `deletePolyFaceAndOrphans` | 253 | function | export | 1 |
-| `deletePolyEdge` | 282 | function | export | 1 |
-| `deletePolyVertex` | 290 | function | export | 1 |
-| `polyMeshBuffers` | 304 | function | export | 1 |
-
-## modules/preference-storage.js（33 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `readStoredPreference` | 1 | function | export | 2 |
-| `readStoredBooleanPreference` | 14 | function | export | 1 |
-| `writeStoredPreference` | 25 | function | export | 1 |
-
-## modules/preferences-backup.js（73 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `createPreferencesBackup` | 4 | function | export | 1 |
-| `normalizePreferencesBackup` | 29 | function | export | 1 |
-| `preferencesBackupFileName` | 66 | function | export | 1 |
-
-## modules/procedural-draw.js（107 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `proceduralAccessoryTaperScale` | 3 | function | export | 1 |
-| `proceduralAccessoryTemplateData` | 24 | function | export | 1 |
-| `longitudinalPoints` | 30 | arrow |  | 2 |
-| `proceduralBranchTemplateData` | 52 | function | export | 1 |
-
-## modules/radial-layout.js（169 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `radialMenuAngles` | 3 | function | export | 3 |
-| `buttonsOverlapAtRadius` | 20 | function |  | 2 |
-| `radialMenuDimensions` | 36 | function | export | 1 |
-| `radialButtonRayExtent` | 57 | function | export | 2 |
-| `radialButtonEntryDistance` | 72 | function | export | 1 |
-| `layoutRadialOptions` | 83 | function | export | 1 |
-| `angularDistanceFromBottom` | 108 | arrow |  | 3 |
-| `radialListCorridorContains` | 141 | function | export | 1 |
-| `partitionRadialOptions` | 153 | function | export | 1 |
-
-## modules/sculpt-brush.js（123 行）
+## modules/sculpt/sculpt-brush.js（123 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -1830,93 +1920,3 @@
 | `inflateSculptPointScale` | 82 | function | export | 1 |
 | `pointInCameraFacingHalfSpace` | 97 | function | export | 1 |
 | `smoothSculptTwistDeltas` | 105 | function | export | 1 |
-
-## modules/selection-sets.js（55 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `uniqueStrandIds` | 1 | function |  | 5 |
-| `nextSelectionSetName` | 8 | function | export | 2 |
-| `normalizeSelectionSets` | 15 | function | export | 1 |
-| `createSelectionSetRecord` | 32 | function | export | 1 |
-| `updateSelectionSetMembers` | 42 | function | export | 1 |
-
-## modules/selection-state.js（125 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `uniqueValidIds` | 1 | function |  | 6 |
-| `screenBoundsOverlap` | 6 | function | export | 3 |
-| `pointInsideScreenBounds` | 14 | function |  | 2 |
-| `screenCross` | 19 | function |  | 8 |
-| `pointInsideScreenTriangle` | 23 | function |  | 2 |
-| `screenSegmentsIntersect` | 31 | function |  | 2 |
-| `triangleIntersectsScreenBounds` | 44 | function | export | 1 |
-| `emptyStrandSelection` | 66 | function | export | 2 |
-| `resolveStrandSelection` | 70 | function | export | 1 |
-| `restoreStrandSelection` | 108 | function | export | 1 |
-| `activateStrandSelection` | 119 | function | export | 1 |
-
-## modules/shape-presets.js（56 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `emptyShapePresetLibrary` | 3 | function | export | 2 |
-| `normalizedPoints` | 7 | function |  | 3 |
-| `normalizeShapePresetLibrary` | 23 | function | export | 1 |
-| `removeShapePreset` | 47 | function | export | 1 |
-
-## modules/shortcut-registry.js（54 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `shortcutToolForKey` | 34 | function | export | 1 |
-| `workspaceForShortcutKey` | 38 | function | export | 1 |
-| `focusedControlShouldYieldToShortcut` | 42 | function | export | 1 |
-
-## modules/strand-constraints.js（120 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `clamp` | 1 | function |  | 3 |
-| `solvePulledStrand` | 5 | function | export | 1 |
-
-## modules/surface-lattice.js（236 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `normalizeSurfaceLatticeCount` | 5 | function | export | 19 |
-| `surfaceLatticePointOrder` | 10 | function |  | 3 |
-| `surfaceLatticePointIndex` | 23 | function | export | 6 |
-| `mirroredSurfaceLatticePointIndex` | 36 | function | export | 1 |
-| `pointComponent` | 56 | function |  | 2 |
-| `catmullRomComponent` | 60 | function |  | 2 |
-| `catmullRomDerivativeComponent` | 71 | function |  | 2 |
-| `sampleCatmullRomLine` | 80 | function |  | 7 |
-| `sampleSurfaceLattice` | 100 | function | export | 6 |
-| `createSurfaceLatticePointData` | 125 | function | export | 1 |
-| `createLoftSurfaceLatticePointData` | 151 | function | export | 1 |
-| `resampleSurfaceLatticePointData` | 177 | function | export | 1 |
-| `surfaceLatticeWireSegments` | 206 | function | export | 1 |
-
-## modules/tool-presets.js（45 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `emptyToolPresetLibrary` | 3 | function | export | 2 |
-| `normalizeToolPresetLibrary` | 7 | function | export | 1 |
-| `removeToolPreset` | 36 | function | export | 1 |
-
-## modules/topology.js（21 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `parseObjFaceVertexCounts` | 1 | function | export | 1 |
-| `fanTriangleEdgeMasks` | 10 | function | export | 1 |
-
-## modules/uv-inspector.js（43 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `uvCoordinateBounds` | 1 | function | export | 1 |
-| `uvViewTransform` | 23 | function | export | 1 |

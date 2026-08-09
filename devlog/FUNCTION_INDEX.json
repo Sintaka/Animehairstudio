@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-09T12:13:46.410Z",
+  "generatedAt": "2026-08-09T12:23:59.166Z",
   "totalFunctions": 1713,
   "files": [
     {
@@ -9998,7 +9998,422 @@
       ]
     },
     {
-      "file": "modules/anime-hair-shaders.js",
+      "file": "modules/core/app-config.js",
+      "lineCount": 92,
+      "functions": []
+    },
+    {
+      "file": "modules/core/history.js",
+      "lineCount": 45,
+      "functions": []
+    },
+    {
+      "file": "modules/core/preference-storage.js",
+      "lineCount": 33,
+      "functions": [
+        {
+          "name": "readStoredPreference",
+          "line": 1,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "readStoredBooleanPreference",
+          "line": 14,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "writeStoredPreference",
+          "line": 25,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/core/preferences-backup.js",
+      "lineCount": 73,
+      "functions": [
+        {
+          "name": "createPreferencesBackup",
+          "line": 4,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "normalizePreferencesBackup",
+          "line": 29,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "preferencesBackupFileName",
+          "line": 66,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/core/shortcut-registry.js",
+      "lineCount": 54,
+      "functions": [
+        {
+          "name": "shortcutToolForKey",
+          "line": 34,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "workspaceForShortcutKey",
+          "line": 38,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "focusedControlShouldYieldToShortcut",
+          "line": 42,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/data/clump-brush-presets.js",
+      "lineCount": 144,
+      "functions": [
+        {
+          "name": "cloneJsonValue",
+          "line": 1,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 4
+        },
+        {
+          "name": "finitePoint",
+          "line": 46,
+          "kind": "function",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "normalizePoints",
+          "line": 53,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "normalizeStrand",
+          "line": 62,
+          "kind": "function",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "normalizeClumpBrushTemplate",
+          "line": 82,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "createClumpBrushTemplate",
+          "line": 107,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/data/loc-ja.js",
+      "lineCount": 673,
+      "functions": []
+    },
+    {
+      "file": "modules/data/loc-zh.js",
+      "lineCount": 660,
+      "functions": []
+    },
+    {
+      "file": "modules/data/localization.js",
+      "lineCount": 151,
+      "functions": [
+        {
+          "name": "normalizeLanguage",
+          "line": 14,
+          "kind": "function",
+          "exported": true,
+          "calls": 3
+        },
+        {
+          "name": "translateUiString",
+          "line": 19,
+          "kind": "function",
+          "exported": true,
+          "calls": 6
+        },
+        {
+          "name": "createDocumentLocalizer",
+          "line": 54,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "localizeTextNode",
+          "line": 61,
+          "kind": "function",
+          "exported": false,
+          "calls": 4
+        },
+        {
+          "name": "localizeElement",
+          "line": 78,
+          "kind": "function",
+          "exported": false,
+          "calls": 4
+        },
+        {
+          "name": "localizeSubtree",
+          "line": 97,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "setLanguage",
+          "line": 121,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        }
+      ]
+    },
+    {
+      "file": "modules/data/shape-presets.js",
+      "lineCount": 56,
+      "functions": [
+        {
+          "name": "emptyShapePresetLibrary",
+          "line": 3,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "normalizedPoints",
+          "line": 7,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "normalizeShapePresetLibrary",
+          "line": 23,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "removeShapePreset",
+          "line": 47,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/data/tool-presets.js",
+      "lineCount": 45,
+      "functions": [
+        {
+          "name": "emptyToolPresetLibrary",
+          "line": 3,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "normalizeToolPresetLibrary",
+          "line": 7,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "removeToolPreset",
+          "line": 36,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/edit/mirror-selection.js",
+      "lineCount": 21,
+      "functions": [
+        {
+          "name": "mirrorSelectionTargets",
+          "line": 1,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/edit/multi-edit.js",
+      "lineCount": 10,
+      "functions": [
+        {
+          "name": "relativeEditValue",
+          "line": 1,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/edit/selection-sets.js",
+      "lineCount": 55,
+      "functions": [
+        {
+          "name": "uniqueStrandIds",
+          "line": 1,
+          "kind": "function",
+          "exported": false,
+          "calls": 5
+        },
+        {
+          "name": "nextSelectionSetName",
+          "line": 8,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "normalizeSelectionSets",
+          "line": 15,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "createSelectionSetRecord",
+          "line": 32,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "updateSelectionSetMembers",
+          "line": 42,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/edit/selection-state.js",
+      "lineCount": 125,
+      "functions": [
+        {
+          "name": "uniqueValidIds",
+          "line": 1,
+          "kind": "function",
+          "exported": false,
+          "calls": 6
+        },
+        {
+          "name": "screenBoundsOverlap",
+          "line": 6,
+          "kind": "function",
+          "exported": true,
+          "calls": 3
+        },
+        {
+          "name": "pointInsideScreenBounds",
+          "line": 14,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "screenCross",
+          "line": 19,
+          "kind": "function",
+          "exported": false,
+          "calls": 8
+        },
+        {
+          "name": "pointInsideScreenTriangle",
+          "line": 23,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "screenSegmentsIntersect",
+          "line": 31,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "triangleIntersectsScreenBounds",
+          "line": 44,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "emptyStrandSelection",
+          "line": 66,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "resolveStrandSelection",
+          "line": 70,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "restoreStrandSelection",
+          "line": 108,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "activateStrandSelection",
+          "line": 119,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/geometry/anime-hair-shaders.js",
       "lineCount": 286,
       "functions": [
         {
@@ -10025,12 +10440,7 @@
       ]
     },
     {
-      "file": "modules/app-config.js",
-      "lineCount": 92,
-      "functions": []
-    },
-    {
-      "file": "modules/branch-connect.js",
+      "file": "modules/geometry/branch-connect.js",
       "lineCount": 163,
       "functions": [
         {
@@ -10092,7 +10502,7 @@
       ]
     },
     {
-      "file": "modules/capsule-curve.js",
+      "file": "modules/geometry/capsule-curve.js",
       "lineCount": 215,
       "functions": [
         {
@@ -10231,55 +10641,7 @@
       ]
     },
     {
-      "file": "modules/clump-brush-presets.js",
-      "lineCount": 144,
-      "functions": [
-        {
-          "name": "cloneJsonValue",
-          "line": 1,
-          "kind": "arrow",
-          "exported": false,
-          "calls": 4
-        },
-        {
-          "name": "finitePoint",
-          "line": 46,
-          "kind": "function",
-          "exported": false,
-          "calls": 1
-        },
-        {
-          "name": "normalizePoints",
-          "line": 53,
-          "kind": "function",
-          "exported": false,
-          "calls": 2
-        },
-        {
-          "name": "normalizeStrand",
-          "line": 62,
-          "kind": "function",
-          "exported": false,
-          "calls": 1
-        },
-        {
-          "name": "normalizeClumpBrushTemplate",
-          "line": 82,
-          "kind": "function",
-          "exported": true,
-          "calls": 2
-        },
-        {
-          "name": "createClumpBrushTemplate",
-          "line": 107,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/compound-strand.js",
+      "file": "modules/geometry/compound-strand.js",
       "lineCount": 131,
       "functions": [
         {
@@ -10348,7 +10710,7 @@
       ]
     },
     {
-      "file": "modules/curve-lattice.js",
+      "file": "modules/geometry/curve-lattice.js",
       "lineCount": 102,
       "functions": [
         {
@@ -10389,7 +10751,7 @@
       ]
     },
     {
-      "file": "modules/curve-math.js",
+      "file": "modules/geometry/curve-math.js",
       "lineCount": 1163,
       "functions": [
         {
@@ -10857,7 +11219,7 @@
       ]
     },
     {
-      "file": "modules/curve-surface.js",
+      "file": "modules/geometry/curve-surface.js",
       "lineCount": 313,
       "functions": [
         {
@@ -10975,9 +11337,382 @@
       ]
     },
     {
-      "file": "modules/history.js",
-      "lineCount": 45,
-      "functions": []
+      "file": "modules/geometry/poly-topology.js",
+      "lineCount": 340,
+      "functions": [
+        {
+          "name": "validVertexIndex",
+          "line": 1,
+          "kind": "function",
+          "exported": false,
+          "calls": 4
+        },
+        {
+          "name": "edgeKey",
+          "line": 5,
+          "kind": "function",
+          "exported": false,
+          "calls": 5
+        },
+        {
+          "name": "normalizePolyFaces",
+          "line": 9,
+          "kind": "function",
+          "exported": true,
+          "calls": 15
+        },
+        {
+          "name": "appendPolyQuad",
+          "line": 24,
+          "kind": "function",
+          "exported": true,
+          "calls": 3
+        },
+        {
+          "name": "polyBoundaryEdges",
+          "line": 28,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "relaxPolyPoints",
+          "line": 43,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "squaredDistance",
+          "line": 106,
+          "kind": "function",
+          "exported": false,
+          "calls": 12
+        },
+        {
+          "name": "midpoint",
+          "line": 113,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "orderedVerticesAroundTarget",
+          "line": 121,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "bridgePolyEdges",
+          "line": 169,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "polyFillCandidate",
+          "line": 183,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "deletePolyFace",
+          "line": 249,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "deletePolyFaceAndOrphans",
+          "line": 253,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "deletePolyEdge",
+          "line": 282,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "deletePolyVertex",
+          "line": 290,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "polyMeshBuffers",
+          "line": 304,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/geometry/procedural-draw.js",
+      "lineCount": 107,
+      "functions": [
+        {
+          "name": "proceduralAccessoryTaperScale",
+          "line": 3,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "proceduralAccessoryTemplateData",
+          "line": 24,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "longitudinalPoints",
+          "line": 30,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "proceduralBranchTemplateData",
+          "line": 52,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/geometry/radial-layout.js",
+      "lineCount": 169,
+      "functions": [
+        {
+          "name": "radialMenuAngles",
+          "line": 3,
+          "kind": "function",
+          "exported": true,
+          "calls": 3
+        },
+        {
+          "name": "buttonsOverlapAtRadius",
+          "line": 20,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "radialMenuDimensions",
+          "line": 36,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "radialButtonRayExtent",
+          "line": 57,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "radialButtonEntryDistance",
+          "line": 72,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "layoutRadialOptions",
+          "line": 83,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "angularDistanceFromBottom",
+          "line": 108,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "radialListCorridorContains",
+          "line": 141,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "partitionRadialOptions",
+          "line": 153,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/geometry/strand-constraints.js",
+      "lineCount": 120,
+      "functions": [
+        {
+          "name": "clamp",
+          "line": 1,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "solvePulledStrand",
+          "line": 5,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/geometry/surface-lattice.js",
+      "lineCount": 236,
+      "functions": [
+        {
+          "name": "normalizeSurfaceLatticeCount",
+          "line": 5,
+          "kind": "function",
+          "exported": true,
+          "calls": 19
+        },
+        {
+          "name": "surfaceLatticePointOrder",
+          "line": 10,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "surfaceLatticePointIndex",
+          "line": 23,
+          "kind": "function",
+          "exported": true,
+          "calls": 6
+        },
+        {
+          "name": "mirroredSurfaceLatticePointIndex",
+          "line": 36,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "pointComponent",
+          "line": 56,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "catmullRomComponent",
+          "line": 60,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "catmullRomDerivativeComponent",
+          "line": 71,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "sampleCatmullRomLine",
+          "line": 80,
+          "kind": "function",
+          "exported": false,
+          "calls": 7
+        },
+        {
+          "name": "sampleSurfaceLattice",
+          "line": 100,
+          "kind": "function",
+          "exported": true,
+          "calls": 6
+        },
+        {
+          "name": "createSurfaceLatticePointData",
+          "line": 125,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "createLoftSurfaceLatticePointData",
+          "line": 151,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "resampleSurfaceLatticePointData",
+          "line": 177,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "surfaceLatticeWireSegments",
+          "line": 206,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/geometry/topology.js",
+      "lineCount": 21,
+      "functions": [
+        {
+          "name": "parseObjFaceVertexCounts",
+          "line": 1,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "fanTriangleEdgeMasks",
+          "line": 10,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/geometry/uv-inspector.js",
+      "lineCount": 43,
+      "functions": [
+        {
+          "name": "uvCoordinateBounds",
+          "line": 1,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "uvViewTransform",
+          "line": 23,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
     },
     {
       "file": "modules/io/file-actions.js",
@@ -11419,72 +12154,7 @@
       ]
     },
     {
-      "file": "modules/loc-ja.js",
-      "lineCount": 673,
-      "functions": []
-    },
-    {
-      "file": "modules/loc-zh.js",
-      "lineCount": 660,
-      "functions": []
-    },
-    {
-      "file": "modules/localization.js",
-      "lineCount": 151,
-      "functions": [
-        {
-          "name": "normalizeLanguage",
-          "line": 14,
-          "kind": "function",
-          "exported": true,
-          "calls": 3
-        },
-        {
-          "name": "translateUiString",
-          "line": 19,
-          "kind": "function",
-          "exported": true,
-          "calls": 6
-        },
-        {
-          "name": "createDocumentLocalizer",
-          "line": 54,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "localizeTextNode",
-          "line": 61,
-          "kind": "function",
-          "exported": false,
-          "calls": 4
-        },
-        {
-          "name": "localizeElement",
-          "line": 78,
-          "kind": "function",
-          "exported": false,
-          "calls": 4
-        },
-        {
-          "name": "localizeSubtree",
-          "line": 97,
-          "kind": "function",
-          "exported": false,
-          "calls": 2
-        },
-        {
-          "name": "setLanguage",
-          "line": 121,
-          "kind": "function",
-          "exported": false,
-          "calls": 2
-        }
-      ]
-    },
-    {
-      "file": "modules/material-state.js",
+      "file": "modules/material/material-state.js",
       "lineCount": 49,
       "functions": [
         {
@@ -11511,308 +12181,7 @@
       ]
     },
     {
-      "file": "modules/mirror-selection.js",
-      "lineCount": 21,
-      "functions": [
-        {
-          "name": "mirrorSelectionTargets",
-          "line": 1,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/multi-edit.js",
-      "lineCount": 10,
-      "functions": [
-        {
-          "name": "relativeEditValue",
-          "line": 1,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/poly-topology.js",
-      "lineCount": 340,
-      "functions": [
-        {
-          "name": "validVertexIndex",
-          "line": 1,
-          "kind": "function",
-          "exported": false,
-          "calls": 4
-        },
-        {
-          "name": "edgeKey",
-          "line": 5,
-          "kind": "function",
-          "exported": false,
-          "calls": 5
-        },
-        {
-          "name": "normalizePolyFaces",
-          "line": 9,
-          "kind": "function",
-          "exported": true,
-          "calls": 15
-        },
-        {
-          "name": "appendPolyQuad",
-          "line": 24,
-          "kind": "function",
-          "exported": true,
-          "calls": 3
-        },
-        {
-          "name": "polyBoundaryEdges",
-          "line": 28,
-          "kind": "function",
-          "exported": true,
-          "calls": 2
-        },
-        {
-          "name": "relaxPolyPoints",
-          "line": 43,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "squaredDistance",
-          "line": 106,
-          "kind": "function",
-          "exported": false,
-          "calls": 12
-        },
-        {
-          "name": "midpoint",
-          "line": 113,
-          "kind": "function",
-          "exported": false,
-          "calls": 3
-        },
-        {
-          "name": "orderedVerticesAroundTarget",
-          "line": 121,
-          "kind": "function",
-          "exported": false,
-          "calls": 2
-        },
-        {
-          "name": "bridgePolyEdges",
-          "line": 169,
-          "kind": "function",
-          "exported": true,
-          "calls": 2
-        },
-        {
-          "name": "polyFillCandidate",
-          "line": 183,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "deletePolyFace",
-          "line": 249,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "deletePolyFaceAndOrphans",
-          "line": 253,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "deletePolyEdge",
-          "line": 282,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "deletePolyVertex",
-          "line": 290,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "polyMeshBuffers",
-          "line": 304,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/preference-storage.js",
-      "lineCount": 33,
-      "functions": [
-        {
-          "name": "readStoredPreference",
-          "line": 1,
-          "kind": "function",
-          "exported": true,
-          "calls": 2
-        },
-        {
-          "name": "readStoredBooleanPreference",
-          "line": 14,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "writeStoredPreference",
-          "line": 25,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/preferences-backup.js",
-      "lineCount": 73,
-      "functions": [
-        {
-          "name": "createPreferencesBackup",
-          "line": 4,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "normalizePreferencesBackup",
-          "line": 29,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "preferencesBackupFileName",
-          "line": 66,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/procedural-draw.js",
-      "lineCount": 107,
-      "functions": [
-        {
-          "name": "proceduralAccessoryTaperScale",
-          "line": 3,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "proceduralAccessoryTemplateData",
-          "line": 24,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "longitudinalPoints",
-          "line": 30,
-          "kind": "arrow",
-          "exported": false,
-          "calls": 2
-        },
-        {
-          "name": "proceduralBranchTemplateData",
-          "line": 52,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/radial-layout.js",
-      "lineCount": 169,
-      "functions": [
-        {
-          "name": "radialMenuAngles",
-          "line": 3,
-          "kind": "function",
-          "exported": true,
-          "calls": 3
-        },
-        {
-          "name": "buttonsOverlapAtRadius",
-          "line": 20,
-          "kind": "function",
-          "exported": false,
-          "calls": 2
-        },
-        {
-          "name": "radialMenuDimensions",
-          "line": 36,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "radialButtonRayExtent",
-          "line": 57,
-          "kind": "function",
-          "exported": true,
-          "calls": 2
-        },
-        {
-          "name": "radialButtonEntryDistance",
-          "line": 72,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "layoutRadialOptions",
-          "line": 83,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "angularDistanceFromBottom",
-          "line": 108,
-          "kind": "arrow",
-          "exported": false,
-          "calls": 3
-        },
-        {
-          "name": "radialListCorridorContains",
-          "line": 141,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "partitionRadialOptions",
-          "line": 153,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/sculpt-brush.js",
+      "file": "modules/sculpt/sculpt-brush.js",
       "lineCount": 123,
       "functions": [
         {
@@ -11860,375 +12229,6 @@
         {
           "name": "smoothSculptTwistDeltas",
           "line": 105,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/selection-sets.js",
-      "lineCount": 55,
-      "functions": [
-        {
-          "name": "uniqueStrandIds",
-          "line": 1,
-          "kind": "function",
-          "exported": false,
-          "calls": 5
-        },
-        {
-          "name": "nextSelectionSetName",
-          "line": 8,
-          "kind": "function",
-          "exported": true,
-          "calls": 2
-        },
-        {
-          "name": "normalizeSelectionSets",
-          "line": 15,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "createSelectionSetRecord",
-          "line": 32,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "updateSelectionSetMembers",
-          "line": 42,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/selection-state.js",
-      "lineCount": 125,
-      "functions": [
-        {
-          "name": "uniqueValidIds",
-          "line": 1,
-          "kind": "function",
-          "exported": false,
-          "calls": 6
-        },
-        {
-          "name": "screenBoundsOverlap",
-          "line": 6,
-          "kind": "function",
-          "exported": true,
-          "calls": 3
-        },
-        {
-          "name": "pointInsideScreenBounds",
-          "line": 14,
-          "kind": "function",
-          "exported": false,
-          "calls": 2
-        },
-        {
-          "name": "screenCross",
-          "line": 19,
-          "kind": "function",
-          "exported": false,
-          "calls": 8
-        },
-        {
-          "name": "pointInsideScreenTriangle",
-          "line": 23,
-          "kind": "function",
-          "exported": false,
-          "calls": 2
-        },
-        {
-          "name": "screenSegmentsIntersect",
-          "line": 31,
-          "kind": "function",
-          "exported": false,
-          "calls": 2
-        },
-        {
-          "name": "triangleIntersectsScreenBounds",
-          "line": 44,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "emptyStrandSelection",
-          "line": 66,
-          "kind": "function",
-          "exported": true,
-          "calls": 2
-        },
-        {
-          "name": "resolveStrandSelection",
-          "line": 70,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "restoreStrandSelection",
-          "line": 108,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "activateStrandSelection",
-          "line": 119,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/shape-presets.js",
-      "lineCount": 56,
-      "functions": [
-        {
-          "name": "emptyShapePresetLibrary",
-          "line": 3,
-          "kind": "function",
-          "exported": true,
-          "calls": 2
-        },
-        {
-          "name": "normalizedPoints",
-          "line": 7,
-          "kind": "function",
-          "exported": false,
-          "calls": 3
-        },
-        {
-          "name": "normalizeShapePresetLibrary",
-          "line": 23,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "removeShapePreset",
-          "line": 47,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/shortcut-registry.js",
-      "lineCount": 54,
-      "functions": [
-        {
-          "name": "shortcutToolForKey",
-          "line": 34,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "workspaceForShortcutKey",
-          "line": 38,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "focusedControlShouldYieldToShortcut",
-          "line": 42,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/strand-constraints.js",
-      "lineCount": 120,
-      "functions": [
-        {
-          "name": "clamp",
-          "line": 1,
-          "kind": "function",
-          "exported": false,
-          "calls": 3
-        },
-        {
-          "name": "solvePulledStrand",
-          "line": 5,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/surface-lattice.js",
-      "lineCount": 236,
-      "functions": [
-        {
-          "name": "normalizeSurfaceLatticeCount",
-          "line": 5,
-          "kind": "function",
-          "exported": true,
-          "calls": 19
-        },
-        {
-          "name": "surfaceLatticePointOrder",
-          "line": 10,
-          "kind": "function",
-          "exported": false,
-          "calls": 3
-        },
-        {
-          "name": "surfaceLatticePointIndex",
-          "line": 23,
-          "kind": "function",
-          "exported": true,
-          "calls": 6
-        },
-        {
-          "name": "mirroredSurfaceLatticePointIndex",
-          "line": 36,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "pointComponent",
-          "line": 56,
-          "kind": "function",
-          "exported": false,
-          "calls": 2
-        },
-        {
-          "name": "catmullRomComponent",
-          "line": 60,
-          "kind": "function",
-          "exported": false,
-          "calls": 2
-        },
-        {
-          "name": "catmullRomDerivativeComponent",
-          "line": 71,
-          "kind": "function",
-          "exported": false,
-          "calls": 2
-        },
-        {
-          "name": "sampleCatmullRomLine",
-          "line": 80,
-          "kind": "function",
-          "exported": false,
-          "calls": 7
-        },
-        {
-          "name": "sampleSurfaceLattice",
-          "line": 100,
-          "kind": "function",
-          "exported": true,
-          "calls": 6
-        },
-        {
-          "name": "createSurfaceLatticePointData",
-          "line": 125,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "createLoftSurfaceLatticePointData",
-          "line": 151,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "resampleSurfaceLatticePointData",
-          "line": 177,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "surfaceLatticeWireSegments",
-          "line": 206,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/tool-presets.js",
-      "lineCount": 45,
-      "functions": [
-        {
-          "name": "emptyToolPresetLibrary",
-          "line": 3,
-          "kind": "function",
-          "exported": true,
-          "calls": 2
-        },
-        {
-          "name": "normalizeToolPresetLibrary",
-          "line": 7,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "removeToolPreset",
-          "line": 36,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/topology.js",
-      "lineCount": 21,
-      "functions": [
-        {
-          "name": "parseObjFaceVertexCounts",
-          "line": 1,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "fanTriangleEdgeMasks",
-          "line": 10,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/uv-inspector.js",
-      "lineCount": 43,
-      "functions": [
-        {
-          "name": "uvCoordinateBounds",
-          "line": 1,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "uvViewTransform",
-          "line": 23,
           "kind": "function",
           "exported": true,
           "calls": 1

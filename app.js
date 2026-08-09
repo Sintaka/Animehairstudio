@@ -4,18 +4,18 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
-import { solvePulledStrand } from "./modules/strand-constraints.js?v=20260720-1";
+import { solvePulledStrand } from "./modules/geometry/strand-constraints.js?v=20260720-1";
 import {
   proceduralAccessoryTaperScale,
   proceduralAccessoryTemplateData,
   proceduralBranchTemplateData
-} from "./modules/procedural-draw.js?v=20260805-1";
+} from "./modules/geometry/procedural-draw.js?v=20260805-1";
 import {
   compoundBridgeArchWeight,
   compoundBridgeParameters,
   compoundConnectedSegmentCount,
   compoundProfileBridgePlan
-} from "./modules/compound-strand.js?v=20260806-6";
+} from "./modules/geometry/compound-strand.js?v=20260806-6";
 import {
   adaptiveCurveParameters,
   blendDirectionPointData,
@@ -57,14 +57,14 @@ import {
   twistRateUnitsFromDegrees,
   upperProfileArcIndices,
   uniformCurveParameters
-} from "./modules/curve-math.js?v=20260806-3";
+} from "./modules/geometry/curve-math.js?v=20260806-3";
 import {
   curveLatticeLoopPointIndices,
   DEFAULT_CURVE_LATTICE_PLANE,
   flatCurveLatticePointData,
   resampleCurveLatticeLineData,
   resampleCurveLatticePointData
-} from "./modules/curve-lattice.js?v=20260726-3";
+} from "./modules/geometry/curve-lattice.js?v=20260726-3";
 import {
   createLoftSurfaceLatticePointData,
   createSurfaceLatticePointData,
@@ -76,7 +76,7 @@ import {
   sampleSurfaceLattice,
   surfaceLatticePointIndex,
   surfaceLatticeWireSegments
-} from "./modules/surface-lattice.js?v=20260727-5";
+} from "./modules/geometry/surface-lattice.js?v=20260727-5";
 import {
   buildConnectedCurveCardGrid,
   buildCurveSurfaceGrid,
@@ -86,13 +86,13 @@ import {
   DEFAULT_CURVE_SURFACE_ROWS,
   DEFAULT_CURVE_SURFACE_STRIP_WIDTH,
   resampleCurveSurfaceLine
-} from "./modules/curve-surface.js?v=20260731-8";
+} from "./modules/geometry/curve-surface.js?v=20260731-8";
 import {
   curveDeformedCapsulePoints,
   polylineLength,
   sampleCapsuleRadialProfile,
   scaleCapsuleRadialLoops
-} from "./modules/capsule-curve.js?v=20260804-1";
+} from "./modules/geometry/capsule-curve.js?v=20260804-1";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./modules/io/obj-export.js?v=20260726-1";
 import { polygonOnlyObjSource } from "./modules/io/obj-import.js?v=20260801-1";
 import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260806-4";
@@ -103,12 +103,12 @@ import {
   normalizeExportContents
 } from "./modules/io/file-actions.js?v=20260728-1";
 import { applicationDropFileKind } from "./modules/io/file-drop.js?v=20260803-1";
-import { mirrorSelectionTargets } from "./modules/mirror-selection.js?v=20260805-1";
+import { mirrorSelectionTargets } from "./modules/edit/mirror-selection.js?v=20260805-1";
 import {
   listRecentProjects,
   rememberRecentProject
 } from "./modules/io/recent-projects.js?v=20260803-1";
-import { uvCoordinateBounds, uvViewTransform } from "./modules/uv-inspector.js?v=20260726-1";
+import { uvCoordinateBounds, uvViewTransform } from "./modules/geometry/uv-inspector.js?v=20260726-1";
 import {
   cameraFacingPlaneNormal,
   inflateSculptPointScale,
@@ -117,8 +117,8 @@ import {
   sculptBrushWeight,
   smoothSculptPointDeltas,
   smoothSculptTwistDeltas
-} from "./modules/sculpt-brush.js?v=20260806-1";
-import { squareChildRing, holeBoundary, connectSide, connectBoundaryToRing } from "./modules/branch-connect.js?v=20260807-2";
+} from "./modules/sculpt/sculpt-brush.js?v=20260806-1";
+import { squareChildRing, holeBoundary, connectSide, connectBoundaryToRing } from "./modules/geometry/branch-connect.js?v=20260807-2";
 import {
   createHairProject,
   validateHairProject
@@ -132,7 +132,7 @@ import {
   createSelectionSetRecord,
   normalizeSelectionSets,
   updateSelectionSetMembers
-} from "./modules/selection-sets.js?v=20260804-2";
+} from "./modules/edit/selection-sets.js?v=20260804-2";
 import {
   layoutRadialOptions,
   partitionRadialOptions,
@@ -140,7 +140,7 @@ import {
   radialListCorridorContains,
   radialButtonRayExtent,
   radialMenuDimensions
-} from "./modules/radial-layout.js?v=20260806-14";
+} from "./modules/geometry/radial-layout.js?v=20260806-14";
 import {
   APP_VERSION,
   CURVE_LATTICE_FEATURE_ENABLED,
@@ -168,13 +168,13 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260809-2";
-import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
+} from "./modules/core/app-config.js?v=20260809-2";
+import { BoundedHistory, RestoreRefreshRegistry } from "./modules/core/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
   shortcutToolForKey,
   workspaceForShortcutKey
-} from "./modules/shortcut-registry.js?v=20260802-2";
+} from "./modules/core/shortcut-registry.js?v=20260802-2";
 import {
   activateStrandSelection,
   emptyStrandSelection,
@@ -182,9 +182,9 @@ import {
   restoreStrandSelection,
   screenBoundsOverlap,
   triangleIntersectsScreenBounds
-} from "./modules/selection-state.js?v=20260803-3";
-import { relativeEditValue } from "./modules/multi-edit.js?v=20260802-1";
-import { fanTriangleEdgeMasks, parseObjFaceVertexCounts } from "./modules/topology.js?v=20260724-1";
+} from "./modules/edit/selection-state.js?v=20260803-3";
+import { relativeEditValue } from "./modules/edit/multi-edit.js?v=20260802-1";
+import { fanTriangleEdgeMasks, parseObjFaceVertexCounts } from "./modules/geometry/topology.js?v=20260724-1";
 import {
   ANIME_ANISOTROPIC_FRAGMENT_SHADER,
   ANIME_ANISOTROPIC_NUMERIC_FIELDS,
@@ -193,38 +193,38 @@ import {
   LAMBERT_SHADER,
   normalizeHairShader,
   STANDARD_ANISOTROPIC_SHADER
-} from "./modules/anime-hair-shaders.js?v=20260730-8";
+} from "./modules/geometry/anime-hair-shaders.js?v=20260730-8";
 import {
   hairMaterialUsageCounts,
   normalizeHairMaterialDefinition,
   resolveHairMaterialDefinition
-} from "./modules/material-state.js?v=20260802-1";
+} from "./modules/material/material-state.js?v=20260802-1";
 import {
   createDocumentLocalizer,
   DEFAULT_LANGUAGE,
   LANGUAGE_STORAGE_KEY,
   normalizeLanguage
-} from "./modules/localization.js?v=20260809-1";
+} from "./modules/data/localization.js?v=20260809-1";
 import {
   emptyToolPresetLibrary,
   normalizeToolPresetLibrary,
   removeToolPreset
-} from "./modules/tool-presets.js?v=20260726-2";
+} from "./modules/data/tool-presets.js?v=20260726-2";
 import {
   emptyShapePresetLibrary,
   normalizeShapePresetLibrary,
   removeShapePreset
-} from "./modules/shape-presets.js?v=20260729-1";
+} from "./modules/data/shape-presets.js?v=20260729-1";
 import {
   createPreferencesBackup,
   normalizePreferencesBackup,
   preferencesBackupFileName
-} from "./modules/preferences-backup.js?v=20260726-3";
+} from "./modules/core/preferences-backup.js?v=20260726-3";
 import {
   readStoredBooleanPreference,
   readStoredPreference,
   writeStoredPreference
-} from "./modules/preference-storage.js?v=20260728-1";
+} from "./modules/core/preference-storage.js?v=20260728-1";
 import {
   appendPolyQuad,
   deletePolyEdge,
@@ -234,11 +234,11 @@ import {
   polyFillCandidate,
   polyMeshBuffers,
   relaxPolyPoints
-} from "./modules/poly-topology.js?v=20260728-3";
+} from "./modules/geometry/poly-topology.js?v=20260728-3";
 import {
   createClumpBrushTemplate,
   normalizeClumpBrushTemplate
-} from "./modules/clump-brush-presets.js?v=20260803-3";
+} from "./modules/data/clump-brush-presets.js?v=20260803-3";
 
 function saveLanguage(language) {
   writeStoredPreference(window, LANGUAGE_STORAGE_KEY, language);
