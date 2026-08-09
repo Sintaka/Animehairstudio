@@ -1,3 +1,4 @@
+import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";
 import { createMiscStore } from "./modules/core/misc-store.js?v=20260809-12";
 import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260809-11";
 import { createScalpStore } from "./modules/scalp/scalp-store.js?v=20260809-10";
@@ -18864,6 +18865,16 @@ function importedBooleanPreference(value, fallback) {
   return typeof value === "boolean" ? value : fallback;
 }
 
+const creationPresets = createCreationPresetsApi({
+  cloneShapePresetValue, normalizeHairLayer, normalizeClumpBrushTemplate,
+  normalizeToolPresetLibrary, emptyToolPresetLibrary, activeStrokeSurfaceValue,
+  drawSurfaceDynamicEnabled, createClumpBrushTemplate, normalizeBraidDimensions,
+  getSelectedLock, syncCreationShapeInputs, updatePlacementStatus, applyCreationToolSettings,
+  braidCreationDefaults, strandCreationDefaults, DEFAULT_BRAID_MESH_PRESET,
+  CREATION_PRESET_STORAGE_KEY, LEGACY_CLUMP_PRESET_STORAGE_KEY,
+  projectState, drawState: draw.state, hairState: hairState.state, selState: sel.state, guideState: guideState.state
+});
+
 async function loadPreferencesAndPresets(file) {
   const backup = normalizePreferencesBackup(JSON.parse(await file.text()));
   const preferences = backup.preferences;
@@ -18902,8 +18913,8 @@ async function loadPreferencesAndPresets(file) {
     saveLanguage(language);
   }
   if (preferences.defaultShader != null) setDefaultHairShader(preferences.defaultShader);
-  projectState.state.customCreationPresets = normalizeCreationPresetLibrary(backup.presets);
-  saveCustomCreationPresets();
+  projectState.state.customCreationPresets = creationPresets.normalizeCreationPresetLibrary(backup.presets);
+  creationPresets.saveCustomCreationPresets();
   projectState.state.customShapePresets = normalizeShapePresetLibrary(backup.shapePresets);
   saveCustomShapePresets();
   populateShapePresetSelects();
@@ -34272,94 +34283,9 @@ removePanelSplitButton?.addEventListener("click", () => changePanelSplitCount(-1
     syncMultiStrandInputs(braid);
   });
 });
-function presetNumber(value, fallback) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
 
-function clonePresetShape(value, fallback) {
-  const fallbackPoint = fallback?.[0];
-  const coordinateKeys = fallbackPoint && "position" in fallbackPoint ? ["position", "value"] : ["x", "z"];
-  const usable = Array.isArray(value)
-    && value.length >= 2
-    && value.every((point) => point && coordinateKeys.every((key) => Number.isFinite(Number(point[key]))));
-  return cloneShapePresetValue(usable ? value : fallback);
-}
 
-function creationPresetSnapshot(source, type) {
-  const fallback = type === "braid" ? braidCreationDefaults : strandCreationDefaults;
-  const snapshot = {
-    width: presetNumber(source.width, fallback.width),
-    depth: presetNumber(source.depth, fallback.depth),
-    widthScale: presetNumber(source.widthScale, 1),
-    depthScale: presetNumber(source.depthScale, 1),
-    profileTrimLeft: presetNumber(source.profileTrimLeft, 0),
-    profileTrimRight: presetNumber(source.profileTrimRight, 0),
-    profileTrimRoundness: presetNumber(source.profileTrimRoundness, 1),
-    hairCard: Boolean(source.hairCard),
-    strandSplitEnabled: Boolean(source.strandSplitEnabled),
-    strandSplitPosition: presetNumber(source.strandSplitPosition, 0),
-    strandSplitHeight: presetNumber(source.strandSplitHeight, 0.3),
-    strandSplitGap: presetNumber(source.strandSplitGap, 0.12),
-    profileOffset: presetNumber(source.profileOffset, 0),
-    rootScalpOffset: presetNumber(source.rootScalpOffset, 0),
-    strandRotation: presetNumber(source.strandRotation, 0),
-    twist: presetNumber(source.twist, 0),
-    twistCurve: clonePresetShape(source.twistCurve, fallback.twistCurve),
-    hairLayer: normalizeHairLayer(source.hairLayer),
-    dynamicDensity: Boolean(source.dynamicDensity),
-    densityAggression: presetNumber(source.densityAggression, 0.5),
-    twistDensity: presetNumber(source.twistDensity, 0),
-    taperCurve: clonePresetShape(source.taperCurve, fallback.taperCurve),
-    depthCurve: clonePresetShape(source.depthCurve, fallback.depthCurve),
-    taperCurveSecondary: clonePresetShape(source.taperCurveSecondary || source.taperCurve, fallback.taperCurveSecondary),
-    depthCurveSecondary: clonePresetShape(source.depthCurveSecondary || source.depthCurve, fallback.depthCurveSecondary),
-    asymmetricWidthCurve: Boolean(source.asymmetricWidthCurve),
-    asymmetricDepthCurve: Boolean(source.asymmetricDepthCurve),
-    centerAsymmetricProfile: Boolean(source.centerAsymmetricProfile),
-    sweepProfile: clonePresetShape(source.sweepProfile, fallback.sweepProfile)
-  };
-  if (type === "strand") {
-    snapshot.curlCount = presetNumber(source.curlCount, 4);
-    snapshot.curlDisplacement = presetNumber(source.curlDisplacement, 0.18);
-    const clumpTemplate = normalizeClumpBrushTemplate(source.clumpTemplate);
-    if (clumpTemplate) snapshot.clumpTemplate = clumpTemplate;
-  } else {
-    snapshot.braidMeshPreset = source.braidMeshPreset || DEFAULT_BRAID_MESH_PRESET;
-    snapshot.braidWidth = presetNumber(source.braidWidth, 0.34);
-    snapshot.braidDepth = presetNumber(source.braidDepth, 0.44);
-    snapshot.braidSegmentLength = presetNumber(source.braidSegmentLength, 0.28);
-    snapshot.braidRotation = presetNumber(source.braidRotation, 0);
-  }
-  return snapshot;
-}
 
-function creationToolSettingsSnapshot(type) {
-  if (type === "braid") {
-    return {
-      toolSize: Number(braidToolSizeInput.value),
-      smoothing: Number(braidSmoothingInput.value),
-      curveStep: Number(braidCurveStepInput.value),
-      scalpOffset: Number(braidScalpOffsetInput.value),
-      surface: activeStrokeSurfaceValue(),
-      dynamicSurface: drawSurfaceDynamicEnabled(),
-      autoShowScalp: braidAutoShowScalpInput.checked,
-      continueFromTip: braidContinueFromTipInput.checked
-    };
-  }
-  return {
-    brushPreset: drawBrushPresetInput.value.startsWith("custom:") ? drawStrandMode : drawBrushPresetInput.value,
-    toolSize: Number(drawToolSizeInput.value),
-    smoothing: Number(drawStrandSmoothingInput.value),
-    curveStep: Number(drawStrandCurveStepInput.value),
-    scalpOffset: Number(drawStrandScalpOffsetInput.value),
-    surfaceNormalInfluence: Number(drawSurfaceNormalInfluenceInput.value),
-    surface: activeStrokeSurfaceValue(),
-    dynamicSurface: drawSurfaceDynamicEnabled(),
-    autoShowScalp: drawAutoShowScalpInput.checked,
-    continueFromTip: drawContinueFromTipInput.checked
-  };
-}
 
 function applyPresetControl(input, value) {
   if (value === undefined || value === null) return;
@@ -34420,68 +34346,11 @@ function applyCreationToolSettings(type, settings, options = {}) {
   if (preservedBrushPreset) drawBrushPresetInput.value = preservedBrushPreset;
 }
 
-const defaultBraidToolSettings = creationToolSettingsSnapshot("braid");
+const defaultBraidToolSettings = creationPresets.creationToolSettingsSnapshot("braid");
 
-function normalizeCreationPresetLibrary(value) {
-  return normalizeToolPresetLibrary(value, (presetValue, type) => {
-    const fallback = type === "braid" ? braidCreationDefaults : strandCreationDefaults;
-    return creationPresetSnapshot({ ...fallback, ...presetValue }, type);
-  });
-}
 
-function loadCustomCreationPresets() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(CREATION_PRESET_STORAGE_KEY) || "null");
-    projectState.state.customCreationPresets = normalizeCreationPresetLibrary(saved);
-  } catch (error) {
-    console.warn("Could not load creation presets", error);
-    projectState.state.customCreationPresets = emptyToolPresetLibrary();
-  }
-}
 
-function saveCustomCreationPresets() {
-  try {
-    localStorage.setItem(CREATION_PRESET_STORAGE_KEY, JSON.stringify(projectState.state.customCreationPresets));
-  } catch (error) {
-    console.warn("Could not save creation presets", error);
-  }
-}
 
-function migrateLegacyClumpPresets() {
-  try {
-    const legacyRecords = JSON.parse(localStorage.getItem(LEGACY_CLUMP_PRESET_STORAGE_KEY) || "null");
-    if (!Array.isArray(legacyRecords) || !legacyRecords.length) return;
-    const existingIds = new Set(projectState.state.customCreationPresets.strand.map((preset) => preset.id));
-    let migrated = false;
-    legacyRecords.forEach((record) => {
-      const locks = Array.isArray(record?.value?.locks) ? record.value.locks : [];
-      const guide = locks.find((lock) => lock?.clumpGuide);
-      const clumpTemplate = createClumpBrushTemplate(locks, guide.id);
-      const legacyId = typeof record?.id === "string" ? record.id : "";
-      const name = typeof record?.title === "string" ? record.title.trim().slice(0, 60) : "";
-      const id = `legacy-clump-${legacyId}`;
-      if (!guide || !clumpTemplate || !legacyId || !name || existingIds.has(id)) return;
-      projectState.state.customCreationPresets.strand.push({
-        id,
-        name,
-        value: {
-          ...creationPresetSnapshot(guide, "strand"),
-          clumpTemplate
-        },
-        toolSettings: {
-          ...creationToolSettingsSnapshot("strand"),
-          brushPreset: "clump"
-        }
-      });
-      existingIds.add(id);
-      migrated = true;
-    });
-    if (migrated) saveCustomCreationPresets();
-    localStorage.removeItem(LEGACY_CLUMP_PRESET_STORAGE_KEY);
-  } catch (error) {
-    console.warn("Could not migrate legacy clump presets", error);
-  }
-}
 
 function populateCreationPresetSelect(select, type, selectedValue = select.value) {
   const builtIns = [{ value: "classic", label: "Classic Braid" }, { value: "chain-links", label: "Chain Links" }];
@@ -34545,42 +34414,7 @@ function syncCreationPresetRemoveButtons() {
   removeBraidToolPresetButton.disabled = !braidToolPresetInput.value.startsWith("custom:");
 }
 
-function applyCreationPresetSnapshot(target, snapshot, type) {
-  const keys = [
-    "width", "depth", "widthScale", "depthScale", "profileTrimLeft", "profileTrimRight", "profileTrimRoundness", "hairCard",
-    "strandSplitEnabled", "strandSplitPosition", "strandSplitHeight", "strandSplitGap", "profileOffset", "rootScalpOffset", "strandRotation", "twist",
-    "hairLayer", "dynamicDensity", "densityAggression", "twistDensity", "curlCount", "curlDisplacement",
-    "braidMeshPreset", "braidWidth", "braidDepth", "braidSegmentLength", "braidRotation",
-    "asymmetricWidthCurve", "asymmetricDepthCurve", "centerAsymmetricProfile"
-  ];
-  keys.forEach((key) => {
-    if (snapshot[key] !== undefined) target[key] = snapshot[key];
-  });
-  ["taperCurve", "depthCurve", "taperCurveSecondary", "depthCurveSecondary", "twistCurve", "sweepProfile"].forEach((key) => {
-    if (snapshot[key]) target[key] = cloneShapePresetValue(snapshot[key]);
-  });
-  if (type === "braid") normalizeBraidDimensions(target);
-}
 
-function applyCustomCreationPreset(type, value) {
-  const id = value.replace(/^custom:/, "");
-  const preset = projectState.state.customCreationPresets[type].find((item) => item.id === id);
-  if (!preset) return;
-  const target = type === "braid" ? braidCreationDefaults : strandCreationDefaults;
-  if (type === "strand") draw.state.activeCustomDrawClumpTemplate = null;
-  applyCreationPresetSnapshot(target, preset.value, type);
-  applyCreationToolSettings(type, preset.toolSettings, {
-    preserveBrushPresetSelection: type === "strand"
-  });
-  if (type === "strand") {
-    draw.state.activeCustomDrawClumpTemplate = normalizeClumpBrushTemplate(preset.value.clumpTemplate);
-    if (draw.state.activeCustomDrawClumpTemplate) hairState.state.drawStrandMode = "clump";
-  }
-  if (!getSelectedLock() && ((type === "braid" && sel.state.activeTool === "braid") || (type === "strand" && sel.state.activeTool === "draw"))) {
-    syncCreationShapeInputs();
-  }
-  updatePlacementStatus();
-}
 
 
 function createCustomCreationPreset(type) {
@@ -34630,16 +34464,16 @@ function commitCustomCreationPreset() {
       id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
       name,
       value: {
-        ...creationPresetSnapshot(guideSnapshot, "strand"),
+        ...creationPresets.creationPresetSnapshot(guideSnapshot, "strand"),
         clumpTemplate
       },
       toolSettings: {
-        ...creationToolSettingsSnapshot("strand"),
+        ...creationPresets.creationToolSettingsSnapshot("strand"),
         brushPreset: "clump"
       }
     };
     projectState.state.customCreationPresets.strand.push(preset);
-    saveCustomCreationPresets();
+    creationPresets.saveCustomCreationPresets();
     draw.state.activeCustomDrawClumpTemplate = clumpTemplate;
     hairState.state.drawStrandMode = "clump";
     populateDrawBrushPresetSelect(`custom:${preset.id}`);
@@ -34656,15 +34490,15 @@ function commitCustomCreationPreset() {
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
     name,
     value: {
-      ...creationPresetSnapshot(source, type),
+      ...creationPresets.creationPresetSnapshot(source, type),
       ...(type === "strand" && draw.state.activeCustomDrawClumpTemplate
         ? { clumpTemplate: normalizeClumpBrushTemplate(draw.state.activeCustomDrawClumpTemplate) }
         : {})
     },
-    toolSettings: creationToolSettingsSnapshot(type)
+    toolSettings: creationPresets.creationToolSettingsSnapshot(type)
   };
   projectState.state.customCreationPresets[type].push(preset);
-  saveCustomCreationPresets();
+  creationPresets.saveCustomCreationPresets();
   if (type === "braid") {
     populateCreationPresetSelect(braidToolPresetInput, type, `custom:${preset.id}`);
   } else {
@@ -34692,7 +34526,7 @@ function commitRemoveCreationPreset() {
   if (!projectState.state.pendingCreationPresetRemoval) return;
   const { type, id } = projectState.state.pendingCreationPresetRemoval;
   projectState.state.customCreationPresets = removeToolPreset(projectState.state.customCreationPresets, type, id);
-  saveCustomCreationPresets();
+  creationPresets.saveCustomCreationPresets();
   if (type === "braid") {
     const fallback = braidCreationDefaults.braidMeshPreset === "chain-links" ? "chain-links" : "classic";
     populateCreationPresetSelect(braidToolPresetInput, "braid", fallback);
@@ -34740,14 +34574,14 @@ function applyBraidToolPreset(presetId) {
   updatePlacementStatus();
 }
 
-loadCustomCreationPresets();
-migrateLegacyClumpPresets();
+creationPresets.loadCustomCreationPresets();
+creationPresets.migrateLegacyClumpPresets();
 populateDrawBrushPresetSelect("standard");
 populateCreationPresetSelect(braidToolPresetInput, "braid", "classic");
 
 drawBrushPresetInput.addEventListener("change", () => {
   if (drawBrushPresetInput.value.startsWith("custom:")) {
-    applyCustomCreationPreset("strand", drawBrushPresetInput.value);
+    creationPresets.applyCustomCreationPreset("strand", drawBrushPresetInput.value);
   } else {
     setDrawStrandMode(drawBrushPresetInput.value);
   }
@@ -34758,7 +34592,7 @@ drawBrushPresetInput.addEventListener("change", () => {
 braidToolPresetInput.addEventListener("change", () => {
   pushUndoState();
   if (braidToolPresetInput.value.startsWith("custom:")) {
-    applyCustomCreationPreset("braid", braidToolPresetInput.value);
+    creationPresets.applyCustomCreationPreset("braid", braidToolPresetInput.value);
   } else {
     applyBraidToolPreset(braidToolPresetInput.value);
   }

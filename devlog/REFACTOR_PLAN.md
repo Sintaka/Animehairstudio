@@ -52,7 +52,7 @@
 目标：把 app.js（38,605 行）的业务逻辑按子系统迁入模块，app.js 只保留「初始化 + store 装配 + 事件绑定」。
 模式：依赖注入（如 IO 的 createProjectSaveApi(deps)）——迁出函数通过 deps 接收 app.js 函数引用 + store。
 候选批次（按独立性排序）：
-1. creation preset 系统（L34276-34708，~15 函数）✅ 第一批
+1. creation preset 系统（L34276-34708，~15 函数）✅ 第一批（迁出 10 个核心逻辑函数 → modules/io/creation-presets.js，依赖注入 createCreationPresetsApi(deps)，app.js 38,605→38,437 行）
 2. shape preset 系统（L16395-16850，~15 函数）
 3. 子发片桥接几何（buildBranchBridgeGeometry/createBranchChildGeometry/applyBranchRootRegionCarving，~1000 行）
 4. scalp 系统函数
