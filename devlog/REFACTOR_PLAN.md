@@ -23,7 +23,9 @@
 - [x] **阶段 1b：bug-fixes 拆独立条目**（#3 拆为 #3/#4/#5，每版含根因/修复/验证/保留判断）
 - [x] **阶段 1c：js-change-annotations 按子系统拆文件**（195 条目 → annotations-bridge/region-panel/root-bone/split/display-fixes/adapt 6 文件，原文件为 42 行索引；local-adaptation-log 保持唯一时间线）
 - [x] **阶段 1d：加 upstream remote，核对 main 与上游同步**（upstream = Ludetools/Animehairstudio；main == upstream/main == d3358f6，完全同步）
-- [x] **阶段 2a：目标文件夹架构落地（IO 域）**——新建 `modules/io/`，把 8 个现有 IO 模块移入（file-actions / file-drop / obj-export / obj-import / usda-export / project-schema / project-state / recent-projects），更新 app.js 8 处 import（纯路径，逻辑零改动）`r`n- [x] **阶段 2b：从 app.js 拆 IO 子系统**（save/export + 文件对话框 → `modules/io/project-files.js`，依赖注入 4 函数 + 8 状态 getter/setter；app.js 39,207→38,785 行；verify-smoke 8/8）`r`n- [ ] **阶段 2c（后续域）**：core/ data/ geometry/ edit/ sculpt/ material/ 归组（按依赖图逐域落地）
+- [x] **阶段 2a：目标文件夹架构落地（IO 域）**——新建 `modules/io/`，把 8 个现有 IO 模块移入（file-actions / file-drop / obj-export / obj-import / usda-export / project-schema / project-state / recent-projects），更新 app.js 8 处 import（纯路径，逻辑零改动）
+- [x] **阶段 2b：从 app.js 拆 IO 子系统**（save/export + 文件对话框 → `modules/io/project-files.js`，依赖注入 4 函数 + 8 状态 getter/setter；app.js 39,207→38,785 行；verify-smoke 8/8）
+- [ ] **阶段 2c（后续域）**：core/ data/ geometry/ edit/ sculpt/ material/ 归组（按依赖图逐域落地）
 - [ ] **阶段 3（可选）：全局状态收敛**（237 个 let → 按子系统 store）
 
 ## 验证策略（每条铁律）
