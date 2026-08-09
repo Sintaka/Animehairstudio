@@ -147,6 +147,7 @@
 - [x] Front Bangs 1-3 视口三角观感修复（0.2.55）：createPanelStrandGeometry 的 addQuad 跳过退化（角点重合）与反射折叠（两三角法线相反）quad，最大二面角 180/90° → ≤10.7°；导出一直是四边面不受影响
 - [x] 面板线框三角面真正修复（0.2.56）：绕序翻转后同步交换 triangleEdgeMasks 的 [1]/[2]，quad 对角线不再被描边；0.2.55 的退化/反射折叠清理保留
 - [x] 重构：localization 词典拆数据文件（0.2.57）：JA/ZH 词典从 modules/localization.js 拆到 modules/loc-ja.js / loc-zh.js（export default Object.freeze），localization.js 改 import 两词典，逻辑零改动；拆分前后 key 数一致（JA 667 / ZH 653）；verify-smoke.mjs 6/6 通过（页面加载 0 异常、zh/ja/en 翻译正常、0043.ahs 加载重建无异常）
+- [x] 修复：Branch Bridge Smooth 按子发片独立（0.2.57）：滑杆读写当前选中子发片的 lock.branchBridgeSmoothStrength/Detail（无选中写全局默认作新子发片默认值）；面板选中变化时 updateBranchBridgeSliderInputs 刷新；几何侧 L15074 本就支持 lock 覆盖；lock 字段随 .ahs 直接序列化持久化；verify 新增 per-lock 测试
 - [x] 重构：branch/sub store（0.2.57，3c 第一批）：modules/branch/branch-store.js 收敛 8 个 let（smooth strength/detail、sync 速度、rigid blend、region view、更新中标志），5 个偏好字段持久化；替换排除 lock.branchBridgeSmoothStrength 等对象属性；全局 let 229→221；verify 12/12
 - [x] 重构：核心场景 store（选择集，0.2.57）：modules/core/scene-store.js（Proxy 可变状态容器 + snapshot/restore/subscribe）+ modules/edit/selection-store.js（选择集 12 状态 + selectionSnapshot 对接 project-state 快照）；app.js 全局 let 241→229；verify-smoke 12/12（4 .ahs 加载 + 选择交互 + IO 对话框）
 - [x] 重构：全部模块按域归组（0.2.57）：core(5)/data(6)/edit(4)/geometry(14)/material(1)/sculpt(1) + io(9)，扁平模块归零；material-state 跨域 import 改相对路径；verify-smoke 8/8（脚本路径同步更新到 data/）

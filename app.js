@@ -28969,6 +28969,7 @@ function updateAttributeEditorMode() {
   );
   hierarchyPanel.classList.toggle("hidden", !editingStrand || !hierarchyToolActive || !hierarchyEditing);
   branchBridgePanel.classList.toggle("hidden", !editingStrand || !getSelectedLock()?.branchParentId);
+  updateBranchBridgeSliderInputs();
   strandLayerControl.classList.toggle("hidden", editingCreationShape && activeTool === "draw");
   strandShapePanel.classList.toggle("hidden", Boolean(selectedPoly) || (!editingStrand && !editingCreationShape));
   strandShapeTitle.textContent = editingCreationShape
@@ -34983,27 +34984,50 @@ branchRigidCurvatureBlendInput.addEventListener("change", () => {
   branchRigidCurvatureBlendInput.value = branch.state.branchRigidCurvatureBlend;
   writeStoredPreference(window, BRANCH_RIGID_CURVATURE_BLEND_PREFERENCE_KEY, branch.state.branchRigidCurvatureBlend);
 });
-branchBridgeSmoothStrengthInput.value = branch.state.branchBridgeSmoothStrength;
-{
-  const n = branchBridgeSmoothStrengthInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
-  if (n) n.value = branch.state.branchBridgeSmoothStrength;
+function selectedBranchChildLock() {
+  const lock = getSelectedLock();
+  return lock && lock.branchParentId ? lock : null;
+}
+function updateBranchBridgeSliderInputs() {
+  const lock = selectedBranchChildLock();
+  const strength = lock?.branchBridgeSmoothStrength ?? branch.state.branchBridgeSmoothStrength;
+  const detail = lock?.branchBridgeSmoothDetail ?? branch.state.branchBridgeSmoothDetail;
+  branchBridgeSmoothStrengthInput.value = strength;
+  branchBridgeSmoothDetailInput.value = detail;
+  const n1 = branchBridgeSmoothStrengthInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
+  if (n1) n1.value = strength;
+  const n2 = branchBridgeSmoothDetailInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
+  if (n2) n2.value = detail;
 }
 branchBridgeSmoothStrengthInput.addEventListener("input", () => {
-  branch.state.branchBridgeSmoothStrength = THREE.MathUtils.clamp(Number(branchBridgeSmoothStrengthInput.value) || 0, 0, 1);
-  branchBridgeSmoothStrengthInput.value = branch.state.branchBridgeSmoothStrength;
-  writeStoredPreference(window, BRANCH_BRIDGE_SMOOTH_STRENGTH_PREFERENCE_KEY, branch.state.branchBridgeSmoothStrength);
-  locks.forEach((lock) => { if (lock?.branchRootRegion) rebuildLockGeometry(lock); });
+  const value = THREE.MathUtils.clamp(Number(branchBridgeSmoothStrengthInput.value) || 0, 0, 1);
+  const lock = selectedBranchChildLock();
+  if (lock) {
+    lock.branchBridgeSmoothStrength = value;
+    rebuildLockGeometry(lock);
+  } else {
+    branch.state.branchBridgeSmoothStrength = value;
+    writeStoredPreference(window, BRANCH_BRIDGE_SMOOTH_STRENGTH_PREFERENCE_KEY, value);
+    locks.forEach((l) => { if (l?.branchRootRegion) rebuildLockGeometry(l); });
+  }
+  branchBridgeSmoothStrengthInput.value = value;
+  const n = branchBridgeSmoothStrengthInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
+  if (n) n.value = value;
 });
-branchBridgeSmoothDetailInput.value = branch.state.branchBridgeSmoothDetail;
-{
-  const n = branchBridgeSmoothDetailInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
-  if (n) n.value = branch.state.branchBridgeSmoothDetail;
-}
 branchBridgeSmoothDetailInput.addEventListener("input", () => {
-  branch.state.branchBridgeSmoothDetail = THREE.MathUtils.clamp(Math.round(Number(branchBridgeSmoothDetailInput.value) || 1), 0, 8);
-  branchBridgeSmoothDetailInput.value = branch.state.branchBridgeSmoothDetail;
-  writeStoredPreference(window, BRANCH_BRIDGE_SMOOTH_DETAIL_PREFERENCE_KEY, branch.state.branchBridgeSmoothDetail);
-  locks.forEach((lock) => { if (lock?.branchRootRegion) rebuildLockGeometry(lock); });
+  const value = THREE.MathUtils.clamp(Math.round(Number(branchBridgeSmoothDetailInput.value) || 1), 0, 8);
+  const lock = selectedBranchChildLock();
+  if (lock) {
+    lock.branchBridgeSmoothDetail = value;
+    rebuildLockGeometry(lock);
+  } else {
+    branch.state.branchBridgeSmoothDetail = value;
+    writeStoredPreference(window, BRANCH_BRIDGE_SMOOTH_DETAIL_PREFERENCE_KEY, value);
+    locks.forEach((l) => { if (l?.branchRootRegion) rebuildLockGeometry(l); });
+  }
+  branchBridgeSmoothDetailInput.value = value;
+  const n = branchBridgeSmoothDetailInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
+  if (n) n.value = value;
 });
 branchRegionSyncLateralInput.value = branch.state.branchRegionSyncLateral;
 branchRegionSyncLateralInput.addEventListener("input", () => {

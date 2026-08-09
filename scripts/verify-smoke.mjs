@@ -217,6 +217,36 @@ try {
   const selParse = JSON.parse(selR);
   check("selection store: click lock item selects it", selParse.ok, selParse.reason || selParse.after);
 
+  // branch bridge smooth must be per-lock (slider writes selected child lock)
+  const branchR = await evalJS(cdp, `(async () => {
+    const items = [...document.querySelectorAll('.lock-item')];
+    const panel = document.querySelector('#branchBridgePanel');
+    const strength = document.querySelector('#branchBridgeSmoothStrengthInput');
+    const children = [];
+    for (const it of items) {
+      it.click();
+      await new Promise(r => setTimeout(r, 200));
+      if (panel && !panel.classList.contains('hidden')) children.push(it);
+      if (children.length >= 2) break;
+    }
+    if (!children.length) return JSON.stringify({ ok: false, reason: 'no child strand found' });
+    const setVal = async (it, v) => { it.click(); await new Promise(r => setTimeout(r, 200)); strength.value = String(v); strength.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 300)); };
+    const readVal = async (it) => { it.click(); await new Promise(r => setTimeout(r, 200)); return Number(strength.value); };
+    await setVal(children[0], 0.3);
+    if (children.length >= 2) {
+      await setVal(children[1], 0.8);
+      const a = await readVal(children[0]);
+      const b = await readVal(children[1]);
+      const ok = Math.abs(a - 0.3) < 0.02 && Math.abs(b - 0.8) < 0.02;
+      return JSON.stringify({ ok, reason: ok ? 'per-lock memory ok (2 children)' : 'a=' + a + ' b=' + b, children: children.length });
+    }
+    const a = await readVal(children[0]);
+    const ok = Math.abs(a - 0.3) < 0.02;
+    return JSON.stringify({ ok, reason: ok ? 'value remembered' : 'got ' + a, children: children.length });
+  })()`);
+  const branchParse = JSON.parse(branchR);
+  check("branch bridge smooth is per-lock", branchParse.ok, branchParse.reason + ' [' + branchParse.children + ' children]');
+
   cdp.ws.close();
 } catch (e) {
   console.error("VERIFY ERROR:", e.message);
