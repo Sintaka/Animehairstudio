@@ -1,4 +1,4 @@
-# 本地适配进度
+﻿# 本地适配进度
 
 <!-- 本文件由 devlog 拆分而来；入口见 README.md 索引 -->
 
@@ -146,3 +146,5 @@
 - [x] 刘海 split 父发片线框三角面修复（0.2.54）：applyBranchRootRegionCarving 挖洞后同步裁剪 triangleEdgeMasks（按被删面去 2 条侧面 mask、保留端盖），线框不再画错误对角线；导出一直是四边面不受影响
 - [x] Front Bangs 1-3 视口三角观感修复（0.2.55）：createPanelStrandGeometry 的 addQuad 跳过退化（角点重合）与反射折叠（两三角法线相反）quad，最大二面角 180/90° → ≤10.7°；导出一直是四边面不受影响
 - [x] 面板线框三角面真正修复（0.2.56）：绕序翻转后同步交换 triangleEdgeMasks 的 [1]/[2]，quad 对角线不再被描边；0.2.55 的退化/反射折叠清理保留
+- [x] 重构：localization 词典拆数据文件（0.2.57）：JA/ZH 词典从 modules/localization.js 拆到 modules/loc-ja.js / loc-zh.js（export default Object.freeze），localization.js 改 import 两词典，逻辑零改动；拆分前后 key 数一致（JA 667 / ZH 653）；verify-smoke.mjs 6/6 通过（页面加载 0 异常、zh/ja/en 翻译正常、0043.ahs 加载重建无异常）
+- [x] 文档检索重构（0.2.57）：js-change-annotations 195 条目按 6 子系统拆分（annotations-bridge/region-panel/root-bone/split/display-fixes/adapt，原文件改为索引）；bug-fixes #3 拆 #3/#4/#5；新增 FUNCTION_INDEX.md/.json（node scripts/gen-function-index.js 机器生成）、REFACTOR_PLAN.md、scripts/verify-smoke.mjs（自包含浏览器冒烟验证）
