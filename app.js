@@ -1,3 +1,4 @@
+import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260809-19";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260809-18";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260809-17";
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260809-16";
@@ -13760,6 +13761,16 @@ function triangulatePolygon3D(points, outward) {
   return out;
 }
 
+const branchSweep = createBranchSweepApi({
+  activeCreationShapeDefaults, activeProfileOffset, applyGroupDefaultsToExistingStrands,
+  closeTaperCurveEditor, compatibleSelectedLocks, creationToolActive, editSelectedLocks,
+  getSelectedLock, profileToCanvas, renderHairCardCoveragePath, renderProfilePreview,
+  strandRegionDisplayLabel, syncShapePresetSelects, taperMeshPointExtentPerValue,
+  taperMeshPointFrame, taperSamples, updateDrawStrandPreview, updateViewportStatsVisibility, locks,
+  TWIST_CURVE_DISPLAY_RANGE_DEFAULT, TWIST_CURVE_VALUE_MAX, STRAND_GROUPS,
+  sculptState: sculptState.state, projectState: projectState.state, selState: sel.state, miscState: miscState.state
+});
+
 function orientedQuadFace(vertices, a, b, c, d, outward) {
   const pointA = new THREE.Vector3(vertices[a * 3], vertices[a * 3 + 1], vertices[a * 3 + 2]);
   const pointB = new THREE.Vector3(vertices[b * 3], vertices[b * 3 + 1], vertices[b * 3 + 2]);
@@ -13770,14 +13781,14 @@ function orientedQuadFace(vertices, a, b, c, d, outward) {
 
 ﻿function createSplitStrandGeometry(lock, curve, profilePoints) {
   const radialSegments = THREE.MathUtils.clamp(Math.round(lock.radialSegments || 10), 6, 32);
-  const profileCurve = createSmoothSweepProfileCurve(profilePoints);
+  const profileCurve = branchSweep.createSmoothSweepProfileCurve(profilePoints);
   const sampleParameters = [
     ...Array.from({ length: radialSegments }, (_, index) => index / radialSegments),
     ...profilePoints.map((_, index) => index / profilePoints.length)
   ].sort((a, b) => a - b).filter((value, index, values) => (
     index === 0 || Math.abs(value - values[index - 1]) > 0.00001
   ));
-  const polygon = sampleParameters.map((t) => sampleSweepProfile(profilePoints, t, profileCurve));
+  const polygon = sampleParameters.map((t) => branchSweep.sampleSweepProfile(profilePoints, t, profileCurve));
   const minX = Math.min(...polygon.map((point) => point.x));
   const maxX = Math.max(...polygon.map((point) => point.x));
   if (!Number.isFinite(minX) || maxX - minX < 0.0001) return null;
@@ -13975,9 +13986,9 @@ function orientedQuadFace(vertices, a, b, c, d, outward) {
 }
 
 function createHairCardGeometry(lock, curve, profilePoints) {
-  const profileCurve = createSmoothSweepProfileCurve(profilePoints);
+  const profileCurve = branchSweep.createSmoothSweepProfileCurve(profilePoints);
   const radialSegments = THREE.MathUtils.clamp(Math.round(lock.radialSegments || 10), 4, 24);
-  const closedTopology = createSweepProfileTopology(profilePoints, radialSegments, profileCurve);
+  const closedTopology = branchSweep.createSweepProfileTopology(profilePoints, radialSegments, profileCurve);
   const arcIndices = upperProfileArcIndices(closedTopology.samples.map((sample) => sample.point));
   const arcSamples = arcIndices.map((index) => closedTopology.samples[index]);
   const arcDistances = [0];
@@ -14377,14 +14388,14 @@ function createCompoundStrandGeometry(lock) {
   ));
   if (controllerCurves.length !== 3) return createConnectedCurveCardGeometry(lock);
 
-  const profilePoints = trimmedSweepProfile(
+  const profilePoints = branchSweep.trimmedSweepProfile(
     (lock.sweepProfile?.length >= 4 ? lock.sweepProfile : DEFAULT_SWEEP_PROFILE)
       .map((point) => ({ ...point, z: point.z + Number(lock.profileOffset || 0) })),
     lock
   );
-  const profileCurve = createSmoothSweepProfileCurve(profilePoints);
+  const profileCurve = branchSweep.createSmoothSweepProfileCurve(profilePoints);
   const radialSegments = THREE.MathUtils.clamp(Math.round(lock.radialSegments || 10), 4, 24);
-  const profileTopology = createSweepProfileTopology(profilePoints, radialSegments, profileCurve);
+  const profileTopology = branchSweep.createSweepProfileTopology(profilePoints, radialSegments, profileCurve);
   const profileSamples = profileTopology.samples.map((sample) => sample.point);
 
   const renderRows = THREE.MathUtils.clamp(
@@ -14703,15 +14714,15 @@ function createBaseHairGeometry(lock) {
   const curve = strandGeometryCurve(lock);
   const baseProfilePoints = (lock.sweepProfile?.length >= 4 ? lock.sweepProfile : DEFAULT_SWEEP_PROFILE)
     .map((point) => ({ ...point, z: point.z + Number(lock.profileOffset || 0) }));
-  const profilePoints = trimmedSweepProfile(baseProfilePoints, lock);
+  const profilePoints = branchSweep.trimmedSweepProfile(baseProfilePoints, lock);
   if (lock.geometryType === "strand" && lock.hairCard) return createHairCardGeometry(lock, curve, profilePoints);
   if (lock.geometryType === "strand" && lock.strandSplitEnabled) {
     const splitGeometry = createSplitStrandGeometry(lock, curve, profilePoints);
     if (splitGeometry) return splitGeometry;
   }
-  const profileCurve = createSmoothSweepProfileCurve(profilePoints);
+  const profileCurve = branchSweep.createSmoothSweepProfileCurve(profilePoints);
   const radialSegments = THREE.MathUtils.clamp(Math.round(lock.radialSegments || 10), 4, 24);
-  const profileTopology = createSweepProfileTopology(profilePoints, radialSegments, profileCurve);
+  const profileTopology = branchSweep.createSweepProfileTopology(profilePoints, radialSegments, profileCurve);
   const profileVertexCount = profileTopology.slots.length;
   const curlSegments = lock.curlEnabled ? Math.ceil(Number(lock.curlCount ?? 4) * 14) : 0;
   const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), curlSegments), 4, 256);
@@ -15355,51 +15366,8 @@ function requestGroupDefaultsWarning(event) {
   if (!groupDefaultsWarning.open) groupDefaultsWarning.showModal();
 }
 
-function activeSweepProfile() {
-  if (!sculptState.state.sweepProfileEdit) return null;
-  if (sculptState.state.sweepProfileEdit.type === "group") return strandGroupDefaults[sculptState.state.sweepProfileEdit.id]?.sweepProfile || null;
-  if (sculptState.state.sweepProfileEdit.type === "creation") return activeCreationShapeDefaults().sweepProfile;
-  return locks.find((lock) => lock.id === sculptState.state.sweepProfileEdit.id)?.sweepProfile || null;
-}
 
-function activeSweepProfileTarget() {
-  if (!sculptState.state.sweepProfileEdit) return null;
-  if (sculptState.state.sweepProfileEdit.type === "group") return strandGroupDefaults[sculptState.state.sweepProfileEdit.id] || null;
-  if (sculptState.state.sweepProfileEdit.type === "creation") return activeCreationShapeDefaults();
-  return locks.find((lock) => lock.id === sculptState.state.sweepProfileEdit.id) || null;
-}
 
-function trimmedSweepProfile(profile, target = null) {
-  if (!profile?.length) return profile || [];
-  const minX = Math.min(...profile.map((point) => point.x));
-  const maxX = Math.max(...profile.map((point) => point.x));
-  const centerX = (minX + maxX) * 0.5;
-  const leftBoundary = THREE.MathUtils.lerp(minX, centerX, THREE.MathUtils.clamp(Number(target?.profileTrimLeft ?? 0), 0, 1));
-  const rightBoundary = THREE.MathUtils.lerp(maxX, centerX, THREE.MathUtils.clamp(Number(target?.profileTrimRight ?? 0), 0, 1));
-  const roundness = THREE.MathUtils.clamp(Number(target?.profileTrimRoundness ?? 1), 0, 1);
-  const blend = Math.max(0.0001, (maxX - minX) * 0.24 * roundness);
-  const roundedLeft = (x) => {
-    if (x <= leftBoundary || roundness <= 0) return Math.max(x, leftBoundary);
-    if (x >= leftBoundary + blend) return x;
-    const t = (x - leftBoundary) / blend;
-    return leftBoundary + blend * (-t * t * t + 2 * t * t);
-  };
-  const roundedRight = (x) => {
-    if (x >= rightBoundary || roundness <= 0) return Math.min(x, rightBoundary);
-    if (x <= rightBoundary - blend) return x;
-    const t = (rightBoundary - x) / blend;
-    return rightBoundary - blend * (-t * t * t + 2 * t * t);
-  };
-  return profile.map((point) => {
-    const x = roundedRight(roundedLeft(point.x));
-    const clipped = Math.abs(x - point.x) > 0.0001;
-    return {
-      ...point,
-      x,
-      interpolation: roundness <= 0.001 && clipped ? "linear" : point.interpolation
-    };
-  });
-}
 
 function activeProfileOffset() {
   if (!sculptState.state.sweepProfileEdit) return 0;
@@ -15408,104 +15376,19 @@ function activeProfileOffset() {
   return Number(locks.find((lock) => lock.id === sculptState.state.sweepProfileEdit.id)?.profileOffset || 0);
 }
 
-function mirroredSweepProfileIndex(profile, pointIndex) {
-  const point = profile?.[pointIndex];
-  if (!point) return null;
-  if (Math.abs(point.x) < 0.025) return pointIndex;
-  let bestIndex = null;
-  let bestDistance = Infinity;
-  profile.forEach((candidate, index) => {
-    if (index === pointIndex) return;
-    const distance = (candidate.x + point.x) ** 2 + (candidate.z - point.z) ** 2;
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestIndex = index;
-    }
-  });
-  return bestIndex;
-}
 
 function profileToCanvas(point, offset = activeProfileOffset()) {
   return { x: 220 + point.x * 156, y: 220 - (point.z + offset) * 156 };
 }
 
-function createSmoothSweepProfileCurve(profile) {
-  return new THREE.CatmullRomCurve3(
-    profile.map((point) => new THREE.Vector3(point.x, 0, point.z)),
-    true,
-    "centripetal",
-    0.5
-  );
-}
 
-function sampleSweepProfile(profile, t, smoothCurve = createSmoothSweepProfileCurve(profile)) {
-  const wrappedT = ((Number(t) % 1) + 1) % 1;
-  const segmentPosition = wrappedT * profile.length;
-  const segmentIndex = Math.min(profile.length - 1, Math.floor(segmentPosition));
-  const segmentT = segmentPosition - segmentIndex;
-  const current = profile[segmentIndex];
-  const next = profile[(segmentIndex + 1) % profile.length];
-  // Interpolation belongs to the point itself: a linear point straightens
-  // both adjacent segments, while a curved segment needs smooth endpoints.
-  const linearSegment = (current.interpolation || "smooth") === "linear"
-    || (next.interpolation || "smooth") === "linear";
-  if (linearSegment) {
-    return new THREE.Vector3(
-      THREE.MathUtils.lerp(current.x, next.x, segmentT),
-      0,
-      THREE.MathUtils.lerp(current.z, next.z, segmentT)
-    );
-  }
-  return smoothCurve.getPoint(wrappedT);
-}
 
-function createSweepProfileTopology(profile, requestedSegments, smoothCurve = createSmoothSweepProfileCurve(profile)) {
-  const symmetryAxisIndex = profile.reduce((bestIndex, point, index) => {
-    const best = profile[bestIndex];
-    if (point.z > best.z + 0.00001) return index;
-    if (Math.abs(point.z - best.z) <= 0.00001 && Math.abs(point.x) < Math.abs(best.x)) return index;
-    return bestIndex;
-  }, 0);
-  const symmetryAxisParameter = symmetryAxisIndex / profile.length;
-  const hardParameters = profile.flatMap((point, index) => (
-    (point.interpolation || "smooth") === "linear" ? [index / profile.length] : []
-  ));
-  const parameters = symmetricClosedCurveParameters(
-    requestedSegments,
-    symmetryAxisParameter,
-    hardParameters
-  );
-  let slotCount = 0;
-  const samples = parameters.map((t) => {
-    const controlIndex = profile.findIndex((_, index) => Math.abs(t - index / profile.length) < 0.00001);
-    const hard = controlIndex >= 0 && (profile[controlIndex].interpolation || "smooth") === "linear";
-    const incomingSlot = slotCount++;
-    const outgoingSlot = hard ? slotCount++ : incomingSlot;
-    return {
-      t,
-      point: sampleSweepProfile(profile, t, smoothCurve),
-      hard,
-      incomingSlot,
-      outgoingSlot
-    };
-  });
-  const slots = Array(slotCount);
-  samples.forEach((sample) => {
-    slots[sample.incomingSlot] = sample;
-    slots[sample.outgoingSlot] = sample;
-  });
-  const edges = samples.map((sample, index) => ({
-    start: sample.outgoingSlot,
-    end: samples[(index + 1) % samples.length].incomingSlot
-  }));
-  return { samples, slots, edges };
-}
 
 function renderProfilePreview(path, profile, offset = 0, target = null) {
   if (!path || !profile?.length) return;
-  const visibleProfile = trimmedSweepProfile(profile, target);
-  const smoothCurve = createSmoothSweepProfileCurve(visibleProfile);
-  const sampled = Array.from({ length: 49 }, (_, index) => sampleSweepProfile(visibleProfile, index / 48, smoothCurve)).map((point) => ({
+  const visibleProfile = branchSweep.trimmedSweepProfile(profile, target);
+  const smoothCurve = branchSweep.createSmoothSweepProfileCurve(visibleProfile);
+  const sampled = Array.from({ length: 49 }, (_, index) => branchSweep.sampleSweepProfile(visibleProfile, index / 48, smoothCurve)).map((point) => ({
     x: 43 + point.x * 30,
     y: 43 - (point.z + offset) * 30
   }));
@@ -15526,7 +15409,7 @@ function renderHairCardCoveragePath(path, profile, visible, mapPoint) {
     path.setAttribute("d", "");
     return;
   }
-  const topology = createSweepProfileTopology(profile, 96);
+  const topology = branchSweep.createSweepProfileTopology(profile, 96);
   const arc = upperProfileArcIndices(topology.samples.map((sample) => sample.point))
     .map((index) => mapPoint(topology.samples[index].point));
   path.setAttribute(
@@ -15542,21 +15425,9 @@ function activeTaperTarget() {
   return locks.find((lock) => lock.id === sculptState.state.taperCurveEdit.id) || null;
 }
 
-function twistCurveEditing(curveKey = sculptState.state.taperCurveEdit?.curveKey) {
-  return curveKey === "twistCurve";
-}
 
-function proceduralBranchLengthCurveEditing(curveKey = sculptState.state.taperCurveEdit?.curveKey) {
-  return curveKey === "proceduralBranchLengthCurve";
-}
 
-function proceduralBranchShapeCurveEditing(curveKey = sculptState.state.taperCurveEdit?.curveKey) {
-  return curveKey === "proceduralBranchShapeCurve";
-}
 
-function proceduralBranchCurveEditing(curveKey = sculptState.state.taperCurveEdit?.curveKey) {
-  return proceduralBranchLengthCurveEditing(curveKey) || proceduralBranchShapeCurveEditing(curveKey);
-}
 
 
 
@@ -15584,8 +15455,8 @@ const shapePresets = createShapePresetsApi({
 function activeTaperCurve() {
   const target = activeTaperTarget();
   if (!target || !sculptState.state.taperCurveEdit) return null;
-  if (twistCurveEditing()) return target.twistCurve || null;
-  if (proceduralBranchCurveEditing()) return target[sculptState.state.taperCurveEdit.curveKey] || null;
+  if (branchSweep.twistCurveEditing()) return target.twistCurve || null;
+  if (branchSweep.proceduralBranchCurveEditing()) return target[sculptState.state.taperCurveEdit.curveKey] || null;
   const key = sculptState.state.taperCurveEdit.side === "secondary"
     ? shapePresets.taperSecondaryKey()
     : sculptState.state.taperCurveEdit.curveKey;
@@ -15594,7 +15465,7 @@ function activeTaperCurve() {
 
 function ensureSecondaryTaperCurve(target, curveKey = sculptState.state.taperCurveEdit?.curveKey) {
   if (!target || !curveKey) return null;
-  if (twistCurveEditing(curveKey) || proceduralBranchCurveEditing(curveKey)) return null;
+  if (branchSweep.twistCurveEditing(curveKey) || branchSweep.proceduralBranchCurveEditing(curveKey)) return null;
   const secondaryKey = shapePresets.taperSecondaryKey(curveKey);
   if (!target[secondaryKey]?.length) {
     target[secondaryKey] = shapePresets.cloneShapePresetValue(target[curveKey]);
@@ -15634,7 +15505,7 @@ function ensureAsymmetricTaperPreviewElements(path) {
 function renderTaperPreview(path, target, curveKey) {
   const curve = target?.[curveKey];
   if (!path || !curve?.length) return;
-  const asymmetric = !proceduralBranchCurveEditing(curveKey)
+  const asymmetric = !branchSweep.proceduralBranchCurveEditing(curveKey)
     && Boolean(target[shapePresets.taperAsymmetryKey(curveKey)]);
   const baseline = asymmetric ? 35 : 63;
   const verticalExtent = asymmetric ? 26 : 54;
@@ -15667,23 +15538,6 @@ function renderTaperPreview(path, target, curveKey) {
   secondaryPath?.setAttribute("d", `${secondaryLine} L151,35 L9,35 Z`);
 }
 
-function renderTwistCurvePreview(path, target) {
-  const curve = target?.twistCurve;
-  if (!path || !curve?.length) return;
-  const displayRange = twistCurveDisplayRange(
-    curve,
-    TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
-    TWIST_CURVE_VALUE_MAX
-  );
-  const sampled = taperSamples(curve, 64).map((point) => ({
-    x: 9 + point.position * 142,
-    y: 35 - (point.value / displayRange) * 27
-  }));
-  const line = sampled
-    .map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`)
-    .join(" ");
-  path.setAttribute("d", `${line} L151,35 L9,35 Z`);
-}
 
 
 
@@ -15856,7 +15710,7 @@ shapePresetSelects.forEach((select) => select.addEventListener("change", () => s
 
 function taperPointToCanvas(point, curveSide = "primary", asymmetric = false) {
   const x = 30 + point.position * 460;
-  if (twistCurveEditing()) {
+  if (branchSweep.twistCurveEditing()) {
     const displayRange = sculptState.state.taperCurveEdit?.dragDisplayRange || twistCurveDisplayRange(
       activeTaperCurve(),
       TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
@@ -15876,8 +15730,8 @@ function canvasToTaperPoint(event, pointIndex) {
   const canvasX = (event.clientX - rect.left) * (520 / rect.width);
   const canvasY = (event.clientY - rect.top) * (220 / rect.height);
   const curve = activeTaperCurve();
-  const editingTwist = twistCurveEditing();
-  const asymmetric = !proceduralBranchCurveEditing()
+  const editingTwist = branchSweep.twistCurveEditing();
+  const asymmetric = !branchSweep.proceduralBranchCurveEditing()
     && Boolean(activeTaperTarget()?.[shapePresets.taperAsymmetryKey()]);
   const isEndpoint = pointIndex === 0 || pointIndex === curve.length - 1;
   const twistDisplayRange = sculptState.state.taperCurveEdit?.dragDisplayRange || twistCurveDisplayRange(
@@ -15894,7 +15748,7 @@ function canvasToTaperPoint(event, pointIndex) {
           : (110 - canvasY) / 80 * TAPER_VALUE_MAX
       )
     : (190 - canvasY) / 170 * TAPER_VALUE_MAX;
-  const constrainedValue = proceduralBranchShapeCurveEditing() && isEndpoint
+  const constrainedValue = branchSweep.proceduralBranchShapeCurveEditing() && isEndpoint
     ? (pointIndex === 0 ? 0 : 1)
     : THREE.MathUtils.clamp(
         value,
@@ -15927,96 +15781,8 @@ function taperMeshPointFrame(lock, curve, position, curveKey = sculptState.state
   return strandGeometryFrameAt(lock, curve, position);
 }
 
-function twistMeshPointDistancePerDegree(lock, position, displayRange) {
-  const referenceExtent = Math.max(
-    taperMeshPointExtentPerValue(lock, position, 1, "x"),
-    taperMeshPointExtentPerValue(lock, position, 1, "z")
-  );
-  return twistCurveHandleDistancePerDegree(referenceExtent, displayRange);
-}
 
-function twistMeshGraphAxis(frame) {
-  return frame.x.clone().negate();
-}
 
-function addTwistMeshCurvePath(lock, curve, twistCurve, displayRange) {
-  const samples = [];
-  const positions = [...new Set([
-    ...Array.from({ length: 65 }, (_, index) => index / 64),
-    ...twistCurve.map((point) => Number(point.position))
-  ])].sort((left, right) => left - right);
-  positions.forEach((position) => {
-    const frame = taperMeshPointFrame(lock, curve, position, "twistCurve");
-    const value = sampleTaperCurve(twistCurve, position);
-    const graphAxis = twistMeshGraphAxis(frame);
-    samples.push({
-      value,
-      center: frame.point.clone(),
-      point: frame.point.clone().addScaledVector(
-        graphAxis,
-        twistMeshPointDistancePerDegree(lock, position, displayRange) * value
-      )
-    });
-  });
-  const signedSegments = { positive: [], negative: [] };
-  const signedFills = { positive: [], negative: [] };
-  const appendSegment = (sign, start, end) => {
-    signedSegments[sign < 0 ? "negative" : "positive"].push(start, end);
-  };
-  const appendFill = (sign, start, end) => {
-    signedFills[sign < 0 ? "negative" : "positive"].push(
-      start.center, start.point, end.point,
-      start.center, end.point, end.center
-    );
-  };
-  const appendSignedSection = (sign, start, end) => {
-    appendSegment(sign, start.point, end.point);
-    appendFill(sign, start, end);
-  };
-  for (let index = 1; index < samples.length; index += 1) {
-    const start = samples[index - 1];
-    const end = samples[index];
-    const startSign = Math.sign(start.value);
-    const endSign = Math.sign(end.value);
-    if (!startSign || !endSign || startSign === endSign) {
-      appendSignedSection(startSign || endSign || 1, start, end);
-      continue;
-    }
-    const zeroAmount = Math.abs(start.value) / (Math.abs(start.value) + Math.abs(end.value));
-    const zeroCenter = start.center.clone().lerp(end.center, zeroAmount);
-    const zero = { value: 0, center: zeroCenter, point: zeroCenter };
-    appendSignedSection(startSign, start, zero);
-    appendSignedSection(endSign, zero, end);
-  }
-  [
-    [signedFills.positive, twistMeshCurvePositiveFillMaterial, "positive"],
-    [signedFills.negative, twistMeshCurveNegativeFillMaterial, "negative"]
-  ].forEach(([points, material, sign]) => {
-    if (!points.length) return;
-    const fill = new THREE.Mesh(
-      new THREE.BufferGeometry().setFromPoints(points),
-      material
-    );
-    fill.renderOrder = 33;
-    fill.raycast = () => {};
-    fill.userData.twistMeshCurveFill = sign;
-    taperMeshPointsGroup.add(fill);
-  });
-  [
-    [signedSegments.positive, twistMeshCurvePositiveMaterial, "positive"],
-    [signedSegments.negative, twistMeshCurveNegativeMaterial, "negative"]
-  ].forEach(([points, material, sign]) => {
-    if (!points.length) return;
-    const line = new THREE.LineSegments(
-      new THREE.BufferGeometry().setFromPoints(points),
-      material
-    );
-    line.renderOrder = 34;
-    line.raycast = () => {};
-    line.userData.twistMeshCurvePath = sign;
-    taperMeshPointsGroup.add(line);
-  });
-}
 
 function taperMeshPointExtentPerValue(lock, position, side, axis) {
   const scale = sampleScale(lock.pointScales, position, axis);
@@ -16035,7 +15801,7 @@ function taperMeshPointExtentPerValue(lock, position, side, axis) {
       : Number(lock.widthScale ?? 1);
     return Math.max(0.0001, baseDimension * dimensionScale * 0.5 * scale);
   }
-  const profile = trimmedSweepProfile(
+  const profile = branchSweep.trimmedSweepProfile(
     (lock.sweepProfile?.length >= 4 ? lock.sweepProfile : DEFAULT_SWEEP_PROFILE)
       .map((point) => ({ ...point, z: point.z + Number(lock.profileOffset || 0) })),
     lock
@@ -16071,7 +15837,7 @@ function updateTaperMeshPoints() {
   if (!applicable) return;
 
   const curve = strandGeometryCurve(lock);
-  const editingTwist = twistCurveEditing();
+  const editingTwist = branchSweep.twistCurveEditing();
   const axis = editingTwist ? "twist" : sculptState.state.taperCurveEdit.curveKey === "depthCurve" ? "z" : "x";
   const frameAxis = axis === "z" ? "z" : "x";
   const asymmetric = Boolean(
@@ -16099,7 +15865,7 @@ function updateTaperMeshPoints() {
         }
       ]
     : [{ curvePoints: primaryCurve, sides: [-1, 1], curveSide: "primary" }];
-  if (editingTwist) addTwistMeshCurvePath(lock, curve, primaryCurve, twistDisplayRange);
+  if (editingTwist) branchSweep.addTwistMeshCurvePath(lock, curve, primaryCurve, twistDisplayRange);
   curveSides.forEach(({ curvePoints: sideCurvePoints, sides, curveSide }) => sideCurvePoints.forEach((point, pointIndex) => {
     const frame = taperMeshPointFrame(lock, curve, point.position, sculptState.state.taperCurveEdit.curveKey);
     sides.forEach((side) => {
@@ -16109,10 +15875,10 @@ function updateTaperMeshPoints() {
         selected ? taperMeshPointSelectedMaterial : taperMeshPointMaterial
       );
       const extent = editingTwist
-        ? twistMeshPointDistancePerDegree(lock, point.position, twistDisplayRange) * point.value
+        ? branchSweep.twistMeshPointDistancePerDegree(lock, point.position, twistDisplayRange) * point.value
         : taperMeshPointExtentPerValue(lock, point.position, side, axis) * point.value;
       handle.position.copy(frame.point).addScaledVector(
-        editingTwist ? twistMeshGraphAxis(frame) : frame[frameAxis],
+        editingTwist ? branchSweep.twistMeshGraphAxis(frame) : frame[frameAxis],
         editingTwist ? extent : side * extent
       );
       handle.renderOrder = 35;
@@ -16149,15 +15915,15 @@ function setTaperMeshPointsVisible(visible) {
     ? locks.find((item) => item.id === sculptState.state.taperCurveEdit.id)
     : null;
   if (lock) updateCurveObjects(lock, { visible: true });
-  if (hairState.state.taperMeshPointsVisible && twistCurveEditing()) setHoveredStrandWidthEdge(null);
+  if (hairState.state.taperMeshPointsVisible && branchSweep.twistCurveEditing()) setHoveredStrandWidthEdge(null);
 }
 
 function renderTaperCurveEditor() {
   const curve = activeTaperCurve();
   if (!curve?.length) return;
   const target = activeTaperTarget();
-  const editingTwist = twistCurveEditing();
-  const editingProceduralBranch = proceduralBranchCurveEditing();
+  const editingTwist = branchSweep.twistCurveEditing();
+  const editingProceduralBranch = branchSweep.proceduralBranchCurveEditing();
   const asymmetric = !editingTwist && !editingProceduralBranch && Boolean(target?.[shapePresets.taperAsymmetryKey()]);
   taperCurveOptions.classList.toggle("hidden", editingProceduralBranch);
   taperAsymmetryToggleRow.classList.toggle("hidden", editingTwist || editingProceduralBranch);
@@ -16215,7 +15981,7 @@ function renderTaperCurveEditor() {
   taperPointValue.value = editingTwist
     ? String(Number(twistRateUnitsFromDegrees(selected.value).toFixed(2)))
     : selected.value.toFixed(2);
-  taperPointValue.disabled = proceduralBranchShapeCurveEditing()
+  taperPointValue.disabled = branchSweep.proceduralBranchShapeCurveEditing()
     && (sculptState.state.taperCurveEdit.selectedIndex === 0 || sculptState.state.taperCurveEdit.selectedIndex === curve.length - 1);
   taperPointPosition.value = selected.position.toFixed(2);
   taperPointPosition.disabled = sculptState.state.taperCurveEdit.selectedIndex === 0 || sculptState.state.taperCurveEdit.selectedIndex === curve.length - 1;
@@ -16242,7 +16008,7 @@ function retargetOpenTaperCurveEditor(lock) {
   if (!taperCurveEditor.open || sculptState.state.taperCurveEdit?.type !== "strand") return;
   flushScheduledTaperCurveEdit();
   finishTaperMeshPointDrag(null);
-  const nextTarget = proceduralBranchCurveEditing()
+  const nextTarget = branchSweep.proceduralBranchCurveEditing()
     ? proceduralGuideForLock(lock)
     : lock;
   if (!nextTarget) {
@@ -16261,7 +16027,7 @@ function refreshTaperCurveEditorAfterStateRestore() {
     closeTaperCurveEditor();
     return;
   }
-  if (!proceduralBranchCurveEditing() && sculptState.state.taperCurveEdit.side === "secondary" && !target[shapePresets.taperAsymmetryKey()]) {
+  if (!branchSweep.proceduralBranchCurveEditing() && sculptState.state.taperCurveEdit.side === "secondary" && !target[shapePresets.taperAsymmetryKey()]) {
     sculptState.state.taperCurveEdit.side = "primary";
   }
   const curve = activeTaperCurve();
@@ -16316,13 +16082,13 @@ function cancelScheduledTaperCurveEdit() {
 
 function applyTaperCurveEdit({ interactive = false } = {}) {
   if (!sculptState.state.taperCurveEdit) return;
-  const editingTwist = twistCurveEditing();
-  const editingProceduralBranch = proceduralBranchCurveEditing();
+  const editingTwist = branchSweep.twistCurveEditing();
+  const editingProceduralBranch = branchSweep.proceduralBranchCurveEditing();
   if (editingProceduralBranch) {
     const guide = proceduralGuideForLock(activeTaperTarget());
     if (guide) {
       const curveKey = sculptState.state.taperCurveEdit.curveKey;
-      const defaultCurve = proceduralBranchShapeCurveEditing(curveKey)
+      const defaultCurve = branchSweep.proceduralBranchShapeCurveEditing(curveKey)
         ? DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE
         : DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE;
       guide[curveKey] = normalizeTaperCurve(guide[curveKey] || defaultCurve);
@@ -16333,7 +16099,7 @@ function applyTaperCurveEdit({ interactive = false } = {}) {
         updateLockGeometry(mirroredGuide, { immediate: true, updateBranches: false });
       }
       renderTaperPreview(
-        proceduralBranchShapeCurveEditing(curveKey)
+        branchSweep.proceduralBranchShapeCurveEditing(curveKey)
           ? proceduralBranchShapeCurvePreview
           : proceduralBranchLengthCurvePreview,
         guide,
@@ -16351,7 +16117,7 @@ function applyTaperCurveEdit({ interactive = false } = {}) {
       sculptState.state.taperCurveEdit.curveKey
     );
   } else if (sculptState.state.taperCurveEdit.type === "creation") {
-    if (editingTwist) renderTwistCurvePreview(strandTwistCurvePreview, activeTaperTarget());
+    if (editingTwist) branchSweep.renderTwistCurvePreview(strandTwistCurvePreview, activeTaperTarget());
     else {
       renderTaperPreview(
         sculptState.state.taperCurveEdit.curveKey === "depthCurve" ? taperPreviewPaths.strandDepth : taperPreviewPaths.strand,
@@ -16409,7 +16175,7 @@ function applyTaperCurveEdit({ interactive = false } = {}) {
         }, { renderList: false });
       }
     }
-    if (editingTwist) renderTwistCurvePreview(strandTwistCurvePreview, activeTaperTarget());
+    if (editingTwist) branchSweep.renderTwistCurvePreview(strandTwistCurvePreview, activeTaperTarget());
     else {
       renderTaperPreview(
         sculptState.state.taperCurveEdit.curveKey === "depthCurve" ? taperPreviewPaths.strandDepth : taperPreviewPaths.strand,
@@ -16425,20 +16191,20 @@ function applyTaperCurveEdit({ interactive = false } = {}) {
 function openTaperCurveEditor(curveKey = "taperCurve") {
   let nextEdit = null;
   const selectedLock = getSelectedLock();
-  const proceduralGuide = proceduralBranchCurveEditing(curveKey)
+  const proceduralGuide = branchSweep.proceduralBranchCurveEditing(curveKey)
     ? proceduralGuideForLock(selectedLock)
     : null;
   if (proceduralGuide) {
-    const defaultCurve = proceduralBranchShapeCurveEditing(curveKey)
+    const defaultCurve = branchSweep.proceduralBranchShapeCurveEditing(curveKey)
       ? DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE
       : DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE;
     proceduralGuide[curveKey] = normalizeTaperCurve(proceduralGuide[curveKey] || defaultCurve);
     nextEdit = { type: "strand", id: proceduralGuide.id, curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
-  } else if (selectedLock && !proceduralBranchCurveEditing(curveKey)) nextEdit = { type: "strand", id: selectedLock.id, curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
-  else if (!proceduralBranchCurveEditing(curveKey) && sel.state.selectedStrandGroup && curveKey !== "twistCurve") nextEdit = { type: "group", id: sel.state.selectedStrandGroup, curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
-  else if (!proceduralBranchCurveEditing(curveKey) && creationToolActive()) nextEdit = { type: "creation", id: "new-strand", curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
+  } else if (selectedLock && !branchSweep.proceduralBranchCurveEditing(curveKey)) nextEdit = { type: "strand", id: selectedLock.id, curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
+  else if (!branchSweep.proceduralBranchCurveEditing(curveKey) && sel.state.selectedStrandGroup && curveKey !== "twistCurve") nextEdit = { type: "group", id: sel.state.selectedStrandGroup, curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
+  else if (!branchSweep.proceduralBranchCurveEditing(curveKey) && creationToolActive()) nextEdit = { type: "creation", id: "new-strand", curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
   if (!nextEdit) return;
-  if (sweepProfileEditor.open) closeSweepProfileEditor();
+  if (sweepProfileEditor.open) branchSweep.closeSweepProfileEditor();
   if (nextEdit.type === "group" && !miscState.state.groupDefaultsWarningAcknowledged) {
     const hasExistingStrands = locks.some((lock) => (lock.scalpRegion || "unassigned") === nextEdit.id);
     if (hasExistingStrands) {
@@ -16448,7 +16214,7 @@ function openTaperCurveEditor(curveKey = "taperCurve") {
     }
   }
   sculptState.state.taperCurveEdit = nextEdit;
-  if (!twistCurveEditing(curveKey) && !proceduralBranchCurveEditing(curveKey)) ensureSecondaryTaperCurve(activeTaperTarget(), curveKey);
+  if (!branchSweep.twistCurveEditing(curveKey) && !branchSweep.proceduralBranchCurveEditing(curveKey)) ensureSecondaryTaperCurve(activeTaperTarget(), curveKey);
   document.querySelector("#taperCurveTitle").textContent = curveKey === "proceduralBranchShapeCurve"
     ? "Branch Shape"
     : curveKey === "proceduralBranchLengthCurve"
@@ -16460,7 +16226,7 @@ function openTaperCurveEditor(curveKey = "taperCurve") {
   setTaperMeshPointsVisible(curveKey !== "twistCurve");
   taperMeshPointsToggleRow.classList.toggle(
     "hidden",
-    nextEdit.type !== "strand" || proceduralBranchCurveEditing(curveKey)
+    nextEdit.type !== "strand" || branchSweep.proceduralBranchCurveEditing(curveKey)
   );
   renderTaperCurveEditor();
   taperCurveEditor.show();
@@ -16509,119 +16275,9 @@ function canvasToProfile(event) {
   };
 }
 
-function renderSweepProfileEditor() {
-  const profile = activeSweepProfile();
-  if (!profile?.length) return;
-  const target = activeSweepProfileTarget();
-  const visibleProfile = trimmedSweepProfile(profile, target);
-  const originalCurve = createSmoothSweepProfileCurve(profile);
-  const originalSampled = Array.from({ length: 97 }, (_, index) => sampleSweepProfile(profile, index / 96, originalCurve))
-    .map((point) => profileToCanvas({ x: point.x, z: point.z }));
-  sweepProfileOriginalPath.setAttribute("d", `${originalSampled.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ")} Z`);
-  const smoothCurve = createSmoothSweepProfileCurve(visibleProfile);
-  const sampled = Array.from({ length: 97 }, (_, index) => sampleSweepProfile(visibleProfile, index / 96, smoothCurve))
-    .map((point) => profileToCanvas({ x: point.x, z: point.z }));
-  sweepProfilePath.setAttribute("d", `${sampled.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ")} Z`);
-  renderHairCardCoveragePath(
-    sweepProfileHairCardCoveragePath,
-    visibleProfile,
-    Boolean(target?.hairCard),
-    (point) => profileToCanvas({ x: point.x, z: point.z })
-  );
-  sweepProfilePoints.replaceChildren();
-  visibleProfile.forEach((point, index) => {
-    const canvasPoint = profileToCanvas(point);
-    const handle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    handle.setAttribute("cx", canvasPoint.x);
-    handle.setAttribute("cy", canvasPoint.y);
-    handle.setAttribute("r", index === sculptState.state.sweepProfileEdit.selectedIndex ? 6 : 5);
-    handle.setAttribute("class", `profile-point${index === sculptState.state.sweepProfileEdit.selectedIndex ? " selected" : ""}`);
-    handle.dataset.profilePoint = index;
-    sweepProfilePoints.appendChild(handle);
-  });
-  const selected = profile[sculptState.state.sweepProfileEdit.selectedIndex];
-  sweepPointInterpolation.value = selected?.interpolation || "smooth";
-  sweepProfileMirrorX.setAttribute("aria-pressed", String(projectState.state.sweepProfileMirrorEnabled));
-  Object.entries(sweepProfileTrimInputs).forEach(([key, input]) => {
-    const value = Number(target?.[key] ?? 0);
-    input.value = value;
-    sweepProfileTrimValues[key].textContent = value.toFixed(2);
-  });
-  const roundness = Number(target?.profileTrimRoundness ?? 1);
-  sweepProfileTrimRoundness.value = roundness;
-  sweepProfileTrimRoundnessValue.textContent = roundness.toFixed(2);
-}
 
-function applySweepProfileEdit() {
-  if (!sculptState.state.sweepProfileEdit) return;
-  if (sculptState.state.sweepProfileEdit.type === "group") {
-    applyGroupDefaultsToExistingStrands(sculptState.state.sweepProfileEdit.id);
-  } else if (sculptState.state.sweepProfileEdit.type === "creation") {
-    if (sculptState.state.drawStrandStroke) updateDrawStrandPreview();
-  } else {
-    const lock = locks.find((item) => item.id === sculptState.state.sweepProfileEdit.id);
-    if (lock) {
-      const profile = shapePresets.cloneShapePresetValue(lock.sweepProfile);
-      const trimLeft = Number(lock.profileTrimLeft ?? 0);
-      const trimRight = Number(lock.profileTrimRight ?? 0);
-      const roundness = Number(lock.profileTrimRoundness ?? 1);
-      editSelectedLocks((item) => {
-        if (item !== lock) item.sweepProfile = shapePresets.cloneShapePresetValue(profile);
-        item.profileTrimLeft = trimLeft;
-        item.profileTrimRight = trimRight;
-        item.profileTrimRoundness = roundness;
-      }, { renderList: false });
-    }
-  }
-  const previewPath = sculptState.state.sweepProfileEdit.type === "group" ? profilePreviewPaths.group : profilePreviewPaths.strand;
-  renderProfilePreview(previewPath, activeSweepProfile(), activeProfileOffset(), activeSweepProfileTarget());
-  renderSweepProfileEditor();
-  syncShapePresetSelects();
-}
 
-function openSweepProfileEditor() {
-  let nextEdit = null;
-  const selectedLock = getSelectedLock();
-  if (selectedLock) {
-    nextEdit = { type: "strand", id: selectedLock.id, selectedIndex: 0, dragPointerId: null };
-  } else if (sel.state.selectedStrandGroup) {
-    nextEdit = { type: "group", id: sel.state.selectedStrandGroup, selectedIndex: 0, dragPointerId: null };
-  } else if (creationToolActive()) {
-    nextEdit = { type: "creation", id: "new-strand", selectedIndex: 0, dragPointerId: null };
-  }
-  if (!nextEdit) return;
-  if (taperCurveEditor.open) closeTaperCurveEditor();
 
-  if (nextEdit.type === "group" && !miscState.state.groupDefaultsWarningAcknowledged) {
-    const hasExistingStrands = locks.some((lock) => (lock.scalpRegion || "unassigned") === nextEdit.id);
-    if (hasExistingStrands) {
-      miscState.state.groupDefaultsWarningContinuation = openSweepProfileEditor;
-      groupDefaultsWarning.showModal();
-      return;
-    }
-  }
-
-  sculptState.state.sweepProfileEdit = nextEdit;
-  const group = STRAND_GROUPS.find((item) => item.id === nextEdit.id);
-  const lock = locks.find((item) => item.id === nextEdit.id);
-  const multiCount = nextEdit.type === "strand" ? compatibleSelectedLocks(lock).length : 0;
-  sweepProfileTarget.textContent = nextEdit.type === "creation"
-    ? "New strand defaults"
-    : nextEdit.type === "group" ? `${group ? strandRegionDisplayLabel(group.id) : "Group"} defaults`
-      : multiCount > 1 ? `${multiCount} selected strands` : lock?.name || "Selected strand";
-  renderSweepProfileEditor();
-  sweepProfileEditor.show();
-  updateViewportStatsVisibility();
-}
-
-function closeSweepProfileEditor() {
-  if (sculptState.state.sweepProfileEdit?.dragPointerId !== null && sweepProfileCanvas.hasPointerCapture?.(sculptState.state.sweepProfileEdit.dragPointerId)) {
-    sweepProfileCanvas.releasePointerCapture(sculptState.state.sweepProfileEdit.dragPointerId);
-  }
-  sculptState.state.sweepProfileEdit = null;
-  if (sweepProfileEditor.open) sweepProfileEditor.close();
-  updateViewportStatsVisibility();
-}
 
 function retargetFloatingStrandEditors() {
   const lock = getSelectedLock();
@@ -16629,7 +16285,7 @@ function retargetFloatingStrandEditors() {
   if (sweepProfileEditor.open && sculptState.state.sweepProfileEdit?.type === "strand") {
     sculptState.state.sweepProfileEdit.id = lock.id;
     sweepProfileTarget.textContent = lock.name || "Selected strand";
-    renderSweepProfileEditor();
+    branchSweep.renderSweepProfileEditor();
   }
   if (taperCurveEditor.open && sculptState.state.taperCurveEdit?.type === "strand") {
     sculptState.state.taperCurveEdit.id = lock.id;
@@ -17019,7 +16675,7 @@ function decoupleMirroredClump(guide) {
 
 const branchRegion = createBranchRegionApi({
   locks, rebuildLockGeometry, updateCurveObjects, getSelectedLock, pushUndoState,
-  resize, pointerToNdc, closeSweepProfileEditor, closeTaperCurveEditor,
+  resize, pointerToNdc, closeSweepProfileEditor: branchSweep.closeSweepProfileEditor, closeTaperCurveEditor,
   branchRootRegionWorldPoints: branchBridge.branchRootRegionWorldPoints, strandGeometryCurve, raycaster, camera, renderer,
   branchState: branch.state, sculptState: sculptState.state, viewportState: viewportState.state,
   selState: sel.state, hairState: hairState.state,
@@ -24624,9 +24280,9 @@ function headMeshes() {
 function strandSplitProfileData(lock) {
   const baseProfilePoints = (lock.sweepProfile?.length >= 4 ? lock.sweepProfile : DEFAULT_SWEEP_PROFILE)
     .map((point) => ({ ...point, z: point.z + Number(lock.profileOffset || 0) }));
-  const profilePoints = trimmedSweepProfile(baseProfilePoints, lock);
-  const profileCurve = createSmoothSweepProfileCurve(profilePoints);
-  const samples = Array.from({ length: 65 }, (_, index) => sampleSweepProfile(profilePoints, index / 64, profileCurve));
+  const profilePoints = branchSweep.trimmedSweepProfile(baseProfilePoints, lock);
+  const profileCurve = branchSweep.createSmoothSweepProfileCurve(profilePoints);
+  const samples = Array.from({ length: 65 }, (_, index) => branchSweep.sampleSweepProfile(profilePoints, index / 64, profileCurve));
   return {
     samples,
     minX: Math.min(...samples.map((point) => point.x)),
@@ -25298,7 +24954,7 @@ function updateCurveObjects(lock, options = {}) {
       && lock.geometryType === "strand"
       && sculptState.state.viewportEditMode === "strand"
       && componentEditModeActive()
-      && !(hairState.state.taperMeshPointsVisible && twistCurveEditing())
+      && !(hairState.state.taperMeshPointsVisible && branchSweep.twistCurveEditing())
       && ["select", "move"].includes(sel.state.activeTool);
   });
   const deEmphasizeControlPoints = ["draw", "procedural-draw", "braid", "panel"].includes(sel.state.activeTool);
@@ -26525,7 +26181,7 @@ function syncCreationShapeInputs() {
   strandLayerInput.value = normalizeHairLayer(defaults.hairLayer);
   renderTaperPreview(taperPreviewPaths.strand, defaults, "taperCurve");
   renderTaperPreview(taperPreviewPaths.strandDepth, defaults, "depthCurve");
-  renderTwistCurvePreview(strandTwistCurvePreview, defaults);
+  branchSweep.renderTwistCurvePreview(strandTwistCurvePreview, defaults);
   renderProfilePreview(profilePreviewPaths.strand, defaults.sweepProfile, defaults.profileOffset, defaults);
   syncShapeDimensionInputs(defaults);
   inputs.profileOffset.value = defaults.profileOffset;
@@ -27019,7 +26675,7 @@ function syncInputs(lock) {
   syncHairMaterialEditor(lock);
   renderTaperPreview(taperPreviewPaths.strand, lock, "taperCurve");
   renderTaperPreview(taperPreviewPaths.strandDepth, lock, "depthCurve");
-  renderTwistCurvePreview(strandTwistCurvePreview, lock);
+  branchSweep.renderTwistCurvePreview(strandTwistCurvePreview, lock);
   if (!isPanelGeometry(lock)) syncShapeDimensionInputs(lock);
   inputs.rootScalpOffset.value = lock.rootScalpOffset ?? 0;
   document.querySelector("#rootScalpOffsetValue").textContent = Number(lock.rootScalpOffset ?? 0).toFixed(2);
@@ -30327,7 +29983,7 @@ function bindLockInput(key, parser = Number) {
     if (key === "profileOffset") {
       document.querySelector("#profileOffsetValue").textContent = Number(target[key]).toFixed(2);
       renderProfilePreview(profilePreviewPaths.strand, target.sweepProfile, target.profileOffset, target);
-      if (sweepProfileEditor.open) renderSweepProfileEditor();
+      if (sweepProfileEditor.open) branchSweep.renderSweepProfileEditor();
     }
     if (key === "rootScalpOffset") {
       document.querySelector("#rootScalpOffsetValue").textContent = Number(target[key]).toFixed(2);
@@ -30808,7 +30464,7 @@ Object.entries(groupInputs).forEach(([key, input]) => {
     if (key === "profileOffset") {
       document.querySelector("#groupProfileOffsetValue").textContent = Number(input.value).toFixed(2);
       renderProfilePreview(profilePreviewPaths.group, strandGroupDefaults[sel.state.selectedStrandGroup].sweepProfile, Number(input.value), strandGroupDefaults[sel.state.selectedStrandGroup]);
-      if (sweepProfileEditor.open) renderSweepProfileEditor();
+      if (sweepProfileEditor.open) branchSweep.renderSweepProfileEditor();
     }
     if (key === "rootScalpOffset") document.querySelector("#groupRootScalpOffsetValue").textContent = Number(input.value).toFixed(2);
     if (key === "widthScale") document.querySelector("#groupWidthScaleValue").textContent = Number(input.value).toFixed(2);
@@ -30865,8 +30521,8 @@ cancelPanelSplitSnapDisable.addEventListener("click", () => {
 panelSplitSnapWarning.addEventListener("cancel", () => {
   ui.state.panelSplitSnapWarningContinuation = null;
 });
-editSweepProfileButtons.forEach((button) => button.addEventListener("click", openSweepProfileEditor));
-document.querySelector("#closeSweepProfile").addEventListener("click", closeSweepProfileEditor);
+editSweepProfileButtons.forEach((button) => button.addEventListener("click", branchSweep.openSweepProfileEditor));
+document.querySelector("#closeSweepProfile").addEventListener("click", branchSweep.closeSweepProfileEditor);
 sweepProfileEditor.addEventListener("cancel", () => {
   sculptState.state.sweepProfileEdit = null;
 });
@@ -30877,16 +30533,16 @@ sweepProfileCanvas.addEventListener("pointerdown", (event) => {
   pushUndoState();
   sculptState.state.sweepProfileEdit.selectedIndex = pointIndex;
   sculptState.state.sweepProfileEdit.mirrorIndex = projectState.state.sweepProfileMirrorEnabled
-    ? mirroredSweepProfileIndex(activeSweepProfile(), pointIndex)
+    ? branchSweep.mirroredSweepProfileIndex(branchSweep.activeSweepProfile(), pointIndex)
     : null;
   sculptState.state.sweepProfileEdit.dragPointerId = event.pointerId;
   sweepProfileCanvas.setPointerCapture?.(event.pointerId);
-  renderSweepProfileEditor();
+  branchSweep.renderSweepProfileEditor();
   event.preventDefault();
 });
 sweepProfileCanvas.addEventListener("pointermove", (event) => {
   if (!sculptState.state.sweepProfileEdit || sculptState.state.sweepProfileEdit.dragPointerId !== event.pointerId) return;
-  const profile = activeSweepProfile();
+  const profile = branchSweep.activeSweepProfile();
   const selected = profile?.[sculptState.state.sweepProfileEdit.selectedIndex];
   if (!selected) return;
   const nextPoint = canvasToProfile(event);
@@ -30899,29 +30555,23 @@ sweepProfileCanvas.addEventListener("pointermove", (event) => {
     mirrored.x = -nextPoint.x;
     mirrored.z = nextPoint.z;
   }
-  applySweepProfileEdit();
+  branchSweep.applySweepProfileEdit();
   event.preventDefault();
 });
-function finishSweepProfileDrag(event) {
-  if (!sculptState.state.sweepProfileEdit || sculptState.state.sweepProfileEdit.dragPointerId !== event.pointerId) return;
-  if (sweepProfileCanvas.hasPointerCapture?.(event.pointerId)) sweepProfileCanvas.releasePointerCapture(event.pointerId);
-  sculptState.state.sweepProfileEdit.dragPointerId = null;
-  sculptState.state.sweepProfileEdit.mirrorIndex = null;
-}
-sweepProfileCanvas.addEventListener("pointerup", finishSweepProfileDrag);
-sweepProfileCanvas.addEventListener("pointercancel", finishSweepProfileDrag);
+sweepProfileCanvas.addEventListener("pointerup", branchSweep.finishSweepProfileDrag);
+sweepProfileCanvas.addEventListener("pointercancel", branchSweep.finishSweepProfileDrag);
 bindUndoCapture(sweepPointInterpolation);
 sweepPointInterpolation.addEventListener("change", () => {
-  const profile = activeSweepProfile();
+  const profile = branchSweep.activeSweepProfile();
   const selected = profile?.[sculptState.state.sweepProfileEdit?.selectedIndex];
   if (!selected) return;
   selected.interpolation = sweepPointInterpolation.value;
   const mirrorIndex = projectState.state.sweepProfileMirrorEnabled
-    ? mirroredSweepProfileIndex(profile, sculptState.state.sweepProfileEdit.selectedIndex)
+    ? branchSweep.mirroredSweepProfileIndex(profile, sculptState.state.sweepProfileEdit.selectedIndex)
     : null;
   const mirrored = profile[mirrorIndex];
   if (mirrored && mirrored !== selected) mirrored.interpolation = sweepPointInterpolation.value;
-  applySweepProfileEdit();
+  branchSweep.applySweepProfileEdit();
 });
 sweepProfileMirrorX.addEventListener("click", () => {
   projectState.state.sweepProfileMirrorEnabled = !projectState.state.sweepProfileMirrorEnabled;
@@ -30930,7 +30580,7 @@ sweepProfileMirrorX.addEventListener("click", () => {
 Object.entries(sweepProfileTrimInputs).forEach(([key, input]) => {
   bindUndoCapture(input);
   input.addEventListener("input", () => {
-    const target = activeSweepProfileTarget();
+    const target = branchSweep.branchSweep.activeSweepProfileTarget();
     if (!target) return;
     const value = THREE.MathUtils.clamp(Number(input.value), 0, 1);
     target[key] = value;
@@ -30938,18 +30588,18 @@ Object.entries(sweepProfileTrimInputs).forEach(([key, input]) => {
       const mirroredKey = key === "profileTrimLeft" ? "profileTrimRight" : "profileTrimLeft";
       target[mirroredKey] = value;
     }
-    applySweepProfileEdit();
+    branchSweep.applySweepProfileEdit();
   });
 });
 bindUndoCapture(sweepProfileTrimRoundness);
 sweepProfileTrimRoundness.addEventListener("input", () => {
-  const target = activeSweepProfileTarget();
+  const target = branchSweep.branchSweep.activeSweepProfileTarget();
   if (!target) return;
   target.profileTrimRoundness = THREE.MathUtils.clamp(Number(sweepProfileTrimRoundness.value), 0, 1);
-  applySweepProfileEdit();
+  branchSweep.applySweepProfileEdit();
 });
 document.querySelector("#addSweepPoint").addEventListener("click", () => {
-  const profile = activeSweepProfile();
+  const profile = branchSweep.activeSweepProfile();
   if (!profile?.length || !sculptState.state.sweepProfileEdit) return;
   pushUndoState();
   const index = THREE.MathUtils.clamp(sculptState.state.sweepProfileEdit.selectedIndex, 0, profile.length - 1);
@@ -30961,19 +30611,19 @@ document.querySelector("#addSweepPoint").addEventListener("click", () => {
     interpolation: current.interpolation || "smooth"
   });
   sculptState.state.sweepProfileEdit.selectedIndex = index + 1;
-  applySweepProfileEdit();
+  branchSweep.applySweepProfileEdit();
 });
 document.querySelector("#deleteSweepPoint").addEventListener("click", () => {
-  const profile = activeSweepProfile();
+  const profile = branchSweep.activeSweepProfile();
   if (!profile || profile.length <= 4 || !sculptState.state.sweepProfileEdit) return;
   pushUndoState();
   profile.splice(sculptState.state.sweepProfileEdit.selectedIndex, 1);
   sculptState.state.sweepProfileEdit.selectedIndex = Math.min(sculptState.state.sweepProfileEdit.selectedIndex, profile.length - 1);
-  applySweepProfileEdit();
+  branchSweep.applySweepProfileEdit();
 });
 document.querySelector("#resetSweepProfile").addEventListener("click", () => {
-  const profile = activeSweepProfile();
-  const target = activeSweepProfileTarget();
+  const profile = branchSweep.activeSweepProfile();
+  const target = branchSweep.branchSweep.activeSweepProfileTarget();
   if (!profile || !sculptState.state.sweepProfileEdit) return;
   pushUndoState();
   profile.splice(0, profile.length, ...DEFAULT_SWEEP_PROFILE.map((point) => ({ ...point })));
@@ -30983,7 +30633,7 @@ document.querySelector("#resetSweepProfile").addEventListener("click", () => {
     target.profileTrimRoundness = 1;
   }
   sculptState.state.sweepProfileEdit.selectedIndex = 0;
-  applySweepProfileEdit();
+  branchSweep.applySweepProfileEdit();
 });
 editTaperCurveButtons.forEach((button) => button.addEventListener("click", () => openTaperCurveEditor(button.dataset.curveKey)));
 document.querySelector("#closeTaperCurve").addEventListener("click", closeTaperCurveEditor);
@@ -31011,7 +30661,7 @@ function releaseTaperCurveEditorFieldFocus() {
 }
 taperAsymmetryToggle.addEventListener("change", () => {
   const target = activeTaperTarget();
-  if (!target || !sculptState.state.taperCurveEdit || twistCurveEditing() || proceduralBranchCurveEditing()) return;
+  if (!target || !sculptState.state.taperCurveEdit || branchSweep.twistCurveEditing() || branchSweep.proceduralBranchCurveEditing()) return;
   pushUndoState();
   if (taperAsymmetryToggle.checked) {
     target[shapePresets.taperSecondaryKey()] = shapePresets.cloneShapePresetValue(target[sculptState.state.taperCurveEdit.curveKey]);
@@ -31025,7 +30675,7 @@ taperAsymmetryToggle.addEventListener("change", () => {
 });
 centerAsymmetricProfileToggle.addEventListener("change", () => {
   const target = activeTaperTarget();
-  if (!target || !sculptState.state.taperCurveEdit || twistCurveEditing() || proceduralBranchCurveEditing()) return;
+  if (!target || !sculptState.state.taperCurveEdit || branchSweep.twistCurveEditing() || branchSweep.proceduralBranchCurveEditing()) return;
   pushUndoState();
   target.centerAsymmetricProfile = centerAsymmetricProfileToggle.checked;
   applyTaperCurveEdit();
@@ -31037,7 +30687,7 @@ taperCurveCanvas.addEventListener("pointerdown", (event) => {
   pushUndoState();
   sculptState.state.taperCurveEdit.side = event.target.dataset.curveSide === "secondary" ? "secondary" : "primary";
   sculptState.state.taperCurveEdit.selectedIndex = pointIndex;
-  sculptState.state.taperCurveEdit.dragDisplayRange = twistCurveEditing()
+  sculptState.state.taperCurveEdit.dragDisplayRange = branchSweep.twistCurveEditing()
     ? twistCurveDisplayRange(
         activeTaperCurve(),
         TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
@@ -31126,12 +30776,12 @@ function beginTaperMeshPointDrag(event) {
   if (!lock || !curvePoint) return;
 
   const curve = strandGeometryCurve(lock);
-  const editingTwist = twistCurveEditing();
+  const editingTwist = branchSweep.twistCurveEditing();
   const frame = taperMeshPointFrame(lock, curve, curvePoint.position, sculptState.state.taperCurveEdit.curveKey);
   const cameraDirection = new THREE.Vector3();
   camera.getWorldDirection(cameraDirection).normalize();
   const axis = editingTwist ? "twist" : sculptState.state.taperCurveEdit.curveKey === "depthCurve" ? "z" : "x";
-  const shapeAxis = editingTwist ? twistMeshGraphAxis(frame) : frame[axis].clone();
+  const shapeAxis = editingTwist ? branchSweep.twistMeshGraphAxis(frame) : frame[axis].clone();
   const projectedAxis = shapeAxis.addScaledVector(
     cameraDirection,
     -shapeAxis.dot(cameraDirection)
@@ -31148,7 +30798,7 @@ function beginTaperMeshPointDrag(event) {
       )
     : null;
   const extentPerValue = editingTwist
-    ? twistMeshPointDistancePerDegree(lock, curvePoint.position, displayRange)
+    ? branchSweep.twistMeshPointDistancePerDegree(lock, curvePoint.position, displayRange)
     : taperMeshPointExtentPerValue(lock, curvePoint.position, side, axis);
   const screenExtentPerValue = extentPerValue * projectedLength;
   if (screenExtentPerValue < 0.00000001) return;
@@ -31279,11 +30929,11 @@ function updateSelectedTaperPoint(key, value) {
 taperPointValue.addEventListener("input", () => updateSelectedTaperPoint(
   "value",
   THREE.MathUtils.clamp(
-    twistCurveEditing()
+    branchSweep.twistCurveEditing()
       ? twistRateDegreesFromUnits(taperPointValue.value)
       : Number(taperPointValue.value),
-    twistCurveEditing() ? -TWIST_CURVE_VALUE_MAX : 0,
-    twistCurveEditing() ? TWIST_CURVE_VALUE_MAX : TAPER_VALUE_MAX
+    branchSweep.twistCurveEditing() ? -TWIST_CURVE_VALUE_MAX : 0,
+    branchSweep.twistCurveEditing() ? TWIST_CURVE_VALUE_MAX : TAPER_VALUE_MAX
   )
 ));
 taperPointPosition.addEventListener("input", () => updateSelectedTaperPoint("position", Number(taperPointPosition.value)));

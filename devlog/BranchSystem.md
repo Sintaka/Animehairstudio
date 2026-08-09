@@ -39,7 +39,7 @@
 | **3d-3a** ✅ | region-panel（31 函数） | modules/geometry/branch-region-panel.js | `createBranchRegionApi(deps)`：14 外部 + 5 store + 4 THREE 引用；app.js 38,386→37,681 |
 | **3d-3b** ✅ | geometry（7 函数） | modules/geometry/branch-bridge.js | `createBranchBridgeApi(deps)`：12 外部 + 2 常量 + branch store；import branch-connect + clampRegionParam；app.js 37,681→36,7xx |
 | **3d-3c** ✅ | root-bone（13 函数） | modules/geometry/branch-root-bone.js | `createBranchRootBoneApi(deps)`：惰性闭包 updateBranchRootRegionCenter + transformControls；import clampRegionParam；app.js 36,704→36,491 |
-| **3d-3d** ✅（a 部分） | hierarchy（6 函数） | modules/geometry/branch-hierarchy.js | `createBranchHierarchyApi(deps)` 惰性闭包引用已迁模块；app.js 36,491→36,409；剩 sweep-profile |
+| **3d-3d** ✅ 完成 | hierarchy + sweep-profile | branch-hierarchy.js + branch-sweep.js | 3d-3d-a（6）+ 3d-3d-b（20）；app.js 36,409→36,058；子发片系统迁出全部完成 |
 
 ## 5. 风险与注意
 
