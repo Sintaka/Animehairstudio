@@ -1,140 +1,140 @@
 {
-  "generatedAt": "2026-08-09T13:02:32.079Z",
-  "total": 229,
+  "generatedAt": "2026-08-09T13:15:54.223Z",
+  "total": 221,
   "lets": [
     {
       "name": "activeTool",
-      "line": 2123,
+      "line": 2124,
       "readRefs": 108,
       "writeRefs": 99,
       "refs": 207,
-      "span": 36522,
+      "span": 36500,
       "bucket": "selection/outliner"
     },
     {
       "name": "drawStrandStroke",
-      "line": 2198,
+      "line": 2199,
       "readRefs": 133,
       "writeRefs": 4,
       "refs": 137,
-      "span": 35878,
+      "span": 35856,
       "bucket": "sculpt/edit"
     },
     {
       "name": "taperCurveEdit",
-      "line": 2309,
+      "line": 2289,
       "readRefs": 117,
       "writeRefs": 3,
       "refs": 120,
-      "span": 31224,
+      "span": 31223,
       "bucket": "sculpt/edit"
     },
     {
       "name": "scalpBuilderCurveLattice",
-      "line": 2158,
+      "line": 2159,
       "readRefs": 71,
       "writeRefs": 2,
       "refs": 73,
-      "span": 35953,
+      "span": 35931,
       "bucket": "scalp"
     },
     {
       "name": "camera",
-      "line": 463,
+      "line": 464,
       "readRefs": 62,
       "writeRefs": 5,
       "refs": 67,
-      "span": 38222,
+      "span": 38200,
       "bucket": "camera/viewport"
     },
     {
       "name": "viewportEditMode",
-      "line": 2423,
+      "line": 2403,
       "readRefs": 16,
       "writeRefs": 50,
       "refs": 66,
-      "span": 36191,
+      "span": 36190,
       "bucket": "sculpt/edit"
     },
     {
       "name": "scalpBuilderEditing",
-      "line": 2148,
+      "line": 2149,
       "readRefs": 53,
       "writeRefs": 5,
       "refs": 58,
-      "span": 36201,
+      "span": 36179,
       "bucket": "scalp"
     },
     {
       "name": "curveSurfaceDraft",
-      "line": 2206,
+      "line": 2207,
       "readRefs": 50,
       "writeRefs": 3,
       "refs": 53,
-      "span": 36228,
+      "span": 36206,
       "bucket": "(unclassified)"
     },
     {
       "name": "sweepProfileEdit",
-      "line": 2307,
+      "line": 2287,
       "readRefs": 46,
       "writeRefs": 3,
       "refs": 49,
-      "span": 30875,
+      "span": 30874,
       "bucket": "sculpt/edit"
     },
     {
       "name": "viewPlaneMoveDrag",
-      "line": 2300,
+      "line": 2280,
       "readRefs": 41,
       "writeRefs": 4,
       "refs": 45,
-      "span": 35775,
+      "span": 35774,
       "bucket": "sculpt/edit"
     },
     {
       "name": "guideModel",
-      "line": 2060,
+      "line": 2061,
       "readRefs": 40,
       "writeRefs": 2,
       "refs": 42,
-      "span": 24739,
+      "span": 24717,
       "bucket": "guide/curve"
     },
     {
       "name": "capsuleGuideEditing",
-      "line": 2149,
+      "line": 2150,
       "readRefs": 30,
       "writeRefs": 9,
       "refs": 39,
-      "span": 36241,
+      "span": 36219,
       "bucket": "sculpt/edit"
     },
     {
       "name": "mirrorXEditing",
-      "line": 2140,
+      "line": 2141,
       "readRefs": 36,
       "writeRefs": 1,
       "refs": 37,
-      "span": 33972,
+      "span": 33950,
       "bucket": "sculpt/edit"
     },
     {
       "name": "placeEdit",
-      "line": 2197,
+      "line": 2198,
       "readRefs": 31,
       "writeRefs": 4,
       "refs": 35,
-      "span": 36250,
+      "span": 36228,
       "bucket": "sculpt/edit"
     },
     {
       "name": "duplicatePlacement",
-      "line": 2424,
+      "line": 2404,
       "readRefs": 28,
       "writeRefs": 7,
       "refs": 35,
-      "span": 35646,
+      "span": 35645,
       "bucket": "(unclassified)"
     },
     {
@@ -143,70 +143,70 @@
       "readRefs": 16,
       "writeRefs": 15,
       "refs": 31,
-      "span": 34329,
+      "span": 34308,
       "bucket": "camera/viewport"
     },
     {
       "name": "activeHandleEdit",
-      "line": 2127,
+      "line": 2128,
       "readRefs": 9,
       "writeRefs": 20,
       "refs": 29,
-      "span": 34598,
+      "span": 34576,
       "bucket": "sculpt/edit"
     },
     {
       "name": "scalpPaintEditing",
-      "line": 2146,
+      "line": 2147,
       "readRefs": 26,
       "writeRefs": 3,
       "refs": 29,
-      "span": 36208,
+      "span": 36186,
       "bucket": "scalp"
     },
     {
       "name": "branchRegionCanvasDrag",
-      "line": 22766,
+      "line": 22746,
       "readRefs": 22,
       "writeRefs": 7,
       "refs": 29,
-      "span": 483,
+      "span": 482,
       "bucket": "sculpt/edit"
     },
     {
       "name": "proportionalEditing",
-      "line": 2142,
+      "line": 2143,
       "readRefs": 26,
       "writeRefs": 2,
       "refs": 28,
-      "span": 35566,
+      "span": 35544,
       "bucket": "sculpt/edit"
     },
     {
       "name": "headSetupEditing",
-      "line": 2147,
+      "line": 2148,
       "readRefs": 17,
       "writeRefs": 10,
       "refs": 27,
-      "span": 33464,
+      "span": 33442,
       "bucket": "sculpt/edit"
     },
     {
       "name": "loftSurfaceDraft",
-      "line": 2205,
+      "line": 2206,
       "readRefs": 23,
       "writeRefs": 3,
       "refs": 26,
-      "span": 35873,
+      "span": 35851,
       "bucket": "(unclassified)"
     },
     {
       "name": "scalpShapeEditing",
-      "line": 2144,
+      "line": 2145,
       "readRefs": 21,
       "writeRefs": 3,
       "refs": 24,
-      "span": 36236,
+      "span": 36214,
       "bucket": "scalp"
     },
     {
@@ -215,34 +215,34 @@
       "readRefs": 21,
       "writeRefs": 2,
       "refs": 23,
-      "span": 36091,
+      "span": 36070,
       "bucket": "sculpt/edit"
     },
     {
       "name": "selectionMarqueeDrag",
-      "line": 2184,
+      "line": 2185,
       "readRefs": 14,
       "writeRefs": 8,
       "refs": 22,
-      "span": 36342,
+      "span": 36320,
       "bucket": "selection/outliner"
     },
     {
       "name": "relaxEdit",
-      "line": 2196,
+      "line": 2197,
       "readRefs": 19,
       "writeRefs": 3,
       "refs": 22,
-      "span": 34350,
+      "span": 34328,
       "bucket": "sculpt/edit"
     },
     {
       "name": "viewSnapDrag",
-      "line": 2294,
+      "line": 2274,
       "readRefs": 19,
       "writeRefs": 3,
       "refs": 22,
-      "span": 36375,
+      "span": 36374,
       "bucket": "sculpt/edit"
     },
     {
@@ -251,7 +251,7 @@
       "readRefs": 16,
       "writeRefs": 5,
       "refs": 21,
-      "span": 36090,
+      "span": 36069,
       "bucket": "sculpt/edit"
     },
     {
@@ -260,79 +260,70 @@
       "readRefs": 15,
       "writeRefs": 6,
       "refs": 21,
-      "span": 32840,
+      "span": 32819,
       "bucket": "camera/viewport"
     },
     {
       "name": "preferencesOpenSnapshot",
-      "line": 2289,
+      "line": 2269,
       "readRefs": 17,
       "writeRefs": 4,
       "refs": 21,
-      "span": 28817,
+      "span": 28816,
       "bucket": "ui/panel"
     },
     {
       "name": "customScalpSurfaceMesh",
-      "line": 1613,
+      "line": 1614,
       "readRefs": 15,
       "writeRefs": 3,
       "refs": 18,
-      "span": 32036,
+      "span": 32014,
       "bucket": "scalp"
     },
     {
       "name": "editedScalpSurfaceMesh",
-      "line": 1618,
+      "line": 1619,
       "readRefs": 16,
       "writeRefs": 2,
       "refs": 18,
-      "span": 19713,
+      "span": 19692,
       "bucket": "scalp"
     },
     {
       "name": "scalpBuilderStep",
-      "line": 2155,
+      "line": 2156,
       "readRefs": 16,
       "writeRefs": 2,
       "refs": 18,
-      "span": 3909,
+      "span": 3888,
       "bucket": "scalp"
     },
     {
       "name": "proceduralDuplicatePreview",
-      "line": 2427,
+      "line": 2407,
       "readRefs": 9,
       "writeRefs": 8,
       "refs": 17,
-      "span": 29849,
+      "span": 29848,
       "bucket": "(unclassified)"
     },
     {
-      "name": "branchRegionView",
-      "line": 22887,
-      "readRefs": 13,
-      "writeRefs": 4,
-      "refs": 17,
-      "span": 107,
-      "bucket": "branch/sub"
-    },
-    {
       "name": "transformDragging",
-      "line": 2132,
+      "line": 2133,
       "readRefs": 12,
       "writeRefs": 4,
       "refs": 16,
-      "span": 35939,
+      "span": 35917,
       "bucket": "sculpt/edit"
     },
     {
       "name": "hierarchyEditing",
-      "line": 2139,
+      "line": 2140,
       "readRefs": 14,
       "writeRefs": 2,
       "refs": 16,
-      "span": 33963,
+      "span": 33941,
       "bucket": "sculpt/edit"
     },
     {
@@ -341,21 +332,21 @@
       "readRefs": 13,
       "writeRefs": 3,
       "refs": 16,
-      "span": 32857,
+      "span": 32836,
       "bucket": "draw/poly"
     },
     {
       "name": "activeViewportPointer",
-      "line": 2295,
+      "line": 2275,
       "readRefs": 10,
       "writeRefs": 6,
       "refs": 16,
-      "span": 34283,
+      "span": 34282,
       "bucket": "camera/viewport"
     },
     {
       "name": "customCreationPresets",
-      "line": 34608,
+      "line": 34587,
       "readRefs": 12,
       "writeRefs": 4,
       "refs": 16,
@@ -364,11 +355,11 @@
     },
     {
       "name": "selectedSurfaceObjectAnchorId",
-      "line": 2194,
+      "line": 2195,
       "readRefs": 4,
       "writeRefs": 11,
       "refs": 15,
-      "span": 34528,
+      "span": 34506,
       "bucket": "selection/outliner"
     },
     {
@@ -377,34 +368,34 @@
       "readRefs": 13,
       "writeRefs": 2,
       "refs": 15,
-      "span": 32857,
+      "span": 32836,
       "bucket": "ui/panel"
     },
     {
       "name": "scalpRegionAssignments",
-      "line": 1472,
+      "line": 1473,
       "readRefs": 13,
       "writeRefs": 1,
       "refs": 14,
-      "span": 19863,
+      "span": 19842,
       "bucket": "scalp"
     },
     {
       "name": "scalpBuilderEditedPoints",
-      "line": 2160,
+      "line": 2161,
       "readRefs": 8,
       "writeRefs": 6,
       "refs": 14,
-      "span": 17254,
+      "span": 17233,
       "bucket": "scalp"
     },
     {
       "name": "altOrbitDrag",
-      "line": 2185,
+      "line": 2186,
       "readRefs": 10,
       "writeRefs": 4,
       "refs": 14,
-      "span": 36484,
+      "span": 36462,
       "bucket": "sculpt/edit"
     },
     {
@@ -413,88 +404,88 @@
       "readRefs": 13,
       "writeRefs": 1,
       "refs": 14,
-      "span": 32843,
+      "span": 32822,
       "bucket": "guide/curve"
     },
     {
       "name": "strandRadialGesture",
-      "line": 2421,
+      "line": 2401,
       "readRefs": 10,
       "writeRefs": 4,
       "refs": 14,
-      "span": 28266,
+      "span": 28265,
       "bucket": "hair/mesh"
     },
     {
       "name": "branchRegionEdit",
-      "line": 22765,
+      "line": 22745,
       "readRefs": 12,
       "writeRefs": 2,
       "refs": 14,
-      "span": 10510,
+      "span": 10509,
       "bucket": "sculpt/edit"
     },
     {
       "name": "scalpGuideSource",
-      "line": 1612,
+      "line": 1613,
       "readRefs": 4,
       "writeRefs": 9,
       "refs": 13,
-      "span": 32041,
+      "span": 32019,
       "bucket": "scalp"
     },
     {
       "name": "capsuleGuideLoopSelection",
-      "line": 2151,
+      "line": 2152,
       "readRefs": 8,
       "writeRefs": 5,
       "refs": 13,
-      "span": 8926,
+      "span": 8905,
       "bucket": "selection/outliner"
     },
     {
       "name": "scalpBuilderPlane",
-      "line": 2157,
+      "line": 2158,
       "readRefs": 10,
       "writeRefs": 3,
       "refs": 13,
-      "span": 3932,
+      "span": 3911,
       "bucket": "scalp"
     },
     {
       "name": "scalpLatticeDrag",
-      "line": 2191,
+      "line": 2192,
       "readRefs": 11,
       "writeRefs": 2,
       "refs": 13,
-      "span": 35881,
+      "span": 35859,
       "bucket": "scalp"
     },
     {
       "name": "polyBrushStroke",
-      "line": 2200,
+      "line": 2201,
       "readRefs": 7,
       "writeRefs": 6,
       "refs": 13,
-      "span": 33691,
+      "span": 33669,
       "bucket": "sculpt/edit"
     },
     {
       "name": "panelSplitDrag",
-      "line": 2207,
+      "line": 2208,
       "readRefs": 10,
       "writeRefs": 3,
       "refs": 13,
-      "span": 35872,
+      "span": 35850,
       "bucket": "sculpt/edit"
     },
     {
       "name": "drawStrandMode",
-      "line": 2209,
+      "line": 2210,
       "readRefs": 4,
       "writeRefs": 9,
       "refs": 13,
-      "span": 32680,
+      "span": 32658,
       "bucket": "hair/mesh"
     },
     {
@@ -503,7 +494,7 @@
       "readRefs": 9,
       "writeRefs": 4,
       "refs": 13,
-      "span": 32850,
+      "span": 32829,
       "bucket": "camera/viewport"
     },
     {
@@ -512,7 +503,7 @@
       "readRefs": 12,
       "writeRefs": 1,
       "refs": 13,
-      "span": 32850,
+      "span": 32829,
       "bucket": "camera/viewport"
     },
     {
@@ -521,34 +512,34 @@
       "readRefs": 11,
       "writeRefs": 2,
       "refs": 13,
-      "span": 32847,
+      "span": 32826,
       "bucket": "camera/viewport"
     },
     {
       "name": "defaultHairShader",
-      "line": 304,
+      "line": 305,
       "readRefs": 9,
       "writeRefs": 3,
       "refs": 12,
-      "span": 34787,
+      "span": 34765,
       "bucket": "hair/mesh"
     },
     {
       "name": "capsuleGuidesVisible",
-      "line": 2086,
+      "line": 2087,
       "readRefs": 6,
       "writeRefs": 6,
       "refs": 12,
-      "span": 33628,
+      "span": 33606,
       "bucket": "guide/curve"
     },
     {
       "name": "objectSpaceEditing",
-      "line": 2138,
+      "line": 2139,
       "readRefs": 11,
       "writeRefs": 1,
       "refs": 12,
-      "span": 35997,
+      "span": 35975,
       "bucket": "sculpt/edit"
     },
     {
@@ -557,7 +548,7 @@
       "readRefs": 10,
       "writeRefs": 2,
       "refs": 12,
-      "span": 32843,
+      "span": 32822,
       "bucket": "selection/outliner"
     },
     {
@@ -566,88 +557,88 @@
       "readRefs": 10,
       "writeRefs": 2,
       "refs": 12,
-      "span": 36513,
+      "span": 36492,
       "bucket": "(unclassified)"
     },
     {
       "name": "brushSizeDrag",
-      "line": 2290,
+      "line": 2270,
       "readRefs": 8,
       "writeRefs": 4,
       "refs": 12,
-      "span": 34944,
+      "span": 34943,
       "bucket": "sculpt/edit"
     },
     {
       "name": "strandWidthEdgeDrag",
-      "line": 2291,
+      "line": 2271,
       "readRefs": 8,
       "writeRefs": 4,
       "refs": 12,
-      "span": 35723,
+      "span": 35722,
       "bucket": "sculpt/edit"
     },
     {
       "name": "outlinerContextTarget",
-      "line": 2419,
+      "line": 2399,
       "readRefs": 5,
       "writeRefs": 7,
       "refs": 12,
-      "span": 30320,
+      "span": 30319,
       "bucket": "selection/outliner"
     },
     {
       "name": "toolRadialGesture",
-      "line": 2422,
+      "line": 2402,
       "readRefs": 9,
       "writeRefs": 3,
       "refs": 12,
-      "span": 33507,
+      "span": 33506,
       "bucket": "(unclassified)"
     },
     {
       "name": "scalpVisibleQuads",
-      "line": 1474,
+      "line": 1475,
       "readRefs": 10,
       "writeRefs": 1,
       "refs": 11,
-      "span": 18894,
+      "span": 18873,
       "bucket": "scalp"
     },
     {
       "name": "editedScalpRegions",
-      "line": 1621,
+      "line": 1622,
       "readRefs": 7,
       "writeRefs": 4,
       "refs": 11,
-      "span": 19711,
+      "span": 19690,
       "bucket": "scalp"
     },
     {
       "name": "curveLatticeGuidesVisible",
-      "line": 2087,
+      "line": 2088,
       "readRefs": 5,
       "writeRefs": 6,
       "refs": 11,
-      "span": 33632,
+      "span": 33610,
       "bucket": "guide/curve"
     },
     {
       "name": "capsuleGuideLoopDrag",
-      "line": 2152,
+      "line": 2153,
       "readRefs": 7,
       "writeRefs": 4,
       "refs": 11,
-      "span": 35928,
+      "span": 35906,
       "bucket": "sculpt/edit"
     },
     {
       "name": "houdiniZoomDrag",
-      "line": 2188,
+      "line": 2189,
       "readRefs": 8,
       "writeRefs": 3,
       "refs": 11,
-      "span": 24371,
+      "span": 24349,
       "bucket": "sculpt/edit"
     },
     {
@@ -656,7 +647,7 @@
       "readRefs": 9,
       "writeRefs": 2,
       "refs": 11,
-      "span": 32853,
+      "span": 32832,
       "bucket": "camera/viewport"
     },
     {
@@ -665,7 +656,7 @@
       "readRefs": 9,
       "writeRefs": 2,
       "refs": 11,
-      "span": 32847,
+      "span": 32826,
       "bucket": "(unclassified)"
     },
     {
@@ -674,7 +665,7 @@
       "readRefs": 9,
       "writeRefs": 2,
       "refs": 11,
-      "span": 32847,
+      "span": 32826,
       "bucket": "(unclassified)"
     },
     {
@@ -683,7 +674,7 @@
       "readRefs": 9,
       "writeRefs": 2,
       "refs": 11,
-      "span": 32847,
+      "span": 32826,
       "bucket": "hair/mesh"
     },
     {
@@ -692,12 +683,12 @@
       "readRefs": 9,
       "writeRefs": 2,
       "refs": 11,
-      "span": 32843,
+      "span": 32822,
       "bucket": "selection/outliner"
     },
     {
       "name": "customShapePresets",
-      "line": 16693,
+      "line": 16673,
       "readRefs": 7,
       "writeRefs": 4,
       "refs": 11,
@@ -706,20 +697,20 @@
     },
     {
       "name": "scalpLatticeEditing",
-      "line": 2145,
+      "line": 2146,
       "readRefs": 8,
       "writeRefs": 2,
       "refs": 10,
-      "span": 36218,
+      "span": 36196,
       "bucket": "scalp"
     },
     {
       "name": "capsuleGuideDrawStroke",
-      "line": 2199,
+      "line": 2200,
       "readRefs": 6,
       "writeRefs": 4,
       "refs": 10,
-      "span": 35878,
+      "span": 35856,
       "bucket": "sculpt/edit"
     },
     {
@@ -728,12 +719,12 @@
       "readRefs": 6,
       "writeRefs": 4,
       "refs": 10,
-      "span": 28495,
+      "span": 28474,
       "bucket": "(unclassified)"
     },
     {
       "name": "branchSweepStartDrag",
-      "line": 23261,
+      "line": 23240,
       "readRefs": 7,
       "writeRefs": 3,
       "refs": 10,
@@ -742,70 +733,70 @@
     },
     {
       "name": "orthographicView",
-      "line": 464,
+      "line": 465,
       "readRefs": 8,
       "writeRefs": 1,
       "refs": 9,
-      "span": 35977,
+      "span": 35955,
       "bucket": "camera/viewport"
     },
     {
       "name": "activeHairMaterialId",
-      "line": 996,
+      "line": 997,
       "readRefs": 3,
       "writeRefs": 6,
       "refs": 9,
-      "span": 31940,
+      "span": 31918,
       "bucket": "hair/mesh"
     },
     {
       "name": "customScalpRegions",
-      "line": 1616,
+      "line": 1617,
       "readRefs": 6,
       "writeRefs": 3,
       "refs": 9,
-      "span": 19713,
+      "span": 19692,
       "bucket": "scalp"
     },
     {
       "name": "editedScalpSurfaceWire",
-      "line": 1619,
+      "line": 1620,
       "readRefs": 8,
       "writeRefs": 1,
       "refs": 9,
-      "span": 4500,
+      "span": 4479,
       "bucket": "scalp"
     },
     {
       "name": "uvCheckerEnabled",
-      "line": 2078,
+      "line": 2079,
       "readRefs": 8,
       "writeRefs": 1,
       "refs": 9,
-      "span": 33661,
+      "span": 33639,
       "bucket": "hair/mesh"
     },
     {
       "name": "activeCustomDrawClumpTemplate",
-      "line": 2210,
+      "line": 2211,
       "readRefs": 4,
       "writeRefs": 5,
       "refs": 9,
-      "span": 32678,
+      "span": 32656,
       "bucket": "draw/poly"
     },
     {
       "name": "taperMeshPointsVisible",
-      "line": 2310,
+      "line": 2290,
       "readRefs": 7,
       "writeRefs": 2,
       "refs": 9,
-      "span": 30996,
+      "span": 30995,
       "bucket": "hair/mesh"
     },
     {
       "name": "importedHeadAsset",
-      "line": 3230,
+      "line": 3210,
       "readRefs": 2,
       "writeRefs": 7,
       "refs": 9,
@@ -814,7 +805,7 @@
     },
     {
       "name": "scheduledTaperCurveEditFrame",
-      "line": 17346,
+      "line": 17326,
       "readRefs": 5,
       "writeRefs": 4,
       "refs": 9,
@@ -823,7 +814,7 @@
     },
     {
       "name": "branchRegionZoomDrag",
-      "line": 22888,
+      "line": 22867,
       "readRefs": 7,
       "writeRefs": 2,
       "refs": 9,
@@ -832,7 +823,7 @@
     },
     {
       "name": "hoveredControlPoint",
-      "line": 38051,
+      "line": 38030,
       "readRefs": 6,
       "writeRefs": 3,
       "refs": 9,
@@ -841,83 +832,83 @@
     },
     {
       "name": "turntableActive",
-      "line": 466,
+      "line": 467,
       "readRefs": 7,
       "writeRefs": 1,
       "refs": 8,
-      "span": 38203,
+      "span": 38181,
       "bucket": "camera/viewport"
     },
     {
       "name": "transformScaleDrag",
-      "line": 678,
+      "line": 679,
       "readRefs": 5,
       "writeRefs": 3,
       "refs": 8,
-      "span": 32197,
+      "span": 32175,
       "bucket": "sculpt/edit"
     },
     {
       "name": "importedScalpGuideAsset",
-      "line": 1617,
+      "line": 1618,
       "readRefs": 5,
       "writeRefs": 3,
       "refs": 8,
-      "span": 17573,
+      "span": 17552,
       "bucket": "scalp"
     },
     {
       "name": "showGroupColors",
-      "line": 2077,
+      "line": 2078,
       "readRefs": 7,
       "writeRefs": 1,
       "refs": 8,
-      "span": 33661,
+      "span": 33639,
       "bucket": "hair/mesh"
     },
     {
       "name": "scalpGuideVisible",
-      "line": 2083,
+      "line": 2084,
       "readRefs": 5,
       "writeRefs": 3,
       "refs": 8,
-      "span": 5851,
+      "span": 5830,
       "bucket": "scalp"
     },
     {
       "name": "referenceOverlayDrag",
-      "line": 2121,
-      "readRefs": 4,
-      "writeRefs": 4,
-      "refs": 8,
-      "span": 9204,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "referenceCropDrag",
       "line": 2122,
       "readRefs": 4,
       "writeRefs": 4,
       "refs": 8,
-      "span": 9203,
+      "span": 9183,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "referenceCropDrag",
+      "line": 2123,
+      "readRefs": 4,
+      "writeRefs": 4,
+      "refs": 8,
+      "span": 9182,
       "bucket": "sculpt/edit"
     },
     {
       "name": "sculptMoveStroke",
-      "line": 2125,
+      "line": 2126,
       "readRefs": 4,
       "writeRefs": 4,
       "refs": 8,
-      "span": 36156,
+      "span": 36134,
       "bucket": "sculpt/edit"
     },
     {
       "name": "activeCapsuleGuideLoopTransform",
-      "line": 2153,
+      "line": 2154,
       "readRefs": 0,
       "writeRefs": 8,
       "refs": 8,
-      "span": 8486,
+      "span": 8465,
       "bucket": "guide/curve"
     },
     {
@@ -926,7 +917,7 @@
       "readRefs": 5,
       "writeRefs": 3,
       "refs": 8,
-      "span": 36033,
+      "span": 36012,
       "bucket": "(unclassified)"
     },
     {
@@ -935,39 +926,39 @@
       "readRefs": 7,
       "writeRefs": 1,
       "refs": 8,
-      "span": 32847,
+      "span": 32826,
       "bucket": "(unclassified)"
     },
     {
       "name": "viewPlaneMoveEnabled",
-      "line": 2297,
+      "line": 2277,
       "readRefs": 5,
       "writeRefs": 3,
       "refs": 8,
-      "span": 28848,
+      "span": 28847,
       "bucket": "(unclassified)"
     },
     {
       "name": "sweepProfileMirrorEnabled",
-      "line": 2308,
+      "line": 2288,
       "readRefs": 7,
       "writeRefs": 1,
       "refs": 8,
-      "span": 30826,
+      "span": 30825,
       "bucket": "save/project"
     },
     {
       "name": "taperMeshPointDrag",
-      "line": 2311,
+      "line": 2291,
       "readRefs": 4,
       "writeRefs": 4,
       "refs": 8,
-      "span": 31141,
+      "span": 31140,
       "bucket": "sculpt/edit"
     },
     {
       "name": "proceduralAccessoryEditHistoryOpen",
-      "line": 34035,
+      "line": 34014,
       "readRefs": 1,
       "writeRefs": 7,
       "refs": 8,
@@ -976,7 +967,7 @@
     },
     {
       "name": "compactOutlinerCollapsed",
-      "line": 38689,
+      "line": 38668,
       "readRefs": 6,
       "writeRefs": 2,
       "refs": 8,
@@ -985,7 +976,7 @@
     },
     {
       "name": "compactAttributeEditorCollapsed",
-      "line": 38690,
+      "line": 38669,
       "readRefs": 6,
       "writeRefs": 2,
       "refs": 8,
@@ -994,115 +985,115 @@
     },
     {
       "name": "orthographicHalfHeight",
-      "line": 465,
+      "line": 466,
       "readRefs": 3,
       "writeRefs": 4,
       "refs": 7,
-      "span": 10327,
+      "span": 10306,
       "bucket": "camera/viewport"
     },
     {
       "name": "customScalpSurfaceWire",
-      "line": 1614,
+      "line": 1615,
       "readRefs": 5,
       "writeRefs": 2,
       "refs": 7,
-      "span": 4508,
+      "span": 4487,
       "bucket": "scalp"
     },
     {
       "name": "hairTopologyVisible",
-      "line": 2076,
+      "line": 2077,
       "readRefs": 5,
       "writeRefs": 2,
       "refs": 7,
-      "span": 34379,
+      "span": 34357,
       "bucket": "hair/mesh"
     },
     {
       "name": "uvInspectorDrag",
-      "line": 2082,
+      "line": 2083,
       "readRefs": 4,
       "writeRefs": 3,
       "refs": 7,
-      "span": 33686,
+      "span": 33664,
       "bucket": "sculpt/edit"
     },
     {
       "name": "isolatedStrandIds",
-      "line": 2099,
+      "line": 2100,
       "readRefs": 4,
       "writeRefs": 3,
       "refs": 7,
-      "span": 34153,
+      "span": 34131,
       "bucket": "selection/outliner"
     },
     {
       "name": "lockIndex",
-      "line": 2116,
+      "line": 2117,
       "readRefs": 5,
       "writeRefs": 2,
       "refs": 7,
-      "span": 27467,
+      "span": 27445,
       "bucket": "selection/outliner"
     },
     {
       "name": "activeStrandObjectTransform",
-      "line": 2129,
+      "line": 2130,
       "readRefs": 2,
       "writeRefs": 5,
       "refs": 7,
-      "span": 9765,
+      "span": 9744,
       "bucket": "hair/mesh"
     },
     {
       "name": "activeLatticeMultiEdit",
-      "line": 2131,
+      "line": 2132,
       "readRefs": 2,
       "writeRefs": 5,
       "refs": 7,
-      "span": 10514,
+      "span": 10493,
       "bucket": "sculpt/edit"
     },
     {
       "name": "scalpPaintDrag",
-      "line": 2179,
+      "line": 2180,
       "readRefs": 5,
       "writeRefs": 2,
       "refs": 7,
-      "span": 35894,
+      "span": 35872,
       "bucket": "scalp"
     },
     {
       "name": "activeScalpRegion",
-      "line": 2180,
+      "line": 2181,
       "readRefs": 2,
       "writeRefs": 5,
       "refs": 7,
-      "span": 31542,
+      "span": 31520,
       "bucket": "scalp"
     },
     {
       "name": "clumpUpdateInProgress",
-      "line": 2211,
+      "line": 2212,
       "readRefs": 1,
       "writeRefs": 6,
       "refs": 7,
-      "span": 25744,
+      "span": 25722,
       "bucket": "(unclassified)"
     },
     {
       "name": "shiftSnappedViewActive",
-      "line": 2296,
+      "line": 2276,
       "readRefs": 1,
       "writeRefs": 6,
       "refs": 7,
-      "span": 34314,
+      "span": 34313,
       "bucket": "ui/panel"
     },
     {
       "name": "viewPlaneNormalMoveHeld",
-      "line": 2299,
+      "line": 2279,
       "readRefs": 5,
       "writeRefs": 2,
       "refs": 7,
@@ -1111,34 +1102,34 @@
     },
     {
       "name": "pullMoveEnabled",
-      "line": 2301,
+      "line": 2281,
       "readRefs": 5,
       "writeRefs": 2,
       "refs": 7,
-      "span": 28845,
+      "span": 28844,
       "bucket": "(unclassified)"
     },
     {
       "name": "historyShortcutHeld",
-      "line": 2430,
+      "line": 2410,
       "readRefs": 2,
       "writeRefs": 5,
       "refs": 7,
-      "span": 35873,
+      "span": 35872,
       "bucket": "undo/history"
     },
     {
       "name": "strandRadialActions",
-      "line": 2783,
+      "line": 2763,
       "readRefs": 6,
       "writeRefs": 1,
       "refs": 7,
-      "span": 27675,
+      "span": 27674,
       "bucket": "hair/mesh"
     },
     {
       "name": "branchRegionPanDrag",
-      "line": 22889,
+      "line": 22868,
       "readRefs": 5,
       "writeRefs": 2,
       "refs": 7,
@@ -1147,7 +1138,7 @@
     },
     {
       "name": "pendingCreationPresetType",
-      "line": 34770,
+      "line": 34749,
       "readRefs": 0,
       "writeRefs": 7,
       "refs": 7,
@@ -1156,97 +1147,79 @@
     },
     {
       "name": "transformPrecisionHeld",
-      "line": 680,
+      "line": 681,
       "readRefs": 3,
       "writeRefs": 3,
       "refs": 6,
-      "span": 35486,
+      "span": 35464,
       "bucket": "gizmo/transform"
     },
     {
       "name": "scalpManualRegionQuads",
-      "line": 1473,
+      "line": 1474,
       "readRefs": 4,
       "writeRefs": 2,
       "refs": 6,
-      "span": 17998,
+      "span": 17977,
       "bucket": "scalp"
     },
     {
       "name": "activeSurfaceObjectTransform",
-      "line": 2128,
+      "line": 2129,
       "readRefs": 2,
       "writeRefs": 4,
       "refs": 6,
-      "span": 34094,
+      "span": 34072,
       "bucket": "gizmo/transform"
     },
     {
       "name": "pendingLockGeometryFrame",
-      "line": 2134,
+      "line": 2135,
       "readRefs": 2,
       "writeRefs": 4,
       "refs": 6,
-      "span": 25882,
+      "span": 25860,
       "bucket": "hair/mesh"
     },
     {
       "name": "sculptBrushGeometryFrame",
-      "line": 2136,
+      "line": 2137,
       "readRefs": 3,
       "writeRefs": 3,
       "refs": 6,
-      "span": 25841,
+      "span": 25819,
       "bucket": "sculpt/edit"
     },
     {
       "name": "pointRemovalCandidate",
-      "line": 2187,
+      "line": 2188,
       "readRefs": 0,
       "writeRefs": 6,
       "refs": 6,
-      "span": 36032,
+      "span": 36010,
       "bucket": "(unclassified)"
     },
     {
-      "name": "branchBridgeSmoothStrength",
-      "line": 2271,
-      "readRefs": 2,
-      "writeRefs": 4,
-      "refs": 6,
-      "span": 32744,
-      "bucket": "branch/sub"
-    },
-    {
-      "name": "branchBridgeSmoothDetail",
-      "line": 2275,
-      "readRefs": 2,
-      "writeRefs": 4,
-      "refs": 6,
-      "span": 32751,
-      "bucket": "branch/sub"
-    },
-    {
       "name": "hoveredStrandWidthEdge",
-      "line": 2292,
+      "line": 2272,
       "readRefs": 1,
       "writeRefs": 5,
       "refs": 6,
-      "span": 35715,
+      "span": 35714,
       "bucket": "hair/mesh"
     },
     {
       "name": "selectionSetsOpen",
-      "line": 2413,
+      "line": 2393,
       "readRefs": 3,
       "writeRefs": 3,
       "refs": 6,
-      "span": 29811,
+      "span": 29810,
       "bucket": "selection/outliner"
     },
     {
       "name": "activeOutlinerTab",
-      "line": 2418,
+      "line": 2398,
       "readRefs": 0,
       "writeRefs": 6,
       "refs": 6,
@@ -1255,34 +1228,34 @@
     },
     {
       "name": "toolRadialActions",
-      "line": 2788,
+      "line": 2768,
       "readRefs": 5,
       "writeRefs": 1,
       "refs": 6,
-      "span": 28341,
+      "span": 28340,
       "bucket": "(unclassified)"
     },
     {
       "name": "pendingShapePresetSave",
-      "line": 16694,
+      "line": 16674,
       "readRefs": 0,
       "writeRefs": 6,
       "refs": 6,
-      "span": 18276,
+      "span": 18275,
       "bucket": "save/project"
     },
     {
       "name": "pendingShapePresetRemoval",
-      "line": 16695,
+      "line": 16675,
       "readRefs": 1,
       "writeRefs": 5,
       "refs": 6,
-      "span": 18281,
+      "span": 18280,
       "bucket": "save/project"
     },
     {
       "name": "pendingCreationPresetRemoval",
-      "line": 34771,
+      "line": 34750,
       "readRefs": 1,
       "writeRefs": 5,
       "refs": 6,
@@ -1291,52 +1264,52 @@
     },
     {
       "name": "customScalpSelectionOutline",
-      "line": 1615,
+      "line": 1616,
       "readRefs": 3,
       "writeRefs": 2,
       "refs": 5,
-      "span": 4508,
+      "span": 4487,
       "bucket": "selection/outliner"
     },
     {
       "name": "editedScalpSelectionOutline",
-      "line": 1620,
+      "line": 1621,
       "readRefs": 4,
       "writeRefs": 1,
       "refs": 5,
-      "span": 4500,
+      "span": 4479,
       "bucket": "selection/outliner"
     },
     {
       "name": "headMeshVisible",
-      "line": 2095,
+      "line": 2096,
       "readRefs": 1,
       "writeRefs": 4,
       "refs": 5,
-      "span": 33629,
+      "span": 33607,
       "bucket": "hair/mesh"
     },
     {
       "name": "bodyMeshVisible",
-      "line": 2096,
+      "line": 2097,
       "readRefs": 2,
       "writeRefs": 3,
       "refs": 5,
-      "span": 33633,
+      "span": 33611,
       "bucket": "hair/mesh"
     },
     {
       "name": "referenceImageIndex",
-      "line": 2117,
+      "line": 2118,
       "readRefs": 3,
       "writeRefs": 2,
       "refs": 5,
-      "span": 17257,
+      "span": 17236,
       "bucket": "reference"
     },
     {
       "name": "referenceScaleDrag",
-      "line": 2120,
+      "line": 2121,
       "readRefs": 3,
       "writeRefs": 2,
       "refs": 5,
@@ -1345,115 +1318,88 @@
     },
     {
       "name": "activeGuideObjectTransform",
-      "line": 2130,
+      "line": 2131,
       "readRefs": 0,
       "writeRefs": 5,
       "refs": 5,
-      "span": 9475,
+      "span": 9454,
       "bucket": "guide/curve"
     },
     {
       "name": "recursiveHierarchyTransforms",
-      "line": 2141,
+      "line": 2142,
       "readRefs": 4,
       "writeRefs": 1,
       "refs": 5,
-      "span": 32858,
+      "span": 32836,
       "bucket": "gizmo/transform"
     },
     {
       "name": "activeScalpBuilderCurveLatticeEdit",
-      "line": 2159,
+      "line": 2160,
       "readRefs": 1,
       "writeRefs": 4,
       "refs": 5,
-      "span": 3884,
+      "span": 3863,
       "bucket": "scalp"
     },
     {
       "name": "selectPointerCapture",
-      "line": 2190,
+      "line": 2191,
       "readRefs": 2,
       "writeRefs": 3,
       "refs": 5,
-      "span": 24301,
+      "span": 24279,
       "bucket": "selection/outliner"
     },
     {
       "name": "polyAltDeleteCandidate",
-      "line": 2201,
+      "line": 2202,
       "readRefs": 0,
       "writeRefs": 5,
       "refs": 5,
-      "span": 36016,
+      "span": 35994,
       "bucket": "draw/poly"
     },
     {
       "name": "polyShiftPreviewHeld",
-      "line": 2204,
+      "line": 2205,
       "readRefs": 1,
       "writeRefs": 4,
       "refs": 5,
-      "span": 33968,
+      "span": 33946,
       "bucket": "draw/poly"
     },
     {
-      "name": "branchRigidCurvatureBlend",
-      "line": 2267,
-      "readRefs": 2,
-      "writeRefs": 3,
-      "refs": 5,
-      "span": 32738,
-      "bucket": "branch/sub"
-    },
-    {
-      "name": "branchRegionSyncLateral",
-      "line": 2281,
-      "readRefs": 1,
-      "writeRefs": 4,
-      "refs": 5,
-      "span": 32752,
-      "bucket": "branch/sub"
-    },
-    {
-      "name": "branchRegionSyncVertical",
-      "line": 2285,
-      "readRefs": 1,
-      "writeRefs": 4,
-      "refs": 5,
-      "span": 32754,
-      "bucket": "branch/sub"
-    },
-    {
       "name": "brushSizeHotkeyHeld",
-      "line": 2293,
+      "line": 2273,
       "readRefs": 2,
       "writeRefs": 3,
       "refs": 5,
-      "span": 35185,
+      "span": 35184,
       "bucket": "sculpt/edit"
     },
     {
       "name": "proceduralDuplicateModeActive",
-      "line": 2425,
+      "line": 2405,
       "readRefs": 1,
       "writeRefs": 4,
       "refs": 5,
-      "span": 29453,
+      "span": 29452,
       "bucket": "(unclassified)"
     },
     {
       "name": "proceduralDuplicateWindowSourceIds",
-      "line": 2426,
+      "line": 2406,
       "readRefs": 1,
       "writeRefs": 4,
       "refs": 5,
-      "span": 29176,
+      "span": 29175,
       "bucket": "(unclassified)"
     },
     {
       "name": "restoringHistory",
-      "line": 2429,
+      "line": 2409,
       "readRefs": 1,
       "writeRefs": 4,
       "refs": 5,
@@ -1462,25 +1408,25 @@
     },
     {
       "name": "groupDefaultsWarningContinuation",
-      "line": 3133,
+      "line": 3113,
       "readRefs": 0,
       "writeRefs": 5,
       "refs": 5,
-      "span": 29914,
+      "span": 29913,
       "bucket": "(unclassified)"
     },
     {
       "name": "panelSplitSnapWarningContinuation",
-      "line": 3138,
+      "line": 3118,
       "readRefs": 0,
       "writeRefs": 5,
       "refs": 5,
-      "span": 31175,
+      "span": 31174,
       "bucket": "ui/panel"
     },
     {
       "name": "taperCurveEditInteractiveDirty",
-      "line": 17347,
+      "line": 17327,
       "readRefs": 1,
       "writeRefs": 4,
       "refs": 5,
@@ -1489,7 +1435,7 @@
     },
     {
       "name": "proceduralAccessoryEditPointerActive",
-      "line": 34036,
+      "line": 34015,
       "readRefs": 1,
       "writeRefs": 4,
       "refs": 5,
@@ -1498,7 +1444,7 @@
     },
     {
       "name": "pendingClumpPresetGuideId",
-      "line": 34772,
+      "line": 34751,
       "readRefs": 1,
       "writeRefs": 4,
       "refs": 5,
@@ -1507,7 +1453,7 @@
     },
     {
       "name": "sculptBrushViableLockIds",
-      "line": 37315,
+      "line": 37294,
       "readRefs": 2,
       "writeRefs": 3,
       "refs": 5,
@@ -1516,88 +1462,88 @@
     },
     {
       "name": "turntableSpeed",
-      "line": 467,
+      "line": 468,
       "readRefs": 3,
       "writeRefs": 1,
       "refs": 4,
-      "span": 38206,
+      "span": 38184,
       "bucket": "camera/viewport"
     },
     {
       "name": "selectionRemoveHeld",
-      "line": 681,
+      "line": 682,
       "readRefs": 1,
       "writeRefs": 3,
       "refs": 4,
-      "span": 35486,
+      "span": 35464,
       "bucket": "selection/outliner"
     },
     {
       "name": "hairMaterialIndex",
-      "line": 995,
+      "line": 996,
       "readRefs": 2,
       "writeRefs": 2,
       "refs": 4,
-      "span": 18388,
+      "span": 18367,
       "bucket": "hair/mesh"
     },
     {
       "name": "sculptBrushShiftSmoothHeld",
-      "line": 2126,
+      "line": 2127,
       "readRefs": 2,
       "writeRefs": 2,
       "refs": 4,
-      "span": 8841,
+      "span": 8820,
       "bucket": "sculpt/edit"
     },
     {
       "name": "capsuleGuideLoopHover",
-      "line": 2150,
+      "line": 2151,
       "readRefs": 1,
       "writeRefs": 3,
       "refs": 4,
-      "span": 8239,
+      "span": 8218,
       "bucket": "guide/curve"
     },
     {
       "name": "curveLatticeLoopHover",
-      "line": 2154,
+      "line": 2155,
       "readRefs": 3,
       "writeRefs": 1,
       "refs": 4,
-      "span": 6776,
+      "span": 6755,
       "bucket": "guide/curve"
     },
     {
       "name": "scalpBuilderStroke",
-      "line": 2156,
+      "line": 2157,
       "readRefs": 3,
       "writeRefs": 1,
       "refs": 4,
-      "span": 35918,
+      "span": 35896,
       "bucket": "scalp"
     },
     {
       "name": "curvePointInsertionCandidate",
-      "line": 2189,
+      "line": 2190,
       "readRefs": 0,
       "writeRefs": 4,
       "refs": 4,
-      "span": 36029,
+      "span": 36007,
       "bucket": "(unclassified)"
     },
     {
       "name": "activeCapsuleGuideEdit",
-      "line": 2208,
+      "line": 2209,
       "readRefs": 2,
       "writeRefs": 2,
       "refs": 4,
-      "span": 7751,
+      "span": 7730,
       "bucket": "sculpt/edit"
     },
     {
       "name": "viewPlaneMoveSnappedOnly",
-      "line": 2298,
+      "line": 2278,
       "readRefs": 2,
       "writeRefs": 2,
       "refs": 4,
@@ -1606,61 +1552,61 @@
     },
     {
       "name": "pullRigidity",
-      "line": 2303,
+      "line": 2283,
       "readRefs": 3,
       "writeRefs": 1,
       "refs": 4,
-      "span": 31647,
+      "span": 31646,
       "bucket": "(unclassified)"
     },
     {
       "name": "branchRegionMeshPointsVisible",
-      "line": 2363,
+      "line": 2343,
       "readRefs": 2,
       "writeRefs": 2,
       "refs": 4,
-      "span": 30925,
+      "span": 30924,
       "bucket": "hair/mesh"
     },
     {
       "name": "rebuildingProceduralDuplicatePreview",
-      "line": 2428,
+      "line": 2408,
       "readRefs": 2,
       "writeRefs": 2,
       "refs": 4,
-      "span": 29202,
+      "span": 29201,
       "bucket": "(unclassified)"
     },
     {
       "name": "inputUndoCaptured",
-      "line": 2431,
+      "line": 2411,
       "readRefs": 1,
       "writeRefs": 3,
       "refs": 4,
-      "span": 30015,
+      "span": 30014,
       "bucket": "ui/panel"
     },
     {
       "name": "groupDefaultsWarningAcknowledged",
-      "line": 3132,
+      "line": 3112,
       "readRefs": 3,
       "writeRefs": 1,
       "refs": 4,
-      "span": 29905,
+      "span": 29904,
       "bucket": "(unclassified)"
     },
     {
       "name": "activePresetFilter",
-      "line": 3221,
+      "line": 3201,
       "readRefs": 1,
       "writeRefs": 3,
       "refs": 4,
-      "span": 30442,
+      "span": 30441,
       "bucket": "save/project"
     },
     {
       "name": "currentProjectName",
-      "line": 3222,
+      "line": 3202,
       "readRefs": 0,
       "writeRefs": 4,
       "refs": 4,
@@ -1669,7 +1615,7 @@
     },
     {
       "name": "viewportFrameCycleStep",
-      "line": 10825,
+      "line": 10805,
       "readRefs": 0,
       "writeRefs": 4,
       "refs": 4,
@@ -1678,7 +1624,7 @@
     },
     {
       "name": "enterHeadSetupAfterHeadImport",
-      "line": 33610,
+      "line": 33589,
       "readRefs": 0,
       "writeRefs": 4,
       "refs": 4,
@@ -1687,7 +1633,7 @@
     },
     {
       "name": "enterHeadSetupAfterFullBodyImport",
-      "line": 33611,
+      "line": 33590,
       "readRefs": 0,
       "writeRefs": 4,
       "refs": 4,
@@ -1696,25 +1642,25 @@
     },
     {
       "name": "uniformScaleDrag",
-      "line": 677,
+      "line": 678,
       "readRefs": 0,
       "writeRefs": 3,
       "refs": 3,
-      "span": 32110,
+      "span": 32088,
       "bucket": "sculpt/edit"
     },
     {
       "name": "transformPrecisionDrag",
-      "line": 679,
+      "line": 680,
       "readRefs": 0,
       "writeRefs": 3,
       "refs": 3,
-      "span": 32164,
+      "span": 32142,
       "bucket": "sculpt/edit"
     },
     {
       "name": "defaultScalpGeometryData",
-      "line": 1433,
+      "line": 1434,
       "readRefs": 0,
       "writeRefs": 3,
       "refs": 3,
@@ -1723,7 +1669,7 @@
     },
     {
       "name": "scalpQuadEdges",
-      "line": 1447,
+      "line": 1448,
       "readRefs": 2,
       "writeRefs": 1,
       "refs": 3,
@@ -1732,93 +1678,75 @@
     },
     {
       "name": "uvInspectorDirty",
-      "line": 2080,
+      "line": 2081,
       "readRefs": 1,
       "writeRefs": 2,
       "refs": 3,
-      "span": 26128,
+      "span": 26106,
       "bucket": "hair/mesh"
     },
     {
       "name": "pendingReferenceImageType",
-      "line": 2119,
+      "line": 2120,
       "readRefs": 0,
       "writeRefs": 3,
       "refs": 3,
-      "span": 33306,
+      "span": 33284,
       "bucket": "reference"
     },
     {
       "name": "viewportSelectionMode",
-      "line": 2124,
+      "line": 2125,
       "readRefs": 0,
       "writeRefs": 3,
       "refs": 3,
-      "span": 4773,
+      "span": 4752,
       "bucket": "selection/outliner"
     },
     {
       "name": "scalpBuilderCurveLatticeLoadToken",
-      "line": 2161,
-      "readRefs": 1,
-      "writeRefs": 2,
-      "refs": 3,
-      "span": 2858,
-      "bucket": "scalp"
-    },
-    {
-      "name": "scalpBuilderCurveLatticePromise",
       "line": 2162,
       "readRefs": 1,
       "writeRefs": 2,
       "refs": 3,
-      "span": 2295,
+      "span": 2837,
+      "bucket": "scalp"
+    },
+    {
+      "name": "scalpBuilderCurveLatticePromise",
+      "line": 2163,
+      "readRefs": 1,
+      "writeRefs": 2,
+      "refs": 3,
+      "span": 2274,
       "bucket": "scalp"
     },
     {
       "name": "selectedScalpLatticeIndex",
-      "line": 2181,
+      "line": 2182,
       "readRefs": 0,
       "writeRefs": 3,
       "refs": 3,
-      "span": 36191,
+      "span": 36169,
       "bucket": "selection/outliner"
     },
     {
       "name": "blenderNavigationDrag",
-      "line": 2186,
+      "line": 2187,
       "readRefs": 1,
       "writeRefs": 2,
       "refs": 3,
-      "span": 24291,
+      "span": 24269,
       "bucket": "sculpt/edit"
     },
     {
       "name": "polyFillPreviewGroup",
-      "line": 2202,
+      "line": 2203,
       "readRefs": 1,
       "writeRefs": 2,
       "refs": 3,
-      "span": 19461,
+      "span": 19440,
       "bucket": "draw/poly"
-    },
-    {
-      "name": "branchUpdateInProgress",
-      "line": 2212,
-      "readRefs": 1,
-      "writeRefs": 2,
-      "refs": 3,
-      "span": 25744,
-      "bucket": "branch/sub"
-    },
-    {
-      "name": "regionLengthUpdateInProgress",
-      "line": 2213,
-      "readRefs": 1,
-      "writeRefs": 2,
-      "refs": 3,
-      "span": 25687,
-      "bucket": "branch/sub"
     },
     {
       "name": "emptySelectionPointer",
@@ -1826,48 +1754,48 @@
       "readRefs": 0,
       "writeRefs": 3,
       "refs": 3,
-      "span": 36020,
+      "span": 35999,
       "bucket": "selection/outliner"
     },
     {
       "name": "strandRadialTargetId",
-      "line": 2420,
+      "line": 2400,
       "readRefs": 0,
       "writeRefs": 3,
       "refs": 3,
-      "span": 28160,
+      "span": 28159,
       "bucket": "hair/mesh"
     },
     {
       "name": "pendingDroppedApplicationFile",
-      "line": 2681,
+      "line": 2661,
       "readRefs": 0,
       "writeRefs": 3,
       "refs": 3,
-      "span": 30925,
+      "span": 30924,
       "bucket": "save/project"
     },
     {
       "name": "pendingDroppedApplicationKind",
-      "line": 2682,
+      "line": 2662,
       "readRefs": 0,
       "writeRefs": 3,
       "refs": 3,
-      "span": 30925,
+      "span": 30924,
       "bucket": "(unclassified)"
     },
     {
       "name": "pendingDroppedApplicationHandle",
-      "line": 2683,
+      "line": 2663,
       "readRefs": 1,
       "writeRefs": 2,
       "refs": 3,
-      "span": 30925,
+      "span": 30924,
       "bucket": "(unclassified)"
     },
     {
       "name": "quickSaveFileHandle",
-      "line": 3224,
+      "line": 3204,
       "readRefs": 0,
       "writeRefs": 3,
       "refs": 3,
@@ -1876,7 +1804,7 @@
     },
     {
       "name": "quickSaveFileName",
-      "line": 3225,
+      "line": 3205,
       "readRefs": 0,
       "writeRefs": 3,
       "refs": 3,
@@ -1885,7 +1813,7 @@
     },
     {
       "name": "scalpTopologyTemplatePromise",
-      "line": 4411,
+      "line": 4391,
       "readRefs": 1,
       "writeRefs": 2,
       "refs": 3,
@@ -1894,7 +1822,7 @@
     },
     {
       "name": "viewportFrameSelectionKey",
-      "line": 10826,
+      "line": 10806,
       "readRefs": 1,
       "writeRefs": 2,
       "refs": 3,
@@ -1903,7 +1831,7 @@
     },
     {
       "name": "fpsFrameCount",
-      "line": 38655,
+      "line": 38634,
       "readRefs": 1,
       "writeRefs": 2,
       "refs": 3,
@@ -1912,79 +1840,79 @@
     },
     {
       "name": "scalpActiveVertexIndices",
-      "line": 1448,
+      "line": 1449,
       "readRefs": 1,
       "writeRefs": 1,
       "refs": 2,
-      "span": 24596,
+      "span": 24574,
       "bucket": "scalp"
     },
     {
       "name": "authoredScalpGuideMatrix",
-      "line": 2061,
+      "line": 2062,
       "readRefs": 1,
       "writeRefs": 1,
       "refs": 2,
-      "span": 2400,
+      "span": 2379,
       "bucket": "scalp"
     },
     {
       "name": "uvCheckerTexture",
-      "line": 2079,
+      "line": 2080,
       "readRefs": 0,
       "writeRefs": 2,
       "refs": 2,
-      "span": 26189,
+      "span": 26167,
       "bucket": "hair/mesh"
     },
     {
       "name": "proportionalRootLocked",
-      "line": 2143,
+      "line": 2144,
       "readRefs": 1,
       "writeRefs": 1,
       "refs": 2,
-      "span": 33688,
+      "span": 33666,
       "bucket": "sculpt/edit"
     },
     {
       "name": "polyFillPreviewCandidate",
-      "line": 2203,
+      "line": 2204,
       "readRefs": 0,
       "writeRefs": 2,
       "refs": 2,
-      "span": 19501,
+      "span": 19480,
       "bucket": "draw/poly"
     },
     {
       "name": "pullCollisionEnabled",
-      "line": 2302,
+      "line": 2282,
       "readRefs": 1,
       "writeRefs": 1,
       "refs": 2,
-      "span": 31651,
+      "span": 31650,
       "bucket": "(unclassified)"
     },
     {
       "name": "lastHorizontalViewAxis",
-      "line": 2304,
+      "line": 2284,
       "readRefs": 2,
       "writeRefs": 0,
       "refs": 2,
-      "span": 34343,
+      "span": 34342,
       "bucket": "(unclassified)"
     },
     {
       "name": "panelSplitSnapWarningAcknowledged",
-      "line": 3137,
+      "line": 3117,
       "readRefs": 1,
       "writeRefs": 1,
       "refs": 2,
-      "span": 31174,
+      "span": 31173,
       "bucket": "ui/panel"
     },
     {
       "name": "projectSaveInProgress",
-      "line": 3223,
+      "line": 3203,
       "readRefs": 0,
       "writeRefs": 2,
       "refs": 2,
@@ -1993,7 +1921,7 @@
     },
     {
       "name": "lastExport",
-      "line": 3226,
+      "line": 3206,
       "readRefs": 0,
       "writeRefs": 2,
       "refs": 2,
@@ -2002,7 +1930,7 @@
     },
     {
       "name": "quickExportFileHandle",
-      "line": 3227,
+      "line": 3207,
       "readRefs": 0,
       "writeRefs": 2,
       "refs": 2,
@@ -2011,7 +1939,7 @@
     },
     {
       "name": "quickExportInProgress",
-      "line": 3228,
+      "line": 3208,
       "readRefs": 0,
       "writeRefs": 2,
       "refs": 2,
@@ -2020,7 +1948,7 @@
     },
     {
       "name": "pendingFileAction",
-      "line": 3229,
+      "line": 3209,
       "readRefs": 0,
       "writeRefs": 2,
       "refs": 2,
@@ -2029,7 +1957,7 @@
     },
     {
       "name": "fpsSampleStart",
-      "line": 38656,
+      "line": 38635,
       "readRefs": 0,
       "writeRefs": 2,
       "refs": 2,
@@ -2038,7 +1966,7 @@
     },
     {
       "name": "previousAnimationTimestamp",
-      "line": 38657,
+      "line": 38636,
       "readRefs": 1,
       "writeRefs": 1,
       "refs": 2,
@@ -2047,20 +1975,20 @@
     },
     {
       "name": "braidSegmentTemplate",
-      "line": 2073,
-      "readRefs": 0,
-      "writeRefs": 1,
-      "refs": 1,
-      "span": 1539,
-      "bucket": "(unclassified)"
-    },
-    {
-      "name": "braidSegmentBounds",
       "line": 2074,
       "readRefs": 0,
       "writeRefs": 1,
       "refs": 1,
-      "span": 1539,
+      "span": 1518,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "braidSegmentBounds",
+      "line": 2075,
+      "readRefs": 0,
+      "writeRefs": 1,
+      "refs": 1,
+      "span": 1518,
       "bucket": "(unclassified)"
     }
   ]

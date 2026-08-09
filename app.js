@@ -1,3 +1,4 @@
+import { createBranchStore } from "./modules/branch/branch-store.js?v=20260809-3";
 import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
 import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260809-4";
 ﻿import * as THREE from "three";
@@ -2209,8 +2210,7 @@ let activeCapsuleGuideEdit = null;
 let drawStrandMode = "standard";
 let activeCustomDrawClumpTemplate = null;
 let clumpUpdateInProgress = false;
-let branchUpdateInProgress = false;
-let regionLengthUpdateInProgress = false;
+const branch = createBranchStore();
 let placementPointer = null;
 let emptySelectionPointer = null;
 let proportionalSizeEdit = null;
@@ -2264,28 +2264,8 @@ let sideNamingPerspective = readStoredPreference(window, SIDE_NAMING_PERSPECTIVE
 // is additionally capped at BRANCH_RIGID_SWING_LIMIT_DEG so the child never flips
 // or wildly swings (the lateral surface normal can tilt ~90 deg at the edge).
 const BRANCH_RIGID_SWING_LIMIT_DEG = 60;
-let branchRigidCurvatureBlend = readStoredPreference(window, BRANCH_RIGID_CURVATURE_BLEND_PREFERENCE_KEY, {
-  fallback: 0.5,
-  normalize: (value) => THREE.MathUtils.clamp(Number(value), 0, 1)
-});
-let branchBridgeSmoothStrength = readStoredPreference(window, BRANCH_BRIDGE_SMOOTH_STRENGTH_PREFERENCE_KEY, {
-  fallback: 0.5,
-  normalize: (value) => THREE.MathUtils.clamp(Number(value), 0, 1)
-});
-let branchBridgeSmoothDetail = readStoredPreference(window, BRANCH_BRIDGE_SMOOTH_DETAIL_PREFERENCE_KEY, {
-  fallback: 1,
-  normalize: (value) => THREE.MathUtils.clamp(Math.round(Number(value) || 1), 0, 8)
-});
 // How fast the region follows the root bone while dragging it in Hierarchy mode:
 // lateral (left-right / v) defaults to 0.45x, along-length (up-down / u) to 1.0x.
-let branchRegionSyncLateral = readStoredPreference(window, BRANCH_REGION_SYNC_LATERAL_PREFERENCE_KEY, {
-  fallback: 0.45,
-  normalize: (value) => THREE.MathUtils.clamp(Number(value) || 0.45, 0.1, 2)
-});
-let branchRegionSyncVertical = readStoredPreference(window, BRANCH_REGION_SYNC_VERTICAL_PREFERENCE_KEY, {
-  fallback: 1,
-  normalize: (value) => THREE.MathUtils.clamp(Number(value) || 1, 0.1, 2)
-});
 let preferencesOpenSnapshot = null;
 let brushSizeDrag = null;
 let strandWidthEdgeDrag = null;
@@ -12127,7 +12107,7 @@ function applyBranchRigidRootMove(lock) {
   const rotation = new THREE.Quaternion().slerpQuaternions(
     identityQuat,
     cappedRelative,
-    branchRigidCurvatureBlend
+    branch.state.branchRigidCurvatureBlend
   );
   const root = lock.points[0];
   lock.points.forEach((point, index) => {
@@ -15091,8 +15071,8 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   // rows). "detail" = number of Laplacian passes, "strength" = per-pass amount.
   // The sweep ring and the parent-hole boundary stay fixed as anchors, so the bridge
   // relaxes smoothly without moving the ring or pulling the seam away from the hole.
-  const smoothStrength = THREE.MathUtils.clamp(Number(lock.branchBridgeSmoothStrength ?? branchBridgeSmoothStrength ?? 0), 0, 1);
-  const smoothDetail = THREE.MathUtils.clamp(Math.round(Number(lock.branchBridgeSmoothDetail ?? branchBridgeSmoothDetail ?? 0)), 0, 8);
+  const smoothStrength = THREE.MathUtils.clamp(Number(lock.branchBridgeSmoothStrength ?? branch.state.branchBridgeSmoothStrength ?? 0), 0, 1);
+  const smoothDetail = THREE.MathUtils.clamp(Math.round(Number(lock.branchBridgeSmoothDetail ?? branch.state.branchBridgeSmoothDetail ?? 0)), 0, 8);
   if (smoothStrength > 0.0001 && smoothDetail >= 1 && sideFillVerts.size) {
     const bridgeVertexCount = vertices.length / 3;
     const positionAt = (idx) => {
@@ -16288,7 +16268,7 @@ function setGroupLengthScale(region, value) {
   if (Math.abs(scaleDelta) < 0.000001) return;
 
   const targets = locks.filter((lock) => (lock.scalpRegion || "unassigned") === region);
-  regionLengthUpdateInProgress = true;
+  branch.state.regionLengthUpdateInProgress = true;
   clumpUpdateInProgress = true;
   try {
     targets.forEach((lock) => {
@@ -16310,7 +16290,7 @@ function setGroupLengthScale(region, value) {
     targets.forEach((lock) => updateLockGeometry(lock, { immediate: true }));
   } finally {
     clumpUpdateInProgress = false;
-    regionLengthUpdateInProgress = false;
+    branch.state.regionLengthUpdateInProgress = false;
   }
   const selectedLock = getSelectedLock();
   if (selectedLock) syncInputs(selectedLock);
@@ -22602,8 +22582,8 @@ function updateBranchRootRegionCenter(lock, u, v) {
   // Anchor the bone sync point even when the region does not move (first sync), so a
   // later bone move applies the preserved center offset instead of snapping to the bone.
   region.boneSync = { u: nu, v: nv };
-  const du = (targetU - uc) * branchRegionSyncVertical;
-  const dv = (targetV - vc) * branchRegionSyncLateral;
+  const du = (targetU - uc) * branch.state.branchRegionSyncVertical;
+  const dv = (targetV - vc) * branch.state.branchRegionSyncLateral;
   if (Math.abs(du) < 0.0005 && Math.abs(dv) < 0.0005) return;
   // Translate every edge AND the orange anchor by the same delta so the region keeps
   // its exact shape (the anchor may differ from the geometric center after a single-
@@ -22884,14 +22864,13 @@ function renderBranchRegionEditor() {
 // ---- Branch region panel view navigation: pan/zoom follow the active navigation
 // style (Houdini Alt+MMB pan + Alt+RMB zoom; Blender Shift/Ctrl+MMB; Anime Hair
 // Studio Alt+RMB pan); wheel always zooms; Reset Zoom restores. ----
-let branchRegionView = { x: 0, y: 0, w: 220, h: 400 };
 let branchRegionZoomDrag = null;
 let branchRegionPanDrag = null;
 function applyBranchRegionView() {
-  branchRegionCanvas.setAttribute("viewBox", `${branchRegionView.x} ${branchRegionView.y} ${branchRegionView.w} ${branchRegionView.h}`);
+  branchRegionCanvas.setAttribute("viewBox", `${branch.state.branchRegionView.x} ${branch.state.branchRegionView.y} ${branch.state.branchRegionView.w} ${branch.state.branchRegionView.h}`);
 }
 function resetBranchRegionZoom() {
-  branchRegionView = { x: 0, y: 0, w: 220, h: 400 };
+  branch.state.branchRegionView = { x: 0, y: 0, w: 220, h: 400 };
   applyBranchRegionView();
 }
 // Map the viewport navigation style onto the 2D region panel instead of always
@@ -22947,13 +22926,13 @@ function updateBranchRegionCanvasZoom(event) {
   // Reversed: dragging toward top-right zooms in, toward bottom-left zooms out.
   const sign = ay >= ax ? (dy < 0 ? 1 : -1) : (dx > 0 ? 1 : -1);
   const factor = Math.pow(1.02, sign * magnitude);
-  const nw = THREE.MathUtils.clamp(branchRegionView.w / factor, 40, 440);
-  const nh = THREE.MathUtils.clamp(branchRegionView.h / factor, 80, 800);
-  const kx = nw / branchRegionView.w;
-  const ky = nh / branchRegionView.h;
-  branchRegionView = {
-    x: branchRegionZoomDrag.contentX - (branchRegionZoomDrag.contentX - branchRegionView.x) * kx,
-    y: branchRegionZoomDrag.contentY - (branchRegionZoomDrag.contentY - branchRegionView.y) * ky,
+  const nw = THREE.MathUtils.clamp(branch.state.branchRegionView.w / factor, 40, 440);
+  const nh = THREE.MathUtils.clamp(branch.state.branchRegionView.h / factor, 80, 800);
+  const kx = nw / branch.state.branchRegionView.w;
+  const ky = nh / branch.state.branchRegionView.h;
+  branch.state.branchRegionView = {
+    x: branchRegionZoomDrag.contentX - (branchRegionZoomDrag.contentX - branch.state.branchRegionView.x) * kx,
+    y: branchRegionZoomDrag.contentY - (branchRegionZoomDrag.contentY - branch.state.branchRegionView.y) * ky,
     w: nw,
     h: nh
   };
@@ -22968,7 +22947,7 @@ function updateBranchRegionCanvasPan(event) {
   const dy = (event.clientY - branchRegionPanDrag.lastY) * (viewBox.height / rect.height);
   branchRegionPanDrag.lastX = event.clientX;
   branchRegionPanDrag.lastY = event.clientY;
-  branchRegionView = { ...branchRegionView, x: branchRegionView.x - dx, y: branchRegionView.y - dy };
+  branch.state.branchRegionView = { ...branchRegionView, x: branch.state.branchRegionView.x - dx, y: branch.state.branchRegionView.y - dy };
   applyBranchRegionView();
   event.preventDefault();
 }
@@ -22985,13 +22964,13 @@ function onBranchRegionCanvasWheel(event) {
   const px = viewBox.x + (event.clientX - rect.left) * (viewBox.width / rect.width);
   const py = viewBox.y + (event.clientY - rect.top) * (viewBox.height / rect.height);
   const factor = Math.pow(1.0015, -event.deltaY);
-  const nw = THREE.MathUtils.clamp(branchRegionView.w / factor, 40, 440);
-  const nh = THREE.MathUtils.clamp(branchRegionView.h / factor, 80, 800);
-  const kx = nw / branchRegionView.w;
-  const ky = nh / branchRegionView.h;
-  branchRegionView = {
-    x: px - (px - branchRegionView.x) * kx,
-    y: py - (py - branchRegionView.y) * ky,
+  const nw = THREE.MathUtils.clamp(branch.state.branchRegionView.w / factor, 40, 440);
+  const nh = THREE.MathUtils.clamp(branch.state.branchRegionView.h / factor, 80, 800);
+  const kx = nw / branch.state.branchRegionView.w;
+  const ky = nh / branch.state.branchRegionView.h;
+  branch.state.branchRegionView = {
+    x: px - (px - branch.state.branchRegionView.x) * kx,
+    y: py - (py - branch.state.branchRegionView.y) * ky,
     w: nw,
     h: nh
   };
@@ -23605,7 +23584,7 @@ function detachBranch(lock) {
 function updateBranchChildren(parent) {
   const children = branchChildrenFor(parent);
   if (!children.length || !parent?.points?.length) return;
-  branchUpdateInProgress = true;
+  branch.state.branchUpdateInProgress = true;
   try {
     children.forEach((child) => {
       if (!child.branchLocalPoints?.length || !child.branchLocalSurfaceNormals?.length) {
@@ -23641,7 +23620,7 @@ function updateBranchChildren(parent) {
       updateBranchChildren(child);
     });
   } finally {
-    branchUpdateInProgress = false;
+    branch.state.branchUpdateInProgress = false;
   }
 }
 
@@ -27897,7 +27876,7 @@ function isAffectedCurvePoint(lock, index) {
 }
 
 function syncLockFromCurve(lock) {
-  if (!regionLengthUpdateInProgress) clearRegionLengthBaseline(lock);
+  if (!branch.state.regionLengthUpdateInProgress) clearRegionLengthBaseline(lock);
   const centerCurveOffset = lock.geometryType === "curve-surface"
     ? THREE.MathUtils.clamp(Number(lock.curveSurfaceCenterCurve) || 0, 0, lock.curveSurfaceColumns - 1) * lock.curveSurfaceRows
     : 0;
@@ -27953,7 +27932,7 @@ function rebuildLockGeometry(lock, options = {}) {
     && taperCurveEdit.id === lock.id
   ) updateTaperMeshPoints();
   if (options.updateClump !== false && !clumpUpdateInProgress && lock.clumpGuide) updateClumpMembers(lock);
-  if (options.updateBranches !== false && !branchUpdateInProgress) updateBranchChildren(lock);
+  if (options.updateBranches !== false && !branch.state.branchUpdateInProgress) updateBranchChildren(lock);
   invalidateUvInspector();
 }
 
@@ -34998,45 +34977,45 @@ hierarchyToggle.addEventListener("click", () => setHierarchyEditing(!hierarchyEd
 hierarchyRecursiveTransformInput.addEventListener("change", () => {
   recursiveHierarchyTransforms = hierarchyRecursiveTransformInput.checked;
 });
-branchRigidCurvatureBlendInput.value = branchRigidCurvatureBlend;
+branchRigidCurvatureBlendInput.value = branch.state.branchRigidCurvatureBlend;
 branchRigidCurvatureBlendInput.addEventListener("change", () => {
-  branchRigidCurvatureBlend = THREE.MathUtils.clamp(Number(branchRigidCurvatureBlendInput.value) || 0.5, 0, 1);
-  branchRigidCurvatureBlendInput.value = branchRigidCurvatureBlend;
-  writeStoredPreference(window, BRANCH_RIGID_CURVATURE_BLEND_PREFERENCE_KEY, branchRigidCurvatureBlend);
+  branch.state.branchRigidCurvatureBlend = THREE.MathUtils.clamp(Number(branchRigidCurvatureBlendInput.value) || 0.5, 0, 1);
+  branchRigidCurvatureBlendInput.value = branch.state.branchRigidCurvatureBlend;
+  writeStoredPreference(window, BRANCH_RIGID_CURVATURE_BLEND_PREFERENCE_KEY, branch.state.branchRigidCurvatureBlend);
 });
-branchBridgeSmoothStrengthInput.value = branchBridgeSmoothStrength;
+branchBridgeSmoothStrengthInput.value = branch.state.branchBridgeSmoothStrength;
 {
   const n = branchBridgeSmoothStrengthInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
-  if (n) n.value = branchBridgeSmoothStrength;
+  if (n) n.value = branch.state.branchBridgeSmoothStrength;
 }
 branchBridgeSmoothStrengthInput.addEventListener("input", () => {
-  branchBridgeSmoothStrength = THREE.MathUtils.clamp(Number(branchBridgeSmoothStrengthInput.value) || 0, 0, 1);
-  branchBridgeSmoothStrengthInput.value = branchBridgeSmoothStrength;
-  writeStoredPreference(window, BRANCH_BRIDGE_SMOOTH_STRENGTH_PREFERENCE_KEY, branchBridgeSmoothStrength);
+  branch.state.branchBridgeSmoothStrength = THREE.MathUtils.clamp(Number(branchBridgeSmoothStrengthInput.value) || 0, 0, 1);
+  branchBridgeSmoothStrengthInput.value = branch.state.branchBridgeSmoothStrength;
+  writeStoredPreference(window, BRANCH_BRIDGE_SMOOTH_STRENGTH_PREFERENCE_KEY, branch.state.branchBridgeSmoothStrength);
   locks.forEach((lock) => { if (lock?.branchRootRegion) rebuildLockGeometry(lock); });
 });
-branchBridgeSmoothDetailInput.value = branchBridgeSmoothDetail;
+branchBridgeSmoothDetailInput.value = branch.state.branchBridgeSmoothDetail;
 {
   const n = branchBridgeSmoothDetailInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
-  if (n) n.value = branchBridgeSmoothDetail;
+  if (n) n.value = branch.state.branchBridgeSmoothDetail;
 }
 branchBridgeSmoothDetailInput.addEventListener("input", () => {
-  branchBridgeSmoothDetail = THREE.MathUtils.clamp(Math.round(Number(branchBridgeSmoothDetailInput.value) || 1), 0, 8);
-  branchBridgeSmoothDetailInput.value = branchBridgeSmoothDetail;
-  writeStoredPreference(window, BRANCH_BRIDGE_SMOOTH_DETAIL_PREFERENCE_KEY, branchBridgeSmoothDetail);
+  branch.state.branchBridgeSmoothDetail = THREE.MathUtils.clamp(Math.round(Number(branchBridgeSmoothDetailInput.value) || 1), 0, 8);
+  branchBridgeSmoothDetailInput.value = branch.state.branchBridgeSmoothDetail;
+  writeStoredPreference(window, BRANCH_BRIDGE_SMOOTH_DETAIL_PREFERENCE_KEY, branch.state.branchBridgeSmoothDetail);
   locks.forEach((lock) => { if (lock?.branchRootRegion) rebuildLockGeometry(lock); });
 });
-branchRegionSyncLateralInput.value = branchRegionSyncLateral;
+branchRegionSyncLateralInput.value = branch.state.branchRegionSyncLateral;
 branchRegionSyncLateralInput.addEventListener("input", () => {
-  branchRegionSyncLateral = THREE.MathUtils.clamp(Number(branchRegionSyncLateralInput.value) || 0.45, 0.1, 2);
-  branchRegionSyncLateralInput.value = branchRegionSyncLateral;
-  writeStoredPreference(window, BRANCH_REGION_SYNC_LATERAL_PREFERENCE_KEY, branchRegionSyncLateral);
+  branch.state.branchRegionSyncLateral = THREE.MathUtils.clamp(Number(branchRegionSyncLateralInput.value) || 0.45, 0.1, 2);
+  branchRegionSyncLateralInput.value = branch.state.branchRegionSyncLateral;
+  writeStoredPreference(window, BRANCH_REGION_SYNC_LATERAL_PREFERENCE_KEY, branch.state.branchRegionSyncLateral);
 });
-branchRegionSyncVerticalInput.value = branchRegionSyncVertical;
+branchRegionSyncVerticalInput.value = branch.state.branchRegionSyncVertical;
 branchRegionSyncVerticalInput.addEventListener("input", () => {
-  branchRegionSyncVertical = THREE.MathUtils.clamp(Number(branchRegionSyncVerticalInput.value) || 1, 0.1, 2);
-  branchRegionSyncVerticalInput.value = branchRegionSyncVertical;
-  writeStoredPreference(window, BRANCH_REGION_SYNC_VERTICAL_PREFERENCE_KEY, branchRegionSyncVertical);
+  branch.state.branchRegionSyncVertical = THREE.MathUtils.clamp(Number(branchRegionSyncVerticalInput.value) || 1, 0.1, 2);
+  branchRegionSyncVerticalInput.value = branch.state.branchRegionSyncVertical;
+  writeStoredPreference(window, BRANCH_REGION_SYNC_VERTICAL_PREFERENCE_KEY, branch.state.branchRegionSyncVertical);
 });
 proportionalToggle.addEventListener("click", () => setProportionalEditing(!proportionalEditing));
 appMenuTriggers.forEach((trigger) => {
