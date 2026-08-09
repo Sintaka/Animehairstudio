@@ -301,17 +301,17 @@ function renderBranchRegionEditor() {
   centerCircle.setAttribute("data-region-point", "center");
   centerCircle.style.cursor = "move";
   g.appendChild(centerCircle);
-  // Four corner handles: diagonal deps.resize (scales both u and v from the opposite
-  // corner). Cursor follows the system diagonal-deps.resize glyphs.
+  // Four corner handles: diagonal resize (scales both u and v from the opposite
+  // corner). Cursor follows the system diagonal-resize glyphs.
   const upU = clampRegionParam(cross.up.u);
   const downU = clampRegionParam(cross.down.u);
   const leftV = clampRegionParam(cross.left.v);
   const rightV = clampRegionParam(cross.right.v);
   const corners = [
-    { name: "topleft", u: upU, v: leftV, cursor: "nwse-deps.resize" },
-    { name: "topright", u: upU, v: rightV, cursor: "nesw-deps.resize" },
-    { name: "bottomleft", u: downU, v: leftV, cursor: "nesw-deps.resize" },
-    { name: "bottomright", u: downU, v: rightV, cursor: "nwse-deps.resize" }
+    { name: "topleft", u: upU, v: leftV, cursor: "nwse-resize" },
+    { name: "topright", u: upU, v: rightV, cursor: "nesw-resize" },
+    { name: "bottomleft", u: downU, v: leftV, cursor: "nesw-resize" },
+    { name: "bottomright", u: downU, v: rightV, cursor: "nwse-resize" }
   ];
   corners.forEach((corner) => {
     const cp = branchRegionUVToCanvas(corner.u, corner.v);
@@ -578,7 +578,7 @@ function updateBranchRegionCanvasDrag(event) {
     const cv = clampRegionParam(center?.v ?? (cross.left.v + cross.right.v) / 2);
     const MIN = 0.02;
     const name = deps.sculptState.branchRegionCanvasDrag.name;
-    // Diagonal deps.resize: the dragged corner moves in BOTH u and v (clamped to the
+    // Diagonal resize: the dragged corner moves in BOTH u and v (clamped to the
     // orange center), the opposite corner stays fixed.
     if (name === "topleft") {
       cross.up.u = clampRegionParam(Math.min(uv.u, Math.min(cross.down.u, cu) - MIN));

@@ -180,7 +180,7 @@ const server = http.createServer((request, response) => {
       response.end("Not found");
       return;
     }
-    response.writeHead(200, { "Content-Type": types[path.extname(filePath)] || "application/octet-stream" });
+    response.writeHead(200, { "Content-Type": types[path.extname(filePath)] || "application/octet-stream", "Cache-Control": "no-cache" });
     response.end(data);
   });
 });

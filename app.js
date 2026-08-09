@@ -17937,6 +17937,9 @@ function undoLastAction() {
   redoHistory.push(snapshotState());
   try {
     restoreState(state, { preserveMirrorMode: true });
+  } catch (error) {
+    console.error("Undo failed to restore state", error);
+    presetLibraryStatus.textContent = "Undo failed to restore the previous state";
   } finally {
     undo.state.restoringHistory = false;
     updateHistoryButtons();
@@ -17951,6 +17954,9 @@ function redoLastAction() {
   undoHistory.push(snapshotState());
   try {
     restoreState(state, { preserveMirrorMode: true });
+  } catch (error) {
+    console.error("Redo failed to restore state", error);
+    presetLibraryStatus.textContent = "Redo failed to restore the previous state";
   } finally {
     undo.state.restoringHistory = false;
     updateHistoryButtons();
@@ -18025,7 +18031,7 @@ function restoreSharedStateForStateRestore(state, restorePlan, { preserveMirrorM
   sel.state.selectedCurveSurfaceController = restorePlan.selection.curveSurfaceController;
   sel.state.selectedCurveLatticePoint = restorePlan.selection.curveLatticePoint;
   sel.state.pendingPlacedLockId = restorePlan.selection.pendingPlacedLockId;
-  setMirrorXEditing(preserveMirrorMode ? mirrorXEditing : Boolean(state.mirrorXEditing));
+  setMirrorXEditing(preserveMirrorMode ? sculptState.state.mirrorXEditing : Boolean(state.mirrorXEditing));
 }
 
 function restoreAuthoredScalpForStateRestore(state, { preservePlacement = false } = {}) {
@@ -18585,7 +18591,6 @@ async function applyPresetSelection(presetName) {
   const presetState = catalogPreset?.omitAuthoringAids
     ? { ...project.state, referenceImages: [], guides: [] }
     : project.state;
-  pushUndoState();
   restoreState(presetState, {
     preservePlacement: true,
     deferRootAttachments: needsLegacyRootRemap
@@ -18594,6 +18599,7 @@ async function applyPresetSelection(presetName) {
     remapLegacyPresetToActiveScalp();
   }
   projectState.state.currentProjectName = catalogPreset?.title || project.metadata?.name || projectState.state.currentProjectName;
+  undoHistory.clear(); redoHistory.clear(); updateHistoryButtons(); // preset load is a fresh undo base
 }
 
 function drawPresetThumbnail(canvas, type) {

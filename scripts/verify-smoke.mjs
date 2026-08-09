@@ -201,6 +201,14 @@ try {
     check("ahs load+rebuild 0 exceptions (" + path.basename(ahsFile) + ")", afterErrors.length === 0, `${loadRes} / ${afterErrors.length} exceptions`);
   }
 
+  // undo regression: after loading a project the undo stack must be empty (fresh base)
+  const undoState = await evalJS(cdp, `JSON.stringify({
+    undoDisabled: document.querySelector('#undoAction')?.disabled,
+    redoDisabled: document.querySelector('#redoAction')?.disabled
+  })`);
+  const undoR = JSON.parse(undoState);
+  check("undo stack empty after load (fresh base)", undoR.undoDisabled === true && undoR.redoDisabled === true, "undoDisabled=" + undoR.undoDisabled + " redoDisabled=" + undoR.redoDisabled);
+
   // IO subsystem: export + save dialogs must open via the extracted modules
   const io = await evalJS(cdp, `(async () => {
     const out = {};

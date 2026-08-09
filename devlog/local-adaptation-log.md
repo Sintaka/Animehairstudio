@@ -147,6 +147,10 @@
 - [x] Front Bangs 1-3 视口三角观感修复（0.2.55）：createPanelStrandGeometry 的 addQuad 跳过退化（角点重合）与反射折叠（两三角法线相反）quad，最大二面角 180/90° → ≤10.7°；导出一直是四边面不受影响
 - [x] 面板线框三角面真正修复（0.2.56）：绕序翻转后同步交换 triangleEdgeMasks 的 [1]/[2]，quad 对角线不再被描边；0.2.55 的退化/反射折叠清理保留
 - [x] 重构：localization 词典拆数据文件（0.2.57）：JA/ZH 词典从 modules/localization.js 拆到 modules/loc-ja.js / loc-zh.js（export default Object.freeze），localization.js 改 import 两词典，逻辑零改动；拆分前后 key 数一致（JA 667 / ZH 653）；verify-smoke.mjs 6/6 通过（页面加载 0 异常、zh/ja/en 翻译正常、0043.ahs 加载重建无异常）
+- [x] Bug 修复批次 2（0.2.57，子智能体并行深挖）：
+  - Ctrl+Z 真正根因：restoreState L18028 裸 `mirrorXEditing`（store 化漏改，undo/redo 恢复崩溃→空场景）→ 改 sculptState.state.mirrorXEditing；undo/redo restore 包 try/catch（失败提示不静默空场景）；applyPresetSelection 同样加固（删 push + 加载后清栈）；verify 加「加载后 undo 栈空」回归（14/14）
+  - File 菜单 vs 大纲拖拽没生效根因：**styles.css 缓存号从未 bump**（浏览器用旧 CSS）→ bump styles.css?v=20260810-102 + server.js 加 Cache-Control: no-cache + .panel-resize-handle z-index 30→15（菜单天然压住）+ 防御 cursor/highlight
+  - Region 面板 cursor：角点 cursor 被迁移误伤成 `nwse-deps.resize`（无效）→ 修回 nwse-resize/nesw-resize；边点 move→按方向 ns-resize/ew-resize；中键平移/滚轮缩放代码已支持（capture nav + passive:false，缓存修复后生效）
 - [x] Bug 修复批次（0.2.57，5 个，子智能体并行调研 + 主进程修复）：
   - Ctrl+Z：加载前 pushUndoState 压入空场景且加载后不清栈（撤销会回到加载前）→ 删除加载前 push + restore 后清 undo/redo；恢复路径清 branchRegionEdit + branchRegionMeshPointsGroup（选区标记不再残留）
   - 画子发片不触发桥接：branch-hierarchy/branch-root-bone 迁移残留 `xxx.deps.*` 跨模块裸引用（ReferenceError）→ 统一改 deps.*；remapEnvelopeCurveRange import from curve-math；子发片默认 Topology-Along Curve 26→6（attachDrawnLocksAsBranches 设 lock.lengthSegments=6）

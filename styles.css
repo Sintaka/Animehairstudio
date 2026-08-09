@@ -6661,7 +6661,7 @@ body.outliner-folder-colors-disabled .outliner-layer-items {
   top: 36px;
   bottom: 0;
   width: 6px;
-  z-index: 30;
+  z-index: 15;
   cursor: col-resize;
 }
 
@@ -6749,4 +6749,8 @@ body.outliner-folder-colors-disabled .outliner-layer-items {
 /* App menu open: outliner/panel resize handles must yield to the menu (bug 4) */
 body.app-menu-open .panel-resize-handle {
   pointer-events: none;
+  cursor: default;
+}
+body.app-menu-open .panel-resize-handle:hover::after {
+  background: transparent;
 }
