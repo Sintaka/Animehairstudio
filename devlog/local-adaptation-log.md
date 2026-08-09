@@ -147,6 +147,7 @@
 - [x] Front Bangs 1-3 视口三角观感修复（0.2.55）：createPanelStrandGeometry 的 addQuad 跳过退化（角点重合）与反射折叠（两三角法线相反）quad，最大二面角 180/90° → ≤10.7°；导出一直是四边面不受影响
 - [x] 面板线框三角面真正修复（0.2.56）：绕序翻转后同步交换 triangleEdgeMasks 的 [1]/[2]，quad 对角线不再被描边；0.2.55 的退化/反射折叠清理保留
 - [x] 重构：localization 词典拆数据文件（0.2.57）：JA/ZH 词典从 modules/localization.js 拆到 modules/loc-ja.js / loc-zh.js（export default Object.freeze），localization.js 改 import 两词典，逻辑零改动；拆分前后 key 数一致（JA 667 / ZH 653）；verify-smoke.mjs 6/6 通过（页面加载 0 异常、zh/ja/en 翻译正常、0043.ahs 加载重建无异常）
+- [x] 重构：misc store（0.2.57，3c 收尾）：modules/core/misc-store.js 收敛 19 个杂项（tool/radial/偏好/fps/braid/重复放置参数）；全局 let 20→1（仅 camera）；阶段 3 全部完成；verify 13/13
 - [x] 重构：sculpt/edit store（0.2.57，3c 大块收尾）：modules/edit/sculpt-edit-store.js 收敛 72 个状态（雕刻/编辑/拖拽/工具/重复放置/分支面板拖拽）；objectSpaceEditing 偏好保留原位；踩坑：viewportEditMode/pullRigidity 选择器字符串误伤（已修）；全局 let 92→20；verify 13/13
 - [x] 重构：selection 剩余（0.2.57，3c 大块）：activeTool/lockIndex/outliner 等 12 个并入 sel store（扩展 selection-store）；踩坑：裸 `store.state.X,` 对象简写补齐（括号上下文判断）已入库；全局 let 104→92；verify 13/13
 - [x] 重构：scalp store（0.2.57，3c 大块）：modules/scalp/scalp-store.js 收敛 35 个 let；踩坑：数组/对象展开 `...name`（name 前是展开符点）被 (?<!\.) 误排除漏替换（snapshotState 多处），已修并加进清单第 9 点；store 创建误入 try 块（块作用域）已移出；全局 let 139→104；verify 13/13

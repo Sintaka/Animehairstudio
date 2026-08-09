@@ -32,11 +32,11 @@
 | `ref` | edit/reference-store.js | 2 | 参考图索引 |
 | `transform` | core/transform-store.js | 3 | gizmo 精度/层级 |
 | `head` | core/head-store.js | 3 | 头部模型资产 |
+| `miscState` | core/misc-store.js | 20 | 工具/radial/fps/braid/杂项状态（camera 保留全局） |
 
-## 3. 剩余全局 let（20 个，app.js）
+## 3. 剩余全局 let（仅 1 个，app.js）
 
 - `camera`（渲染核心对象，1533 处属性访问，保留全局）
-- 冷门：loftSurfaceDraft、sideNamingPerspective、toolTipsEnabled、compactToolButtonsEnabled、toolRadialGesture、toolRadialActions、toolShortcutPress、scaleSensitivity、clumpUpdateInProgress、groupDefaultsWarning*、pendingDroppedApplicationKind/Handle、fps*、lastHorizontalViewAxis、braidSegmentTemplate/Bounds、curveSurfaceDraft 等
 - 新增状态一律进对应 store，不新增全局 let。
 
 ## 4. 偏好字段初始化

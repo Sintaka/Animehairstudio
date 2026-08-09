@@ -1,3 +1,4 @@
+import { createMiscStore } from "./modules/core/misc-store.js?v=20260809-12";
 import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260809-11";
 import { createScalpStore } from "./modules/scalp/scalp-store.js?v=20260809-10";
 import { createProjectStore } from "./modules/io/project-store.js?v=20260809-9";
@@ -2064,8 +2065,6 @@ const headTransform = {
 };
 const scalpRoughScale = { x: 1, y: 1, z: 1 };
 const scalpRoughScalePivot = new THREE.Vector3();
-let braidSegmentTemplate = null;
-let braidSegmentBounds = null;
 const braidMeshPresets = new Map();
 const uvInspectorRecordCache = new WeakMap();
 const visibleStrandRegions = new Set(STRAND_GROUPS.map((group) => group.id));
@@ -2077,6 +2076,7 @@ const GUIDE_VIEW_MODES = [
   { id: "hide-lattices", label: "Lattices Hidden", scalp: true, capsules: true, lattices: false },
   { id: "none", label: "All Hidden", scalp: false, capsules: false, lattices: false }
 ];
+const miscState = createMiscStore();
 const sel = createSelectionStore();
 
 
@@ -2123,10 +2123,7 @@ const scalpBuilderContours = new Array(SCALP_BUILDER_STEPS.length).fill(null);
 
 
 const draw = createDrawStore();
-let loftSurfaceDraft = null;
-let clumpUpdateInProgress = false;
 const branch = createBranchStore();
-let toolShortcutPress = null;
 const ui = createUiStore();
 viewportState.state.navigationTipsEnabled = readStoredBooleanPreference(window, NAVIGATION_TIPS_PREFERENCE_KEY, true);
 viewportState.state.navigationStyle = readStoredPreference(window, NAVIGATION_STYLE_PREFERENCE_KEY, {
@@ -2138,9 +2135,8 @@ viewportState.state.cameraSmoothingStrength = readStoredPreference(window, CAMER
   fallback: 0.5,
   normalize: normalizeCameraSmoothingStrength
 });
-let scaleSensitivity = 0.3;
-let toolTipsEnabled = readStoredBooleanPreference(window, TOOL_TIPS_PREFERENCE_KEY, true);
-let compactToolButtonsEnabled = readStoredBooleanPreference(window, COMPACT_TOOL_BUTTONS_PREFERENCE_KEY, false);
+miscState.state.toolTipsEnabled = readStoredBooleanPreference(window, TOOL_TIPS_PREFERENCE_KEY, true);
+miscState.state.compactToolButtonsEnabled = readStoredBooleanPreference(window, COMPACT_TOOL_BUTTONS_PREFERENCE_KEY, false);
 viewportState.state.viewportStatisticsEnabled = readStoredBooleanPreference(window, VIEWPORT_STATISTICS_PREFERENCE_KEY, true);
 hairState.state.twistCurveAllStrandsPreviewEnabled = readStoredBooleanPreference(
   window,
@@ -2161,7 +2157,7 @@ if (viewportState.state.viewportBackgroundColor === "#17151c") {
   viewportState.state.viewportBackgroundColor = DEFAULT_VIEWPORT_BACKGROUND_COLOR;
   writeStoredPreference(window, VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY, viewportState.state.viewportBackgroundColor);
 }
-let sideNamingPerspective = readStoredPreference(window, SIDE_NAMING_PERSPECTIVE_PREFERENCE_KEY, {
+miscState.state.sideNamingPerspective = readStoredPreference(window, SIDE_NAMING_PERSPECTIVE_PREFERENCE_KEY, {
   fallback: "viewport",
   normalize: normalizeSideNamingPerspective
 });
@@ -2172,7 +2168,7 @@ let sideNamingPerspective = readStoredPreference(window, SIDE_NAMING_PERSPECTIVE
 const BRANCH_RIGID_SWING_LIMIT_DEG = 60;
 // How fast the region follows the root bone while dragging it in Hierarchy mode:
 // lateral (left-right / v) defaults to 0.45x, along-length (up-down / u) to 1.0x.
-let lastHorizontalViewAxis = new THREE.Vector3(0, 0, 1);
+miscState.state.lastHorizontalViewAxis = new THREE.Vector3(0, 0, 1);
 const CARDINAL_VIEW_DRAG_STEP = 72;
 const CARDINAL_VIEW_DRAG_GRACE = 48;
 const taperMeshPointGeometry = new THREE.SphereGeometry(0.016, 12, 8);
@@ -2279,7 +2275,6 @@ const strandLayerOpen = new Map();
 const referenceGroupOpen = new Map(["overlay", "front", "back", "left", "right"].map((id) => [id, true]));
 const clumpOpen = new Map();
 const curveSurfaceOpen = new Map();
-let toolRadialGesture = null;
 const undo = createUndoStore();
 const inputs = {
   name: document.querySelector("#lockName"),
@@ -2530,9 +2525,7 @@ const dropObjTargetChoices = document.querySelector("#dropObjTargetChoices");
 const closeDropImportDialog = document.querySelector("#closeDropImportDialog");
 const cancelDropImport = document.querySelector("#cancelDropImport");
 const confirmDropImport = document.querySelector("#confirmDropImport");
-let pendingDroppedApplicationKind = null;
 const projectState = createProjectStore();
-let pendingDroppedApplicationHandle = null;
 const importHeadMeshMenu = document.querySelector("#importHeadMeshMenu");
 const importFullBodyMeshMenu = document.querySelector("#importFullBodyMeshMenu");
 const undoButton = document.querySelector("#undoAction");
@@ -2637,7 +2630,7 @@ const strandRadialActionList = document.querySelector("#strandRadialActionList")
 const strandRadialLine = document.querySelector("#strandRadialLine");
 const strandRadialCenter = document.querySelector("#strandRadialCenter");
 const toolRadialMenu = document.querySelector("#toolRadialMenu");
-let toolRadialActions = [...toolRadialMenu.querySelectorAll("[data-tool-radial-index]")];
+miscState.state.toolRadialActions = [...toolRadialMenu.querySelectorAll("[data-tool-radial-index]")];
 const toolRadialActionList = document.querySelector("#toolRadialActionList");
 const toolRadialLine = document.querySelector("#toolRadialLine");
 const toolRadialCenter = document.querySelector("#toolRadialCenter");
@@ -2981,8 +2974,7 @@ const groupDefaultsWarning = document.querySelector("#groupDefaultsWarning");
 const hideGroupDefaultsWarning = document.querySelector("#hideGroupDefaultsWarning");
 const confirmGroupDefaultsChange = document.querySelector("#confirmGroupDefaultsChange");
 const cancelGroupDefaultsChange = document.querySelector("#cancelGroupDefaultsChange");
-let groupDefaultsWarningAcknowledged = localStorage.getItem("anime-hair-hide-group-defaults-warning") === "true";
-let groupDefaultsWarningContinuation = null;
+miscState.state.groupDefaultsWarningAcknowledged = localStorage.getItem("anime-hair-hide-group-defaults-warning") === "true";
 const panelSplitSnapWarning = document.querySelector("#panelSplitSnapWarning");
 const confirmPanelSplitSnapDisable = document.querySelector("#confirmPanelSplitSnapDisable");
 const cancelPanelSplitSnapDisable = document.querySelector("#cancelPanelSplitSnapDisable");
@@ -3450,8 +3442,8 @@ function registerBraidMeshPreset(id, obj, { authoredCaps = false } = {}) {
   body.cache = prepareBraidBodyCache(body);
   braidMeshPresets.set(id, { id, body, start, end, authoredCaps });
   if (id === DEFAULT_BRAID_MESH_PRESET) {
-    braidSegmentTemplate = body.geometry;
-    braidSegmentBounds = body.bounds;
+    miscState.state.braidSegmentTemplate = body.geometry;
+    miscState.state.braidSegmentBounds = body.bounds;
   }
   locks.filter((lock) => lock.geometryType === "braid" && (lock.braidMeshPreset || DEFAULT_BRAID_MESH_PRESET) === id)
     .forEach(updateLockGeometry);
@@ -3644,14 +3636,14 @@ function applyLayerOffset(lock, targetOffset = layerOffsetForLock(lock)) {
 function setLockHairLayer(lock, layerId) {
   if (!lock) return;
   const targets = lock.clumpId ? locks.filter((item) => item.clumpId === lock.clumpId) : [lock];
-  clumpUpdateInProgress = true;
+  miscState.state.clumpUpdateInProgress = true;
   targets.forEach((item) => {
     item.hairLayer = normalizeHairLayer(layerId);
     applyLayerOffset(item);
     applyLockRootScalpOffset(item);
     updateLockGeometry(item);
   });
-  clumpUpdateInProgress = false;
+  miscState.state.clumpUpdateInProgress = false;
   const guide = clumpGuideForLock(lock);
   if (guide) updateClumpMembers(guide);
 }
@@ -11156,11 +11148,11 @@ function finishBrushSizeDrag(event) {
 }
 
 function updateInteractionLocks() {
-  const loftStrokeActive = Boolean(loftSurfaceDraft?.activeStroke);
+  const loftStrokeActive = Boolean(miscState.state.loftSurfaceDraft?.activeStroke);
   const curveSurfaceStrokeActive = Boolean(sculptState.state.curveSurfaceDraft?.activeStroke);
-  controls.enabled = Boolean(sculptState.state.altOrbitDrag) || (!toolRadialGesture && !hairState.state.strandRadialGesture && !sculptState.state.duplicatePlacement && !sculptState.state.referenceOverlayDrag && !sculptState.state.referenceCropDrag && !sculptState.state.selectPointerCapture && !sculptState.state.transformDragging && !sculptState.state.relaxEdit && !sculptState.state.sculptMoveStroke && !sculptState.state.proportionalSizeEdit && !sculptState.state.proportionalHotkeyPress && !sculptState.state.brushSizeDrag && !sculptState.state.strandWidthEdgeDrag && !scalpState.state.scalpLatticeDrag && !scalpState.state.scalpPaintDrag && !scalpState.state.scalpBuilderStroke && !sculptState.state.viewSnapDrag && !sculptState.state.viewPlaneMoveDrag && !sculptState.state.drawStrandStroke && !sculptState.state.capsuleGuideDrawStroke && !sculptState.state.polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !sculptState.state.selectionMarqueeDrag && !sculptState.state.panelSplitDrag && !sculptState.state.capsuleGuideLoopDrag && !sculptState.state.taperMeshPointDrag && !sculptState.state.branchSweepStartDrag && !sculptState.state.houdiniZoomDrag);
+  controls.enabled = Boolean(sculptState.state.altOrbitDrag) || (!miscState.state.toolRadialGesture && !hairState.state.strandRadialGesture && !sculptState.state.duplicatePlacement && !sculptState.state.referenceOverlayDrag && !sculptState.state.referenceCropDrag && !sculptState.state.selectPointerCapture && !sculptState.state.transformDragging && !sculptState.state.relaxEdit && !sculptState.state.sculptMoveStroke && !sculptState.state.proportionalSizeEdit && !sculptState.state.proportionalHotkeyPress && !sculptState.state.brushSizeDrag && !sculptState.state.strandWidthEdgeDrag && !scalpState.state.scalpLatticeDrag && !scalpState.state.scalpPaintDrag && !scalpState.state.scalpBuilderStroke && !sculptState.state.viewSnapDrag && !sculptState.state.viewPlaneMoveDrag && !sculptState.state.drawStrandStroke && !sculptState.state.capsuleGuideDrawStroke && !sculptState.state.polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !sculptState.state.selectionMarqueeDrag && !sculptState.state.panelSplitDrag && !sculptState.state.capsuleGuideLoopDrag && !sculptState.state.taperMeshPointDrag && !sculptState.state.branchSweepStartDrag && !sculptState.state.houdiniZoomDrag);
   const branchMoveDisabled = branchMoveGizmoDisabled();
-  transformControls.enabled = !toolRadialGesture && !hairState.state.strandRadialGesture && !sculptState.state.duplicatePlacement && !sculptState.state.referenceOverlayDrag && !sculptState.state.referenceCropDrag && !sculptState.state.altOrbitDrag && !sculptState.state.sculptMoveStroke && !sculptState.state.proportionalSizeEdit && !sculptState.state.proportionalHotkeyPress && !sculptState.state.brushSizeDrag && !sculptState.state.strandWidthEdgeDrag && !scalpState.state.scalpBuilderStroke && !sculptState.state.viewSnapDrag && !sculptState.state.viewPlaneMoveDrag && !sculptState.state.drawStrandStroke && !sculptState.state.capsuleGuideDrawStroke && !sculptState.state.polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !sculptState.state.panelSplitDrag && !sculptState.state.capsuleGuideLoopDrag && !sculptState.state.taperMeshPointDrag && !branchMoveDisabled && !sculptState.state.branchSweepStartDrag && !sculptState.state.houdiniZoomDrag;
+  transformControls.enabled = !miscState.state.toolRadialGesture && !hairState.state.strandRadialGesture && !sculptState.state.duplicatePlacement && !sculptState.state.referenceOverlayDrag && !sculptState.state.referenceCropDrag && !sculptState.state.altOrbitDrag && !sculptState.state.sculptMoveStroke && !sculptState.state.proportionalSizeEdit && !sculptState.state.proportionalHotkeyPress && !sculptState.state.brushSizeDrag && !sculptState.state.strandWidthEdgeDrag && !scalpState.state.scalpBuilderStroke && !sculptState.state.viewSnapDrag && !sculptState.state.viewPlaneMoveDrag && !sculptState.state.drawStrandStroke && !sculptState.state.capsuleGuideDrawStroke && !sculptState.state.polyBrushStroke && !loftStrokeActive && !curveSurfaceStrokeActive && !sculptState.state.panelSplitDrag && !sculptState.state.capsuleGuideLoopDrag && !sculptState.state.taperMeshPointDrag && !branchMoveDisabled && !sculptState.state.branchSweepStartDrag && !sculptState.state.houdiniZoomDrag;
   setBranchMoveGizmoVisual(branchMoveDisabled);
 }
 
@@ -12215,7 +12207,7 @@ function updateViewPlaneGrid() {
   const directMoveActive = viewPlaneMoveActiveForView() && sel.state.activeTool === "move";
   const strokeToolActive = ["draw", "procedural-draw", "braid", "panel", "surface-loft", "curve-surface"].includes(sel.state.activeTool);
   const activeFreePlane = sel.state.activeTool === "surface-loft"
-    ? loftSurfaceDraft?.activeStroke?.freePlane
+    ? miscState.state.loftSurfaceDraft?.activeStroke?.freePlane
     : sel.state.activeTool === "curve-surface"
       ? sculptState.state.curveSurfaceDraft?.activeStroke?.freePlane
       : sculptState.state.drawStrandStroke?.freePlane;
@@ -16127,7 +16119,7 @@ function setGroupLengthScale(region, value) {
 
   const targets = locks.filter((lock) => (lock.scalpRegion || "unassigned") === region);
   branch.state.regionLengthUpdateInProgress = true;
-  clumpUpdateInProgress = true;
+  miscState.state.clumpUpdateInProgress = true;
   try {
     targets.forEach((lock) => {
       ensureRegionLengthBaseline(lock, previousScale);
@@ -16147,7 +16139,7 @@ function setGroupLengthScale(region, value) {
     });
     targets.forEach((lock) => updateLockGeometry(lock, { immediate: true }));
   } finally {
-    clumpUpdateInProgress = false;
+    miscState.state.clumpUpdateInProgress = false;
     branch.state.regionLengthUpdateInProgress = false;
   }
   const selectedLock = getSelectedLock();
@@ -16188,7 +16180,7 @@ function applyGroupDefaultsToExistingStrands(region) {
 }
 
 function requestGroupDefaultsWarning(event) {
-  if (groupDefaultsWarningAcknowledged || !sel.state.selectedStrandGroup) return;
+  if (miscState.state.groupDefaultsWarningAcknowledged || !sel.state.selectedStrandGroup) return;
   const hasExistingStrands = locks.some((lock) => (lock.scalpRegion || "unassigned") === sel.state.selectedStrandGroup);
   if (!hasExistingStrands) return;
   event.preventDefault();
@@ -17332,10 +17324,10 @@ function openTaperCurveEditor(curveKey = "taperCurve") {
   else if (!proceduralBranchCurveEditing(curveKey) && creationToolActive()) nextEdit = { type: "creation", id: "new-strand", curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
   if (!nextEdit) return;
   if (sweepProfileEditor.open) closeSweepProfileEditor();
-  if (nextEdit.type === "group" && !groupDefaultsWarningAcknowledged) {
+  if (nextEdit.type === "group" && !miscState.state.groupDefaultsWarningAcknowledged) {
     const hasExistingStrands = locks.some((lock) => (lock.scalpRegion || "unassigned") === nextEdit.id);
     if (hasExistingStrands) {
-      groupDefaultsWarningContinuation = () => openTaperCurveEditor(curveKey);
+      miscState.state.groupDefaultsWarningContinuation = () => openTaperCurveEditor(curveKey);
       groupDefaultsWarning.showModal();
       return;
     }
@@ -17485,10 +17477,10 @@ function openSweepProfileEditor() {
   if (!nextEdit) return;
   if (taperCurveEditor.open) closeTaperCurveEditor();
 
-  if (nextEdit.type === "group" && !groupDefaultsWarningAcknowledged) {
+  if (nextEdit.type === "group" && !miscState.state.groupDefaultsWarningAcknowledged) {
     const hasExistingStrands = locks.some((lock) => (lock.scalpRegion || "unassigned") === nextEdit.id);
     if (hasExistingStrands) {
-      groupDefaultsWarningContinuation = openSweepProfileEditor;
+      miscState.state.groupDefaultsWarningContinuation = openSweepProfileEditor;
       groupDefaultsWarning.showModal();
       return;
     }
@@ -18846,13 +18838,13 @@ function downloadPreferencesAndPresets() {
       navigationStyle: viewportState.state.navigationStyle,
       cameraSmoothingEnabled: viewportState.state.cameraSmoothingEnabled,
       cameraSmoothingStrength: viewportState.state.cameraSmoothingStrength,
-      toolTips: toolTipsEnabled,
-      compactToolButtons: compactToolButtonsEnabled,
+      toolTips: miscState.state.toolTipsEnabled,
+      compactToolButtons: miscState.state.compactToolButtonsEnabled,
       viewportStatistics: viewportState.state.viewportStatisticsEnabled,
       twistCurveAllStrandsPreview: hairState.state.twistCurveAllStrandsPreviewEnabled,
       layerColorShifts: sel.state.layerColorShiftsEnabled,
       outlinerFolderColors: sel.state.outlinerFolderColorsEnabled,
-      sideNamingPerspective,
+      sideNamingPerspective: miscState.state.sideNamingPerspective,
       controlPointDisplaySize: guideState.state.controlPointDisplaySize,
       viewportBackgroundColor: viewportState.state.viewportBackgroundColor,
       radialMenus: ui.state.radialMenusEnabled,
@@ -18881,8 +18873,8 @@ async function loadPreferencesAndPresets(file) {
   if (preferences.cameraSmoothingStrength != null) {
     setCameraSmoothingStrength(preferences.cameraSmoothingStrength);
   }
-  setToolTipsEnabled(importedBooleanPreference(preferences.toolTips, toolTipsEnabled));
-  setCompactToolButtonsEnabled(importedBooleanPreference(preferences.compactToolButtons, compactToolButtonsEnabled));
+  setToolTipsEnabled(importedBooleanPreference(preferences.toolTips, miscState.state.toolTipsEnabled));
+  setCompactToolButtonsEnabled(importedBooleanPreference(preferences.compactToolButtons, miscState.state.compactToolButtonsEnabled));
   setViewportStatisticsEnabled(importedBooleanPreference(preferences.viewportStatistics, viewportState.state.viewportStatisticsEnabled));
   setTwistCurveAllStrandsPreviewEnabled(importedBooleanPreference(
     preferences.twistCurveAllStrandsPreview,
@@ -18928,13 +18920,13 @@ async function loadPreferencesAndPresets(file) {
     navigationStyle: viewportState.state.navigationStyle,
     cameraSmoothingEnabled: viewportState.state.cameraSmoothingEnabled,
     cameraSmoothingStrength: viewportState.state.cameraSmoothingStrength,
-    toolTipsEnabled,
-    compactToolButtonsEnabled,
+    toolTipsEnabled: miscState.state.toolTipsEnabled,
+    compactToolButtonsEnabled: miscState.state.compactToolButtonsEnabled,
     viewportStatisticsEnabled: viewportState.state.viewportStatisticsEnabled,
     twistCurveAllStrandsPreviewEnabled: hairState.state.twistCurveAllStrandsPreviewEnabled,
     layerColorShiftsEnabled: sel.state.layerColorShiftsEnabled,
     outlinerFolderColorsEnabled: sel.state.outlinerFolderColorsEnabled,
-    sideNamingPerspective,
+    sideNamingPerspective: miscState.state.sideNamingPerspective,
     controlPointDisplaySize: guideState.state.controlPointDisplaySize,
     viewportBackgroundColor: viewportState.state.viewportBackgroundColor,
     defaultHairShader: hairState.state.defaultHairShader
@@ -19097,8 +19089,8 @@ function openDroppedApplicationFilePrompt(file, { handle = null } = {}) {
   const kind = applicationDropFileKind(file);
   if (!kind) return false;
   projectState.state.pendingDroppedApplicationFile = file;
-  pendingDroppedApplicationKind = kind;
-  pendingDroppedApplicationHandle = handle || null;
+  miscState.state.pendingDroppedApplicationKind = kind;
+  miscState.state.pendingDroppedApplicationHandle = handle || null;
   dropImportFileName.textContent = file.name;
   const isProject = kind === "project";
   dropImportDialogTitle.textContent = isProject ? "Open Dropped Project?" : "Import Dropped OBJ?";
@@ -19124,14 +19116,14 @@ function closeDroppedApplicationFilePrompt() {
 
 async function confirmDroppedApplicationFile() {
   const file = projectState.state.pendingDroppedApplicationFile;
-  const kind = pendingDroppedApplicationKind;
+  const kind = miscState.state.pendingDroppedApplicationKind;
   if (!file || !kind) return;
   const objTarget = kind === "obj"
     ? dropImportForm.querySelector('input[name="dropObjTarget"]:checked')?.value
     : null;
   closeDroppedApplicationFilePrompt();
   if (kind === "project") {
-    await openHairProjectFile(file, { handle: pendingDroppedApplicationHandle });
+    await openHairProjectFile(file, { handle: miscState.state.pendingDroppedApplicationHandle });
     return;
   }
   if (objTarget === "body") await importFullBodyMeshFile(file);
@@ -23825,7 +23817,7 @@ function updateClumpMembers(guide) {
   const strandWidth = THREE.MathUtils.clamp(guide.clumpStrandWidth, 0.1, 2.5);
   const strandDepth = THREE.MathUtils.clamp(guide.clumpStrandDepth, 0.1, 2.5);
   const variation = THREE.MathUtils.clamp(guide.clumpVariation, 0, 1);
-  clumpUpdateInProgress = true;
+  miscState.state.clumpUpdateInProgress = true;
   try {
     members.forEach((member) => {
       if (member.clumpShapeCurveInheritance) {
@@ -23895,7 +23887,7 @@ function updateClumpMembers(guide) {
       updateLockGeometry(member);
     });
   } finally {
-    clumpUpdateInProgress = false;
+    miscState.state.clumpUpdateInProgress = false;
   }
 }
 
@@ -24907,19 +24899,19 @@ function hideLoftSurfacePreviews() {
 }
 
 function updateLoftSurfaceDraftUi() {
-  const hasHorizontal = Boolean(loftSurfaceDraft?.horizontalPoints?.length);
+  const hasHorizontal = Boolean(miscState.state.loftSurfaceDraft?.horizontalPoints?.length);
   loftHorizontalStep.classList.toggle("active", !hasHorizontal);
   loftHorizontalStep.classList.toggle("complete", hasHorizontal);
   loftVerticalStep.classList.toggle("active", hasHorizontal);
   loftVerticalStep.classList.remove("complete");
-  resetLoftSurfaceDraftButton.disabled = !hasHorizontal && !loftSurfaceDraft?.activeStroke;
+  resetLoftSurfaceDraftButton.disabled = !hasHorizontal && !miscState.state.loftSurfaceDraft?.activeStroke;
 }
 
 function updateLoftSurfacePreview() {
-  const stroke = loftSurfaceDraft?.activeStroke;
+  const stroke = miscState.state.loftSurfaceDraft?.activeStroke;
   const horizontalPoints = stroke?.stage === "horizontal"
     ? loftSurfaceProfilePoints(stroke.samples)
-    : loftSurfaceDraft?.horizontalPoints || [];
+    : miscState.state.loftSurfaceDraft?.horizontalPoints || [];
   const verticalPoints = stroke?.stage === "vertical"
     ? loftSurfaceProfilePoints(stroke.samples)
     : [];
@@ -24948,11 +24940,11 @@ function updateLoftSurfacePreview() {
 }
 
 function resetLoftSurfaceDraft() {
-  const pointerId = loftSurfaceDraft?.activeStroke?.pointerId;
+  const pointerId = miscState.state.loftSurfaceDraft?.activeStroke?.pointerId;
   if (pointerId !== undefined && renderer.domElement.hasPointerCapture?.(pointerId)) {
     renderer.domElement.releasePointerCapture(pointerId);
   }
-  loftSurfaceDraft = {
+  miscState.state.loftSurfaceDraft = {
     horizontalPoints: null,
     activeStroke: null
   };
@@ -24965,14 +24957,14 @@ function resetLoftSurfaceDraft() {
 
 function cancelLoftSurfaceDraft() {
   const hadDraft = Boolean(
-    loftSurfaceDraft?.activeStroke
-    || loftSurfaceDraft?.horizontalPoints?.length
+    miscState.state.loftSurfaceDraft?.activeStroke
+    || miscState.state.loftSurfaceDraft?.horizontalPoints?.length
   );
-  const pointerId = loftSurfaceDraft?.activeStroke?.pointerId;
+  const pointerId = miscState.state.loftSurfaceDraft?.activeStroke?.pointerId;
   if (pointerId !== undefined && renderer.domElement.hasPointerCapture?.(pointerId)) {
     renderer.domElement.releasePointerCapture(pointerId);
   }
-  loftSurfaceDraft = null;
+  miscState.state.loftSurfaceDraft = null;
   renderer.domElement.style.cursor = "";
   hideLoftSurfacePreviews();
   updateLoftSurfaceDraftUi();
@@ -25581,14 +25573,14 @@ function beginLoftSurfaceStroke(event, hit) {
     || event.altKey
     || event.metaKey
   ) return false;
-  if (!loftSurfaceDraft) resetLoftSurfaceDraft();
-  if (loftSurfaceDraft.activeStroke) return false;
+  if (!miscState.state.loftSurfaceDraft) resetLoftSurfaceDraft();
+  if (miscState.state.loftSurfaceDraft.activeStroke) return false;
   const surfaceMode = activeStrokeSurfaceValue();
   const dynamicContextual = activeStrokeDynamicEnabled(surfaceMode);
   const contextualPlane = surfaceMode === "contextual-plane" ? contextualPlaneAtOrigin() : null;
-  loftSurfaceDraft.activeStroke = {
+  miscState.state.loftSurfaceDraft.activeStroke = {
     pointerId: event.pointerId,
-    stage: loftSurfaceDraft.horizontalPoints ? "vertical" : "horizontal",
+    stage: miscState.state.loftSurfaceDraft.horizontalPoints ? "vertical" : "horizontal",
     surfaceMode,
     dynamicContextual,
     samples: [loftSurfaceSampleFromHit(hit)],
@@ -25618,7 +25610,7 @@ function beginLoftSurfaceFreePlane(stroke) {
 }
 
 function updateLoftSurfaceStroke(event) {
-  const stroke = loftSurfaceDraft?.activeStroke;
+  const stroke = miscState.state.loftSurfaceDraft?.activeStroke;
   if (!stroke || event.pointerId !== stroke.pointerId) return;
   const screenDistance = Math.hypot(event.clientX - stroke.lastX, event.clientY - stroke.lastY);
   if (screenDistance < 4) return;
@@ -25648,9 +25640,9 @@ function updateLoftSurfaceStroke(event) {
 }
 
 function finishLoftSurfaceStroke(event, options = {}) {
-  const stroke = loftSurfaceDraft?.activeStroke;
+  const stroke = miscState.state.loftSurfaceDraft?.activeStroke;
   if (!stroke || (event?.pointerId !== undefined && event.pointerId !== stroke.pointerId)) return false;
-  loftSurfaceDraft.activeStroke = null;
+  miscState.state.loftSurfaceDraft.activeStroke = null;
   if (renderer.domElement.hasPointerCapture?.(stroke.pointerId)) {
     renderer.domElement.releasePointerCapture(stroke.pointerId);
   }
@@ -25667,7 +25659,7 @@ function finishLoftSurfaceStroke(event, options = {}) {
   }
   const profilePoints = loftSurfaceProfilePoints(stroke.samples);
   if (stroke.stage === "horizontal") {
-    loftSurfaceDraft.horizontalPoints = profilePoints;
+    miscState.state.loftSurfaceDraft.horizontalPoints = profilePoints;
     updateLoftSurfacePreview();
     updateInteractionLocks();
     updatePlacementStatus();
@@ -25675,7 +25667,7 @@ function finishLoftSurfaceStroke(event, options = {}) {
     return true;
   }
   const latticeData = createLoftSurfaceLatticePointData({
-    horizontalPoints: loftSurfaceDraft.horizontalPoints,
+    horizontalPoints: miscState.state.loftSurfaceDraft.horizontalPoints,
     verticalPoints: profilePoints,
     columns: DEFAULT_SURFACE_LATTICE_COLUMNS,
     rows: DEFAULT_SURFACE_LATTICE_ROWS
@@ -25688,7 +25680,7 @@ function finishLoftSurfaceStroke(event, options = {}) {
       namePrefix: "Loft Surface",
       scalpRegion: scalpRegionNearestWorldPoint(root)
     });
-    loftSurfaceDraft = null;
+    miscState.state.loftSurfaceDraft = null;
     hideLoftSurfacePreviews();
     if (lock) {
       renderLockList();
@@ -26168,12 +26160,12 @@ function updatePlacementStatus() {
       ? "Draw Capsule Guide: drag from the open root toward the rounded tip, then release to create the guide."
       : "Draw Capsule Guide: drag from root to tip on the active live surface. Hold Ctrl or Alt for viewport navigation.";
   } else if (sel.state.activeTool === "surface-loft") {
-    if (loftSurfaceDraft?.horizontalPoints) {
-      message = loftSurfaceDraft.activeStroke
+    if (miscState.state.loftSurfaceDraft?.horizontalPoints) {
+      message = miscState.state.loftSurfaceDraft.activeStroke
         ? "Loft Surface step 2 of 2: draw the vertical curve. Release to create the surface."
         : "Loft Surface step 2 of 2: draw a vertical curve crossing the magenta horizontal curve. Press Esc to restart.";
     } else {
-      message = loftSurfaceDraft?.activeStroke
+      message = miscState.state.loftSurfaceDraft?.activeStroke
         ? "Loft Surface step 1 of 2: draw the horizontal curve."
         : "Loft Surface step 1 of 2: draw a horizontal profile on the chosen Live Surface.";
     }
@@ -26198,7 +26190,7 @@ function updatePlacementStatus() {
     message = "Object space: gizmo is aligned to the selected curve point. Press O for world space.";
   }
   placementStatus.textContent = message;
-  const hidden = !toolTipsEnabled || !message;
+  const hidden = !miscState.state.toolTipsEnabled || !message;
   placementStatus.classList.toggle("hidden", hidden);
   placementStatus.setAttribute("aria-hidden", String(hidden));
 }
@@ -27779,7 +27771,7 @@ function rebuildLockGeometry(lock, options = {}) {
     && sculptState.state.taperCurveEdit?.type === "strand"
     && sculptState.state.taperCurveEdit.id === lock.id
   ) updateTaperMeshPoints();
-  if (options.updateClump !== false && !clumpUpdateInProgress && lock.clumpGuide) updateClumpMembers(lock);
+  if (options.updateClump !== false && !miscState.state.clumpUpdateInProgress && lock.clumpGuide) updateClumpMembers(lock);
   if (options.updateBranches !== false && !branch.state.branchUpdateInProgress) updateBranchChildren(lock);
   invalidateUvInspector();
 }
@@ -30420,7 +30412,7 @@ function cancelStrandRadialGesture() {
 }
 
 function blockPointerDuringStrandRadialGesture(event) {
-  if (!hairState.state.strandRadialGesture && !toolRadialGesture) return;
+  if (!hairState.state.strandRadialGesture && !miscState.state.toolRadialGesture) return;
   event.preventDefault();
   event.stopImmediatePropagation();
 }
@@ -30459,9 +30451,9 @@ function toolRadialOptions(tool = sel.state.activeTool) {
 }
 
 function hideToolRadialMenu() {
-  toolRadialGesture = null;
+  miscState.state.toolRadialGesture = null;
   toolRadialMenu.classList.add("hidden");
-  toolRadialActions.forEach((button) => {
+  miscState.state.toolRadialActions.forEach((button) => {
     button.classList.remove("selected");
     button.classList.add("hidden");
   });
@@ -30472,14 +30464,14 @@ function hideToolRadialMenu() {
 }
 
 function beginToolRadialGesture() {
-  if (!ui.state.radialMenusEnabled || toolRadialGesture || hairState.state.strandRadialGesture || sculptState.state.duplicatePlacement) return false;
+  if (!ui.state.radialMenusEnabled || miscState.state.toolRadialGesture || hairState.state.strandRadialGesture || sculptState.state.duplicatePlacement) return false;
   const partitioned = partitionRadialOptions(toolRadialOptions(), MAX_RADIAL_OPTIONS);
   const options = layoutRadialOptions(partitioned.radialOptions);
   const listOptions = partitioned.listOptions;
   if (!options.length) return false;
-  toolRadialActions = ensureRadialButtonCapacity(
+  miscState.state.toolRadialActions = ensureRadialButtonCapacity(
     toolRadialMenu,
-    toolRadialActions,
+    miscState.state.toolRadialActions,
     options.length,
     "toolRadialIndex",
     toolRadialLine
@@ -30487,7 +30479,7 @@ function beginToolRadialGesture() {
   applyRadialMenuDimensions(toolRadialMenu, options.length, sharedRadialFrameDimensions());
   renderRadialActionList(toolRadialActionList, listOptions);
   options.forEach((option, index) => {
-    const button = toolRadialActions[index];
+    const button = miscState.state.toolRadialActions[index];
     button.textContent = option.label;
     button.dataset.toolRadialAction = option.action;
     button.style.setProperty("--radial-angle", `${option.angle}rad`);
@@ -30495,8 +30487,8 @@ function beginToolRadialGesture() {
     button.style.setProperty("--radial-radius-offset", `${option.radiusOffset || 0}px`);
     button.classList.remove("hidden", "selected");
   });
-  toolRadialActions.slice(options.length).forEach((button) => button.classList.add("hidden"));
-  toolRadialGesture = {
+  miscState.state.toolRadialActions.slice(options.length).forEach((button) => button.classList.add("hidden"));
+  miscState.state.toolRadialGesture = {
     centerX: lastPointer.x,
     centerY: lastPointer.y,
     action: null,
@@ -30512,33 +30504,33 @@ function beginToolRadialGesture() {
 }
 
 function beginToolShortcutPress(key, tool) {
-  if (toolShortcutPress || toolRadialGesture || hairState.state.strandRadialGesture || sculptState.state.duplicatePlacement) return;
+  if (miscState.state.toolShortcutPress || miscState.state.toolRadialGesture || hairState.state.strandRadialGesture || sculptState.state.duplicatePlacement) return;
   setActiveTool(tool);
   if (!ui.state.radialMenusEnabled) return;
-  toolShortcutPress = {
+  miscState.state.toolShortcutPress = {
     key,
     tool,
     opened: false,
     holdTimer: window.setTimeout(() => {
-      if (!toolShortcutPress || toolShortcutPress.key !== key) return;
-      toolShortcutPress.opened = beginToolRadialGesture();
+      if (!miscState.state.toolShortcutPress || miscState.state.toolShortcutPress.key !== key) return;
+      miscState.state.toolShortcutPress.opened = beginToolRadialGesture();
     }, 180)
   };
 }
 
 function finishToolShortcutPress(key) {
-  if (!toolShortcutPress || toolShortcutPress.key !== key) return false;
-  const press = toolShortcutPress;
-  toolShortcutPress = null;
+  if (!miscState.state.toolShortcutPress || miscState.state.toolShortcutPress.key !== key) return false;
+  const press = miscState.state.toolShortcutPress;
+  miscState.state.toolShortcutPress = null;
   window.clearTimeout(press.holdTimer);
   if (press.opened) finishToolRadialGesture();
   return true;
 }
 
 function cancelToolShortcutPress() {
-  if (!toolShortcutPress) return false;
-  window.clearTimeout(toolShortcutPress.holdTimer);
-  toolShortcutPress = null;
+  if (!miscState.state.toolShortcutPress) return false;
+  window.clearTimeout(miscState.state.toolShortcutPress.holdTimer);
+  miscState.state.toolShortcutPress = null;
   cancelToolRadialGesture();
   return true;
 }
@@ -30642,26 +30634,26 @@ function setCameraSmoothingStrength(value, { persist = true } = {}) {
 }
 
 function setScaleSensitivity(value) {
-  scaleSensitivity = normalizeScaleSensitivity(value);
-  scaleSensitivityInput.value = String(scaleSensitivity);
-  scaleSensitivityValue.textContent = scaleSensitivity.toFixed(2);
+  miscState.state.scaleSensitivity = normalizeScaleSensitivity(value);
+  scaleSensitivityInput.value = String(miscState.state.scaleSensitivity);
+  scaleSensitivityValue.textContent = miscState.state.scaleSensitivity.toFixed(2);
   const numberInput = scaleSensitivityInput.closest("label")?.querySelector(".slider-number-input");
-  if (numberInput) numberInput.value = String(scaleSensitivity);
+  if (numberInput) numberInput.value = String(miscState.state.scaleSensitivity);
 }
 
 function setToolTipsEnabled(enabled, { persist = true } = {}) {
-  toolTipsEnabled = Boolean(enabled);
-  toolTipsPreferenceInput.checked = toolTipsEnabled;
+  miscState.state.toolTipsEnabled = Boolean(enabled);
+  toolTipsPreferenceInput.checked = miscState.state.toolTipsEnabled;
   updatePlacementStatus();
-  if (persist) saveBooleanPreference(TOOL_TIPS_PREFERENCE_KEY, toolTipsEnabled);
+  if (persist) saveBooleanPreference(TOOL_TIPS_PREFERENCE_KEY, miscState.state.toolTipsEnabled);
 }
 
 function setCompactToolButtonsEnabled(enabled, { persist = true } = {}) {
-  compactToolButtonsEnabled = Boolean(enabled);
-  compactToolButtonsPreferenceInput.checked = compactToolButtonsEnabled;
-  document.body.classList.toggle("compact-tool-buttons", compactToolButtonsEnabled);
+  miscState.state.compactToolButtonsEnabled = Boolean(enabled);
+  compactToolButtonsPreferenceInput.checked = miscState.state.compactToolButtonsEnabled;
+  document.body.classList.toggle("compact-tool-buttons", miscState.state.compactToolButtonsEnabled);
   if (persist) {
-    saveBooleanPreference(COMPACT_TOOL_BUTTONS_PREFERENCE_KEY, compactToolButtonsEnabled);
+    saveBooleanPreference(COMPACT_TOOL_BUTTONS_PREFERENCE_KEY, miscState.state.compactToolButtonsEnabled);
   }
 }
 
@@ -30707,7 +30699,7 @@ function setOutlinerFolderColorsEnabled(enabled, { persist = true } = {}) {
 }
 
 function sideNamingDisplayId(id) {
-  if (sideNamingPerspective !== "character") return id;
+  if (miscState.state.sideNamingPerspective !== "character") return id;
   return ({
     left: "right",
     right: "left",
@@ -30774,11 +30766,11 @@ function updateSideNamingLabels() {
 }
 
 function setSideNamingPerspective(value, { persist = true } = {}) {
-  sideNamingPerspective = normalizeSideNamingPerspective(value);
-  sideNamingPerspectivePreferenceInput.value = sideNamingPerspective;
+  miscState.state.sideNamingPerspective = normalizeSideNamingPerspective(value);
+  sideNamingPerspectivePreferenceInput.value = miscState.state.sideNamingPerspective;
   updateSideNamingLabels();
   if (persist) {
-    writeStoredPreference(window, SIDE_NAMING_PERSPECTIVE_PREFERENCE_KEY, sideNamingPerspective);
+    writeStoredPreference(window, SIDE_NAMING_PERSPECTIVE_PREFERENCE_KEY, miscState.state.sideNamingPerspective);
   }
 }
 
@@ -30862,13 +30854,13 @@ function openPreferencesDialog() {
     navigationStyle: viewportState.state.navigationStyle,
     cameraSmoothingEnabled: viewportState.state.cameraSmoothingEnabled,
     cameraSmoothingStrength: viewportState.state.cameraSmoothingStrength,
-    toolTipsEnabled,
-    compactToolButtonsEnabled,
+    toolTipsEnabled: miscState.state.toolTipsEnabled,
+    compactToolButtonsEnabled: miscState.state.compactToolButtonsEnabled,
     viewportStatisticsEnabled: viewportState.state.viewportStatisticsEnabled,
     twistCurveAllStrandsPreviewEnabled: hairState.state.twistCurveAllStrandsPreviewEnabled,
     layerColorShiftsEnabled: sel.state.layerColorShiftsEnabled,
     outlinerFolderColorsEnabled: sel.state.outlinerFolderColorsEnabled,
-    sideNamingPerspective,
+    sideNamingPerspective: miscState.state.sideNamingPerspective,
     controlPointDisplaySize: guideState.state.controlPointDisplaySize,
     viewportBackgroundColor: viewportState.state.viewportBackgroundColor,
     defaultHairShader: hairState.state.defaultHairShader
@@ -30889,8 +30881,8 @@ function savePreferencesDialog() {
   writeStoredPreference(window, NAVIGATION_STYLE_PREFERENCE_KEY, viewportState.state.navigationStyle);
   saveBooleanPreference(CAMERA_SMOOTHING_ENABLED_PREFERENCE_KEY, viewportState.state.cameraSmoothingEnabled);
   writeStoredPreference(window, CAMERA_SMOOTHING_STRENGTH_PREFERENCE_KEY, viewportState.state.cameraSmoothingStrength);
-  saveBooleanPreference(TOOL_TIPS_PREFERENCE_KEY, toolTipsEnabled);
-  saveBooleanPreference(COMPACT_TOOL_BUTTONS_PREFERENCE_KEY, compactToolButtonsEnabled);
+  saveBooleanPreference(TOOL_TIPS_PREFERENCE_KEY, miscState.state.toolTipsEnabled);
+  saveBooleanPreference(COMPACT_TOOL_BUTTONS_PREFERENCE_KEY, miscState.state.compactToolButtonsEnabled);
   saveBooleanPreference(VIEWPORT_STATISTICS_PREFERENCE_KEY, viewportState.state.viewportStatisticsEnabled);
   saveBooleanPreference(
     TWIST_CURVE_ALL_STRANDS_PREVIEW_PREFERENCE_KEY,
@@ -30898,7 +30890,7 @@ function savePreferencesDialog() {
   );
   saveBooleanPreference(LAYER_COLOR_SHIFTS_PREFERENCE_KEY, sel.state.layerColorShiftsEnabled);
   saveBooleanPreference(OUTLINER_FOLDER_COLORS_PREFERENCE_KEY, sel.state.outlinerFolderColorsEnabled);
-  writeStoredPreference(window, SIDE_NAMING_PERSPECTIVE_PREFERENCE_KEY, sideNamingPerspective);
+  writeStoredPreference(window, SIDE_NAMING_PERSPECTIVE_PREFERENCE_KEY, miscState.state.sideNamingPerspective);
   writeStoredPreference(window, CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY, guideState.state.controlPointDisplaySize);
   writeStoredPreference(window, VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY, viewportState.state.viewportBackgroundColor);
   writeStoredPreference(window, DEFAULT_HAIR_SHADER_PREFERENCE_KEY, hairState.state.defaultHairShader);
@@ -30936,7 +30928,7 @@ function cancelPreferencesDialog() {
 }
 
 function updateToolRadialGesture(event) {
-  const gesture = toolRadialGesture;
+  const gesture = miscState.state.toolRadialGesture;
   if (!gesture) return;
   const dx = event.clientX - gesture.centerX;
   const dy = event.clientY - gesture.centerY;
@@ -30954,7 +30946,7 @@ function updateToolRadialGesture(event) {
         ? { ...option, difference }
         : closest;
     }, null)?.action || null);
-  toolRadialActions.forEach((button) => {
+  miscState.state.toolRadialActions.forEach((button) => {
     button.classList.toggle("selected", button.dataset.toolRadialAction === gesture.action);
   });
   syncRadialListHighlight(toolRadialActionList, gesture.action);
@@ -30975,8 +30967,8 @@ function performToolRadialAction(action) {
 }
 
 function finishToolRadialGesture() {
-  if (!toolRadialGesture) return false;
-  const action = toolRadialGesture.action;
+  if (!miscState.state.toolRadialGesture) return false;
+  const action = miscState.state.toolRadialGesture.action;
   hideToolRadialMenu();
   updateInteractionLocks();
   if (action) performToolRadialAction(action);
@@ -30984,7 +30976,7 @@ function finishToolRadialGesture() {
 }
 
 function cancelToolRadialGesture() {
-  if (!toolRadialGesture) return false;
+  if (!miscState.state.toolRadialGesture) return false;
   hideToolRadialMenu();
   updateInteractionLocks();
   return true;
@@ -32640,7 +32632,7 @@ function applyReducedTransformScale(handle) {
       ? horizontalDrag
       : upwardDrag;
     const factor = THREE.MathUtils.clamp(
-      Math.exp(screenDrag * 0.01 * scaleSensitivity * precision),
+      Math.exp(screenDrag * 0.01 * miscState.state.scaleSensitivity * precision),
       MIN_UNIFORM_SCALE_RATIO,
       MAX_UNIFORM_SCALE_RATIO
     );
@@ -32660,7 +32652,7 @@ function applyReducedTransformScale(handle) {
     const previousRaw = drag.lastRawScale?.[axis];
     if (Math.abs(previousRaw) <= 1e-6) return;
     const rawRatio = rawScale[axis] / previousRaw;
-    const adjustedRatio = 1 + (rawRatio - 1) * scaleSensitivity * precision;
+    const adjustedRatio = 1 + (rawRatio - 1) * miscState.state.scaleSensitivity * precision;
     drag.appliedScale[axis] *= adjustedRatio;
   });
   drag.lastRawScale.copy(rawScale);
@@ -32862,17 +32854,17 @@ groupDynamicDensityInput.addEventListener("change", () => {
   applyGroupDefaultsToExistingStrands(sel.state.selectedStrandGroup);
 });
 confirmGroupDefaultsChange.addEventListener("click", () => {
-  groupDefaultsWarningAcknowledged = true;
+  miscState.state.groupDefaultsWarningAcknowledged = true;
   if (hideGroupDefaultsWarning.checked) {
     localStorage.setItem("anime-hair-hide-group-defaults-warning", "true");
   }
   groupDefaultsWarning.close();
-  const continuation = groupDefaultsWarningContinuation;
-  groupDefaultsWarningContinuation = null;
+  const continuation = miscState.state.groupDefaultsWarningContinuation;
+  miscState.state.groupDefaultsWarningContinuation = null;
   continuation?.();
 });
 cancelGroupDefaultsChange.addEventListener("click", () => {
-  groupDefaultsWarningContinuation = null;
+  miscState.state.groupDefaultsWarningContinuation = null;
   groupDefaultsWarning.close();
 });
 confirmPanelSplitSnapDisable.addEventListener("click", () => {
@@ -33432,8 +33424,8 @@ dropImportForm.addEventListener("submit", async (event) => {
 });
 dropImportDialog.addEventListener("close", () => {
   projectState.state.pendingDroppedApplicationFile = null;
-  pendingDroppedApplicationKind = null;
-  pendingDroppedApplicationHandle = null;
+  miscState.state.pendingDroppedApplicationKind = null;
+  miscState.state.pendingDroppedApplicationHandle = null;
 });
 document.querySelector("#importHeadMesh").addEventListener("click", () => {
   head.state.enterHeadSetupAfterHeadImport = false;
@@ -34922,9 +34914,9 @@ setNavigationTipsEnabled(viewportState.state.navigationTipsEnabled, { persist: f
 setNavigationStyle(viewportState.state.navigationStyle, { persist: false });
 setCameraSmoothingEnabled(viewportState.state.cameraSmoothingEnabled, { persist: false });
 setCameraSmoothingStrength(viewportState.state.cameraSmoothingStrength, { persist: false });
-setScaleSensitivity(scaleSensitivity);
-setToolTipsEnabled(toolTipsEnabled, { persist: false });
-setCompactToolButtonsEnabled(compactToolButtonsEnabled, { persist: false });
+setScaleSensitivity(miscState.state.scaleSensitivity);
+setToolTipsEnabled(miscState.state.toolTipsEnabled, { persist: false });
+setCompactToolButtonsEnabled(miscState.state.compactToolButtonsEnabled, { persist: false });
 setViewportStatisticsEnabled(viewportState.state.viewportStatisticsEnabled, { persist: false });
 setTwistCurveAllStrandsPreviewEnabled(hairState.state.twistCurveAllStrandsPreviewEnabled, { persist: false });
 setLayerColorShiftsEnabled(sel.state.layerColorShiftsEnabled, { persist: false });
@@ -35769,7 +35761,7 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     return;
   }
-  if (toolRadialGesture) {
+  if (miscState.state.toolRadialGesture) {
     event.preventDefault();
     return;
   }
@@ -36354,7 +36346,7 @@ function startViewSnap(pointerId, startX, startY) {
   const offset = camera.position.clone().sub(controls.target);
   const startAxis = nearestCardinalAxis(offset);
   const baseHorizontalAxis = Math.abs(startAxis.y) > 0.5
-    ? lastHorizontalViewAxis.clone()
+    ? miscState.state.lastHorizontalViewAxis.clone()
     : startAxis.clone();
   sculptState.state.viewSnapDrag = {
     pointerId,
@@ -36487,7 +36479,7 @@ function snapCameraToCardinalAxis(axis, distance) {
     camera.up.set(0, 0, axis.y > 0 ? -1 : 1);
   } else {
     camera.up.set(0, 1, 0);
-    lastHorizontalViewAxis.copy(axis);
+    miscState.state.lastHorizontalViewAxis.copy(axis);
   }
   camera.position.copy(controls.target).addScaledVector(axis, distance);
   camera.lookAt(controls.target);
@@ -37916,7 +37908,7 @@ function visibleControlPointHoverTargets() {
     || sculptState.state.viewPlaneMoveDrag
     || sculptState.state.drawStrandStroke
     || sculptState.state.capsuleGuideDrawStroke
-    || loftSurfaceDraft?.activeStroke
+    || miscState.state.loftSurfaceDraft?.activeStroke
     || sculptState.state.panelSplitDrag
     || sculptState.state.capsuleGuideLoopDrag
   ) return [];
@@ -38493,19 +38485,18 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   activateStrandControlPoint(hit.object, event);
 });
 
-let fpsFrameCount = 0;
-let fpsSampleStart = performance.now();
-let previousAnimationTimestamp = performance.now();
+miscState.state.fpsSampleStart = performance.now();
+miscState.state.previousAnimationTimestamp = performance.now();
 
 function animate(timestamp = performance.now()) {
-  const deltaSeconds = Math.min(0.1, Math.max(0, (timestamp - previousAnimationTimestamp) / 1000));
-  previousAnimationTimestamp = timestamp;
-  fpsFrameCount += 1;
-  const fpsElapsed = timestamp - fpsSampleStart;
+  const deltaSeconds = Math.min(0.1, Math.max(0, (timestamp - miscState.state.previousAnimationTimestamp) / 1000));
+  miscState.state.previousAnimationTimestamp = timestamp;
+  miscState.state.fpsFrameCount += 1;
+  const fpsElapsed = timestamp - miscState.state.fpsSampleStart;
   if (fpsElapsed >= 500) {
-    viewportFps.textContent = `${Math.round((fpsFrameCount * 1000) / fpsElapsed)} FPS`;
-    fpsFrameCount = 0;
-    fpsSampleStart = timestamp;
+    viewportFps.textContent = `${Math.round((miscState.state.fpsFrameCount * 1000) / fpsElapsed)} FPS`;
+    miscState.state.fpsFrameCount = 0;
+    miscState.state.fpsSampleStart = timestamp;
   }
   if (viewportState.state.turntableActive && !sculptState.state.altOrbitDrag && !sculptState.state.viewSnapDrag) {
     const cameraOffset = camera.position.clone().sub(controls.target);
@@ -38607,6 +38598,6 @@ syncCompactSidebarLayout();
 syncHairMaterialEditor();
 renderLockList();
 updateAttributeEditorMode();
-setSideNamingPerspective(sideNamingPerspective, { persist: false });
+setSideNamingPerspective(miscState.state.sideNamingPerspective, { persist: false });
 resize();
 animate();
