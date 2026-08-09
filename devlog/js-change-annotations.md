@@ -131,6 +131,11 @@
 
 
 
+  - **刘海（split 父发片）线框显示三角面修复（0.2.54，分支 codex/bangs-triangle-fix）**：
+    1) 现象/原因：刘海分叉（split 父发片被挖洞后，如 Side Bangs Left 1/Right 1）在 viewport 线框/拓扑视图里显示为三角面，但导出（OBJ/USDA 走 `quadFaces`）是四边面。根因是 `applyBranchRootRegionCarving` 挖洞后**没有同步裁剪 `triangleEdgeMasks`**——split 几何的 masks 按「每侧面 quad 2 条 + 端盖」顺序发射，挖洞删掉侧面 quad 后 masks 数组仍是旧长度（如 1180 vs 三角形 1174），`createHairTopologyGeometry` 按三角形序号读取时错位 → 挖洞区域之后的 quad 对角线被描边 → 看似三角。普通发丝无 authored masks（走 fallback）不受影响；面板（Front Bangs）masks 正常，其三角观感是既有的非平面折叠 quad 着色折痕（bug-fixes #3 已知问题，与本次无关）。
+    2) 修复：`applyBranchRootRegionCarving` 重建索引/quadFaces 后同步裁剪 `triangleEdgeMasks`（按被删 face 去掉其 2 条侧面 mask，保留端盖 mask）。验证（0042）：Side Bangs Left 1/Right 1 挖洞后 maskLen==三角形数（1174/1174、1168/1168），线框不再画错误对角线；非挖洞 split（Left 2/Right 2）与面板 masks 不变；0041/0042 全部子发片桥接回归正常（bridgeVC 19/24、0 NaN、0 页面错误）。
+    3) 影响评估：该问题**仅影响线框/拓扑显示**，几何索引与导出一直是四边面，不损害拓扑/导出/桥接；对后续「基于单发丝 split 建立多骨骼系统」无结构性影响，但挖洞必须同步裁剪 masks（本次已加），否则多骨骼父发片线框同样会显示三角。面板（Front Bangs）的着色折痕是独立问题（非平面折叠 quad），与 split/多骨骼无关。
+
   - **Region 同步速度可调（0.2.52）**：新增两个「同步速度」滑杆（用既有 `setupEditableSliderControls` 自动升级为 浮点+滑杆+⟲重置，位于 Branch Root Region 面板 Show points 下方）：**Sync L/R（左右/横向，默认 0.45）** 与 **Sync U/D（上下/沿长度，默认 1.0）**，范围 0.1~2.0、localStorage 持久化（`anime-hair-studio-branch-region-sync-{lateral,vertical}`）。作用：`updateBranchRootRegionCenter` 的 du/dv 分别乘以 `branchRegionSyncVertical`/`branchRegionSyncLateral`（该函数唯一调用方是根骨骼拖动同步，不影响选区手动编辑）。左右默认 0.45（0.2.53 由 0.6 调低）、上下默认 1.0：0.45 使左右跟随明显变慢（更稳地抵消既有 ~1.6-1.9 倍横向比例），上下保持 1:1。验证：bone v 0.5→0.3 时 region v 按 0.6/1.0/0.8 分别移动 -0.12/-0.20/-0.24（精确匹配）；滑杆 type=range 且自动带数值框+重置按钮。
 
   - **调研：H 模式拖根时 Region 选区「2 倍速度左右同步」排查（0.2.52，无代码改动）**：

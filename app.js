@@ -167,7 +167,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-37";
+} from "./modules/app-config.js?v=20260808-38";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -23741,6 +23741,20 @@ function applyBranchRootRegionCarving(lock, geometry) {
   geometry.setIndex(rebuilt);
   geometry.userData.quadFaces = faces.filter((_, faceIndex) => !removed.has(faceIndex));
   geometry.userData.sideTriangleCount = Math.max(0, faces.length - removed.size) * 2;
+  // Keep authored edge masks in sync with the removed side faces: masks are emitted
+  // in quadFaces order (2 per side quad), end-cap masks trail after all side masks.
+  // Stale masks make the wireframe/topology overlay draw quad diagonals (bangs look
+  // like triangles) even though the geometry/export stay quads.
+  if (Array.isArray(geometry.userData.triangleEdgeMasks)) {
+    const oldMasks = geometry.userData.triangleEdgeMasks;
+    const keptMasks = [];
+    for (let faceIndex = 0; faceIndex < faces.length; faceIndex += 1) {
+      if (removed.has(faceIndex)) continue;
+      keptMasks.push(oldMasks[faceIndex * 2], oldMasks[faceIndex * 2 + 1]);
+    }
+    for (let i = faces.length * 2; i < oldMasks.length; i += 1) keptMasks.push(oldMasks[i]);
+    geometry.userData.triangleEdgeMasks = keptMasks;
+  }
   geometry.computeBoundingSphere?.();
 }
 
