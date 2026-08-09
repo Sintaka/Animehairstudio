@@ -167,7 +167,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-39";
+} from "./modules/app-config.js?v=20260808-40";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -13905,6 +13905,10 @@ function createPanelStrandGeometry(lock) {
     for (let index = 0; index < indices.length; index += 3) {
       [indices[index + 1], indices[index + 2]] = [indices[index + 2], indices[index + 1]];
     }
+    // Swapping v1/v2 changes which triangle edge each mask entry controls
+    // (the diagonal of a quad pair). Keep the masks in sync so the wireframe /
+    // topology overlay hides the quad diagonal (otherwise panels read as triangles).
+    triangleEdgeMasks.forEach((mask) => { [mask[1], mask[2]] = [mask[2], mask[1]]; });
   }
 
   const welded = weldPanelGeometryData(positions, uvs, colors, indices, quadFaces);
