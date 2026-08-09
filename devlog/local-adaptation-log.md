@@ -147,6 +147,7 @@
 - [x] Front Bangs 1-3 视口三角观感修复（0.2.55）：createPanelStrandGeometry 的 addQuad 跳过退化（角点重合）与反射折叠（两三角法线相反）quad，最大二面角 180/90° → ≤10.7°；导出一直是四边面不受影响
 - [x] 面板线框三角面真正修复（0.2.56）：绕序翻转后同步交换 triangleEdgeMasks 的 [1]/[2]，quad 对角线不再被描边；0.2.55 的退化/反射折叠清理保留
 - [x] 重构：localization 词典拆数据文件（0.2.57）：JA/ZH 词典从 modules/localization.js 拆到 modules/loc-ja.js / loc-zh.js（export default Object.freeze），localization.js 改 import 两词典，逻辑零改动；拆分前后 key 数一致（JA 667 / ZH 653）；verify-smoke.mjs 6/6 通过（页面加载 0 异常、zh/ja/en 翻译正常、0043.ahs 加载重建无异常）
+- [x] 重构：scalp store（0.2.57，3c 大块）：modules/scalp/scalp-store.js 收敛 35 个 let；踩坑：数组/对象展开 `...name`（name 前是展开符点）被 (?<!\.) 误排除漏替换（snapshotState 多处），已修并加进清单第 9 点；store 创建误入 try 块（块作用域）已移出；全局 let 139→104；verify 13/13
 - [x] 重构：save/project store（0.2.57，3c 第六批）：modules/io/project-store.js 收敛 17 个 let（自定义预设、当前项目名、8 个 IO deps 状态）；fileApi 的 getter/setter 改为读写 store；踩坑：批量脚本 lines.join 覆盖丢失替换（重跑修正）；全局 let 156→139；verify 13/13
 - [x] 重构：camera/guide/hair store（0.2.57，3c 第五批）：modules/core/camera-store.js（12，camera 对象保留全局）+ guide-store.js（10）+ hair-store.js（20）；踩坑：无逗号/带逗号简写修复误伤函数调用参数（strandRadialActions、三目 activeHairMaterialId 漏替换）——已修并把括号上下文判断加进验证清单第 8 点；全局 let 198→156；verify 13/13
 - [x] 重构：undo/transform/head store（0.2.57，3c 第四批）：modules/core/undo-store.js（restoringHistory/historyShortcutHeld）+ transform-store.js（precision/activeSurfaceObjectTransform/recursiveHierarchyTransforms）+ head-store.js（importedHeadAsset 等 3 个）；fileApi 的 importedHeadAsset getter 改用 head.state；踩坑：getter 方法名被误替换（已修 + 验证清单补第 7 点）；全局 let 206→198；verify 13/13
