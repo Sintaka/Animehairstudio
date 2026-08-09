@@ -901,7 +901,7 @@ transformControls.addEventListener("objectChange", () => {
   if (!activeHandleEdit || activeHandleEdit.lockId !== lock.id || activeHandleEdit.pointIndex !== pointIndex) {
     beginHandleEdit();
   }
-  if (activeTool === "move") {
+  if (sel.state.activeTool === "move") {
     if (lock.geometryType === "surface") {
       if (multiPointHandleEditActive()) applyMultiMove(lock, handle);
       else applySingleMove(lock, pointIndex, handle);
@@ -912,12 +912,12 @@ transformControls.addEventListener("objectChange", () => {
     else if (proportionalEditing) applyProportionalMove(lock, pointIndex, handle);
     else applySingleMove(lock, pointIndex, handle);
     syncLockFromCurve(lock);
-  } else if (activeTool === "rotate") {
+  } else if (sel.state.activeTool === "rotate") {
     if (multiPointHandleEditActive()) applyMultiRotate(lock, pointIndex, handle);
     else if (hierarchyEditing) applyHierarchicalRotate(lock, pointIndex, handle);
     else if (proportionalEditing) applyProportionalRotate(lock, pointIndex, handle);
     else applySingleRotate(lock, pointIndex, handle);
-  } else if (activeTool === "scale") {
+  } else if (sel.state.activeTool === "scale") {
     if (multiPointHandleEditActive()) applyMultiScale(lock, handle);
     else if (hierarchyEditing) applyHierarchicalScale(lock, pointIndex, handle);
     else if (proportionalEditing) applyProportionalScale(lock, pointIndex, handle);
@@ -925,12 +925,12 @@ transformControls.addEventListener("objectChange", () => {
     lock.width = Math.max(0.04, lock.baseWidth * average(lock.pointWidths));
   }
   enforceBranchRootPosition(lock);
-  if (activeTool === "move" && hierarchyEditing && pointIndex === 0 && lock.branchParentId) {
+  if (sel.state.activeTool === "move" && hierarchyEditing && pointIndex === 0 && lock.branchParentId) {
     applyBranchRigidRootMove(lock);
     syncBranchRootHandleFrame(lock);
   }
-  syncUnifiedCurveSurfaceMirror(lock, pointIndex, activeTool);
-  if (["move", "rotate"].includes(activeTool)) updateGroupLatticeBaseFromHandleEdit(lock);
+  syncUnifiedCurveSurfaceMirror(lock, pointIndex, sel.state.activeTool);
+  if (["move", "rotate"].includes(sel.state.activeTool)) updateGroupLatticeBaseFromHandleEdit(lock);
   updateLockGeometry(lock);
   updatePullGuideVisual();
   syncActiveMirror(lock);
@@ -1088,7 +1088,7 @@ const DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE = Object.freeze([
 ]);
 
 function activeDrawClumpTemplate(stroke = null) {
-  if (activeTool === "procedural-draw") return proceduralDrawClumpTemplate(stroke);
+  if (sel.state.activeTool === "procedural-draw") return proceduralDrawClumpTemplate(stroke);
   return draw.state.activeCustomDrawClumpTemplate || DRAW_CLUMP_TEMPLATES[hairState.state.drawStrandMode] || null;
 }
 
@@ -2082,7 +2082,6 @@ const GUIDE_VIEW_MODES = [
 ];
 const sel = createSelectionStore();
 
-let isolatedStrandIds = null;
 
 function currentStrandSelectionState() {
   return { activeId: sel.state.selectedId, selectedIds: [...sel.state.selectedStrandIds] };
@@ -2099,14 +2098,11 @@ function clearStrandSelectionState() {
 
 
 
-let lockIndex = 1;
 const ref = createReferenceStore();
 
 let referenceScaleDrag = null;
 let referenceOverlayDrag = null;
 let referenceCropDrag = null;
-let activeTool = "select";
-let viewportSelectionMode = "component";
 let sculptMoveStroke = null;
 let sculptBrushShiftSmoothHeld = false;
 let activeHandleEdit = null;
@@ -2152,7 +2148,6 @@ let curvePointInsertionCandidate = null;
 let selectPointerCapture = null;
 
 
-let selectedSurfaceObjectAnchorId = null;
 
 let relaxEdit = null;
 let placeEdit = null;
@@ -2191,8 +2186,8 @@ hairState.state.twistCurveAllStrandsPreviewEnabled = readStoredBooleanPreference
   TWIST_CURVE_ALL_STRANDS_PREVIEW_PREFERENCE_KEY,
   true
 );
-let layerColorShiftsEnabled = readStoredBooleanPreference(window, LAYER_COLOR_SHIFTS_PREFERENCE_KEY, true);
-let outlinerFolderColorsEnabled = readStoredBooleanPreference(window, OUTLINER_FOLDER_COLORS_PREFERENCE_KEY, true);
+sel.state.layerColorShiftsEnabled = readStoredBooleanPreference(window, LAYER_COLOR_SHIFTS_PREFERENCE_KEY, true);
+sel.state.outlinerFolderColorsEnabled = readStoredBooleanPreference(window, OUTLINER_FOLDER_COLORS_PREFERENCE_KEY, true);
 guideState.state.controlPointDisplaySize = readStoredPreference(window, CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY, {
   fallback: 1,
   normalize: normalizeControlPointDisplaySize
@@ -2332,13 +2327,10 @@ const restoreRefreshes = new RestoreRefreshRegistry()
   .register("sculpt-brush-debug", refreshSculptBrushDebugAfterStateRestore)
   .register("curve-editors", refreshTaperCurveEditorAfterStateRestore);
 const strandGroupOpen = new Map(STRAND_GROUPS.map((group) => [group.id, true]));
-let selectionSetsOpen = true;
 const strandLayerOpen = new Map();
 const referenceGroupOpen = new Map(["overlay", "front", "back", "left", "right"].map((id) => [id, true]));
 const clumpOpen = new Map();
 const curveSurfaceOpen = new Map();
-let activeOutlinerTab = "strands";
-let outlinerContextTarget = null;
 let toolRadialGesture = null;
 let viewportEditMode = "strand";
 let duplicatePlacement = null;
@@ -5985,7 +5977,7 @@ function setScalpBuilderEditing(enabled) {
   scalpState.state.scalpBuilderEditing = Boolean(enabled);
   scalpBuilderGroup.visible = scalpState.state.scalpBuilderEditing;
   if (enabled) {
-    if (["rotate", "scale"].includes(activeTool)) setActiveTool("select");
+    if (["rotate", "scale"].includes(sel.state.activeTool)) setActiveTool("select");
     setMirrorXEditing(true);
     setScalpGuideVisibility(true);
     createScalpBuilderCurveLattice();
@@ -5998,7 +5990,7 @@ function setScalpBuilderEditing(enabled) {
     disposeScalpBuilderVisuals();
     scalpBuilderGroup.visible = false;
     scalpBuilderTemplateOverlay.visible = false;
-    configureTransformControls(activeTool);
+    configureTransformControls(sel.state.activeTool);
   }
   setHeadReferenceTransparency(
     scalpState.state.scalpBuilderEditing && scalpBuilderTransparentHeadInput.checked,
@@ -6007,7 +5999,7 @@ function setScalpBuilderEditing(enabled) {
   updateScalpEditingVisibility();
   updateAttributeEditorMode();
   updatePlacementStatus();
-  if (activeOutlinerTab === "guides") renderGuideOutliner();
+  if (sel.state.activeOutlinerTab === "guides") renderGuideOutliner();
 }
 
 function updateScalpEditingVisibility() {
@@ -6062,7 +6054,7 @@ function updateScalpEditingVisibility() {
   scalpPaintToggle.classList.toggle("active", scalpState.state.scalpPaintEditing);
   headSetupMode.classList.toggle("active", headSetupEditing);
   scalpBuilderMode.classList.toggle("active", scalpState.state.scalpBuilderEditing);
-  drawCapsuleGuideMode.classList.toggle("active", viewportEditMode === "guide" && activeTool === "draw-capsule-guide");
+  drawCapsuleGuideMode.classList.toggle("active", viewportEditMode === "guide" && sel.state.activeTool === "draw-capsule-guide");
   capsuleGuideMode.classList.toggle("active", capsuleGuideEditing);
   scalpBuilderGroup.visible = scalpState.state.scalpBuilderEditing;
   if (scalpState.state.scalpBuilderCurveLattice) {
@@ -6084,7 +6076,7 @@ function updateScalpEditingVisibility() {
   scalpLatticeGroup.visible = scalpState.state.scalpShapeEditing && scalpState.state.scalpLatticeEditing;
   const surfaceOpacity = scalpState.state.scalpPaintEditing
       ? 0.46
-      : ["place", "draw", "procedural-draw", "braid", "panel"].includes(activeTool)
+      : ["place", "draw", "procedural-draw", "braid", "panel"].includes(sel.state.activeTool)
         ? 0.28
         : 0.12;
   const activeMesh = activeScalpSurfaceMesh();
@@ -6597,12 +6589,12 @@ function attachReferenceImageTransform() {
   if (
     reference?.type !== "plane"
     || !reference.mesh?.visible
-    || !["move", "scale"].includes(activeTool)
+    || !["move", "scale"].includes(sel.state.activeTool)
   ) return;
-  configureTransformControls(activeTool);
+  configureTransformControls(sel.state.activeTool);
   transformControls.showX = true;
   transformControls.showY = true;
-  transformControls.showZ = activeTool === "move";
+  transformControls.showZ = sel.state.activeTool === "move";
   transformControls.attach(reference.mesh);
 }
 
@@ -6717,10 +6709,10 @@ const REFERENCE_OUTLINER_GROUPS = Object.freeze([
 ]);
 
 function setOutlinerTab(tab) {
-  activeOutlinerTab = ["strands", "guides", "references"].includes(tab) ? tab : "strands";
-  const guidesActive = activeOutlinerTab === "guides";
-  const referencesActive = activeOutlinerTab === "references";
-  const strandsActive = activeOutlinerTab === "strands";
+  sel.state.activeOutlinerTab = ["strands", "guides", "references"].includes(tab) ? tab : "strands";
+  const guidesActive = sel.state.activeOutlinerTab === "guides";
+  const referencesActive = sel.state.activeOutlinerTab === "references";
+  const strandsActive = sel.state.activeOutlinerTab === "strands";
   strandOutlinerTab.classList.toggle("active", strandsActive);
   strandOutlinerTab.setAttribute("aria-selected", String(strandsActive));
   guideOutlinerTab.classList.toggle("active", guidesActive);
@@ -6735,14 +6727,14 @@ function setOutlinerTab(tab) {
 }
 
 function effectiveViewportSelectionMode() {
-  return viewportEditMode === "reference" ? "object" : viewportSelectionMode;
+  return viewportEditMode === "reference" ? "object" : sel.state.viewportSelectionMode;
 }
 
 function componentEditModeActive() {
   return effectiveViewportSelectionMode() === "component";
 }
 
-function selectionToolSupportsPicking(tool = activeTool) {
+function selectionToolSupportsPicking(tool = sel.state.activeTool) {
   return ["select", "move", "rotate", "scale"].includes(tool)
     || (tool === "relax" && viewportEditMode === "strand");
 }
@@ -6772,7 +6764,7 @@ function refreshSelectionModeVisuals() {
   clearMultiPointSelection();
   sel.state.selectedPoint = null;
   sel.state.selectedCurveLatticePoint = null;
-  selectedSurfaceObjectAnchorId = null;
+  sel.state.selectedSurfaceObjectAnchorId = null;
   locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
   guides.forEach((guide) => {
     const selected = guide.id === sel.state.selectedGuideId;
@@ -6796,11 +6788,11 @@ function refreshSelectionModeVisuals() {
 function setViewportSelectionMode(mode) {
   const nextMode = mode === "object" ? "object" : "component";
   if (viewportEditMode === "reference" && nextMode === "component") return;
-  if (viewportSelectionMode === nextMode) {
+  if (sel.state.viewportSelectionMode === nextMode) {
     syncViewportSelectionModeControl();
     return;
   }
-  viewportSelectionMode = nextMode;
+  sel.state.viewportSelectionMode = nextMode;
   syncViewportSelectionModeControl();
   refreshSelectionModeVisuals();
 }
@@ -6841,7 +6833,7 @@ function setViewportEditMode(mode, options = {}) {
     if (switchingMode) setMirrorXEditing(true);
     setAttributeEditorTab("main");
   }
-  if (activateSelect && activeTool !== "select") setActiveTool("select");
+  if (activateSelect && sel.state.activeTool !== "select") setActiveTool("select");
   updateGuideControlsVisibility();
   updateAttributeEditorMode();
   updatePlacementStatus();
@@ -7348,7 +7340,7 @@ function beginReferenceOverlayDrag(event, reference) {
   if (
     referenceOverlayDrag
     || viewportEditMode !== "reference"
-    || !["select", "move", "scale"].includes(activeTool)
+    || !["select", "move", "scale"].includes(sel.state.activeTool)
     || reference?.type !== "overlay"
     || !reference.element
     || event.button !== 0
@@ -7477,7 +7469,7 @@ function updateReferenceOverlayCursor(event) {
   if (
     referenceOverlayDrag
     || viewportEditMode !== "reference"
-    || !["select", "move", "scale"].includes(activeTool)
+    || !["select", "move", "scale"].includes(sel.state.activeTool)
   ) return;
   setReferenceOverlayScaleHandleHover(null);
   const reference = selectedReferenceImage();
@@ -7661,7 +7653,7 @@ function setHeadSetupEditing(enabled) {
   updatePlacementStatus();
 }
 
-function activeToolUsesScalpGuide(tool = activeTool) {
+function activeToolUsesScalpGuide(tool = sel.state.activeTool) {
   if (tool === "place") return true;
   if (tool === "draw-capsule-guide") return activeStrokeSurfaceValue() !== "contextual-plane";
   if (tool === "curve-surface") return activeStrokeSurfaceValue() !== "contextual-plane";
@@ -7670,7 +7662,7 @@ function activeToolUsesScalpGuide(tool = activeTool) {
   return scalpState.state.scalpShapeEditing || scalpState.state.scalpPaintEditing;
 }
 
-function toolAutoShowsScalpGuide(tool = activeTool) {
+function toolAutoShowsScalpGuide(tool = sel.state.activeTool) {
   if (tool === "place") return placeAutoShowScalpInput.checked;
   if (tool === "draw-capsule-guide") return drawAutoShowScalpInput.checked;
   if (["draw", "procedural-draw", "poly", "curve-surface"].includes(tool)) return drawAutoShowScalpInput.checked;
@@ -7691,7 +7683,7 @@ function setScalpGuideVisibility(visible) {
   updateGuideViewToggle();
   syncDisplayVisibilityInputs();
   updateScalpEditingVisibility();
-  if (activeOutlinerTab === "guides") renderGuideOutliner();
+  if (sel.state.activeOutlinerTab === "guides") renderGuideOutliner();
 }
 
 function currentGuideViewMode() {
@@ -7762,7 +7754,7 @@ function strandPassesDisplayFilters(lock) {
 
 function strandVisibleForDisplay(lock) {
   return strandPassesDisplayFilters(lock)
-    && (!isolatedStrandIds || isolatedStrandIds.has(lock.id));
+    && (!sel.state.isolatedStrandIds || sel.state.isolatedStrandIds.has(lock.id));
 }
 
 function strandAvailableForViewportInteraction(lock) {
@@ -7797,7 +7789,7 @@ function unhideHiddenStrands() {
 }
 
 function strandIsolationActive() {
-  return isolatedStrandIds instanceof Set && isolatedStrandIds.size > 0;
+  return sel.state.isolatedStrandIds instanceof Set && sel.state.isolatedStrandIds.size > 0;
 }
 
 function setStrandIsolation(lockIds = null) {
@@ -7805,7 +7797,7 @@ function setStrandIsolation(lockIds = null) {
   const nextIds = Array.isArray(lockIds)
     ? lockIds.filter((id) => validIds.has(id))
     : [];
-  isolatedStrandIds = nextIds.length ? new Set(nextIds) : null;
+  sel.state.isolatedStrandIds = nextIds.length ? new Set(nextIds) : null;
   applyStrandDisplayVisibility();
   renderLockList();
   updatePlacementStatus();
@@ -8840,7 +8832,7 @@ function setCurveLatticeLoopHover(result = null) {
 }
 
 function updateCurveLatticeLoopHover(event) {
-  const applicableTool = ["select", "move"].includes(activeTool);
+  const applicableTool = ["select", "move"].includes(sel.state.activeTool);
   const blocked = !applicableTool
     || viewportEditMode !== "guide"
     || !componentEditModeActive()
@@ -8876,10 +8868,10 @@ function selectCurveLatticeLoop(guide, axis, loopIndex) {
   guides.filter((item) => item.type === "curve-lattice").forEach(updateCurveLatticeHandleColors);
   transformControls.detach();
   if (
-    activeTool === "move"
-    && !(activeTool === "move" && viewPlaneMoveActiveForView())
+    sel.state.activeTool === "move"
+    && !(sel.state.activeTool === "move" && viewPlaneMoveActiveForView())
   ) {
-    configureTransformControls(activeTool);
+    configureTransformControls(sel.state.activeTool);
     transformControls.attach(guide.handlesGroup.children[indices[0]]);
   }
   updateSelectedPointLabel();
@@ -8887,7 +8879,7 @@ function selectCurveLatticeLoop(guide, axis, loopIndex) {
   return true;
 }
 
-function selectCurveLatticePoint(guide, pointIndex, attachTransform = activeTool === "move", preserveMulti = false) {
+function selectCurveLatticePoint(guide, pointIndex, attachTransform = sel.state.activeTool === "move", preserveMulti = false) {
   if (!guide?.handlesGroup?.children[pointIndex]) return;
   sel.state.selectedCurveLatticePoint = { guideId: guide.id, pointIndex };
   sel.state.selectedPoint = null;
@@ -8968,7 +8960,7 @@ function beginCurveLatticeMultiEdit(handle) {
 function applyCurveLatticeMultiTransform(handle) {
   const edit = activeLatticeMultiEdit;
   const guide = guides.find((item) => item.id === edit?.guideId);
-  if (!guide || activeTool !== "move" || transformControls.mode !== "translate") return;
+  if (!guide || sel.state.activeTool !== "move" || transformControls.mode !== "translate") return;
   const selectedSet = new Set(edit.selectedIndices);
   const delta = handle.position.clone().sub(edit.handlePosition);
 
@@ -9881,11 +9873,11 @@ function selectCapsuleGuidePoint(guide, pointIndex) {
   sel.state.selectedControlPoints = [];
   guide.selectedPointIndex = pointIndex;
   updateCapsuleGuideHandleColors(guide, pointIndex);
-  if (activeTool === "select") {
+  if (sel.state.activeTool === "select") {
     transformControls.detach();
     return;
   }
-  configureTransformControls(activeTool);
+  configureTransformControls(sel.state.activeTool);
   transformControls.attach(handle);
 }
 
@@ -9899,7 +9891,7 @@ function attachCapsuleGuideLoopTransform() {
   const guide = capsuleGuideLoopTransformGuide();
   const loopIndex = capsuleGuideLoopSelection?.loopIndex;
   const loop = guide?.controlLoops?.[loopIndex];
-  if (!guide || !loop?.length || !["move", "rotate", "scale"].includes(activeTool)) {
+  if (!guide || !loop?.length || !["move", "rotate", "scale"].includes(sel.state.activeTool)) {
     if (transformControls.object?.userData.capsuleGuideLoopHandle) transformControls.detach();
     return;
   }
@@ -9909,8 +9901,8 @@ function attachCapsuleGuideLoopTransform() {
   capsuleGuideLoopHandle.scale.set(1, 1, 1);
   capsuleGuideLoopHandle.userData.capsuleGuideId = guide.id;
   capsuleGuideLoopHandle.userData.capsuleGuideLoopIndex = loopIndex;
-  configureTransformControls(activeTool);
-  if (activeTool === "scale") {
+  configureTransformControls(sel.state.activeTool);
+  if (sel.state.activeTool === "scale") {
     // Plane scaling must stay in the loop's fixed local basis. Showing a
     // world-space gizmo while TransformControls applies local object scale can
     // make the active plane appear to jump or change axes during the drag.
@@ -9937,12 +9929,12 @@ function selectCapsuleGuideLoop(guide, loopIndex) {
 function beginCapsuleGuideLoopTransform() {
   const guide = capsuleGuideLoopTransformGuide();
   const loopIndex = capsuleGuideLoopSelection?.loopIndex;
-  if (!guide?.controlLoops?.[loopIndex]?.length || !["move", "rotate", "scale"].includes(activeTool)) return;
+  if (!guide?.controlLoops?.[loopIndex]?.length || !["move", "rotate", "scale"].includes(sel.state.activeTool)) return;
   guide.mesh.updateMatrixWorld(true);
   guideState.state.activeCapsuleGuideLoopTransform = {
     guideId: guide.id,
     loopIndex,
-    mode: activeTool,
+    mode: sel.state.activeTool,
     startPoints: guide.controlPoints.map((point) => point.clone()),
     loopCenters: guide.controlLoops.map((indices) => capsuleGuideLoopCenter(guide.controlPoints, indices)),
     worldMatrix: guide.mesh.matrixWorld.clone(),
@@ -10082,7 +10074,7 @@ function updateCapsuleGuideLoopHover(event) {
 }
 
 function beginCapsuleGuideLoopDrag(event) {
-  if (!capsuleGuideEditing || !["select", "move", "rotate", "scale"].includes(activeTool)) return false;
+  if (!capsuleGuideEditing || !["select", "move", "rotate", "scale"].includes(sel.state.activeTool)) return false;
   const result = capsuleGuideLoopHitFromEvent(event);
   if (!result) return false;
   const { guide, loopIndex } = result;
@@ -10551,14 +10543,14 @@ function selectGuide(id) {
   sel.state.selectedGuideId = id;
   sel.state.selectedReferenceImageId = null;
   sel.state.selectedPoint = null;
-  selectedSurfaceObjectAnchorId = null;
+  sel.state.selectedSurfaceObjectAnchorId = null;
   sel.state.selectedCurveLatticePoint = null;
   setOutlinerTab("guides");
   updateSelectedPointLabel();
   const guide = getSelectedGuide();
   if (guide?.type === "curve-lattice") sel.state.activeCurveLatticeGuideId = guide.id;
   const editingCurveLattice = guide?.type === "curve-lattice";
-  if (componentEditModeActive() && editingCurveLattice && ["rotate", "scale"].includes(activeTool)) setActiveTool("move");
+  if (componentEditModeActive() && editingCurveLattice && ["rotate", "scale"].includes(sel.state.activeTool)) setActiveTool("move");
   curveLatticeToggle.classList.toggle("active", editingCurveLattice);
   curveLatticeToggle.setAttribute("aria-pressed", String(editingCurveLattice));
   filterCurveLatticesToGroup(editingCurveLattice ? guide.id : null);
@@ -10634,7 +10626,7 @@ function updateViewportToolVisibility() {
   const selectedGuide = getSelectedGuide();
   const latticeSelected = selectedGuide?.type === "curve-lattice";
   const surfaceSelected = viewportEditMode === "strand" && getSelectedLock()?.geometryType === "surface";
-  const surfaceAnchorSelected = surfaceSelected && selectedSurfaceObjectAnchorId === getSelectedLock()?.id;
+  const surfaceAnchorSelected = surfaceSelected && sel.state.selectedSurfaceObjectAnchorId === getSelectedLock()?.id;
   modeToolButtons.forEach((button) => {
     const tool = button.dataset.tool;
     const guideToolAllowed = ["select", "move", "rotate", "scale", "draw-capsule-guide"].includes(tool)
@@ -10653,8 +10645,8 @@ function updateViewportToolVisibility() {
   viewportCapsuleGuideTool.classList.toggle("active", guideMode && capsuleGuideEditing);
   viewportCapsuleGuideTool.setAttribute("aria-pressed", String(guideMode && capsuleGuideEditing));
   viewportDrawCapsuleGuideTool.classList.toggle("hidden", !guideMode);
-  viewportDrawCapsuleGuideTool.classList.toggle("active", guideMode && activeTool === "draw-capsule-guide");
-  viewportDrawCapsuleGuideTool.setAttribute("aria-pressed", String(guideMode && activeTool === "draw-capsule-guide"));
+  viewportDrawCapsuleGuideTool.classList.toggle("active", guideMode && sel.state.activeTool === "draw-capsule-guide");
+  viewportDrawCapsuleGuideTool.setAttribute("aria-pressed", String(guideMode && sel.state.activeTool === "draw-capsule-guide"));
   viewportCurveLatticeGuideTool.classList.toggle("hidden", !guideMode || !CURVE_LATTICE_FEATURE_ENABLED);
   viewportCurveLatticeGuideTool.classList.toggle("active", guideMode && latticeSelected);
   viewportCurveLatticeGuideTool.setAttribute("aria-pressed", String(guideMode && latticeSelected));
@@ -10728,7 +10720,6 @@ function fullSceneFocusBounds() {
   return bounds.isEmpty() ? null : bounds;
 }
 
-let viewportFrameSelectionKey = "";
 
 function currentViewportFrameSelectionKey() {
   return [
@@ -10742,12 +10733,12 @@ function currentViewportFrameSelectionKey() {
 function cycleViewportFraming() {
   if (guideState.state.guideModel?.userData?.fullBodyReference) {
     viewportState.state.viewportFrameCycleStep = 0;
-    viewportFrameSelectionKey = currentViewportFrameSelectionKey();
+    sel.state.viewportFrameSelectionKey = currentViewportFrameSelectionKey();
     return frameViewportBounds(fullBodyScalpFocusBounds());
   }
   const selectionKey = currentViewportFrameSelectionKey();
-  if (selectionKey !== viewportFrameSelectionKey) {
-    viewportFrameSelectionKey = selectionKey;
+  if (selectionKey !== sel.state.viewportFrameSelectionKey) {
+    sel.state.viewportFrameSelectionKey = selectionKey;
     viewportState.state.viewportFrameCycleStep = 0;
   }
   const framed = viewportState.state.viewportFrameCycleStep === 0
@@ -10821,7 +10812,7 @@ function updateGuideGeometry(guide) {
   selectGuide(guide.id);
 }
 
-function sculptBrushToolActive(tool = activeTool) {
+function sculptBrushToolActive(tool = sel.state.activeTool) {
   return ["sculpt-move", "sculpt-smooth", "sculpt-inflate", "sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient"].includes(tool);
 }
 
@@ -10836,7 +10827,7 @@ function sculptBrushSelectionAllows(lock) {
 function effectiveSculptBrushTool() {
   return sculptBrushToolActive() && sculptBrushShiftSmoothHeld
     ? "sculpt-smooth"
-    : activeTool;
+    : sel.state.activeTool;
 }
 
 function updateSculptScaleModeRow() {
@@ -10850,18 +10841,18 @@ function syncSculptBrushToolButtons() {
   modeToolButtons.filter((button) => sculptBrushToolActive(button.dataset.tool)).forEach((button) => {
     const effective = button.dataset.tool === effectiveTool;
     const temporarySource = sculptBrushShiftSmoothHeld
-      && button.dataset.tool === activeTool
-      && activeTool !== "sculpt-smooth";
+      && button.dataset.tool === sel.state.activeTool
+      && sel.state.activeTool !== "sculpt-smooth";
     button.classList.toggle("active", effective);
     button.classList.toggle("temporary-source", temporarySource);
     button.setAttribute("aria-pressed", String(effective));
   });
   sculptBrushCursor.classList.toggle("smooth", effectiveTool === "sculpt-smooth");
   sculptBrushCursor.classList.toggle("inflate", effectiveTool === "sculpt-inflate");
-  const preserveTipsAvailable = sculptBrushPreserveTipsByTool[activeTool] !== undefined;
+  const preserveTipsAvailable = sculptBrushPreserveTipsByTool[sel.state.activeTool] !== undefined;
   sculptPreserveTipsSetting.classList.toggle("hidden", !preserveTipsAvailable);
   if (preserveTipsAvailable) {
-    sculptPreserveTipsInput.checked = sculptBrushPreserveTipsByTool[activeTool];
+    sculptPreserveTipsInput.checked = sculptBrushPreserveTipsByTool[sel.state.activeTool];
   }
   updateSculptScaleModeRow();
 }
@@ -10878,7 +10869,7 @@ function setSculptBrushShiftSmoothHeld(held) {
 function setActiveTool(tool) {
   clearCurvePointTopologyCursor();
   undo.state.historyShortcutHeld = false;
-  const previousTool = activeTool;
+  const previousTool = sel.state.activeTool;
   if (sculptBrushToolActive(previousTool) && tool !== previousTool) {
     finishSculptMoveStroke(null, { cancel: true });
     setSculptBrushCursorVisible(false);
@@ -10886,13 +10877,13 @@ function setActiveTool(tool) {
   if (referenceCropDrag) finishReferenceCrop(null, { cancel: true });
   if (RETIRED_CURVE_LATTICE_SURFACE_TOOLS.has(tool)) tool = "select";
   if (tool === "procedural-draw" && !draw.state.proceduralDrawExperimentalEnabled) tool = "draw";
-  const leavingLoftSurface = activeTool === "surface-loft" && tool !== "surface-loft";
-  const enteringLoftSurface = activeTool !== "surface-loft" && tool === "surface-loft";
-  const leavingCurveSurface = activeTool === "curve-surface" && tool !== "curve-surface";
-  const enteringCurveSurface = activeTool !== "curve-surface" && tool === "curve-surface";
+  const leavingLoftSurface = sel.state.activeTool === "surface-loft" && tool !== "surface-loft";
+  const enteringLoftSurface = sel.state.activeTool !== "surface-loft" && tool === "surface-loft";
+  const leavingCurveSurface = sel.state.activeTool === "curve-surface" && tool !== "curve-surface";
+  const enteringCurveSurface = sel.state.activeTool !== "curve-surface" && tool === "curve-surface";
   if (leavingLoftSurface) cancelLoftSurfaceDraft();
   if (leavingCurveSurface) cancelCurveSurfaceDraft();
-  if (activeTool === "draw-capsule-guide" && tool !== "draw-capsule-guide") {
+  if (sel.state.activeTool === "draw-capsule-guide" && tool !== "draw-capsule-guide") {
     finishCapsuleGuideDrawStroke(null, { cancel: true });
   }
   if (tool === "surface-guide") {
@@ -10912,7 +10903,7 @@ function setActiveTool(tool) {
       && ["scale", "relax"].includes(tool);
     const unsupportedSurfaceTool = selectedGeometryType === "surface"
       && ["rotate", "scale", "relax"].includes(tool)
-      && (tool === "relax" || selectedSurfaceObjectAnchorId !== getSelectedLock()?.id);
+      && (tool === "relax" || sel.state.selectedSurfaceObjectAnchorId !== getSelectedLock()?.id);
     if (unsupportedCurveSurfaceTool || unsupportedSurfaceTool) tool = "move";
   }
   if (
@@ -10937,19 +10928,19 @@ function setActiveTool(tool) {
   }
   if (["place", "draw", "procedural-draw", "poly", "braid", "panel", "curve-surface"].includes(tool) && scalpState.state.scalpShapeEditing) setScalpShapeEditing(false);
   if (tool !== "move") endViewPlaneMove();
-  activeTool = tool;
+  sel.state.activeTool = tool;
   if (sculptBrushToolActive()) syncSculptBrushStrengthForActiveTool();
   updateStrandSelectionHighlight();
   updateReferenceSelectionVisuals();
   updateReferenceCropHandles();
   if (
-    ["draw", "procedural-draw", "braid", "panel", "curve-surface"].includes(activeTool)
-    || activeTool === "draw-capsule-guide"
+    ["draw", "procedural-draw", "braid", "panel", "curve-surface"].includes(sel.state.activeTool)
+    || sel.state.activeTool === "draw-capsule-guide"
     || sculptBrushToolActive()
   ) setHoveredControlPoint(null);
   const proportionalVisualStateChanged = proportionalEditing
     && ["move", "rotate", "scale", "relax"].includes(previousTool)
-      !== ["move", "rotate", "scale", "relax"].includes(activeTool);
+      !== ["move", "rotate", "scale", "relax"].includes(sel.state.activeTool);
   if (proportionalVisualStateChanged) {
     const proportionalLock = locks.find((lock) => lock.id === sel.state.selectedPoint?.lockId);
     if (proportionalLock) updateLockGeometry(proportionalLock, { immediate: true });
@@ -10987,7 +10978,7 @@ function setActiveTool(tool) {
   if (!componentEditModeActive() && viewportEditMode === "guide") {
     attachGuideObjectTransform();
   }
-  const selectedSurfaceAnchorLock = locks.find((lock) => lock.id === selectedSurfaceObjectAnchorId);
+  const selectedSurfaceAnchorLock = locks.find((lock) => lock.id === sel.state.selectedSurfaceObjectAnchorId);
   if (componentEditModeActive() && ["move", "rotate", "scale"].includes(tool) && selectedSurfaceAnchorLock) {
     attachSurfaceObjectAnchorTransform(selectedSurfaceAnchorLock);
   }
@@ -11033,7 +11024,7 @@ function setObjectSpaceEditing(enabled) {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
-  configureTransformControls(activeTool);
+  configureTransformControls(sel.state.activeTool);
   if (!componentEditModeActive() && viewportEditMode === "strand") attachStrandObjectTransform();
   if (!componentEditModeActive() && viewportEditMode === "guide") attachGuideObjectTransform();
   updatePlacementStatus();
@@ -11121,9 +11112,9 @@ function refreshProportionalPreview() {
 function activeBrushSizeInput() {
   if (scalpState.state.scalpPaintEditing) return scalpBrushSizeInput;
   if (sculptBrushToolActive()) return sculptBrushRadiusInput;
-  if (["draw", "procedural-draw"].includes(activeTool)) return drawToolSizeInput;
-  if (activeTool === "braid") return braidToolSizeInput;
-  if (activeTool === "panel") return panelToolSizeInput;
+  if (["draw", "procedural-draw"].includes(sel.state.activeTool)) return drawToolSizeInput;
+  if (sel.state.activeTool === "braid") return braidToolSizeInput;
+  if (sel.state.activeTool === "panel") return panelToolSizeInput;
   return null;
 }
 
@@ -11234,7 +11225,7 @@ function updateInteractionLocks() {
 function branchMoveGizmoDisabled() {
   // Branch children can move their root bone in the parent's width plane; the
   // position is constrained back onto the parent surface in enforceBranchRootPosition.
-  if (activeTool !== "move" || viewportEditMode !== "strand") return false;
+  if (sel.state.activeTool !== "move" || viewportEditMode !== "strand") return false;
   const lock = getSelectedLock();
   if (!lock?.branchParentId) return false;
   return !componentEditModeActive();
@@ -11280,7 +11271,7 @@ function configureTransformControls(tool) {
 }
 
 function pullMoveActive() {
-  return activeTool === "move" && pullMoveEnabled && getSelectedLock()?.geometryType !== "surface";
+  return sel.state.activeTool === "move" && pullMoveEnabled && getSelectedLock()?.geometryType !== "surface";
 }
 
 function updatePullGuideVisual() {
@@ -11363,7 +11354,7 @@ function attachStrandObjectTransform() {
     componentEditModeActive()
     || !lock
     || lock.locked
-    || !["move", "rotate", "scale"].includes(activeTool)
+    || !["move", "rotate", "scale"].includes(sel.state.activeTool)
     || transformDragging
   ) return false;
   const root = strandObjectRoot(lock);
@@ -11374,7 +11365,7 @@ function attachStrandObjectTransform() {
   );
   strandObjectTransformHandle.scale.set(1, 1, 1);
   strandObjectTransformHandle.userData.lockId = lock.id;
-  configureTransformControls(activeTool);
+  configureTransformControls(sel.state.activeTool);
   transformControls.attach(strandObjectTransformHandle);
   updateInteractionLocks();
   return true;
@@ -11401,7 +11392,7 @@ function attachGuideObjectTransform() {
   if (
     componentEditModeActive()
     || !guide
-    || !["move", "rotate", "scale"].includes(activeTool)
+    || !["move", "rotate", "scale"].includes(sel.state.activeTool)
     || transformDragging
   ) return false;
   const pivot = guideObjectPivot(guide);
@@ -11410,7 +11401,7 @@ function attachGuideObjectTransform() {
   guideObjectTransformHandle.quaternion.copy(guideObjectTransformQuaternion(guide));
   guideObjectTransformHandle.scale.set(1, 1, 1);
   guideObjectTransformHandle.userData.guideId = guide.id;
-  configureTransformControls(activeTool);
+  configureTransformControls(sel.state.activeTool);
   transformControls.attach(guideObjectTransformHandle);
   return true;
 }
@@ -11830,9 +11821,9 @@ function surfaceObjectAnchorPose(lock) {
 
 function attachSurfaceObjectAnchorTransform(lock) {
   const anchor = lock?.geometryType === "surface" ? lock.curveObjects?.surfaceObjectAnchor : null;
-  if (!anchor || selectedSurfaceObjectAnchorId !== lock.id || !["move", "rotate", "scale"].includes(activeTool)) return false;
-  configureTransformControls(activeTool);
-  if (activeTool === "scale") {
+  if (!anchor || sel.state.selectedSurfaceObjectAnchorId !== lock.id || !["move", "rotate", "scale"].includes(sel.state.activeTool)) return false;
+  configureTransformControls(sel.state.activeTool);
+  if (sel.state.activeTool === "scale") {
     transformControls.showX = true;
     transformControls.showY = true;
     transformControls.showZ = true;
@@ -11841,9 +11832,9 @@ function attachSurfaceObjectAnchorTransform(lock) {
   return true;
 }
 
-function selectSurfaceObjectAnchor(lock, attachTransform = ["move", "rotate", "scale"].includes(activeTool)) {
+function selectSurfaceObjectAnchor(lock, attachTransform = ["move", "rotate", "scale"].includes(sel.state.activeTool)) {
   if (lock?.geometryType !== "surface" || !lock.curveObjects?.surfaceObjectAnchor) return false;
-  selectedSurfaceObjectAnchorId = lock.id;
+  sel.state.selectedSurfaceObjectAnchorId = lock.id;
   sel.state.selectedPoint = null;
   sel.state.selectedCurveLatticePoint = null;
   clearMultiPointSelection();
@@ -11953,7 +11944,7 @@ function beginHandleEdit(handle = transformControls.object) {
   activeHandleEdit = {
     lockId: lock.id,
     pointIndex: handle.userData.pointIndex,
-    tool: activeTool,
+    tool: sel.state.activeTool,
     points: lock.points.map((point) => point.clone()),
     groupLatticeBasePoints: lock.groupLatticeBasePoints?.map((point) => point.clone()) || null,
     pointSurfaceNormals: lock.pointSurfaceNormals?.map((normal) => normal?.clone?.() || null) || null,
@@ -12135,7 +12126,7 @@ function curveSurfaceMirroredPointIndex(lock, pointIndex) {
   return (columns - 1 - column) * rows + row;
 }
 
-function syncUnifiedCurveSurfaceMirror(lock, sourcePointIndex, tool = activeTool) {
+function syncUnifiedCurveSurfaceMirror(lock, sourcePointIndex, tool = sel.state.activeTool) {
   const edit = activeHandleEdit;
   if (
     !mirrorXEditing
@@ -12279,11 +12270,11 @@ function updateViewPlaneGrid() {
   const selectedMoveHandle = latticePoint
     ? latticeGuide?.handlesGroup?.children[sel.state.selectedCurveLatticePoint.pointIndex]
     : lock?.curveObjects?.handles[sel.state.selectedPoint?.pointIndex];
-  const directMoveActive = viewPlaneMoveActiveForView() && activeTool === "move";
-  const strokeToolActive = ["draw", "procedural-draw", "braid", "panel", "surface-loft", "curve-surface"].includes(activeTool);
-  const activeFreePlane = activeTool === "surface-loft"
+  const directMoveActive = viewPlaneMoveActiveForView() && sel.state.activeTool === "move";
+  const strokeToolActive = ["draw", "procedural-draw", "braid", "panel", "surface-loft", "curve-surface"].includes(sel.state.activeTool);
+  const activeFreePlane = sel.state.activeTool === "surface-loft"
     ? loftSurfaceDraft?.activeStroke?.freePlane
-    : activeTool === "curve-surface"
+    : sel.state.activeTool === "curve-surface"
       ? curveSurfaceDraft?.activeStroke?.freePlane
       : drawStrandStroke?.freePlane;
   const freeDrawActive = strokeToolActive && Boolean(activeFreePlane);
@@ -12296,7 +12287,7 @@ function updateViewPlaneGrid() {
   viewPlaneGrid.visible = visible;
   if (!visible) {
     if (
-      activeTool === "move" &&
+      sel.state.activeTool === "move" &&
       selectedMovePoint &&
       (strandPointActive || latticePointActive) &&
       !viewPlaneMoveDrag &&
@@ -12409,7 +12400,7 @@ function setViewPlaneNormalMoveHeld(held) {
 }
 
 function beginViewPlaneMove(lock, handle, event) {
-  if (!viewPlaneMoveActiveForView() || activeTool !== "move" || event.button !== 0) return false;
+  if (!viewPlaneMoveActiveForView() || sel.state.activeTool !== "move" || event.button !== 0) return false;
   if (lock?.locked) return false;
   if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return false;
   const latticeGuideId = handle.userData.curveLatticeGuideId;
@@ -12678,7 +12669,7 @@ function proportionalWeight(index, originIndex) {
 
 function proportionalStrandVisualsActive(lock) {
   return proportionalEditing
-    && ["move", "rotate", "scale", "relax"].includes(activeTool)
+    && ["move", "rotate", "scale", "relax"].includes(sel.state.activeTool)
     && sel.state.selectedPoint?.lockId === lock.id;
 }
 
@@ -14389,7 +14380,7 @@ function curveSurfaceControllerHitFromEvent(event, lock = getSelectedLock()) {
   if (
     viewportEditMode !== "strand"
     || lock?.locked
-    || !["select", "move", "rotate"].includes(activeTool)
+    || !["select", "move", "rotate"].includes(sel.state.activeTool)
     || lock?.geometryType !== "curve-surface"
     || !lock.curveObjects?.group.visible
     || event.button !== 0
@@ -15737,8 +15728,8 @@ function strandDisplayColor(lock) {
   const color = new THREE.Color(hairState.state.showGroupColors ? region.color : materialColor);
   const adjustedFactor = hairState.state.showGroupColors
     ? layer.colorFactor
-    : layerColorShiftsEnabled ? Number(MATERIAL_LAYER_COLOR_FACTORS[layer.id] ?? 1) : 1;
-  if (hairState.state.showGroupColors || layerColorShiftsEnabled) {
+    : sel.state.layerColorShiftsEnabled ? Number(MATERIAL_LAYER_COLOR_FACTORS[layer.id] ?? 1) : 1;
+  if (hairState.state.showGroupColors || sel.state.layerColorShiftsEnabled) {
     color.offsetHSL(Number(LAYER_HUE_SHIFTS[layer.id] ?? 0), 0, 0);
   }
   color.multiplyScalar(adjustedFactor);
@@ -16099,12 +16090,12 @@ function groupDefaultsFor(region) {
 }
 
 function creationToolActive() {
-  return ["place", "draw", "braid", "panel"].includes(activeTool);
+  return ["place", "draw", "braid", "panel"].includes(sel.state.activeTool);
 }
 
 function activeCreationShapeDefaults() {
-  if (activeTool === "braid") return braidCreationDefaults;
-  if (activeTool === "panel") return panelCreationDefaults;
+  if (sel.state.activeTool === "braid") return braidCreationDefaults;
+  if (sel.state.activeTool === "panel") return panelCreationDefaults;
   return strandCreationDefaults;
 }
 
@@ -17100,7 +17091,7 @@ function setTaperMeshPointsVisible(visible) {
     && taperCurveEdit?.type === "strand"
     && ["taperCurve", "depthCurve", "twistCurve"].includes(taperCurveEdit?.curveKey)
   );
-  if (hairState.state.taperMeshPointsVisible && ["draw", "procedural-draw", "braid", "panel"].includes(activeTool)) {
+  if (hairState.state.taperMeshPointsVisible && ["draw", "procedural-draw", "braid", "panel"].includes(sel.state.activeTool)) {
     setActiveTool("select");
   }
   taperMeshPointsToggle.checked = hairState.state.taperMeshPointsVisible;
@@ -17644,7 +17635,7 @@ function addLock(presetName, overrides = {}, options = {}) {
     liveSurfaceGuide: Boolean(base.liveSurfaceGuide),
     name: nextStrandName(scalpRegion)
   };
-  lockIndex += 1;
+  sel.state.lockIndex += 1;
   const topologyDefaults = groupDefaultsFor(lock.scalpRegion);
   lock.radialSegments = Math.round(base.radialSegments ?? topologyDefaults.radialSegments);
   lock.lengthSegments = Math.round(base.lengthSegments ?? topologyDefaults.lengthSegments);
@@ -18164,7 +18155,7 @@ function setMirrorXEditing(enabled) {
     ? "X axis mirror is active. New strands create linked mirror instances"
     : "Enable X axis mirror. New strands will create linked mirror instances";
   if (drawStrandStroke) updateDrawStrandPreview();
-  if (activeTool === "curve-surface") updateCurveSurfacePreview();
+  if (sel.state.activeTool === "curve-surface") updateCurveSurfacePreview();
   guides.filter((guide) => guide.type === "curve-lattice").forEach(updateCurveLatticeHandleColors);
   guides.filter((guide) => guide.type === "capsule").forEach((guide) => {
     updateCapsuleGuideHandleColors(guide, guide.selectedPointIndex ?? -1);
@@ -18189,7 +18180,7 @@ function snapshotState() {
     curveLatticeGuidesVisible: guideState.state.curveLatticeGuidesVisible,
     headMeshVisible: hairState.state.headMeshVisible,
     bodyMeshVisible: hairState.state.bodyMeshVisible,
-    lockIndex,
+    lockIndex: sel.state.lockIndex,
     referenceImageIndex: ref.state.referenceImageIndex,
     hairMaterialIndex: hairState.state.hairMaterialIndex,
     hairMaterials: hairMaterialDefinitions.map((material) => ({ ...material })),
@@ -18919,8 +18910,8 @@ function downloadPreferencesAndPresets() {
       compactToolButtons: compactToolButtonsEnabled,
       viewportStatistics: viewportState.state.viewportStatisticsEnabled,
       twistCurveAllStrandsPreview: hairState.state.twistCurveAllStrandsPreviewEnabled,
-      layerColorShifts: layerColorShiftsEnabled,
-      outlinerFolderColors: outlinerFolderColorsEnabled,
+      layerColorShifts: sel.state.layerColorShiftsEnabled,
+      outlinerFolderColors: sel.state.outlinerFolderColorsEnabled,
       sideNamingPerspective,
       controlPointDisplaySize: guideState.state.controlPointDisplaySize,
       viewportBackgroundColor: viewportState.state.viewportBackgroundColor,
@@ -18957,8 +18948,8 @@ async function loadPreferencesAndPresets(file) {
     preferences.twistCurveAllStrandsPreview,
     hairState.state.twistCurveAllStrandsPreviewEnabled
   ));
-  setLayerColorShiftsEnabled(importedBooleanPreference(preferences.layerColorShifts, layerColorShiftsEnabled));
-  setOutlinerFolderColorsEnabled(importedBooleanPreference(preferences.outlinerFolderColors, outlinerFolderColorsEnabled));
+  setLayerColorShiftsEnabled(importedBooleanPreference(preferences.layerColorShifts, sel.state.layerColorShiftsEnabled));
+  setOutlinerFolderColorsEnabled(importedBooleanPreference(preferences.outlinerFolderColors, sel.state.outlinerFolderColorsEnabled));
   if (preferences.sideNamingPerspective != null) {
     setSideNamingPerspective(preferences.sideNamingPerspective);
   }
@@ -19001,8 +18992,8 @@ async function loadPreferencesAndPresets(file) {
     compactToolButtonsEnabled,
     viewportStatisticsEnabled: viewportState.state.viewportStatisticsEnabled,
     twistCurveAllStrandsPreviewEnabled: hairState.state.twistCurveAllStrandsPreviewEnabled,
-    layerColorShiftsEnabled,
-    outlinerFolderColorsEnabled,
+    layerColorShiftsEnabled: sel.state.layerColorShiftsEnabled,
+    outlinerFolderColorsEnabled: sel.state.outlinerFolderColorsEnabled,
     sideNamingPerspective,
     controlPointDisplaySize: guideState.state.controlPointDisplaySize,
     viewportBackgroundColor: viewportState.state.viewportBackgroundColor,
@@ -19248,7 +19239,7 @@ function updateHistoryButtons() {
 }
 
 function resetTransientInteractionsForStateRestore() {
-  isolatedStrandIds = null;
+  sel.state.isolatedStrandIds = null;
   proceduralDuplicatePreview = null;
   proceduralDuplicateWindowSourceIds = [];
   if (proceduralDuplicateDialog.open) proceduralDuplicateDialog.close();
@@ -19272,7 +19263,7 @@ function resetEditableSceneForStateRestore() {
 }
 
 function restoreSharedStateForStateRestore(state, restorePlan, { preserveMirrorMode = false } = {}) {
-  lockIndex = restorePlan.counters.lockIndex;
+  sel.state.lockIndex = restorePlan.counters.lockIndex;
   ref.state.referenceImageIndex = restorePlan.counters.referenceImageIndex;
   visibleStrandRegions.clear();
   restorePlan.visibility.strandRegions.forEach((region) => visibleStrandRegions.add(region));
@@ -20161,7 +20152,7 @@ function rebuildCurveObjects(lock) {
   lock.curveObjects = createCurveObjects(lock);
   curveGroup.add(lock.curveObjects.group);
   updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
-  if (selectedSurfaceObjectAnchorId === lock.id) attachSurfaceObjectAnchorTransform(lock);
+  if (sel.state.selectedSurfaceObjectAnchorId === lock.id) attachSurfaceObjectAnchorTransform(lock);
 }
 
 function createCurvePoints(lock) {
@@ -21252,15 +21243,15 @@ function selectedCurveLatticeGuide() {
 }
 
 function braidStrokeActive() {
-  return activeTool === "braid";
+  return sel.state.activeTool === "braid";
 }
 
 function proceduralDrawActive() {
-  return activeTool === "procedural-draw";
+  return sel.state.activeTool === "procedural-draw";
 }
 
 function panelStrokeActive() {
-  return activeTool === "panel";
+  return sel.state.activeTool === "panel";
 }
 
 function activeStrokeSurfaceInput() {
@@ -21466,7 +21457,7 @@ function addPolyLock() {
     width: Number(polyBrushWidthInput.value),
     depth: 0.01
   }, { deferUi: true });
-  lock.name = `Poly Mesh ${lockIndex}`;
+  lock.name = `Poly Mesh ${sel.state.lockIndex}`;
   selectLock(lock.id);
   renderLockList();
   updateCount();
@@ -21613,7 +21604,7 @@ function showPolyFillPreview(lock, candidate) {
 
 function updatePolyFillPreview(event) {
   if (
-    activeTool !== "poly"
+    sel.state.activeTool !== "poly"
     || !event.shiftKey
     || event.altKey
     || event.ctrlKey
@@ -21637,7 +21628,7 @@ function updatePolyFillPreview(event) {
 }
 
 function refreshPolyFillPreviewFromLastPointer() {
-  if (!draw.state.polyShiftPreviewHeld || activeTool !== "poly") return;
+  if (!draw.state.polyShiftPreviewHeld || sel.state.activeTool !== "poly") return;
   updatePolyFillPreview({
     clientX: lastPointer.x,
     clientY: lastPointer.y,
@@ -21783,7 +21774,7 @@ function appendPolyStrokeRow(stroke, sample, side) {
 }
 
 function beginPolyBrushPointer(event) {
-  if (activeTool !== "poly" || event.button !== 0 || proportionalSizeEdit || proportionalHotkeyPress) return;
+  if (sel.state.activeTool !== "poly" || event.button !== 0 || proportionalSizeEdit || proportionalHotkeyPress) return;
   if (event.altKey) {
     clearPolyFillPreview();
     const target = polyTargetAtEvent(event);
@@ -21873,7 +21864,7 @@ function finishPolyAltDelete(event) {
   if (!candidate || event.pointerId !== candidate.pointerId) return;
   draw.state.polyAltDeleteCandidate = null;
   if (
-    activeTool === "poly"
+    sel.state.activeTool === "poly"
     && event.altKey
     && Math.hypot(event.clientX - candidate.startX, event.clientY - candidate.startY) < 4
   ) {
@@ -22047,7 +22038,7 @@ function drawSampleFromHit(hit, root = false, scalpRegion = "unassigned", scalpO
 }
 
 function updateDrawStrandBrushCursor(event) {
-  if (!["draw", "procedural-draw", "braid", "panel"].includes(activeTool) || drawStrandStroke?.freePlane) {
+  if (!["draw", "procedural-draw", "braid", "panel"].includes(sel.state.activeTool) || drawStrandStroke?.freePlane) {
     drawStrandBrushCursor.visible = false;
     return;
   }
@@ -24311,7 +24302,7 @@ function selectedTipContinuationLock(event) {
 }
 
 function selectedDrawBranchPoint(event) {
-  if (activeTool !== "draw") return null;
+  if (sel.state.activeTool !== "draw") return null;
   const lock = getSelectedLock();
   if (!canBranchDrawFromLock(lock) || lock.locked || lock.points.length < 2) return null;
   const hit = strandControlPointHitFromEvent(event, lock);
@@ -24933,7 +24924,7 @@ function createSurfaceLockFromLattice(points, options = {}) {
     rootSurfaceNormal,
     points
   }, { deferUi: true });
-  lock.name = `${options.namePrefix || "Surface"} ${lockIndex}`;
+  lock.name = `${options.namePrefix || "Surface"} ${sel.state.lockIndex}`;
   updateLockGeometry(lock);
   return lock;
 }
@@ -25621,7 +25612,7 @@ function confirmCurveSurfaceDraft() {
       points: curve.map((point) => ({ ...point }))
     }))
   };
-  lock.name = `Curve Surface ${lockIndex}`;
+  lock.name = `Curve Surface ${sel.state.lockIndex}`;
   updateLockGeometry(lock);
   curveSurfaceDraft = null;
   hideCurveSurfacePreview();
@@ -26169,7 +26160,7 @@ function updatePlacementStatus() {
       : sculptTool === "sculpt-inflate"
         ? "Inflate Brush: drag across visible strands to make them wider and thicker. Hold Shift for Smooth; Alt-drag orbits."
         : "Move Brush: drag across visible strands to move nearby control points in the view plane. Hold Shift for Smooth; Alt-drag orbits.";
-  } else if (activeTool === "place") {
+  } else if (sel.state.activeTool === "place") {
     if (placeEdit?.step === "direction") {
       message = "Step 1 of 2: move the mouse to choose hair flow, click to confirm. Hold and drag to orbit.";
     } else if (placeEdit?.step === "length") {
@@ -26179,8 +26170,8 @@ function updatePlacementStatus() {
         ? "Place strand: click the selected curve lattice to set the root. Hold and drag to orbit."
         : "Place strand: click the scalp guide to set the root. Hold and drag to orbit.";
     }
-  } else if (["draw", "procedural-draw"].includes(activeTool)) {
-    const drawLabel = activeTool === "procedural-draw"
+  } else if (["draw", "procedural-draw"].includes(sel.state.activeTool)) {
+    const drawLabel = sel.state.activeTool === "procedural-draw"
       ? "Draw procedural strand"
       : hairState.state.drawStrandMode === "clump"
       ? "Draw 3 strand clump"
@@ -26197,7 +26188,7 @@ function updatePlacementStatus() {
         ? `${drawLabel}: drag across the live surface. Beyond its boundary, the stroke continues on the contextual 2D plane.`
         : `${drawLabel}: drag from the chosen live surface. Hold Shift for a surface-conformed eight-direction stroke; hold Ctrl or Alt for viewport navigation.`;
     }
-  } else if (activeTool === "poly") {
+  } else if (sel.state.activeTool === "poly") {
     message = polyBrushStroke
       ? polyBrushStroke.kind === "relax"
         ? "Poly Brush: Shift-drag across the mesh to relax nearby vertices on the live surface."
@@ -26205,7 +26196,7 @@ function updatePlacementStatus() {
         ? "Poly Brush: drag the vertex across the active live surface."
         : "Poly Brush: drag to extend a strip of authored quads."
       : "Poly Brush: Ctrl-click vertices to add them to the selection, Alt-click selected vertices to remove them, Shift-drag the mesh to relax, Shift-click a gap to fill or bridge, and Alt-click unselected components to delete.";
-  } else if (activeTool === "braid") {
+  } else if (sel.state.activeTool === "braid") {
     const surfaceMode = activeStrokeSurfaceValue();
     const dynamicSurface = activeStrokeDynamicEnabled(surfaceMode);
     if (!braidMeshPresets.has(braidMeshPresetInput.value)) {
@@ -26219,7 +26210,7 @@ function updatePlacementStatus() {
         ? "Draw braid: drag across the live surface. Beyond its boundary, the braid continues on the contextual 2D plane."
         : "Draw braid: drag a continuous path from the chosen live surface. Hold Shift for a surface-conformed eight-direction stroke; hold Ctrl or Alt for viewport navigation.";
     }
-  } else if (activeTool === "panel") {
+  } else if (sel.state.activeTool === "panel") {
     const surfaceMode = activeStrokeSurfaceValue();
     const dynamicSurface = activeStrokeDynamicEnabled(surfaceMode);
     if (surfaceMode === "contextual-plane") {
@@ -26231,17 +26222,17 @@ function updatePlacementStatus() {
         ? "Split Panel: drag across the live surface. Beyond its boundary, continue on the contextual plane."
         : "Split Panel: drag a center path from the chosen live surface. Hold Shift for a surface-conformed eight-direction stroke.";
     }
-  } else if (activeTool === "curve-surface") {
+  } else if (sel.state.activeTool === "curve-surface") {
     message = curveSurfaceDraft?.activeStroke
       ? "Curve Surface: release to add this controller and its connected hair card. Hold Shift for an eight-direction surface-conformed curve."
       : curveSurfaceDraft?.curves?.length
         ? "Curve Surface: draw another controller, hold Shift for a straight surface-conformed curve, or press Enter to confirm."
         : "Curve Surface: draw the first hair-card controller. Hold Shift for a straight surface-conformed curve; hold Ctrl or Alt for viewport navigation."
-  } else if (activeTool === "draw-capsule-guide") {
+  } else if (sel.state.activeTool === "draw-capsule-guide") {
     message = capsuleGuideDrawStroke
       ? "Draw Capsule Guide: drag from the open root toward the rounded tip, then release to create the guide."
       : "Draw Capsule Guide: drag from root to tip on the active live surface. Hold Ctrl or Alt for viewport navigation.";
-  } else if (activeTool === "surface-loft") {
+  } else if (sel.state.activeTool === "surface-loft") {
     if (loftSurfaceDraft?.horizontalPoints) {
       message = loftSurfaceDraft.activeStroke
         ? "Loft Surface step 2 of 2: draw the vertical curve. Release to create the surface."
@@ -26253,7 +26244,7 @@ function updatePlacementStatus() {
     }
   } else if (capsuleGuideEditing) {
     message = "Capsule guide: select a horizontal loop, then use Move, Rotate, or Scale to edit the entire loop.";
-  } else if (["select", "move", "rotate", "scale"].includes(activeTool) && selectedCurveLatticeGuide()) {
+  } else if (["select", "move", "rotate", "scale"].includes(sel.state.activeTool) && selectedCurveLatticeGuide()) {
     message = sel.state.selectedStrandGroup
       ? "Group curve: move a cyan control point to reshape every strand in the selected group."
       : "Curve lattice guide: click a control point, or click an edge to select its full horizontal or vertical loop.";
@@ -26264,11 +26255,11 @@ function updatePlacementStatus() {
   } else if (
     !componentEditModeActive()
     && viewportEditMode === "strand"
-    && ["move", "rotate", "scale"].includes(activeTool)
+    && ["move", "rotate", "scale"].includes(sel.state.activeTool)
     && getSelectedLock()
   ) {
-    message = `${activeTool[0].toUpperCase()}${activeTool.slice(1)} object: the active gizmo is rooted at the strand origin; all selected strands are affected.`;
-  } else if (objectSpaceEditing && ["move", "rotate", "scale"].includes(activeTool)) {
+    message = `${sel.state.activeTool[0].toUpperCase()}${sel.state.activeTool.slice(1)} object: the active gizmo is rooted at the strand origin; all selected strands are affected.`;
+  } else if (objectSpaceEditing && ["move", "rotate", "scale"].includes(sel.state.activeTool)) {
     message = "Object space: gizmo is aligned to the selected curve point. Press O for world space.";
   }
   placementStatus.textContent = message;
@@ -26382,7 +26373,7 @@ function endBlenderNavigation(event) {
 }
 
 function prepareSelectPointerCapture(event) {
-  if (activeTool !== "select" || event.button !== 0 || event.altKey || event.shiftKey || event.ctrlKey || event.metaKey) return;
+  if (sel.state.activeTool !== "select" || event.button !== 0 || event.altKey || event.shiftKey || event.ctrlKey || event.metaKey) return;
   selectPointerCapture = { pointerId: event.pointerId };
   updateInteractionLocks();
 }
@@ -27206,7 +27197,7 @@ function createPolyEditObjects(lock) {
   const target = { group: new THREE.Group() };
   target.group.userData.lockId = lock.id;
   populatePolyEditObjects(lock, target);
-  target.group.visible = activeTool === "poly" && sel.state.selectedId === lock.id;
+  target.group.visible = sel.state.activeTool === "poly" && sel.state.selectedId === lock.id;
   return target;
 }
 
@@ -27220,7 +27211,7 @@ function rebuildPolyEditObjects(lock, options = {}) {
   target.group.clear();
   populatePolyEditObjects(lock, target);
   target.group.visible = ("visible" in options ? options.visible : sel.state.selectedId === lock.id)
-    && activeTool === "poly"
+    && sel.state.activeTool === "poly"
     && strandVisibleForDisplay(lock);
 }
 
@@ -27378,7 +27369,7 @@ function updateCurveObjects(lock, options = {}) {
       }
     }
     lock.curveObjects.surfaceObjectAnchorHandle.material.color.set(
-      selectedSurfaceObjectAnchorId === lock.id ? 0xff4fd8 : 0xf6b75d
+      sel.state.selectedSurfaceObjectAnchorId === lock.id ? 0xff4fd8 : 0xf6b75d
     );
   }
   lock.curveObjects.widthEdgeLines?.forEach((edge) => {
@@ -27398,9 +27389,9 @@ function updateCurveObjects(lock, options = {}) {
       && viewportEditMode === "strand"
       && componentEditModeActive()
       && !(hairState.state.taperMeshPointsVisible && twistCurveEditing())
-      && ["select", "move"].includes(activeTool);
+      && ["select", "move"].includes(sel.state.activeTool);
   });
-  const deEmphasizeControlPoints = ["draw", "procedural-draw", "braid", "panel"].includes(activeTool);
+  const deEmphasizeControlPoints = ["draw", "procedural-draw", "braid", "panel"].includes(sel.state.activeTool);
   const controlPointDisplayScale = guideState.state.controlPointDisplaySize * (
     deEmphasizeControlPoints
       ? STRAND_CONTROL_POINT_DRAW_TOOL_SCALE
@@ -27420,7 +27411,7 @@ function updateCurveObjects(lock, options = {}) {
     const preserveDraggedObjectRotation = Boolean(
       transformDragging
       && objectSpaceEditing
-      && activeTool === "rotate"
+      && sel.state.activeTool === "rotate"
       && activeHandleEdit?.lockId === lock.id
       && activeHandleEdit.pointIndex === index
       && transformControls.object === handle
@@ -27491,7 +27482,7 @@ function updateCurveObjects(lock, options = {}) {
       && !sculptBrushHelpersSuppressed
       && controllerVisible
       && lock.id === sel.state.selectedId
-      && ["rotate", "relax"].includes(activeTool);
+      && ["rotate", "relax"].includes(sel.state.activeTool);
   });
   const splits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
   lock.curveObjects.panelSplitHandles?.forEach((handle, index) => {
@@ -27787,7 +27778,7 @@ function handleColor(lock, index) {
   if (selectedHandle) return CONTROL_POINT_SELECTED_COLOR;
   if (hierarchyAffected) return 0xf0d95d;
   if (proportionalAffected) return 0x8affcf;
-  if (activeTool === "relax") return 0x80ffcf;
+  if (sel.state.activeTool === "relax") return 0x80ffcf;
   return endpointColor;
 }
 
@@ -28389,15 +28380,15 @@ function selectLock(id, options = {}) {
   sel.state.selectedStrandGroup = null;
   sel.state.selectedGuideId = undefined;
   sel.state.selectedReferenceImageId = null;
-  selectedSurfaceObjectAnchorId = null;
+  sel.state.selectedSurfaceObjectAnchorId = null;
   sel.state.selectedCurveLatticePoint = null;
   curveLatticeToggle.classList.remove("active");
   curveLatticeToggle.setAttribute("aria-pressed", "false");
   filterCurveLatticesToGroup(null);
   const lock = getSelectedLock();
   if (
-    (lock?.geometryType === "surface" && ["rotate", "scale", "relax"].includes(activeTool))
-    || (lock?.geometryType === "curve-surface" && ["scale", "relax"].includes(activeTool))
+    (lock?.geometryType === "surface" && ["rotate", "scale", "relax"].includes(sel.state.activeTool))
+    || (lock?.geometryType === "curve-surface" && ["scale", "relax"].includes(sel.state.activeTool))
   ) {
     setActiveTool("move");
   }
@@ -28779,10 +28770,10 @@ function updateAttributeEditorMode() {
   const selectedCoil = getSelectedLock()?.geometryType === "strand" && getSelectedLock()?.curlEnabled
     ? getSelectedLock()
     : null;
-  const transformToolActive = ["move", "rotate", "scale"].includes(activeTool);
-  const hierarchyToolActive = ["move", "rotate", "scale"].includes(activeTool) && !pullMoveActive();
-  const proportionalToolActive = hierarchyToolActive || activeTool === "relax";
-  const sculptProportionalToolActive = ["sculpt-move", "sculpt-smooth"].includes(activeTool);
+  const transformToolActive = ["move", "rotate", "scale"].includes(sel.state.activeTool);
+  const hierarchyToolActive = ["move", "rotate", "scale"].includes(sel.state.activeTool) && !pullMoveActive();
+  const proportionalToolActive = hierarchyToolActive || sel.state.activeTool === "relax";
+  const sculptProportionalToolActive = ["sculpt-move", "sculpt-smooth"].includes(sel.state.activeTool);
   groupSettingsPanel.classList.toggle("hidden", !editingGroup);
   guidePanel.classList.toggle("hidden", !editingLegacyGuide);
   guidePanel.hidden = !editingLegacyGuide;
@@ -28792,33 +28783,33 @@ function updateAttributeEditorMode() {
   hairMaterialPanel.classList.remove("hidden");
   strandTopologyPanel.classList.toggle("hidden", !editingStrand || Boolean(selectedPanel) || Boolean(selectedPoly));
   transformToolPanel.classList.toggle("hidden", !transformToolActive);
-  relaxToolPanel.classList.toggle("hidden", activeTool !== "relax");
-  const drawToolSettingsVisible = ["draw", "procedural-draw"].includes(activeTool);
+  relaxToolPanel.classList.toggle("hidden", sel.state.activeTool !== "relax");
+  const drawToolSettingsVisible = ["draw", "procedural-draw"].includes(sel.state.activeTool);
   drawStrandToolPanel.classList.toggle("hidden", !drawToolSettingsVisible);
-  drawStrandToolTitle.textContent = activeTool === "procedural-draw" ? "Procedural Draw Tool" : "Draw Strand Tool";
+  drawStrandToolTitle.textContent = sel.state.activeTool === "procedural-draw" ? "Procedural Draw Tool" : "Draw Strand Tool";
   syncProceduralAccessoryEditControls();
-  drawBrushPresetInput.closest(".creation-preset-row")?.classList.toggle("hidden", activeTool === "procedural-draw");
-  drawContinueFromTipInput.closest(".toggle-row")?.classList.toggle("hidden", activeTool === "procedural-draw");
+  drawBrushPresetInput.closest(".creation-preset-row")?.classList.toggle("hidden", sel.state.activeTool === "procedural-draw");
+  drawContinueFromTipInput.closest(".toggle-row")?.classList.toggle("hidden", sel.state.activeTool === "procedural-draw");
   sculptMoveToolPanel.classList.toggle("hidden", !sculptBrushToolActive());
   updateSculptScaleModeRow();
-  polyBrushToolPanel.classList.toggle("hidden", activeTool !== "poly");
-  loftSurfaceToolPanel.classList.toggle("hidden", activeTool !== "surface-loft");
-  curveSurfaceToolPanel.classList.toggle("hidden", activeTool !== "curve-surface");
-  braidToolPanel.classList.toggle("hidden", activeTool !== "braid");
-  panelStrandToolPanel.classList.toggle("hidden", activeTool !== "panel");
+  polyBrushToolPanel.classList.toggle("hidden", sel.state.activeTool !== "poly");
+  loftSurfaceToolPanel.classList.toggle("hidden", sel.state.activeTool !== "surface-loft");
+  curveSurfaceToolPanel.classList.toggle("hidden", sel.state.activeTool !== "curve-surface");
+  braidToolPanel.classList.toggle("hidden", sel.state.activeTool !== "braid");
+  panelStrandToolPanel.classList.toggle("hidden", sel.state.activeTool !== "panel");
   panelToolTitle.textContent = "Split Panel Tool";
   surfaceGuideToolPanel.classList.toggle(
     "hidden",
-    activeTool !== "draw-capsule-guide" && !capsuleGuideEditing && !editingCapsuleGuide && !canCreateCapsuleGuide
+    sel.state.activeTool !== "draw-capsule-guide" && !capsuleGuideEditing && !editingCapsuleGuide && !canCreateCapsuleGuide
   );
-  capsuleGuideDrawSettings.classList.toggle("hidden", activeTool !== "draw-capsule-guide");
+  capsuleGuideDrawSettings.classList.toggle("hidden", sel.state.activeTool !== "draw-capsule-guide");
   strandShapePanel.classList.toggle(
     "braid-context",
-    Boolean(selectedBraid) || (!editingStrand && activeTool === "braid")
+    Boolean(selectedBraid) || (!editingStrand && sel.state.activeTool === "braid")
   );
   strandShapePanel.classList.toggle(
     "panel-context",
-    Boolean(selectedPanel) || (!editingStrand && activeTool === "panel")
+    Boolean(selectedPanel) || (!editingStrand && sel.state.activeTool === "panel")
   );
   surfaceLatticeControls.classList.toggle("hidden", !selectedSurface);
   panelCurvatureControl.classList.toggle("hidden", Boolean(selectedSurface));
@@ -28869,14 +28860,14 @@ function updateAttributeEditorMode() {
     drawStrandBrushSizeInput.value = width;
     drawStrandBrushSizeValue.textContent = width.toFixed(2);
   }
-  transformToolTitle.textContent = `${activeTool[0].toUpperCase()}${activeTool.slice(1)} Tool`;
-  pullMoveSetting.classList.toggle("hidden", activeTool !== "move");
-  pullRigiditySetting.classList.toggle("hidden", activeTool !== "move" || !pullMoveEnabled);
-  pullCollisionSetting.classList.toggle("hidden", activeTool !== "move" || !pullMoveEnabled);
-  scaleSensitivitySetting.classList.toggle("hidden", activeTool !== "scale");
-  viewPlaneMoveSetting.classList.toggle("hidden", activeTool !== "move");
-  viewPlaneMoveSnappedSetting.classList.toggle("hidden", activeTool !== "move");
-  placeStrandToolPanel.classList.toggle("hidden", activeTool !== "place");
+  transformToolTitle.textContent = `${sel.state.activeTool[0].toUpperCase()}${sel.state.activeTool.slice(1)} Tool`;
+  pullMoveSetting.classList.toggle("hidden", sel.state.activeTool !== "move");
+  pullRigiditySetting.classList.toggle("hidden", sel.state.activeTool !== "move" || !pullMoveEnabled);
+  pullCollisionSetting.classList.toggle("hidden", sel.state.activeTool !== "move" || !pullMoveEnabled);
+  scaleSensitivitySetting.classList.toggle("hidden", sel.state.activeTool !== "scale");
+  viewPlaneMoveSetting.classList.toggle("hidden", sel.state.activeTool !== "move");
+  viewPlaneMoveSnappedSetting.classList.toggle("hidden", sel.state.activeTool !== "move");
+  placeStrandToolPanel.classList.toggle("hidden", sel.state.activeTool !== "place");
   proportionalPanel.classList.toggle(
     "hidden",
     !(
@@ -28892,10 +28883,10 @@ function updateAttributeEditorMode() {
   hierarchyPanel.classList.toggle("hidden", !editingStrand || !hierarchyToolActive || !hierarchyEditing);
   branchBridgePanel.classList.toggle("hidden", !editingStrand || !getSelectedLock()?.branchParentId);
   updateBranchBridgeSliderInputs();
-  strandLayerControl.classList.toggle("hidden", editingCreationShape && activeTool === "draw");
+  strandLayerControl.classList.toggle("hidden", editingCreationShape && sel.state.activeTool === "draw");
   strandShapePanel.classList.toggle("hidden", Boolean(selectedPoly) || (!editingStrand && !editingCreationShape));
   strandShapeTitle.textContent = editingCreationShape
-    ? (activeTool === "braid" ? "Braid Shape" : activeTool === "panel" ? "Panel Shape" : "Strand Shape")
+    ? (sel.state.activeTool === "braid" ? "Braid Shape" : sel.state.activeTool === "panel" ? "Panel Shape" : "Strand Shape")
     : (selectedBraid ? "Braid Shape" : selectedSurface ? "Surface Shape" : selectedPanel ? "Panel Shape" : "Strand Shape");
   if (editingCreationShape) syncCreationShapeInputs();
   else syncHairCardControls(getSelectedLock());
@@ -28912,14 +28903,14 @@ function pinActiveToolSettingsPanel() {
   else if (headSetupEditing) panel = headPanel;
   else if (scalpState.state.scalpBuilderEditing) panel = scalpBuilderPanel;
   else if (scalpState.state.scalpShapeEditing) panel = scalpPanel;
-  else if (["draw", "procedural-draw"].includes(activeTool)) panel = drawStrandToolPanel;
+  else if (["draw", "procedural-draw"].includes(sel.state.activeTool)) panel = drawStrandToolPanel;
   else if (sculptBrushToolActive()) panel = sculptMoveToolPanel;
-  else if (activeTool === "poly") panel = polyBrushToolPanel;
-  else if (activeTool === "braid") panel = braidToolPanel;
-  else if (activeTool === "panel") panel = panelStrandToolPanel;
-  else if (activeTool === "draw-capsule-guide" || capsuleGuideEditing || (viewportEditMode === "guide" && getSelectedGuide()?.type === "capsule")) panel = surfaceGuideToolPanel;
-  else if (activeTool === "relax") panel = relaxToolPanel;
-  else if (["move", "rotate", "scale"].includes(activeTool)) panel = transformToolPanel;
+  else if (sel.state.activeTool === "poly") panel = polyBrushToolPanel;
+  else if (sel.state.activeTool === "braid") panel = braidToolPanel;
+  else if (sel.state.activeTool === "panel") panel = panelStrandToolPanel;
+  else if (sel.state.activeTool === "draw-capsule-guide" || capsuleGuideEditing || (viewportEditMode === "guide" && getSelectedGuide()?.type === "capsule")) panel = surfaceGuideToolPanel;
+  else if (sel.state.activeTool === "relax") panel = relaxToolPanel;
+  else if (["move", "rotate", "scale"].includes(sel.state.activeTool)) panel = transformToolPanel;
   if (panel && !panel.classList.contains("hidden")) {
     panel.classList.add("active-tool-settings");
     panel.parentElement?.prepend(panel);
@@ -29087,7 +29078,7 @@ function selectStrandGroup(region) {
 
 function selectCurvePoint(lockId, pointIndex, preserveMulti = false) {
   sel.state.selectedPoint = { lockId, pointIndex };
-  selectedSurfaceObjectAnchorId = null;
+  sel.state.selectedSurfaceObjectAnchorId = null;
   sel.state.selectedCurveLatticePoint = null;
   if (!preserveMulti) sel.state.selectedControlPoints = [{ type: "strand", lockId, pointIndex }];
   updateSelectedPointLabel();
@@ -29103,7 +29094,7 @@ function updateSelectedPointLabel() {
   if (!selectedPointLabel) return;
   selectedPointLabel.textContent = sel.state.selectedControlPoints.length > 1
     ? `${sel.state.selectedControlPoints.length} selected`
-    : selectedSurfaceObjectAnchorId
+    : sel.state.selectedSurfaceObjectAnchorId
       ? "Object"
     : sel.state.selectedPoint
       ? String(sel.state.selectedPoint.pointIndex + 1)
@@ -29154,7 +29145,7 @@ function syncInputs(lock) {
   } else {
     syncHairCardControls(lock);
   }
-  if (["move", "rotate", "scale"].includes(activeTool)) configureTransformControls(activeTool);
+  if (["move", "rotate", "scale"].includes(sel.state.activeTool)) configureTransformControls(sel.state.activeTool);
   syncMultiStrandInputs(lock);
 }
 
@@ -29482,7 +29473,7 @@ function createCompoundStrand() {
     depthCurveSecondary: uniformDepthCurve,
     surfaceNormalInfluence: 0
   }, { deferUi: true });
-  compound.name = `Compound Strand ${lockIndex}`;
+  compound.name = `Compound Strand ${sel.state.lockIndex}`;
   compound.baseWidth = compound.width;
   compound.curveSurfaceSource = {
     rows,
@@ -29595,7 +29586,7 @@ function createSelectionSetFromSelection() {
   if (!selectionSet) return null;
   pushUndoState();
   selectionSets.push(selectionSet);
-  selectionSetsOpen = true;
+  sel.state.selectionSetsOpen = true;
   renderLockList();
   return selectionSet;
 }
@@ -29717,11 +29708,11 @@ function deleteCurrentSelection() {
 }
 
 function hideOutlinerContextMenu() {
-  outlinerContextTarget = null;
+  sel.state.outlinerContextTarget = null;
   clumpContextMenu.classList.add("hidden");
 }
 
-function outlinerLockTargets(target = outlinerContextTarget) {
+function outlinerLockTargets(target = sel.state.outlinerContextTarget) {
   if (target?.type === "strand") {
     const lock = locks.find((item) => item.id === target.lockId);
     return lock && !lock.proceduralDuplicatePreview ? [lock] : [];
@@ -29751,7 +29742,7 @@ function outlinerLockTargets(target = outlinerContextTarget) {
 function showOutlinerContextMenu(event, target) {
   event.preventDefault();
   event.stopPropagation();
-  outlinerContextTarget = target;
+  sel.state.outlinerContextTarget = target;
   const isClump = target.type === "clump";
   const isScalpGuide = target.type === "scalp-guide";
   const isGuide = target.type === "guide";
@@ -30507,7 +30498,7 @@ function setPullMoveEnabled(enabled) {
   setActiveTool("move");
 }
 
-function toolRadialOptions(tool = activeTool) {
+function toolRadialOptions(tool = sel.state.activeTool) {
   if (tool === "select") {
     return [
       { action: "select-strand", label: "Strand Select" },
@@ -30577,7 +30568,7 @@ function beginToolRadialGesture() {
     options,
     listOptions
   };
-  toolRadialCenter.textContent = activeTool[0].toUpperCase() + activeTool.slice(1);
+  toolRadialCenter.textContent = sel.state.activeTool[0].toUpperCase() + sel.state.activeTool.slice(1);
   toolRadialMenu.style.left = `${lastPointer.x}px`;
   toolRadialMenu.style.top = `${lastPointer.y}px`;
   toolRadialMenu.classList.remove("hidden");
@@ -30637,7 +30628,7 @@ function setProceduralDrawExperimentalEnabled(enabled, { persist = true } = {}) 
   proceduralDrawToolButton.hidden = !draw.state.proceduralDrawExperimentalEnabled;
   proceduralDrawToolButton.setAttribute("aria-hidden", String(!draw.state.proceduralDrawExperimentalEnabled));
   proceduralDrawToolButton.tabIndex = draw.state.proceduralDrawExperimentalEnabled ? 0 : -1;
-  if (!draw.state.proceduralDrawExperimentalEnabled && activeTool === "procedural-draw") {
+  if (!draw.state.proceduralDrawExperimentalEnabled && sel.state.activeTool === "procedural-draw") {
     setActiveTool("draw");
   }
   if (persist) {
@@ -30763,20 +30754,20 @@ function setTwistCurveAllStrandsPreviewEnabled(enabled, { persist = true } = {})
 }
 
 function setLayerColorShiftsEnabled(enabled, { persist = true } = {}) {
-  layerColorShiftsEnabled = Boolean(enabled);
-  layerColorShiftsPreferenceInput.checked = layerColorShiftsEnabled;
+  sel.state.layerColorShiftsEnabled = Boolean(enabled);
+  layerColorShiftsPreferenceInput.checked = sel.state.layerColorShiftsEnabled;
   locks.forEach(applyMaterialDefinitionToLock);
   if (drawStrandStroke) updateDrawStrandPreview();
   renderLockList();
-  if (persist) saveBooleanPreference(LAYER_COLOR_SHIFTS_PREFERENCE_KEY, layerColorShiftsEnabled);
+  if (persist) saveBooleanPreference(LAYER_COLOR_SHIFTS_PREFERENCE_KEY, sel.state.layerColorShiftsEnabled);
 }
 
 function setOutlinerFolderColorsEnabled(enabled, { persist = true } = {}) {
-  outlinerFolderColorsEnabled = Boolean(enabled);
-  outlinerFolderColorsPreferenceInput.checked = outlinerFolderColorsEnabled;
-  document.body.classList.toggle("outliner-folder-colors-disabled", !outlinerFolderColorsEnabled);
+  sel.state.outlinerFolderColorsEnabled = Boolean(enabled);
+  outlinerFolderColorsPreferenceInput.checked = sel.state.outlinerFolderColorsEnabled;
+  document.body.classList.toggle("outliner-folder-colors-disabled", !sel.state.outlinerFolderColorsEnabled);
   if (persist) {
-    saveBooleanPreference(OUTLINER_FOLDER_COLORS_PREFERENCE_KEY, outlinerFolderColorsEnabled);
+    saveBooleanPreference(OUTLINER_FOLDER_COLORS_PREFERENCE_KEY, sel.state.outlinerFolderColorsEnabled);
   }
 }
 
@@ -30940,8 +30931,8 @@ function openPreferencesDialog() {
     compactToolButtonsEnabled,
     viewportStatisticsEnabled: viewportState.state.viewportStatisticsEnabled,
     twistCurveAllStrandsPreviewEnabled: hairState.state.twistCurveAllStrandsPreviewEnabled,
-    layerColorShiftsEnabled,
-    outlinerFolderColorsEnabled,
+    layerColorShiftsEnabled: sel.state.layerColorShiftsEnabled,
+    outlinerFolderColorsEnabled: sel.state.outlinerFolderColorsEnabled,
     sideNamingPerspective,
     controlPointDisplaySize: guideState.state.controlPointDisplaySize,
     viewportBackgroundColor: viewportState.state.viewportBackgroundColor,
@@ -30970,8 +30961,8 @@ function savePreferencesDialog() {
     TWIST_CURVE_ALL_STRANDS_PREVIEW_PREFERENCE_KEY,
     hairState.state.twistCurveAllStrandsPreviewEnabled
   );
-  saveBooleanPreference(LAYER_COLOR_SHIFTS_PREFERENCE_KEY, layerColorShiftsEnabled);
-  saveBooleanPreference(OUTLINER_FOLDER_COLORS_PREFERENCE_KEY, outlinerFolderColorsEnabled);
+  saveBooleanPreference(LAYER_COLOR_SHIFTS_PREFERENCE_KEY, sel.state.layerColorShiftsEnabled);
+  saveBooleanPreference(OUTLINER_FOLDER_COLORS_PREFERENCE_KEY, sel.state.outlinerFolderColorsEnabled);
   writeStoredPreference(window, SIDE_NAMING_PERSPECTIVE_PREFERENCE_KEY, sideNamingPerspective);
   writeStoredPreference(window, CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY, guideState.state.controlPointDisplaySize);
   writeStoredPreference(window, VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY, viewportState.state.viewportBackgroundColor);
@@ -32092,7 +32083,7 @@ function selectionSetMatchesCurrentSelection(selectionSet) {
 
 function createSelectionSetsOutlinerFolder() {
   const group = document.createElement("div");
-  group.className = `outliner-group selection-sets-group${selectionSetsOpen ? " open" : ""}`;
+  group.className = `outliner-group selection-sets-group${sel.state.selectionSetsOpen ? " open" : ""}`;
   group.style.setProperty("--outliner-region-color", "#53d9e6");
 
   const header = document.createElement("div");
@@ -32101,11 +32092,11 @@ function createSelectionSetsOutlinerFolder() {
   disclosure.className = "outliner-disclosure";
   disclosure.type = "button";
   disclosure.textContent = ">";
-  disclosure.title = selectionSetsOpen ? "Collapse Selection Sets" : "Expand Selection Sets";
+  disclosure.title = sel.state.selectionSetsOpen ? "Collapse Selection Sets" : "Expand Selection Sets";
   disclosure.setAttribute("aria-label", disclosure.title);
-  disclosure.setAttribute("aria-expanded", String(selectionSetsOpen));
+  disclosure.setAttribute("aria-expanded", String(sel.state.selectionSetsOpen));
   disclosure.addEventListener("click", () => {
-    selectionSetsOpen = !selectionSetsOpen;
+    sel.state.selectionSetsOpen = !sel.state.selectionSetsOpen;
     renderLockList();
   });
   const spacer = document.createElement("span");
@@ -32123,7 +32114,7 @@ function createSelectionSetsOutlinerFolder() {
   count.textContent = selectionSets.length;
   folderButton.append(icon, label, count);
   folderButton.addEventListener("click", () => {
-    selectionSetsOpen = !selectionSetsOpen;
+    sel.state.selectionSetsOpen = !sel.state.selectionSetsOpen;
     renderLockList();
   });
   header.append(disclosure, spacer, folderButton);
@@ -32495,7 +32486,7 @@ strandLayerInput.addEventListener("change", () => {
 viewportDrawLayerInput.addEventListener("change", () => {
   const layerId = normalizeHairLayer(viewportDrawLayerInput.value);
   strandCreationDefaults.hairLayer = layerId;
-  if (activeTool === "draw" && !getSelectedLock()) strandLayerInput.value = layerId;
+  if (sel.state.activeTool === "draw" && !getSelectedLock()) strandLayerInput.value = layerId;
   if (drawStrandStroke?.outputType === "strand") updateDrawStrandPreview();
   updatePlacementStatus();
 });
@@ -32555,16 +32546,16 @@ createSelectionSetFromSelectedAction.addEventListener("click", () => {
 });
 
 addSelectedToSelectionSetAction.addEventListener("click", () => {
-  const selectionSetId = outlinerContextTarget?.type === "selection-set"
-    ? outlinerContextTarget.selectionSetId
+  const selectionSetId = sel.state.outlinerContextTarget?.type === "selection-set"
+    ? sel.state.outlinerContextTarget.selectionSetId
     : null;
   hideOutlinerContextMenu();
   if (selectionSetId) editSelectionSetFromSelection(selectionSetId, "add");
 });
 
 removeSelectedFromSelectionSetAction.addEventListener("click", () => {
-  const selectionSetId = outlinerContextTarget?.type === "selection-set"
-    ? outlinerContextTarget.selectionSetId
+  const selectionSetId = sel.state.outlinerContextTarget?.type === "selection-set"
+    ? sel.state.outlinerContextTarget.selectionSetId
     : null;
   hideOutlinerContextMenu();
   if (selectionSetId) editSelectionSetFromSelection(selectionSetId, "remove");
@@ -32579,7 +32570,7 @@ lockOutlinerAction.addEventListener("click", () => {
 });
 
 promoteLiveSurfaceGuideAction.addEventListener("click", () => {
-  const target = outlinerContextTarget;
+  const target = sel.state.outlinerContextTarget;
   const lock = target?.type === "strand" ? locks.find((item) => item.id === target.lockId) : null;
   if (!lock) return;
   pushUndoState();
@@ -32592,7 +32583,7 @@ promoteLiveSurfaceGuideAction.addEventListener("click", () => {
 });
 
 dissolveClumpAction.addEventListener("click", () => {
-  const target = outlinerContextTarget;
+  const target = sel.state.outlinerContextTarget;
   const guide = target?.type === "clump" ? locks.find((lock) => lock.id === target.guideId) : null;
   if (!guide?.clumpId) return;
   pushUndoState();
@@ -32603,14 +32594,14 @@ dissolveClumpAction.addEventListener("click", () => {
 });
 
 createClumpPresetAction.addEventListener("click", () => {
-  const target = outlinerContextTarget;
+  const target = sel.state.outlinerContextTarget;
   const guide = target?.type === "clump" ? locks.find((lock) => lock.id === target.guideId) : null;
   hideOutlinerContextMenu();
   createCustomClumpPreset(guide);
 });
 
 mirrorInstanceAction.addEventListener("click", () => {
-  const target = outlinerContextTarget;
+  const target = sel.state.outlinerContextTarget;
   const guide = target?.type === "clump" ? locks.find((item) => item.id === target.guideId) : null;
   const lock = target?.type === "strand" ? locks.find((item) => item.id === target.lockId) : null;
   if (!lock && !guide) return;
@@ -32638,7 +32629,7 @@ mirrorInstanceAction.addEventListener("click", () => {
 });
 
 deleteOutlinerAction.addEventListener("click", () => {
-  const target = outlinerContextTarget;
+  const target = sel.state.outlinerContextTarget;
   hideOutlinerContextMenu();
   if (target?.type === "selection-set") {
     deleteSelectionSet(target.selectionSetId);
@@ -33416,12 +33407,12 @@ document.querySelector("#resetTaperCurve").addEventListener("click", () => {
   const curve = activeTaperCurve();
   if (!curve || !taperCurveEdit) return;
   pushUndoState();
-  const braidCreationCurve = taperCurveEdit.type === "creation" && activeTool === "braid";
+  const braidCreationCurve = taperCurveEdit.type === "creation" && sel.state.activeTool === "braid";
   const editedLock = taperCurveEdit.type === "strand"
     ? locks.find((lock) => lock.id === taperCurveEdit.id)
     : null;
   const panelWidthCurve = taperCurveEdit.curveKey === "taperCurve"
-    && ((taperCurveEdit.type === "creation" && activeTool === "panel") || isPanelGeometry(editedLock));
+    && ((taperCurveEdit.type === "creation" && sel.state.activeTool === "panel") || isPanelGeometry(editedLock));
   const defaultCurve = taperCurveEdit.curveKey === "twistCurve"
     ? DEFAULT_TWIST_CURVE
     : taperCurveEdit.curveKey === "proceduralBranchShapeCurve"
@@ -33818,7 +33809,7 @@ confirmCurveSurfaceDraftButton.addEventListener("click", (event) => {
 resetCurveSurfaceDraftButton.addEventListener("click", resetCurveSurfaceDraft);
 curveSurfaceStripWidthInput.addEventListener("input", () => {
   curveSurfaceStripWidthValue.textContent = Number(curveSurfaceStripWidthInput.value).toFixed(2);
-  if (activeTool === "curve-surface") updateCurveSurfacePreview();
+  if (sel.state.activeTool === "curve-surface") updateCurveSurfacePreview();
 });
 capsuleGuideCurveStepInput.addEventListener("input", () => {
   capsuleGuideDrawDefaults.curveStep = Number(capsuleGuideCurveStepInput.value);
@@ -34044,8 +34035,8 @@ drawSurfaceNormalInfluenceInput.addEventListener("input", () => {
 });
 function handleLiveSurfaceChange() {
   finishDrawStrandStroke(null, { cancel: true });
-  if (activeTool === "curve-surface") resetCurveSurfaceDraft();
-  if (activeTool === "surface-loft") resetLoftSurfaceDraft();
+  if (sel.state.activeTool === "curve-surface") resetCurveSurfaceDraft();
+  if (sel.state.activeTool === "surface-loft") resetLoftSurfaceDraft();
   drawStrandBrushCursor.visible = false;
   drawSurfaceDynamicButton.disabled = activeStrokeSurfaceValue() === "contextual-plane";
   autoShowScalpGuideForActiveTool();
@@ -34085,7 +34076,7 @@ Object.entries(strandSplitInputs).forEach(([key, input]) => {
     const selected = getSelectedLock();
     const target = selected?.geometryType === "strand"
       ? selected
-      : activeTool === "draw" ? strandCreationDefaults : null;
+      : sel.state.activeTool === "draw" ? strandCreationDefaults : null;
     if (!target) return;
     const value = input.type === "checkbox" ? input.checked : Number(input.value);
     if (selected?.geometryType === "strand") {
@@ -34107,7 +34098,7 @@ hairCardInput.addEventListener("change", () => {
   const selected = getSelectedLock();
   const target = selected?.geometryType === "strand"
     ? selected
-    : activeTool === "draw" ? strandCreationDefaults : null;
+    : sel.state.activeTool === "draw" ? strandCreationDefaults : null;
   if (!target) return;
   if (selected?.geometryType === "strand") {
     editSelectedLocks((item) => { item.hairCard = hairCardInput.checked; }, { immediate: true });
@@ -34116,7 +34107,7 @@ hairCardInput.addEventListener("change", () => {
   }
   syncHairCardControls(target);
   renderProfilePreview(profilePreviewPaths.strand, target.sweepProfile, target.profileOffset, target);
-  if (selected && ["move", "rotate", "scale"].includes(activeTool)) configureTransformControls(activeTool);
+  if (selected && ["move", "rotate", "scale"].includes(sel.state.activeTool)) configureTransformControls(sel.state.activeTool);
   if (drawStrandStroke?.outputType === "strand" && target === strandCreationDefaults) {
     drawStrandStroke.hairCard = target.hairCard;
     updateDrawStrandPreview();
@@ -34206,7 +34197,7 @@ Object.entries(panelShapeInputs).forEach(([key, input]) => {
     const selected = getSelectedLock();
     const target = isPanelGeometry(selected)
       ? getSelectedLock()
-      : activeTool === "panel" ? panelCreationDefaults : null;
+      : sel.state.activeTool === "panel" ? panelCreationDefaults : null;
     if (!target) return;
     if (key === "panelSplitSnapToLoops" && !input.checked && !ui.state.panelSplitSnapWarningAcknowledged) {
       input.checked = true;
@@ -34256,7 +34247,7 @@ function changePanelSplitCount(delta) {
   const selected = getSelectedLock();
   const target = isPanelGeometry(selected)
     ? getSelectedLock()
-    : activeTool === "panel" ? panelCreationDefaults : null;
+    : sel.state.activeTool === "panel" ? panelCreationDefaults : null;
   if (!target) return;
   const widthLoops = THREE.MathUtils.clamp(Math.round(Number(target.panelWidthLoops ?? 6)), 3, 24);
   const splits = clonePanelSplits(target.panelSplits, target.panelSplitHeight, widthLoops - 1);
@@ -34660,7 +34651,7 @@ function applyCustomCreationPreset(type, value) {
     draw.state.activeCustomDrawClumpTemplate = normalizeClumpBrushTemplate(preset.value.clumpTemplate);
     if (draw.state.activeCustomDrawClumpTemplate) hairState.state.drawStrandMode = "clump";
   }
-  if (!getSelectedLock() && ((type === "braid" && activeTool === "braid") || (type === "strand" && activeTool === "draw"))) {
+  if (!getSelectedLock() && ((type === "braid" && sel.state.activeTool === "braid") || (type === "strand" && sel.state.activeTool === "draw"))) {
     syncCreationShapeInputs();
   }
   updatePlacementStatus();
@@ -35003,8 +34994,8 @@ setToolTipsEnabled(toolTipsEnabled, { persist: false });
 setCompactToolButtonsEnabled(compactToolButtonsEnabled, { persist: false });
 setViewportStatisticsEnabled(viewportState.state.viewportStatisticsEnabled, { persist: false });
 setTwistCurveAllStrandsPreviewEnabled(hairState.state.twistCurveAllStrandsPreviewEnabled, { persist: false });
-setLayerColorShiftsEnabled(layerColorShiftsEnabled, { persist: false });
-setOutlinerFolderColorsEnabled(outlinerFolderColorsEnabled, { persist: false });
+setLayerColorShiftsEnabled(sel.state.layerColorShiftsEnabled, { persist: false });
+setOutlinerFolderColorsEnabled(sel.state.outlinerFolderColorsEnabled, { persist: false });
 setControlPointDisplaySize(guideState.state.controlPointDisplaySize, { persist: false });
 setViewportBackgroundColor(viewportState.state.viewportBackgroundColor, { persist: false });
 setDefaultHairShader(hairState.state.defaultHairShader, { persist: false });
@@ -35806,30 +35797,30 @@ window.addEventListener("keydown", (event) => {
   }
   if (
     event.key === "Escape"
-    && activeTool === "poly"
+    && sel.state.activeTool === "poly"
     && polyBrushStroke
   ) {
     finishPolyBrushStroke(event, { cancel: true });
     event.preventDefault();
     return;
   }
-  if (event.key === "Escape" && activeTool === "draw-capsule-guide" && capsuleGuideDrawStroke) {
+  if (event.key === "Escape" && sel.state.activeTool === "draw-capsule-guide" && capsuleGuideDrawStroke) {
     finishCapsuleGuideDrawStroke(event, { cancel: true });
     event.preventDefault();
     return;
   }
-  if (event.key === "Escape" && activeTool === "surface-loft" && cancelLoftSurfaceDraft()) {
+  if (event.key === "Escape" && sel.state.activeTool === "surface-loft" && cancelLoftSurfaceDraft()) {
     event.preventDefault();
     resetLoftSurfaceDraft();
     return;
   }
-  if (event.key === "Escape" && activeTool === "curve-surface" && curveSurfaceDraft) {
+  if (event.key === "Escape" && sel.state.activeTool === "curve-surface" && curveSurfaceDraft) {
     if (curveSurfaceDraft.activeStroke) finishCurveSurfaceStroke(event, { cancel: true });
     else cancelCurveSurfaceDraft();
     event.preventDefault();
     return;
   }
-  if (!editingField && event.key === "Enter" && activeTool === "curve-surface" && commitCurveSurfaceDraft(event)) {
+  if (!editingField && event.key === "Enter" && sel.state.activeTool === "curve-surface" && commitCurveSurfaceDraft(event)) {
     event.preventDefault();
     return;
   }
@@ -35913,7 +35904,7 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Shift" && !event.repeat && !editingField && sculptBrushToolActive()) {
     setSculptBrushShiftSmoothHeld(true);
   }
-  if (event.key === "Shift" && !event.repeat && !editingField && activeTool === "poly") {
+  if (event.key === "Shift" && !event.repeat && !editingField && sel.state.activeTool === "poly") {
     draw.state.polyShiftPreviewHeld = true;
     refreshPolyFillPreviewFromLastPointer();
   }
@@ -35947,7 +35938,7 @@ window.addEventListener("keydown", (event) => {
     && !event.metaKey
     && !event.altKey
     && event.key.toLowerCase() === "z"
-    && activeTool === "move"
+    && sel.state.activeTool === "move"
     && viewPlaneMoveActiveForView()
   ) {
     event.preventDefault();
@@ -36136,8 +36127,8 @@ function deleteLocks(targetLocks) {
     sel.state.selectedPoint = null;
     updateSelectedPointLabel();
   }
-  if (targets.some((item) => selectedSurfaceObjectAnchorId === item.id)) {
-    selectedSurfaceObjectAnchorId = null;
+  if (targets.some((item) => sel.state.selectedSurfaceObjectAnchorId === item.id)) {
+    sel.state.selectedSurfaceObjectAnchorId = null;
     transform.state.activeSurfaceObjectTransform = null;
     updateSelectedPointLabel();
   }
@@ -36166,9 +36157,9 @@ function deleteLocks(targetLocks) {
     if (parent) updateLockGeometry(parent, { immediate: true });
   });
   cleanSelectionSets();
-  if (isolatedStrandIds) {
-    targetIds.forEach((id) => isolatedStrandIds.delete(id));
-    if (!isolatedStrandIds.size) isolatedStrandIds = null;
+  if (sel.state.isolatedStrandIds) {
+    targetIds.forEach((id) => sel.state.isolatedStrandIds.delete(id));
+    if (!sel.state.isolatedStrandIds.size) sel.state.isolatedStrandIds = null;
   }
   if (targets.some((item) => item.id === sel.state.selectedId)) {
     sel.state.selectedCurveSurfaceController = null;
@@ -36611,23 +36602,23 @@ function activateStrandControlPoint(handle, event) {
     ));
   }
   selectCurvePoint(handle.userData.lockId, handle.userData.pointIndex, preserveMulti);
-  if (getSelectedLock()?.geometryType === "surface" && ["rotate", "scale"].includes(activeTool)) {
+  if (getSelectedLock()?.geometryType === "surface" && ["rotate", "scale"].includes(sel.state.activeTool)) {
     setActiveTool("move");
   }
-  if (activeTool === "select") {
+  if (sel.state.activeTool === "select") {
     transformControls.detach();
     return true;
   }
-  if (activeTool === "relax") {
+  if (sel.state.activeTool === "relax") {
     const lock = getSelectedLock();
     if (lock && beginRelaxEdit(lock, handle.userData.pointIndex, event)) event.preventDefault();
     return true;
   }
-  if (activeTool === "move" && viewPlaneMoveActiveForView()) {
+  if (sel.state.activeTool === "move" && viewPlaneMoveActiveForView()) {
     beginViewPlaneMove(getSelectedLock(), handle, event);
     return true;
   }
-  configureTransformControls(activeTool);
+  configureTransformControls(sel.state.activeTool);
   attachTransformForCurvePoint(getSelectedLock(), handle.userData.pointIndex, handle);
   beginHandleEdit();
   return true;
@@ -36638,7 +36629,7 @@ function refreshStrandControlPointSelection(lock) {
     point.type === "strand" && point.lockId === lock.id
   )) || null;
   sel.state.selectedPoint = primary ? { lockId: primary.lockId, pointIndex: primary.pointIndex } : null;
-  selectedSurfaceObjectAnchorId = null;
+  sel.state.selectedSurfaceObjectAnchorId = null;
   sel.state.selectedCurveLatticePoint = null;
   transformControls.detach();
   activeHandleEdit = null;
@@ -36646,10 +36637,10 @@ function refreshStrandControlPointSelection(lock) {
   if (proportionalEditing) updateLockGeometry(lock);
   locks.forEach((item) => updateCurveObjects(item, { visible: item.id === sel.state.selectedId }));
 
-  if (primary && ["move", "rotate", "scale"].includes(activeTool)) {
+  if (primary && ["move", "rotate", "scale"].includes(sel.state.activeTool)) {
     const primaryHandle = lock.curveObjects?.handles[primary.pointIndex];
-    if (primaryHandle && !(activeTool === "move" && viewPlaneMoveActiveForView())) {
-      configureTransformControls(activeTool);
+    if (primaryHandle && !(sel.state.activeTool === "move" && viewPlaneMoveActiveForView())) {
+      configureTransformControls(sel.state.activeTool);
       attachTransformForCurvePoint(lock, primary.pointIndex, primaryHandle);
     }
   }
@@ -36846,7 +36837,7 @@ function curvePointTopologyCursorAvailable() {
 function selectionModifierCursorAvailable() {
   return Boolean(
     viewportEditMode === "strand"
-    && ["select", "move", "rotate", "scale", "relax", "poly"].includes(activeTool)
+    && ["select", "move", "rotate", "scale", "relax", "poly"].includes(sel.state.activeTool)
     && !duplicatePlacement
     && !transformDragging
     && !altOrbitDrag
@@ -36869,7 +36860,7 @@ function clearCurvePointTopologyCursor() {
 function updateCurvePointTopologyCursor(event) {
   const selectionAvailable = selectionModifierCursorAvailable();
   const topologyAvailable = curvePointTopologyCursorAvailable();
-  const polyModifiers = activeTool === "poly";
+  const polyModifiers = sel.state.activeTool === "poly";
   const marqueeAdding = selectionMarqueeDrag?.selectionMode === "add";
   const marqueeRemoving = selectionMarqueeDrag?.selectionMode === "remove";
   const inserting = marqueeAdding || (!event.metaKey && (polyModifiers
@@ -36907,9 +36898,9 @@ function prepareCurvePointSelection(event) {
   const insertingCurvePoint = event.shiftKey && event.altKey && !event.ctrlKey && !event.metaKey;
   const addingSelection = event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
   const removingSelection = event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey;
-  if (activeTool === "curve-surface") return;
-  if (viewportEditMode !== "strand" || event.metaKey || proportionalSizeEdit || proportionalHotkeyPress || scalpState.state.scalpShapeEditing || scalpState.state.scalpPaintEditing || scalpState.state.scalpBuilderEditing || capsuleGuideEditing || ["place", "draw", "procedural-draw", "braid", "panel", "surface-loft", "surface-guide"].includes(activeTool)) return;
-  const polySelectionModifier = activeTool === "poly"
+  if (sel.state.activeTool === "curve-surface") return;
+  if (viewportEditMode !== "strand" || event.metaKey || proportionalSizeEdit || proportionalHotkeyPress || scalpState.state.scalpShapeEditing || scalpState.state.scalpPaintEditing || scalpState.state.scalpBuilderEditing || capsuleGuideEditing || ["place", "draw", "procedural-draw", "braid", "panel", "surface-loft", "surface-guide"].includes(sel.state.activeTool)) return;
+  const polySelectionModifier = sel.state.activeTool === "poly"
     && (
       event.ctrlKey && !event.shiftKey && !event.altKey
       || event.altKey && !event.shiftKey && !event.ctrlKey
@@ -36940,7 +36931,7 @@ function prepareCurvePointSelection(event) {
     && !insertingCurvePoint
     && pointerHitsTransformGizmo(event)
   ) return;
-  if (activeTool === "poly") {
+  if (sel.state.activeTool === "poly") {
     if (!hit || hit.object === transformControls.object) return;
     if (event.altKey) {
       pointRemovalCandidate = {
@@ -37126,8 +37117,8 @@ function updateActiveSculptBrushStrength() {
 }
 
 function updateActiveSculptBrushPreserveTips() {
-  if (sculptBrushPreserveTipsByTool[activeTool] !== undefined) {
-    sculptBrushPreserveTipsByTool[activeTool] = sculptPreserveTipsInput.checked;
+  if (sculptBrushPreserveTipsByTool[sel.state.activeTool] !== undefined) {
+    sculptBrushPreserveTipsByTool[sel.state.activeTool] = sculptPreserveTipsInput.checked;
   }
 }
 
@@ -37391,7 +37382,7 @@ function captureSculptMoveStrokeInfluence(
 }
 
 function beginSculptMoveStroke(event) {
-  const reverseTool = ["sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient"].includes(activeTool);
+  const reverseTool = ["sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient"].includes(sel.state.activeTool);
   if (
     !sculptBrushToolActive()
     || brushSizeHotkeyHeld
@@ -37419,7 +37410,7 @@ function beginSculptMoveStroke(event) {
     planeNormal,
     planeOffset,
     units,
-    moveInfluence: activeTool === "sculpt-move"
+    moveInfluence: sel.state.activeTool === "sculpt-move"
       ? captureSculptMoveStrokeInfluence(
           units,
           event.clientX,
@@ -37429,7 +37420,7 @@ function beginSculptMoveStroke(event) {
         )
       : new Map(),
     reverse: Boolean(event.ctrlKey),
-    scaleMode: activeTool === "sculpt-scale" ? (document.querySelector("#sculptScaleMode")?.value || "scale") : null,
+    scaleMode: sel.state.activeTool === "sculpt-scale" ? (document.querySelector("#sculptScaleMode")?.value || "scale") : null,
     cutExtendOffset: 0,
     editedLockIds: new Set(),
     snapshots: snapshotLocks.map((lock) => ({
@@ -37474,7 +37465,7 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
   const pushBrushActive = effectiveSculptBrushTool() === "sculpt-push";
   const orientBrushActive = effectiveSculptBrushTool() === "sculpt-orient";
   const reverse = Boolean(stroke.reverse);
-  const preserveTips = Boolean(sculptBrushPreserveTipsByTool[activeTool]);
+  const preserveTips = Boolean(sculptBrushPreserveTipsByTool[sel.state.activeTool]);
   const fixedMoveBrushInfluence = !smoothBrushActive && !inflateBrushActive && !slideBrushActive && !scaleBrushActive && !pushBrushActive && !orientBrushActive;
   const strokeDistance = Math.hypot(deltaX, deltaY);
   const changedSources = [];
@@ -37772,7 +37763,7 @@ function beginStrandWidthEdgeDrag(event) {
     || event.altKey
     || event.metaKey
     || viewportEditMode !== "strand"
-    || !["select", "move"].includes(activeTool)
+    || !["select", "move"].includes(sel.state.activeTool)
     || transformDragging
     || pointerHitsTransformGizmo(event)
   ) return;
@@ -38012,7 +38003,7 @@ function visibleControlPointHoverTargets() {
   const lock = viewportEditMode === "strand" ? getSelectedLock() : null;
   if (
     lock?.curveObjects?.group.visible
-    && (activeTool === "draw" || !["procedural-draw", "braid", "panel"].includes(activeTool))
+    && (sel.state.activeTool === "draw" || !["procedural-draw", "braid", "panel"].includes(sel.state.activeTool))
   ) targets.push(...lock.curveObjects.handles);
   return targets;
 }
@@ -38157,7 +38148,7 @@ window.addEventListener("pointercancel", endAltOrbit);
 window.addEventListener("pointercancel", endHoudiniZoomDrag);
 window.addEventListener("pointercancel", endSelectPointerCapture);
 window.addEventListener("pointerup", (event) => {
-  if (activeTool === "place" && finishPlacementPointer(event)) {
+  if (sel.state.activeTool === "place" && finishPlacementPointer(event)) {
     event.preventDefault();
   }
 });
@@ -38232,7 +38223,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   if (pointerHitsTransformGizmo(event)) return;
   const referenceSelectionActive = selectionToolSupportsPicking() && viewportEditMode === "reference";
   const referenceTransformActive = !referenceImagePanel.classList.contains("hidden")
-    && ["move", "scale"].includes(activeTool);
+    && ["move", "scale"].includes(sel.state.activeTool);
   if (
     (referenceSelectionActive || referenceTransformActive)
     && event.button === 0
@@ -38244,7 +38235,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     const overlayReference = viewportEditMode === "reference" ? referenceOverlayAtPointer(event) : null;
     if (overlayReference) {
       selectReferenceImage(overlayReference.id);
-      if (["select", "move", "scale"].includes(activeTool)) {
+      if (["select", "move", "scale"].includes(sel.state.activeTool)) {
         beginReferenceOverlayDrag(event, overlayReference);
       }
       event.preventDefault();
@@ -38300,7 +38291,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     return;
   }
-  if (activeTool === "draw-capsule-guide") {
+  if (sel.state.activeTool === "draw-capsule-guide") {
     if (event.ctrlKey || event.altKey || event.metaKey) return;
     beginCapsuleGuideDrawStroke(event, drawSurfaceHitFromEvent(event, { root: true }));
     return;
@@ -38336,7 +38327,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     }
     return;
   }
-  if (["draw", "procedural-draw", "braid", "panel"].includes(activeTool)) {
+  if (["draw", "procedural-draw", "braid", "panel"].includes(sel.state.activeTool)) {
     if (event.ctrlKey || event.altKey || event.metaKey) return;
     const extensionLock = selectedTipContinuationLock(event);
     const branchStart = extensionLock ? null : selectedDrawBranchPoint(event);
@@ -38344,7 +38335,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     beginDrawStrandStroke(event, surfaceHit, extensionLock, branchStart);
     return;
   }
-  if (activeTool === "curve-surface") {
+  if (sel.state.activeTool === "curve-surface") {
     if (event.ctrlKey || event.altKey || event.metaKey) return;
     const surfaceMode = activeStrokeSurfaceValue();
     const dynamicContextual = activeStrokeDynamicEnabled(surfaceMode);
@@ -38355,12 +38346,12 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     beginCurveSurfaceStroke(event, hit);
     return;
   }
-  if (activeTool === "surface-loft") {
+  if (sel.state.activeTool === "surface-loft") {
     if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
     beginLoftSurfaceStroke(event, drawSurfaceHitFromEvent(event, { root: true }));
     return;
   }
-  if (activeTool === "place") {
+  if (sel.state.activeTool === "place") {
     if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
     if (placeEdit) {
       beginPlacementPointer(event);
@@ -38420,7 +38411,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
       : null;
     if (surfaceAnchorHit) {
       selectionMarqueeDrag = null;
-      selectSurfaceObjectAnchor(selectedSurfaceLock, activeTool !== "select");
+      selectSurfaceObjectAnchor(selectedSurfaceLock, sel.state.activeTool !== "select");
       event.preventDefault();
       return;
     }
@@ -38469,10 +38460,10 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
 
   const modelingClick = event.button === 0 && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
   const selectedLattice = viewportEditMode === "guide" ? selectedCurveLatticeGuide() : null;
-  if (modelingClick && activeTool === "move" && selectedLattice?.handlesGroup.visible) {
+  if (modelingClick && sel.state.activeTool === "move" && selectedLattice?.handlesGroup.visible) {
     const latticePointHit = raycaster.intersectObjects(selectedLattice.handlesGroup.children, false)[0];
     if (latticePointHit) {
-      const directMove = activeTool === "move" && viewPlaneMoveActiveForView();
+      const directMove = sel.state.activeTool === "move" && viewPlaneMoveActiveForView();
       const pointIndex = latticePointHit.object.userData.curveLatticePointIndex;
       const preserveMulti = sel.state.selectedControlPoints.length > 1
         && controlPointIsSelected("lattice", selectedLattice.id, pointIndex);
@@ -38522,7 +38513,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   const handles = selectedLock?.curveObjects?.group.visible ? selectedLock.curveObjects.handles : [];
   const hit = modelingClick ? strandControlPointHitFromEvent(event, selectedLock) : null;
 
-  if (!hit && modelingClick && ["move", "rotate", "scale"].includes(activeTool)) {
+  if (!hit && modelingClick && ["move", "rotate", "scale"].includes(sel.state.activeTool)) {
     const lockHit = viewportEditMode === "strand"
       ? raycaster.intersectObjects(
         locks.filter(strandAvailableForViewportInteraction).map((lock) => lock.mesh),
@@ -38560,7 +38551,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   }
 
   if (!hit) {
-    if (modelingClick && activeTool === "relax" && selectedLock && sel.state.selectedPoint?.lockId === selectedLock.id) {
+    if (modelingClick && sel.state.activeTool === "relax" && selectedLock && sel.state.selectedPoint?.lockId === selectedLock.id) {
       if (beginRelaxEdit(selectedLock, sel.state.selectedPoint.pointIndex, event)) {
         event.preventDefault();
       }
@@ -38604,17 +38595,16 @@ function animate(timestamp = performance.now()) {
   requestAnimationFrame(animate);
 }
 
-let compactOutlinerCollapsed = false;
 let compactAttributeEditorCollapsed = false;
 
 function syncCompactSidebarLayout() {
-  document.body.classList.toggle("compact-outliner-collapsed", compactOutlinerCollapsed);
+  document.body.classList.toggle("compact-outliner-collapsed", sel.state.compactOutlinerCollapsed);
   document.body.classList.toggle("compact-attribute-collapsed", compactAttributeEditorCollapsed);
 
-  toggleOutlinerPanelButton.setAttribute("aria-expanded", String(!compactOutlinerCollapsed));
-  toggleOutlinerPanelButton.title = compactOutlinerCollapsed ? "Expand outliner" : "Collapse outliner";
+  toggleOutlinerPanelButton.setAttribute("aria-expanded", String(!sel.state.compactOutlinerCollapsed));
+  toggleOutlinerPanelButton.title = sel.state.compactOutlinerCollapsed ? "Expand outliner" : "Collapse outliner";
   toggleOutlinerPanelButton.setAttribute("aria-label", toggleOutlinerPanelButton.title);
-  toggleOutlinerPanelButton.querySelector("span").textContent = compactOutlinerCollapsed ? "\u2304" : "\u2303";
+  toggleOutlinerPanelButton.querySelector("span").textContent = sel.state.compactOutlinerCollapsed ? "\u2304" : "\u2303";
 
   toggleAttributeEditorPanelButton.setAttribute("aria-expanded", String(!compactAttributeEditorCollapsed));
   toggleAttributeEditorPanelButton.title = compactAttributeEditorCollapsed
@@ -38627,14 +38617,14 @@ function syncCompactSidebarLayout() {
 }
 
 function setOutlinerPanelCollapsed(collapsed) {
-  compactOutlinerCollapsed = Boolean(collapsed);
-  if (compactOutlinerCollapsed) compactAttributeEditorCollapsed = false;
+  sel.state.compactOutlinerCollapsed = Boolean(collapsed);
+  if (sel.state.compactOutlinerCollapsed) compactAttributeEditorCollapsed = false;
   syncCompactSidebarLayout();
 }
 
 function setAttributeEditorPanelCollapsed(collapsed) {
   compactAttributeEditorCollapsed = Boolean(collapsed);
-  if (compactAttributeEditorCollapsed) compactOutlinerCollapsed = false;
+  if (compactAttributeEditorCollapsed) sel.state.compactOutlinerCollapsed = false;
   syncCompactSidebarLayout();
 }
 
@@ -38675,7 +38665,7 @@ attributeEditorTabs.forEach((button, index) => {
 });
 
 toggleOutlinerPanelButton.addEventListener("click", () => {
-  setOutlinerPanelCollapsed(!compactOutlinerCollapsed);
+  setOutlinerPanelCollapsed(!sel.state.compactOutlinerCollapsed);
 });
 toggleAttributeEditorPanelButton.addEventListener("click", () => {
   setAttributeEditorPanelCollapsed(!compactAttributeEditorCollapsed);

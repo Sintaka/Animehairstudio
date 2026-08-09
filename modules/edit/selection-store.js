@@ -16,7 +16,19 @@ export function createSelectionStore() {
     selectedCurveSurfaceController: null,
     selectedCurveLatticePoint: null,
     selectedControlPoints: [],
-    pendingPlacedLockId: null
+    pendingPlacedLockId: null,
+    isolatedStrandIds: null,
+    lockIndex: 1,
+    activeTool: "select",
+    viewportSelectionMode: "component",
+    selectedSurfaceObjectAnchorId: null,
+    layerColorShiftsEnabled: true,
+    outlinerFolderColorsEnabled: true,
+    selectionSetsOpen: true,
+    activeOutlinerTab: "strands",
+    outlinerContextTarget: null,
+    viewportFrameSelectionKey: "",
+    compactOutlinerCollapsed: false
   });
   return {
     state: store.state,
