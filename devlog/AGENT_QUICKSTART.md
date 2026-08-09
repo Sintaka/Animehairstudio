@@ -9,12 +9,12 @@
 2. `devlog/README.md` —— devlog 索引字典（各专题文件入口）
 3. `devlog/development-standards.md` —— 开发规范 + 「持续修改功能」清单（main 更新后要优先同步的本地功能）+ 许可证
 4. `devlog/main-sync-conflicts.md` —— 与 main 合并的全部决策（Local 选项移除、桥接区与 compound 并存策略、17 处冲突分类）
-5. 按需跳读：`devlog/js-change-annotations.md`（子系统索引表 + 指向 6 个 `annotations-*.md` 专题文件）、`devlog/FUNCTION_INDEX.md`（机器生成的函数目录）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）
+5. 按需跳读：`devlog/js-change-annotations.md`（子系统索引表 + 指向 6 个 `annotations-*.md` 专题文件）、`devlog/FUNCTION_INDEX.md`（机器生成的函数目录）、`devlog/STATE_MANAGEMENT.md`（**状态管理架构：15 个 store 清单 + 替换验证 9 点**）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）
 
 ## 1. 仓库结构速览
 
 - `app.js`（≈1.7MB 单体）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 全部在这里。
-- `modules/*.js` —— 拆出的模块；本 fork 新增/大改：`branch-connect.js`（桥接核心）、`app-config.js`（版本号/缓存号）、`localization.js`（ZH 词典）、`sculpt-brush.js`（自定义笔刷）、`shortcut-registry.js`（Ctrl+Z 放行）等。
+- `modules/*.js` —— 按域分目录（core/data/geometry/io/edit/sculpt/material/branch/scalp）；**全局状态已收敛到 15 个 store**（见 `devlog/STATE_MANAGEMENT.md`），不要再新增 app.js 全局 let。
 - `index.html` / `styles.css` —— UI。
 - `server.js` —— main 带来的静态文件服务；`/api/save-project` 已是**死代码**（三个 Local 选项已移除，勿再调用）。
 - `devlog/` —— 全部开发记录（本页所在）。
