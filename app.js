@@ -1,3 +1,4 @@
+import { createReferenceStore } from "./modules/edit/reference-store.js?v=20260809-5";
 import { createDrawStore } from "./modules/edit/draw-store.js?v=20260809-4";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260809-3";
 import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
@@ -2116,9 +2117,8 @@ function clearStrandSelectionState() {
 
 
 let lockIndex = 1;
-let referenceImageIndex = 1;
+const ref = createReferenceStore();
 
-let pendingReferenceImageType = null;
 let referenceScaleDrag = null;
 let referenceOverlayDrag = null;
 let referenceCropDrag = null;
@@ -6517,8 +6517,8 @@ function addReferenceImage(snapshot, { select = true } = {}) {
     && snapshot.y == null;
   const activeScale = THREE.MathUtils.clamp(Number(snapshot.scale ?? 1), 0.05, 20);
   const reference = {
-    id: snapshot.id || `reference-${referenceImageIndex++}`,
-    name: snapshot.name || `Reference ${referenceImageIndex - 1}`,
+    id: snapshot.id || `reference-${ref.state.referenceImageIndex++}`,
+    name: snapshot.name || `Reference ${ref.state.referenceImageIndex - 1}`,
     type,
     source: snapshot.source,
     aspect: Math.max(0.05, Number(snapshot.aspect || 1)),
@@ -6548,7 +6548,7 @@ function addReferenceImage(snapshot, { select = true } = {}) {
     rotation: { ...(savedPlaneRotation || { x: placement.rotation[0], y: placement.rotation[1], z: placement.rotation[2] }) }
   };
   const numericId = Number(reference.id.match(/\d+$/)?.[0]);
-  if (Number.isFinite(numericId)) referenceImageIndex = Math.max(referenceImageIndex, numericId + 1);
+  if (Number.isFinite(numericId)) ref.state.referenceImageIndex = Math.max(ref.state.referenceImageIndex, numericId + 1);
   referenceImages.push(reference);
   createReferenceImageRuntime(reference);
   if (select) selectReferenceImage(reference.id);
@@ -18260,7 +18260,7 @@ function snapshotState() {
     headMeshVisible,
     bodyMeshVisible,
     lockIndex,
-    referenceImageIndex,
+    referenceImageIndex: ref.state.referenceImageIndex,
     hairMaterialIndex,
     hairMaterials: hairMaterialDefinitions.map((material) => ({ ...material })),
         ...createProjectSelectionSnapshot(sel.selectionSnapshot()),
@@ -19343,7 +19343,7 @@ function resetEditableSceneForStateRestore() {
 
 function restoreSharedStateForStateRestore(state, restorePlan, { preserveMirrorMode = false } = {}) {
   lockIndex = restorePlan.counters.lockIndex;
-  referenceImageIndex = restorePlan.counters.referenceImageIndex;
+  ref.state.referenceImageIndex = restorePlan.counters.referenceImageIndex;
   visibleStrandRegions.clear();
   restorePlan.visibility.strandRegions.forEach((region) => visibleStrandRegions.add(region));
   visibleStrandLayers.clear();
@@ -35404,7 +35404,7 @@ joinDiscordButton.addEventListener("click", () => {
 });
 function requestReferenceImage(type) {
   setViewportEditMode("reference");
-  pendingReferenceImageType = type;
+  ref.state.pendingReferenceImageType = type;
   referenceImageFile.value = "";
   referenceImageFile.click();
 }
@@ -35416,8 +35416,8 @@ addViewportReference.addEventListener("click", () => requestReferenceImage("over
 addPlaneReference.addEventListener("click", () => requestReferenceImage("plane"));
 referenceImageFile.addEventListener("change", async () => {
   const file = referenceImageFile.files?.[0];
-  const type = pendingReferenceImageType;
-  pendingReferenceImageType = null;
+  const type = ref.state.pendingReferenceImageType;
+  ref.state.pendingReferenceImageType = null;
   if (!file || !type) return;
   try {
     await addReferenceImagesFromFiles([file], type);

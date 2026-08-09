@@ -1,6 +1,6 @@
 # 全局状态登记表 / GLOBAL LET INVENTORY
 
-> 机器生成（2026-08-09），由 `node scripts/gen-let-inventory.js` 产出。共 **215** 个顶层 `let`（app.js 全局可变状态）。
+> 机器生成（2026-08-09），由 `node scripts/gen-let-inventory.js` 产出。共 **213** 个顶层 `let`（app.js 全局可变状态）。
 > 用途：阶段 3（全局状态收敛）的地图——按 refs 排序找最核心状态，按 bucket 找子系统边界。`refs`=读写点总数，`span`=首末引用行距。
 
 ## 按子系统桶（bucket）汇总
@@ -19,7 +19,6 @@
 | head/body | 3 | `importedHeadAsset`(9) `enterHeadSetupAfterHeadImport`(4) `enterHeadSetupAfterFullBodyImport`(4) |
 | gizmo/transform | 3 | `transformPrecisionHeld`(6) `activeSurfaceObjectTransform`(6) `recursiveHierarchyTransforms`(5) |
 | undo/history | 2 | `historyShortcutHeld`(7) `restoringHistory`(5) |
-| reference | 2 | `referenceImageIndex`(5) `pendingReferenceImageType`(3) |
 
 ## 全量清单（按 refs 降序）
 
@@ -29,13 +28,13 @@
 | `drawStrandStroke` | 2200 | 137 | 133 | 4 | 35871 | sculpt/edit |
 | `taperCurveEdit` | 2281 | 120 | 117 | 3 | 31224 | sculpt/edit |
 | `scalpBuilderCurveLattice` | 2160 | 73 | 71 | 2 | 35946 | scalp |
-| `camera` | 465 | 67 | 62 | 5 | 38215 | camera/viewport |
+| `camera` | 466 | 67 | 62 | 5 | 38214 | camera/viewport |
 | `viewportEditMode` | 2395 | 66 | 16 | 50 | 36214 | sculpt/edit |
 | `scalpBuilderEditing` | 2150 | 58 | 53 | 5 | 36194 | scalp |
 | `curveSurfaceDraft` | 2205 | 53 | 50 | 3 | 36224 | (unclassified) |
 | `sweepProfileEdit` | 2279 | 49 | 46 | 3 | 30875 | sculpt/edit |
 | `viewPlaneMoveDrag` | 2272 | 45 | 41 | 4 | 35798 | sculpt/edit |
-| `guideModel` | 2062 | 42 | 40 | 2 | 24708 | guide/curve |
+| `guideModel` | 2063 | 42 | 40 | 2 | 24707 | guide/curve |
 | `capsuleGuideEditing` | 2151 | 39 | 30 | 9 | 36234 | sculpt/edit |
 | `mirrorXEditing` | 2142 | 37 | 36 | 1 | 33965 | sculpt/edit |
 | `placeEdit` | 2199 | 35 | 31 | 4 | 36243 | sculpt/edit |
@@ -55,8 +54,8 @@
 | `proportionalHotkeyPress` | 2214 | 21 | 16 | 5 | 36088 | sculpt/edit |
 | `viewportBackgroundColor` | 2242 | 21 | 15 | 6 | 32843 | camera/viewport |
 | `preferencesOpenSnapshot` | 2261 | 21 | 17 | 4 | 28817 | ui/panel |
-| `customScalpSurfaceMesh` | 1615 | 18 | 15 | 3 | 32006 | scalp |
-| `editedScalpSurfaceMesh` | 1620 | 18 | 16 | 2 | 19683 | scalp |
+| `customScalpSurfaceMesh` | 1616 | 18 | 15 | 3 | 32005 | scalp |
+| `editedScalpSurfaceMesh` | 1621 | 18 | 16 | 2 | 19682 | scalp |
 | `scalpBuilderStep` | 2157 | 18 | 16 | 2 | 3879 | scalp |
 | `proceduralDuplicatePreview` | 2399 | 17 | 9 | 8 | 29849 | (unclassified) |
 | `transformDragging` | 2134 | 16 | 12 | 4 | 35932 | sculpt/edit |
@@ -65,13 +64,13 @@
 | `customCreationPresets` | 34580 | 16 | 12 | 4 | 274 | save/project |
 | `selectedSurfaceObjectAnchorId` | 2196 | 15 | 4 | 11 | 34521 | selection/outliner |
 | `radialMenusEnabled` | 2216 | 15 | 13 | 2 | 32855 | ui/panel |
-| `scalpRegionAssignments` | 1474 | 14 | 13 | 1 | 19833 | scalp |
+| `scalpRegionAssignments` | 1475 | 14 | 13 | 1 | 19832 | scalp |
 | `scalpBuilderEditedPoints` | 2162 | 14 | 8 | 6 | 17224 | scalp |
 | `altOrbitDrag` | 2187 | 14 | 10 | 4 | 36477 | sculpt/edit |
 | `controlPointDisplaySize` | 2238 | 14 | 13 | 1 | 32846 | guide/curve |
 | `strandRadialGesture` | 2393 | 14 | 10 | 4 | 28266 | hair/mesh |
 | `branchRegionEdit` | 22737 | 14 | 12 | 2 | 10510 | sculpt/edit |
-| `scalpGuideSource` | 1614 | 13 | 4 | 9 | 32011 | scalp |
+| `scalpGuideSource` | 1615 | 13 | 4 | 9 | 32010 | scalp |
 | `capsuleGuideLoopSelection` | 2153 | 13 | 8 | 5 | 8896 | selection/outliner |
 | `scalpBuilderPlane` | 2159 | 13 | 10 | 3 | 3902 | scalp |
 | `scalpLatticeDrag` | 2193 | 13 | 11 | 2 | 35874 | scalp |
@@ -81,8 +80,8 @@
 | `cameraSmoothingEnabled` | 2222 | 13 | 9 | 4 | 32853 | camera/viewport |
 | `cameraSmoothingStrength` | 2223 | 13 | 12 | 1 | 32853 | camera/viewport |
 | `viewportStatisticsEnabled` | 2230 | 13 | 11 | 2 | 32850 | camera/viewport |
-| `defaultHairShader` | 306 | 12 | 9 | 3 | 34780 | hair/mesh |
-| `capsuleGuidesVisible` | 2088 | 12 | 6 | 6 | 33621 | guide/curve |
+| `defaultHairShader` | 307 | 12 | 9 | 3 | 34779 | hair/mesh |
+| `capsuleGuidesVisible` | 2089 | 12 | 6 | 6 | 33620 | guide/curve |
 | `objectSpaceEditing` | 2140 | 12 | 11 | 1 | 35990 | sculpt/edit |
 | `layerColorShiftsEnabled` | 2236 | 12 | 10 | 2 | 32846 | selection/outliner |
 | `sideNamingPerspective` | 2250 | 12 | 10 | 2 | 36516 | (unclassified) |
@@ -90,9 +89,9 @@
 | `strandWidthEdgeDrag` | 2263 | 12 | 8 | 4 | 35746 | sculpt/edit |
 | `outlinerContextTarget` | 2391 | 12 | 5 | 7 | 30320 | selection/outliner |
 | `toolRadialGesture` | 2394 | 12 | 9 | 3 | 33530 | (unclassified) |
-| `scalpVisibleQuads` | 1476 | 11 | 10 | 1 | 18864 | scalp |
-| `editedScalpRegions` | 1623 | 11 | 7 | 4 | 19681 | scalp |
-| `curveLatticeGuidesVisible` | 2089 | 11 | 5 | 6 | 33625 | guide/curve |
+| `scalpVisibleQuads` | 1477 | 11 | 10 | 1 | 18863 | scalp |
+| `editedScalpRegions` | 1624 | 11 | 7 | 4 | 19680 | scalp |
+| `curveLatticeGuidesVisible` | 2090 | 11 | 5 | 6 | 33624 | guide/curve |
 | `capsuleGuideLoopDrag` | 2154 | 11 | 7 | 4 | 35921 | sculpt/edit |
 | `houdiniZoomDrag` | 2190 | 11 | 8 | 3 | 24340 | sculpt/edit |
 | `navigationTipsEnabled` | 2217 | 11 | 9 | 2 | 32856 | camera/viewport |
@@ -105,21 +104,21 @@
 | `capsuleGuideDrawStroke` | 2201 | 10 | 6 | 4 | 35871 | sculpt/edit |
 | `toolShortcutPress` | 2215 | 10 | 6 | 4 | 28470 | (unclassified) |
 | `branchSweepStartDrag` | 23232 | 10 | 7 | 3 | 4400 | sculpt/edit |
-| `orthographicView` | 466 | 9 | 8 | 1 | 35970 | camera/viewport |
-| `activeHairMaterialId` | 998 | 9 | 3 | 6 | 31910 | hair/mesh |
-| `customScalpRegions` | 1618 | 9 | 6 | 3 | 19683 | scalp |
-| `editedScalpSurfaceWire` | 1621 | 9 | 8 | 1 | 4470 | scalp |
-| `uvCheckerEnabled` | 2080 | 9 | 8 | 1 | 33654 | hair/mesh |
+| `orthographicView` | 467 | 9 | 8 | 1 | 35969 | camera/viewport |
+| `activeHairMaterialId` | 999 | 9 | 3 | 6 | 31909 | hair/mesh |
+| `customScalpRegions` | 1619 | 9 | 6 | 3 | 19682 | scalp |
+| `editedScalpSurfaceWire` | 1622 | 9 | 8 | 1 | 4469 | scalp |
+| `uvCheckerEnabled` | 2081 | 9 | 8 | 1 | 33653 | hair/mesh |
 | `taperMeshPointsVisible` | 2282 | 9 | 7 | 2 | 30996 | hair/mesh |
 | `importedHeadAsset` | 3202 | 9 | 2 | 7 | 15939 | head/body |
 | `scheduledTaperCurveEditFrame` | 17318 | 9 | 5 | 4 | 26 | sculpt/edit |
 | `branchRegionZoomDrag` | 22859 | 9 | 7 | 2 | 89 | sculpt/edit |
 | `hoveredControlPoint` | 38046 | 9 | 6 | 3 | 12 | guide/curve |
-| `turntableActive` | 468 | 8 | 7 | 1 | 38196 | camera/viewport |
-| `transformScaleDrag` | 680 | 8 | 5 | 3 | 32167 | sculpt/edit |
-| `importedScalpGuideAsset` | 1619 | 8 | 5 | 3 | 17543 | scalp |
-| `showGroupColors` | 2079 | 8 | 7 | 1 | 33654 | hair/mesh |
-| `scalpGuideVisible` | 2085 | 8 | 5 | 3 | 5821 | scalp |
+| `turntableActive` | 469 | 8 | 7 | 1 | 38195 | camera/viewport |
+| `transformScaleDrag` | 681 | 8 | 5 | 3 | 32166 | sculpt/edit |
+| `importedScalpGuideAsset` | 1620 | 8 | 5 | 3 | 17542 | scalp |
+| `showGroupColors` | 2080 | 8 | 7 | 1 | 33653 | hair/mesh |
+| `scalpGuideVisible` | 2086 | 8 | 5 | 3 | 5820 | scalp |
 | `referenceOverlayDrag` | 2123 | 8 | 4 | 4 | 9174 | sculpt/edit |
 | `referenceCropDrag` | 2124 | 8 | 4 | 4 | 9173 | sculpt/edit |
 | `sculptMoveStroke` | 2127 | 8 | 4 | 4 | 36149 | sculpt/edit |
@@ -132,12 +131,12 @@
 | `proceduralAccessoryEditHistoryOpen` | 34007 | 8 | 1 | 7 | 2176 | sculpt/edit |
 | `compactOutlinerCollapsed` | 38684 | 8 | 6 | 2 | 71 | selection/outliner |
 | `compactAttributeEditorCollapsed` | 38685 | 8 | 6 | 2 | 73 | sculpt/edit |
-| `orthographicHalfHeight` | 467 | 7 | 3 | 4 | 10297 | camera/viewport |
-| `customScalpSurfaceWire` | 1616 | 7 | 5 | 2 | 4478 | scalp |
-| `hairTopologyVisible` | 2078 | 7 | 5 | 2 | 34372 | hair/mesh |
-| `uvInspectorDrag` | 2084 | 7 | 4 | 3 | 33679 | sculpt/edit |
-| `isolatedStrandIds` | 2101 | 7 | 4 | 3 | 34146 | selection/outliner |
-| `lockIndex` | 2118 | 7 | 5 | 2 | 27437 | selection/outliner |
+| `orthographicHalfHeight` | 468 | 7 | 3 | 4 | 10296 | camera/viewport |
+| `customScalpSurfaceWire` | 1617 | 7 | 5 | 2 | 4477 | scalp |
+| `hairTopologyVisible` | 2079 | 7 | 5 | 2 | 34371 | hair/mesh |
+| `uvInspectorDrag` | 2085 | 7 | 4 | 3 | 33678 | sculpt/edit |
+| `isolatedStrandIds` | 2102 | 7 | 4 | 3 | 34145 | selection/outliner |
+| `lockIndex` | 2119 | 7 | 5 | 2 | 27436 | selection/outliner |
 | `activeStrandObjectTransform` | 2131 | 7 | 2 | 5 | 9735 | hair/mesh |
 | `activeLatticeMultiEdit` | 2133 | 7 | 2 | 5 | 10484 | sculpt/edit |
 | `scalpPaintDrag` | 2181 | 7 | 5 | 2 | 35887 | scalp |
@@ -150,8 +149,8 @@
 | `strandRadialActions` | 2755 | 7 | 6 | 1 | 27675 | hair/mesh |
 | `branchRegionPanDrag` | 22860 | 7 | 5 | 2 | 89 | sculpt/edit |
 | `pendingCreationPresetType` | 34742 | 7 | 0 | 7 | 198 | save/project |
-| `transformPrecisionHeld` | 682 | 6 | 3 | 3 | 35479 | gizmo/transform |
-| `scalpManualRegionQuads` | 1475 | 6 | 4 | 2 | 17968 | scalp |
+| `transformPrecisionHeld` | 683 | 6 | 3 | 3 | 35478 | gizmo/transform |
+| `scalpManualRegionQuads` | 1476 | 6 | 4 | 2 | 17967 | scalp |
 | `activeSurfaceObjectTransform` | 2130 | 6 | 2 | 4 | 34087 | gizmo/transform |
 | `pendingLockGeometryFrame` | 2136 | 6 | 2 | 4 | 25851 | hair/mesh |
 | `sculptBrushGeometryFrame` | 2138 | 6 | 3 | 3 | 25810 | sculpt/edit |
@@ -163,12 +162,11 @@
 | `pendingShapePresetSave` | 16666 | 6 | 0 | 6 | 18276 | save/project |
 | `pendingShapePresetRemoval` | 16667 | 6 | 1 | 5 | 18281 | save/project |
 | `pendingCreationPresetRemoval` | 34743 | 6 | 1 | 5 | 204 | save/project |
-| `customScalpSelectionOutline` | 1617 | 5 | 3 | 2 | 4478 | selection/outliner |
-| `editedScalpSelectionOutline` | 1622 | 5 | 4 | 1 | 4470 | selection/outliner |
-| `headMeshVisible` | 2097 | 5 | 1 | 4 | 33622 | hair/mesh |
-| `bodyMeshVisible` | 2098 | 5 | 2 | 3 | 33626 | hair/mesh |
-| `referenceImageIndex` | 2119 | 5 | 3 | 2 | 17227 | reference |
-| `referenceScaleDrag` | 2122 | 5 | 3 | 2 | -1281 | sculpt/edit |
+| `customScalpSelectionOutline` | 1618 | 5 | 3 | 2 | 4477 | selection/outliner |
+| `editedScalpSelectionOutline` | 1623 | 5 | 4 | 1 | 4469 | selection/outliner |
+| `headMeshVisible` | 2098 | 5 | 1 | 4 | 33621 | hair/mesh |
+| `bodyMeshVisible` | 2099 | 5 | 2 | 3 | 33625 | hair/mesh |
+| `referenceScaleDrag` | 2122 | 5 | 3 | 2 | -1280 | sculpt/edit |
 | `activeGuideObjectTransform` | 2132 | 5 | 0 | 5 | 9445 | guide/curve |
 | `recursiveHierarchyTransforms` | 2143 | 5 | 4 | 1 | 32828 | gizmo/transform |
 | `activeScalpBuilderCurveLatticeEdit` | 2161 | 5 | 1 | 4 | 3854 | scalp |
@@ -183,9 +181,9 @@
 | `proceduralAccessoryEditPointerActive` | 34008 | 5 | 1 | 4 | 2174 | sculpt/edit |
 | `pendingClumpPresetGuideId` | 34744 | 5 | 1 | 4 | 197 | guide/curve |
 | `sculptBrushViableLockIds` | 37310 | 5 | 2 | 3 | 46 | sculpt/edit |
-| `turntableSpeed` | 469 | 4 | 3 | 1 | 38199 | camera/viewport |
-| `selectionRemoveHeld` | 683 | 4 | 1 | 3 | 35479 | selection/outliner |
-| `hairMaterialIndex` | 997 | 4 | 2 | 2 | 18358 | hair/mesh |
+| `turntableSpeed` | 470 | 4 | 3 | 1 | 38198 | camera/viewport |
+| `selectionRemoveHeld` | 684 | 4 | 1 | 3 | 35478 | selection/outliner |
+| `hairMaterialIndex` | 998 | 4 | 2 | 2 | 18357 | hair/mesh |
 | `sculptBrushShiftSmoothHeld` | 2128 | 4 | 2 | 2 | 8811 | sculpt/edit |
 | `capsuleGuideLoopHover` | 2152 | 4 | 1 | 3 | 8209 | guide/curve |
 | `curveLatticeLoopHover` | 2156 | 4 | 3 | 1 | 6746 | guide/curve |
@@ -203,12 +201,11 @@
 | `viewportFrameCycleStep` | 10797 | 4 | 0 | 4 | 26 | camera/viewport |
 | `enterHeadSetupAfterHeadImport` | 33582 | 4 | 0 | 4 | 14 | head/body |
 | `enterHeadSetupAfterFullBodyImport` | 33583 | 4 | 0 | 4 | 29 | head/body |
-| `uniformScaleDrag` | 679 | 3 | 0 | 3 | 32080 | sculpt/edit |
-| `transformPrecisionDrag` | 681 | 3 | 0 | 3 | 32134 | sculpt/edit |
-| `defaultScalpGeometryData` | 1435 | 3 | 0 | 3 | 13 | scalp |
-| `scalpQuadEdges` | 1449 | 3 | 2 | 1 | 353 | scalp |
-| `uvInspectorDirty` | 2082 | 3 | 1 | 2 | 26097 | hair/mesh |
-| `pendingReferenceImageType` | 2121 | 3 | 0 | 3 | 33299 | reference |
+| `uniformScaleDrag` | 680 | 3 | 0 | 3 | 32079 | sculpt/edit |
+| `transformPrecisionDrag` | 682 | 3 | 0 | 3 | 32133 | sculpt/edit |
+| `defaultScalpGeometryData` | 1436 | 3 | 0 | 3 | 13 | scalp |
+| `scalpQuadEdges` | 1450 | 3 | 2 | 1 | 353 | scalp |
+| `uvInspectorDirty` | 2083 | 3 | 1 | 2 | 26096 | hair/mesh |
 | `viewportSelectionMode` | 2126 | 3 | 0 | 3 | 4743 | selection/outliner |
 | `scalpBuilderCurveLatticeLoadToken` | 2163 | 3 | 1 | 2 | 2828 | scalp |
 | `scalpBuilderCurveLatticePromise` | 2164 | 3 | 1 | 2 | 2265 | scalp |
@@ -224,9 +221,9 @@
 | `scalpTopologyTemplatePromise` | 4383 | 3 | 1 | 2 | 34 | scalp |
 | `viewportFrameSelectionKey` | 10798 | 3 | 1 | 2 | 19 | selection/outliner |
 | `fpsFrameCount` | 38650 | 3 | 1 | 2 | 11 | (unclassified) |
-| `scalpActiveVertexIndices` | 1450 | 2 | 1 | 1 | 24565 | scalp |
-| `authoredScalpGuideMatrix` | 2063 | 2 | 1 | 1 | 2370 | scalp |
-| `uvCheckerTexture` | 2081 | 2 | 0 | 2 | 26158 | hair/mesh |
+| `scalpActiveVertexIndices` | 1451 | 2 | 1 | 1 | 24564 | scalp |
+| `authoredScalpGuideMatrix` | 2064 | 2 | 1 | 1 | 2369 | scalp |
+| `uvCheckerTexture` | 2082 | 2 | 0 | 2 | 26157 | hair/mesh |
 | `proportionalRootLocked` | 2145 | 2 | 1 | 1 | 33681 | sculpt/edit |
 | `pullCollisionEnabled` | 2274 | 2 | 1 | 1 | 31651 | (unclassified) |
 | `lastHorizontalViewAxis` | 2276 | 2 | 2 | 0 | 34366 | (unclassified) |
@@ -238,5 +235,5 @@
 | `pendingFileAction` | 3201 | 2 | 0 | 2 | 15914 | save/project |
 | `fpsSampleStart` | 38651 | 2 | 0 | 2 | 11 | (unclassified) |
 | `previousAnimationTimestamp` | 38652 | 2 | 1 | 1 | 4 | (unclassified) |
-| `braidSegmentTemplate` | 2075 | 1 | 0 | 1 | 1509 | (unclassified) |
-| `braidSegmentBounds` | 2076 | 1 | 0 | 1 | 1509 | (unclassified) |
+| `braidSegmentTemplate` | 2076 | 1 | 0 | 1 | 1508 | (unclassified) |
+| `braidSegmentBounds` | 2077 | 1 | 0 | 1 | 1508 | (unclassified) |
