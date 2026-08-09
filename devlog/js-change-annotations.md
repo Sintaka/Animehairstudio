@@ -131,6 +131,8 @@
 
 
 
+  - **排查：Front Bangs 1-3（面板/拉链）视口三角观感（0.2.55，无代码改动）**：三片大刘海在视口着色中沿 quad 对角线出折痕呈三角观感，但导出是四边面。确认是**显示（着色）问题，非数据错误**——`quadFaces`/`triangleEdgeMasks` 均正确（maskLen==三角形数，线框不画对角线），导出走 quadFaces。根因：面板 Split（Zipper）开口处的 wall quad 四角不共面（前/后壳在开口处被 splitOpening 横向错位 + camber + 帧扭转），GPU 按固定对角线拆 2 三角，折叠 quad 两三角法线差异大（0043 实测：Front Bangs 1 折叠 22/822（16 个 120-180° 近完全折叠）、Front Bangs 3 折叠 52/332（12 个 60-120°）、Front Bangs 2 仅 3 个 ≤7°）→ 着色折痕。原版同样存在（bug-fixes #3）。若修：折叠 quad 选「形内对角」或细分开口段。
+
   - **刘海（split 父发片）线框显示三角面修复（0.2.54，分支 codex/bangs-triangle-fix）**：
     1) 现象/原因：刘海分叉（split 父发片被挖洞后，如 Side Bangs Left 1/Right 1）在 viewport 线框/拓扑视图里显示为三角面，但导出（OBJ/USDA 走 `quadFaces`）是四边面。根因是 `applyBranchRootRegionCarving` 挖洞后**没有同步裁剪 `triangleEdgeMasks`**——split 几何的 masks 按「每侧面 quad 2 条 + 端盖」顺序发射，挖洞删掉侧面 quad 后 masks 数组仍是旧长度（如 1180 vs 三角形 1174），`createHairTopologyGeometry` 按三角形序号读取时错位 → 挖洞区域之后的 quad 对角线被描边 → 看似三角。普通发丝无 authored masks（走 fallback）不受影响；面板（Front Bangs）masks 正常，其三角观感是既有的非平面折叠 quad 着色折痕（bug-fixes #3 已知问题，与本次无关）。
     2) 修复：`applyBranchRootRegionCarving` 重建索引/quadFaces 后同步裁剪 `triangleEdgeMasks`（按被删 face 去掉其 2 条侧面 mask，保留端盖 mask）。验证（0042）：Side Bangs Left 1/Right 1 挖洞后 maskLen==三角形数（1174/1174、1168/1168），线框不再画错误对角线；非挖洞 split（Left 2/Right 2）与面板 masks 不变；0041/0042 全部子发片桥接回归正常（bridgeVC 19/24、0 NaN、0 页面错误）。
