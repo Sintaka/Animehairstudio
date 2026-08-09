@@ -4,6 +4,10 @@ import * as THREE from "three";
 
 const branchRegionCanvas = document.querySelector("#branchRegionCanvas");
 
+export function clampRegionParam(value) {
+  return THREE.MathUtils.clamp(Number(value) || 0, 0, 1);
+}
+
 export function createBranchRegionApi(deps) {
   // deps: locks, rebuildLockGeometry, updateCurveObjects, getSelectedLock, pushUndoState,
   //   resize, pointerToNdc, closeSweepProfileEditor, closeTaperCurveEditor,
