@@ -23,7 +23,7 @@
 - [x] **阶段 1b：bug-fixes 拆独立条目**（#3 拆为 #3/#4/#5，每版含根因/修复/验证/保留判断）
 - [x] **阶段 1c：js-change-annotations 按子系统拆文件**（195 条目 → annotations-bridge/region-panel/root-bone/split/display-fixes/adapt 6 文件，原文件为 42 行索引；local-adaptation-log 保持唯一时间线）
 - [x] **阶段 1d：加 upstream remote，核对 main 与上游同步**（upstream = Ludetools/Animehairstudio；main == upstream/main == d3358f6，完全同步）
-- [ ] **阶段 2：按依赖图拆第一个子系统**（候选：save/export、子发片桥接）
+- [x] **阶段 2a：目标文件夹架构落地（IO 域）**——新建 `modules/io/`，把 8 个现有 IO 模块移入（file-actions / file-drop / obj-export / obj-import / usda-export / project-schema / project-state / recent-projects），更新 app.js 8 处 import（纯路径，逻辑零改动）`r`n- [ ] **阶段 2b：从 app.js 拆 IO 子系统**（save/export + 文件对话框 → `modules/io/project-files.js`，依赖注入 snapshotState/strandCurveParameters/curveSurfaceControllerCurves 等）`r`n- [ ] **阶段 2c（后续域）**：core/ data/ geometry/ edit/ sculpt/ material/ 归组（按依赖图逐域落地）
 - [ ] **阶段 3（可选）：全局状态收敛**（237 个 let → 按子系统 store）
 
 ## 验证策略（每条铁律）
@@ -31,3 +31,18 @@
 1. 每个改动 commit 独立跑 Playwright headless 回归：静态服务器 127.0.0.1:8080 + `%TEMP%\ahs-verify-three\vendor`(three) + D:/Downloads/Sussurro_v1_004*.ahs，断言无页面错误、桥接 quads/NaN 与基线一致。
 2. 文档类改动：改完 `Select-String` 抽查渲染/链接。
 3. 拆分只允许「独立 commit + 失败回滚」，不允许「拆完未验证」。
+
+## 目标文件夹架构（modules/）
+
+```
+modules/
+  io/          ← 已落地（2a）：project-files.js(计划) file-actions file-drop obj-export obj-import usda-export project-schema project-state recent-projects
+  core/        ← 计划：app-config preference-storage shortcut-registry history
+  data/        ← 计划：loc-ja loc-zh localization clump-brush-presets shape-presets tool-presets
+  geometry/    ← 计划：curve-math curve-surface curve-lattice surface-lattice poly-topology topology strand-constraints capsule-curve branch-connect compound-strand procedural-draw radial-layout anime-hair-shaders uv-inspector
+  edit/        ← 计划：selection-state selection-sets mirror-selection multi-edit
+  sculpt/      ← 计划：sculpt-brush
+  material/    ← 计划：material-state
+```
+
+> 归组原则：按功能域分目录；模块间保持扁平（不互相 import，只被 app.js import）；每个域落地独立 commit + verify-smoke 回归。

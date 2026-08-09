@@ -92,21 +92,21 @@ import {
   sampleCapsuleRadialProfile,
   scaleCapsuleRadialLoops
 } from "./modules/capsule-curve.js?v=20260804-1";
-import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./modules/obj-export.js?v=20260726-1";
-import { polygonOnlyObjSource } from "./modules/obj-import.js?v=20260801-1";
-import { exportAnimeHairUsda } from "./modules/usda-export.js?v=20260806-4";
+import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./modules/io/obj-export.js?v=20260726-1";
+import { polygonOnlyObjSource } from "./modules/io/obj-import.js?v=20260801-1";
+import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260806-4";
 import {
   cleanFileBaseName,
   fileActionFormat,
   fileNameForAction,
   normalizeExportContents
-} from "./modules/file-actions.js?v=20260728-1";
-import { applicationDropFileKind } from "./modules/file-drop.js?v=20260803-1";
+} from "./modules/io/file-actions.js?v=20260728-1";
+import { applicationDropFileKind } from "./modules/io/file-drop.js?v=20260803-1";
 import { mirrorSelectionTargets } from "./modules/mirror-selection.js?v=20260805-1";
 import {
   listRecentProjects,
   rememberRecentProject
-} from "./modules/recent-projects.js?v=20260803-1";
+} from "./modules/io/recent-projects.js?v=20260803-1";
 import { uvCoordinateBounds, uvViewTransform } from "./modules/uv-inspector.js?v=20260726-1";
 import {
   cameraFacingPlaneNormal,
@@ -121,12 +121,12 @@ import { squareChildRing, holeBoundary, connectSide, connectBoundaryToRing } fro
 import {
   createHairProject,
   validateHairProject
-} from "./modules/project-schema.js?v=20260728-2";
+} from "./modules/io/project-schema.js?v=20260728-2";
 import {
   createProjectRestorePlan,
   createProjectSelectionSnapshot,
   projectSnapshotLocks
-} from "./modules/project-state.js?v=20260805-2";
+} from "./modules/io/project-state.js?v=20260805-2";
 import {
   createSelectionSetRecord,
   normalizeSelectionSets,
