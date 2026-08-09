@@ -1,3 +1,4 @@
+import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260809-18";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260809-17";
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260809-16";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260809-15";
@@ -11549,6 +11550,18 @@ function applyStrandObjectPreviewMatrix(lock, worldDelta, snapshot) {
   mesh.matrixWorldNeedsUpdate = true;
 }
 
+const branchHierarchy = createBranchHierarchyApi({
+  curveFrameAtPoint, getSelectedLock, strandControlPointHitFromEvent, syncLockFromCurve, updateLockGeometry, locks,
+  branchState: branch.state, selState: sel.state,
+  branchRootRegionFromParam: (...a) => branchRegion.branchRootRegionFromParam(...a),
+  applyBranchRootOffset: (...a) => branchBridge.applyBranchRootOffset(...a),
+  captureBranchLocalState: (...a) => branchRootBone.captureBranchLocalState(...a),
+  ensureBranchParentNormalField: (...a) => branchRootBone.ensureBranchParentNormalField(...a),
+  branchParentFrame: (...a) => branchRootBone.branchParentFrame(...a),
+  branchWorldVector: (...a) => branchRootBone.branchWorldVector(...a)
+});
+
+
 function beginStrandObjectTransform(handle) {
   if (handle !== strandObjectTransformHandle || componentEditModeActive()) return;
   const activeLock = getSelectedLock();
@@ -11561,11 +11574,11 @@ function beginStrandObjectTransform(handle) {
   const sharedClumpPivot = sel.state.clumpViewportSelection ? strandObjectRoot(activeLock)?.clone() : null;
   const previewLocks = new Set(targets);
   targets.forEach((lock) => {
-    branchChildrenFor(lock).forEach((child) => previewLocks.add(child));
+    branchHierarchy.branchChildrenFor(lock).forEach((child) => previewLocks.add(child));
     const partner = mirrorPartnerFor(lock);
     if (partner) {
       previewLocks.add(partner);
-      branchChildrenFor(partner).forEach((child) => previewLocks.add(child));
+      branchHierarchy.branchChildrenFor(partner).forEach((child) => previewLocks.add(child));
     }
   });
   const targetSnapshots = targets.map((lock) => strandObjectTransformSnapshot(lock, sharedClumpPivot));
@@ -11600,7 +11613,7 @@ function updateStrandObjectTransform(handle) {
       ? worldMatrixForFixedPivot(target.pivot)
       : worldMatrixForPivot(target.pivot);
     applyStrandObjectPreviewMatrix(lock, worldDelta, previewSnapshot);
-    branchChildrenFor(lock).forEach((child) => {
+    branchHierarchy.branchChildrenFor(lock).forEach((child) => {
       if (targetIds.has(child.id)) return;
       applyStrandObjectPreviewMatrix(
         child,
@@ -11624,7 +11637,7 @@ function updateStrandObjectTransform(handle) {
         mirroredDelta,
         edit.previewMeshByLockId.get(partner.id)
       );
-      branchChildrenFor(partner).forEach((child) => {
+      branchHierarchy.branchChildrenFor(partner).forEach((child) => {
         if (targetIds.has(child.id)) return;
         applyStrandObjectPreviewMatrix(
           child,
@@ -11639,7 +11652,7 @@ function updateStrandObjectTransform(handle) {
 const branchRootBone = createBranchRootBoneApi({
   commitClumpMemberRestState, componentEditModeActive, controlPointRotationAt,
   curveFrameAt, curveFrameAtPoint, getSelectedLock, strandControlPointFrame,
-  transportedStrandFrameAt, updateBranchChildren, locks, transformControls,
+  transportedStrandFrameAt, updateBranchChildren: branchHierarchy.updateBranchChildren, locks, transformControls,
   updateBranchRootRegionCenter: (lock, u, v) => branchRegion.updateBranchRootRegionCenter(lock, u, v),
   branchState: branch.state, selState: sel.state, sculptState: sculptState.state
 });
@@ -14617,7 +14630,7 @@ const branchBridge = createBranchBridgeApi({
   strandCurveParameters, strandGeometryFrameAt, strandProfileTopologyAt,
   strandControlPointFrame, curveFrameAt, guidedNormalAt, controlPointRotationAt,
   strandGeometryCurve, strandInfluenceColor,
-  branchChildrenFor, updateBranchChildren, locks,
+  branchChildrenFor: branchHierarchy.branchChildrenFor, updateBranchChildren: branchHierarchy.updateBranchChildren, locks,
   BRANCH_CONNECTION_ENABLED, BRANCH_SIDE_FILL_ENABLED,
   branchState: branch.state
 });
@@ -16351,7 +16364,7 @@ function applyTaperCurveEdit({ interactive = false } = {}) {
     const lock = locks.find((item) => item.id === sculptState.state.taperCurveEdit.id);
     if (lock) {
       // A branch child's width/depth curves are normally remapped from the parent
-      // (updateBranchChildren). Mark them authored so the user's direct edits persist.
+      // (branchHierarchy.updateBranchChildren). Mark them authored so the user's direct edits persist.
       if (lock.branchParentId) lock.branchCurvesAuthored = true;
       const curveKey = sculptState.state.taperCurveEdit.curveKey;
       const primaryCurve = shapePresets.cloneShapePresetValue(lock[curveKey]);
@@ -18440,7 +18453,7 @@ function restoreSceneCollectionsForStateRestore(restorePlan, {
     remapRootAttachment: preservePlacement
   }));
   // Deep-reset pass: carve parent regions for branch children and offset their roots.
-  locks.filter((lock) => branchChildrenFor(lock).length).forEach((parent) => {
+  locks.filter((lock) => branchHierarchy.branchChildrenFor(lock).length).forEach((parent) => {
     branchBridge.applyBranchRootRegionCarving(parent, parent.mesh.geometry);
   });
   locks.filter((lock) => lock.branchParentId).forEach((child) => branchBridge.applyBranchRootOffset(child));
@@ -21105,7 +21118,7 @@ function updateDrawStrandBrushCursor(event) {
     setDrawStrandBrushCursorScale(cursorScale);
     return;
   }
-  const branchStart = selectedDrawBranchPoint(event);
+  const branchStart = branchHierarchy.selectedDrawBranchPoint(event);
   if (branchStart) {
     drawStrandBrushCursor.visible = true;
     drawStrandBrushCursor.position.copy(branchStart.point);
@@ -21469,83 +21482,9 @@ function gridProfileSkipCol(edges, vertexCount) {
 
 // Offset the child root to the center of its carved parent region (half-cell nudge).
 
-function attachDrawnLocksAsBranches(stroke, created) {
-  const parent = locks.find((lock) => lock.id === stroke.branchSourceLockId);
-  if (!canBranchDrawFromLock(parent) || !created.length) return null;
-  branchRootBone.ensureBranchParentNormalField(parent);
-  const parameter = THREE.MathUtils.clamp(
-    Number(stroke.branchSourcePointIndex || 0) / Math.max(1, parent.points.length - 1),
-    0,
-    1
-  );
-  created.forEach((lock) => {
-    lock.branchParentId = parent.id;
-    lock.branchParentParameter = parameter;
-    delete lock.clumpShapeCurveInheritance;
-    lock.branchRootRegion = branchRegion.branchRootRegionFromParam(parameter);
-    branchRootBone.captureBranchLocalState(lock);
-  });
-  updateBranchChildren(parent);
-  return parent;
-}
 
-function branchChildrenFor(parent) {
-  return parent ? locks.filter((lock) => lock.branchParentId === parent.id) : [];
-}
 
-function detachBranch(lock) {
-  if (!lock) return;
-  delete lock.branchParentId;
-  delete lock.branchParentParameter;
-  delete lock.branchLocalPoints;
-  delete lock.branchLocalSurfaceNormals;
-  delete lock.branchRootRegion;
-  delete lock.proceduralBranch;
-  delete lock.proceduralBranchIndex;
-}
 
-function updateBranchChildren(parent) {
-  const children = branchChildrenFor(parent);
-  if (!children.length || !parent?.points?.length) return;
-  branch.state.branchUpdateInProgress = true;
-  try {
-    children.forEach((child) => {
-      if (!child.branchLocalPoints?.length || !child.branchLocalSurfaceNormals?.length) {
-        branchRootBone.captureBranchLocalState(child);
-      }
-      const frame = branchRootBone.branchParentFrame(parent, child.branchParentParameter);
-      child.pointSurfaceNormals ||= [];
-      child.points.forEach((point, index) => {
-        const local = child.branchLocalPoints?.[index] || child.branchLocalPoints?.at(-1) || new THREE.Vector3();
-        point.copy(frame.point).add(branchRootBone.branchWorldVector(local, frame));
-        const localNormal = child.branchLocalSurfaceNormals?.[index];
-        if (localNormal) {
-          child.pointSurfaceNormals[index] = branchRootBone.branchWorldVector(localNormal, frame).normalize();
-        }
-      });
-      const start = THREE.MathUtils.clamp(Number(child.branchParentParameter ?? 0), 0, 1);
-      if (!child.branchCurvesAuthored) {
-        child.taperCurve = remapEnvelopeCurveRange(parent.taperCurve, start, 1);
-        child.depthCurve = remapEnvelopeCurveRange(parent.depthCurve, start, 1);
-        child.taperCurveSecondary = remapEnvelopeCurveRange(parent.taperCurveSecondary || parent.taperCurve, start, 1);
-        child.depthCurveSecondary = remapEnvelopeCurveRange(parent.depthCurveSecondary || parent.depthCurve, start, 1);
-        child.asymmetricWidthCurve = Boolean(parent.asymmetricWidthCurve);
-        child.asymmetricDepthCurve = Boolean(parent.asymmetricDepthCurve);
-        child.centerAsymmetricProfile = Boolean(parent.centerAsymmetricProfile);
-      }
-      child.surfaceNormalInfluence = 1;
-      child.rootSurfacePoint = frame.point.clone();
-      child.rootSurfaceNormal = frame.z.clone();
-      child.rootAttachment = null;
-      syncLockFromCurve(child);
-      branchBridge.applyBranchRootOffset(child);
-      updateLockGeometry(child, { updateBranches: false });
-      updateBranchChildren(child);
-    });
-  } finally {
-    branch.state.branchUpdateInProgress = false;
-  }
-}
 
 function clumpDirectMembers(guide) {
   if (!guide?.clumpGuide || !guide.clumpId) return [];
@@ -22311,29 +22250,7 @@ function selectedTipContinuationLock(event) {
   return Math.hypot(event.clientX - tipX, event.clientY - tipY) <= 20 ? lock : null;
 }
 
-function selectedDrawBranchPoint(event) {
-  if (sel.state.activeTool !== "draw") return null;
-  const lock = getSelectedLock();
-  if (!canBranchDrawFromLock(lock) || lock.locked || lock.points.length < 2) return null;
-  const hit = strandControlPointHitFromEvent(event, lock);
-  const pointIndex = hit?.object?.userData?.pointIndex;
-  if (!Number.isInteger(pointIndex) || !lock.points[pointIndex]) return null;
-  const frame = curveFrameAtPoint(lock, pointIndex);
-  return {
-    lock,
-    pointIndex,
-    point: lock.points[pointIndex].clone(),
-    normal: frame.z.clone().normalize(),
-    tangent: frame.y.clone().normalize()
-  };
-}
 
-function canBranchDrawFromLock(lock) {
-  return Boolean(
-    lock?.geometryType === "strand"
-    && (!lock.clumpId || lock.clumpGuide)
-  );
-}
 
 function beginDrawStrandStroke(event, hit, extensionLock = null, branchStart = null) {
   if (event.button !== 0 || (!hit && !extensionLock && !branchStart) || event.ctrlKey || event.altKey || event.metaKey) return false;
@@ -22795,10 +22712,10 @@ function createDrawnStrand(stroke) {
   }
   if (stroke.branchSourceLockId) {
     const source = locks.find((lock) => lock.id === stroke.branchSourceLockId);
-    attachDrawnLocksAsBranches(stroke, created);
+    branchHierarchy.attachDrawnLocksAsBranches(stroke, created);
     const mirroredSource = mirrorPartnerFor(source);
     if (mirroredSource && mirroredCreated.length === created.length) {
-      attachDrawnLocksAsBranches({
+      branchHierarchy.attachDrawnLocksAsBranches({
         ...stroke,
         branchSourceLockId: mirroredSource.id
       }, mirroredCreated);
@@ -25838,7 +25755,7 @@ function rebuildLockGeometry(lock, options = {}) {
     && sculptState.state.taperCurveEdit.id === lock.id
   ) updateTaperMeshPoints();
   if (options.updateClump !== false && !miscState.state.clumpUpdateInProgress && lock.clumpGuide) updateClumpMembers(lock);
-  if (options.updateBranches !== false && !branch.state.branchUpdateInProgress) updateBranchChildren(lock);
+  if (options.updateBranches !== false && !branch.state.branchUpdateInProgress) branchHierarchy.updateBranchChildren(lock);
   invalidateUvInspector();
 }
 
@@ -33931,8 +33848,8 @@ function deleteLocks(targetLocks) {
     else if (item.clumpId) detachLockFromClump(item);
   });
   targets.forEach((parent) => {
-    branchChildrenFor(parent).forEach((child) => {
-      if (!targetIds.has(child.id)) detachBranch(child);
+    branchHierarchy.branchChildrenFor(parent).forEach((child) => {
+      if (!targetIds.has(child.id)) branchHierarchy.detachBranch(child);
     });
   });
   if (targets.some((item) => item.curveObjects?.handles.includes(transformControls.object))) transformControls.detach();
@@ -36143,7 +36060,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   if (["draw", "procedural-draw", "braid", "panel"].includes(sel.state.activeTool)) {
     if (event.ctrlKey || event.altKey || event.metaKey) return;
     const extensionLock = selectedTipContinuationLock(event);
-    const branchStart = extensionLock ? null : selectedDrawBranchPoint(event);
+    const branchStart = extensionLock ? null : branchHierarchy.selectedDrawBranchPoint(event);
     const surfaceHit = extensionLock || branchStart ? null : drawSurfaceHitFromEvent(event, { root: true });
     beginDrawStrandStroke(event, surfaceHit, extensionLock, branchStart);
     return;
