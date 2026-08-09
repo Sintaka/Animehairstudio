@@ -147,6 +147,7 @@
 - [x] Front Bangs 1-3 视口三角观感修复（0.2.55）：createPanelStrandGeometry 的 addQuad 跳过退化（角点重合）与反射折叠（两三角法线相反）quad，最大二面角 180/90° → ≤10.7°；导出一直是四边面不受影响
 - [x] 面板线框三角面真正修复（0.2.56）：绕序翻转后同步交换 triangleEdgeMasks 的 [1]/[2]，quad 对角线不再被描边；0.2.55 的退化/反射折叠清理保留
 - [x] 重构：localization 词典拆数据文件（0.2.57）：JA/ZH 词典从 modules/localization.js 拆到 modules/loc-ja.js / loc-zh.js（export default Object.freeze），localization.js 改 import 两词典，逻辑零改动；拆分前后 key 数一致（JA 667 / ZH 653）；verify-smoke.mjs 6/6 通过（页面加载 0 异常、zh/ja/en 翻译正常、0043.ahs 加载重建无异常）
+- [x] 重构：undo/transform/head store（0.2.57，3c 第四批）：modules/core/undo-store.js（restoringHistory/historyShortcutHeld）+ transform-store.js（precision/activeSurfaceObjectTransform/recursiveHierarchyTransforms）+ head-store.js（importedHeadAsset 等 3 个）；fileApi 的 importedHeadAsset getter 改用 head.state；踩坑：getter 方法名被误替换（已修 + 验证清单补第 7 点）；全局 let 206→198；verify 13/13
 - [x] 重构：reference + ui-panel store（0.2.57，3c 第三批）：modules/edit/reference-store.js（2 let）+ modules/core/ui-store.js（7 let：radial menus、preferences 快照、view 吸附、undo 标志、panel split 警告含 localStorage 持久化）；踩坑：替换误伤 querySelector 选择器字符串（已修 + 验证清单补第 6 点）；全局 let 215→204；verify 13/13
 - [x] 重构：draw/poly store（0.2.57，3c 第二批）：modules/edit/draw-store.js 收敛 6 个 let（poly 填充/删除候选、shift preview、clump 模板、procedural draw 实验开关含持久化）；踩坑：对象简写跨行残留致 SyntaxError（已修 + 验证清单入库）；全局 let 221→215；verify 13/13
 - [x] 修复：Branch Bridge Smooth 按子发片独立（0.2.57）：滑杆读写当前选中子发片的 lock.branchBridgeSmoothStrength/Detail（无选中写全局默认作新子发片默认值）；面板选中变化时 updateBranchBridgeSliderInputs 刷新；几何侧 L15074 本就支持 lock 覆盖；lock 字段随 .ahs 直接序列化持久化；verify 新增 per-lock 测试

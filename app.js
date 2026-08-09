@@ -1,3 +1,6 @@
+import { createTransformStore } from "./modules/core/transform-store.js?v=20260809-7";
+import { createUndoStore } from "./modules/core/undo-store.js?v=20260809-7";
+import { createHeadStore } from "./modules/core/head-store.js?v=20260809-7";
 import { createUiStore } from "./modules/core/ui-store.js?v=20260809-6";
 import { createReferenceStore } from "./modules/edit/reference-store.js?v=20260809-5";
 import { createDrawStore } from "./modules/edit/draw-store.js?v=20260809-4";
@@ -681,7 +684,7 @@ capsuleGuideLoopHandle.userData.capsuleGuideLoopHandle = true;
 let uniformScaleDrag = null;
 let transformScaleDrag = null;
 let transformPrecisionDrag = null;
-let transformPrecisionHeld = false;
+const transform = createTransformStore();
 let selectionRemoveHeld = false;
 const TRANSFORM_PRECISION_MULTIPLIER = 0.2;
 const MIN_UNIFORM_SCALE_RATIO = 0.05;
@@ -2128,7 +2131,6 @@ let viewportSelectionMode = "component";
 let sculptMoveStroke = null;
 let sculptBrushShiftSmoothHeld = false;
 let activeHandleEdit = null;
-let activeSurfaceObjectTransform = null;
 let activeStrandObjectTransform = null;
 let activeGuideObjectTransform = null;
 let activeLatticeMultiEdit = null;
@@ -2141,7 +2143,6 @@ const SCULPT_BRUSH_GEOMETRY_FRAME_BUDGET_MS = 6;
 let objectSpaceEditing = readStoredBooleanPreference(window, TRANSFORM_SPACE_PREFERENCE_KEY, true);
 let hierarchyEditing = false;
 let mirrorXEditing = false;
-let recursiveHierarchyTransforms = false;
 let proportionalEditing = false;
 let proportionalRootLocked = false;
 let scalpShapeEditing = false;
@@ -2396,8 +2397,7 @@ let proceduralDuplicateModeActive = false;
 let proceduralDuplicateWindowSourceIds = [];
 let proceduralDuplicatePreview = null;
 let rebuildingProceduralDuplicatePreview = false;
-let restoringHistory = false;
-let historyShortcutHeld = false;
+const undo = createUndoStore();
 const inputs = {
   name: document.querySelector("#lockName"),
   widthScale: document.querySelector("#widthScale"),
@@ -3194,7 +3194,7 @@ let lastExport = null;
 let quickExportFileHandle = null;
 let quickExportInProgress = false;
 let pendingFileAction = null;
-let importedHeadAsset = null;
+const head = createHeadStore();
 
 const GUIDE_HEAD_REFERENCE_SIZE = 26.760177;
 const GUIDE_HEAD_TARGET_HEIGHT = 2.8;
@@ -3399,7 +3399,7 @@ function loadDefaultGuideModel(options = {}) {
         installGuideModel(obj, options);
         obj.updateMatrixWorld(true);
         authoredScalpGuideMatrix = obj.matrixWorld.clone();
-        importedHeadAsset = null;
+        head.state.importedHeadAsset = null;
         ensureEditedScalpSurface().catch((error) => {
           console.error("Could not initialize the live authored scalp surface", error);
         });
@@ -5756,7 +5756,7 @@ async function rebuildScalpBuilderTemplateOverlay() {
     const headBounds = guideHeadBounds(guideModel);
     const headCenter = headBounds.getCenter(new THREE.Vector3());
     const headSize = headBounds.getSize(new THREE.Vector3());
-    const useAuthoredCoordinates = !importedHeadAsset;
+    const useAuthoredCoordinates = !head.state.importedHeadAsset;
     const mappedPoints = template.vertices.map((vertex) => {
       if (useAuthoredCoordinates) return vertex.clone().applyMatrix4(guideModel.matrixWorld);
       return new THREE.Vector3(
@@ -10939,7 +10939,7 @@ function setSculptBrushShiftSmoothHeld(held) {
 
 function setActiveTool(tool) {
   clearCurvePointTopologyCursor();
-  historyShortcutHeld = false;
+  undo.state.historyShortcutHeld = false;
   const previousTool = activeTool;
   if (sculptBrushToolActive(previousTool) && tool !== previousTool) {
     finishSculptMoveStroke(null, { cancel: true });
@@ -11923,7 +11923,7 @@ function beginSurfaceObjectTransform(anchor) {
   if (lock?.geometryType !== "surface") return;
   const hadMirrorPartner = Boolean(mirrorPartnerFor(lock));
   syncActiveMirror(lock, { refreshUi: !hadMirrorPartner });
-  activeSurfaceObjectTransform = {
+  transform.state.activeSurfaceObjectTransform = {
     lockId: lock.id,
     points: lock.points.map((point) => point.clone()),
     pointSurfaceNormals: lock.pointSurfaceNormals?.map((normal) => normal?.clone() || null) || [],
@@ -11945,7 +11945,7 @@ function beginSurfaceObjectTransform(anchor) {
 }
 
 function updateSurfaceObjectTransform(anchor) {
-  const edit = activeSurfaceObjectTransform;
+  const edit = transform.state.activeSurfaceObjectTransform;
   const lock = locks.find((item) => item.id === edit?.lockId);
   if (!edit || !lock || anchor?.userData?.lockId !== lock.id) return;
   const inverseStartQuaternion = edit.quaternion.clone().invert();
@@ -11994,8 +11994,8 @@ function updateSurfaceObjectTransform(anchor) {
 }
 
 function finishSurfaceObjectTransform() {
-  const lock = locks.find((item) => item.id === activeSurfaceObjectTransform?.lockId);
-  activeSurfaceObjectTransform = null;
+  const lock = locks.find((item) => item.id === transform.state.activeSurfaceObjectTransform?.lockId);
+  transform.state.activeSurfaceObjectTransform = null;
   if (!lock) return;
   updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
   attachSurfaceObjectAnchorTransform(lock);
@@ -12162,7 +12162,7 @@ function applyHierarchicalMove(lock, pointIndex, handle) {
     ? (Math.floor(pointIndex / lock.curveSurfaceRows) + 1) * lock.curveSurfaceRows
     : lock.points.length;
   for (let i = pointIndex; i < curveEnd; i += 1) {
-    const depth = recursiveHierarchyTransforms ? i - pointIndex + 1 : 1;
+    const depth = transform.state.recursiveHierarchyTransforms ? i - pointIndex + 1 : 1;
     lock.points[i].copy(edit.points[i]).addScaledVector(delta, depth);
   }
 }
@@ -12633,7 +12633,7 @@ function applyHierarchicalRotate(lock, pointIndex, handle) {
     lock.pointSurfaceNormals[index].copy(original).applyQuaternion(rotation).normalize();
   };
   lock.points[pointIndex].copy(edit.points[pointIndex]);
-  if (recursiveHierarchyTransforms) {
+  if (transform.state.recursiveHierarchyTransforms) {
     const accumulatedQ = new THREE.Quaternion();
     rotateGuideNormal(pointIndex, deltaQ);
     for (let i = pointIndex + 1; i < range.end; i += 1) {
@@ -12658,7 +12658,7 @@ function applyHierarchicalRotate(lock, pointIndex, handle) {
   const handleZ = new THREE.Vector3(0, 0, 1).applyQuaternion(handle.quaternion).normalize();
   const deltaTwist = signedAngleAroundAxis(originalHandleZ, handleZ, originalFrame.y);
   for (let i = pointIndex; i < range.end; i += 1) {
-    const depth = recursiveHierarchyTransforms ? i - pointIndex + 1 : 1;
+    const depth = transform.state.recursiveHierarchyTransforms ? i - pointIndex + 1 : 1;
     lock.pointTwists[i] = edit.pointTwists[i] + deltaTwist * depth;
   }
 }
@@ -12692,7 +12692,7 @@ function applyHierarchicalScale(lock, pointIndex, handle) {
   const ratioX = Math.max(0.18, handle.scale.x) / Math.max(0.18, edit.handleScale.x);
   const ratioZ = Math.max(0.18, handle.scale.z) / Math.max(0.18, edit.handleScale.z);
   for (let i = pointIndex; i < lock.pointScales.length; i += 1) {
-    const depth = recursiveHierarchyTransforms ? i - pointIndex + 1 : 1;
+    const depth = transform.state.recursiveHierarchyTransforms ? i - pointIndex + 1 : 1;
     setPointScale(lock, i, edit.pointScales[i].x * Math.pow(ratioX, depth), edit.pointScales[i].z * Math.pow(ratioZ, depth));
   }
 }
@@ -18927,12 +18927,12 @@ async function importHeadMeshFile(file) {
     const content = await file.text();
     const model = new OBJLoader().parse(polygonOnlyObjSource(content));
     installGuideModel(model, { normalize: true });
-    importedHeadAsset = {
+    head.state.importedHeadAsset = {
       format: "obj",
       name: file.name || "custom-head.obj",
       content
     };
-    importButton.title = `Using ${importedHeadAsset.name}. Import another head mesh`;
+    importButton.title = `Using ${head.state.importedHeadAsset.name}. Import another head mesh`;
     document.querySelector("#importFullBodyMesh").title = "Import a full body OBJ, scale it to seven head heights, and align its top to the scalp guide";
     return true;
   } catch (error) {
@@ -18950,13 +18950,13 @@ async function importFullBodyMeshFile(file) {
     const content = await file.text();
     const model = new OBJLoader().parse(polygonOnlyObjSource(content));
     installGuideModel(model, { normalize: true, fullBody: true });
-    importedHeadAsset = {
+    head.state.importedHeadAsset = {
       format: "obj",
       name: file.name || "custom-full-body.obj",
       content,
       fit: "full-body"
     };
-    importButton.title = `Using ${importedHeadAsset.name}. Import another full body mesh`;
+    importButton.title = `Using ${head.state.importedHeadAsset.name}. Import another full body mesh`;
     document.querySelector("#importHeadMesh").title = "Import head mesh from an OBJ file";
     return true;
   } catch (error) {
@@ -19108,7 +19108,7 @@ const fileApi = createProjectSaveApi({
   set quickExportInProgress(value) { quickExportInProgress = value; },
   get pendingFileAction() { return pendingFileAction; },
   set pendingFileAction(value) { pendingFileAction = value; },
-  get importedHeadAsset() { return importedHeadAsset; },
+  get importedHeadAsset() { return head.state.importedHeadAsset; },
   get importedScalpGuideAsset() { return importedScalpGuideAsset; },
   get referenceImages() { return referenceImages; },
   get locks() { return locks; },
@@ -19126,14 +19126,14 @@ async function openHairProjectFile(file, { handle = null } = {}) {
     if (project.headAssetOmitted === true) {
       disposeGuideModel(guideModel);
       guideModel = null;
-      importedHeadAsset = null;
+      head.state.importedHeadAsset = null;
       document.querySelector("#importHeadMesh").title = "Import head mesh from an OBJ file";
       document.querySelector("#importFullBodyMesh").title = "Import a full body OBJ, scale it to seven head heights, and align its top to the scalp guide";
     } else if (project.headAsset?.format === "obj" && typeof project.headAsset.content === "string") {
       const model = new OBJLoader().parse(polygonOnlyObjSource(project.headAsset.content));
       const fullBody = project.headAsset.fit === "full-body";
       installGuideModel(model, { normalize: true, fullBody });
-      importedHeadAsset = { ...project.headAsset };
+      head.state.importedHeadAsset = { ...project.headAsset };
       document.querySelector("#importHeadMesh").title = fullBody
         ? "Import head mesh from an OBJ file"
         : `Using ${project.headAsset.name || "custom head"}. Import another head mesh`;
@@ -19273,7 +19273,7 @@ async function confirmDroppedApplicationFile() {
 }
 
 function pushUndoState() {
-  if (restoringHistory) return;
+  if (undo.state.restoringHistory) return;
   undoHistory.push(snapshotState());
   redoHistory.clear();
   updateHistoryButtons();
@@ -19287,7 +19287,7 @@ function undoLastAction() {
   try {
     restoreState(state, { preserveMirrorMode: true });
   } finally {
-    restoringHistory = false;
+    undo.state.restoringHistory = false;
     updateHistoryButtons();
   }
   if (taperCurveEditor.open) renderTaperCurveEditor();
@@ -19301,7 +19301,7 @@ function redoLastAction() {
   try {
     restoreState(state, { preserveMirrorMode: true });
   } finally {
-    restoringHistory = false;
+    undo.state.restoringHistory = false;
     updateHistoryButtons();
   }
   if (taperCurveEditor.open) renderTaperCurveEditor();
@@ -19566,7 +19566,7 @@ function restoreState(state, {
     regionIds: STRAND_GROUPS.map((group) => group.id),
     layerIds: HAIR_LAYERS.map((layer) => layer.id)
   });
-  restoringHistory = true;
+  undo.state.restoringHistory = true;
   try {
     resetTransientInteractionsForStateRestore();
     resetEditableSceneForStateRestore();
@@ -19577,7 +19577,7 @@ function restoreState(state, {
     reapplySelectionAfterStateRestore(restorePlan);
     finalizeStateRestore(state);
   } finally {
-    restoringHistory = false;
+    undo.state.restoringHistory = false;
   }
 }
 
@@ -27432,7 +27432,7 @@ function updateCurveObjects(lock, options = {}) {
     : new THREE.BufferGeometry().setFromPoints(new THREE.CatmullRomCurve3(lock.points).getPoints(40));
   const surfaceObjectAnchor = lock.curveObjects.surfaceObjectAnchor;
   if (surfaceObjectAnchor) {
-    const transformingAnchor = activeSurfaceObjectTransform?.lockId === lock.id
+    const transformingAnchor = transform.state.activeSurfaceObjectTransform?.lockId === lock.id
       && transformControls.object === surfaceObjectAnchor;
     if (!transformingAnchor) {
       const pose = surfaceObjectAnchorPose(lock);
@@ -30732,7 +30732,7 @@ function configureNavigationMouseButtons() {
 
 function syncNavigationModifierLocks() {
   controls.enablePan = navigationStyle !== "anime-hair-studio"
-    || (!transformPrecisionHeld && !selectionRemoveHeld);
+    || (!transform.state.transformPrecisionHeld && !selectionRemoveHeld);
 }
 
 function setNavigationStyle(value, { persist = true } = {}) {
@@ -32771,7 +32771,7 @@ function applyReducedTransformScale(handle) {
   const drag = transformScaleDrag;
   const startScale = drag?.startScale;
   if (!startScale || transformControls.mode !== "scale") return;
-  const precision = transformPrecisionHeld ? TRANSFORM_PRECISION_MULTIPLIER : 1;
+  const precision = transform.state.transformPrecisionHeld ? TRANSFORM_PRECISION_MULTIPLIER : 1;
   if (drag.axis === "XYZ") {
     const horizontalDrag = drag.pointerX - drag.lastPointerX;
     const upwardDrag = drag.lastPointerY - drag.pointerY;
@@ -32809,7 +32809,7 @@ function applyReducedTransformScale(handle) {
 function applyTransformPrecision(handle) {
   const drag = transformPrecisionDrag;
   if (!drag || drag.mode !== transformControls.mode) return;
-  const precision = transformPrecisionHeld ? TRANSFORM_PRECISION_MULTIPLIER : 1;
+  const precision = transform.state.transformPrecisionHeld ? TRANSFORM_PRECISION_MULTIPLIER : 1;
   if (drag.mode === "translate") {
     const rawPosition = handle.position.clone();
     drag.appliedPosition.addScaledVector(
@@ -33574,37 +33574,35 @@ dropImportDialog.addEventListener("close", () => {
   pendingDroppedApplicationKind = null;
   pendingDroppedApplicationHandle = null;
 });
-let enterHeadSetupAfterHeadImport = false;
-let enterHeadSetupAfterFullBodyImport = false;
 document.querySelector("#importHeadMesh").addEventListener("click", () => {
-  enterHeadSetupAfterHeadImport = false;
+  head.state.enterHeadSetupAfterHeadImport = false;
   headMeshFileInput.click();
 });
 importHeadMeshMenu.addEventListener("click", () => {
-  enterHeadSetupAfterHeadImport = true;
+  head.state.enterHeadSetupAfterHeadImport = true;
   headMeshFileInput.click();
 });
 headMeshFileInput.addEventListener("change", async () => {
   const [file] = headMeshFileInput.files;
   if (!file) return;
-  const enterHeadSetup = enterHeadSetupAfterHeadImport;
-  enterHeadSetupAfterHeadImport = false;
+  const enterHeadSetup = head.state.enterHeadSetupAfterHeadImport;
+  head.state.enterHeadSetupAfterHeadImport = false;
   const imported = await importHeadMeshFile(file);
   if (imported && enterHeadSetup) setHeadSetupEditing(true);
 });
 document.querySelector("#importFullBodyMesh").addEventListener("click", () => {
-  enterHeadSetupAfterFullBodyImport = false;
+  head.state.enterHeadSetupAfterFullBodyImport = false;
   fullBodyMeshFileInput.click();
 });
 importFullBodyMeshMenu.addEventListener("click", () => {
-  enterHeadSetupAfterFullBodyImport = true;
+  head.state.enterHeadSetupAfterFullBodyImport = true;
   fullBodyMeshFileInput.click();
 });
 fullBodyMeshFileInput.addEventListener("change", async () => {
   const [file] = fullBodyMeshFileInput.files;
   if (!file) return;
-  const enterHeadSetup = enterHeadSetupAfterFullBodyImport;
-  enterHeadSetupAfterFullBodyImport = false;
+  const enterHeadSetup = head.state.enterHeadSetupAfterFullBodyImport;
+  head.state.enterHeadSetupAfterFullBodyImport = false;
   const imported = await importFullBodyMeshFile(file);
   if (imported && enterHeadSetup) setHeadSetupEditing(true);
 });
@@ -34963,7 +34961,7 @@ braidMeshPresetInput.addEventListener("change", () => {
 });
 hierarchyToggle.addEventListener("click", () => setHierarchyEditing(!hierarchyEditing));
 hierarchyRecursiveTransformInput.addEventListener("change", () => {
-  recursiveHierarchyTransforms = hierarchyRecursiveTransformInput.checked;
+  transform.state.recursiveHierarchyTransforms = hierarchyRecursiveTransformInput.checked;
 });
 branchRigidCurvatureBlendInput.value = branch.state.branchRigidCurvatureBlend;
 branchRigidCurvatureBlendInput.addEventListener("change", () => {
@@ -35847,7 +35845,7 @@ window.addEventListener("keydown", (event) => {
     editingField = false;
   }
   if (event.key === "Shift" && !event.repeat) {
-    transformPrecisionHeld = true;
+    transform.state.transformPrecisionHeld = true;
     syncNavigationModifierLocks();
   }
   if (event.key === "Control" && !event.repeat) {
@@ -35996,8 +35994,8 @@ window.addEventListener("keydown", (event) => {
   }
   if (!editingField && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !event.shiftKey) {
     event.preventDefault();
-    if (event.repeat || historyShortcutHeld) return;
-    historyShortcutHeld = true;
+    if (event.repeat || undo.state.historyShortcutHeld) return;
+    undo.state.historyShortcutHeld = true;
     undoLastAction();
     return;
   }
@@ -36007,8 +36005,8 @@ window.addEventListener("keydown", (event) => {
     && (event.key.toLowerCase() === "y" || (event.shiftKey && event.key.toLowerCase() === "z"))
   ) {
     event.preventDefault();
-    if (event.repeat || historyShortcutHeld) return;
-    historyShortcutHeld = true;
+    if (event.repeat || undo.state.historyShortcutHeld) return;
+    undo.state.historyShortcutHeld = true;
     redoLastAction();
     return;
   }
@@ -36118,7 +36116,7 @@ window.addEventListener("keyup", (event) => {
     setViewPlaneNormalMoveHeld(false);
   }
   if (event.key === "Shift") {
-    transformPrecisionHeld = false;
+    transform.state.transformPrecisionHeld = false;
     syncNavigationModifierLocks();
     setSculptBrushShiftSmoothHeld(false);
     draw.state.polyShiftPreviewHeld = false;
@@ -36153,7 +36151,7 @@ window.addEventListener("keyup", (event) => {
   }
 });
 window.addEventListener("blur", () => {
-  transformPrecisionHeld = false;
+  transform.state.transformPrecisionHeld = false;
   selectionRemoveHeld = false;
   setViewPlaneNormalMoveHeld(false);
   syncNavigationModifierLocks();
@@ -36209,7 +36207,7 @@ function deleteLocks(targetLocks) {
   }
   if (targets.some((item) => selectedSurfaceObjectAnchorId === item.id)) {
     selectedSurfaceObjectAnchorId = null;
-    activeSurfaceObjectTransform = null;
+    transform.state.activeSurfaceObjectTransform = null;
     updateSelectedPointLabel();
   }
   // Deleting a branch child must refill the parent's carved hole: the parent's
@@ -38287,10 +38285,10 @@ window.addEventListener("pointercancel", () => {
 window.addEventListener("keydown", updateCurvePointTopologyCursor, true);
 window.addEventListener("keyup", (event) => {
   updateCurvePointTopologyCursor(event);
-  if (["z", "y", "control", "meta"].includes(event.key.toLowerCase())) historyShortcutHeld = false;
+  if (["z", "y", "control", "meta"].includes(event.key.toLowerCase())) undo.state.historyShortcutHeld = false;
 }, true);
 window.addEventListener("blur", () => {
-  historyShortcutHeld = false;
+  undo.state.historyShortcutHeld = false;
   clearCurvePointTopologyCursor();
 });
 renderer.domElement.addEventListener("pointerdown", (event) => {

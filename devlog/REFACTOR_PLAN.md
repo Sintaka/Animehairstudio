@@ -31,9 +31,10 @@
 - [x] **阶段 3c（第一批）：branch/sub store**（modules/branch/branch-store.js；8 个 let / 55 refs，含 5 个偏好持久化到 localStorage；全局 let 229→221；verify-smoke 12/12）
 - [x] **阶段 3c（第二批）：draw/poly store**（modules/edit/draw-store.js；6 个 let / 41 refs；全局 let 221→215；verify 13/13）
 - [x] **阶段 3c（第三批）：reference + ui-panel store**（modules/edit/reference-store.js + modules/core/ui-store.js；9 个 let；全局 let 213→206；verify 13/13）
+- [x] **阶段 3c（第四批）：undo/transform/head store**（modules/core/undo-store.js + transform-store.js + head-store.js；8 个 let，含 IO fileApi 的 importedHeadAsset getter 兼容；全局 let 206→198；verify 13/13）
 - [ ] **阶段 3c（后续）**：scalp / camera / guide / sculpt 等逐域落地（每域独立 commit + verify）
 
-> 批量替换验证清单（3b/3c 教训，替换后必须逐项扫）：(1) 双重替换 `.store.state.`（对象属性名被误替换，曾致项目加载静默失败）；(2) 函数参数/绑定位置（`function f(store.state.x)`）；(3) 对象简写残留（含**跨行** `{ x,\n store.state.y,`，单行正则会漏，曾致 SyntaxError）；(4) 对象属性访问 `obj.name`（用 `(?<!\.)` 排除）；(5) `name:` key 位置（用 `(?!\s*:)` 排除）；(6) 字符串/选择器字面量（`document.querySelector("#name")` 曾把 `"#viewPlaneMoveSnappedOnly"` 误改成 `"#ui.state.viewPlaneMoveSnappedOnly"`，需用精确字符串字面量扫描）。每步替换后先跑这 5 项扫描再 node --check + verify-smoke 全量。
+> 批量替换验证清单（3b/3c 教训，替换后必须逐项扫）：(1) 双重替换 `.store.state.`（对象属性名被误替换，曾致项目加载静默失败）；(2) 函数参数/绑定位置（`function f(store.state.x)`）；(3) 对象简写残留（含**跨行** `{ x,\n store.state.y,`，单行正则会漏，曾致 SyntaxError）；(4) 对象属性访问 `obj.name`（用 `(?<!\.)` 排除）；(5) `name:` key 位置（用 `(?!\s*:)` 排除）；(6) 字符串/选择器字面量（`document.querySelector("#name")` 曾把 `"#viewPlaneMoveSnappedOnly"` 误改成 `"#ui.state.viewPlaneMoveSnappedOnly"`，需用精确字符串字面量扫描）；(7) getter/setter 方法名（`get importedHeadAsset()` 曾被误改成 `get head.state.importedHeadAsset()`，对象字面量 get/set 方法名位置要排除）。每步替换后先跑这 5 项扫描再 node --check + verify-smoke 全量。
 - [ ] **阶段 3d：app.js 瘦身为编排层**（业务逻辑迁入模块，模块显式依赖 store；IO 的 createProjectSaveApi(deps) 从 25 个散装依赖收敛为单个 store）
 
 ## 验证策略（每条铁律）

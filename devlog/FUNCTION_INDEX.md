@@ -1,65 +1,65 @@
 # 函数索引 / FUNCTION INDEX
 
-> 机器生成（2026-08-09），由 `node scripts/gen-function-index.js` 产出。共 **1721** 个函数。
+> 机器生成（2026-08-09），由 `node scripts/gen-function-index.js` 产出。共 **1724** 个函数。
 > 用途：agent 先 `Select-String`/`grep` 函数名定位，再跳读对应文件/行号；`calls` 列 = 整个文件内 `name(` 出现次数（hub 指标，越大越核心）。
 
-## app.js（38764 行）
+## app.js（38762 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
-| `saveLanguage` | 248 | function |  | 3 |
-| `saveBooleanPreference` | 276 | function |  | 21 |
-| `normalizeControlPointDisplaySize` | 280 | function |  | 2 |
-| `normalizeCameraSmoothingStrength` | 285 | function |  | 2 |
-| `normalizeScaleSensitivity` | 290 | function |  | 2 |
-| `normalizeViewportBackgroundColor` | 295 | function |  | 2 |
-| `normalizeSideNamingPerspective` | 300 | function |  | 2 |
-| `normalizeNavigationStyle` | 304 | function |  | 2 |
-| `setupEditableSliderControls` | 318 | function |  | 2 |
-| `syncNumberFromRange` | 369 | arrow |  | 0 |
-| `applyNumberValue` | 376 | arrow |  | 0 |
-| `copyCameraPose` | 486 | function |  | 3 |
-| `updateCameraProjectionForViewport` | 492 | function |  | 5 |
-| `syncOrthographicFramingFromDistance` | 505 | function |  | 3 |
-| `setOrthographicView` | 511 | function |  | 4 |
-| `addNegativeTransformGizmoRods` | 551 | function |  | 2 |
-| `addFullRotateGizmoAxisCircles` | 580 | function |  | 2 |
-| `removeRotateFreeAxisRing` | 606 | function |  | 2 |
-| `deflateTransformGizmoPickers` | 618 | function |  | 2 |
-| `nextStrandName` | 1001 | function |  | 2 |
-| `activeDrawClumpTemplate` | 1086 | function |  | 5 |
-| `proceduralDrawClumpTemplate` | 1091 | function |  | 3 |
-| `drawModeCreatesClump` | 1118 | function |  | 1 |
-| `isPanelGeometry` | 1262 | function |  | 31 |
-| `normalizePanelSplits` | 1266 | function |  | 3 |
-| `clonePanelSplits` | 1278 | function |  | 19 |
-| `snapPanelSplitHeight` | 1282 | function |  | 5 |
-| `createQuadSphereGeometry` | 1317 | function |  | 2 |
-| `vertexIndex` | 1331 | function |  | 11 |
-| `addEdge` | 1349 | function |  | 5 |
-| `createAuthoredScalpGeometry` | 1384 | function |  | 2 |
-| `buildDefaultScalpRegionAssignments` | 1454 | function |  | 3 |
-| `updateScalpRenderGeometry` | 1481 | function |  | 4 |
-| `writeScalpRegionColors` | 1532 | function |  | 4 |
-| `applyDefaultScalpRegionAssignments` | 1545 | function |  | 2 |
-| `createScalpSelectionOutline` | 1575 | function |  | 5 |
-| `activeScalpSurfaceMesh` | 1627 | function |  | 25 |
-| `activeScalpSurfaceWire` | 1632 | function |  | 2 |
-| `activeScalpSelectionOutline` | 1637 | function |  | 2 |
-| `inferredCustomScalpRegion` | 1642 | function |  | 2 |
-| `writeCustomScalpRegionColors` | 1649 | function |  | 5 |
-| `customScalpGeometryFromObject` | 1668 | function |  | 2 |
-| `customScalpWireGeometry` | 1700 | function |  | 3 |
-| `installCustomScalpGeometry` | 1711 | function |  | 3 |
-| `installCustomScalpGuide` | 1735 | function |  | 3 |
-| `setScalpGuideSource` | 1753 | function |  | 7 |
-| `updateScalpQuadWire` | 1769 | function |  | 4 |
-| `updateScalpTopology` | 1785 | function |  | 3 |
-| `setDrawStrandBrushCursorScale` | 1849 | function |  | 8 |
-| `ensureDrawClumpPreviewCount` | 2029 | function |  | 2 |
-| `currentStrandSelectionState` | 2105 | function |  | 4 |
-| `applyStrandSelectionState` | 2109 | function |  | 5 |
-| `clearStrandSelectionState` | 2114 | function |  | 7 |
+| `saveLanguage` | 251 | function |  | 3 |
+| `saveBooleanPreference` | 279 | function |  | 21 |
+| `normalizeControlPointDisplaySize` | 283 | function |  | 2 |
+| `normalizeCameraSmoothingStrength` | 288 | function |  | 2 |
+| `normalizeScaleSensitivity` | 293 | function |  | 2 |
+| `normalizeViewportBackgroundColor` | 298 | function |  | 2 |
+| `normalizeSideNamingPerspective` | 303 | function |  | 2 |
+| `normalizeNavigationStyle` | 307 | function |  | 2 |
+| `setupEditableSliderControls` | 321 | function |  | 2 |
+| `syncNumberFromRange` | 372 | arrow |  | 0 |
+| `applyNumberValue` | 379 | arrow |  | 0 |
+| `copyCameraPose` | 489 | function |  | 3 |
+| `updateCameraProjectionForViewport` | 495 | function |  | 5 |
+| `syncOrthographicFramingFromDistance` | 508 | function |  | 3 |
+| `setOrthographicView` | 514 | function |  | 4 |
+| `addNegativeTransformGizmoRods` | 554 | function |  | 2 |
+| `addFullRotateGizmoAxisCircles` | 583 | function |  | 2 |
+| `removeRotateFreeAxisRing` | 609 | function |  | 2 |
+| `deflateTransformGizmoPickers` | 621 | function |  | 2 |
+| `nextStrandName` | 1004 | function |  | 2 |
+| `activeDrawClumpTemplate` | 1089 | function |  | 5 |
+| `proceduralDrawClumpTemplate` | 1094 | function |  | 3 |
+| `drawModeCreatesClump` | 1121 | function |  | 1 |
+| `isPanelGeometry` | 1265 | function |  | 31 |
+| `normalizePanelSplits` | 1269 | function |  | 3 |
+| `clonePanelSplits` | 1281 | function |  | 19 |
+| `snapPanelSplitHeight` | 1285 | function |  | 5 |
+| `createQuadSphereGeometry` | 1320 | function |  | 2 |
+| `vertexIndex` | 1334 | function |  | 11 |
+| `addEdge` | 1352 | function |  | 5 |
+| `createAuthoredScalpGeometry` | 1387 | function |  | 2 |
+| `buildDefaultScalpRegionAssignments` | 1457 | function |  | 3 |
+| `updateScalpRenderGeometry` | 1484 | function |  | 4 |
+| `writeScalpRegionColors` | 1535 | function |  | 4 |
+| `applyDefaultScalpRegionAssignments` | 1548 | function |  | 2 |
+| `createScalpSelectionOutline` | 1578 | function |  | 5 |
+| `activeScalpSurfaceMesh` | 1630 | function |  | 25 |
+| `activeScalpSurfaceWire` | 1635 | function |  | 2 |
+| `activeScalpSelectionOutline` | 1640 | function |  | 2 |
+| `inferredCustomScalpRegion` | 1645 | function |  | 2 |
+| `writeCustomScalpRegionColors` | 1652 | function |  | 5 |
+| `customScalpGeometryFromObject` | 1671 | function |  | 2 |
+| `customScalpWireGeometry` | 1703 | function |  | 3 |
+| `installCustomScalpGeometry` | 1714 | function |  | 3 |
+| `installCustomScalpGuide` | 1738 | function |  | 3 |
+| `setScalpGuideSource` | 1756 | function |  | 7 |
+| `updateScalpQuadWire` | 1772 | function |  | 4 |
+| `updateScalpTopology` | 1788 | function |  | 3 |
+| `setDrawStrandBrushCursorScale` | 1852 | function |  | 8 |
+| `ensureDrawClumpPreviewCount` | 2032 | function |  | 2 |
+| `currentStrandSelectionState` | 2108 | function |  | 4 |
+| `applyStrandSelectionState` | 2112 | function |  | 5 |
+| `clearStrandSelectionState` | 2117 | function |  | 7 |
 | `guideHeadBounds` | 3206 | function |  | 8 |
 | `fullBodyScalpFocusBounds` | 3216 | function |  | 5 |
 | `disposeGuideModel` | 3230 | function |  | 3 |
@@ -1309,133 +1309,133 @@
 | `updateTaperMeshPointDrag` | 33351 | function |  | 1 |
 | `finishTaperMeshPointDrag` | 33406 | function |  | 6 |
 | `updateSelectedTaperPoint` | 33430 | function |  | 4 |
-| `beginProceduralAccessoryEdit` | 34004 | function |  | 4 |
-| `updateSelectedProceduralAccessories` | 34009 | function |  | 4 |
-| `syncDrawCurlControls` | 34064 | function |  | 5 |
-| `handleLiveSurfaceChange` | 34112 | function |  | 1 |
-| `scaleSurfaceLatticeWidth` | 34194 | function |  | 3 |
-| `resampleSurfaceLock` | 34209 | function |  | 2 |
-| `changePanelSplitCount` | 34322 | function |  | 3 |
-| `presetNumber` | 34426 | function |  | 23 |
-| `clonePresetShape` | 34431 | function |  | 7 |
-| `creationPresetSnapshot` | 34440 | function |  | 5 |
-| `creationToolSettingsSnapshot` | 34488 | function |  | 5 |
-| `applyPresetControl` | 34515 | function |  | 2 |
-| `applyCreationToolSettings` | 34536 | function |  | 3 |
-| `normalizeCreationPresetLibrary` | 34577 | function |  | 3 |
-| `loadCustomCreationPresets` | 34584 | function |  | 2 |
-| `saveCustomCreationPresets` | 34594 | function |  | 6 |
-| `migrateLegacyClumpPresets` | 34602 | function |  | 2 |
-| `populateCreationPresetSelect` | 34638 | function |  | 5 |
-| `populateDrawBrushPresetSelect` | 34662 | function |  | 6 |
-| `syncCreationPresetRemoveButtons` | 34695 | function |  | 5 |
-| `applyCreationPresetSnapshot` | 34700 | function |  | 2 |
-| `applyCustomCreationPreset` | 34717 | function |  | 3 |
-| `createCustomCreationPreset` | 34741 | function |  | 3 |
-| `createCustomClumpPreset` | 34756 | function |  | 3 |
-| `commitCustomCreationPreset` | 34771 | function |  | 2 |
-| `openRemoveCreationPreset` | 34832 | function |  | 3 |
-| `commitRemoveCreationPreset` | 34845 | function |  | 1 |
-| `applyBraidToolPreset` | 34862 | function |  | 2 |
-| `selectedBranchChildLock` | 34974 | function |  | 4 |
-| `updateBranchBridgeSliderInputs` | 34978 | function |  | 2 |
-| `initPanelResizeHandles` | 35084 | function |  | 2 |
-| `applyWidth` | 35090 | arrow |  | 2 |
-| `restoreWidth` | 35097 | arrow |  | 2 |
-| `bindResize` | 35105 | arrow |  | 2 |
-| `onMove` | 35113 | arrow |  | 0 |
-| `onUp` | 35117 | arrow |  | 0 |
-| `updateSnappedFloatingPanels` | 35134 | function |  | 2 |
-| `initFloatingPanelControls` | 35143 | function |  | 2 |
-| `detach` | 35152 | arrow |  | 43 |
-| `endDrag` | 35190 | arrow |  | 0 |
-| `endResize` | 35222 | arrow |  | 0 |
-| `updateSculptBrushDockCompact` | 35233 | function |  | 3 |
-| `selectPatchNotesVersion` | 35367 | function |  | 3 |
-| `requestReferenceImage` | 35400 | function |  | 5 |
-| `toggleCapsuleGuideTool` | 35604 | function |  | 1 |
-| `activateCapsuleGuideDrawTool` | 35610 | function |  | 1 |
-| `createCurveLatticeGuideFromUi` | 35617 | function |  | 1 |
-| `deleteLocks` | 36184 | function |  | 10 |
-| `disposeCurveObjects` | 36262 | function |  | 4 |
-| `beginPanelSplitHandleDrag` | 36314 | function |  | 2 |
-| `updatePanelSplitHandleDrag` | 36345 | function |  | 1 |
-| `endPanelSplitHandleDrag` | 36420 | function |  | 2 |
-| `resize` | 36453 | function |  | 4 |
-| `handleViewportPointerMove` | 36464 | function |  | 1 |
-| `blockProportionalSizingEvent` | 36475 | function |  | 1 |
-| `updateLightAngleFromInputs` | 36481 | function |  | 2 |
-| `startViewSnap` | 36495 | function |  | 3 |
-| `beginViewSnapFromActiveOrbit` | 36525 | function |  | 3 |
-| `trackViewportPointerDown` | 36542 | function |  | 1 |
-| `trackViewportPointerMove` | 36558 | function |  | 1 |
-| `clearViewportPointer` | 36566 | function |  | 1 |
-| `updateViewSnap` | 36571 | function |  | 1 |
-| `nearestCardinalAxis` | 36607 | function |  | 5 |
-| `cardinalAxisKey` | 36621 | function |  | 5 |
-| `steppedDragAmount` | 36625 | function |  | 3 |
-| `snapCameraToCardinalAxis` | 36631 | function |  | 4 |
-| `endViewSnap` | 36647 | function |  | 4 |
-| `activateStrandControlPoint` | 36657 | function |  | 4 |
-| `refreshStrandControlPointSelection` | 36707 | function |  | 4 |
-| `addStrandControlPointSelection` | 36734 | function |  | 3 |
-| `removeStrandControlPointSelection` | 36751 | function |  | 3 |
-| `sampleStrandPointNormal` | 36765 | function |  | 2 |
-| `sampleStrandPointVectors` | 36775 | function |  | 3 |
-| `remapStrandPointSelectionAfterRemoval` | 36781 | function |  | 2 |
-| `resampleStrandCurveData` | 36792 | function |  | 4 |
-| `resampleMatchingVectors` | 36798 | arrow |  | 3 |
-| `finishStrandCurveTopologyChange` | 36837 | function |  | 4 |
-| `removeStrandCurvePoint` | 36848 | function |  | 2 |
-| `closestStrandCurveParameter` | 36861 | function |  | 2 |
-| `insertStrandCurvePoint` | 36890 | function |  | 2 |
-| `curvePointTopologyCursorAvailable` | 36907 | function |  | 2 |
-| `selectionModifierCursorAvailable` | 36917 | function |  | 3 |
-| `clearCurvePointTopologyCursor` | 36933 | function |  | 6 |
-| `updateCurvePointTopologyCursor` | 36940 | function |  | 4 |
-| `prepareCurvePointSelection` | 36962 | function |  | 1 |
-| `finishCurvePointInsertion` | 37073 | function |  | 1 |
-| `finishPointRemoval` | 37088 | function |  | 1 |
-| `editableStrandWidth` | 37106 | function |  | 6 |
-| `editableStrandWidthBounds` | 37118 | function |  | 2 |
-| `applyEditableStrandWidth` | 37124 | function |  | 3 |
-| `viewportPixelPoint` | 37160 | function |  | 3 |
-| `syncSculptBrushControls` | 37168 | function |  | 6 |
-| `syncSculptBrushStrengthForActiveTool` | 37183 | function |  | 3 |
-| `updateActiveSculptBrushStrength` | 37191 | function |  | 1 |
-| `updateActiveSculptBrushPreserveTips` | 37199 | function |  | 1 |
-| `sculptBrushPlaneOffset` | 37205 | function |  | 5 |
-| `setSculptBrushCursorVisible` | 37209 | function |  | 7 |
-| `updateSculptBrushCursor` | 37216 | function |  | 4 |
-| `sculptBrushMirrorUpdateLock` | 37238 | function |  | 4 |
-| `sculptBrushEditableLock` | 37245 | function |  | 6 |
-| `sculptBrushWorkingPlaneNormal` | 37255 | function |  | 5 |
-| `sculptBrushLockViable` | 37261 | function |  | 5 |
-| `sculptBrushUnits` | 37272 | function |  | 2 |
-| `updateSculptBrushViabilityPlane` | 37311 | function |  | 4 |
-| `sculptBrushPointWeight` | 37361 | function |  | 5 |
-| `sculptBrushWorldDelta` | 37371 | function |  | 4 |
-| `syncSculptBrushMirrorPoints` | 37380 | function |  | 2 |
-| `captureSculptMoveStrokeInfluence` | 37406 | function |  | 2 |
-| `beginSculptMoveStroke` | 37464 | function |  | 1 |
-| `applySculptMoveStrokeSample` | 37526 | function |  | 2 |
-| `flushSculptMoveStrokeSample` | 37761 | function |  | 3 |
-| `updateSculptMoveStroke` | 37770 | function |  | 1 |
-| `finishSculptMoveStroke` | 37786 | function |  | 3 |
-| `strandControlPointHit` | 37834 | function |  | 3 |
-| `beginStrandWidthEdgeDrag` | 37838 | function |  | 1 |
-| `updateStrandWidthEdgeDrag` | 37916 | function |  | 1 |
-| `finishStrandWidthEdgeDrag` | 37950 | function |  | 2 |
-| `setHoveredStrandWidthEdge` | 37990 | function |  | 9 |
-| `updateStrandWidthEdgeHover` | 38003 | function |  | 1 |
-| `setHoveredControlPoint` | 38043 | function |  | 7 |
-| `visibleControlPointHoverTargets` | 38056 | function |  | 2 |
-| `updateControlPointHover` | 38092 | function |  | 1 |
-| `animate` | 38649 | function |  | 2 |
-| `syncCompactSidebarLayout` | 38682 | function |  | 4 |
-| `setOutlinerPanelCollapsed` | 38701 | function |  | 5 |
-| `setAttributeEditorPanelCollapsed` | 38707 | function |  | 3 |
-| `setAttributeEditorTab` | 38713 | function |  | 6 |
+| `beginProceduralAccessoryEdit` | 34002 | function |  | 4 |
+| `updateSelectedProceduralAccessories` | 34007 | function |  | 4 |
+| `syncDrawCurlControls` | 34062 | function |  | 5 |
+| `handleLiveSurfaceChange` | 34110 | function |  | 1 |
+| `scaleSurfaceLatticeWidth` | 34192 | function |  | 3 |
+| `resampleSurfaceLock` | 34207 | function |  | 2 |
+| `changePanelSplitCount` | 34320 | function |  | 3 |
+| `presetNumber` | 34424 | function |  | 23 |
+| `clonePresetShape` | 34429 | function |  | 7 |
+| `creationPresetSnapshot` | 34438 | function |  | 5 |
+| `creationToolSettingsSnapshot` | 34486 | function |  | 5 |
+| `applyPresetControl` | 34513 | function |  | 2 |
+| `applyCreationToolSettings` | 34534 | function |  | 3 |
+| `normalizeCreationPresetLibrary` | 34575 | function |  | 3 |
+| `loadCustomCreationPresets` | 34582 | function |  | 2 |
+| `saveCustomCreationPresets` | 34592 | function |  | 6 |
+| `migrateLegacyClumpPresets` | 34600 | function |  | 2 |
+| `populateCreationPresetSelect` | 34636 | function |  | 5 |
+| `populateDrawBrushPresetSelect` | 34660 | function |  | 6 |
+| `syncCreationPresetRemoveButtons` | 34693 | function |  | 5 |
+| `applyCreationPresetSnapshot` | 34698 | function |  | 2 |
+| `applyCustomCreationPreset` | 34715 | function |  | 3 |
+| `createCustomCreationPreset` | 34739 | function |  | 3 |
+| `createCustomClumpPreset` | 34754 | function |  | 3 |
+| `commitCustomCreationPreset` | 34769 | function |  | 2 |
+| `openRemoveCreationPreset` | 34830 | function |  | 3 |
+| `commitRemoveCreationPreset` | 34843 | function |  | 1 |
+| `applyBraidToolPreset` | 34860 | function |  | 2 |
+| `selectedBranchChildLock` | 34972 | function |  | 4 |
+| `updateBranchBridgeSliderInputs` | 34976 | function |  | 2 |
+| `initPanelResizeHandles` | 35082 | function |  | 2 |
+| `applyWidth` | 35088 | arrow |  | 2 |
+| `restoreWidth` | 35095 | arrow |  | 2 |
+| `bindResize` | 35103 | arrow |  | 2 |
+| `onMove` | 35111 | arrow |  | 0 |
+| `onUp` | 35115 | arrow |  | 0 |
+| `updateSnappedFloatingPanels` | 35132 | function |  | 2 |
+| `initFloatingPanelControls` | 35141 | function |  | 2 |
+| `detach` | 35150 | arrow |  | 43 |
+| `endDrag` | 35188 | arrow |  | 0 |
+| `endResize` | 35220 | arrow |  | 0 |
+| `updateSculptBrushDockCompact` | 35231 | function |  | 3 |
+| `selectPatchNotesVersion` | 35365 | function |  | 3 |
+| `requestReferenceImage` | 35398 | function |  | 5 |
+| `toggleCapsuleGuideTool` | 35602 | function |  | 1 |
+| `activateCapsuleGuideDrawTool` | 35608 | function |  | 1 |
+| `createCurveLatticeGuideFromUi` | 35615 | function |  | 1 |
+| `deleteLocks` | 36182 | function |  | 10 |
+| `disposeCurveObjects` | 36260 | function |  | 4 |
+| `beginPanelSplitHandleDrag` | 36312 | function |  | 2 |
+| `updatePanelSplitHandleDrag` | 36343 | function |  | 1 |
+| `endPanelSplitHandleDrag` | 36418 | function |  | 2 |
+| `resize` | 36451 | function |  | 4 |
+| `handleViewportPointerMove` | 36462 | function |  | 1 |
+| `blockProportionalSizingEvent` | 36473 | function |  | 1 |
+| `updateLightAngleFromInputs` | 36479 | function |  | 2 |
+| `startViewSnap` | 36493 | function |  | 3 |
+| `beginViewSnapFromActiveOrbit` | 36523 | function |  | 3 |
+| `trackViewportPointerDown` | 36540 | function |  | 1 |
+| `trackViewportPointerMove` | 36556 | function |  | 1 |
+| `clearViewportPointer` | 36564 | function |  | 1 |
+| `updateViewSnap` | 36569 | function |  | 1 |
+| `nearestCardinalAxis` | 36605 | function |  | 5 |
+| `cardinalAxisKey` | 36619 | function |  | 5 |
+| `steppedDragAmount` | 36623 | function |  | 3 |
+| `snapCameraToCardinalAxis` | 36629 | function |  | 4 |
+| `endViewSnap` | 36645 | function |  | 4 |
+| `activateStrandControlPoint` | 36655 | function |  | 4 |
+| `refreshStrandControlPointSelection` | 36705 | function |  | 4 |
+| `addStrandControlPointSelection` | 36732 | function |  | 3 |
+| `removeStrandControlPointSelection` | 36749 | function |  | 3 |
+| `sampleStrandPointNormal` | 36763 | function |  | 2 |
+| `sampleStrandPointVectors` | 36773 | function |  | 3 |
+| `remapStrandPointSelectionAfterRemoval` | 36779 | function |  | 2 |
+| `resampleStrandCurveData` | 36790 | function |  | 4 |
+| `resampleMatchingVectors` | 36796 | arrow |  | 3 |
+| `finishStrandCurveTopologyChange` | 36835 | function |  | 4 |
+| `removeStrandCurvePoint` | 36846 | function |  | 2 |
+| `closestStrandCurveParameter` | 36859 | function |  | 2 |
+| `insertStrandCurvePoint` | 36888 | function |  | 2 |
+| `curvePointTopologyCursorAvailable` | 36905 | function |  | 2 |
+| `selectionModifierCursorAvailable` | 36915 | function |  | 3 |
+| `clearCurvePointTopologyCursor` | 36931 | function |  | 6 |
+| `updateCurvePointTopologyCursor` | 36938 | function |  | 4 |
+| `prepareCurvePointSelection` | 36960 | function |  | 1 |
+| `finishCurvePointInsertion` | 37071 | function |  | 1 |
+| `finishPointRemoval` | 37086 | function |  | 1 |
+| `editableStrandWidth` | 37104 | function |  | 6 |
+| `editableStrandWidthBounds` | 37116 | function |  | 2 |
+| `applyEditableStrandWidth` | 37122 | function |  | 3 |
+| `viewportPixelPoint` | 37158 | function |  | 3 |
+| `syncSculptBrushControls` | 37166 | function |  | 6 |
+| `syncSculptBrushStrengthForActiveTool` | 37181 | function |  | 3 |
+| `updateActiveSculptBrushStrength` | 37189 | function |  | 1 |
+| `updateActiveSculptBrushPreserveTips` | 37197 | function |  | 1 |
+| `sculptBrushPlaneOffset` | 37203 | function |  | 5 |
+| `setSculptBrushCursorVisible` | 37207 | function |  | 7 |
+| `updateSculptBrushCursor` | 37214 | function |  | 4 |
+| `sculptBrushMirrorUpdateLock` | 37236 | function |  | 4 |
+| `sculptBrushEditableLock` | 37243 | function |  | 6 |
+| `sculptBrushWorkingPlaneNormal` | 37253 | function |  | 5 |
+| `sculptBrushLockViable` | 37259 | function |  | 5 |
+| `sculptBrushUnits` | 37270 | function |  | 2 |
+| `updateSculptBrushViabilityPlane` | 37309 | function |  | 4 |
+| `sculptBrushPointWeight` | 37359 | function |  | 5 |
+| `sculptBrushWorldDelta` | 37369 | function |  | 4 |
+| `syncSculptBrushMirrorPoints` | 37378 | function |  | 2 |
+| `captureSculptMoveStrokeInfluence` | 37404 | function |  | 2 |
+| `beginSculptMoveStroke` | 37462 | function |  | 1 |
+| `applySculptMoveStrokeSample` | 37524 | function |  | 2 |
+| `flushSculptMoveStrokeSample` | 37759 | function |  | 3 |
+| `updateSculptMoveStroke` | 37768 | function |  | 1 |
+| `finishSculptMoveStroke` | 37784 | function |  | 3 |
+| `strandControlPointHit` | 37832 | function |  | 3 |
+| `beginStrandWidthEdgeDrag` | 37836 | function |  | 1 |
+| `updateStrandWidthEdgeDrag` | 37914 | function |  | 1 |
+| `finishStrandWidthEdgeDrag` | 37948 | function |  | 2 |
+| `setHoveredStrandWidthEdge` | 37988 | function |  | 9 |
+| `updateStrandWidthEdgeHover` | 38001 | function |  | 1 |
+| `setHoveredControlPoint` | 38041 | function |  | 7 |
+| `visibleControlPointHoverTargets` | 38054 | function |  | 2 |
+| `updateControlPointHover` | 38090 | function |  | 1 |
+| `animate` | 38647 | function |  | 2 |
+| `syncCompactSidebarLayout` | 38680 | function |  | 4 |
+| `setOutlinerPanelCollapsed` | 38699 | function |  | 5 |
+| `setAttributeEditorPanelCollapsed` | 38705 | function |  | 3 |
+| `setAttributeEditorTab` | 38711 | function |  | 6 |
 
 ## modules/branch/branch-store.js（43 行）
 
@@ -1447,6 +1447,12 @@
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
+
+## modules/core/head-store.js（11 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `createHeadStore` | 3 | function | export | 1 |
 
 ## modules/core/history.js（45 行）
 
@@ -1483,11 +1489,23 @@
 | `workspaceForShortcutKey` | 38 | function | export | 1 |
 | `focusedControlShouldYieldToShortcut` | 42 | function | export | 1 |
 
+## modules/core/transform-store.js（11 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `createTransformStore` | 3 | function | export | 1 |
+
 ## modules/core/ui-store.js（22 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
 | `createUiStore` | 10 | function | export | 1 |
+
+## modules/core/undo-store.js（10 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `createUndoStore` | 3 | function | export | 1 |
 
 ## modules/data/clump-brush-presets.js（144 行）
 
