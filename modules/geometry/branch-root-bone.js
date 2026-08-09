@@ -134,7 +134,7 @@ function branchParentFrame(parent, parameter) {
   // Continuous parent-surface frame along the guide: the child root slides smoothly
   // between guide control points (no discrete row snapping / jumps) while staying
   // laterally aligned to the guide line (across along frame.x is preserved in
-  // enforceBranchRootPosition). Orientation matches deps.deps.curveFrameAtPoint at each
+  // enforceBranchRootPosition). Orientation matches deps.curveFrameAtPoint at each
   // control point, so this only smooths the interpolation.
   const t = THREE.MathUtils.clamp(Number(parameter ?? 0), 0, 1);
   const frame = deps.curveFrameAt(parent, t);
@@ -192,7 +192,7 @@ function enforceBranchRootPosition(lock) {
     const d = p.distanceToSquared(lock.points[0]);
     if (d < bestDist) { bestDist = d; bestT = t; }
   }
-  lock.branchParentParameter = branchRegion.clampRegionParam(bestT);
+  lock.branchParentParameter = clampRegionParam(bestT);
   const frame = branchParentFrame(parent, lock.branchParentParameter);
   // The root slides in the parent's width plane: keep the across-width (frame.x)
   // component of the drag and project back onto the parent surface.
@@ -208,9 +208,9 @@ function enforceBranchRootPosition(lock) {
     -halfWidth,
     halfWidth
   );
-  const v = branchRegion.clampRegionParam(0.5 - across / width);
+  const v = clampRegionParam(0.5 - across / width);
   // Follow the selection region with the root (u and v centers).
-  branchRegion.deps.updateBranchRootRegionCenter(lock, lock.branchParentParameter, v);
+  deps.updateBranchRootRegionCenter(lock, lock.branchParentParameter, v);
   const rootPoint = frame.point.clone().addScaledVector(frame.x, across);
   lock.points[0].copy(rootPoint);
   if (lock.groupLatticeBasePoints?.[0]) lock.groupLatticeBasePoints[0].copy(rootPoint);

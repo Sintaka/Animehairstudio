@@ -6746,3 +6746,7 @@ body.outliner-folder-colors-disabled .outliner-layer-items {
 .sculpt-brush-dock.dock-icons .sculpt-brush-button .brush-label {
   display: none;
 }
+/* App menu open: outliner/panel resize handles must yield to the menu (bug 4) */
+body.app-menu-open .panel-resize-handle {
+  pointer-events: none;
+}

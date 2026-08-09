@@ -147,6 +147,13 @@
 - [x] Front Bangs 1-3 视口三角观感修复（0.2.55）：createPanelStrandGeometry 的 addQuad 跳过退化（角点重合）与反射折叠（两三角法线相反）quad，最大二面角 180/90° → ≤10.7°；导出一直是四边面不受影响
 - [x] 面板线框三角面真正修复（0.2.56）：绕序翻转后同步交换 triangleEdgeMasks 的 [1]/[2]，quad 对角线不再被描边；0.2.55 的退化/反射折叠清理保留
 - [x] 重构：localization 词典拆数据文件（0.2.57）：JA/ZH 词典从 modules/localization.js 拆到 modules/loc-ja.js / loc-zh.js（export default Object.freeze），localization.js 改 import 两词典，逻辑零改动；拆分前后 key 数一致（JA 667 / ZH 653）；verify-smoke.mjs 6/6 通过（页面加载 0 异常、zh/ja/en 翻译正常、0043.ahs 加载重建无异常）
+- [x] Bug 修复批次（0.2.57，5 个，子智能体并行调研 + 主进程修复）：
+  - Ctrl+Z：加载前 pushUndoState 压入空场景且加载后不清栈（撤销会回到加载前）→ 删除加载前 push + restore 后清 undo/redo；恢复路径清 branchRegionEdit + branchRegionMeshPointsGroup（选区标记不再残留）
+  - 画子发片不触发桥接：branch-hierarchy/branch-root-bone 迁移残留 `xxx.deps.*` 跨模块裸引用（ReferenceError）→ 统一改 deps.*；remapEnvelopeCurveRange import from curve-math；子发片默认 Topology-Along Curve 26→6（attachDrawnLocksAsBranches 设 lock.lengthSegments=6）
+  - 扫掠起始控制器优先级：beginBranchSweepStartDrag 无修饰键过滤 + stopImmediatePropagation 抢在 Alt 导航前 → 加 `button!==0 || alt/shift/ctrl/meta` 放行（与 beginPanelSplitHandleDrag 惯例一致）
+  - File 菜单 vs 大纲拖拽：.panel-resize-handle z-index:30 盖过菜单（topbar z-index:20）+ 无菜单守卫 → syncAppMenuVisibility 切 body.app-menu-open 类 + CSS `pointer-events:none` + bindResize 菜单守卫
+  - Region 面板选区拖不动：openBranchRegionEditor 引用未注入 DOM（sweepProfileEditor/taperCurveEditor）+ branchRootRegionFromParam 用未注入常量 BRANCH_ROOT_REGION_DEFAULTS → deps 注入 + 常量移入模块；顺删 restoreLock 重复 branchRootRegion 键
+  - 验证：13/13 通过
 - [x] 验证增强：verify-smoke 本地 three（0.2.57）：CDP Fetch 拦截 unpkg→%TEMP%\ahs-verify-three\vendor（含 CORS 头），验证不再依赖外网；3d-3 全量 13/13 通过（4 个 .ahs status opened）
 - [x] 3d 第七批：sweep-profile 迁出（0.2.57，3d-3d-b）：20 个函数 → modules/geometry/branch-sweep.js；import curve-math（symmetricClosedCurveParameters/twistCurveDisplayRange）+ 3 常量注入；踩坑：api deps 非法简写（closeSweepProfileEditor）、restore 报错 twistCurveDisplayRange 未注入（已修）；app.js 36,409→36,058；子发片系统迁出完成；验证受 unpkg 网络中断影响（真机验证）
 - [x] 3d 第六批：hierarchy 迁出（0.2.57，3d-3d-a）：6 函数（attachDrawnLocksAsBranches/updateBranchChildren hub 等）→ modules/geometry/branch-hierarchy.js；惰性闭包 deps（branchRegion/branchBridge/branchRootBone 的 6 函数）；踩坑：api deps 非法简写 a.b（已修）；app.js 36,491→36,409；verify 13/13

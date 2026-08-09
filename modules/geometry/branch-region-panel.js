@@ -4,6 +4,14 @@ import * as THREE from "three";
 
 const branchRegionCanvas = document.querySelector("#branchRegionCanvas");
 
+const BRANCH_ROOT_REGION_DEFAULTS = Object.freeze({
+  centerV: 0.5,
+  upLength: 0.08,
+  downLength: 0.08,
+  leftWidth: 0.12,
+  rightWidth: 0.12
+});
+
 export function clampRegionParam(value) {
   return THREE.MathUtils.clamp(Number(value) || 0, 0, 1);
 }
@@ -213,8 +221,8 @@ function branchRegionCanvasToUV(cx, cy) {
 function openBranchRegionEditor(lockId) {
   const lock = deps.locks.find((item) => item.id === lockId);
   if (!lock?.branchRootRegion) return;
-  if (sweepProfileEditor?.open) deps.closeSweepProfileEditor();
-  if (taperCurveEditor?.open) deps.closeTaperCurveEditor();
+  if (deps.sweepProfileEditor?.open) deps.closeSweepProfileEditor();
+  if (deps.taperCurveEditor?.open) deps.closeTaperCurveEditor();
   deps.sculptState.branchRegionEdit = lockId;
   applyBranchRegionView();
   const target = document.querySelector("#branchRegionTarget");
@@ -697,6 +705,8 @@ function beginBranchSweepStartDrag(event) {
   const selected = deps.locks.find((item) => item.id === deps.selState.selectedId);
   const handle = selected?.curveObjects?.branchSweepStartHandle;
   if (!handle || selected?.locked) return false;
+  // Navigation modifier keys (Alt rotate/zoom) take priority over handle dragging.
+  if (event.button !== 0 || event.altKey || event.shiftKey || event.ctrlKey || event.metaKey) return false;
   deps.raycaster.setFromCamera(deps.pointerToNdc(event), deps.camera);
   const hits = deps.raycaster.intersectObjects([handle], false);
   if (!hits.length) return false;

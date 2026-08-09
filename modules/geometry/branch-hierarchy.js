@@ -1,6 +1,7 @@
 // branch-hierarchy.js — child-strand hierarchy tree (refactor 3d-3d).
 // Extracted from app.js; coupling injected via createBranchHierarchyApi(deps).
 import * as THREE from "three";
+import { remapEnvelopeCurveRange } from "./curve-math.js";
 
 export function createBranchHierarchyApi(deps) {
   // deps: curveFrameAtPoint, getSelectedLock, strandControlPointHitFromEvent,
@@ -11,7 +12,7 @@ export function createBranchHierarchyApi(deps) {
 function attachDrawnLocksAsBranches(stroke, created) {
   const parent = deps.locks.find((lock) => lock.id === stroke.branchSourceLockId);
   if (!canBranchDrawFromLock(parent) || !created.length) return null;
-  branchRootBone.deps.ensureBranchParentNormalField(parent);
+  deps.ensureBranchParentNormalField(parent);
   const parameter = THREE.MathUtils.clamp(
     Number(stroke.branchSourcePointIndex || 0) / Math.max(1, parent.points.length - 1),
     0,
@@ -21,8 +22,9 @@ function attachDrawnLocksAsBranches(stroke, created) {
     lock.branchParentId = parent.id;
     lock.branchParentParameter = parameter;
     delete lock.clumpShapeCurveInheritance;
-    lock.branchRootRegion = branchRegion.deps.branchRootRegionFromParam(parameter);
-    branchRootBone.deps.captureBranchLocalState(lock);
+    lock.branchRootRegion = deps.branchRootRegionFromParam(parameter);
+    lock.lengthSegments = 6; // child-strand default Topology - Along Curve
+    deps.captureBranchLocalState(lock);
   });
   updateBranchChildren(parent);
   return parent;
@@ -50,16 +52,16 @@ function updateBranchChildren(parent) {
   try {
     children.forEach((child) => {
       if (!child.branchLocalPoints?.length || !child.branchLocalSurfaceNormals?.length) {
-        branchRootBone.deps.captureBranchLocalState(child);
+        deps.captureBranchLocalState(child);
       }
-      const frame = branchRootBone.deps.branchParentFrame(parent, child.branchParentParameter);
+      const frame = deps.branchParentFrame(parent, child.branchParentParameter);
       child.pointSurfaceNormals ||= [];
       child.points.forEach((point, index) => {
         const local = child.branchLocalPoints?.[index] || child.branchLocalPoints?.at(-1) || new THREE.Vector3();
-        point.copy(frame.point).add(branchRootBone.deps.branchWorldVector(local, frame));
+        point.copy(frame.point).add(deps.branchWorldVector(local, frame));
         const localNormal = child.branchLocalSurfaceNormals?.[index];
         if (localNormal) {
-          child.pointSurfaceNormals[index] = branchRootBone.deps.branchWorldVector(localNormal, frame).normalize();
+          child.pointSurfaceNormals[index] = deps.branchWorldVector(localNormal, frame).normalize();
         }
       });
       const start = THREE.MathUtils.clamp(Number(child.branchParentParameter ?? 0), 0, 1);
@@ -77,7 +79,7 @@ function updateBranchChildren(parent) {
       child.rootSurfaceNormal = frame.z.clone();
       child.rootAttachment = null;
       deps.syncLockFromCurve(child);
-      branchBridge.deps.applyBranchRootOffset(child);
+      deps.applyBranchRootOffset(child);
       deps.updateLockGeometry(child, { updateBranches: false });
       updateBranchChildren(child);
     });

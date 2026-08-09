@@ -6076,6 +6076,7 @@ function setCapsuleGuideEditing(enabled) {
 
 function syncAppMenuVisibility() {
   const menuOpen = appMenuDropdowns.some((menu) => !menu.classList.contains("hidden"));
+  document.body.classList.toggle("app-menu-open", menuOpen);
   placementStatus.style.visibility = menuOpen ? "hidden" : "";
 }
 
@@ -16679,7 +16680,8 @@ const branchRegion = createBranchRegionApi({
   branchRootRegionWorldPoints: branchBridge.branchRootRegionWorldPoints, strandGeometryCurve, raycaster, camera, renderer,
   branchState: branch.state, sculptState: sculptState.state, viewportState: viewportState.state,
   selState: sel.state, hairState: hairState.state,
-  branchRegionMeshPointsGroup, branchRegionMeshPointGeometry, branchRegionMeshPointMaterial, branchRegionCenterMeshPointMaterial
+  branchRegionMeshPointsGroup, branchRegionMeshPointGeometry, branchRegionMeshPointMaterial, branchRegionCenterMeshPointMaterial,
+  sweepProfileEditor, taperCurveEditor
 });
 
 
@@ -17806,7 +17808,6 @@ async function openHairProjectFile(file, { handle = null } = {}) {
       scalpState.state.importedScalpGuideAsset = null;
       setScalpGuideSource("default");
     }
-    pushUndoState();
     restoreState(project.state);
     realignFullBodyGuideToScalpTop();
     if (guideState.state.guideModel?.userData?.fullBodyReference) {
@@ -17816,6 +17817,7 @@ async function openHairProjectFile(file, { handle = null } = {}) {
     projectState.state.quickSaveFileHandle = handle || null;
     projectState.state.quickSaveFileName = cleanFileBaseName(file.name || `${project.metadata?.name || "Untitled Hair Project"}.ahs`, "Untitled Hair Project");
     presetLibraryStatus.textContent = `${project.metadata?.name || "Project"} opened`;
+    undoHistory.clear(); redoHistory.clear(); updateHistoryButtons(); // loading is a fresh undo base, not an undoable step
     setPresetLibraryOpen(false);
     await safelyRememberRecentProject(file.name || `${project.metadata?.name || "Untitled Hair Project"}.ahs`, content);
   } catch (error) {
@@ -17974,6 +17976,9 @@ function resetTransientInteractionsForStateRestore() {
   hideStrandRadialMenu();
   hideToolRadialMenu();
   sculptState.state.placeEdit = null;
+  sculptState.state.branchRegionEdit = null;
+  branchRegionMeshPointsGroup.clear();
+  branchRegionMeshPointsGroup.visible = false;
   sculptState.state.transformDragging = false;
   updateInteractionLocks();
 }
@@ -18422,7 +18427,6 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     branchParentParameter: THREE.MathUtils.clamp(Number(snapshot.branchParentParameter ?? 0), 0, 1),
     branchLocalPoints: snapshot.branchLocalPoints?.map(dataToVector) || null,
     branchLocalSurfaceNormals: snapshot.branchLocalSurfaceNormals?.map((normal) => normal ? dataToVector(normal) : null) || null,
-    branchRootRegion: branchRegion.cloneBranchRootRegion(snapshot.branchRootRegion),
     branchRootRegion: branchRegion.cloneBranchRootRegion(snapshot.branchRootRegion) || (snapshot.branchParentId ? branchRegion.branchRootRegionFromParam(snapshot.branchParentParameter ?? 0) : null),
     branchCurvesAuthored: Boolean(snapshot.branchCurvesAuthored),
     branchSweepStartT: THREE.MathUtils.clamp(Number(snapshot.branchSweepStartT ?? 0.1), 0.02, 0.6),
@@ -21072,13 +21076,6 @@ function addLockToClump(lock, guide, options = {}) {
 // Shift the branch region's center to follow the child root (u and v), so the
 // selection panel's relative position and the direct-bridge region stay in sync.
 
-const BRANCH_ROOT_REGION_DEFAULTS = Object.freeze({
-  centerV: 0.5,
-  upLength: 0.08,
-  downLength: 0.08,
-  leftWidth: 0.12,
-  rightWidth: 0.12
-});
 
 
 // 4 edge control points (up/down/left/right) define the rectangular carve region on the
@@ -32406,6 +32403,7 @@ function initPanelResizeHandles() {
   const bindResize = (handle, variable, storageKey, min, max, invert) => {
     handle.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) return;
+      if (appMenuDropdowns.some((menu) => !menu.classList.contains("hidden"))) return; // open menus take priority
       event.preventDefault();
       handle.classList.add("dragging");
       handle.setPointerCapture?.(event.pointerId);
