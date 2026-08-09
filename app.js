@@ -1,3 +1,4 @@
+import { createDrawStore } from "./modules/edit/draw-store.js?v=20260809-4";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260809-3";
 import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
 import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260809-4";
@@ -1082,7 +1083,7 @@ const DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE = Object.freeze([
 
 function activeDrawClumpTemplate(stroke = null) {
   if (activeTool === "procedural-draw") return proceduralDrawClumpTemplate(stroke);
-  return activeCustomDrawClumpTemplate || DRAW_CLUMP_TEMPLATES[drawStrandMode] || null;
+  return draw.state.activeCustomDrawClumpTemplate || DRAW_CLUMP_TEMPLATES[drawStrandMode] || null;
 }
 
 function proceduralDrawClumpTemplate(stroke = null) {
@@ -2199,16 +2200,12 @@ let placeEdit = null;
 let drawStrandStroke = null;
 let capsuleGuideDrawStroke = null;
 let polyBrushStroke = null;
-let polyAltDeleteCandidate = null;
-let polyFillPreviewGroup = null;
-let polyFillPreviewCandidate = null;
-let polyShiftPreviewHeld = false;
+const draw = createDrawStore();
 let loftSurfaceDraft = null;
 let curveSurfaceDraft = null;
 let panelSplitDrag = null;
 let activeCapsuleGuideEdit = null;
 let drawStrandMode = "standard";
-let activeCustomDrawClumpTemplate = null;
 let clumpUpdateInProgress = false;
 const branch = createBranchStore();
 let placementPointer = null;
@@ -2217,11 +2214,6 @@ let proportionalSizeEdit = null;
 let proportionalHotkeyPress = null;
 let toolShortcutPress = null;
 let radialMenusEnabled = readStoredBooleanPreference(window, RADIAL_MENUS_PREFERENCE_KEY, true);
-let proceduralDrawExperimentalEnabled = readStoredBooleanPreference(
-  window,
-  PROCEDURAL_DRAW_EXPERIMENTAL_PREFERENCE_KEY,
-  false
-);
 let navigationTipsEnabled = readStoredBooleanPreference(window, NAVIGATION_TIPS_PREFERENCE_KEY, true);
 let navigationStyle = readStoredPreference(window, NAVIGATION_STYLE_PREFERENCE_KEY, {
   fallback: "anime-hair-studio",
@@ -10960,7 +10952,7 @@ function setActiveTool(tool) {
   }
   if (referenceCropDrag) finishReferenceCrop(null, { cancel: true });
   if (RETIRED_CURVE_LATTICE_SURFACE_TOOLS.has(tool)) tool = "select";
-  if (tool === "procedural-draw" && !proceduralDrawExperimentalEnabled) tool = "draw";
+  if (tool === "procedural-draw" && !draw.state.proceduralDrawExperimentalEnabled) tool = "draw";
   const leavingLoftSurface = activeTool === "surface-loft" && tool !== "surface-loft";
   const enteringLoftSurface = activeTool !== "surface-loft" && tool === "surface-loft";
   const leavingCurveSurface = activeTool === "curve-surface" && tool !== "curve-surface";
@@ -11092,7 +11084,7 @@ function setDrawStrandMode(mode) {
   if (!["standard", "clump", "ponytail-clump", "coil"].includes(mode)) return;
   finishDrawStrandStroke(null, { cancel: true });
   drawStrandMode = mode;
-  activeCustomDrawClumpTemplate = null;
+  draw.state.activeCustomDrawClumpTemplate = null;
   drawBrushPresetInput.value = mode;
   syncDrawCurlControls();
   updatePlacementStatus();
@@ -19003,7 +18995,7 @@ function downloadPreferencesAndPresets() {
       controlPointDisplaySize,
       viewportBackgroundColor,
       radialMenus: radialMenusEnabled,
-      proceduralDrawExperimental: proceduralDrawExperimentalEnabled,
+      proceduralDrawExperimental: draw.state.proceduralDrawExperimentalEnabled,
       defaultShader: defaultHairShader
     },
     presets: customCreationPresets,
@@ -19049,7 +19041,7 @@ async function loadPreferencesAndPresets(file) {
   setRadialMenusEnabled(importedBooleanPreference(preferences.radialMenus, radialMenusEnabled));
   setProceduralDrawExperimentalEnabled(importedBooleanPreference(
     preferences.proceduralDrawExperimental,
-    proceduralDrawExperimentalEnabled
+    draw.state.proceduralDrawExperimentalEnabled
   ));
   if (typeof preferences.language === "string") {
     const language = documentLocalizer.setLanguage(normalizeLanguage(preferences.language));
@@ -19070,7 +19062,7 @@ async function loadPreferencesAndPresets(file) {
   );
   preferencesOpenSnapshot = {
     radialMenusEnabled,
-    proceduralDrawExperimentalEnabled,
+    proceduralDrawExperimentalEnabled: draw.state.proceduralDrawExperimentalEnabled,
     navigationTipsEnabled,
     navigationStyle,
     cameraSmoothingEnabled,
@@ -21602,7 +21594,7 @@ function refreshPolyMesh(lock) {
 }
 
 function ensurePolyFillPreview() {
-  if (polyFillPreviewGroup) return polyFillPreviewGroup;
+  if (draw.state.polyFillPreviewGroup) return draw.state.polyFillPreviewGroup;
   const group = new THREE.Group();
   const mesh = new THREE.Mesh(
     new THREE.BufferGeometry(),
@@ -21634,13 +21626,13 @@ function ensurePolyFillPreview() {
   group.userData.mesh = mesh;
   group.userData.outline = outline;
   curveGroup.add(group);
-  polyFillPreviewGroup = group;
+  draw.state.polyFillPreviewGroup = group;
   return group;
 }
 
 function clearPolyFillPreview() {
-  polyFillPreviewCandidate = null;
-  if (polyFillPreviewGroup) polyFillPreviewGroup.visible = false;
+  draw.state.polyFillPreviewCandidate = null;
+  if (draw.state.polyFillPreviewGroup) draw.state.polyFillPreviewGroup.visible = false;
 }
 
 function polyFillCandidateForEvent(event) {
@@ -21681,7 +21673,7 @@ function showPolyFillPreview(lock, candidate) {
   outline.geometry.dispose();
   outline.geometry = new THREE.BufferGeometry();
   outline.geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  polyFillPreviewCandidate = {
+  draw.state.polyFillPreviewCandidate = {
     lockId: lock.id,
     kind: candidate.kind,
     vertices: [...face]
@@ -21715,7 +21707,7 @@ function updatePolyFillPreview(event) {
 }
 
 function refreshPolyFillPreviewFromLastPointer() {
-  if (!polyShiftPreviewHeld || activeTool !== "poly") return;
+  if (!draw.state.polyShiftPreviewHeld || activeTool !== "poly") return;
   updatePolyFillPreview({
     clientX: lastPointer.x,
     clientY: lastPointer.y,
@@ -21867,7 +21859,7 @@ function beginPolyBrushPointer(event) {
     const target = polyTargetAtEvent(event);
     const removingSelectedVertex = target?.type === "vertex"
       && controlPointIsSelected("strand", selectedPolyMesh()?.id, target.index);
-    polyAltDeleteCandidate = !removingSelectedVertex && target
+    draw.state.polyAltDeleteCandidate = !removingSelectedVertex && target
       ? { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY }
       : null;
     return;
@@ -21947,9 +21939,9 @@ function beginPolyBrushPointer(event) {
 }
 
 function finishPolyAltDelete(event) {
-  const candidate = polyAltDeleteCandidate;
+  const candidate = draw.state.polyAltDeleteCandidate;
   if (!candidate || event.pointerId !== candidate.pointerId) return;
-  polyAltDeleteCandidate = null;
+  draw.state.polyAltDeleteCandidate = null;
   if (
     activeTool === "poly"
     && event.altKey
@@ -26427,7 +26419,7 @@ function beginBlenderNavigation(event) {
   };
   if (action === "pan") {
     setSculptBrushShiftSmoothHeld(false);
-    polyShiftPreviewHeld = false;
+    draw.state.polyShiftPreviewHeld = false;
     clearPolyFillPreview();
   }
   if (action === "snap") {
@@ -30709,17 +30701,17 @@ function setRadialMenusEnabled(enabled, { persist = true } = {}) {
 }
 
 function setProceduralDrawExperimentalEnabled(enabled, { persist = true } = {}) {
-  proceduralDrawExperimentalEnabled = Boolean(enabled);
-  proceduralDrawExperimentalPreferenceInput.checked = proceduralDrawExperimentalEnabled;
-  proceduralDrawToolButton.classList.toggle("experimental-tool-hidden", !proceduralDrawExperimentalEnabled);
-  proceduralDrawToolButton.hidden = !proceduralDrawExperimentalEnabled;
-  proceduralDrawToolButton.setAttribute("aria-hidden", String(!proceduralDrawExperimentalEnabled));
-  proceduralDrawToolButton.tabIndex = proceduralDrawExperimentalEnabled ? 0 : -1;
-  if (!proceduralDrawExperimentalEnabled && activeTool === "procedural-draw") {
+  draw.state.proceduralDrawExperimentalEnabled = Boolean(enabled);
+  proceduralDrawExperimentalPreferenceInput.checked = draw.state.proceduralDrawExperimentalEnabled;
+  proceduralDrawToolButton.classList.toggle("experimental-tool-hidden", !draw.state.proceduralDrawExperimentalEnabled);
+  proceduralDrawToolButton.hidden = !draw.state.proceduralDrawExperimentalEnabled;
+  proceduralDrawToolButton.setAttribute("aria-hidden", String(!draw.state.proceduralDrawExperimentalEnabled));
+  proceduralDrawToolButton.tabIndex = draw.state.proceduralDrawExperimentalEnabled ? 0 : -1;
+  if (!draw.state.proceduralDrawExperimentalEnabled && activeTool === "procedural-draw") {
     setActiveTool("draw");
   }
   if (persist) {
-    saveBooleanPreference(PROCEDURAL_DRAW_EXPERIMENTAL_PREFERENCE_KEY, proceduralDrawExperimentalEnabled);
+    saveBooleanPreference(PROCEDURAL_DRAW_EXPERIMENTAL_PREFERENCE_KEY, draw.state.proceduralDrawExperimentalEnabled);
   }
 }
 
@@ -31009,7 +31001,7 @@ function setPreferenceCategory(category) {
 function openPreferencesDialog() {
   preferencesOpenSnapshot = {
     radialMenusEnabled,
-    proceduralDrawExperimentalEnabled,
+    proceduralDrawExperimentalEnabled: draw.state.proceduralDrawExperimentalEnabled,
     navigationTipsEnabled,
     navigationStyle,
     cameraSmoothingEnabled,
@@ -31036,7 +31028,7 @@ function openPreferencesDialog() {
 
 function savePreferencesDialog() {
   saveBooleanPreference(RADIAL_MENUS_PREFERENCE_KEY, radialMenusEnabled);
-  saveBooleanPreference(PROCEDURAL_DRAW_EXPERIMENTAL_PREFERENCE_KEY, proceduralDrawExperimentalEnabled);
+  saveBooleanPreference(PROCEDURAL_DRAW_EXPERIMENTAL_PREFERENCE_KEY, draw.state.proceduralDrawExperimentalEnabled);
   saveBooleanPreference(NAVIGATION_TIPS_PREFERENCE_KEY, navigationTipsEnabled);
   writeStoredPreference(window, NAVIGATION_STYLE_PREFERENCE_KEY, navigationStyle);
   saveBooleanPreference(CAMERA_SMOOTHING_ENABLED_PREFERENCE_KEY, cameraSmoothingEnabled);
@@ -34732,14 +34724,14 @@ function applyCustomCreationPreset(type, value) {
   const preset = customCreationPresets[type].find((item) => item.id === id);
   if (!preset) return;
   const target = type === "braid" ? braidCreationDefaults : strandCreationDefaults;
-  if (type === "strand") activeCustomDrawClumpTemplate = null;
+  if (type === "strand") draw.state.activeCustomDrawClumpTemplate = null;
   applyCreationPresetSnapshot(target, preset.value, type);
   applyCreationToolSettings(type, preset.toolSettings, {
     preserveBrushPresetSelection: type === "strand"
   });
   if (type === "strand") {
-    activeCustomDrawClumpTemplate = normalizeClumpBrushTemplate(preset.value.clumpTemplate);
-    if (activeCustomDrawClumpTemplate) drawStrandMode = "clump";
+    draw.state.activeCustomDrawClumpTemplate = normalizeClumpBrushTemplate(preset.value.clumpTemplate);
+    if (draw.state.activeCustomDrawClumpTemplate) drawStrandMode = "clump";
   }
   if (!getSelectedLock() && ((type === "braid" && activeTool === "braid") || (type === "strand" && activeTool === "draw"))) {
     syncCreationShapeInputs();
@@ -34808,7 +34800,7 @@ function commitCustomCreationPreset() {
     };
     customCreationPresets.strand.push(preset);
     saveCustomCreationPresets();
-    activeCustomDrawClumpTemplate = clumpTemplate;
+    draw.state.activeCustomDrawClumpTemplate = clumpTemplate;
     drawStrandMode = "clump";
     populateDrawBrushPresetSelect(`custom:${preset.id}`);
     pendingCreationPresetType = null;
@@ -34825,8 +34817,8 @@ function commitCustomCreationPreset() {
     name,
     value: {
       ...creationPresetSnapshot(source, type),
-      ...(type === "strand" && activeCustomDrawClumpTemplate
-        ? { clumpTemplate: normalizeClumpBrushTemplate(activeCustomDrawClumpTemplate) }
+      ...(type === "strand" && draw.state.activeCustomDrawClumpTemplate
+        ? { clumpTemplate: normalizeClumpBrushTemplate(draw.state.activeCustomDrawClumpTemplate) }
         : {})
     },
     toolSettings: creationToolSettingsSnapshot(type)
@@ -34865,7 +34857,7 @@ function commitRemoveCreationPreset() {
     const fallback = braidCreationDefaults.braidMeshPreset === "chain-links" ? "chain-links" : "classic";
     populateCreationPresetSelect(braidToolPresetInput, "braid", fallback);
   } else {
-    activeCustomDrawClumpTemplate = null;
+    draw.state.activeCustomDrawClumpTemplate = null;
     populateDrawBrushPresetSelect(drawStrandMode);
   }
   pendingCreationPresetRemoval = null;
@@ -35077,7 +35069,7 @@ turntableSpeedInput.addEventListener("input", () => {
 });
 setTurntableActive(false);
 setRadialMenusEnabled(radialMenusEnabled, { persist: false });
-setProceduralDrawExperimentalEnabled(proceduralDrawExperimentalEnabled, { persist: false });
+setProceduralDrawExperimentalEnabled(draw.state.proceduralDrawExperimentalEnabled, { persist: false });
 setNavigationTipsEnabled(navigationTipsEnabled, { persist: false });
 setNavigationStyle(navigationStyle, { persist: false });
 setCameraSmoothingEnabled(cameraSmoothingEnabled, { persist: false });
@@ -35998,7 +35990,7 @@ window.addEventListener("keydown", (event) => {
     setSculptBrushShiftSmoothHeld(true);
   }
   if (event.key === "Shift" && !event.repeat && !editingField && activeTool === "poly") {
-    polyShiftPreviewHeld = true;
+    draw.state.polyShiftPreviewHeld = true;
     refreshPolyFillPreviewFromLastPointer();
   }
   if (event.key === "Escape" && !presetLibrary.classList.contains("hidden")) {
@@ -36134,7 +36126,7 @@ window.addEventListener("keyup", (event) => {
     transformPrecisionHeld = false;
     syncNavigationModifierLocks();
     setSculptBrushShiftSmoothHeld(false);
-    polyShiftPreviewHeld = false;
+    draw.state.polyShiftPreviewHeld = false;
     clearPolyFillPreview();
     if (navigationStyle === "anime-hair-studio") endViewSnap();
   }
@@ -36172,7 +36164,7 @@ window.addEventListener("blur", () => {
   syncNavigationModifierLocks();
   activeViewportPointer = null;
   pointRemovalCandidate = null;
-  polyShiftPreviewHeld = false;
+  draw.state.polyShiftPreviewHeld = false;
   clearPolyFillPreview();
   finishReferenceOverlayDrag(null, { cancel: true });
   cancelStrandRadialGesture();
@@ -36190,7 +36182,7 @@ window.addEventListener("blur", () => {
   proceduralAccessoryEditPointerActive = false;
   proceduralAccessoryEditHistoryOpen = false;
   finishPolyBrushStroke(null, { cancel: true });
-  polyAltDeleteCandidate = null;
+  draw.state.polyAltDeleteCandidate = null;
   updateInteractionLocks();
 });
 
@@ -38217,7 +38209,7 @@ window.addEventListener("pointercancel", (event) => finishSculptMoveStroke(event
 window.addEventListener("pointercancel", finishBrushSizeDrag, true);
 window.addEventListener("pointercancel", (event) => finishStrandWidthEdgeDrag(event, { cancel: true }), true);
 window.addEventListener("pointercancel", finishPolyBrushStroke, true);
-window.addEventListener("pointercancel", () => { polyAltDeleteCandidate = null; }, true);
+window.addEventListener("pointercancel", () => { draw.state.polyAltDeleteCandidate = null; }, true);
 window.addEventListener("pointercancel", () => { curvePointInsertionCandidate = null; }, true);
 window.addEventListener("pointercancel", () => { pointRemovalCandidate = null; }, true);
 window.addEventListener("pointercancel", endBlenderNavigation);
