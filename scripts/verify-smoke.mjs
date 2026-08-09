@@ -154,6 +154,26 @@ try {
     check("ahs drop + rebuild no exceptions", afterErrors.length === 0, `${loadRes} / ${afterErrors.length} exceptions`);
   }
 
+  // IO subsystem: export + save dialogs must open via the extracted modules
+  const io = await evalJS(cdp, `(async () => {
+    const out = {};
+    document.querySelector("#exportObj").click();
+    await new Promise(r => setTimeout(r, 300));
+    const dlg = document.querySelector("#fileActionDialog");
+    out.exportOpen = dlg.open;
+    out.exportTitle = document.querySelector("#fileActionDialogTitle").textContent;
+    dlg.close();
+    document.querySelector("#saveCurrentPreset").click();
+    await new Promise(r => setTimeout(r, 300));
+    out.saveOpen = dlg.open;
+    out.saveTitle = document.querySelector("#fileActionDialogTitle").textContent;
+    dlg.close();
+    return JSON.stringify(out);
+  })()`);
+  const ioR = JSON.parse(io);
+  check("export dialog opens (IO module)", ioR.exportOpen && /Export/.test(ioR.exportTitle), ioR.exportTitle);
+  check("save dialog opens (IO module)", ioR.saveOpen && /Save/.test(ioR.saveTitle), ioR.saveTitle);
+
   cdp.ws.close();
 } catch (e) {
   console.error("VERIFY ERROR:", e.message);

@@ -34,10 +34,19 @@ function scanFile(filePath) {
   return { file: path.relative(ROOT, filePath).replace(/\\/g, "/"), lineCount: lines.length, functions: funcs };
 }
 
+function collectJs(dir, out = []) {
+  for (const name of fs.readdirSync(dir).sort()) {
+    const full = path.join(dir, name);
+    const stat = fs.statSync(full);
+    if (stat.isDirectory()) collectJs(full, out);
+    else if (name.endsWith(".js")) out.push(full);
+  }
+  return out;
+}
 const files = [];
 files.push(scanFile(APP));
-for (const name of fs.readdirSync(MODULES).filter((n) => n.endsWith(".js")).sort()) {
-  files.push(scanFile(path.join(MODULES, name)));
+for (const full of collectJs(MODULES)) {
+  files.push(scanFile(full));
 }
 
 const total = files.reduce((n, f) => n + f.functions.length, 0);

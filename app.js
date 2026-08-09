@@ -1,3 +1,4 @@
+import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260809-4";
 ﻿import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
@@ -18947,21 +18948,6 @@ function remapLegacyPresetToActiveScalp() {
   updateCount();
 }
 
-function buildHairProjectFile(name, {
-  includeHeadAsset = true,
-  includeReferences = true
-} = {}) {
-  const state = snapshotState();
-  if (!includeReferences) state.referenceImages = [];
-  return createHairProject({
-    name,
-    state,
-    strandGroups: STRAND_GROUPS,
-    headAsset: includeHeadAsset ? importedHeadAsset : null,
-    headAssetOmitted: Boolean(importedHeadAsset && !includeHeadAsset),
-    scalpGuideAsset: importedScalpGuideAsset
-  });
-}
 
 async function importScalpGuideMeshFile(file) {
   try {
@@ -19027,21 +19013,6 @@ async function importFullBodyMeshFile(file) {
   }
 }
 
-function downloadTextFile(content, suggestedName, mimeType = "text/plain;charset=utf-8") {
-  const url = URL.createObjectURL(new Blob([content], { type: mimeType }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = suggestedName;
-  anchor.hidden = true;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function downloadProjectFile(content, suggestedName) {
-  downloadTextFile(content, suggestedName, "application/json;charset=utf-8");
-}
 
 function downloadPreferencesAndPresets() {
   const exportedAt = new Date();
@@ -19070,7 +19041,7 @@ function downloadPreferencesAndPresets() {
     presets: customCreationPresets,
     shapePresets: customShapePresets
   });
-  downloadProjectFile(
+  fileApi.downloadProjectFile(
     `${JSON.stringify(backup, null, 2)}\n`,
     preferencesBackupFileName(exportedAt)
   );
@@ -19164,231 +19135,34 @@ async function handlePreferencesAndPresetsFile(event) {
   }
 }
 
-function setProjectSaveButtonsDisabled(disabled) {
-  document.querySelector("#saveCurrentPreset").disabled = disabled;
-  document.querySelector("#quickSaveProject").disabled = disabled;
-}
 
-const fileExportAvailability = Object.freeze({
-  mesh: true,
-  curves: true,
-  bones: false,
-  weights: false
+const fileApi = createProjectSaveApi({
+  get currentProjectName() { return currentProjectName; },
+  set currentProjectName(value) { currentProjectName = value; },
+  get quickSaveFileHandle() { return quickSaveFileHandle; },
+  set quickSaveFileHandle(value) { quickSaveFileHandle = value; },
+  get quickSaveFileName() { return quickSaveFileName; },
+  set quickSaveFileName(value) { quickSaveFileName = value; },
+  get projectSaveInProgress() { return projectSaveInProgress; },
+  set projectSaveInProgress(value) { projectSaveInProgress = value; },
+  get lastExport() { return lastExport; },
+  set lastExport(value) { lastExport = value; },
+  get quickExportFileHandle() { return quickExportFileHandle; },
+  set quickExportFileHandle(value) { quickExportFileHandle = value; },
+  get quickExportInProgress() { return quickExportInProgress; },
+  set quickExportInProgress(value) { quickExportInProgress = value; },
+  get pendingFileAction() { return pendingFileAction; },
+  set pendingFileAction(value) { pendingFileAction = value; },
+  get importedHeadAsset() { return importedHeadAsset; },
+  get importedScalpGuideAsset() { return importedScalpGuideAsset; },
+  get referenceImages() { return referenceImages; },
+  get locks() { return locks; },
+  get STRAND_GROUPS() { return STRAND_GROUPS; },
+  snapshotState,
+  strandCurveParameters,
+  curveSurfaceControllerCurves,
+  safelyRememberRecentProject
 });
-const fileExportDescriptions = Object.freeze({
-  mesh: "Rendered strand and panel geometry",
-  curves: "Editable strand center curves",
-  bones: "Available when the scene contains an authored skeleton",
-  weights: "Available when mesh skin weights have been authored"
-});
-const fileExportLabels = Object.freeze({
-  mesh: "Mesh",
-  curves: "Curves",
-  bones: "Bones",
-  weights: "Weights"
-});
-
-function openFileActionDialog({ format }) {
-  const definition = fileActionFormat(format);
-  const isExport = definition.exportContents.length > 0;
-  pendingFileAction = { format };
-  fileActionDialogTitle.textContent = isExport ? `Export ${definition.label}` : "Save Project";
-  fileActionDescription.textContent = "Choose the file name and location for the export.";
-  fileActionNameInput.value = cleanFileBaseName(
-    currentProjectName,
-    isExport ? "anime-hair" : "Untitled Hair Project"
-  );
-  fileActionExtension.textContent = definition.extension;
-  fileExportContents.classList.toggle("hidden", !isExport);
-  projectSaveContents.classList.toggle("hidden", isExport);
-  projectIncludeHeadAssetInput.checked = true;
-  projectIncludeHeadAssetInput.disabled = !importedHeadAsset;
-  projectIncludeReferencesInput.checked = true;
-  projectIncludeReferencesInput.disabled = referenceImages.length === 0;
-  fileActionStatus.textContent = "";
-  confirmFileActionButton.textContent = isExport ? "Export" : "Save";
-
-  Object.entries(exportContentInputs).forEach(([key, input]) => {
-    const row = input.closest("[data-export-content]");
-    const supported = definition.exportContents.includes(key);
-    const label = row.querySelector("strong");
-    const description = row.querySelector("small");
-    row.classList.remove("hidden");
-    input.disabled = !supported || fileExportAvailability[key] === false;
-    input.checked = supported && fileExportAvailability[key] !== false && (key === "mesh" || key === "curves");
-    const objPolyline = format === "obj" && key === "curves";
-    label.textContent = objPolyline ? "Export Curve as Polyline" : fileExportLabels[key];
-    description.textContent = objPolyline
-      ? "Not supported in Maya."
-      : supported
-        ? fileExportDescriptions[key]
-        : `Not supported in ${definition.label}. Use USDA to export.`;
-    row.title = input.disabled ? description.textContent : "";
-  });
-
-  fileActionDialog.showModal();
-  requestAnimationFrame(() => {
-    fileActionNameInput.focus();
-    fileActionNameInput.select();
-  });
-}
-
-async function performFileAction(action, baseName, contents) {
-  if (action.format === "project") {
-    if (projectSaveInProgress) return;
-    projectSaveInProgress = true;
-    setProjectSaveButtonsDisabled(true);
-    const suggestedName = fileNameForAction(baseName, "project", "Untitled Hair Project");
-    const content = `${JSON.stringify(buildHairProjectFile(baseName, {
-      includeHeadAsset: contents.headAsset,
-      includeReferences: contents.references
-    }))}\n`;
-    try {
-      downloadProjectFile(content, suggestedName);
-      currentProjectName = baseName;
-      await safelyRememberRecentProject(suggestedName, content);
-    } catch (error) {
-      if (error?.name !== "AbortError") {
-        console.error(error);
-        window.alert("The project could not be saved. Please try again.");
-      }
-    } finally {
-      projectSaveInProgress = false;
-      setProjectSaveButtonsDisabled(false);
-    }
-    return;
-  }
-
-  const suggestedName = fileNameForAction(baseName, action.format);
-  const content = action.format === "obj"
-    ? buildHairObj({ includeMesh: contents.mesh, includeCurves: contents.curves })
-    : buildHairUsda({
-      includeMesh: contents.mesh,
-      includeCurves: contents.curves,
-      includeBones: contents.bones,
-      includeWeights: contents.weights,
-      rootName: baseName
-    });
-  try {
-    let savedName = suggestedName;
-    const handle = await writeExportThroughFileSystem(content, suggestedName, action.format);
-    if (handle) {
-      quickExportFileHandle = handle;
-      savedName = fileNameForAction(handle.name, action.format);
-    } else {
-      downloadTextFile(
-        content,
-        suggestedName,
-        action.format === "usda" ? "model/vnd.usda;charset=utf-8" : "text/plain;charset=utf-8"
-      );
-    }
-    lastExport = {
-      format: action.format,
-      fileName: savedName,
-      contents: {
-        mesh: contents.mesh,
-        curves: contents.curves,
-        bones: contents.bones,
-        weights: contents.weights
-      }
-    };
-  } catch (error) {
-    if (error?.name !== "AbortError") {
-      console.error(error);
-      window.alert(`The ${action.format.toUpperCase()} export could not be written. Please try again.`);
-    }
-  }
-}
-
-fileActionForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!pendingFileAction) return;
-  const action = pendingFileAction;
-  const definition = fileActionFormat(action.format);
-  const baseName = cleanFileBaseName(
-    fileActionNameInput.value,
-    action.format === "project" ? "Untitled Hair Project" : "anime-hair"
-  );
-  const requested = Object.fromEntries(
-    Object.entries(exportContentInputs).map(([key, input]) => [key, input.checked])
-  );
-  const contents = action.format === "project"
-    ? {
-        headAsset: projectIncludeHeadAssetInput.checked && !projectIncludeHeadAssetInput.disabled,
-        references: projectIncludeReferencesInput.checked && !projectIncludeReferencesInput.disabled
-      }
-    : normalizeExportContents(action.format, requested, fileExportAvailability);
-  if (definition.exportContents.length && !Object.values(contents).some(Boolean)) {
-    fileActionStatus.textContent = "Select at least one available item to export.";
-    return;
-  }
-  fileActionDialog.close();
-  await performFileAction(action, baseName, contents);
-});
-
-[closeFileActionDialogButton, cancelFileActionButton].forEach((button) => {
-  button.addEventListener("click", () => fileActionDialog.close());
-});
-fileActionDialog.addEventListener("close", () => {
-  pendingFileAction = null;
-  fileActionStatus.textContent = "";
-});
-
-async function saveHairProjectFile() {
-  const baseName = cleanFileBaseName(quickSaveFileName || currentProjectName, "Untitled Hair Project");
-  const suggestedName = fileNameForAction(baseName, "project", "Untitled Hair Project");
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName,
-        types: [{
-          description: "Anime Hair Studio Project",
-          accept: { "application/json": [".ahs", ".animehair.json", ".json"] }
-        }]
-      });
-      const content = `${JSON.stringify(buildHairProjectFile(baseName))}\n`;
-      const writable = await handle.createWritable();
-      await writable.write(content);
-      await writable.close();
-      quickSaveFileHandle = handle;
-      const savedName = cleanFileBaseName(handle.name, "Untitled Hair Project");
-      quickSaveFileName = savedName;
-      currentProjectName = savedName;
-      return;
-    } catch (error) {
-      if (error?.name === "AbortError") return;
-      console.error("Save as could not write to the chosen file, falling back to download.", error);
-    }
-  }
-  openFileActionDialog({ format: "project" });
-}
-
-async function saveHairProjectQuickly() {
-  if (projectSaveInProgress) return;
-  if (quickSaveFileHandle) {
-    const baseName = cleanFileBaseName(quickSaveFileName || currentProjectName, "Untitled Hair Project");
-    const content = `${JSON.stringify(buildHairProjectFile(baseName))}\n`;
-    projectSaveInProgress = true;
-    setProjectSaveButtonsDisabled(true);
-    try {
-      const permission = await quickSaveFileHandle.requestPermission?.({ mode: "readwrite" });
-      if (permission === "denied") throw new Error("Write permission was denied.");
-      const writable = await quickSaveFileHandle.createWritable();
-      await writable.write(content);
-      await writable.close();
-      currentProjectName = baseName;
-      return;
-    } catch (error) {
-      console.error("Quick Save could not overwrite the last saved file, opening Save As instead.", error);
-      quickSaveFileHandle = null;
-      quickSaveFileName = null;
-    } finally {
-      projectSaveInProgress = false;
-      setProjectSaveButtonsDisabled(false);
-    }
-  }
-  await saveHairProjectFile();
-}
 
 async function openHairProjectFile(file, { handle = null } = {}) {
   try {
@@ -33895,8 +33669,8 @@ scalpGuideMeshFileInput.addEventListener("change", () => {
   const [file] = scalpGuideMeshFileInput.files;
   if (file) importScalpGuideMeshFile(file);
 });
-document.querySelector("#saveCurrentPreset").addEventListener("click", saveHairProjectFile);
-document.querySelector("#quickSaveProject").addEventListener("click", saveHairProjectQuickly);
+document.querySelector("#saveCurrentPreset").addEventListener("click", fileApi.saveHairProjectFile);
+document.querySelector("#quickSaveProject").addEventListener("click", fileApi.saveHairProjectQuickly);
 presetFilterButtons.forEach((button) => button.addEventListener("click", () => {
   activePresetFilter = button.dataset.presetFilter;
   renderPresetLibrary();
@@ -36075,14 +35849,14 @@ window.addEventListener("keydown", (event) => {
   if ((event.ctrlKey || event.metaKey) && event.altKey && !event.shiftKey && event.key.toLowerCase() === "s") {
     event.preventDefault();
     if (event.repeat) return;
-    exportHairProjectQuickly();
+    fileApi.exportHairProjectQuickly();
     return;
   }
   if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
     event.preventDefault();
     if (event.repeat) return;
-    if (event.shiftKey) saveHairProjectFile();
-    else saveHairProjectQuickly();
+    if (event.shiftKey) fileApi.saveHairProjectFile();
+    else fileApi.saveHairProjectQuickly();
     return;
   }
   const tag = document.activeElement?.tagName?.toLowerCase();
@@ -36693,206 +36467,10 @@ document.querySelector("#toggleWire").addEventListener("click", () => {
   button.setAttribute("aria-pressed", String(hairTopologyVisible));
 });
 
-document.querySelector("#exportObj").addEventListener("click", exportHairObj);
-document.querySelector("#exportUsda").addEventListener("click", exportHairUsda);
-document.querySelector("#quickExportProject").addEventListener("click", exportHairProjectQuickly);
+document.querySelector("#exportObj").addEventListener("click", fileApi.exportHairObj);
+document.querySelector("#exportUsda").addEventListener("click", fileApi.exportHairUsda);
+document.querySelector("#quickExportProject").addEventListener("click", fileApi.exportHairProjectQuickly);
 
-function buildHairObj({ includeMesh = true, includeCurves = true } = {}) {
-  let obj = "# Anime Hair Studio mesh and center-curve export\n";
-  let vertexOffset = 1;
-  let uvOffset = 1;
-  locks.forEach((lock) => {
-    const objectName = lock.name.replace(/[^a-zA-Z0-9_.-]+/g, "_");
-    if (includeMesh) {
-      obj += `o ${objectName}\n`;
-      const geometry = lock.mesh.geometry;
-      const positions = geometry.getAttribute("position");
-      const uvs = geometry.getAttribute("uv");
-      for (let i = 0; i < positions.count; i += 1) {
-        obj += `v ${positions.getX(i).toFixed(5)} ${positions.getY(i).toFixed(5)} ${positions.getZ(i).toFixed(5)}\n`;
-      }
-      if (uvs) {
-        for (let i = 0; i < uvs.count; i += 1) {
-          obj += `vt ${uvs.getX(i).toFixed(6)} ${uvs.getY(i).toFixed(6)}\n`;
-        }
-      }
-      obj += exportHairFaces(geometry, vertexOffset, uvOffset);
-      vertexOffset += positions.count;
-      if (uvs) uvOffset += uvs.count;
-    }
-
-    if (includeCurves) {
-      if (lock.geometryType !== "poly") {
-        const sourceCurves = lock.geometryType === "curve-surface"
-          ? curveSurfaceControllerCurves(lock)
-          : [lock.points];
-        sourceCurves.forEach((points, curveIndex) => {
-          if (points.length < 2) return;
-          const centerCurve = new THREE.CatmullRomCurve3(points);
-          const curveSegmentCount = THREE.MathUtils.clamp(
-            Math.max(Number(lock.lengthSegments || 26), points.length * 4),
-            8,
-            256
-          );
-          const curveParameters = strandCurveParameters(lock, centerCurve, curveSegmentCount);
-          const curvePoints = curveParameters.map((t) => centerCurve.getPoint(t));
-          const curveExport = exportCurvePolyline(curvePoints, vertexOffset);
-          const suffix = sourceCurves.length > 1 ? `_curve_${curveIndex + 1}` : "_curve";
-          obj += `o ${objectName}${suffix}\n${curveExport.text}`;
-          vertexOffset += curveExport.vertexCount;
-        });
-      }
-    }
-  });
-  return obj;
-}
-
-function exportHairObj() {
-  openFileActionDialog({ format: "obj" });
-}
-
-function bufferAttributeTuples(attribute, itemSize = attribute?.itemSize || 3) {
-  if (!attribute) return [];
-  return Array.from({ length: attribute.count }, (_, index) => (
-    Array.from({ length: itemSize }, (__, component) => Number(attribute.array[(index * attribute.itemSize) + component]))
-  ));
-}
-
-function buildHairUsda({
-  includeMesh = true,
-  includeCurves = true,
-  includeBones = false,
-  includeWeights = false,
-  rootName = currentProjectName
-} = {}) {
-  const meshes = [];
-  const curves = [];
-  locks.forEach((lock) => {
-    if (includeMesh) {
-      const geometry = lock.mesh.geometry;
-      const position = geometry.getAttribute("position");
-      if (position) {
-        meshes.push({
-          name: lock.name,
-          group: lock.group || "unassigned",
-          layer: lock.layer || "mid",
-          points: bufferAttributeTuples(position, 3),
-          normals: bufferAttributeTuples(geometry.getAttribute("normal"), 3),
-          uvs: bufferAttributeTuples(geometry.getAttribute("uv"), 2),
-          colors: bufferAttributeTuples(geometry.getAttribute("color"), 3),
-          tangents: bufferAttributeTuples(geometry.getAttribute("tangent"), 4),
-          faces: hairFaceIndices(geometry)
-        });
-      }
-    }
-    if (includeCurves && lock.geometryType !== "poly") {
-      const sourceCurves = lock.geometryType === "curve-surface"
-        ? curveSurfaceControllerCurves(lock)
-        : [lock.points];
-      sourceCurves.forEach((points, curveIndex) => {
-        if (points.length < 2) return;
-        const centerCurve = new THREE.CatmullRomCurve3(points);
-        const curveSegmentCount = THREE.MathUtils.clamp(
-          Math.max(Number(lock.lengthSegments || 26), points.length * 4),
-          8,
-          256
-        );
-        const curveParameters = strandCurveParameters(lock, centerCurve, curveSegmentCount);
-        curves.push({
-          name: sourceCurves.length > 1 ? `${lock.name} Curve ${curveIndex + 1}` : lock.name,
-          group: lock.group || "unassigned",
-          layer: lock.layer || "mid",
-          width: Math.max(0.001, Number(lock.width || 0.01) * 0.06),
-          points: curveParameters.map((t) => centerCurve.getPoint(t).toArray())
-        });
-      });
-    }
-  });
-  void includeBones;
-  void includeWeights;
-  return exportAnimeHairUsda({
-    meshes,
-    curves,
-    rootName: rootName || "Anime Hair Studio"
-  });
-}
-
-function exportHairUsda() {
-  openFileActionDialog({ format: "usda" });
-}
-
-async function writeExportThroughFileSystem(content, suggestedName, format) {
-  if (!window.showSaveFilePicker) return null;
-  try {
-    const handle = await window.showSaveFilePicker({
-      suggestedName,
-      types: [{
-        description: format === "obj" ? "Wavefront OBJ" : "Universal Scene Description",
-        accept: format === "obj" ? { "text/plain": [".obj"] } : { "model/vnd.usda": [".usda"] }
-      }]
-    });
-    const writable = await handle.createWritable();
-    await writable.write(content);
-    await writable.close();
-    return handle;
-  } catch (error) {
-    if (error?.name === "AbortError") return null;
-    console.error("Export could not write to the chosen file, falling back to download.", error);
-    return null;
-  }
-}
-
-async function exportHairProjectQuickly() {
-  if (!lastExport) {
-    openFileActionDialog({ format: "obj" });
-    return;
-  }
-  if (quickExportInProgress) return;
-  const format = lastExport.format;
-  const baseName = cleanFileBaseName(currentProjectName, "anime-hair");
-  const suggestedName = lastExport.fileName || fileNameForAction(baseName, format);
-  const contents = lastExport.contents || Object.fromEntries(
-    Object.entries(exportContentInputs).map(([key, input]) => [key, input.checked])
-  );
-  const content = format === "obj"
-    ? buildHairObj({ includeMesh: contents.mesh, includeCurves: contents.curves })
-    : buildHairUsda({
-      includeMesh: contents.mesh,
-      includeCurves: contents.curves,
-      includeBones: contents.bones,
-      includeWeights: contents.weights,
-      rootName: baseName
-    });
-  if (quickExportFileHandle) {
-    quickExportInProgress = true;
-    try {
-      const writable = await quickExportFileHandle.createWritable();
-      await writable.write(content);
-      await writable.close();
-      return;
-    } catch (error) {
-      console.error("Quick Export could not overwrite the last export file, choosing a new file instead.", error);
-      quickExportFileHandle = null;
-    } finally {
-      quickExportInProgress = false;
-    }
-  }
-  const handle = await writeExportThroughFileSystem(content, suggestedName, format);
-  if (handle) {
-    quickExportFileHandle = handle;
-    lastExport = {
-      format,
-      fileName: fileNameForAction(handle.name, format),
-      contents
-    };
-    return;
-  }
-  downloadTextFile(
-    content,
-    suggestedName,
-    format === "usda" ? "model/vnd.usda;charset=utf-8" : "text/plain;charset=utf-8"
-  );
-}
 
 function resize() {
   const { clientWidth, clientHeight } = viewport;
