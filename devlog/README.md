@@ -29,6 +29,7 @@ python -m http.server 8080 --bind 127.0.0.1
 | 全局状态登记表（机器生成，241 个 let 按 refs/子系统排序，阶段 3 地图） | [GLOBAL_LET_INVENTORY.md](GLOBAL_LET_INVENTORY.md)（`node scripts/gen-let-inventory.js` 重新生成） |
 | 状态管理架构（scene-store 模式 / 15 个 store 清单 / 替换验证 9 点） | [STATE_MANAGEMENT.md](STATE_MANAGEMENT.md) |
 | 子发片系统架构（数据流 / 5 子系统划分 / 依赖清单 / 3d-3 拆分方案） | [BranchSystem.md](BranchSystem.md) |
+| 迁移方法论（脚本化提取 / 依赖注入 / 模块间 import / 9 点验证清单） | [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) |
 | 开发规范 / 持续修改功能（本地适配清单）/ 许可证 | [development-standards.md](development-standards.md) |
 | JS 改动标注（索引 + 6 个子系统专题） | [js-change-annotations.md](js-change-annotations.md)（索引）+ [annotations-bridge.md](annotations-bridge.md) / [annotations-region-panel.md](annotations-region-panel.md) / [annotations-root-bone.md](annotations-root-bone.md) / [annotations-split.md](annotations-split.md) / [annotations-display-fixes.md](annotations-display-fixes.md) / [annotations-adapt.md](annotations-adapt.md) |
 | Bug 修复 / 已知问题 | [bug-fixes.md](bug-fixes.md) |
