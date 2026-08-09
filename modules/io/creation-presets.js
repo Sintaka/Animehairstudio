@@ -1,9 +1,10 @@
 ﻿// creation-presets.js — creation-preset snapshot/normalize/apply logic (refactor 3d-1).
 // Extracted from app.js; all app.js coupling injected via createCreationPresetsApi(deps).
 import * as THREE from "three";
+import { cloneShapePresetValue } from "./shape-presets.js";
 
 export function createCreationPresetsApi(deps) {
-  // deps: { cloneShapePresetValue, normalizeHairLayer, normalizeClumpBrushTemplate,
+  // deps: { normalizeHairLayer, normalizeClumpBrushTemplate,
   //   normalizeToolPresetLibrary, emptyToolPresetLibrary, activeStrokeSurfaceValue,
   //   drawSurfaceDynamicEnabled, createClumpBrushTemplate, normalizeBraidDimensions,
   //   getSelectedLock, syncCreationShapeInputs, updatePlacementStatus, applyCreationToolSettings,
@@ -40,7 +41,7 @@ export function createCreationPresetsApi(deps) {
     const usable = Array.isArray(value)
       && value.length >= 2
       && value.every((point) => point && coordinateKeys.every((key) => Number.isFinite(Number(point[key]))));
-    return deps.cloneShapePresetValue(usable ? value : fallback);
+    return cloneShapePresetValue(usable ? value : fallback);
   }
 
   function creationPresetSnapshot(source, type) {
@@ -191,7 +192,7 @@ export function createCreationPresetsApi(deps) {
       if (snapshot[key] !== undefined) target[key] = snapshot[key];
     });
     ["taperCurve", "depthCurve", "taperCurveSecondary", "depthCurveSecondary", "twistCurve", "sweepProfile"].forEach((key) => {
-      if (snapshot[key]) target[key] = deps.cloneShapePresetValue(snapshot[key]);
+      if (snapshot[key]) target[key] = cloneShapePresetValue(snapshot[key]);
     });
     if (type === "braid") deps.normalizeBraidDimensions(target);
   }

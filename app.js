@@ -1,3 +1,4 @@
+import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-14";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";
 import { createMiscStore } from "./modules/core/misc-store.js?v=20260809-12";
 import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260809-11";
@@ -1108,10 +1109,10 @@ function proceduralDrawClumpTemplate(stroke = null) {
   });
   const parentShape = stroke?.proceduralParentShape || strandCreationDefaults;
   template.parentShape = {
-    taperCurve: cloneShapePresetValue(parentShape.taperCurve),
-    depthCurve: cloneShapePresetValue(parentShape.depthCurve),
-    taperCurveSecondary: cloneShapePresetValue(parentShape.taperCurveSecondary || parentShape.taperCurve),
-    depthCurveSecondary: cloneShapePresetValue(parentShape.depthCurveSecondary || parentShape.depthCurve),
+    taperCurve: shapePresets.cloneShapePresetValue(parentShape.taperCurve),
+    depthCurve: shapePresets.cloneShapePresetValue(parentShape.depthCurve),
+    taperCurveSecondary: shapePresets.cloneShapePresetValue(parentShape.taperCurveSecondary || parentShape.taperCurve),
+    depthCurveSecondary: shapePresets.cloneShapePresetValue(parentShape.depthCurveSecondary || parentShape.depthCurve),
     asymmetricWidthCurve: Boolean(parentShape.asymmetricWidthCurve),
     asymmetricDepthCurve: Boolean(parentShape.asymmetricDepthCurve),
     pointScales: parentShape.pointScales?.map((scale) => ({ x: scale.x, z: scale.z })) || [{ x: 1, z: 1 }]
@@ -16392,13 +16393,28 @@ function proceduralBranchCurveEditing(curveKey = sculptState.state.taperCurveEdi
   return proceduralBranchLengthCurveEditing(curveKey) || proceduralBranchShapeCurveEditing(curveKey);
 }
 
-function taperAsymmetryKey(curveKey = sculptState.state.taperCurveEdit?.curveKey) {
-  return curveKey === "depthCurve" ? "asymmetricDepthCurve" : "asymmetricWidthCurve";
-}
 
-function taperSecondaryKey(curveKey = sculptState.state.taperCurveEdit?.curveKey) {
-  return curveKey === "depthCurve" ? "depthCurveSecondary" : "taperCurveSecondary";
-}
+
+const shapePresets = createShapePresetsApi({
+  sculptState: sculptState.state,
+  projectState,
+  selState: sel.state,
+  normalizeShapePresetLibrary,
+  emptyShapePresetLibrary,
+  SHAPE_PRESET_STORAGE_KEY,
+  pushUndoState,
+  applyGroupDefaultsToExistingStrands,
+  syncGroupInputs,
+  syncCreationShapeInputs,
+  editSelectedLocks,
+  syncInputs,
+  shapeTargetForSelect,
+  syncShapePresetSelects,
+  SHAPE_PRESETS,
+  strandCreationDefaults,
+  braidCreationDefaults,
+  panelCreationDefaults
+});
 
 function activeTaperCurve() {
   const target = activeTaperTarget();
@@ -16406,7 +16422,7 @@ function activeTaperCurve() {
   if (twistCurveEditing()) return target.twistCurve || null;
   if (proceduralBranchCurveEditing()) return target[sculptState.state.taperCurveEdit.curveKey] || null;
   const key = sculptState.state.taperCurveEdit.side === "secondary"
-    ? taperSecondaryKey()
+    ? shapePresets.taperSecondaryKey()
     : sculptState.state.taperCurveEdit.curveKey;
   return target[key] || target[sculptState.state.taperCurveEdit.curveKey] || null;
 }
@@ -16414,9 +16430,9 @@ function activeTaperCurve() {
 function ensureSecondaryTaperCurve(target, curveKey = sculptState.state.taperCurveEdit?.curveKey) {
   if (!target || !curveKey) return null;
   if (twistCurveEditing(curveKey) || proceduralBranchCurveEditing(curveKey)) return null;
-  const secondaryKey = taperSecondaryKey(curveKey);
+  const secondaryKey = shapePresets.taperSecondaryKey(curveKey);
   if (!target[secondaryKey]?.length) {
-    target[secondaryKey] = cloneShapePresetValue(target[curveKey]);
+    target[secondaryKey] = shapePresets.cloneShapePresetValue(target[curveKey]);
   }
   return target[secondaryKey];
 }
@@ -16454,10 +16470,10 @@ function renderTaperPreview(path, target, curveKey) {
   const curve = target?.[curveKey];
   if (!path || !curve?.length) return;
   const asymmetric = !proceduralBranchCurveEditing(curveKey)
-    && Boolean(target[taperAsymmetryKey(curveKey)]);
+    && Boolean(target[shapePresets.taperAsymmetryKey(curveKey)]);
   const baseline = asymmetric ? 35 : 63;
   const verticalExtent = asymmetric ? 26 : 54;
-  const secondaryCurve = asymmetric ? (target[taperSecondaryKey(curveKey)] || curve) : null;
+  const secondaryCurve = asymmetric ? (target[shapePresets.taperSecondaryKey(curveKey)] || curve) : null;
   const primarySamples = taperSamples(curve, 48);
   const secondarySamples = asymmetric ? taperSamples(secondaryCurve, 48) : [];
   const previewValueMax = asymmetric
@@ -16504,17 +16520,7 @@ function renderTwistCurvePreview(path, target) {
   path.setAttribute("d", `${line} L151,35 L9,35 Z`);
 }
 
-function cloneShapePresetValue(value) {
-  return value.map((point) => ({ ...point }));
-}
 
-function shapeValuesMatch(left, right) {
-  if (!left || !right || left.length !== right.length) return false;
-  return left.every((point, index) => Object.keys(point).every((key) => {
-    const other = right[index]?.[key];
-    return typeof point[key] === "number" ? Math.abs(point[key] - other) < 0.0001 : point[key] === other;
-  }));
-}
 
 function shapeTargetForSelect(select) {
   if (select.closest("#groupSettingsPanel")) return sel.state.selectedStrandGroup ? strandGroupDefaults[sel.state.selectedStrandGroup] : null;
@@ -16523,29 +16529,8 @@ function shapeTargetForSelect(select) {
 
 const shapePresetButtons = new Map();
 
-function loadCustomShapePresets() {
-  try {
-    projectState.state.customShapePresets = normalizeShapePresetLibrary(
-      JSON.parse(localStorage.getItem(SHAPE_PRESET_STORAGE_KEY) || "null")
-    );
-  } catch (error) {
-    console.warn("Could not load custom shape presets", error);
-    projectState.state.customShapePresets = emptyShapePresetLibrary();
-  }
-}
 
-function saveCustomShapePresets() {
-  try {
-    localStorage.setItem(SHAPE_PRESET_STORAGE_KEY, JSON.stringify(projectState.state.customShapePresets));
-  } catch (error) {
-    console.warn("Could not save custom shape presets", error);
-  }
-}
 
-function shapePresetLabel(key) {
-  if (key === "sweepProfile") return "Strand Profile";
-  return key === "depthCurve" ? "Depth Curve" : "Width Curve";
-}
 
 function setupShapePresetControls() {
   shapePresetSelects.forEach((select) => {
@@ -16557,7 +16542,7 @@ function setupShapePresetControls() {
     saveButton.type = "button";
     saveButton.className = "shape-preset-action";
     saveButton.textContent = "+";
-    saveButton.title = `Save custom ${shapePresetLabel(select.dataset.shapePreset).toLowerCase()} preset`;
+    saveButton.title = `Save custom ${shapePresets.shapePresetLabel(select.dataset.shapePreset).toLowerCase()} preset`;
     saveButton.setAttribute("aria-label", saveButton.title);
     const removeButton = document.createElement("button");
     removeButton.type = "button";
@@ -16583,14 +16568,14 @@ function syncShapePresetSelects() {
     const key = select.dataset.shapePreset;
     const target = shapeTargetForSelect(select);
     const value = target?.[key];
-    const builtInMatch = SHAPE_PRESETS[key].find((preset) => shapeValuesMatch(value, preset.value));
+    const builtInMatch = SHAPE_PRESETS[key].find((preset) => shapePresets.shapeValuesMatch(value, preset.value));
     const customMatch = projectState.state.customShapePresets[key].find((preset) => (
-      shapeValuesMatch(value, preset.value)
+      shapePresets.shapeValuesMatch(value, preset.value)
       && (
         key === "sweepProfile"
         || (
-          shapeValuesMatch(target?.[taperSecondaryKey(key)], preset.secondaryValue)
-          && Boolean(target?.[taperAsymmetryKey(key)]) === preset.asymmetric
+          shapePresets.shapeValuesMatch(target?.[shapePresets.taperSecondaryKey(key)], preset.secondaryValue)
+          && Boolean(target?.[shapePresets.taperAsymmetryKey(key)]) === preset.asymmetric
         )
       )
     ));
@@ -16626,42 +16611,6 @@ function populateShapePresetSelects() {
   syncShapePresetSelects();
 }
 
-function applyShapePreset(select) {
-  const key = select.dataset.shapePreset;
-  const custom = select.value.startsWith("custom:");
-  const preset = custom
-    ? projectState.state.customShapePresets[key].find((item) => item.id === select.value.replace(/^custom:/, ""))
-    : SHAPE_PRESETS[key].find((item) => item.id === select.value);
-  const target = shapeTargetForSelect(select);
-  if (!preset || !target) return;
-  pushUndoState();
-  target[key] = cloneShapePresetValue(preset.value);
-  if (custom && key !== "sweepProfile") {
-    target[taperSecondaryKey(key)] = cloneShapePresetValue(preset.secondaryValue || preset.value);
-    target[taperAsymmetryKey(key)] = Boolean(preset.asymmetric);
-  }
-  if (select.closest("#groupSettingsPanel")) {
-    applyGroupDefaultsToExistingStrands(sel.state.selectedStrandGroup);
-    syncGroupInputs();
-  } else if (target === strandCreationDefaults || target === braidCreationDefaults || target === panelCreationDefaults) {
-    syncCreationShapeInputs();
-  } else {
-    const primaryValue = cloneShapePresetValue(target[key]);
-    const secondaryValue = key === "sweepProfile"
-      ? null
-      : cloneShapePresetValue(target[taperSecondaryKey(key)] || target[key]);
-    const asymmetric = key === "sweepProfile" ? false : Boolean(target[taperAsymmetryKey(key)]);
-    editSelectedLocks((lock) => {
-      lock[key] = cloneShapePresetValue(primaryValue);
-      if (key !== "sweepProfile") {
-        lock[taperSecondaryKey(key)] = cloneShapePresetValue(secondaryValue);
-        lock[taperAsymmetryKey(key)] = asymmetric;
-      }
-    });
-    syncInputs(target);
-  }
-  syncShapePresetSelects();
-}
 
 function openSaveShapePreset(select) {
   const key = select.dataset.shapePreset;
@@ -16671,13 +16620,13 @@ function openSaveShapePreset(select) {
   projectState.state.pendingShapePresetSave = {
     select,
     key,
-    value: cloneShapePresetValue(target[key]),
+    value: shapePresets.cloneShapePresetValue(target[key]),
     secondaryValue: key === "sweepProfile"
       ? null
-      : cloneShapePresetValue(target[taperSecondaryKey(key)] || target[key]),
-    asymmetric: key === "sweepProfile" ? false : Boolean(target[taperAsymmetryKey(key)])
+      : shapePresets.cloneShapePresetValue(target[shapePresets.taperSecondaryKey(key)] || target[key]),
+    asymmetric: key === "sweepProfile" ? false : Boolean(target[shapePresets.taperAsymmetryKey(key)])
   };
-  const label = shapePresetLabel(key);
+  const label = shapePresets.shapePresetLabel(key);
   creationPresetDialogTitle.textContent = `Create ${label} Preset`;
   creationPresetDescription.textContent = `Save the current ${label.toLowerCase()} in this browser.`;
   creationPresetNameInput.value = `New ${label} Preset`;
@@ -16695,14 +16644,14 @@ function commitCustomShapePreset() {
   const preset = {
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
     name,
-    value: cloneShapePresetValue(pending.value),
+    value: shapePresets.cloneShapePresetValue(pending.value),
     ...(pending.key === "sweepProfile" ? {} : {
-      secondaryValue: cloneShapePresetValue(pending.secondaryValue),
+      secondaryValue: shapePresets.cloneShapePresetValue(pending.secondaryValue),
       asymmetric: pending.asymmetric
     })
   };
   projectState.state.customShapePresets[pending.key].push(preset);
-  saveCustomShapePresets();
+  shapePresets.saveCustomShapePresets();
   populateShapePresetSelects();
   pending.select.value = `custom:${preset.id}`;
   syncShapePresetRemoveButtons();
@@ -16719,7 +16668,7 @@ function openRemoveShapePreset(select) {
   if (!preset) return;
   projectState.state.pendingShapePresetRemoval = { key, id };
   projectState.state.pendingCreationPresetRemoval = null;
-  removeCreationPresetDialogTitle.textContent = `Remove ${shapePresetLabel(key)} Preset`;
+  removeCreationPresetDialogTitle.textContent = `Remove ${shapePresets.shapePresetLabel(key)} Preset`;
   removeCreationPresetMessage.textContent = `Remove "${preset.name}"? This only removes it from this browser.`;
   removeCreationPresetDialog.showModal();
 }
@@ -16728,17 +16677,17 @@ function commitRemoveShapePreset() {
   if (!projectState.state.pendingShapePresetRemoval) return false;
   const { key, id } = projectState.state.pendingShapePresetRemoval;
   projectState.state.customShapePresets = removeShapePreset(projectState.state.customShapePresets, key, id);
-  saveCustomShapePresets();
+  shapePresets.saveCustomShapePresets();
   populateShapePresetSelects();
   projectState.state.pendingShapePresetRemoval = null;
   removeCreationPresetDialog.close();
   return true;
 }
 
-loadCustomShapePresets();
+shapePresets.loadCustomShapePresets();
 setupShapePresetControls();
 populateShapePresetSelects();
-shapePresetSelects.forEach((select) => select.addEventListener("change", () => applyShapePreset(select)));
+shapePresetSelects.forEach((select) => select.addEventListener("change", () => shapePresets.applyShapePreset(select)));
 
 function taperPointToCanvas(point, curveSide = "primary", asymmetric = false) {
   const x = 30 + point.position * 460;
@@ -16764,7 +16713,7 @@ function canvasToTaperPoint(event, pointIndex) {
   const curve = activeTaperCurve();
   const editingTwist = twistCurveEditing();
   const asymmetric = !proceduralBranchCurveEditing()
-    && Boolean(activeTaperTarget()?.[taperAsymmetryKey()]);
+    && Boolean(activeTaperTarget()?.[shapePresets.taperAsymmetryKey()]);
   const isEndpoint = pointIndex === 0 || pointIndex === curve.length - 1;
   const twistDisplayRange = sculptState.state.taperCurveEdit?.dragDisplayRange || twistCurveDisplayRange(
     curve,
@@ -17044,7 +16993,7 @@ function renderTaperCurveEditor() {
   const target = activeTaperTarget();
   const editingTwist = twistCurveEditing();
   const editingProceduralBranch = proceduralBranchCurveEditing();
-  const asymmetric = !editingTwist && !editingProceduralBranch && Boolean(target?.[taperAsymmetryKey()]);
+  const asymmetric = !editingTwist && !editingProceduralBranch && Boolean(target?.[shapePresets.taperAsymmetryKey()]);
   taperCurveOptions.classList.toggle("hidden", editingProceduralBranch);
   taperAsymmetryToggleRow.classList.toggle("hidden", editingTwist || editingProceduralBranch);
   taperAsymmetryToggle.checked = asymmetric;
@@ -17147,7 +17096,7 @@ function refreshTaperCurveEditorAfterStateRestore() {
     closeTaperCurveEditor();
     return;
   }
-  if (!proceduralBranchCurveEditing() && sculptState.state.taperCurveEdit.side === "secondary" && !target[taperAsymmetryKey()]) {
+  if (!proceduralBranchCurveEditing() && sculptState.state.taperCurveEdit.side === "secondary" && !target[shapePresets.taperAsymmetryKey()]) {
     sculptState.state.taperCurveEdit.side = "primary";
   }
   const curve = activeTaperCurve();
@@ -17215,7 +17164,7 @@ function applyTaperCurveEdit({ interactive = false } = {}) {
       updateLockGeometry(guide, { immediate: true, updateBranches: false });
       const mirroredGuide = proceduralGuideForLock(mirrorPartnerFor(guide));
       if (mirroredGuide) {
-        mirroredGuide[curveKey] = cloneShapePresetValue(guide[curveKey]);
+        mirroredGuide[curveKey] = shapePresets.cloneShapePresetValue(guide[curveKey]);
         updateLockGeometry(mirroredGuide, { immediate: true, updateBranches: false });
       }
       renderTaperPreview(
@@ -17253,12 +17202,12 @@ function applyTaperCurveEdit({ interactive = false } = {}) {
       // (updateBranchChildren). Mark them authored so the user's direct edits persist.
       if (lock.branchParentId) lock.branchCurvesAuthored = true;
       const curveKey = sculptState.state.taperCurveEdit.curveKey;
-      const primaryCurve = cloneShapePresetValue(lock[curveKey]);
+      const primaryCurve = shapePresets.cloneShapePresetValue(lock[curveKey]);
       if (editingTwist) {
         if (interactive) {
           if (hairState.state.twistCurveAllStrandsPreviewEnabled) {
             editSelectedLocks((item) => {
-              if (item !== lock) item.twistCurve = cloneShapePresetValue(primaryCurve);
+              if (item !== lock) item.twistCurve = shapePresets.cloneShapePresetValue(primaryCurve);
             }, {
               immediate: true,
               renderList: false,
@@ -17274,22 +17223,22 @@ function applyTaperCurveEdit({ interactive = false } = {}) {
           }
         } else {
           editSelectedLocks((item) => {
-            if (item !== lock) item.twistCurve = cloneShapePresetValue(primaryCurve);
+            if (item !== lock) item.twistCurve = shapePresets.cloneShapePresetValue(primaryCurve);
           }, {
             renderList: false,
             updateCurveObjects: false
           });
         }
       } else {
-        const secondaryKey = taperSecondaryKey(curveKey);
-        const asymmetryKey = taperAsymmetryKey(curveKey);
-        const secondaryCurve = cloneShapePresetValue(lock[secondaryKey] || lock[curveKey]);
+        const secondaryKey = shapePresets.taperSecondaryKey(curveKey);
+        const asymmetryKey = shapePresets.taperAsymmetryKey(curveKey);
+        const secondaryCurve = shapePresets.cloneShapePresetValue(lock[secondaryKey] || lock[curveKey]);
         const asymmetric = Boolean(lock[asymmetryKey]);
         const centered = Boolean(lock.centerAsymmetricProfile);
         editSelectedLocks((item) => {
           if (item === lock) return;
-          item[curveKey] = cloneShapePresetValue(primaryCurve);
-          item[secondaryKey] = cloneShapePresetValue(secondaryCurve);
+          item[curveKey] = shapePresets.cloneShapePresetValue(primaryCurve);
+          item[secondaryKey] = shapePresets.cloneShapePresetValue(secondaryCurve);
           item[asymmetryKey] = asymmetric;
           item.centerAsymmetricProfile = centered;
         }, { renderList: false });
@@ -17447,12 +17396,12 @@ function applySweepProfileEdit() {
   } else {
     const lock = locks.find((item) => item.id === sculptState.state.sweepProfileEdit.id);
     if (lock) {
-      const profile = cloneShapePresetValue(lock.sweepProfile);
+      const profile = shapePresets.cloneShapePresetValue(lock.sweepProfile);
       const trimLeft = Number(lock.profileTrimLeft ?? 0);
       const trimRight = Number(lock.profileTrimRight ?? 0);
       const roundness = Number(lock.profileTrimRoundness ?? 1);
       editSelectedLocks((item) => {
-        if (item !== lock) item.sweepProfile = cloneShapePresetValue(profile);
+        if (item !== lock) item.sweepProfile = shapePresets.cloneShapePresetValue(profile);
         item.profileTrimLeft = trimLeft;
         item.profileTrimRight = trimRight;
         item.profileTrimRoundness = roundness;
@@ -18255,10 +18204,10 @@ function snapshotState() {
       proceduralBranchIndex: lock.proceduralBranchIndex == null ? null : Number(lock.proceduralBranchIndex),
       proceduralBranchCount: lock.proceduralBranchCount == null ? null : Number(lock.proceduralBranchCount),
       proceduralBranchLength: lock.proceduralBranchLength == null ? null : Number(lock.proceduralBranchLength),
-      proceduralBranchLengthCurve: cloneShapePresetValue(
+      proceduralBranchLengthCurve: shapePresets.cloneShapePresetValue(
         lock.proceduralBranchLengthCurve || DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE
       ),
-      proceduralBranchShapeCurve: cloneShapePresetValue(
+      proceduralBranchShapeCurve: shapePresets.cloneShapePresetValue(
         lock.proceduralBranchShapeCurve || DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE
       ),
       proceduralBranchTipOffset: lock.proceduralBranchTipOffset == null ? null : Number(lock.proceduralBranchTipOffset),
@@ -18866,7 +18815,7 @@ function importedBooleanPreference(value, fallback) {
 }
 
 const creationPresets = createCreationPresetsApi({
-  cloneShapePresetValue, normalizeHairLayer, normalizeClumpBrushTemplate,
+  normalizeHairLayer, normalizeClumpBrushTemplate,
   normalizeToolPresetLibrary, emptyToolPresetLibrary, activeStrokeSurfaceValue,
   drawSurfaceDynamicEnabled, createClumpBrushTemplate, normalizeBraidDimensions,
   getSelectedLock, syncCreationShapeInputs, updatePlacementStatus, applyCreationToolSettings,
@@ -18916,7 +18865,7 @@ async function loadPreferencesAndPresets(file) {
   projectState.state.customCreationPresets = creationPresets.normalizeCreationPresetLibrary(backup.presets);
   creationPresets.saveCustomCreationPresets();
   projectState.state.customShapePresets = normalizeShapePresetLibrary(backup.shapePresets);
-  saveCustomShapePresets();
+  shapePresets.saveCustomShapePresets();
   populateShapePresetSelects();
   populateDrawBrushPresetSelect(hairState.state.drawStrandMode);
   populateCreationPresetSelect(
@@ -20625,9 +20574,9 @@ function addBraidedBobPreset() {
       width: definition.width,
       widthScale: definition.widthScale,
       depthScale: definition.region === "bangs" ? 0.34 : definition.depthScale,
-      taperCurve: cloneShapePresetValue(definition.region === "bangs" ? fringeTaper : capTaper),
-      depthCurve: cloneShapePresetValue(definition.region === "bangs" ? fringeDepth : capDepth),
-      sweepProfile: cloneShapePresetValue(definition.region === "bangs" ? flatFringeProfile : DEFAULT_SWEEP_PROFILE),
+      taperCurve: shapePresets.cloneShapePresetValue(definition.region === "bangs" ? fringeTaper : capTaper),
+      depthCurve: shapePresets.cloneShapePresetValue(definition.region === "bangs" ? fringeDepth : capDepth),
+      sweepProfile: shapePresets.cloneShapePresetValue(definition.region === "bangs" ? flatFringeProfile : DEFAULT_SWEEP_PROFILE),
       twist: variation * 0.035,
       color: DEFAULT_HAIR_COLOR,
       scalpRegion: definition.region || sample.region,
@@ -20663,9 +20612,9 @@ function addBraidedBobPreset() {
       width: definition.width,
       widthScale: 1,
       depthScale: 0.34,
-      taperCurve: cloneShapePresetValue(fringeTaper),
-      depthCurve: cloneShapePresetValue(fringeDepth),
-      sweepProfile: cloneShapePresetValue(flatFringeProfile),
+      taperCurve: shapePresets.cloneShapePresetValue(fringeTaper),
+      depthCurve: shapePresets.cloneShapePresetValue(fringeDepth),
+      sweepProfile: shapePresets.cloneShapePresetValue(flatFringeProfile),
       color: DEFAULT_HAIR_COLOR,
       scalpRegion: definition.region,
       hairLayer: definition.width < 0.12 ? "accent" : "top",
@@ -20718,9 +20667,9 @@ function addBraidedBobPreset() {
       braidDepth: 0.56,
       braidSegmentLength: 0.48,
       braidRotation: side < 0 ? -90 : 90,
-      taperCurve: cloneShapePresetValue(braidWidthCurve),
-      depthCurve: cloneShapePresetValue(braidDepthCurve),
-      sweepProfile: cloneShapePresetValue(braidCreationDefaults.sweepProfile),
+      taperCurve: shapePresets.cloneShapePresetValue(braidWidthCurve),
+      depthCurve: shapePresets.cloneShapePresetValue(braidDepthCurve),
+      sweepProfile: shapePresets.cloneShapePresetValue(braidCreationDefaults.sweepProfile),
       profileOffset: braidCreationDefaults.profileOffset,
       widthScale: 1,
       depthScale: 1,
@@ -20833,9 +20782,9 @@ function addBraidedBobPresetV2() {
       panelSplitGap: splitGap,
       widthScale: 1,
       depthScale: 1,
-      taperCurve: cloneShapePresetValue(taperCurve),
-      depthCurve: cloneShapePresetValue(depthCurve),
-      sweepProfile: cloneShapePresetValue(flatProfile),
+      taperCurve: shapePresets.cloneShapePresetValue(taperCurve),
+      depthCurve: shapePresets.cloneShapePresetValue(depthCurve),
+      sweepProfile: shapePresets.cloneShapePresetValue(flatProfile),
       twist: 0,
       color: DEFAULT_HAIR_COLOR,
       scalpRegion: region || sample.region,
@@ -21027,9 +20976,9 @@ function addBraidedBobPresetV2() {
       braidDepth: 1.08,
       braidSegmentLength: 0.34,
       braidRotation: side < 0 ? -90 : 90,
-      taperCurve: cloneShapePresetValue(braidWidthCurve),
-      depthCurve: cloneShapePresetValue(braidDepthCurve),
-      sweepProfile: cloneShapePresetValue(braidCreationDefaults.sweepProfile),
+      taperCurve: shapePresets.cloneShapePresetValue(braidWidthCurve),
+      depthCurve: shapePresets.cloneShapePresetValue(braidDepthCurve),
+      sweepProfile: shapePresets.cloneShapePresetValue(braidCreationDefaults.sweepProfile),
       widthScale: 1,
       depthScale: 1,
       twist: 0,
@@ -22144,7 +22093,7 @@ function applyDrawClumpTemplateSettings(target, template) {
     if (settings[key] !== undefined) target[key] = settings[key];
   });
   ["taperCurve", "depthCurve", "taperCurveSecondary", "depthCurveSecondary", "twistCurve", "sweepProfile"].forEach((key) => {
-    if (settings[key]) target[key] = cloneShapePresetValue(settings[key]);
+    if (settings[key]) target[key] = shapePresets.cloneShapePresetValue(settings[key]);
   });
   return target;
 }
@@ -24051,10 +24000,10 @@ function updateDrawStrandPreview() {
     proceduralDrawGuide: Boolean(sculptState.state.drawStrandStroke.proceduralDraw),
     proceduralBranchCount: Number(sculptState.state.drawStrandStroke.proceduralBranchCount || 0),
     proceduralBranchLength: Number(sculptState.state.drawStrandStroke.proceduralBranchLength ?? 0.6),
-    proceduralBranchLengthCurve: cloneShapePresetValue(
+    proceduralBranchLengthCurve: shapePresets.cloneShapePresetValue(
       sculptState.state.drawStrandStroke.proceduralBranchLengthCurve || DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE
     ),
-    proceduralBranchShapeCurve: cloneShapePresetValue(
+    proceduralBranchShapeCurve: shapePresets.cloneShapePresetValue(
       sculptState.state.drawStrandStroke.proceduralBranchShapeCurve || DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE
     ),
     proceduralBranchTipOffset: Number(sculptState.state.drawStrandStroke.proceduralBranchTipOffset ?? 0.35),
@@ -24361,8 +24310,8 @@ function beginDrawStrandStroke(event, hit, extensionLock = null, branchStart = n
     proceduralParentVisible: !drawingProcedural || PROCEDURAL_DRAW_DEFAULTS.parentVisible,
     proceduralBranchCount: drawingProcedural ? PROCEDURAL_DRAW_DEFAULTS.branchCount : 0,
     proceduralBranchLength: PROCEDURAL_DRAW_DEFAULTS.branchLength,
-    proceduralBranchLengthCurve: cloneShapePresetValue(DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE),
-    proceduralBranchShapeCurve: cloneShapePresetValue(DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE),
+    proceduralBranchLengthCurve: shapePresets.cloneShapePresetValue(DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE),
+    proceduralBranchShapeCurve: shapePresets.cloneShapePresetValue(DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE),
     proceduralBranchTipOffset: PROCEDURAL_DRAW_DEFAULTS.branchTipOffset,
     extensionLockId: extensionLock?.id || null,
     branchSourceLockId: branchStart?.lock.id || null,
@@ -24487,11 +24436,11 @@ function createDrawnLock(stroke, points, pointSurfaceNormals, width, isCenter, s
     width,
     strandRotation: Number(setting("strandRotation", strandCreationDefaults.strandRotation)),
     twist: Number(setting("twist", strandCreationDefaults.twist)),
-    twistCurve: cloneShapePresetValue(setting("twistCurve", strandCreationDefaults.twistCurve)),
-    taperCurve: cloneShapePresetValue(setting("taperCurve", strandCreationDefaults.taperCurve)),
-    depthCurve: cloneShapePresetValue(setting("depthCurve", strandCreationDefaults.depthCurve)),
-    taperCurveSecondary: cloneShapePresetValue(setting("taperCurveSecondary", strandCreationDefaults.taperCurveSecondary)),
-    depthCurveSecondary: cloneShapePresetValue(setting("depthCurveSecondary", strandCreationDefaults.depthCurveSecondary)),
+    twistCurve: shapePresets.cloneShapePresetValue(setting("twistCurve", strandCreationDefaults.twistCurve)),
+    taperCurve: shapePresets.cloneShapePresetValue(setting("taperCurve", strandCreationDefaults.taperCurve)),
+    depthCurve: shapePresets.cloneShapePresetValue(setting("depthCurve", strandCreationDefaults.depthCurve)),
+    taperCurveSecondary: shapePresets.cloneShapePresetValue(setting("taperCurveSecondary", strandCreationDefaults.taperCurveSecondary)),
+    depthCurveSecondary: shapePresets.cloneShapePresetValue(setting("depthCurveSecondary", strandCreationDefaults.depthCurveSecondary)),
     asymmetricWidthCurve: Boolean(setting("asymmetricWidthCurve", strandCreationDefaults.asymmetricWidthCurve)),
     asymmetricDepthCurve: Boolean(setting("asymmetricDepthCurve", strandCreationDefaults.asymmetricDepthCurve)),
     centerAsymmetricProfile: Boolean(setting("centerAsymmetricProfile", strandCreationDefaults.centerAsymmetricProfile)),
@@ -24508,7 +24457,7 @@ function createDrawnLock(stroke, points, pointSurfaceNormals, width, isCenter, s
     depth: shapeTemplate && clumpTemplate
       ? stroke.brushSize * ((shapeTemplate.depth ?? shapeTemplate.width) / clumpTemplate.baseWidth)
       : stroke.brushDepth,
-    sweepProfile: cloneShapePresetValue(setting("sweepProfile", strandCreationDefaults.sweepProfile)),
+    sweepProfile: shapePresets.cloneShapePresetValue(setting("sweepProfile", strandCreationDefaults.sweepProfile)),
     profileOffset: Number(setting("profileOffset", strandCreationDefaults.profileOffset)),
     radialSegments: Number(setting("radialSegments", strandCreationDefaults.radialSegments)),
     lengthSegments: Number(setting("lengthSegments", strandCreationDefaults.lengthSegments)),
@@ -24577,15 +24526,15 @@ function createDrawnBraid(stroke) {
     braidRotation: stroke.braidRotation,
     strandRotation: defaults.strandRotation,
     twist: defaults.twist,
-    twistCurve: cloneShapePresetValue(defaults.twistCurve),
-    taperCurve: cloneShapePresetValue(defaults.taperCurve),
-    depthCurve: cloneShapePresetValue(defaults.depthCurve),
-    taperCurveSecondary: cloneShapePresetValue(defaults.taperCurveSecondary),
-    depthCurveSecondary: cloneShapePresetValue(defaults.depthCurveSecondary),
+    twistCurve: shapePresets.cloneShapePresetValue(defaults.twistCurve),
+    taperCurve: shapePresets.cloneShapePresetValue(defaults.taperCurve),
+    depthCurve: shapePresets.cloneShapePresetValue(defaults.depthCurve),
+    taperCurveSecondary: shapePresets.cloneShapePresetValue(defaults.taperCurveSecondary),
+    depthCurveSecondary: shapePresets.cloneShapePresetValue(defaults.depthCurveSecondary),
     asymmetricWidthCurve: Boolean(defaults.asymmetricWidthCurve),
     asymmetricDepthCurve: Boolean(defaults.asymmetricDepthCurve),
     centerAsymmetricProfile: Boolean(defaults.centerAsymmetricProfile),
-    sweepProfile: cloneShapePresetValue(defaults.sweepProfile),
+    sweepProfile: shapePresets.cloneShapePresetValue(defaults.sweepProfile),
     profileOffset: defaults.profileOffset,
     widthScale: defaults.widthScale,
     depthScale: defaults.depthScale,
@@ -25804,12 +25753,12 @@ function createPlacedStrand(hit) {
     taper: 0.58,
     strandRotation: strandCreationDefaults.strandRotation,
     twist: strandCreationDefaults.twist,
-    twistCurve: cloneShapePresetValue(strandCreationDefaults.twistCurve),
-    taperCurve: cloneShapePresetValue(strandCreationDefaults.taperCurve),
-    depthCurve: cloneShapePresetValue(strandCreationDefaults.depthCurve),
+    twistCurve: shapePresets.cloneShapePresetValue(strandCreationDefaults.twistCurve),
+    taperCurve: shapePresets.cloneShapePresetValue(strandCreationDefaults.taperCurve),
+    depthCurve: shapePresets.cloneShapePresetValue(strandCreationDefaults.depthCurve),
     widthScale: strandCreationDefaults.widthScale,
     depthScale: strandCreationDefaults.depthScale,
-    sweepProfile: cloneShapePresetValue(strandCreationDefaults.sweepProfile),
+    sweepProfile: shapePresets.cloneShapePresetValue(strandCreationDefaults.sweepProfile),
     profileOffset: strandCreationDefaults.profileOffset,
     color: DEFAULT_HAIR_COLOR,
     scalpRegion,
@@ -29355,7 +29304,7 @@ function syncMultiStrandInputs(primary = getSelectedLock()) {
     .filter((select) => select.closest("#strandShapePanel"))
     .forEach((select) => {
       const key = select.dataset.shapePreset;
-      const mixed = selection.slice(1).some((lock) => !shapeValuesMatch(selection[0]?.[key], lock[key]));
+      const mixed = selection.slice(1).some((lock) => !shapePresets.shapeValuesMatch(selection[0]?.[key], lock[key]));
       select.classList.toggle("mixed-value", mixed);
       select.toggleAttribute("data-mixed", mixed);
       select.title = mixed ? "Selected strands use different shapes. Choose a preset to set them all." : "";
@@ -33042,11 +32991,11 @@ taperAsymmetryToggle.addEventListener("change", () => {
   if (!target || !sculptState.state.taperCurveEdit || twistCurveEditing() || proceduralBranchCurveEditing()) return;
   pushUndoState();
   if (taperAsymmetryToggle.checked) {
-    target[taperSecondaryKey()] = cloneShapePresetValue(target[sculptState.state.taperCurveEdit.curveKey]);
+    target[shapePresets.taperSecondaryKey()] = shapePresets.cloneShapePresetValue(target[sculptState.state.taperCurveEdit.curveKey]);
   } else {
     ensureSecondaryTaperCurve(target);
   }
-  target[taperAsymmetryKey()] = taperAsymmetryToggle.checked;
+  target[shapePresets.taperAsymmetryKey()] = taperAsymmetryToggle.checked;
   if (!taperAsymmetryToggle.checked) sculptState.state.taperCurveEdit.side = "primary";
   sculptState.state.taperCurveEdit.selectedIndex = 0;
   applyTaperCurveEdit();

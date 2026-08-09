@@ -53,7 +53,7 @@
 模式：依赖注入（如 IO 的 createProjectSaveApi(deps)）——迁出函数通过 deps 接收 app.js 函数引用 + store。
 候选批次（按独立性排序）：
 1. creation preset 系统（L34276-34708，~15 函数）✅ 第一批（迁出 10 个核心逻辑函数 → modules/io/creation-presets.js，依赖注入 createCreationPresetsApi(deps)，app.js 38,605→38,437 行）
-2. shape preset 系统（L16395-16850，~15 函数）
+2. shape preset 系统（L16395-16850，~15 函数）✅ 3d-2（迁出 8 个核心逻辑 → modules/io/shape-presets.js；cloneShapePresetValue 改模块级导出，creation-presets 改模块间 import；app.js 38,437→38,386 行）
 3. 子发片桥接几何（buildBranchBridgeGeometry/createBranchChildGeometry/applyBranchRootRegionCarving，~1000 行）
 4. scalp 系统函数
 5. curve/guide 系统函数
