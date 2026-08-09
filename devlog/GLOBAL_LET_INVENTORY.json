@@ -1,766 +1,136 @@
 {
-  "generatedAt": "2026-08-09T14:48:56.016Z",
-  "total": 92,
+  "generatedAt": "2026-08-09T14:52:26.903Z",
+  "total": 20,
   "lets": [
     {
-      "name": "drawStrandStroke",
-      "line": 2154,
-      "readRefs": 133,
-      "writeRefs": 4,
-      "refs": 137,
-      "span": 35831,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "taperCurveEdit",
-      "line": 2228,
-      "readRefs": 117,
-      "writeRefs": 3,
-      "refs": 120,
-      "span": 31198,
-      "bucket": "sculpt/edit"
-    },
-    {
       "name": "camera",
-      "line": 476,
+      "line": 477,
       "readRefs": 63,
       "writeRefs": 5,
       "refs": 68,
-      "span": 38118,
+      "span": 38049,
       "bucket": "camera/viewport"
     },
     {
-      "name": "viewportEditMode",
-      "line": 2335,
-      "readRefs": 16,
-      "writeRefs": 50,
-      "refs": 66,
-      "span": 36188,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "curveSurfaceDraft",
-      "line": 2159,
-      "readRefs": 50,
-      "writeRefs": 3,
-      "refs": 53,
-      "span": 36184,
-      "bucket": "(unclassified)"
-    },
-    {
-      "name": "sweepProfileEdit",
-      "line": 2227,
-      "readRefs": 46,
-      "writeRefs": 3,
-      "refs": 49,
-      "span": 30848,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "viewPlaneMoveDrag",
-      "line": 2220,
-      "readRefs": 41,
-      "writeRefs": 4,
-      "refs": 45,
-      "span": 35764,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "capsuleGuideEditing",
-      "line": 2121,
-      "readRefs": 30,
-      "writeRefs": 9,
-      "refs": 39,
-      "span": 36178,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "mirrorXEditing",
-      "line": 2117,
-      "readRefs": 36,
-      "writeRefs": 1,
-      "refs": 37,
-      "span": 33905,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "placeEdit",
-      "line": 2153,
-      "readRefs": 31,
-      "writeRefs": 4,
-      "refs": 35,
-      "span": 36203,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "duplicatePlacement",
-      "line": 2336,
-      "readRefs": 28,
-      "writeRefs": 7,
-      "refs": 35,
-      "span": 35643,
-      "bucket": "(unclassified)"
-    },
-    {
-      "name": "activeHandleEdit",
-      "line": 2108,
-      "readRefs": 9,
-      "writeRefs": 20,
-      "refs": 29,
-      "span": 34527,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "branchRegionCanvasDrag",
-      "line": 22659,
-      "readRefs": 22,
-      "writeRefs": 7,
-      "refs": 29,
-      "span": 482,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "proportionalEditing",
-      "line": 2118,
-      "readRefs": 26,
-      "writeRefs": 2,
-      "refs": 28,
-      "span": 35500,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "headSetupEditing",
-      "line": 2120,
-      "readRefs": 17,
-      "writeRefs": 10,
-      "refs": 27,
-      "span": 33401,
-      "bucket": "sculpt/edit"
-    },
-    {
       "name": "loftSurfaceDraft",
-      "line": 2158,
+      "line": 2126,
       "readRefs": 23,
       "writeRefs": 3,
       "refs": 26,
-      "span": 35829,
+      "span": 35793,
       "bucket": "(unclassified)"
-    },
-    {
-      "name": "proportionalSizeEdit",
-      "line": 2166,
-      "readRefs": 21,
-      "writeRefs": 2,
-      "refs": 23,
-      "span": 36050,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "selectionMarqueeDrag",
-      "line": 2142,
-      "readRefs": 14,
-      "writeRefs": 8,
-      "refs": 22,
-      "span": 36293,
-      "bucket": "selection/outliner"
-    },
-    {
-      "name": "relaxEdit",
-      "line": 2152,
-      "readRefs": 19,
-      "writeRefs": 3,
-      "refs": 22,
-      "span": 34304,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "viewSnapDrag",
-      "line": 2217,
-      "readRefs": 19,
-      "writeRefs": 3,
-      "refs": 22,
-      "span": 36361,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "proportionalHotkeyPress",
-      "line": 2167,
-      "readRefs": 16,
-      "writeRefs": 5,
-      "refs": 21,
-      "span": 36049,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "proceduralDuplicatePreview",
-      "line": 2339,
-      "readRefs": 9,
-      "writeRefs": 8,
-      "refs": 17,
-      "span": 29830,
-      "bucket": "(unclassified)"
-    },
-    {
-      "name": "transformDragging",
-      "line": 2110,
-      "readRefs": 12,
-      "writeRefs": 4,
-      "refs": 16,
-      "span": 35870,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "hierarchyEditing",
-      "line": 2116,
-      "readRefs": 14,
-      "writeRefs": 2,
-      "refs": 16,
-      "span": 33896,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "altOrbitDrag",
-      "line": 2143,
-      "readRefs": 10,
-      "writeRefs": 4,
-      "refs": 14,
-      "span": 36435,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "branchRegionEdit",
-      "line": 22658,
-      "readRefs": 12,
-      "writeRefs": 2,
-      "refs": 14,
-      "span": 10510,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "capsuleGuideLoopSelection",
-      "line": 2122,
-      "readRefs": 8,
-      "writeRefs": 5,
-      "refs": 13,
-      "span": 8851,
-      "bucket": "selection/outliner"
-    },
-    {
-      "name": "polyBrushStroke",
-      "line": 2156,
-      "readRefs": 7,
-      "writeRefs": 6,
-      "refs": 13,
-      "span": 33645,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "panelSplitDrag",
-      "line": 2160,
-      "readRefs": 10,
-      "writeRefs": 3,
-      "refs": 13,
-      "span": 35828,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "objectSpaceEditing",
-      "line": 2115,
-      "readRefs": 11,
-      "writeRefs": 1,
-      "refs": 12,
-      "span": 35929,
-      "bucket": "sculpt/edit"
     },
     {
       "name": "sideNamingPerspective",
-      "line": 2203,
+      "line": 2164,
       "readRefs": 10,
       "writeRefs": 2,
       "refs": 12,
-      "span": 36476,
+      "span": 36446,
       "bucket": "(unclassified)"
-    },
-    {
-      "name": "brushSizeDrag",
-      "line": 2214,
-      "readRefs": 8,
-      "writeRefs": 4,
-      "refs": 12,
-      "span": 34930,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "strandWidthEdgeDrag",
-      "line": 2215,
-      "readRefs": 8,
-      "writeRefs": 4,
-      "refs": 12,
-      "span": 35709,
-      "bucket": "sculpt/edit"
     },
     {
       "name": "toolRadialGesture",
-      "line": 2334,
+      "line": 2282,
       "readRefs": 9,
       "writeRefs": 3,
       "refs": 12,
-      "span": 33505,
+      "span": 33490,
       "bucket": "(unclassified)"
     },
     {
-      "name": "capsuleGuideLoopDrag",
-      "line": 2123,
-      "readRefs": 7,
-      "writeRefs": 4,
-      "refs": 11,
-      "span": 35866,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "houdiniZoomDrag",
-      "line": 2146,
-      "readRefs": 8,
-      "writeRefs": 3,
-      "refs": 11,
-      "span": 24305,
-      "bucket": "sculpt/edit"
-    },
-    {
       "name": "toolTipsEnabled",
-      "line": 2181,
+      "line": 2142,
       "readRefs": 9,
       "writeRefs": 2,
       "refs": 11,
-      "span": 32812,
+      "span": 32784,
       "bucket": "(unclassified)"
     },
     {
       "name": "compactToolButtonsEnabled",
-      "line": 2182,
+      "line": 2143,
       "readRefs": 9,
       "writeRefs": 2,
       "refs": 11,
-      "span": 32812,
+      "span": 32784,
       "bucket": "(unclassified)"
-    },
-    {
-      "name": "capsuleGuideDrawStroke",
-      "line": 2155,
-      "readRefs": 6,
-      "writeRefs": 4,
-      "refs": 10,
-      "span": 35831,
-      "bucket": "sculpt/edit"
     },
     {
       "name": "toolShortcutPress",
-      "line": 2168,
+      "line": 2129,
       "readRefs": 6,
       "writeRefs": 4,
       "refs": 10,
-      "span": 28438,
-      "bucket": "(unclassified)"
-    },
-    {
-      "name": "branchSweepStartDrag",
-      "line": 23153,
-      "readRefs": 7,
-      "writeRefs": 3,
-      "refs": 10,
-      "span": 4400,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "scheduledTaperCurveEditFrame",
-      "line": 17239,
-      "readRefs": 5,
-      "writeRefs": 4,
-      "refs": 9,
-      "span": 26,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "branchRegionZoomDrag",
-      "line": 22780,
-      "readRefs": 7,
-      "writeRefs": 2,
-      "refs": 9,
-      "span": 89,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "transformScaleDrag",
-      "line": 687,
-      "readRefs": 5,
-      "writeRefs": 3,
-      "refs": 8,
-      "span": 32081,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "referenceOverlayDrag",
-      "line": 2104,
-      "readRefs": 4,
-      "writeRefs": 4,
-      "refs": 8,
-      "span": 9117,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "referenceCropDrag",
-      "line": 2105,
-      "readRefs": 4,
-      "writeRefs": 4,
-      "refs": 8,
-      "span": 9116,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "sculptMoveStroke",
-      "line": 2106,
-      "readRefs": 4,
-      "writeRefs": 4,
-      "refs": 8,
-      "span": 36084,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "placementPointer",
-      "line": 2164,
-      "readRefs": 5,
-      "writeRefs": 3,
-      "refs": 8,
-      "span": 35992,
+      "span": 28412,
       "bucket": "(unclassified)"
     },
     {
       "name": "scaleSensitivity",
-      "line": 2180,
+      "line": 2141,
       "readRefs": 7,
       "writeRefs": 1,
       "refs": 8,
-      "span": 32812,
+      "span": 32784,
       "bucket": "(unclassified)"
-    },
-    {
-      "name": "viewPlaneMoveEnabled",
-      "line": 2218,
-      "readRefs": 5,
-      "writeRefs": 3,
-      "refs": 8,
-      "span": 28820,
-      "bucket": "(unclassified)"
-    },
-    {
-      "name": "taperMeshPointDrag",
-      "line": 2229,
-      "readRefs": 4,
-      "writeRefs": 4,
-      "refs": 8,
-      "span": 31116,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "proceduralAccessoryEditHistoryOpen",
-      "line": 33926,
-      "readRefs": 1,
-      "writeRefs": 7,
-      "refs": 8,
-      "span": 2172,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "compactAttributeEditorCollapsed",
-      "line": 38598,
-      "readRefs": 6,
-      "writeRefs": 2,
-      "refs": 8,
-      "span": 73,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "uvInspectorDrag",
-      "line": 2073,
-      "readRefs": 4,
-      "writeRefs": 3,
-      "refs": 7,
-      "span": 33605,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "activeLatticeMultiEdit",
-      "line": 2109,
-      "readRefs": 2,
-      "writeRefs": 5,
-      "refs": 7,
-      "span": 10432,
-      "bucket": "sculpt/edit"
     },
     {
       "name": "clumpUpdateInProgress",
-      "line": 2162,
+      "line": 2127,
       "readRefs": 1,
       "writeRefs": 6,
       "refs": 7,
-      "span": 25685,
-      "bucket": "(unclassified)"
-    },
-    {
-      "name": "viewPlaneNormalMoveHeld",
-      "line": 2219,
-      "readRefs": 5,
-      "writeRefs": 2,
-      "refs": 7,
-      "span": 10252,
-      "bucket": "(unclassified)"
-    },
-    {
-      "name": "pullMoveEnabled",
-      "line": 2221,
-      "readRefs": 5,
-      "writeRefs": 2,
-      "refs": 7,
-      "span": 28818,
-      "bucket": "(unclassified)"
-    },
-    {
-      "name": "branchRegionPanDrag",
-      "line": 22781,
-      "readRefs": 5,
-      "writeRefs": 2,
-      "refs": 7,
-      "span": 89,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "sculptBrushGeometryFrame",
-      "line": 2113,
-      "readRefs": 3,
-      "writeRefs": 3,
-      "refs": 6,
-      "span": 25756,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "pointRemovalCandidate",
-      "line": 2145,
-      "readRefs": 0,
-      "writeRefs": 6,
-      "refs": 6,
-      "span": 35983,
+      "span": 25655,
       "bucket": "(unclassified)"
     },
     {
       "name": "toolRadialActions",
-      "line": 2698,
+      "line": 2640,
       "readRefs": 5,
       "writeRefs": 1,
       "refs": 6,
-      "span": 28324,
-      "bucket": "(unclassified)"
-    },
-    {
-      "name": "referenceScaleDrag",
-      "line": 2103,
-      "readRefs": 3,
-      "writeRefs": 2,
-      "refs": 5,
-      "span": -1254,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "selectPointerCapture",
-      "line": 2148,
-      "readRefs": 2,
-      "writeRefs": 3,
-      "refs": 5,
-      "span": 24235,
-      "bucket": "selection/outliner"
-    },
-    {
-      "name": "brushSizeHotkeyHeld",
-      "line": 2216,
-      "readRefs": 2,
-      "writeRefs": 3,
-      "refs": 5,
-      "span": 35172,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "proceduralDuplicateModeActive",
-      "line": 2337,
-      "readRefs": 1,
-      "writeRefs": 4,
-      "refs": 5,
-      "span": 29434,
-      "bucket": "(unclassified)"
-    },
-    {
-      "name": "proceduralDuplicateWindowSourceIds",
-      "line": 2338,
-      "readRefs": 1,
-      "writeRefs": 4,
-      "refs": 5,
-      "span": 29157,
+      "span": 28317,
       "bucket": "(unclassified)"
     },
     {
       "name": "groupDefaultsWarningContinuation",
-      "line": 3043,
+      "line": 2985,
       "readRefs": 0,
       "writeRefs": 5,
       "refs": 5,
-      "span": 29897,
-      "bucket": "(unclassified)"
-    },
-    {
-      "name": "taperCurveEditInteractiveDirty",
-      "line": 17240,
-      "readRefs": 1,
-      "writeRefs": 4,
-      "refs": 5,
-      "span": 26,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "proceduralAccessoryEditPointerActive",
-      "line": 33927,
-      "readRefs": 1,
-      "writeRefs": 4,
-      "refs": 5,
-      "span": 2170,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "sculptBrushViableLockIds",
-      "line": 37225,
-      "readRefs": 2,
-      "writeRefs": 3,
-      "refs": 5,
-      "span": 46,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "selectionRemoveHeld",
-      "line": 690,
-      "readRefs": 1,
-      "writeRefs": 3,
-      "refs": 4,
-      "span": 35387,
-      "bucket": "selection/outliner"
-    },
-    {
-      "name": "sculptBrushShiftSmoothHeld",
-      "line": 2107,
-      "readRefs": 2,
-      "writeRefs": 2,
-      "refs": 4,
-      "span": 8756,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "curvePointInsertionCandidate",
-      "line": 2147,
-      "readRefs": 0,
-      "writeRefs": 4,
-      "refs": 4,
-      "span": 35980,
-      "bucket": "(unclassified)"
-    },
-    {
-      "name": "activeCapsuleGuideEdit",
-      "line": 2161,
-      "readRefs": 2,
-      "writeRefs": 2,
-      "refs": 4,
-      "span": 7696,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "pullRigidity",
-      "line": 2223,
-      "readRefs": 3,
-      "writeRefs": 1,
-      "refs": 4,
-      "span": 31618,
-      "bucket": "(unclassified)"
-    },
-    {
-      "name": "rebuildingProceduralDuplicatePreview",
-      "line": 2340,
-      "readRefs": 2,
-      "writeRefs": 2,
-      "refs": 4,
-      "span": 29183,
+      "span": 29890,
       "bucket": "(unclassified)"
     },
     {
       "name": "groupDefaultsWarningAcknowledged",
-      "line": 3042,
+      "line": 2984,
       "readRefs": 3,
       "writeRefs": 1,
       "refs": 4,
-      "span": 29888,
+      "span": 29881,
       "bucket": "(unclassified)"
     },
     {
-      "name": "uniformScaleDrag",
-      "line": 686,
-      "readRefs": 0,
-      "writeRefs": 3,
-      "refs": 3,
-      "span": 31994,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "transformPrecisionDrag",
-      "line": 688,
-      "readRefs": 0,
-      "writeRefs": 3,
-      "refs": 3,
-      "span": 32048,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "blenderNavigationDrag",
-      "line": 2144,
-      "readRefs": 1,
-      "writeRefs": 2,
-      "refs": 3,
-      "span": 24225,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "emptySelectionPointer",
-      "line": 2165,
-      "readRefs": 0,
-      "writeRefs": 3,
-      "refs": 3,
-      "span": 35979,
-      "bucket": "selection/outliner"
-    },
-    {
       "name": "pendingDroppedApplicationKind",
-      "line": 2591,
+      "line": 2533,
       "readRefs": 0,
       "writeRefs": 3,
       "refs": 3,
-      "span": 30909,
+      "span": 30902,
       "bucket": "(unclassified)"
     },
     {
       "name": "pendingDroppedApplicationHandle",
-      "line": 2593,
+      "line": 2535,
       "readRefs": 1,
       "writeRefs": 2,
       "refs": 3,
-      "span": 30908,
+      "span": 30901,
       "bucket": "(unclassified)"
     },
     {
       "name": "fpsFrameCount",
-      "line": 38564,
+      "line": 38496,
       "readRefs": 1,
       "writeRefs": 2,
       "refs": 3,
@@ -768,35 +138,17 @@
       "bucket": "(unclassified)"
     },
     {
-      "name": "proportionalRootLocked",
-      "line": 2119,
-      "readRefs": 1,
-      "writeRefs": 1,
-      "refs": 2,
-      "span": 33622,
-      "bucket": "sculpt/edit"
-    },
-    {
-      "name": "pullCollisionEnabled",
-      "line": 2222,
-      "readRefs": 1,
-      "writeRefs": 1,
-      "refs": 2,
-      "span": 31622,
-      "bucket": "(unclassified)"
-    },
-    {
       "name": "lastHorizontalViewAxis",
-      "line": 2224,
+      "line": 2175,
       "readRefs": 2,
       "writeRefs": 0,
       "refs": 2,
-      "span": 34333,
+      "span": 34315,
       "bucket": "(unclassified)"
     },
     {
       "name": "fpsSampleStart",
-      "line": 38565,
+      "line": 38497,
       "readRefs": 0,
       "writeRefs": 2,
       "refs": 2,
@@ -805,7 +157,7 @@
     },
     {
       "name": "previousAnimationTimestamp",
-      "line": 38566,
+      "line": 38498,
       "readRefs": 1,
       "writeRefs": 1,
       "refs": 2,
@@ -814,20 +166,20 @@
     },
     {
       "name": "braidSegmentTemplate",
-      "line": 2069,
+      "line": 2067,
       "readRefs": 0,
       "writeRefs": 1,
       "refs": 1,
-      "span": 1442,
+      "span": 1386,
       "bucket": "(unclassified)"
     },
     {
       "name": "braidSegmentBounds",
-      "line": 2070,
+      "line": 2068,
       "readRefs": 0,
       "writeRefs": 1,
       "refs": 1,
-      "span": 1442,
+      "span": 1386,
       "bucket": "(unclassified)"
     }
   ]
