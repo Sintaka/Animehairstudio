@@ -1,3 +1,4 @@
+import { createUiStore } from "./modules/core/ui-store.js?v=20260809-6";
 import { createReferenceStore } from "./modules/edit/reference-store.js?v=20260809-5";
 import { createDrawStore } from "./modules/edit/draw-store.js?v=20260809-4";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260809-3";
@@ -2213,7 +2214,7 @@ let emptySelectionPointer = null;
 let proportionalSizeEdit = null;
 let proportionalHotkeyPress = null;
 let toolShortcutPress = null;
-let radialMenusEnabled = readStoredBooleanPreference(window, RADIAL_MENUS_PREFERENCE_KEY, true);
+const ui = createUiStore();
 let navigationTipsEnabled = readStoredBooleanPreference(window, NAVIGATION_TIPS_PREFERENCE_KEY, true);
 let navigationStyle = readStoredPreference(window, NAVIGATION_STYLE_PREFERENCE_KEY, {
   fallback: "anime-hair-studio",
@@ -2258,16 +2259,13 @@ let sideNamingPerspective = readStoredPreference(window, SIDE_NAMING_PERSPECTIVE
 const BRANCH_RIGID_SWING_LIMIT_DEG = 60;
 // How fast the region follows the root bone while dragging it in Hierarchy mode:
 // lateral (left-right / v) defaults to 0.45x, along-length (up-down / u) to 1.0x.
-let preferencesOpenSnapshot = null;
 let brushSizeDrag = null;
 let strandWidthEdgeDrag = null;
 let hoveredStrandWidthEdge = null;
 let brushSizeHotkeyHeld = false;
 let viewSnapDrag = null;
 let activeViewportPointer = null;
-let shiftSnappedViewActive = false;
 let viewPlaneMoveEnabled = false;
-let viewPlaneMoveSnappedOnly = false;
 let viewPlaneNormalMoveHeld = false;
 let viewPlaneMoveDrag = null;
 let pullMoveEnabled = false;
@@ -2400,7 +2398,6 @@ let proceduralDuplicatePreview = null;
 let rebuildingProceduralDuplicatePreview = false;
 let restoringHistory = false;
 let historyShortcutHeld = false;
-let inputUndoCaptured = false;
 const inputs = {
   name: document.querySelector("#lockName"),
   widthScale: document.querySelector("#widthScale"),
@@ -3106,8 +3103,6 @@ let groupDefaultsWarningContinuation = null;
 const panelSplitSnapWarning = document.querySelector("#panelSplitSnapWarning");
 const confirmPanelSplitSnapDisable = document.querySelector("#confirmPanelSplitSnapDisable");
 const cancelPanelSplitSnapDisable = document.querySelector("#cancelPanelSplitSnapDisable");
-let panelSplitSnapWarningAcknowledged = localStorage.getItem("anime-hair-panel-split-snap-warning") === "true";
-let panelSplitSnapWarningContinuation = null;
 const scalpInputs = {
   x: document.querySelector("#scalpX"),
   y: document.querySelector("#scalpY"),
@@ -3650,7 +3645,7 @@ function frameGuideModel({
     frameViewportBounds(fullBodyScalpFocusBounds());
     return;
   }
-  shiftSnappedViewActive = false;
+  ui.state.shiftSnappedViewActive = false;
   const box = guideHeadBounds(guideModel);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
@@ -10758,7 +10753,7 @@ function frameViewportBounds(bounds) {
     viewDirection.negate();
   }
   viewDirection.normalize();
-  shiftSnappedViewActive = false;
+  ui.state.shiftSnappedViewActive = false;
   controls.target.copy(center);
   if (orthographicView) {
     orthographicHalfHeight = radius * 1.16;
@@ -12320,15 +12315,15 @@ function viewPlaneNormal() {
 }
 
 function isCameraInSnappedView() {
-  if (!shiftSnappedViewActive) return false;
+  if (!ui.state.shiftSnappedViewActive) return false;
   const direction = camera.position.clone().sub(controls.target).normalize();
   const stillSnapped = direction.dot(nearestCardinalAxis(direction)) >= 0.9995;
-  if (!stillSnapped) shiftSnappedViewActive = false;
+  if (!stillSnapped) ui.state.shiftSnappedViewActive = false;
   return stillSnapped;
 }
 
 function viewPlaneMoveActiveForView() {
-  return viewPlaneMoveEnabled && (!viewPlaneMoveSnappedOnly || isCameraInSnappedView());
+  return viewPlaneMoveEnabled && (!ui.state.viewPlaneMoveSnappedOnly || isCameraInSnappedView());
 }
 
 function updateViewPlaneGrid() {
@@ -12401,8 +12396,8 @@ function setViewPlaneMove(enabled) {
 
 function setViewPlaneMoveSnappedOnly(enabled) {
   endViewPlaneMove();
-  viewPlaneMoveSnappedOnly = Boolean(enabled);
-  viewPlaneMoveSnappedOnlyInput.checked = viewPlaneMoveSnappedOnly;
+  ui.state.viewPlaneMoveSnappedOnly = Boolean(enabled);
+  viewPlaneMoveSnappedOnlyInput.checked = ui.state.viewPlaneMoveSnappedOnly;
   updateViewPlaneGrid();
   updateInteractionLocks();
 }
@@ -18994,7 +18989,7 @@ function downloadPreferencesAndPresets() {
       sideNamingPerspective,
       controlPointDisplaySize,
       viewportBackgroundColor,
-      radialMenus: radialMenusEnabled,
+      radialMenus: ui.state.radialMenusEnabled,
       proceduralDrawExperimental: draw.state.proceduralDrawExperimentalEnabled,
       defaultShader: defaultHairShader
     },
@@ -19038,7 +19033,7 @@ async function loadPreferencesAndPresets(file) {
   if (preferences.viewportBackgroundColor != null) {
     setViewportBackgroundColor(preferences.viewportBackgroundColor);
   }
-  setRadialMenusEnabled(importedBooleanPreference(preferences.radialMenus, radialMenusEnabled));
+  setRadialMenusEnabled(importedBooleanPreference(preferences.radialMenus, ui.state.radialMenusEnabled));
   setProceduralDrawExperimentalEnabled(importedBooleanPreference(
     preferences.proceduralDrawExperimental,
     draw.state.proceduralDrawExperimentalEnabled
@@ -19060,8 +19055,8 @@ async function loadPreferencesAndPresets(file) {
     "braid",
     braidCreationDefaults.braidMeshPreset === "chain-links" ? "chain-links" : "classic"
   );
-  preferencesOpenSnapshot = {
-    radialMenusEnabled,
+  ui.state.preferencesOpenSnapshot = {
+    radialMenusEnabled: ui.state.radialMenusEnabled,
     proceduralDrawExperimentalEnabled: draw.state.proceduralDrawExperimentalEnabled,
     navigationTipsEnabled,
     navigationStyle,
@@ -30325,7 +30320,7 @@ function configureContextualRadialMenu(kind, options, listOptions = []) {
 }
 
 function beginStrandRadialGesture() {
-  if (!radialMenusEnabled || strandRadialGesture || duplicatePlacement) return false;
+  if (!ui.state.radialMenusEnabled || strandRadialGesture || duplicatePlacement) return false;
   const lock = getSelectedLock();
   const hasOtherSelection = Boolean(sel.state.selectedStrandGroup || getSelectedGuide() || selectedReferenceImage());
   if (!lock && hasOtherSelection) return false;
@@ -30616,7 +30611,7 @@ function hideToolRadialMenu() {
 }
 
 function beginToolRadialGesture() {
-  if (!radialMenusEnabled || toolRadialGesture || strandRadialGesture || duplicatePlacement) return false;
+  if (!ui.state.radialMenusEnabled || toolRadialGesture || strandRadialGesture || duplicatePlacement) return false;
   const partitioned = partitionRadialOptions(toolRadialOptions(), MAX_RADIAL_OPTIONS);
   const options = layoutRadialOptions(partitioned.radialOptions);
   const listOptions = partitioned.listOptions;
@@ -30658,7 +30653,7 @@ function beginToolRadialGesture() {
 function beginToolShortcutPress(key, tool) {
   if (toolShortcutPress || toolRadialGesture || strandRadialGesture || duplicatePlacement) return;
   setActiveTool(tool);
-  if (!radialMenusEnabled) return;
+  if (!ui.state.radialMenusEnabled) return;
   toolShortcutPress = {
     key,
     tool,
@@ -30688,15 +30683,15 @@ function cancelToolShortcutPress() {
 }
 
 function setRadialMenusEnabled(enabled, { persist = true } = {}) {
-  radialMenusEnabled = Boolean(enabled);
-  radialMenusPreferenceInput.checked = radialMenusEnabled;
-  radialShortcutRows.forEach((row) => row.classList.toggle("hidden", !radialMenusEnabled));
-  if (!radialMenusEnabled) {
+  ui.state.radialMenusEnabled = Boolean(enabled);
+  radialMenusPreferenceInput.checked = ui.state.radialMenusEnabled;
+  radialShortcutRows.forEach((row) => row.classList.toggle("hidden", !ui.state.radialMenusEnabled));
+  if (!ui.state.radialMenusEnabled) {
     cancelToolShortcutPress();
     cancelToolRadialGesture();
     cancelStrandRadialGesture();
   }
-  if (persist) saveBooleanPreference(RADIAL_MENUS_PREFERENCE_KEY, radialMenusEnabled);
+  if (persist) saveBooleanPreference(RADIAL_MENUS_PREFERENCE_KEY, ui.state.radialMenusEnabled);
   updateInteractionLocks();
 }
 
@@ -30999,8 +30994,8 @@ function setPreferenceCategory(category) {
 }
 
 function openPreferencesDialog() {
-  preferencesOpenSnapshot = {
-    radialMenusEnabled,
+  ui.state.preferencesOpenSnapshot = {
+    radialMenusEnabled: ui.state.radialMenusEnabled,
     proceduralDrawExperimentalEnabled: draw.state.proceduralDrawExperimentalEnabled,
     navigationTipsEnabled,
     navigationStyle,
@@ -31027,7 +31022,7 @@ function openPreferencesDialog() {
 }
 
 function savePreferencesDialog() {
-  saveBooleanPreference(RADIAL_MENUS_PREFERENCE_KEY, radialMenusEnabled);
+  saveBooleanPreference(RADIAL_MENUS_PREFERENCE_KEY, ui.state.radialMenusEnabled);
   saveBooleanPreference(PROCEDURAL_DRAW_EXPERIMENTAL_PREFERENCE_KEY, draw.state.proceduralDrawExperimentalEnabled);
   saveBooleanPreference(NAVIGATION_TIPS_PREFERENCE_KEY, navigationTipsEnabled);
   writeStoredPreference(window, NAVIGATION_STYLE_PREFERENCE_KEY, navigationStyle);
@@ -31046,36 +31041,36 @@ function savePreferencesDialog() {
   writeStoredPreference(window, CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY, controlPointDisplaySize);
   writeStoredPreference(window, VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY, viewportBackgroundColor);
   writeStoredPreference(window, DEFAULT_HAIR_SHADER_PREFERENCE_KEY, defaultHairShader);
-  preferencesOpenSnapshot = null;
+  ui.state.preferencesOpenSnapshot = null;
   preferencesDialog.close();
 }
 
 function cancelPreferencesDialog() {
-  if (preferencesOpenSnapshot) {
-    setRadialMenusEnabled(preferencesOpenSnapshot.radialMenusEnabled, { persist: false });
+  if (ui.state.preferencesOpenSnapshot) {
+    setRadialMenusEnabled(ui.state.preferencesOpenSnapshot.radialMenusEnabled, { persist: false });
     setProceduralDrawExperimentalEnabled(
-      preferencesOpenSnapshot.proceduralDrawExperimentalEnabled,
+      ui.state.preferencesOpenSnapshot.proceduralDrawExperimentalEnabled,
       { persist: false }
     );
-    setNavigationTipsEnabled(preferencesOpenSnapshot.navigationTipsEnabled, { persist: false });
-    setNavigationStyle(preferencesOpenSnapshot.navigationStyle, { persist: false });
-    setCameraSmoothingEnabled(preferencesOpenSnapshot.cameraSmoothingEnabled, { persist: false });
-    setCameraSmoothingStrength(preferencesOpenSnapshot.cameraSmoothingStrength, { persist: false });
-    setToolTipsEnabled(preferencesOpenSnapshot.toolTipsEnabled, { persist: false });
-    setCompactToolButtonsEnabled(preferencesOpenSnapshot.compactToolButtonsEnabled, { persist: false });
-    setViewportStatisticsEnabled(preferencesOpenSnapshot.viewportStatisticsEnabled, { persist: false });
+    setNavigationTipsEnabled(ui.state.preferencesOpenSnapshot.navigationTipsEnabled, { persist: false });
+    setNavigationStyle(ui.state.preferencesOpenSnapshot.navigationStyle, { persist: false });
+    setCameraSmoothingEnabled(ui.state.preferencesOpenSnapshot.cameraSmoothingEnabled, { persist: false });
+    setCameraSmoothingStrength(ui.state.preferencesOpenSnapshot.cameraSmoothingStrength, { persist: false });
+    setToolTipsEnabled(ui.state.preferencesOpenSnapshot.toolTipsEnabled, { persist: false });
+    setCompactToolButtonsEnabled(ui.state.preferencesOpenSnapshot.compactToolButtonsEnabled, { persist: false });
+    setViewportStatisticsEnabled(ui.state.preferencesOpenSnapshot.viewportStatisticsEnabled, { persist: false });
     setTwistCurveAllStrandsPreviewEnabled(
-      preferencesOpenSnapshot.twistCurveAllStrandsPreviewEnabled,
+      ui.state.preferencesOpenSnapshot.twistCurveAllStrandsPreviewEnabled,
       { persist: false }
     );
-    setLayerColorShiftsEnabled(preferencesOpenSnapshot.layerColorShiftsEnabled, { persist: false });
-    setOutlinerFolderColorsEnabled(preferencesOpenSnapshot.outlinerFolderColorsEnabled, { persist: false });
-    setSideNamingPerspective(preferencesOpenSnapshot.sideNamingPerspective, { persist: false });
-    setControlPointDisplaySize(preferencesOpenSnapshot.controlPointDisplaySize, { persist: false });
-    setViewportBackgroundColor(preferencesOpenSnapshot.viewportBackgroundColor, { persist: false });
-    setDefaultHairShader(preferencesOpenSnapshot.defaultHairShader, { persist: false });
+    setLayerColorShiftsEnabled(ui.state.preferencesOpenSnapshot.layerColorShiftsEnabled, { persist: false });
+    setOutlinerFolderColorsEnabled(ui.state.preferencesOpenSnapshot.outlinerFolderColorsEnabled, { persist: false });
+    setSideNamingPerspective(ui.state.preferencesOpenSnapshot.sideNamingPerspective, { persist: false });
+    setControlPointDisplaySize(ui.state.preferencesOpenSnapshot.controlPointDisplaySize, { persist: false });
+    setViewportBackgroundColor(ui.state.preferencesOpenSnapshot.viewportBackgroundColor, { persist: false });
+    setDefaultHairShader(ui.state.preferencesOpenSnapshot.defaultHairShader, { persist: false });
   }
-  preferencesOpenSnapshot = null;
+  ui.state.preferencesOpenSnapshot = null;
   preferencesDialog.close();
 }
 
@@ -32403,19 +32398,19 @@ function updateCount() {
 }
 
 function captureInputUndo() {
-  if (inputUndoCaptured) return;
+  if (ui.state.inputUndoCaptured) return;
   pushUndoState();
-  inputUndoCaptured = true;
+  ui.state.inputUndoCaptured = true;
 }
 
 function bindUndoCapture(input) {
   input.addEventListener("pointerdown", captureInputUndo);
   input.addEventListener("keydown", captureInputUndo);
   input.addEventListener("change", () => {
-    inputUndoCaptured = false;
+    ui.state.inputUndoCaptured = false;
   });
   input.addEventListener("blur", () => {
-    inputUndoCaptured = false;
+    ui.state.inputUndoCaptured = false;
   });
 }
 
@@ -33020,19 +33015,19 @@ cancelGroupDefaultsChange.addEventListener("click", () => {
   groupDefaultsWarning.close();
 });
 confirmPanelSplitSnapDisable.addEventListener("click", () => {
-  panelSplitSnapWarningAcknowledged = true;
+  ui.state.panelSplitSnapWarningAcknowledged = true;
   localStorage.setItem("anime-hair-panel-split-snap-warning", "true");
   panelSplitSnapWarning.close();
-  const continuation = panelSplitSnapWarningContinuation;
-  panelSplitSnapWarningContinuation = null;
+  const continuation = ui.state.panelSplitSnapWarningContinuation;
+  ui.state.panelSplitSnapWarningContinuation = null;
   continuation?.();
 });
 cancelPanelSplitSnapDisable.addEventListener("click", () => {
-  panelSplitSnapWarningContinuation = null;
+  ui.state.panelSplitSnapWarningContinuation = null;
   panelSplitSnapWarning.close();
 });
 panelSplitSnapWarning.addEventListener("cancel", () => {
-  panelSplitSnapWarningContinuation = null;
+  ui.state.panelSplitSnapWarningContinuation = null;
 });
 editSweepProfileButtons.forEach((button) => button.addEventListener("click", openSweepProfileEditor));
 document.querySelector("#closeSweepProfile").addEventListener("click", closeSweepProfileEditor);
@@ -34280,9 +34275,9 @@ Object.entries(panelShapeInputs).forEach(([key, input]) => {
       ? getSelectedLock()
       : activeTool === "panel" ? panelCreationDefaults : null;
     if (!target) return;
-    if (key === "panelSplitSnapToLoops" && !input.checked && !panelSplitSnapWarningAcknowledged) {
+    if (key === "panelSplitSnapToLoops" && !input.checked && !ui.state.panelSplitSnapWarningAcknowledged) {
       input.checked = true;
-      panelSplitSnapWarningContinuation = () => {
+      ui.state.panelSplitSnapWarningContinuation = () => {
         input.checked = false;
         input.dispatchEvent(new Event("change"));
       };
@@ -35068,7 +35063,7 @@ turntableSpeedInput.addEventListener("input", () => {
   turntableSpeedValue.textContent = `${turntableSpeed.toFixed(1)}x`;
 });
 setTurntableActive(false);
-setRadialMenusEnabled(radialMenusEnabled, { persist: false });
+setRadialMenusEnabled(ui.state.radialMenusEnabled, { persist: false });
 setProceduralDrawExperimentalEnabled(draw.state.proceduralDrawExperimentalEnabled, { persist: false });
 setNavigationTipsEnabled(navigationTipsEnabled, { persist: false });
 setNavigationStyle(navigationStyle, { persist: false });
@@ -36518,7 +36513,7 @@ function startViewSnap(pointerId, startX, startY) {
     currentAxisKey: cardinalAxisKey(startAxis),
     didDrag: true
   };
-  shiftSnappedViewActive = true;
+  ui.state.shiftSnappedViewActive = true;
   snapCameraToCardinalAxis(startAxis, viewSnapDrag.distance);
   renderer.domElement.setPointerCapture?.(pointerId);
   renderer.domElement.style.cursor = "grabbing";
@@ -36584,7 +36579,7 @@ function updateViewSnap(event) {
   }
   if (!viewSnapDrag.didDrag) {
     viewSnapDrag.didDrag = true;
-    shiftSnappedViewActive = true;
+    ui.state.shiftSnappedViewActive = true;
     snapCameraToCardinalAxis(viewSnapDrag.startAxis, viewSnapDrag.distance);
     viewSnapDrag.currentAxisKey = cardinalAxisKey(viewSnapDrag.startAxis);
   }
@@ -36602,7 +36597,7 @@ function updateViewSnap(event) {
   }
 
   const axisKey = cardinalAxisKey(axis);
-  shiftSnappedViewActive = true;
+  ui.state.shiftSnappedViewActive = true;
   snapCameraToCardinalAxis(axis, viewSnapDrag.distance);
   viewSnapDrag.currentAxisKey = axisKey;
   event.preventDefault();
