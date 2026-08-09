@@ -167,7 +167,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/app-config.js?v=20260808-38";
+} from "./modules/app-config.js?v=20260808-39";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/history.js?v=20260802-1";
 import {
   focusedControlShouldYieldToShortcut,
@@ -13715,6 +13715,29 @@ function createPanelStrandGeometry(lock) {
   const quadFaces = [];
   const triangleEdgeMasks = [];
   const addQuad = (a, b, c, d, reverse = false) => {
+    // Skip degenerate (collapsed) quads: coincident corners produce zero-area faces
+    // whose two triangles get opposite normals - visible as a triangle/crease artifact
+    // (the split-opening wall/cap quads that taper to a point at the panel tip).
+    const near = (i, j) => {
+      const dx = positions[i * 3] - positions[j * 3];
+      const dy = positions[i * 3 + 1] - positions[j * 3 + 1];
+      const dz = positions[i * 3 + 2] - positions[j * 3 + 2];
+      return dx * dx + dy * dy + dz * dz < 1e-10;
+    };
+    if (near(a, b) || near(a, c) || near(a, d) || near(b, c) || near(b, d) || near(c, d)) return;
+    // Reflex-folded quads (the two triangles end up nearly coplanar but on opposite
+    // sides of the shared diagonal) read as a broken triangle in the shading. They are
+    // degenerate flaps at the split-opening walls where the panel tapers to a sliver,
+    // so skip them like collapsed quads.
+    if (a !== b && b !== c && c !== d && a !== c && b !== d) {
+      const pa = new THREE.Vector3(positions[a * 3], positions[a * 3 + 1], positions[a * 3 + 2]);
+      const pb = new THREE.Vector3(positions[b * 3], positions[b * 3 + 1], positions[b * 3 + 2]);
+      const pc = new THREE.Vector3(positions[c * 3], positions[c * 3 + 1], positions[c * 3 + 2]);
+      const pd = new THREE.Vector3(positions[d * 3], positions[d * 3 + 1], positions[d * 3 + 2]);
+      const n1 = new THREE.Vector3().subVectors(pb, pa).cross(new THREE.Vector3().subVectors(pc, pa)).normalize();
+      const n2 = new THREE.Vector3().subVectors(pc, pa).cross(new THREE.Vector3().subVectors(pd, pa)).normalize();
+      if (n1.dot(n2) < -0.999) return;
+    }
     if (reverse) {
       indices.push(a, c, b, a, d, c);
       quadFaces.push([a, b, c, d]);

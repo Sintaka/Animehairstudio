@@ -144,3 +144,4 @@
 - [x] 调研：H 拖根 Region 2 倍速度左右同步（0.2.52，无代码改动）——同步链路对 split/普通父完全一致，未复现 split 特有 2 倍；两种横向映射修复均因 fused 环列非横向单调产生非连续选区而回退
 - [x] Region 同步速度可调（0.2.52）：Branch Root Region 面板新增 Sync L/R（默认0.45，0.2.53 由 0.6 调低）与 Sync U/D（默认1.0）滑杆（浮点+滑杆+重置），updateBranchRootRegionCenter 的 du/dv 按速度缩放
 - [x] 刘海 split 父发片线框三角面修复（0.2.54）：applyBranchRootRegionCarving 挖洞后同步裁剪 triangleEdgeMasks（按被删面去 2 条侧面 mask、保留端盖），线框不再画错误对角线；导出一直是四边面不受影响
+- [x] Front Bangs 1-3 视口三角观感修复（0.2.55）：createPanelStrandGeometry 的 addQuad 跳过退化（角点重合）与反射折叠（两三角法线相反）quad，最大二面角 180/90° → ≤10.7°；导出一直是四边面不受影响
