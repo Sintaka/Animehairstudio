@@ -1,3 +1,4 @@
+import { createProjectStore } from "./modules/io/project-store.js?v=20260809-9";
 import { createHairStore } from "./modules/core/hair-store.js?v=20260809-8";
 import { createGuideStore } from "./modules/core/guide-store.js?v=20260809-8";
 import { createCameraStore } from "./modules/core/camera-store.js?v=20260809-8";
@@ -2257,7 +2258,6 @@ let lastHorizontalViewAxis = new THREE.Vector3(0, 0, 1);
 const CARDINAL_VIEW_DRAG_STEP = 72;
 const CARDINAL_VIEW_DRAG_GRACE = 48;
 let sweepProfileEdit = null;
-let sweepProfileMirrorEnabled = false;
 let taperCurveEdit = null;
 let taperMeshPointDrag = null;
 const taperMeshPointGeometry = new THREE.SphereGeometry(0.016, 12, 8);
@@ -2624,8 +2624,8 @@ const dropObjTargetChoices = document.querySelector("#dropObjTargetChoices");
 const closeDropImportDialog = document.querySelector("#closeDropImportDialog");
 const cancelDropImport = document.querySelector("#cancelDropImport");
 const confirmDropImport = document.querySelector("#confirmDropImport");
-let pendingDroppedApplicationFile = null;
 let pendingDroppedApplicationKind = null;
+const projectState = createProjectStore();
 let pendingDroppedApplicationHandle = null;
 const importHeadMeshMenu = document.querySelector("#importHeadMeshMenu");
 const importFullBodyMeshMenu = document.querySelector("#importFullBodyMeshMenu");
@@ -3162,15 +3162,6 @@ const presetCatalog = [
     omitAuthoringAids: true
   }
 ];
-let activePresetFilter = "full";
-let currentProjectName = "Untitled Hair Project";
-let projectSaveInProgress = false;
-let quickSaveFileHandle = null;
-let quickSaveFileName = null;
-let lastExport = null;
-let quickExportFileHandle = null;
-let quickExportInProgress = false;
-let pendingFileAction = null;
 const head = createHeadStore();
 
 const GUIDE_HEAD_REFERENCE_SIZE = 26.760177;
@@ -16633,25 +16624,22 @@ function shapeTargetForSelect(select) {
   return activeStrandShapeTarget();
 }
 
-let customShapePresets = emptyShapePresetLibrary();
-let pendingShapePresetSave = null;
-let pendingShapePresetRemoval = null;
 const shapePresetButtons = new Map();
 
 function loadCustomShapePresets() {
   try {
-    customShapePresets = normalizeShapePresetLibrary(
+    projectState.state.customShapePresets = normalizeShapePresetLibrary(
       JSON.parse(localStorage.getItem(SHAPE_PRESET_STORAGE_KEY) || "null")
     );
   } catch (error) {
     console.warn("Could not load custom shape presets", error);
-    customShapePresets = emptyShapePresetLibrary();
+    projectState.state.customShapePresets = emptyShapePresetLibrary();
   }
 }
 
 function saveCustomShapePresets() {
   try {
-    localStorage.setItem(SHAPE_PRESET_STORAGE_KEY, JSON.stringify(customShapePresets));
+    localStorage.setItem(SHAPE_PRESET_STORAGE_KEY, JSON.stringify(projectState.state.customShapePresets));
   } catch (error) {
     console.warn("Could not save custom shape presets", error);
   }
@@ -16699,7 +16687,7 @@ function syncShapePresetSelects() {
     const target = shapeTargetForSelect(select);
     const value = target?.[key];
     const builtInMatch = SHAPE_PRESETS[key].find((preset) => shapeValuesMatch(value, preset.value));
-    const customMatch = customShapePresets[key].find((preset) => (
+    const customMatch = projectState.state.customShapePresets[key].find((preset) => (
       shapeValuesMatch(value, preset.value)
       && (
         key === "sweepProfile"
@@ -16726,7 +16714,7 @@ function populateShapePresetSelects() {
     });
     const customGroup = document.createElement("optgroup");
     customGroup.label = "Custom Presets";
-    customShapePresets[key].forEach((preset) => {
+    projectState.state.customShapePresets[key].forEach((preset) => {
       const option = document.createElement("option");
       option.value = `custom:${preset.id}`;
       option.textContent = preset.name;
@@ -16745,7 +16733,7 @@ function applyShapePreset(select) {
   const key = select.dataset.shapePreset;
   const custom = select.value.startsWith("custom:");
   const preset = custom
-    ? customShapePresets[key].find((item) => item.id === select.value.replace(/^custom:/, ""))
+    ? projectState.state.customShapePresets[key].find((item) => item.id === select.value.replace(/^custom:/, ""))
     : SHAPE_PRESETS[key].find((item) => item.id === select.value);
   const target = shapeTargetForSelect(select);
   if (!preset || !target) return;
@@ -16782,8 +16770,8 @@ function openSaveShapePreset(select) {
   const key = select.dataset.shapePreset;
   const target = shapeTargetForSelect(select);
   if (!target?.[key]?.length) return;
-  pendingCreationPresetType = null;
-  pendingShapePresetSave = {
+  projectState.state.pendingCreationPresetType = null;
+  projectState.state.pendingShapePresetSave = {
     select,
     key,
     value: cloneShapePresetValue(target[key]),
@@ -16804,7 +16792,7 @@ function openSaveShapePreset(select) {
 }
 
 function commitCustomShapePreset() {
-  const pending = pendingShapePresetSave;
+  const pending = projectState.state.pendingShapePresetSave;
   const name = creationPresetNameInput.value.trim();
   if (!pending || !name) return false;
   const preset = {
@@ -16816,12 +16804,12 @@ function commitCustomShapePreset() {
       asymmetric: pending.asymmetric
     })
   };
-  customShapePresets[pending.key].push(preset);
+  projectState.state.customShapePresets[pending.key].push(preset);
   saveCustomShapePresets();
   populateShapePresetSelects();
   pending.select.value = `custom:${preset.id}`;
   syncShapePresetRemoveButtons();
-  pendingShapePresetSave = null;
+  projectState.state.pendingShapePresetSave = null;
   creationPresetDialog.close();
   return true;
 }
@@ -16830,22 +16818,22 @@ function openRemoveShapePreset(select) {
   if (!select.value.startsWith("custom:")) return;
   const key = select.dataset.shapePreset;
   const id = select.value.replace(/^custom:/, "");
-  const preset = customShapePresets[key].find((item) => item.id === id);
+  const preset = projectState.state.customShapePresets[key].find((item) => item.id === id);
   if (!preset) return;
-  pendingShapePresetRemoval = { key, id };
-  pendingCreationPresetRemoval = null;
+  projectState.state.pendingShapePresetRemoval = { key, id };
+  projectState.state.pendingCreationPresetRemoval = null;
   removeCreationPresetDialogTitle.textContent = `Remove ${shapePresetLabel(key)} Preset`;
   removeCreationPresetMessage.textContent = `Remove "${preset.name}"? This only removes it from this browser.`;
   removeCreationPresetDialog.showModal();
 }
 
 function commitRemoveShapePreset() {
-  if (!pendingShapePresetRemoval) return false;
-  const { key, id } = pendingShapePresetRemoval;
-  customShapePresets = removeShapePreset(customShapePresets, key, id);
+  if (!projectState.state.pendingShapePresetRemoval) return false;
+  const { key, id } = projectState.state.pendingShapePresetRemoval;
+  projectState.state.customShapePresets = removeShapePreset(projectState.state.customShapePresets, key, id);
   saveCustomShapePresets();
   populateShapePresetSelects();
-  pendingShapePresetRemoval = null;
+  projectState.state.pendingShapePresetRemoval = null;
   removeCreationPresetDialog.close();
   return true;
 }
@@ -17544,7 +17532,7 @@ function renderSweepProfileEditor() {
   });
   const selected = profile[sweepProfileEdit.selectedIndex];
   sweepPointInterpolation.value = selected?.interpolation || "smooth";
-  sweepProfileMirrorX.setAttribute("aria-pressed", String(sweepProfileMirrorEnabled));
+  sweepProfileMirrorX.setAttribute("aria-pressed", String(projectState.state.sweepProfileMirrorEnabled));
   Object.entries(sweepProfileTrimInputs).forEach(([key, input]) => {
     const value = Number(target?.[key] ?? 0);
     input.value = value;
@@ -18969,8 +18957,8 @@ function downloadPreferencesAndPresets() {
       proceduralDrawExperimental: draw.state.proceduralDrawExperimentalEnabled,
       defaultShader: hairState.state.defaultHairShader
     },
-    presets: customCreationPresets,
-    shapePresets: customShapePresets
+    presets: projectState.state.customCreationPresets,
+    shapePresets: projectState.state.customShapePresets
   });
   fileApi.downloadProjectFile(
     `${JSON.stringify(backup, null, 2)}\n`,
@@ -19020,9 +19008,9 @@ async function loadPreferencesAndPresets(file) {
     saveLanguage(language);
   }
   if (preferences.defaultShader != null) setDefaultHairShader(preferences.defaultShader);
-  customCreationPresets = normalizeCreationPresetLibrary(backup.presets);
+  projectState.state.customCreationPresets = normalizeCreationPresetLibrary(backup.presets);
   saveCustomCreationPresets();
-  customShapePresets = normalizeShapePresetLibrary(backup.shapePresets);
+  projectState.state.customShapePresets = normalizeShapePresetLibrary(backup.shapePresets);
   saveCustomShapePresets();
   populateShapePresetSelects();
   populateDrawBrushPresetSelect(hairState.state.drawStrandMode);
@@ -19068,22 +19056,22 @@ async function handlePreferencesAndPresetsFile(event) {
 
 
 const fileApi = createProjectSaveApi({
-  get currentProjectName() { return currentProjectName; },
-  set currentProjectName(value) { currentProjectName = value; },
-  get quickSaveFileHandle() { return quickSaveFileHandle; },
-  set quickSaveFileHandle(value) { quickSaveFileHandle = value; },
-  get quickSaveFileName() { return quickSaveFileName; },
-  set quickSaveFileName(value) { quickSaveFileName = value; },
-  get projectSaveInProgress() { return projectSaveInProgress; },
-  set projectSaveInProgress(value) { projectSaveInProgress = value; },
-  get lastExport() { return lastExport; },
-  set lastExport(value) { lastExport = value; },
-  get quickExportFileHandle() { return quickExportFileHandle; },
-  set quickExportFileHandle(value) { quickExportFileHandle = value; },
-  get quickExportInProgress() { return quickExportInProgress; },
-  set quickExportInProgress(value) { quickExportInProgress = value; },
-  get pendingFileAction() { return pendingFileAction; },
-  set pendingFileAction(value) { pendingFileAction = value; },
+  get currentProjectName() { return projectState.state.currentProjectName; },
+  set currentProjectName(value) { projectState.state.currentProjectName = value; },
+  get quickSaveFileHandle() { return projectState.state.quickSaveFileHandle; },
+  set quickSaveFileHandle(value) { projectState.state.quickSaveFileHandle = value; },
+  get quickSaveFileName() { return projectState.state.quickSaveFileName; },
+  set quickSaveFileName(value) { projectState.state.quickSaveFileName = value; },
+  get projectSaveInProgress() { return projectState.state.projectSaveInProgress; },
+  set projectSaveInProgress(value) { projectState.state.projectSaveInProgress = value; },
+  get lastExport() { return projectState.state.lastExport; },
+  set lastExport(value) { projectState.state.lastExport = value; },
+  get quickExportFileHandle() { return projectState.state.quickExportFileHandle; },
+  set quickExportFileHandle(value) { projectState.state.quickExportFileHandle = value; },
+  get quickExportInProgress() { return projectState.state.quickExportInProgress; },
+  set quickExportInProgress(value) { projectState.state.quickExportInProgress = value; },
+  get pendingFileAction() { return projectState.state.pendingFileAction; },
+  set pendingFileAction(value) { projectState.state.pendingFileAction = value; },
   get importedHeadAsset() { return head.state.importedHeadAsset; },
   get importedScalpGuideAsset() { return importedScalpGuideAsset; },
   get referenceImages() { return referenceImages; },
@@ -19139,9 +19127,9 @@ async function openHairProjectFile(file, { handle = null } = {}) {
     if (guideState.state.guideModel?.userData?.fullBodyReference) {
       frameViewportBounds(fullBodyScalpFocusBounds());
     }
-    if (project.metadata?.name) currentProjectName = project.metadata.name;
-    quickSaveFileHandle = handle || null;
-    quickSaveFileName = cleanFileBaseName(file.name || `${project.metadata?.name || "Untitled Hair Project"}.ahs`, "Untitled Hair Project");
+    if (project.metadata?.name) projectState.state.currentProjectName = project.metadata.name;
+    projectState.state.quickSaveFileHandle = handle || null;
+    projectState.state.quickSaveFileName = cleanFileBaseName(file.name || `${project.metadata?.name || "Untitled Hair Project"}.ahs`, "Untitled Hair Project");
     presetLibraryStatus.textContent = `${project.metadata?.name || "Project"} opened`;
     setPresetLibraryOpen(false);
     await safelyRememberRecentProject(file.name || `${project.metadata?.name || "Untitled Hair Project"}.ahs`, content);
@@ -19206,7 +19194,7 @@ async function renderRecentProjectsMenu() {
 function openDroppedApplicationFilePrompt(file, { handle = null } = {}) {
   const kind = applicationDropFileKind(file);
   if (!kind) return false;
-  pendingDroppedApplicationFile = file;
+  projectState.state.pendingDroppedApplicationFile = file;
   pendingDroppedApplicationKind = kind;
   pendingDroppedApplicationHandle = handle || null;
   dropImportFileName.textContent = file.name;
@@ -19233,7 +19221,7 @@ function closeDroppedApplicationFilePrompt() {
 }
 
 async function confirmDroppedApplicationFile() {
-  const file = pendingDroppedApplicationFile;
+  const file = projectState.state.pendingDroppedApplicationFile;
   const kind = pendingDroppedApplicationKind;
   if (!file || !kind) return;
   const objTarget = kind === "obj"
@@ -19916,7 +19904,7 @@ async function applyPresetSelection(presetName) {
   if (needsLegacyRootRemap) {
     remapLegacyPresetToActiveScalp();
   }
-  currentProjectName = catalogPreset?.title || project.metadata?.name || currentProjectName;
+  projectState.state.currentProjectName = catalogPreset?.title || project.metadata?.name || projectState.state.currentProjectName;
 }
 
 function drawPresetThumbnail(canvas, type) {
@@ -20089,17 +20077,17 @@ function drawPresetThumbnail(canvas, type) {
 }
 
 function renderPresetLibrary() {
-  const catalog = activePresetFilter === "custom" ? [] : presetCatalog.filter((preset) => preset.category === activePresetFilter);
+  const catalog = projectState.state.activePresetFilter === "custom" ? [] : presetCatalog.filter((preset) => preset.category === projectState.state.activePresetFilter);
   document.querySelector("#fullPresetCount").textContent = presetCatalog.filter((preset) => preset.category === "full").length;
   document.querySelector("#elementPresetCount").textContent = presetCatalog.filter((preset) => preset.category === "elements").length;
   document.querySelector("#customPresetCount").textContent = "0";
   presetFilterButtons.forEach((button) => {
-    const active = button.dataset.presetFilter === activePresetFilter;
+    const active = button.dataset.presetFilter === projectState.state.activePresetFilter;
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
   const headings = { full: "Full Hair Presets", elements: "Hair Elements", custom: "Custom Presets" };
-  presetLibraryStatus.textContent = headings[activePresetFilter];
+  presetLibraryStatus.textContent = headings[projectState.state.activePresetFilter];
   presetLibraryGrid.replaceChildren();
   if (!catalog.length) {
     const empty = document.createElement("div");
@@ -33016,7 +33004,7 @@ sweepProfileCanvas.addEventListener("pointerdown", (event) => {
   if (!Number.isInteger(pointIndex) || !sweepProfileEdit) return;
   pushUndoState();
   sweepProfileEdit.selectedIndex = pointIndex;
-  sweepProfileEdit.mirrorIndex = sweepProfileMirrorEnabled
+  sweepProfileEdit.mirrorIndex = projectState.state.sweepProfileMirrorEnabled
     ? mirroredSweepProfileIndex(activeSweepProfile(), pointIndex)
     : null;
   sweepProfileEdit.dragPointerId = event.pointerId;
@@ -33030,12 +33018,12 @@ sweepProfileCanvas.addEventListener("pointermove", (event) => {
   const selected = profile?.[sweepProfileEdit.selectedIndex];
   if (!selected) return;
   const nextPoint = canvasToProfile(event);
-  if (sweepProfileMirrorEnabled && sweepProfileEdit.mirrorIndex === sweepProfileEdit.selectedIndex) {
+  if (projectState.state.sweepProfileMirrorEnabled && sweepProfileEdit.mirrorIndex === sweepProfileEdit.selectedIndex) {
     nextPoint.x = 0;
   }
   Object.assign(selected, nextPoint);
   const mirrored = profile[sweepProfileEdit.mirrorIndex];
-  if (sweepProfileMirrorEnabled && mirrored && mirrored !== selected) {
+  if (projectState.state.sweepProfileMirrorEnabled && mirrored && mirrored !== selected) {
     mirrored.x = -nextPoint.x;
     mirrored.z = nextPoint.z;
   }
@@ -33056,7 +33044,7 @@ sweepPointInterpolation.addEventListener("change", () => {
   const selected = profile?.[sweepProfileEdit?.selectedIndex];
   if (!selected) return;
   selected.interpolation = sweepPointInterpolation.value;
-  const mirrorIndex = sweepProfileMirrorEnabled
+  const mirrorIndex = projectState.state.sweepProfileMirrorEnabled
     ? mirroredSweepProfileIndex(profile, sweepProfileEdit.selectedIndex)
     : null;
   const mirrored = profile[mirrorIndex];
@@ -33064,8 +33052,8 @@ sweepPointInterpolation.addEventListener("change", () => {
   applySweepProfileEdit();
 });
 sweepProfileMirrorX.addEventListener("click", () => {
-  sweepProfileMirrorEnabled = !sweepProfileMirrorEnabled;
-  sweepProfileMirrorX.setAttribute("aria-pressed", String(sweepProfileMirrorEnabled));
+  projectState.state.sweepProfileMirrorEnabled = !projectState.state.sweepProfileMirrorEnabled;
+  sweepProfileMirrorX.setAttribute("aria-pressed", String(projectState.state.sweepProfileMirrorEnabled));
 });
 Object.entries(sweepProfileTrimInputs).forEach(([key, input]) => {
   bindUndoCapture(input);
@@ -33074,7 +33062,7 @@ Object.entries(sweepProfileTrimInputs).forEach(([key, input]) => {
     if (!target) return;
     const value = THREE.MathUtils.clamp(Number(input.value), 0, 1);
     target[key] = value;
-    if (sweepProfileMirrorEnabled) {
+    if (projectState.state.sweepProfileMirrorEnabled) {
       const mirroredKey = key === "profileTrimLeft" ? "profileTrimRight" : "profileTrimLeft";
       target[mirroredKey] = value;
     }
@@ -33546,7 +33534,7 @@ dropImportForm.addEventListener("submit", async (event) => {
   button.addEventListener("click", closeDroppedApplicationFilePrompt);
 });
 dropImportDialog.addEventListener("close", () => {
-  pendingDroppedApplicationFile = null;
+  projectState.state.pendingDroppedApplicationFile = null;
   pendingDroppedApplicationKind = null;
   pendingDroppedApplicationHandle = null;
 });
@@ -33601,7 +33589,7 @@ scalpGuideMeshFileInput.addEventListener("change", () => {
 document.querySelector("#saveCurrentPreset").addEventListener("click", fileApi.saveHairProjectFile);
 document.querySelector("#quickSaveProject").addEventListener("click", fileApi.saveHairProjectQuickly);
 presetFilterButtons.forEach((button) => button.addEventListener("click", () => {
-  activePresetFilter = button.dataset.presetFilter;
+  projectState.state.activePresetFilter = button.dataset.presetFilter;
   renderPresetLibrary();
 }));
 presetLibrary.addEventListener("pointerdown", (event) => event.stopPropagation());
@@ -34546,7 +34534,6 @@ function applyCreationToolSettings(type, settings, options = {}) {
 }
 
 const defaultBraidToolSettings = creationToolSettingsSnapshot("braid");
-let customCreationPresets = emptyToolPresetLibrary();
 
 function normalizeCreationPresetLibrary(value) {
   return normalizeToolPresetLibrary(value, (presetValue, type) => {
@@ -34558,16 +34545,16 @@ function normalizeCreationPresetLibrary(value) {
 function loadCustomCreationPresets() {
   try {
     const saved = JSON.parse(localStorage.getItem(CREATION_PRESET_STORAGE_KEY) || "null");
-    customCreationPresets = normalizeCreationPresetLibrary(saved);
+    projectState.state.customCreationPresets = normalizeCreationPresetLibrary(saved);
   } catch (error) {
     console.warn("Could not load creation presets", error);
-    customCreationPresets = emptyToolPresetLibrary();
+    projectState.state.customCreationPresets = emptyToolPresetLibrary();
   }
 }
 
 function saveCustomCreationPresets() {
   try {
-    localStorage.setItem(CREATION_PRESET_STORAGE_KEY, JSON.stringify(customCreationPresets));
+    localStorage.setItem(CREATION_PRESET_STORAGE_KEY, JSON.stringify(projectState.state.customCreationPresets));
   } catch (error) {
     console.warn("Could not save creation presets", error);
   }
@@ -34577,7 +34564,7 @@ function migrateLegacyClumpPresets() {
   try {
     const legacyRecords = JSON.parse(localStorage.getItem(LEGACY_CLUMP_PRESET_STORAGE_KEY) || "null");
     if (!Array.isArray(legacyRecords) || !legacyRecords.length) return;
-    const existingIds = new Set(customCreationPresets.strand.map((preset) => preset.id));
+    const existingIds = new Set(projectState.state.customCreationPresets.strand.map((preset) => preset.id));
     let migrated = false;
     legacyRecords.forEach((record) => {
       const locks = Array.isArray(record?.value?.locks) ? record.value.locks : [];
@@ -34587,7 +34574,7 @@ function migrateLegacyClumpPresets() {
       const name = typeof record?.title === "string" ? record.title.trim().slice(0, 60) : "";
       const id = `legacy-clump-${legacyId}`;
       if (!guide || !clumpTemplate || !legacyId || !name || existingIds.has(id)) return;
-      customCreationPresets.strand.push({
+      projectState.state.customCreationPresets.strand.push({
         id,
         name,
         value: {
@@ -34618,10 +34605,10 @@ function populateCreationPresetSelect(select, type, selectedValue = select.value
     option.textContent = label;
     select.append(option);
   });
-  if (customCreationPresets[type].length) {
+  if (projectState.state.customCreationPresets[type].length) {
     const group = document.createElement("optgroup");
     group.label = "Custom Presets";
-    customCreationPresets[type].forEach((preset) => {
+    projectState.state.customCreationPresets[type].forEach((preset) => {
       const option = document.createElement("option");
       option.value = `custom:${preset.id}`;
       option.textContent = preset.name;
@@ -34647,10 +34634,10 @@ function populateDrawBrushPresetSelect(selectedValue = drawBrushPresetInput.valu
     option.textContent = label;
     drawBrushPresetInput.append(option);
   });
-  if (customCreationPresets.strand.length) {
+  if (projectState.state.customCreationPresets.strand.length) {
     const group = document.createElement("optgroup");
     group.label = "Custom Presets";
-    customCreationPresets.strand.forEach((preset) => {
+    projectState.state.customCreationPresets.strand.forEach((preset) => {
       const option = document.createElement("option");
       option.value = `custom:${preset.id}`;
       option.textContent = preset.name;
@@ -34690,7 +34677,7 @@ function applyCreationPresetSnapshot(target, snapshot, type) {
 
 function applyCustomCreationPreset(type, value) {
   const id = value.replace(/^custom:/, "");
-  const preset = customCreationPresets[type].find((item) => item.id === id);
+  const preset = projectState.state.customCreationPresets[type].find((item) => item.id === id);
   if (!preset) return;
   const target = type === "braid" ? braidCreationDefaults : strandCreationDefaults;
   if (type === "strand") draw.state.activeCustomDrawClumpTemplate = null;
@@ -34708,12 +34695,10 @@ function applyCustomCreationPreset(type, value) {
   updatePlacementStatus();
 }
 
-let pendingCreationPresetType = null;
-let pendingCreationPresetRemoval = null;
 
 function createCustomCreationPreset(type) {
-  pendingShapePresetSave = null;
-  pendingCreationPresetType = type;
+  projectState.state.pendingShapePresetSave = null;
+  projectState.state.pendingCreationPresetType = type;
   guideState.state.pendingClumpPresetGuideId = null;
   const label = type === "braid" ? "Braid" : "Brush";
   creationPresetDialogTitle.textContent = `Create ${label} Preset`;
@@ -34728,8 +34713,8 @@ function createCustomCreationPreset(type) {
 
 function createCustomClumpPreset(guide) {
   if (!guide?.clumpGuide || !guide.clumpId) return;
-  pendingShapePresetSave = null;
-  pendingCreationPresetType = "clump";
+  projectState.state.pendingShapePresetSave = null;
+  projectState.state.pendingCreationPresetType = "clump";
   guideState.state.pendingClumpPresetGuideId = guide.id;
   creationPresetDialogTitle.textContent = "Create Brush Preset";
   creationPresetDescription.textContent = "Save this clump as a reusable Draw Strand brush in this browser.";
@@ -34743,7 +34728,7 @@ function createCustomClumpPreset(guide) {
 
 function commitCustomCreationPreset() {
   if (commitCustomShapePreset()) return;
-  const type = pendingCreationPresetType;
+  const type = projectState.state.pendingCreationPresetType;
   const name = creationPresetNameInput.value.trim();
   if (!type || !name) return;
   if (type === "clump") {
@@ -34766,12 +34751,12 @@ function commitCustomCreationPreset() {
         brushPreset: "clump"
       }
     };
-    customCreationPresets.strand.push(preset);
+    projectState.state.customCreationPresets.strand.push(preset);
     saveCustomCreationPresets();
     draw.state.activeCustomDrawClumpTemplate = clumpTemplate;
     hairState.state.drawStrandMode = "clump";
     populateDrawBrushPresetSelect(`custom:${preset.id}`);
-    pendingCreationPresetType = null;
+    projectState.state.pendingCreationPresetType = null;
     guideState.state.pendingClumpPresetGuideId = null;
     creationPresetDialog.close();
     return;
@@ -34791,14 +34776,14 @@ function commitCustomCreationPreset() {
     },
     toolSettings: creationToolSettingsSnapshot(type)
   };
-  customCreationPresets[type].push(preset);
+  projectState.state.customCreationPresets[type].push(preset);
   saveCustomCreationPresets();
   if (type === "braid") {
     populateCreationPresetSelect(braidToolPresetInput, type, `custom:${preset.id}`);
   } else {
     populateDrawBrushPresetSelect(`custom:${preset.id}`);
   }
-  pendingCreationPresetType = null;
+  projectState.state.pendingCreationPresetType = null;
   creationPresetDialog.close();
 }
 
@@ -34806,10 +34791,10 @@ function openRemoveCreationPreset(type) {
   const select = type === "braid" ? braidToolPresetInput : drawBrushPresetInput;
   if (!select.value.startsWith("custom:")) return;
   const id = select.value.replace(/^custom:/, "");
-  const preset = customCreationPresets[type].find((item) => item.id === id);
+  const preset = projectState.state.customCreationPresets[type].find((item) => item.id === id);
   if (!preset) return;
-  pendingShapePresetRemoval = null;
-  pendingCreationPresetRemoval = { type, id };
+  projectState.state.pendingShapePresetRemoval = null;
+  projectState.state.pendingCreationPresetRemoval = { type, id };
   removeCreationPresetDialogTitle.textContent = `Remove ${type === "braid" ? "Braid" : "Brush"} Preset`;
   removeCreationPresetMessage.textContent = `Remove "${preset.name}"? This only removes it from this browser.`;
   removeCreationPresetDialog.showModal();
@@ -34817,9 +34802,9 @@ function openRemoveCreationPreset(type) {
 
 function commitRemoveCreationPreset() {
   if (commitRemoveShapePreset()) return;
-  if (!pendingCreationPresetRemoval) return;
-  const { type, id } = pendingCreationPresetRemoval;
-  customCreationPresets = removeToolPreset(customCreationPresets, type, id);
+  if (!projectState.state.pendingCreationPresetRemoval) return;
+  const { type, id } = projectState.state.pendingCreationPresetRemoval;
+  projectState.state.customCreationPresets = removeToolPreset(projectState.state.customCreationPresets, type, id);
   saveCustomCreationPresets();
   if (type === "braid") {
     const fallback = braidCreationDefaults.braidMeshPreset === "chain-links" ? "chain-links" : "classic";
@@ -34828,7 +34813,7 @@ function commitRemoveCreationPreset() {
     draw.state.activeCustomDrawClumpTemplate = null;
     populateDrawBrushPresetSelect(hairState.state.drawStrandMode);
   }
-  pendingCreationPresetRemoval = null;
+  projectState.state.pendingCreationPresetRemoval = null;
   removeCreationPresetDialog.close();
 }
 
@@ -34905,15 +34890,15 @@ creationPresetForm.addEventListener("submit", (event) => {
   button.addEventListener("click", () => creationPresetDialog.close());
 });
 creationPresetDialog.addEventListener("close", () => {
-  pendingCreationPresetType = null;
+  projectState.state.pendingCreationPresetType = null;
   guideState.state.pendingClumpPresetGuideId = null;
-  pendingShapePresetSave = null;
+  projectState.state.pendingShapePresetSave = null;
 });
 cancelRemoveCreationPresetButton.addEventListener("click", () => removeCreationPresetDialog.close());
 confirmRemoveCreationPresetButton.addEventListener("click", commitRemoveCreationPreset);
 removeCreationPresetDialog.addEventListener("close", () => {
-  pendingCreationPresetRemoval = null;
-  pendingShapePresetRemoval = null;
+  projectState.state.pendingCreationPresetRemoval = null;
+  projectState.state.pendingShapePresetRemoval = null;
 });
 
 braidMeshPresetInput.addEventListener("change", () => {
