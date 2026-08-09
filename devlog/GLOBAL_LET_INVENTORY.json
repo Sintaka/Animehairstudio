@@ -1,0 +1,2175 @@
+{
+  "generatedAt": "2026-08-09T12:32:02.677Z",
+  "total": 241,
+  "lets": [
+    {
+      "name": "activeTool",
+      "line": 2122,
+      "readRefs": 108,
+      "writeRefs": 99,
+      "refs": 207,
+      "span": 36535,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "drawStrandStroke",
+      "line": 2197,
+      "readRefs": 133,
+      "writeRefs": 4,
+      "refs": 137,
+      "span": 35891,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "taperCurveEdit",
+      "line": 2308,
+      "readRefs": 117,
+      "writeRefs": 3,
+      "refs": 120,
+      "span": 31237,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "scalpBuilderCurveLattice",
+      "line": 2157,
+      "readRefs": 71,
+      "writeRefs": 2,
+      "refs": 73,
+      "span": 35966,
+      "bucket": "scalp"
+    },
+    {
+      "name": "camera",
+      "line": 462,
+      "readRefs": 62,
+      "writeRefs": 5,
+      "refs": 67,
+      "span": 38235,
+      "bucket": "camera/viewport"
+    },
+    {
+      "name": "viewportEditMode",
+      "line": 2422,
+      "readRefs": 16,
+      "writeRefs": 50,
+      "refs": 66,
+      "span": 36204,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "selectedId",
+      "line": 2096,
+      "readRefs": 53,
+      "writeRefs": 8,
+      "refs": 61,
+      "span": 36552,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "scalpBuilderEditing",
+      "line": 2147,
+      "readRefs": 53,
+      "writeRefs": 5,
+      "refs": 58,
+      "span": 36214,
+      "bucket": "scalp"
+    },
+    {
+      "name": "curveSurfaceDraft",
+      "line": 2205,
+      "readRefs": 50,
+      "writeRefs": 3,
+      "refs": 53,
+      "span": 36241,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "selectedStrandGroup",
+      "line": 2194,
+      "readRefs": 38,
+      "writeRefs": 14,
+      "refs": 52,
+      "span": 30852,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "sweepProfileEdit",
+      "line": 2306,
+      "readRefs": 46,
+      "writeRefs": 3,
+      "refs": 49,
+      "span": 30888,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "viewPlaneMoveDrag",
+      "line": 2299,
+      "readRefs": 41,
+      "writeRefs": 4,
+      "refs": 45,
+      "span": 35788,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "guideModel",
+      "line": 2059,
+      "readRefs": 40,
+      "writeRefs": 2,
+      "refs": 42,
+      "span": 24752,
+      "bucket": "guide/curve"
+    },
+    {
+      "name": "selectedPoint",
+      "line": 2191,
+      "readRefs": 25,
+      "writeRefs": 17,
+      "refs": 42,
+      "span": 36467,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "capsuleGuideEditing",
+      "line": 2148,
+      "readRefs": 30,
+      "writeRefs": 9,
+      "refs": 39,
+      "span": 36254,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "mirrorXEditing",
+      "line": 2139,
+      "readRefs": 36,
+      "writeRefs": 1,
+      "refs": 37,
+      "span": 33985,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "selectedGuideId",
+      "line": 2113,
+      "readRefs": 18,
+      "writeRefs": 18,
+      "refs": 36,
+      "span": 36528,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "placeEdit",
+      "line": 2196,
+      "readRefs": 31,
+      "writeRefs": 4,
+      "refs": 35,
+      "span": 36263,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "duplicatePlacement",
+      "line": 2423,
+      "readRefs": 28,
+      "writeRefs": 7,
+      "refs": 35,
+      "span": 35659,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "selectedCurveLatticePoint",
+      "line": 2181,
+      "readRefs": 14,
+      "writeRefs": 20,
+      "refs": 34,
+      "span": 34554,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "selectedStrandIds",
+      "line": 2097,
+      "readRefs": 31,
+      "writeRefs": 2,
+      "refs": 33,
+      "span": 34174,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "selectedControlPoints",
+      "line": 2182,
+      "readRefs": 20,
+      "writeRefs": 13,
+      "refs": 33,
+      "span": 36389,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "navigationStyle",
+      "line": 2225,
+      "readRefs": 16,
+      "writeRefs": 15,
+      "refs": 31,
+      "span": 34342,
+      "bucket": "camera/viewport"
+    },
+    {
+      "name": "activeHandleEdit",
+      "line": 2126,
+      "readRefs": 9,
+      "writeRefs": 20,
+      "refs": 29,
+      "span": 34611,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "scalpPaintEditing",
+      "line": 2145,
+      "readRefs": 26,
+      "writeRefs": 3,
+      "refs": 29,
+      "span": 36221,
+      "bucket": "scalp"
+    },
+    {
+      "name": "branchRegionCanvasDrag",
+      "line": 22778,
+      "readRefs": 22,
+      "writeRefs": 7,
+      "refs": 29,
+      "span": 483,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "proportionalEditing",
+      "line": 2141,
+      "readRefs": 26,
+      "writeRefs": 2,
+      "refs": 28,
+      "span": 35579,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "headSetupEditing",
+      "line": 2146,
+      "readRefs": 17,
+      "writeRefs": 10,
+      "refs": 27,
+      "span": 33477,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "loftSurfaceDraft",
+      "line": 2204,
+      "readRefs": 23,
+      "writeRefs": 3,
+      "refs": 26,
+      "span": 35886,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "scalpShapeEditing",
+      "line": 2143,
+      "readRefs": 21,
+      "writeRefs": 3,
+      "refs": 24,
+      "span": 36249,
+      "bucket": "scalp"
+    },
+    {
+      "name": "proportionalSizeEdit",
+      "line": 2215,
+      "readRefs": 21,
+      "writeRefs": 2,
+      "refs": 23,
+      "span": 36104,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "selectionMarqueeDrag",
+      "line": 2183,
+      "readRefs": 14,
+      "writeRefs": 8,
+      "refs": 22,
+      "span": 36355,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "relaxEdit",
+      "line": 2195,
+      "readRefs": 19,
+      "writeRefs": 3,
+      "refs": 22,
+      "span": 34363,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "viewSnapDrag",
+      "line": 2293,
+      "readRefs": 19,
+      "writeRefs": 3,
+      "refs": 22,
+      "span": 36388,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "proportionalHotkeyPress",
+      "line": 2216,
+      "readRefs": 16,
+      "writeRefs": 5,
+      "refs": 21,
+      "span": 36103,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "viewportBackgroundColor",
+      "line": 2249,
+      "readRefs": 15,
+      "writeRefs": 6,
+      "refs": 21,
+      "span": 32853,
+      "bucket": "camera/viewport"
+    },
+    {
+      "name": "preferencesOpenSnapshot",
+      "line": 2288,
+      "readRefs": 17,
+      "writeRefs": 4,
+      "refs": 21,
+      "span": 28830,
+      "bucket": "ui/panel"
+    },
+    {
+      "name": "clumpViewportSelection",
+      "line": 2112,
+      "readRefs": 9,
+      "writeRefs": 10,
+      "refs": 19,
+      "span": 34880,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "selectedReferenceImageId",
+      "line": 2117,
+      "readRefs": 10,
+      "writeRefs": 9,
+      "refs": 19,
+      "span": 27691,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "customScalpSurfaceMesh",
+      "line": 1612,
+      "readRefs": 15,
+      "writeRefs": 3,
+      "refs": 18,
+      "span": 32049,
+      "bucket": "scalp"
+    },
+    {
+      "name": "editedScalpSurfaceMesh",
+      "line": 1617,
+      "readRefs": 16,
+      "writeRefs": 2,
+      "refs": 18,
+      "span": 19726,
+      "bucket": "scalp"
+    },
+    {
+      "name": "scalpBuilderStep",
+      "line": 2154,
+      "readRefs": 16,
+      "writeRefs": 2,
+      "refs": 18,
+      "span": 3909,
+      "bucket": "scalp"
+    },
+    {
+      "name": "proceduralDuplicatePreview",
+      "line": 2426,
+      "readRefs": 9,
+      "writeRefs": 8,
+      "refs": 17,
+      "span": 29862,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "branchRegionView",
+      "line": 22899,
+      "readRefs": 13,
+      "writeRefs": 4,
+      "refs": 17,
+      "span": 107,
+      "bucket": "branch/sub"
+    },
+    {
+      "name": "transformDragging",
+      "line": 2131,
+      "readRefs": 12,
+      "writeRefs": 4,
+      "refs": 16,
+      "span": 35952,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "hierarchyEditing",
+      "line": 2138,
+      "readRefs": 14,
+      "writeRefs": 2,
+      "refs": 16,
+      "span": 33976,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "selectedCurveSurfaceController",
+      "line": 2192,
+      "readRefs": 8,
+      "writeRefs": 8,
+      "refs": 16,
+      "span": 34075,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "proceduralDrawExperimentalEnabled",
+      "line": 2219,
+      "readRefs": 13,
+      "writeRefs": 3,
+      "refs": 16,
+      "span": 32870,
+      "bucket": "draw/poly"
+    },
+    {
+      "name": "activeViewportPointer",
+      "line": 2294,
+      "readRefs": 10,
+      "writeRefs": 6,
+      "refs": 16,
+      "span": 34296,
+      "bucket": "camera/viewport"
+    },
+    {
+      "name": "customCreationPresets",
+      "line": 34620,
+      "readRefs": 12,
+      "writeRefs": 4,
+      "refs": 16,
+      "span": 274,
+      "bucket": "save/project"
+    },
+    {
+      "name": "selectedSurfaceObjectAnchorId",
+      "line": 2193,
+      "readRefs": 4,
+      "writeRefs": 11,
+      "refs": 15,
+      "span": 34541,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "radialMenusEnabled",
+      "line": 2218,
+      "readRefs": 13,
+      "writeRefs": 2,
+      "refs": 15,
+      "span": 32870,
+      "bucket": "ui/panel"
+    },
+    {
+      "name": "scalpRegionAssignments",
+      "line": 1471,
+      "readRefs": 13,
+      "writeRefs": 1,
+      "refs": 14,
+      "span": 19876,
+      "bucket": "scalp"
+    },
+    {
+      "name": "scalpBuilderEditedPoints",
+      "line": 2159,
+      "readRefs": 8,
+      "writeRefs": 6,
+      "refs": 14,
+      "span": 17267,
+      "bucket": "scalp"
+    },
+    {
+      "name": "altOrbitDrag",
+      "line": 2184,
+      "readRefs": 10,
+      "writeRefs": 4,
+      "refs": 14,
+      "span": 36497,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "controlPointDisplaySize",
+      "line": 2245,
+      "readRefs": 13,
+      "writeRefs": 1,
+      "refs": 14,
+      "span": 32856,
+      "bucket": "guide/curve"
+    },
+    {
+      "name": "strandRadialGesture",
+      "line": 2420,
+      "readRefs": 10,
+      "writeRefs": 4,
+      "refs": 14,
+      "span": 28279,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "branchRegionEdit",
+      "line": 22777,
+      "readRefs": 12,
+      "writeRefs": 2,
+      "refs": 14,
+      "span": 10510,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "scalpGuideSource",
+      "line": 1611,
+      "readRefs": 4,
+      "writeRefs": 9,
+      "refs": 13,
+      "span": 32054,
+      "bucket": "scalp"
+    },
+    {
+      "name": "capsuleGuideLoopSelection",
+      "line": 2150,
+      "readRefs": 8,
+      "writeRefs": 5,
+      "refs": 13,
+      "span": 8926,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "scalpBuilderPlane",
+      "line": 2156,
+      "readRefs": 10,
+      "writeRefs": 3,
+      "refs": 13,
+      "span": 3932,
+      "bucket": "scalp"
+    },
+    {
+      "name": "scalpLatticeDrag",
+      "line": 2190,
+      "readRefs": 11,
+      "writeRefs": 2,
+      "refs": 13,
+      "span": 35894,
+      "bucket": "scalp"
+    },
+    {
+      "name": "polyBrushStroke",
+      "line": 2199,
+      "readRefs": 7,
+      "writeRefs": 6,
+      "refs": 13,
+      "span": 33704,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "panelSplitDrag",
+      "line": 2206,
+      "readRefs": 10,
+      "writeRefs": 3,
+      "refs": 13,
+      "span": 35885,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "drawStrandMode",
+      "line": 2208,
+      "readRefs": 4,
+      "writeRefs": 9,
+      "refs": 13,
+      "span": 32693,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "cameraSmoothingEnabled",
+      "line": 2229,
+      "readRefs": 9,
+      "writeRefs": 4,
+      "refs": 13,
+      "span": 32863,
+      "bucket": "camera/viewport"
+    },
+    {
+      "name": "cameraSmoothingStrength",
+      "line": 2230,
+      "readRefs": 12,
+      "writeRefs": 1,
+      "refs": 13,
+      "span": 32863,
+      "bucket": "camera/viewport"
+    },
+    {
+      "name": "viewportStatisticsEnabled",
+      "line": 2237,
+      "readRefs": 11,
+      "writeRefs": 2,
+      "refs": 13,
+      "span": 32860,
+      "bucket": "camera/viewport"
+    },
+    {
+      "name": "defaultHairShader",
+      "line": 303,
+      "readRefs": 9,
+      "writeRefs": 3,
+      "refs": 12,
+      "span": 34800,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "capsuleGuidesVisible",
+      "line": 2085,
+      "readRefs": 6,
+      "writeRefs": 6,
+      "refs": 12,
+      "span": 33641,
+      "bucket": "guide/curve"
+    },
+    {
+      "name": "objectSpaceEditing",
+      "line": 2137,
+      "readRefs": 11,
+      "writeRefs": 1,
+      "refs": 12,
+      "span": 36010,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "layerColorShiftsEnabled",
+      "line": 2243,
+      "readRefs": 10,
+      "writeRefs": 2,
+      "refs": 12,
+      "span": 32856,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "sideNamingPerspective",
+      "line": 2257,
+      "readRefs": 10,
+      "writeRefs": 2,
+      "refs": 12,
+      "span": 36526,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "brushSizeDrag",
+      "line": 2289,
+      "readRefs": 8,
+      "writeRefs": 4,
+      "refs": 12,
+      "span": 34957,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "strandWidthEdgeDrag",
+      "line": 2290,
+      "readRefs": 8,
+      "writeRefs": 4,
+      "refs": 12,
+      "span": 35736,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "outlinerContextTarget",
+      "line": 2418,
+      "readRefs": 5,
+      "writeRefs": 7,
+      "refs": 12,
+      "span": 30333,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "toolRadialGesture",
+      "line": 2421,
+      "readRefs": 9,
+      "writeRefs": 3,
+      "refs": 12,
+      "span": 33520,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "scalpVisibleQuads",
+      "line": 1473,
+      "readRefs": 10,
+      "writeRefs": 1,
+      "refs": 11,
+      "span": 18907,
+      "bucket": "scalp"
+    },
+    {
+      "name": "editedScalpRegions",
+      "line": 1620,
+      "readRefs": 7,
+      "writeRefs": 4,
+      "refs": 11,
+      "span": 19724,
+      "bucket": "scalp"
+    },
+    {
+      "name": "curveLatticeGuidesVisible",
+      "line": 2086,
+      "readRefs": 5,
+      "writeRefs": 6,
+      "refs": 11,
+      "span": 33645,
+      "bucket": "guide/curve"
+    },
+    {
+      "name": "activeCurveLatticeGuideId",
+      "line": 2114,
+      "readRefs": 3,
+      "writeRefs": 8,
+      "refs": 11,
+      "span": 27670,
+      "bucket": "guide/curve"
+    },
+    {
+      "name": "capsuleGuideLoopDrag",
+      "line": 2151,
+      "readRefs": 7,
+      "writeRefs": 4,
+      "refs": 11,
+      "span": 35941,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "houdiniZoomDrag",
+      "line": 2187,
+      "readRefs": 8,
+      "writeRefs": 3,
+      "refs": 11,
+      "span": 24384,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "navigationTipsEnabled",
+      "line": 2224,
+      "readRefs": 9,
+      "writeRefs": 2,
+      "refs": 11,
+      "span": 32866,
+      "bucket": "camera/viewport"
+    },
+    {
+      "name": "toolTipsEnabled",
+      "line": 2235,
+      "readRefs": 9,
+      "writeRefs": 2,
+      "refs": 11,
+      "span": 32860,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "compactToolButtonsEnabled",
+      "line": 2236,
+      "readRefs": 9,
+      "writeRefs": 2,
+      "refs": 11,
+      "span": 32860,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "twistCurveAllStrandsPreviewEnabled",
+      "line": 2238,
+      "readRefs": 9,
+      "writeRefs": 2,
+      "refs": 11,
+      "span": 32860,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "outlinerFolderColorsEnabled",
+      "line": 2244,
+      "readRefs": 9,
+      "writeRefs": 2,
+      "refs": 11,
+      "span": 32856,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "pendingPlacedLockId",
+      "line": 2379,
+      "readRefs": 4,
+      "writeRefs": 7,
+      "refs": 11,
+      "span": 36085,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "customShapePresets",
+      "line": 16692,
+      "readRefs": 7,
+      "writeRefs": 4,
+      "refs": 11,
+      "span": 2402,
+      "bucket": "save/project"
+    },
+    {
+      "name": "scalpLatticeEditing",
+      "line": 2144,
+      "readRefs": 8,
+      "writeRefs": 2,
+      "refs": 10,
+      "span": 36231,
+      "bucket": "scalp"
+    },
+    {
+      "name": "capsuleGuideDrawStroke",
+      "line": 2198,
+      "readRefs": 6,
+      "writeRefs": 4,
+      "refs": 10,
+      "span": 35891,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "toolShortcutPress",
+      "line": 2217,
+      "readRefs": 6,
+      "writeRefs": 4,
+      "refs": 10,
+      "span": 28508,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "branchSweepStartDrag",
+      "line": 23273,
+      "readRefs": 7,
+      "writeRefs": 3,
+      "refs": 10,
+      "span": 4400,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "orthographicView",
+      "line": 463,
+      "readRefs": 8,
+      "writeRefs": 1,
+      "refs": 9,
+      "span": 35990,
+      "bucket": "camera/viewport"
+    },
+    {
+      "name": "activeHairMaterialId",
+      "line": 995,
+      "readRefs": 3,
+      "writeRefs": 6,
+      "refs": 9,
+      "span": 31953,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "customScalpRegions",
+      "line": 1615,
+      "readRefs": 6,
+      "writeRefs": 3,
+      "refs": 9,
+      "span": 19726,
+      "bucket": "scalp"
+    },
+    {
+      "name": "editedScalpSurfaceWire",
+      "line": 1618,
+      "readRefs": 8,
+      "writeRefs": 1,
+      "refs": 9,
+      "span": 4500,
+      "bucket": "scalp"
+    },
+    {
+      "name": "uvCheckerEnabled",
+      "line": 2077,
+      "readRefs": 8,
+      "writeRefs": 1,
+      "refs": 9,
+      "span": 33674,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "activeCustomDrawClumpTemplate",
+      "line": 2209,
+      "readRefs": 4,
+      "writeRefs": 5,
+      "refs": 9,
+      "span": 32691,
+      "bucket": "draw/poly"
+    },
+    {
+      "name": "taperMeshPointsVisible",
+      "line": 2309,
+      "readRefs": 7,
+      "writeRefs": 2,
+      "refs": 9,
+      "span": 31009,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "importedHeadAsset",
+      "line": 3229,
+      "readRefs": 2,
+      "writeRefs": 7,
+      "refs": 9,
+      "span": 15952,
+      "bucket": "head/body"
+    },
+    {
+      "name": "scheduledTaperCurveEditFrame",
+      "line": 17345,
+      "readRefs": 5,
+      "writeRefs": 4,
+      "refs": 9,
+      "span": 26,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "branchRegionZoomDrag",
+      "line": 22900,
+      "readRefs": 7,
+      "writeRefs": 2,
+      "refs": 9,
+      "span": 89,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "hoveredControlPoint",
+      "line": 38063,
+      "readRefs": 6,
+      "writeRefs": 3,
+      "refs": 9,
+      "span": 12,
+      "bucket": "guide/curve"
+    },
+    {
+      "name": "turntableActive",
+      "line": 465,
+      "readRefs": 7,
+      "writeRefs": 1,
+      "refs": 8,
+      "span": 38216,
+      "bucket": "camera/viewport"
+    },
+    {
+      "name": "transformScaleDrag",
+      "line": 677,
+      "readRefs": 5,
+      "writeRefs": 3,
+      "refs": 8,
+      "span": 32210,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "importedScalpGuideAsset",
+      "line": 1616,
+      "readRefs": 5,
+      "writeRefs": 3,
+      "refs": 8,
+      "span": 17586,
+      "bucket": "scalp"
+    },
+    {
+      "name": "showGroupColors",
+      "line": 2076,
+      "readRefs": 7,
+      "writeRefs": 1,
+      "refs": 8,
+      "span": 33674,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "scalpGuideVisible",
+      "line": 2082,
+      "readRefs": 5,
+      "writeRefs": 3,
+      "refs": 8,
+      "span": 5851,
+      "bucket": "scalp"
+    },
+    {
+      "name": "referenceOverlayDrag",
+      "line": 2120,
+      "readRefs": 4,
+      "writeRefs": 4,
+      "refs": 8,
+      "span": 9204,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "referenceCropDrag",
+      "line": 2121,
+      "readRefs": 4,
+      "writeRefs": 4,
+      "refs": 8,
+      "span": 9203,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "sculptMoveStroke",
+      "line": 2124,
+      "readRefs": 4,
+      "writeRefs": 4,
+      "refs": 8,
+      "span": 36169,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "activeCapsuleGuideLoopTransform",
+      "line": 2152,
+      "readRefs": 0,
+      "writeRefs": 8,
+      "refs": 8,
+      "span": 8486,
+      "bucket": "guide/curve"
+    },
+    {
+      "name": "placementPointer",
+      "line": 2213,
+      "readRefs": 5,
+      "writeRefs": 3,
+      "refs": 8,
+      "span": 36046,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "scaleSensitivity",
+      "line": 2234,
+      "readRefs": 7,
+      "writeRefs": 1,
+      "refs": 8,
+      "span": 32860,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "viewPlaneMoveEnabled",
+      "line": 2296,
+      "readRefs": 5,
+      "writeRefs": 3,
+      "refs": 8,
+      "span": 28861,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "sweepProfileMirrorEnabled",
+      "line": 2307,
+      "readRefs": 7,
+      "writeRefs": 1,
+      "refs": 8,
+      "span": 30839,
+      "bucket": "save/project"
+    },
+    {
+      "name": "taperMeshPointDrag",
+      "line": 2310,
+      "readRefs": 4,
+      "writeRefs": 4,
+      "refs": 8,
+      "span": 31154,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "proceduralAccessoryEditHistoryOpen",
+      "line": 34047,
+      "readRefs": 1,
+      "writeRefs": 7,
+      "refs": 8,
+      "span": 2153,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "compactOutlinerCollapsed",
+      "line": 38701,
+      "readRefs": 6,
+      "writeRefs": 2,
+      "refs": 8,
+      "span": 71,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "compactAttributeEditorCollapsed",
+      "line": 38702,
+      "readRefs": 6,
+      "writeRefs": 2,
+      "refs": 8,
+      "span": 73,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "orthographicHalfHeight",
+      "line": 464,
+      "readRefs": 3,
+      "writeRefs": 4,
+      "refs": 7,
+      "span": 10327,
+      "bucket": "camera/viewport"
+    },
+    {
+      "name": "customScalpSurfaceWire",
+      "line": 1613,
+      "readRefs": 5,
+      "writeRefs": 2,
+      "refs": 7,
+      "span": 4508,
+      "bucket": "scalp"
+    },
+    {
+      "name": "hairTopologyVisible",
+      "line": 2075,
+      "readRefs": 5,
+      "writeRefs": 2,
+      "refs": 7,
+      "span": 34392,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "uvInspectorDrag",
+      "line": 2081,
+      "readRefs": 4,
+      "writeRefs": 3,
+      "refs": 7,
+      "span": 33699,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "isolatedStrandIds",
+      "line": 2098,
+      "readRefs": 4,
+      "writeRefs": 3,
+      "refs": 7,
+      "span": 34166,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "lockIndex",
+      "line": 2115,
+      "readRefs": 5,
+      "writeRefs": 2,
+      "refs": 7,
+      "span": 27480,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "activeStrandObjectTransform",
+      "line": 2128,
+      "readRefs": 2,
+      "writeRefs": 5,
+      "refs": 7,
+      "span": 9765,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "activeLatticeMultiEdit",
+      "line": 2130,
+      "readRefs": 2,
+      "writeRefs": 5,
+      "refs": 7,
+      "span": 10514,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "scalpPaintDrag",
+      "line": 2178,
+      "readRefs": 5,
+      "writeRefs": 2,
+      "refs": 7,
+      "span": 35907,
+      "bucket": "scalp"
+    },
+    {
+      "name": "activeScalpRegion",
+      "line": 2179,
+      "readRefs": 2,
+      "writeRefs": 5,
+      "refs": 7,
+      "span": 31555,
+      "bucket": "scalp"
+    },
+    {
+      "name": "clumpUpdateInProgress",
+      "line": 2210,
+      "readRefs": 1,
+      "writeRefs": 6,
+      "refs": 7,
+      "span": 25757,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "shiftSnappedViewActive",
+      "line": 2295,
+      "readRefs": 1,
+      "writeRefs": 6,
+      "refs": 7,
+      "span": 34327,
+      "bucket": "ui/panel"
+    },
+    {
+      "name": "viewPlaneNormalMoveHeld",
+      "line": 2298,
+      "readRefs": 5,
+      "writeRefs": 2,
+      "refs": 7,
+      "span": 10276,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "pullMoveEnabled",
+      "line": 2300,
+      "readRefs": 5,
+      "writeRefs": 2,
+      "refs": 7,
+      "span": 28858,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "historyShortcutHeld",
+      "line": 2429,
+      "readRefs": 2,
+      "writeRefs": 5,
+      "refs": 7,
+      "span": 35886,
+      "bucket": "undo/history"
+    },
+    {
+      "name": "strandRadialActions",
+      "line": 2782,
+      "readRefs": 6,
+      "writeRefs": 1,
+      "refs": 7,
+      "span": 27688,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "branchRegionPanDrag",
+      "line": 22901,
+      "readRefs": 5,
+      "writeRefs": 2,
+      "refs": 7,
+      "span": 89,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "pendingCreationPresetType",
+      "line": 34782,
+      "readRefs": 0,
+      "writeRefs": 7,
+      "refs": 7,
+      "span": 198,
+      "bucket": "save/project"
+    },
+    {
+      "name": "transformPrecisionHeld",
+      "line": 679,
+      "readRefs": 3,
+      "writeRefs": 3,
+      "refs": 6,
+      "span": 35499,
+      "bucket": "gizmo/transform"
+    },
+    {
+      "name": "scalpManualRegionQuads",
+      "line": 1472,
+      "readRefs": 4,
+      "writeRefs": 2,
+      "refs": 6,
+      "span": 18011,
+      "bucket": "scalp"
+    },
+    {
+      "name": "activeSurfaceObjectTransform",
+      "line": 2127,
+      "readRefs": 2,
+      "writeRefs": 4,
+      "refs": 6,
+      "span": 34107,
+      "bucket": "gizmo/transform"
+    },
+    {
+      "name": "pendingLockGeometryFrame",
+      "line": 2133,
+      "readRefs": 2,
+      "writeRefs": 4,
+      "refs": 6,
+      "span": 25895,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "sculptBrushGeometryFrame",
+      "line": 2135,
+      "readRefs": 3,
+      "writeRefs": 3,
+      "refs": 6,
+      "span": 25854,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "pointRemovalCandidate",
+      "line": 2186,
+      "readRefs": 0,
+      "writeRefs": 6,
+      "refs": 6,
+      "span": 36045,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "branchBridgeSmoothStrength",
+      "line": 2270,
+      "readRefs": 2,
+      "writeRefs": 4,
+      "refs": 6,
+      "span": 32757,
+      "bucket": "branch/sub"
+    },
+    {
+      "name": "branchBridgeSmoothDetail",
+      "line": 2274,
+      "readRefs": 2,
+      "writeRefs": 4,
+      "refs": 6,
+      "span": 32764,
+      "bucket": "branch/sub"
+    },
+    {
+      "name": "hoveredStrandWidthEdge",
+      "line": 2291,
+      "readRefs": 1,
+      "writeRefs": 5,
+      "refs": 6,
+      "span": 35728,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "selectionSetsOpen",
+      "line": 2412,
+      "readRefs": 3,
+      "writeRefs": 3,
+      "refs": 6,
+      "span": 29824,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "activeOutlinerTab",
+      "line": 2417,
+      "readRefs": 0,
+      "writeRefs": 6,
+      "refs": 6,
+      "span": 5370,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "toolRadialActions",
+      "line": 2787,
+      "readRefs": 5,
+      "writeRefs": 1,
+      "refs": 6,
+      "span": 28354,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "pendingShapePresetSave",
+      "line": 16693,
+      "readRefs": 0,
+      "writeRefs": 6,
+      "refs": 6,
+      "span": 18289,
+      "bucket": "save/project"
+    },
+    {
+      "name": "pendingShapePresetRemoval",
+      "line": 16694,
+      "readRefs": 1,
+      "writeRefs": 5,
+      "refs": 6,
+      "span": 18294,
+      "bucket": "save/project"
+    },
+    {
+      "name": "pendingCreationPresetRemoval",
+      "line": 34783,
+      "readRefs": 1,
+      "writeRefs": 5,
+      "refs": 6,
+      "span": 204,
+      "bucket": "save/project"
+    },
+    {
+      "name": "customScalpSelectionOutline",
+      "line": 1614,
+      "readRefs": 3,
+      "writeRefs": 2,
+      "refs": 5,
+      "span": 4508,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "editedScalpSelectionOutline",
+      "line": 1619,
+      "readRefs": 4,
+      "writeRefs": 1,
+      "refs": 5,
+      "span": 4500,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "headMeshVisible",
+      "line": 2094,
+      "readRefs": 1,
+      "writeRefs": 4,
+      "refs": 5,
+      "span": 33642,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "bodyMeshVisible",
+      "line": 2095,
+      "readRefs": 2,
+      "writeRefs": 3,
+      "refs": 5,
+      "span": 33646,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "referenceImageIndex",
+      "line": 2116,
+      "readRefs": 3,
+      "writeRefs": 2,
+      "refs": 5,
+      "span": 17270,
+      "bucket": "reference"
+    },
+    {
+      "name": "referenceScaleDrag",
+      "line": 2119,
+      "readRefs": 3,
+      "writeRefs": 2,
+      "refs": 5,
+      "span": -1281,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "activeGuideObjectTransform",
+      "line": 2129,
+      "readRefs": 0,
+      "writeRefs": 5,
+      "refs": 5,
+      "span": 9475,
+      "bucket": "guide/curve"
+    },
+    {
+      "name": "recursiveHierarchyTransforms",
+      "line": 2140,
+      "readRefs": 4,
+      "writeRefs": 1,
+      "refs": 5,
+      "span": 32871,
+      "bucket": "gizmo/transform"
+    },
+    {
+      "name": "activeScalpBuilderCurveLatticeEdit",
+      "line": 2158,
+      "readRefs": 1,
+      "writeRefs": 4,
+      "refs": 5,
+      "span": 3884,
+      "bucket": "scalp"
+    },
+    {
+      "name": "selectPointerCapture",
+      "line": 2189,
+      "readRefs": 2,
+      "writeRefs": 3,
+      "refs": 5,
+      "span": 24314,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "polyAltDeleteCandidate",
+      "line": 2200,
+      "readRefs": 0,
+      "writeRefs": 5,
+      "refs": 5,
+      "span": 36029,
+      "bucket": "draw/poly"
+    },
+    {
+      "name": "polyShiftPreviewHeld",
+      "line": 2203,
+      "readRefs": 1,
+      "writeRefs": 4,
+      "refs": 5,
+      "span": 33981,
+      "bucket": "draw/poly"
+    },
+    {
+      "name": "branchRigidCurvatureBlend",
+      "line": 2266,
+      "readRefs": 2,
+      "writeRefs": 3,
+      "refs": 5,
+      "span": 32751,
+      "bucket": "branch/sub"
+    },
+    {
+      "name": "branchRegionSyncLateral",
+      "line": 2280,
+      "readRefs": 1,
+      "writeRefs": 4,
+      "refs": 5,
+      "span": 32765,
+      "bucket": "branch/sub"
+    },
+    {
+      "name": "branchRegionSyncVertical",
+      "line": 2284,
+      "readRefs": 1,
+      "writeRefs": 4,
+      "refs": 5,
+      "span": 32767,
+      "bucket": "branch/sub"
+    },
+    {
+      "name": "brushSizeHotkeyHeld",
+      "line": 2292,
+      "readRefs": 2,
+      "writeRefs": 3,
+      "refs": 5,
+      "span": 35198,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "proceduralDuplicateModeActive",
+      "line": 2424,
+      "readRefs": 1,
+      "writeRefs": 4,
+      "refs": 5,
+      "span": 29466,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "proceduralDuplicateWindowSourceIds",
+      "line": 2425,
+      "readRefs": 1,
+      "writeRefs": 4,
+      "refs": 5,
+      "span": 29189,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "restoringHistory",
+      "line": 2428,
+      "readRefs": 1,
+      "writeRefs": 4,
+      "refs": 5,
+      "span": 17197,
+      "bucket": "undo/history"
+    },
+    {
+      "name": "groupDefaultsWarningContinuation",
+      "line": 3132,
+      "readRefs": 0,
+      "writeRefs": 5,
+      "refs": 5,
+      "span": 29927,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "panelSplitSnapWarningContinuation",
+      "line": 3137,
+      "readRefs": 0,
+      "writeRefs": 5,
+      "refs": 5,
+      "span": 31188,
+      "bucket": "ui/panel"
+    },
+    {
+      "name": "taperCurveEditInteractiveDirty",
+      "line": 17346,
+      "readRefs": 1,
+      "writeRefs": 4,
+      "refs": 5,
+      "span": 26,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "proceduralAccessoryEditPointerActive",
+      "line": 34048,
+      "readRefs": 1,
+      "writeRefs": 4,
+      "refs": 5,
+      "span": 2151,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "pendingClumpPresetGuideId",
+      "line": 34784,
+      "readRefs": 1,
+      "writeRefs": 4,
+      "refs": 5,
+      "span": 197,
+      "bucket": "guide/curve"
+    },
+    {
+      "name": "sculptBrushViableLockIds",
+      "line": 37327,
+      "readRefs": 2,
+      "writeRefs": 3,
+      "refs": 5,
+      "span": 46,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "turntableSpeed",
+      "line": 466,
+      "readRefs": 3,
+      "writeRefs": 1,
+      "refs": 4,
+      "span": 38219,
+      "bucket": "camera/viewport"
+    },
+    {
+      "name": "selectionRemoveHeld",
+      "line": 680,
+      "readRefs": 1,
+      "writeRefs": 3,
+      "refs": 4,
+      "span": 35499,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "hairMaterialIndex",
+      "line": 994,
+      "readRefs": 2,
+      "writeRefs": 2,
+      "refs": 4,
+      "span": 18401,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "sculptBrushShiftSmoothHeld",
+      "line": 2125,
+      "readRefs": 2,
+      "writeRefs": 2,
+      "refs": 4,
+      "span": 8841,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "capsuleGuideLoopHover",
+      "line": 2149,
+      "readRefs": 1,
+      "writeRefs": 3,
+      "refs": 4,
+      "span": 8239,
+      "bucket": "guide/curve"
+    },
+    {
+      "name": "curveLatticeLoopHover",
+      "line": 2153,
+      "readRefs": 3,
+      "writeRefs": 1,
+      "refs": 4,
+      "span": 6776,
+      "bucket": "guide/curve"
+    },
+    {
+      "name": "scalpBuilderStroke",
+      "line": 2155,
+      "readRefs": 3,
+      "writeRefs": 1,
+      "refs": 4,
+      "span": 35931,
+      "bucket": "scalp"
+    },
+    {
+      "name": "curvePointInsertionCandidate",
+      "line": 2188,
+      "readRefs": 0,
+      "writeRefs": 4,
+      "refs": 4,
+      "span": 36042,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "activeCapsuleGuideEdit",
+      "line": 2207,
+      "readRefs": 2,
+      "writeRefs": 2,
+      "refs": 4,
+      "span": 7751,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "viewPlaneMoveSnappedOnly",
+      "line": 2297,
+      "readRefs": 2,
+      "writeRefs": 2,
+      "refs": 4,
+      "span": 10135,
+      "bucket": "ui/panel"
+    },
+    {
+      "name": "pullRigidity",
+      "line": 2302,
+      "readRefs": 3,
+      "writeRefs": 1,
+      "refs": 4,
+      "span": 31660,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "branchRegionMeshPointsVisible",
+      "line": 2362,
+      "readRefs": 2,
+      "writeRefs": 2,
+      "refs": 4,
+      "span": 30938,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "rebuildingProceduralDuplicatePreview",
+      "line": 2427,
+      "readRefs": 2,
+      "writeRefs": 2,
+      "refs": 4,
+      "span": 29215,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "inputUndoCaptured",
+      "line": 2430,
+      "readRefs": 1,
+      "writeRefs": 3,
+      "refs": 4,
+      "span": 30028,
+      "bucket": "ui/panel"
+    },
+    {
+      "name": "groupDefaultsWarningAcknowledged",
+      "line": 3131,
+      "readRefs": 3,
+      "writeRefs": 1,
+      "refs": 4,
+      "span": 29918,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "activePresetFilter",
+      "line": 3220,
+      "readRefs": 1,
+      "writeRefs": 3,
+      "refs": 4,
+      "span": 30455,
+      "bucket": "save/project"
+    },
+    {
+      "name": "currentProjectName",
+      "line": 3221,
+      "readRefs": 0,
+      "writeRefs": 4,
+      "refs": 4,
+      "span": 16767,
+      "bucket": "save/project"
+    },
+    {
+      "name": "viewportFrameCycleStep",
+      "line": 10824,
+      "readRefs": 0,
+      "writeRefs": 4,
+      "refs": 4,
+      "span": 26,
+      "bucket": "camera/viewport"
+    },
+    {
+      "name": "enterHeadSetupAfterHeadImport",
+      "line": 33622,
+      "readRefs": 0,
+      "writeRefs": 4,
+      "refs": 4,
+      "span": 14,
+      "bucket": "head/body"
+    },
+    {
+      "name": "enterHeadSetupAfterFullBodyImport",
+      "line": 33623,
+      "readRefs": 0,
+      "writeRefs": 4,
+      "refs": 4,
+      "span": 29,
+      "bucket": "head/body"
+    },
+    {
+      "name": "uniformScaleDrag",
+      "line": 676,
+      "readRefs": 0,
+      "writeRefs": 3,
+      "refs": 3,
+      "span": 32123,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "transformPrecisionDrag",
+      "line": 678,
+      "readRefs": 0,
+      "writeRefs": 3,
+      "refs": 3,
+      "span": 32177,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "defaultScalpGeometryData",
+      "line": 1432,
+      "readRefs": 0,
+      "writeRefs": 3,
+      "refs": 3,
+      "span": 13,
+      "bucket": "scalp"
+    },
+    {
+      "name": "scalpQuadEdges",
+      "line": 1446,
+      "readRefs": 2,
+      "writeRefs": 1,
+      "refs": 3,
+      "span": 353,
+      "bucket": "scalp"
+    },
+    {
+      "name": "uvInspectorDirty",
+      "line": 2079,
+      "readRefs": 1,
+      "writeRefs": 2,
+      "refs": 3,
+      "span": 26141,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "pendingReferenceImageType",
+      "line": 2118,
+      "readRefs": 0,
+      "writeRefs": 3,
+      "refs": 3,
+      "span": 33319,
+      "bucket": "reference"
+    },
+    {
+      "name": "viewportSelectionMode",
+      "line": 2123,
+      "readRefs": 0,
+      "writeRefs": 3,
+      "refs": 3,
+      "span": 4773,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "scalpBuilderCurveLatticeLoadToken",
+      "line": 2160,
+      "readRefs": 1,
+      "writeRefs": 2,
+      "refs": 3,
+      "span": 2858,
+      "bucket": "scalp"
+    },
+    {
+      "name": "scalpBuilderCurveLatticePromise",
+      "line": 2161,
+      "readRefs": 1,
+      "writeRefs": 2,
+      "refs": 3,
+      "span": 2295,
+      "bucket": "scalp"
+    },
+    {
+      "name": "selectedScalpLatticeIndex",
+      "line": 2180,
+      "readRefs": 0,
+      "writeRefs": 3,
+      "refs": 3,
+      "span": 36204,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "blenderNavigationDrag",
+      "line": 2185,
+      "readRefs": 1,
+      "writeRefs": 2,
+      "refs": 3,
+      "span": 24304,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "polyFillPreviewGroup",
+      "line": 2201,
+      "readRefs": 1,
+      "writeRefs": 2,
+      "refs": 3,
+      "span": 19474,
+      "bucket": "draw/poly"
+    },
+    {
+      "name": "branchUpdateInProgress",
+      "line": 2211,
+      "readRefs": 1,
+      "writeRefs": 2,
+      "refs": 3,
+      "span": 25757,
+      "bucket": "branch/sub"
+    },
+    {
+      "name": "regionLengthUpdateInProgress",
+      "line": 2212,
+      "readRefs": 1,
+      "writeRefs": 2,
+      "refs": 3,
+      "span": 25700,
+      "bucket": "branch/sub"
+    },
+    {
+      "name": "emptySelectionPointer",
+      "line": 2214,
+      "readRefs": 0,
+      "writeRefs": 3,
+      "refs": 3,
+      "span": 36033,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "strandRadialTargetId",
+      "line": 2419,
+      "readRefs": 0,
+      "writeRefs": 3,
+      "refs": 3,
+      "span": 28173,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "pendingDroppedApplicationFile",
+      "line": 2680,
+      "readRefs": 0,
+      "writeRefs": 3,
+      "refs": 3,
+      "span": 30938,
+      "bucket": "save/project"
+    },
+    {
+      "name": "pendingDroppedApplicationKind",
+      "line": 2681,
+      "readRefs": 0,
+      "writeRefs": 3,
+      "refs": 3,
+      "span": 30938,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "pendingDroppedApplicationHandle",
+      "line": 2682,
+      "readRefs": 1,
+      "writeRefs": 2,
+      "refs": 3,
+      "span": 30938,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "quickSaveFileHandle",
+      "line": 3223,
+      "readRefs": 0,
+      "writeRefs": 3,
+      "refs": 3,
+      "span": 15989,
+      "bucket": "save/project"
+    },
+    {
+      "name": "quickSaveFileName",
+      "line": 3224,
+      "readRefs": 0,
+      "writeRefs": 3,
+      "refs": 3,
+      "span": 15989,
+      "bucket": "save/project"
+    },
+    {
+      "name": "scalpTopologyTemplatePromise",
+      "line": 4410,
+      "readRefs": 1,
+      "writeRefs": 2,
+      "refs": 3,
+      "span": 34,
+      "bucket": "scalp"
+    },
+    {
+      "name": "viewportFrameSelectionKey",
+      "line": 10825,
+      "readRefs": 1,
+      "writeRefs": 2,
+      "refs": 3,
+      "span": 19,
+      "bucket": "selection/outliner"
+    },
+    {
+      "name": "fpsFrameCount",
+      "line": 38667,
+      "readRefs": 1,
+      "writeRefs": 2,
+      "refs": 3,
+      "span": 11,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "scalpActiveVertexIndices",
+      "line": 1447,
+      "readRefs": 1,
+      "writeRefs": 1,
+      "refs": 2,
+      "span": 24609,
+      "bucket": "scalp"
+    },
+    {
+      "name": "authoredScalpGuideMatrix",
+      "line": 2060,
+      "readRefs": 1,
+      "writeRefs": 1,
+      "refs": 2,
+      "span": 2400,
+      "bucket": "scalp"
+    },
+    {
+      "name": "uvCheckerTexture",
+      "line": 2078,
+      "readRefs": 0,
+      "writeRefs": 2,
+      "refs": 2,
+      "span": 26202,
+      "bucket": "hair/mesh"
+    },
+    {
+      "name": "proportionalRootLocked",
+      "line": 2142,
+      "readRefs": 1,
+      "writeRefs": 1,
+      "refs": 2,
+      "span": 33701,
+      "bucket": "sculpt/edit"
+    },
+    {
+      "name": "polyFillPreviewCandidate",
+      "line": 2202,
+      "readRefs": 0,
+      "writeRefs": 2,
+      "refs": 2,
+      "span": 19514,
+      "bucket": "draw/poly"
+    },
+    {
+      "name": "pullCollisionEnabled",
+      "line": 2301,
+      "readRefs": 1,
+      "writeRefs": 1,
+      "refs": 2,
+      "span": 31664,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "lastHorizontalViewAxis",
+      "line": 2303,
+      "readRefs": 2,
+      "writeRefs": 0,
+      "refs": 2,
+      "span": 34356,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "panelSplitSnapWarningAcknowledged",
+      "line": 3136,
+      "readRefs": 1,
+      "writeRefs": 1,
+      "refs": 2,
+      "span": 31187,
+      "bucket": "ui/panel"
+    },
+    {
+      "name": "projectSaveInProgress",
+      "line": 3222,
+      "readRefs": 0,
+      "writeRefs": 2,
+      "refs": 2,
+      "span": 15925,
+      "bucket": "save/project"
+    },
+    {
+      "name": "lastExport",
+      "line": 3225,
+      "readRefs": 0,
+      "writeRefs": 2,
+      "refs": 2,
+      "span": 15924,
+      "bucket": "save/project"
+    },
+    {
+      "name": "quickExportFileHandle",
+      "line": 3226,
+      "readRefs": 0,
+      "writeRefs": 2,
+      "refs": 2,
+      "span": 15925,
+      "bucket": "save/project"
+    },
+    {
+      "name": "quickExportInProgress",
+      "line": 3227,
+      "readRefs": 0,
+      "writeRefs": 2,
+      "refs": 2,
+      "span": 15926,
+      "bucket": "save/project"
+    },
+    {
+      "name": "pendingFileAction",
+      "line": 3228,
+      "readRefs": 0,
+      "writeRefs": 2,
+      "refs": 2,
+      "span": 15927,
+      "bucket": "save/project"
+    },
+    {
+      "name": "fpsSampleStart",
+      "line": 38668,
+      "readRefs": 0,
+      "writeRefs": 2,
+      "refs": 2,
+      "span": 11,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "previousAnimationTimestamp",
+      "line": 38669,
+      "readRefs": 1,
+      "writeRefs": 1,
+      "refs": 2,
+      "span": 4,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "braidSegmentTemplate",
+      "line": 2072,
+      "readRefs": 0,
+      "writeRefs": 1,
+      "refs": 1,
+      "span": 1539,
+      "bucket": "(unclassified)"
+    },
+    {
+      "name": "braidSegmentBounds",
+      "line": 2073,
+      "readRefs": 0,
+      "writeRefs": 1,
+      "refs": 1,
+      "span": 1539,
+      "bucket": "(unclassified)"
+    }
+  ]
+}

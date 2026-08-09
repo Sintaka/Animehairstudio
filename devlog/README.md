@@ -26,6 +26,7 @@ python -m http.server 8080 --bind 127.0.0.1
 | **新 Agent 快速入口（保留代码清单 + 决策总览，先读这个）** | [AGENT_QUICKSTART.md](AGENT_QUICKSTART.md) |
 | 重构计划 / 执行状态 | [REFACTOR_PLAN.md](REFACTOR_PLAN.md) |
 | 函数索引（机器生成，函数名→行号→calls） | [FUNCTION_INDEX.md](FUNCTION_INDEX.md)（`node scripts/gen-function-index.js` 重新生成） |
+| 全局状态登记表（机器生成，241 个 let 按 refs/子系统排序，阶段 3 地图） | [GLOBAL_LET_INVENTORY.md](GLOBAL_LET_INVENTORY.md)（`node scripts/gen-let-inventory.js` 重新生成） |
 | 开发规范 / 持续修改功能（本地适配清单）/ 许可证 | [development-standards.md](development-standards.md) |
 | JS 改动标注（索引 + 6 个子系统专题） | [js-change-annotations.md](js-change-annotations.md)（索引）+ [annotations-bridge.md](annotations-bridge.md) / [annotations-region-panel.md](annotations-region-panel.md) / [annotations-root-bone.md](annotations-root-bone.md) / [annotations-split.md](annotations-split.md) / [annotations-display-fixes.md](annotations-display-fixes.md) / [annotations-adapt.md](annotations-adapt.md) |
 | Bug 修复 / 已知问题 | [bug-fixes.md](bug-fixes.md) |
