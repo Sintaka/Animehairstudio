@@ -31,4 +31,4 @@ This repository is a local adaptation of the original project. My own code chang
 - When the parent does not use topology connect (e.g. Split Geometry), the child falls back to direct generation (sweep from its root).
 - Detailed notes: `devlog/js-change-annotations.md` (Phase 2.x), `devlog/main-sync-conflicts.md`.
 
-See `devlog/README.md` for detailed change annotations.
+**New agent / developer onboarding:** start with [devlog/AGENT_QUICKSTART.md](devlog/AGENT_QUICKSTART.md) — it lists which code must be preserved and the decisions behind them. See [devlog/README.md](devlog/README.md) for the full devlog index and detailed change annotations.

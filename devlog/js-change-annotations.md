@@ -6,6 +6,20 @@
 
 > 以 main 分支（原版本）为基准，记录本地适配的差别/新增功能。
 
+## 子系统索引（先 grep 关键词，再跳读对应条目，不要全文顺序读）
+
+| 子系统 | 关键词 / 函数（app.js 行号可 `Select-String` 定位） | 对应条目 |
+|---|---|---|
+| 子发片桥接（几何） | `buildBranchBridgeGeometry` / `createBranchChildGeometry` / `modules/branch-connect.js` | 2.4a→2.4u、0.2.43–0.2.45 |
+| 父发片挖洞 | `applyBranchRootRegionCarving` / `triangleEdgeMasks` | 2.2、2.4p、0.2.54 |
+| Region 选区 / 面板 | `branchRootRegion` / `normalizeBranchRootRegion` / `syncBranchRootRegionOffsets` / `updateBranchRootRegionCenter` / `branchRegionNavAction` | 2.1、2.4u、0.2.40–0.2.47、0.2.52–0.2.53 |
+| 根骨骼 gizmo / twist / H 模式 | `captureBranchLocalState` / `pointerHitsTransformGizmo` / sweep 起始手柄 | Phase 2.15、0.2.38–0.2.42 |
+| split 父发片兼容 | `splitFusedGrid` / `parentSupportsTopologyConnect` / `createSplitStrandGeometry` | 0.2.49–0.2.51、0.2.54 |
+| 刘海 / 面板线框三角面 | `createPanelStrandGeometry` / `addQuad` / `triangleEdgeMasks` / authoredEdgeMasks | 0.2.54–0.2.56 |
+| 保存 / 导出 | `saveHairProjectQuickly` / `exportHairProjectQuickly` / File System Access API | 顶部条目、0.2.48 |
+| 语言 / 导航 / 笔刷 | `localization.js` / Navigation style / `sculpt-brush.js` | 顶部条目、v0.1.4 迁移 |
+
+> 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只按需跳读。
 - **app.js**
   - 新增 Quick Save（Ctrl+S）/ Save as（Ctrl+Shift+S）：`saveHairProjectFile` 优先用 File System Access API 写盘并记住文件句柄，浏览器不支持时回退原下载对话框；新增 `saveHairProjectQuickly` 覆盖保存到上次文件；全局 keydown 拦截 Ctrl+S / Ctrl+Shift+S（代替浏览器默认"保存网页"，原快捷键说明不改动，新增内容放在独立「Local Adaptation」分区）。
   - 雕刻笔刷选择遮罩：新增 `sculptBrushSelectionMask`；`sculptBrushUnits` / `updateSculptBrushViabilityPlane` 增加选择过滤（未选中 → 所有可见头发可雕刻；选中 → 仅选中头发可雕刻）。

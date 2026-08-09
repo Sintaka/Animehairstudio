@@ -35,6 +35,11 @@
 | 材质面板删除材质 | 启用 | 删除按钮 + Delete 键；默认材质不可删 |
 | Ctrl+Z 修复 | 启用 | modules/shortcut-registry.js 对非文本输入控件放行 |
 | start-dev-server.cmd 本地服务器 | 启用 | python -m http.server 8080 |
+| 子发片拓扑衔接系统（父发片挖洞 + 低模水密桥接 + Region 选区 + 根骨骼工作流） | 启用 | main 完全没有；`createHairGeometry` 按 `lock.branchRootRegion` 分流（`createBranchChildGeometry` / `buildBranchBridgeGeometry` / `applyBranchRootRegionCarving`，`modules/branch-connect.js`）；子发片仅支持单发丝默认预设 |
+| split 父发片兼容（索引侧 fused 网格） | 启用 | 0.2.49 起父无 gridRows/quadFaces 时子发片退回直接生成；0.2.50–0.2.51 索引侧拼接 `splitFusedGrid`（保留两管渲染）；0.2.54 挖洞后同步裁剪 masks |
+| Branch Bridge Smooth（Strength / Detail） | 启用 | 独立 Branch Bridge 面板，仅选中子发片时显示；标准 float+滑杆+重置（0.2.45–0.2.47） |
+| Region 同步速度滑块（Sync L/R、Sync U/D） | 启用 | Branch Root Region 面板；默认 L/R 0.45、U/D 1.0；`updateBranchRootRegionCenter` 按速度缩放（0.2.52–0.2.53） |
+| 刘海 / 面板线框三角面显示修复 | 启用 | 显示层 masks 修复（0.2.54–0.2.56）；导出数据一直是四边面；详见 bug-fixes.md #3 |
 | 拖放统一分发 | deprecated | main 0.1.4 已有应用文件拖放确认对话框，本地实现已删除 |
 | 雕刻笔刷选择遮罩 | deprecated | main 0.1.4 已有 sculptBrushSelectionAllows，本地实现已删除 |
 
