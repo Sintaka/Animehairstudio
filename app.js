@@ -1,3 +1,4 @@
+import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260809-15";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-14";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";
 import { createMiscStore } from "./modules/core/misc-store.js?v=20260809-12";
@@ -17852,6 +17853,16 @@ function decoupleMirroredClump(guide) {
   return true;
 }
 
+const branchRegion = createBranchRegionApi({
+  locks, rebuildLockGeometry, updateCurveObjects, getSelectedLock, pushUndoState,
+  resize, pointerToNdc, closeSweepProfileEditor, closeTaperCurveEditor,
+  branchRootRegionWorldPoints, strandGeometryCurve, raycaster, camera, renderer,
+  branchState: branch.state, sculptState: sculptState.state, viewportState: viewportState.state,
+  selState: sel.state, hairState: hairState.state,
+  branchRegionMeshPointsGroup, branchRegionMeshPointGeometry, branchRegionMeshPointMaterial, branchRegionCenterMeshPointMaterial
+});
+
+
 function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), options = {}) {
   if (!lock || !partner || partner === lock) return null;
   partner.outlinerVisible = lock.outlinerVisible !== false;
@@ -17996,7 +18007,7 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   partner.branchLocalSurfaceNormals = lock.branchLocalSurfaceNormals?.map((normal) => (
     normal ? new THREE.Vector3(-normal.x, normal.y, normal.z) : null
   )) || null;
-  partner.branchRootRegion = cloneBranchRootRegion(lock.branchRootRegion, { mirror: true });
+  partner.branchRootRegion = branchRegion.cloneBranchRootRegion(lock.branchRootRegion, { mirror: true });
   partner.pointScales = lock.pointScales.map((scale) => ({ x: scale.x, z: scale.z }));
   partner.pointWidths = [...lock.pointWidths];
   partner.pointTwists = lock.pointTwists.map((twist) => -twist);
@@ -18228,7 +18239,7 @@ function snapshotState() {
       branchParentParameter: THREE.MathUtils.clamp(Number(lock.branchParentParameter ?? 0), 0, 1),
       branchLocalPoints: lock.branchLocalPoints?.map(vectorToData) || null,
       branchLocalSurfaceNormals: lock.branchLocalSurfaceNormals?.map((normal) => normal ? vectorToData(normal) : null) || null,
-      branchRootRegion: cloneBranchRootRegion(lock.branchRootRegion),
+      branchRootRegion: branchRegion.cloneBranchRootRegion(lock.branchRootRegion),
       branchCurvesAuthored: Boolean(lock.branchCurvesAuthored),
       branchSweepStartT: THREE.MathUtils.clamp(Number(lock.branchSweepStartT ?? 0.1), 0.02, 0.6),
       rootSurfacePoint: lock.rootSurfacePoint ? vectorToData(lock.rootSurfacePoint) : null,
@@ -19591,8 +19602,8 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     branchParentParameter: THREE.MathUtils.clamp(Number(snapshot.branchParentParameter ?? 0), 0, 1),
     branchLocalPoints: snapshot.branchLocalPoints?.map(dataToVector) || null,
     branchLocalSurfaceNormals: snapshot.branchLocalSurfaceNormals?.map((normal) => normal ? dataToVector(normal) : null) || null,
-    branchRootRegion: cloneBranchRootRegion(snapshot.branchRootRegion),
-    branchRootRegion: cloneBranchRootRegion(snapshot.branchRootRegion) || (snapshot.branchParentId ? branchRootRegionFromParam(snapshot.branchParentParameter ?? 0) : null),
+    branchRootRegion: branchRegion.cloneBranchRootRegion(snapshot.branchRootRegion),
+    branchRootRegion: branchRegion.cloneBranchRootRegion(snapshot.branchRootRegion) || (snapshot.branchParentId ? branchRegion.branchRootRegionFromParam(snapshot.branchParentParameter ?? 0) : null),
     branchCurvesAuthored: Boolean(snapshot.branchCurvesAuthored),
     branchSweepStartT: THREE.MathUtils.clamp(Number(snapshot.branchSweepStartT ?? 0.1), 0.02, 0.6),
     rootSurfacePoint: snapshot.rootSurfacePoint ? dataToVector(snapshot.rootSurfacePoint) : null,
@@ -19601,8 +19612,8 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     placementFrame: snapshot.placementFrame ? frameFromData(snapshot.placementFrame) : null
   };
   if (lock.branchRootRegion) {
-    normalizeBranchRootRegion(lock);
-    syncBranchRootRegionOffsets(lock);
+    branchRegion.normalizeBranchRootRegion(lock);
+    branchRegion.syncBranchRootRegionOffsets(lock);
   }
   lock.rootAttachment = lock.rootAttachmentEnabled && !deferRootAttachment
     ? rootAttachmentFromData(snapshot.rootAttachment || null, lock, {
@@ -22305,7 +22316,7 @@ function enforceBranchRootPosition(lock) {
     const d = p.distanceToSquared(lock.points[0]);
     if (d < bestDist) { bestDist = d; bestT = t; }
   }
-  lock.branchParentParameter = clampRegionParam(bestT);
+  lock.branchParentParameter = branchRegion.clampRegionParam(bestT);
   const frame = branchParentFrame(parent, lock.branchParentParameter);
   // The root slides in the parent's width plane: keep the across-width (frame.x)
   // component of the drag and project back onto the parent surface.
@@ -22321,9 +22332,9 @@ function enforceBranchRootPosition(lock) {
     -halfWidth,
     halfWidth
   );
-  const v = clampRegionParam(0.5 - across / width);
+  const v = branchRegion.clampRegionParam(0.5 - across / width);
   // Follow the selection region with the root (u and v centers).
-  updateBranchRootRegionCenter(lock, lock.branchParentParameter, v);
+  branchRegion.updateBranchRootRegionCenter(lock, lock.branchParentParameter, v);
   const rootPoint = frame.point.clone().addScaledVector(frame.x, across);
   lock.points[0].copy(rootPoint);
   if (lock.groupLatticeBasePoints?.[0]) lock.groupLatticeBasePoints[0].copy(rootPoint);
@@ -22343,71 +22354,9 @@ function enforceBranchRootPosition(lock) {
 // The offsets are what recenter (root slide / rect move) preserves, so clamping at
 // the [0,1] boundary during a drag cannot permanently collapse the region into a
 // thin line that needs to be re-dragged back open.
-function syncBranchRootRegionOffsets(lock) {
-  const region = lock?.branchRootRegion;
-  const cross = region?.cross;
-  if (!region || !cross) return null;
-  // The orange center is a stable anchor (where the direct bridge attaches), NOT a
-  // value recomputed from the edges: dragging a single edge (e.g. only the bottom)
-  // must not move the center. Initialize it once from the rectangle's geometric
-  // center when it is missing (new regions / old files).
-  if (!region.center) {
-    region.center = {
-      u: clampRegionParam((cross.up.u + cross.down.u) / 2),
-      v: clampRegionParam((cross.left.v + cross.right.v) / 2)
-    };
-  }
-  const centerU = clampRegionParam(region.center.u);
-  const centerV = clampRegionParam(region.center.v);
-  region.edgeOffsets = {
-    up: Math.max(0, centerU - cross.up.u),
-    down: Math.max(0, cross.down.u - centerU),
-    left: Math.max(0, cross.left.v - centerV),
-    right: Math.max(0, centerV - cross.right.v)
-  };
-  return region.edgeOffsets;
-}
 
 // Shift the branch region's center to follow the child root (u and v), so the
 // selection panel's relative position and the direct-bridge region stay in sync.
-function updateBranchRootRegionCenter(lock, u, v) {
-  const region = lock?.branchRootRegion;
-  const cross = region?.cross;
-  if (!region || !cross) return;
-  const uc = clampRegionParam((cross.up.u + cross.down.u) / 2);
-  const vc = clampRegionParam((cross.left.v + cross.right.v) / 2);
-  const nu = clampRegionParam(u);
-  const nv = clampRegionParam(v);
-  // Keep the region center's offset from the root bone: the user may have dragged
-  // the region (points or rect) away from the bone, and a later bone move should
-  // follow with that relative offset instead of snapping the center back to the bone.
-  const bone = region.boneSync || { u: nu, v: nv };
-  const targetU = clampRegionParam(nu + (uc - clampRegionParam(bone.u)));
-  const targetV = clampRegionParam(nv + (vc - clampRegionParam(bone.v)));
-  // Anchor the bone sync point even when the region does not move (first sync), so a
-  // later bone move applies the preserved center offset instead of snapping to the bone.
-  region.boneSync = { u: nu, v: nv };
-  const du = (targetU - uc) * branch.state.branchRegionSyncVertical;
-  const dv = (targetV - vc) * branch.state.branchRegionSyncLateral;
-  if (Math.abs(du) < 0.0005 && Math.abs(dv) < 0.0005) return;
-  // Translate every edge AND the orange anchor by the same delta so the region keeps
-  // its exact shape (the anchor may differ from the geometric center after a single-
-  // edge drag; reconstructing from center + offsets would shift it).
-  cross.up = { u: clampRegionParam(cross.up.u + du), v: clampRegionParam(cross.up.v + dv) };
-  cross.down = { u: clampRegionParam(cross.down.u + du), v: clampRegionParam(cross.down.v + dv) };
-  cross.left = { u: clampRegionParam(cross.left.u + du), v: clampRegionParam(cross.left.v + dv) };
-  cross.right = { u: clampRegionParam(cross.right.u + du), v: clampRegionParam(cross.right.v + dv) };
-  region.center = {
-    u: clampRegionParam((region.center?.u ?? uc) + du),
-    v: clampRegionParam((region.center?.v ?? vc) + dv)
-  };
-  normalizeBranchRootRegion(lock);
-  const parent = locks.find((item) => item.id === lock?.branchParentId);
-  if (parent) rebuildLockGeometry(parent);
-  else rebuildLockGeometry(lock);
-  renderBranchRegionEditor();
-  updateBranchRegionMeshPoints();
-}
 
 const BRANCH_ROOT_REGION_DEFAULTS = Object.freeze({
   centerV: 0.5,
@@ -22417,63 +22366,11 @@ const BRANCH_ROOT_REGION_DEFAULTS = Object.freeze({
   rightWidth: 0.12
 });
 
-function clampRegionParam(value) {
-  return THREE.MathUtils.clamp(Number(value) || 0, 0, 1);
-}
 
 // 4 edge control points (up/down/left/right) define the rectangular carve region on the
 // parent surface (u = along length, v = across width). The center RootCtrl point was
 // dropped in 2.4u - only the 4 light-blue boundary points select the rectangular region.
-function branchRootRegionFromParam(parameter) {
-  const u0 = clampRegionParam(parameter);
-  const { centerV, upLength, downLength, leftWidth, rightWidth } = BRANCH_ROOT_REGION_DEFAULTS;
-  const v0 = clampRegionParam(centerV);
-  const up = clampRegionParam(u0 - upLength);
-  const down = clampRegionParam(u0 + downLength);
-  const left = clampRegionParam(v0 + leftWidth);
-  const right = clampRegionParam(v0 - rightWidth);
-  return {
-    center: { u: u0, v: v0 },
-    edgeOffsets: { up: u0 - up, down: down - u0, left: left - v0, right: v0 - right },
-    boneSync: null,
-    cross: {
-      // up = region top (toward root, smaller u); down = bottom (toward tip, larger u).
-      up: { u: up, v: v0 },
-      down: { u: down, v: v0 },
-      // left = larger v (world-left for a left-side strand), right = smaller v.
-      left: { u: u0, v: left },
-      right: { u: u0, v: right }
-    }
-  };
-}
 
-function cloneBranchRootRegion(region, { mirror = false } = {}) {
-  if (!region) return null;
-  const flip = (value) => (mirror ? 1 - clampRegionParam(value) : clampRegionParam(value));
-  const left = mirror ? region.cross?.right : region.cross?.left;
-  const right = mirror ? region.cross?.left : region.cross?.right;
-  const cross = {
-    up: { u: clampRegionParam(region.cross?.up?.u), v: flip(region.cross?.up?.v) },
-    down: { u: clampRegionParam(region.cross?.down?.u), v: flip(region.cross?.down?.v) },
-    left: { u: clampRegionParam(left?.u), v: flip(left?.v) },
-    right: { u: clampRegionParam(right?.u), v: flip(right?.v) }
-  };
-  const centerU = (cross.up.u + cross.down.u) / 2;
-  const centerV = (cross.left.v + cross.right.v) / 2;
-  return {
-    center: { u: clampRegionParam(centerU), v: clampRegionParam(centerV) },
-    edgeOffsets: {
-      up: Math.max(0, centerU - cross.up.u),
-      down: Math.max(0, cross.down.u - centerU),
-      left: Math.max(0, cross.left.v - centerV),
-      right: Math.max(0, centerV - cross.right.v)
-    },
-    boneSync: region.boneSync
-      ? { u: clampRegionParam(region.boneSync.u), v: flip(region.boneSync.v) }
-      : null,
-    cross
-  };
-}
 
 
 
@@ -22482,552 +22379,15 @@ function cloneBranchRootRegion(region, { mirror = false } = {}) {
 // Keep the region rectangle ordered so drag clamps never snap a point to the
 // opposite side: up must be smaller u than down, left larger v than right. Old
 // files (and boundary clamps) can leave inverted or collapsed pairs.
-function normalizeBranchRootRegion(lock) {
-  const cross = lock?.branchRootRegion?.cross;
-  if (!cross) return false;
-  const MIN_REGION_SPAN = 0.02;
-  let changed = false;
-  const offsets = lock?.branchRootRegion?.edgeOffsets;
-  if (cross.up.u >= cross.down.u) {
-    const u = cross.up.u; cross.up.u = cross.down.u; cross.down.u = u;
-    const v = cross.up.v; cross.up.v = cross.down.v; cross.down.v = v;
-    if (offsets) { const t = offsets.up; offsets.up = offsets.down; offsets.down = t; }
-    changed = true;
-  }
-  if (cross.left.v <= cross.right.v) {
-    const u = cross.left.u; cross.left.u = cross.right.u; cross.right.u = u;
-    const v = cross.left.v; cross.left.v = cross.right.v; cross.right.v = v;
-    if (offsets) { const t = offsets.left; offsets.left = offsets.right; offsets.right = t; }
-    changed = true;
-  }
-  if (cross.down.u - cross.up.u < MIN_REGION_SPAN) {
-    cross.up.u = clampRegionParam(cross.down.u - MIN_REGION_SPAN);
-    if (cross.down.u - cross.up.u < MIN_REGION_SPAN) cross.down.u = clampRegionParam(cross.up.u + MIN_REGION_SPAN);
-    changed = true;
-  }
-  if (cross.left.v - cross.right.v < MIN_REGION_SPAN) {
-    cross.right.v = clampRegionParam(cross.left.v - MIN_REGION_SPAN);
-    if (cross.left.v - cross.right.v < MIN_REGION_SPAN) cross.left.v = clampRegionParam(cross.right.v + MIN_REGION_SPAN);
-    changed = true;
-  }
-  return changed;
-}
 
-function setBranchRootRegionPoint(lock, name, param) {
-  const cross = lock?.branchRootRegion?.cross;
-  if (!cross?.[name] || !param) return;
-  const MIN_REGION_SPAN = 0.02;
-  const u = clampRegionParam(param.u);
-  const v = clampRegionParam(param.v);
-  // Normalize first: an inverted pair would make the clamps snap the dragged point
-  // to the opposite side (e.g. clicking a point that already crossed its partner).
-  normalizeBranchRootRegion(lock);
-  // The four side points may never cross the orange center (the stable bridge
-  // anchor): each edge is clamped to stay on its own side of region.center.
-  const center = lock?.branchRootRegion?.center;
-  const cu = clampRegionParam(center?.u ?? (cross.up.u + cross.down.u) / 2);
-  const cv = clampRegionParam(center?.v ?? (cross.left.v + cross.right.v) / 2);
-  if (name === "up") {
-    cross.up = { u: clampRegionParam(Math.min(u, Math.min(cross.down.u, cu) - MIN_REGION_SPAN)), v };
-  } else if (name === "down") {
-    cross.down = { u: clampRegionParam(Math.max(u, Math.max(cross.up.u, cu) + MIN_REGION_SPAN)), v };
-  } else if (name === "left") {
-    cross.left = { u, v: clampRegionParam(Math.max(v, Math.max(cross.right.v, cv) + MIN_REGION_SPAN)) };
-  } else {
-    cross.right = { u, v: clampRegionParam(Math.min(v, Math.min(cross.left.v, cv) - MIN_REGION_SPAN)) };
-  }
-  syncBranchRootRegionOffsets(lock);
-  // Rebuild the parent from scratch so carving always starts from the full grid:
-  // carving mutates quadFaces, so re-carving an already-carved mesh drifts the
-  // row/col mapping and deletes extra fragments on every pass (Reset accumulation).
-  const parent = locks.find((item) => item.id === lock?.branchParentId);
-  if (parent) rebuildLockGeometry(parent);
-  else rebuildLockGeometry(lock);
-  updateCurveObjects(lock);
-}
 
 // ---- 2D branch region editor (u/v plane, like the width/depth curve panel) ----
-function branchRegionUVToCanvas(u, v) {
-  return { x: 20 + v * 180, y: 20 + u * 360 };
-}
-function branchRegionCanvasToUV(cx, cy) {
-  return {
-    u: THREE.MathUtils.clamp((cy - 20) / 360, 0, 1),
-    v: THREE.MathUtils.clamp((cx - 20) / 180, 0, 1)
-  };
-}
-function openBranchRegionEditor(lockId) {
-  const lock = locks.find((item) => item.id === lockId);
-  if (!lock?.branchRootRegion) return;
-  if (sweepProfileEditor?.open) closeSweepProfileEditor();
-  if (taperCurveEditor?.open) closeTaperCurveEditor();
-  sculptState.state.branchRegionEdit = lockId;
-  applyBranchRegionView();
-  const target = document.querySelector("#branchRegionTarget");
-  if (target) target.textContent = lock.name || "Selected branch";
-  renderBranchRegionEditor();
-  updateBranchRegionMeshPoints();
-  const dialog = document.querySelector("#branchRegionEditor");
-  if (dialog && !dialog.open) dialog.show();
-}
-function closeBranchRegionEditor() {
-  sculptState.state.branchRegionEdit = null;
-  branchRegionMeshPointsGroup.visible = false;
-  const dialog = document.querySelector("#branchRegionEditor");
-  if (dialog?.open) dialog.close();
-}
-function retargetBranchRegionEditor() {
-  const lock = getSelectedLock();
-  if (lock?.branchRootRegion) openBranchRegionEditor(lock.id);
-  else closeBranchRegionEditor();
-}
-function renderBranchRegionEditor() {
-  const lock = locks.find((item) => item.id === sculptState.state.branchRegionEdit);
-  const region = lock?.branchRootRegion;
-  if (!region) return;
-  const cross = region.cross;
-  const vc = clampRegionParam((cross.left.v + cross.right.v) / 2);
-  const uc = clampRegionParam((cross.up.u + cross.down.u) / 2);
-  const pts = {
-    up: branchRegionUVToCanvas(clampRegionParam(cross.up.u), vc),
-    down: branchRegionUVToCanvas(clampRegionParam(cross.down.u), vc),
-    left: branchRegionUVToCanvas(uc, clampRegionParam(cross.left.v)),
-    right: branchRegionUVToCanvas(uc, clampRegionParam(cross.right.v))
-  };
-  const rect = document.querySelector("#branchRegionRect");
-  const c1 = branchRegionUVToCanvas(clampRegionParam(cross.down.u), clampRegionParam(cross.left.v));
-  const c2 = branchRegionUVToCanvas(clampRegionParam(cross.down.u), clampRegionParam(cross.right.v));
-  const c3 = branchRegionUVToCanvas(clampRegionParam(cross.up.u), clampRegionParam(cross.left.v));
-  if (rect) {
-    rect.setAttribute("x", Math.min(c1.x, c2.x));
-    rect.setAttribute("y", Math.min(c1.y, c3.y));
-    rect.setAttribute("width", Math.abs(c2.x - c1.x));
-    rect.setAttribute("height", Math.abs(c3.y - c1.y));
-  }
-  const g = document.querySelector("#branchRegionPoints");
-  if (!g) return;
-  g.innerHTML = "";
-  Object.entries(pts).forEach(([name, p]) => {
-    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    circle.setAttribute("cx", p.x);
-    circle.setAttribute("cy", p.y);
-    circle.setAttribute("r", 7);
-    circle.setAttribute("fill", "#8fd8ff");
-    circle.setAttribute("stroke", "#ffffff");
-    circle.setAttribute("stroke-width", "1.5");
-    circle.setAttribute("data-region-point", name);
-    circle.style.cursor = "move";
-    g.appendChild(circle);
-  });
-  // Region center marker (orange): the bridge anchor. Dragging it translates the
-  // whole region; Ctrl+dragging mirror-scales both sides around it. It is drawn at
-  // the stable anchor (region.center), not the edge average, so editing a single
-  // edge does not move it.
-  const anchorU = clampRegionParam(region.center?.u ?? uc);
-  const anchorV = clampRegionParam(region.center?.v ?? vc);
-  const centerCanvas = branchRegionUVToCanvas(anchorU, anchorV);
-  const centerCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-  centerCircle.setAttribute("cx", centerCanvas.x);
-  centerCircle.setAttribute("cy", centerCanvas.y);
-  centerCircle.setAttribute("r", 5);
-  centerCircle.setAttribute("fill", "#ff9a3c");
-  centerCircle.setAttribute("stroke", "#ffffff");
-  centerCircle.setAttribute("stroke-width", "1.5");
-  centerCircle.setAttribute("data-region-point", "center");
-  centerCircle.style.cursor = "move";
-  g.appendChild(centerCircle);
-  // Four corner handles: diagonal resize (scales both u and v from the opposite
-  // corner). Cursor follows the system diagonal-resize glyphs.
-  const upU = clampRegionParam(cross.up.u);
-  const downU = clampRegionParam(cross.down.u);
-  const leftV = clampRegionParam(cross.left.v);
-  const rightV = clampRegionParam(cross.right.v);
-  const corners = [
-    { name: "topleft", u: upU, v: leftV, cursor: "nwse-resize" },
-    { name: "topright", u: upU, v: rightV, cursor: "nesw-resize" },
-    { name: "bottomleft", u: downU, v: leftV, cursor: "nesw-resize" },
-    { name: "bottomright", u: downU, v: rightV, cursor: "nwse-resize" }
-  ];
-  corners.forEach((corner) => {
-    const cp = branchRegionUVToCanvas(corner.u, corner.v);
-    const rectEl = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rectEl.setAttribute("x", cp.x - 4);
-    rectEl.setAttribute("y", cp.y - 4);
-    rectEl.setAttribute("width", 8);
-    rectEl.setAttribute("height", 8);
-    rectEl.setAttribute("fill", "#cfe9ff");
-    rectEl.setAttribute("stroke", "#5b8fb0");
-    rectEl.setAttribute("stroke-width", "1");
-    rectEl.setAttribute("data-region-point", corner.name);
-    rectEl.style.cursor = corner.cursor;
-    g.appendChild(rectEl);
-  });
-  updateBranchRegionMeshPoints();
-}
 // ---- Branch region panel view navigation: pan/zoom follow the active navigation
 // style (Houdini Alt+MMB pan + Alt+RMB zoom; Blender Shift/Ctrl+MMB; Anime Hair
 // Studio Alt+RMB pan); wheel always zooms; Reset Zoom restores. ----
-function applyBranchRegionView() {
-  branchRegionCanvas.setAttribute("viewBox", `${branch.state.branchRegionView.x} ${branch.state.branchRegionView.y} ${branch.state.branchRegionView.w} ${branch.state.branchRegionView.h}`);
-}
-function resetBranchRegionZoom() {
-  branch.state.branchRegionView = { x: 0, y: 0, w: 220, h: 400 };
-  applyBranchRegionView();
-}
 // Map the viewport navigation style onto the 2D region panel instead of always
 // copying Houdini's Alt+RMB zoom. Alt+MMB pan stays available in every style.
-function branchRegionNavAction(event) {
-  const mmb = event.button === 1;
-  const rmb = event.button === 2;
-  if (viewportState.state.navigationStyle === "houdini") {
-    if (mmb) return "pan";
-    if (rmb && event.altKey) return "zoom";
-  } else if (viewportState.state.navigationStyle === "blender") {
-    if (mmb) return event.ctrlKey ? "zoom" : "pan";
-  } else if (rmb && event.altKey) {
-    return "pan";
-  }
-  if (mmb) return "pan";
-  return null;
-}
-function beginBranchRegionCanvasNav(event) {
-  const action = branchRegionNavAction(event);
-  if (!action) return;
-  const rect = branchRegionCanvas.getBoundingClientRect();
-  const viewBox = branchRegionCanvas.viewBox.baseVal;
-  if (action === "zoom") {
-    sculptState.state.branchRegionZoomDrag = {
-      pointerId: event.pointerId,
-      lastX: event.clientX,
-      lastY: event.clientY,
-      contentX: viewBox.x + (event.clientX - rect.left) * (viewBox.width / rect.width),
-      contentY: viewBox.y + (event.clientY - rect.top) * (viewBox.height / rect.height)
-    };
-  } else {
-    sculptState.state.branchRegionPanDrag = { pointerId: event.pointerId, lastX: event.clientX, lastY: event.clientY };
-  }
-  try { branchRegionCanvas.setPointerCapture?.(event.pointerId); } catch (e) { /* synthetic */ }
-  event.preventDefault();
-  event.stopPropagation();
-}
-function updateBranchRegionCanvasNav(event) {
-  updateBranchRegionCanvasZoom(event);
-  updateBranchRegionCanvasPan(event);
-}
-function updateBranchRegionCanvasZoom(event) {
-  if (!sculptState.state.branchRegionZoomDrag || event.pointerId !== sculptState.state.branchRegionZoomDrag.pointerId) return;
-  const dx = event.clientX - sculptState.state.branchRegionZoomDrag.lastX;
-  const dy = event.clientY - sculptState.state.branchRegionZoomDrag.lastY;
-  sculptState.state.branchRegionZoomDrag.lastX = event.clientX;
-  sculptState.state.branchRegionZoomDrag.lastY = event.clientY;
-  if (dx === 0 && dy === 0) return;
-  const ax = Math.abs(dx);
-  const ay = Math.abs(dy);
-  const magnitude = ax > ay ? ax + ay * 0.4142 : ay + ax * 0.4142;
-  // Reversed: dragging toward top-right zooms in, toward bottom-left zooms out.
-  const sign = ay >= ax ? (dy < 0 ? 1 : -1) : (dx > 0 ? 1 : -1);
-  const factor = Math.pow(1.02, sign * magnitude);
-  const nw = THREE.MathUtils.clamp(branch.state.branchRegionView.w / factor, 40, 440);
-  const nh = THREE.MathUtils.clamp(branch.state.branchRegionView.h / factor, 80, 800);
-  const kx = nw / branch.state.branchRegionView.w;
-  const ky = nh / branch.state.branchRegionView.h;
-  branch.state.branchRegionView = {
-    x: sculptState.state.branchRegionZoomDrag.contentX - (sculptState.state.branchRegionZoomDrag.contentX - branch.state.branchRegionView.x) * kx,
-    y: sculptState.state.branchRegionZoomDrag.contentY - (sculptState.state.branchRegionZoomDrag.contentY - branch.state.branchRegionView.y) * ky,
-    w: nw,
-    h: nh
-  };
-  applyBranchRegionView();
-  event.preventDefault();
-}
-function updateBranchRegionCanvasPan(event) {
-  if (!sculptState.state.branchRegionPanDrag || event.pointerId !== sculptState.state.branchRegionPanDrag.pointerId) return;
-  const rect = branchRegionCanvas.getBoundingClientRect();
-  const viewBox = branchRegionCanvas.viewBox.baseVal;
-  const dx = (event.clientX - sculptState.state.branchRegionPanDrag.lastX) * (viewBox.width / rect.width);
-  const dy = (event.clientY - sculptState.state.branchRegionPanDrag.lastY) * (viewBox.height / rect.height);
-  sculptState.state.branchRegionPanDrag.lastX = event.clientX;
-  sculptState.state.branchRegionPanDrag.lastY = event.clientY;
-  branch.state.branchRegionView = { ...branch.state.branchRegionView, x: branch.state.branchRegionView.x - dx, y: branch.state.branchRegionView.y - dy };
-  applyBranchRegionView();
-  event.preventDefault();
-}
-function endBranchRegionCanvasNav(event) {
-  const pid = event?.pointerId;
-  if (sculptState.state.branchRegionZoomDrag && (pid === undefined || pid === sculptState.state.branchRegionZoomDrag.pointerId)) sculptState.state.branchRegionZoomDrag = null;
-  if (sculptState.state.branchRegionPanDrag && (pid === undefined || pid === sculptState.state.branchRegionPanDrag.pointerId)) sculptState.state.branchRegionPanDrag = null;
-}
-function onBranchRegionCanvasWheel(event) {
-  if (!sculptState.state.branchRegionEdit) return;
-  event.preventDefault();
-  const rect = branchRegionCanvas.getBoundingClientRect();
-  const viewBox = branchRegionCanvas.viewBox.baseVal;
-  const px = viewBox.x + (event.clientX - rect.left) * (viewBox.width / rect.width);
-  const py = viewBox.y + (event.clientY - rect.top) * (viewBox.height / rect.height);
-  const factor = Math.pow(1.0015, -event.deltaY);
-  const nw = THREE.MathUtils.clamp(branch.state.branchRegionView.w / factor, 40, 440);
-  const nh = THREE.MathUtils.clamp(branch.state.branchRegionView.h / factor, 80, 800);
-  const kx = nw / branch.state.branchRegionView.w;
-  const ky = nh / branch.state.branchRegionView.h;
-  branch.state.branchRegionView = {
-    x: px - (px - branch.state.branchRegionView.x) * kx,
-    y: py - (py - branch.state.branchRegionView.y) * ky,
-    w: nw,
-    h: nh
-  };
-  applyBranchRegionView();
-}
-function branchRegionEventUV(event) {
-  const canvasRect = branchRegionCanvas.getBoundingClientRect();
-  const viewBox = branchRegionCanvas.viewBox.baseVal;
-  const svgX = viewBox.x + (event.clientX - canvasRect.left) * (viewBox.width / canvasRect.width);
-  const svgY = viewBox.y + (event.clientY - canvasRect.top) * (viewBox.height / canvasRect.height);
-  return branchRegionCanvasToUV(svgX, svgY);
-}
 
-function beginBranchRegionCanvasDrag(event) {
-  if (!sculptState.state.branchRegionEdit) return;
-  const point = event.target?.closest?.("circle[data-region-point], rect[data-region-point]");
-  const rectTarget = event.target?.closest?.("#branchRegionRect");
-  if (!point && !rectTarget) return;
-  if (event.button !== 0) return;
-  // One undo for the whole drag.
-  pushUndoState();
-  if (point && point.getAttribute("data-region-point") === "center") {
-    const lock = locks.find((item) => item.id === sculptState.state.branchRegionEdit);
-    const cross = lock?.branchRootRegion?.cross;
-    if (!cross) return;
-    const centerU = clampRegionParam(lock.branchRootRegion.center?.u ?? (cross.up.u + cross.down.u) / 2);
-    const centerV = clampRegionParam(lock.branchRootRegion.center?.v ?? (cross.left.v + cross.right.v) / 2);
-    // Ctrl+drag the center = mirror-scale: the side you drag toward and the opposite
-    // side both move apart symmetrically around the fixed center.
-    sculptState.state.branchRegionCanvasDrag = {
-      mode: event.ctrlKey ? "center-mirror" : "move",
-      pointerId: event.pointerId,
-      startU: centerU,
-      startV: centerV,
-      startCenter: { u: centerU, v: centerV },
-      startRegion: {
-        up: { ...cross.up },
-        down: { ...cross.down },
-        left: { ...cross.left },
-        right: { ...cross.right }
-      }
-    };
-  } else if (point && ["topleft", "topright", "bottomleft", "bottomright"].includes(point.getAttribute("data-region-point"))) {
-    const cornerName = point.getAttribute("data-region-point");
-    if (event.ctrlKey) {
-      const lock = locks.find((item) => item.id === sculptState.state.branchRegionEdit);
-      const cross = lock?.branchRootRegion?.cross;
-      if (!cross) return;
-      const startUV = branchRegionEventUV(event);
-      sculptState.state.branchRegionCanvasDrag = {
-        mode: "corner-mirror",
-        name: cornerName,
-        pointerId: event.pointerId,
-        startU: startUV.u,
-        startV: startUV.v,
-        startRegion: {
-          up: { ...cross.up },
-          down: { ...cross.down },
-          left: { ...cross.left },
-          right: { ...cross.right }
-        }
-      };
-    } else {
-      sculptState.state.branchRegionCanvasDrag = { mode: "corner", name: cornerName, pointerId: event.pointerId };
-    }
-  } else if (point) {
-    const pointName = point.getAttribute("data-region-point");
-    if (event.ctrlKey) {
-      const lock = locks.find((item) => item.id === sculptState.state.branchRegionEdit);
-      const cross = lock?.branchRootRegion?.cross;
-      if (!cross) return;
-      const startUV = branchRegionEventUV(event);
-      sculptState.state.branchRegionCanvasDrag = {
-        mode: "point-mirror",
-        name: pointName,
-        pointerId: event.pointerId,
-        startU: startUV.u,
-        startV: startUV.v,
-        startRegion: {
-          up: { ...cross.up },
-          down: { ...cross.down },
-          left: { ...cross.left },
-          right: { ...cross.right }
-        }
-      };
-    } else {
-      sculptState.state.branchRegionCanvasDrag = { mode: "point", name: pointName, pointerId: event.pointerId };
-    }
-  } else {
-    // Drag the rect body to translate the whole region.
-    const canvasRect = branchRegionCanvas.getBoundingClientRect();
-    const viewBox = branchRegionCanvas.viewBox.baseVal;
-    const lock = locks.find((item) => item.id === sculptState.state.branchRegionEdit);
-    const cross = lock?.branchRootRegion?.cross;
-    if (!cross) return;
-    const svgX = viewBox.x + (event.clientX - canvasRect.left) * (viewBox.width / canvasRect.width);
-    const svgY = viewBox.y + (event.clientY - canvasRect.top) * (viewBox.height / canvasRect.height);
-    const startUV = branchRegionCanvasToUV(svgX, svgY);
-    const startCenter = lock?.branchRootRegion?.center
-      ? { u: clampRegionParam(lock.branchRootRegion.center.u), v: clampRegionParam(lock.branchRootRegion.center.v) }
-      : { u: clampRegionParam((cross.up.u + cross.down.u) / 2), v: clampRegionParam((cross.left.v + cross.right.v) / 2) };
-    sculptState.state.branchRegionCanvasDrag = {
-      mode: "move",
-      pointerId: event.pointerId,
-      startU: startUV.u,
-      startV: startUV.v,
-      startCenter,
-      startRegion: {
-        up: { ...cross.up },
-        down: { ...cross.down },
-        left: { ...cross.left },
-        right: { ...cross.right }
-      }
-    };
-  }
-  try { branchRegionCanvas.setPointerCapture?.(event.pointerId); } catch (e) { /* synthetic */ }
-  event.preventDefault();
-}
-function updateBranchRegionCanvasDrag(event) {
-  if (!sculptState.state.branchRegionCanvasDrag || !sculptState.state.branchRegionEdit) return;
-  const rect = branchRegionCanvas.getBoundingClientRect();
-  const viewBox = branchRegionCanvas.viewBox.baseVal;
-  const svgX = viewBox.x + (event.clientX - rect.left) * (viewBox.width / rect.width);
-  const svgY = viewBox.y + (event.clientY - rect.top) * (viewBox.height / rect.height);
-  const uv = branchRegionCanvasToUV(svgX, svgY);
-  const lock = locks.find((item) => item.id === sculptState.state.branchRegionEdit);
-  const cross = lock?.branchRootRegion?.cross;
-  if (!cross) return;
-  if (sculptState.state.branchRegionCanvasDrag.mode === "corner") {
-    const region = lock.branchRootRegion;
-    const center = region.center;
-    const cu = clampRegionParam(center?.u ?? (cross.up.u + cross.down.u) / 2);
-    const cv = clampRegionParam(center?.v ?? (cross.left.v + cross.right.v) / 2);
-    const MIN = 0.02;
-    const name = sculptState.state.branchRegionCanvasDrag.name;
-    // Diagonal resize: the dragged corner moves in BOTH u and v (clamped to the
-    // orange center), the opposite corner stays fixed.
-    if (name === "topleft") {
-      cross.up.u = clampRegionParam(Math.min(uv.u, Math.min(cross.down.u, cu) - MIN));
-      cross.left.v = clampRegionParam(Math.max(uv.v, Math.max(cross.right.v, cv) + MIN));
-    } else if (name === "topright") {
-      cross.up.u = clampRegionParam(Math.min(uv.u, Math.min(cross.down.u, cu) - MIN));
-      cross.right.v = clampRegionParam(Math.min(uv.v, Math.min(cross.left.v, cv) - MIN));
-    } else if (name === "bottomleft") {
-      cross.down.u = clampRegionParam(Math.max(uv.u, Math.max(cross.up.u, cu) + MIN));
-      cross.left.v = clampRegionParam(Math.max(uv.v, Math.max(cross.right.v, cv) + MIN));
-    } else {
-      cross.down.u = clampRegionParam(Math.max(uv.u, Math.max(cross.up.u, cu) + MIN));
-      cross.right.v = clampRegionParam(Math.min(uv.v, Math.min(cross.left.v, cv) - MIN));
-    }
-    normalizeBranchRootRegion(lock);
-    syncBranchRootRegionOffsets(lock);
-    const parent = locks.find((item) => item.id === lock?.branchParentId);
-    if (parent) rebuildLockGeometry(parent);
-    else rebuildLockGeometry(lock);
-    updateCurveObjects(lock);
-    renderBranchRegionEditor();
-    return;
-  }
-  if (sculptState.state.branchRegionCanvasDrag.mode === "center-mirror") {
-    const start = sculptState.state.branchRegionCanvasDrag.startRegion;
-    if (!start) return;
-    const region = lock.branchRootRegion;
-    const offsets = region.edgeOffsets || syncBranchRootRegionOffsets(lock);
-    const centerU = clampRegionParam(region.center?.u ?? (start.up.u + start.down.u) / 2);
-    const centerV = clampRegionParam(region.center?.v ?? (start.left.v + start.right.v) / 2);
-    const du = uv.u - sculptState.state.branchRegionCanvasDrag.startU;
-    const dv = uv.v - sculptState.state.branchRegionCanvasDrag.startV;
-    if (Math.abs(du) >= Math.abs(dv)) {
-      // Mirror along u (top/bottom): both edges move away from the fixed center.
-      cross.up.u = clampRegionParam(centerU - (offsets.up + du));
-      cross.down.u = clampRegionParam(centerU + (offsets.down + du));
-    } else {
-      // Mirror along v (left/right).
-      cross.left.v = clampRegionParam(centerV + (offsets.left + dv));
-      cross.right.v = clampRegionParam(centerV - (offsets.right + dv));
-    }
-    normalizeBranchRootRegion(lock);
-    syncBranchRootRegionOffsets(lock);
-    const parent = locks.find((item) => item.id === lock?.branchParentId);
-    if (parent) rebuildLockGeometry(parent);
-    else rebuildLockGeometry(lock);
-    updateCurveObjects(lock);
-    renderBranchRegionEditor();
-    return;
-  }
-  if (sculptState.state.branchRegionCanvasDrag.mode === "point-mirror" || sculptState.state.branchRegionCanvasDrag.mode === "corner-mirror") {
-    const start = sculptState.state.branchRegionCanvasDrag.startRegion;
-    if (!start) return;
-    const name = sculptState.state.branchRegionCanvasDrag.name;
-    const du = uv.u - sculptState.state.branchRegionCanvasDrag.startU;
-    const dv = uv.v - sculptState.state.branchRegionCanvasDrag.startV;
-    // Ctrl+drag: the dragged point follows the pointer, the opposite point moves
-    // in reverse, mirroring around the pair midpoint (the orange anchor stays put).
-    const mirrorU = sculptState.state.branchRegionCanvasDrag.mode === "corner-mirror" || name === "up" || name === "down";
-    const mirrorV = sculptState.state.branchRegionCanvasDrag.mode === "corner-mirror" || name === "left" || name === "right";
-    if (mirrorU) {
-      const upFollows = name === "up" || name.startsWith("top");
-      cross.up.u = clampRegionParam(start.up.u + (upFollows ? du : -du));
-      cross.down.u = clampRegionParam(start.down.u + (upFollows ? -du : du));
-    }
-    if (mirrorV) {
-      const leftFollows = name === "left" || name.endsWith("left");
-      cross.left.v = clampRegionParam(start.left.v + (leftFollows ? dv : -dv));
-      cross.right.v = clampRegionParam(start.right.v + (leftFollows ? -dv : dv));
-    }
-    normalizeBranchRootRegion(lock);
-    syncBranchRootRegionOffsets(lock);
-    const parent = locks.find((item) => item.id === lock?.branchParentId);
-    if (parent) rebuildLockGeometry(parent);
-    else rebuildLockGeometry(lock);
-    updateCurveObjects(lock);
-    renderBranchRegionEditor();
-    return;
-  }
-  if (sculptState.state.branchRegionCanvasDrag.mode === "move") {
-    const start = sculptState.state.branchRegionCanvasDrag.startRegion;
-    if (!start) return;
-    const du = uv.u - sculptState.state.branchRegionCanvasDrag.startU;
-    const dv = uv.v - sculptState.state.branchRegionCanvasDrag.startV;
-    const region = lock.branchRootRegion;
-    // Pure translate of every edge AND the orange anchor by the pointer delta: the
-    // anchor may differ from the geometric center after a single-edge drag, so
-    // reconstructing from center + offsets would shift the shape.
-    cross.up = { u: clampRegionParam(start.up.u + du), v: clampRegionParam(start.up.v + dv) };
-    cross.down = { u: clampRegionParam(start.down.u + du), v: clampRegionParam(start.down.v + dv) };
-    cross.left = { u: clampRegionParam(start.left.u + du), v: clampRegionParam(start.left.v + dv) };
-    cross.right = { u: clampRegionParam(start.right.u + du), v: clampRegionParam(start.right.v + dv) };
-    const startCenter = sculptState.state.branchRegionCanvasDrag.startCenter
-      || { u: (start.up.u + start.down.u) / 2, v: (start.left.v + start.right.v) / 2 };
-    region.center = {
-      u: clampRegionParam(startCenter.u + du),
-      v: clampRegionParam(startCenter.v + dv)
-    };
-    normalizeBranchRootRegion(lock);
-    const parent = locks.find((item) => item.id === lock?.branchParentId);
-    if (parent) rebuildLockGeometry(parent);
-    else rebuildLockGeometry(lock);
-    updateCurveObjects(lock);
-    renderBranchRegionEditor();
-    return;
-  }
-  const vc = clampRegionParam((cross.left.v + cross.right.v) / 2);
-  const uc = clampRegionParam((cross.up.u + cross.down.u) / 2);
-  const name = sculptState.state.branchRegionCanvasDrag.name;
-  const next = name === "up" || name === "down"
-    ? { u: uv.u, v: vc }
-    : { u: uc, v: uv.v };
-  setBranchRootRegionPoint(lock, name, next);
-  renderBranchRegionEditor();
-}
-function endBranchRegionCanvasDrag(event) {
-  if (!sculptState.state.branchRegionCanvasDrag) return;
-  try { branchRegionCanvas.releasePointerCapture?.(sculptState.state.branchRegionCanvasDrag.pointerId); } catch (e) { /* synthetic */ }
-  sculptState.state.branchRegionCanvasDrag = null;
-}
 function pointerToNdc(event) {
   const rect = renderer.domElement.getBoundingClientRect();
   return new THREE.Vector2(
@@ -23038,73 +22398,8 @@ function pointerToNdc(event) {
 
 // Sweep-start control: drag the yellow handle along the child guide to set where
 // the sweep (and therefore the bridge) starts.
-function beginBranchSweepStartDrag(event) {
-  const selected = locks.find((item) => item.id === sel.state.selectedId);
-  const handle = selected?.curveObjects?.branchSweepStartHandle;
-  if (!handle || selected?.locked) return false;
-  raycaster.setFromCamera(pointerToNdc(event), camera);
-  const hits = raycaster.intersectObjects([handle], false);
-  if (!hits.length) return false;
-  sculptState.state.branchSweepStartDrag = { lockId: selected.id, pointerId: event.pointerId };
-  pushUndoState();
-  renderer.domElement.setPointerCapture?.(event.pointerId);
-  event.stopImmediatePropagation();
-  event.preventDefault();
-  return true;
-}
-function updateBranchSweepStartDrag(event) {
-  if (!sculptState.state.branchSweepStartDrag || event.pointerId !== sculptState.state.branchSweepStartDrag.pointerId) return;
-  // Mouse: never move on button-less pointermove (guards a lingering drag state).
-  if (event.pointerType === "mouse" && (event.buttons & 1) === 0) return;
-  const lock = locks.find((item) => item.id === sculptState.state.branchSweepStartDrag.lockId);
-  if (!lock?.branchRootRegion) { sculptState.state.branchSweepStartDrag = null; return; }
-  raycaster.setFromCamera(pointerToNdc(event), camera);
-  const hit = raycaster.intersectObject(lock.mesh, false)[0];
-  if (!hit) return;
-  const curve = strandGeometryCurve(lock);
-  let bestT = Number(lock.branchSweepStartT ?? 0.1);
-  let bestDist = Infinity;
-  for (let i = 0; i <= 64; i += 1) {
-    const t = i / 64;
-    const d = curve.getPoint(t).distanceToSquared(hit.point);
-    if (d < bestDist) { bestDist = d; bestT = t; }
-  }
-  const clamped = THREE.MathUtils.clamp(bestT, 0.02, 0.6);
-  if (Math.abs(clamped - Number(lock.branchSweepStartT ?? 0.1)) < 0.001) return;
-  lock.branchSweepStartT = clamped;
-  rebuildLockGeometry(lock, { updateBranches: false });
-  updateCurveObjects(lock);
-}
-function endBranchSweepStartDrag(event) {
-  if (!sculptState.state.branchSweepStartDrag || (event?.pointerId !== undefined && event.pointerId !== sculptState.state.branchSweepStartDrag.pointerId)) return;
-  renderer.domElement.releasePointerCapture?.(sculptState.state.branchSweepStartDrag.pointerId);
-  sculptState.state.branchSweepStartDrag = null;
-}
 
 // 3D markers for the 4 region points on the parent surface (show points on mesh).
-function updateBranchRegionMeshPoints() {
-  branchRegionMeshPointsGroup.clear();
-  if (!hairState.state.branchRegionMeshPointsVisible) {
-    branchRegionMeshPointsGroup.visible = false;
-    return;
-  }
-  const lock = locks.find((item) => item.id === sculptState.state.branchRegionEdit);
-  const world = lock ? branchRootRegionWorldPoints(lock) : null;
-  if (!world) {
-    branchRegionMeshPointsGroup.visible = false;
-    return;
-  }
-  Object.entries(world).forEach(([name, point]) => {
-    const material = name === "center" ? branchRegionCenterMeshPointMaterial : branchRegionMeshPointMaterial;
-    const scale = name === "center" ? 1.6 : 1;
-    const handle = new THREE.Mesh(branchRegionMeshPointGeometry, material);
-    handle.position.copy(point);
-    handle.scale.setScalar(scale);
-    handle.renderOrder = 35;
-    branchRegionMeshPointsGroup.add(handle);
-  });
-  branchRegionMeshPointsGroup.visible = true;
-}
 
 // Cache of the parent-surface grid region for a child's branchRootRegion.
 // Recomputed only when the control points change; parent moves never touch it.
@@ -23147,13 +22442,13 @@ function branchRootRegionSurface(lock) {
     const g = skipCol >= 0 && vc >= skipCol ? vc + 1 : vc;
     return THREE.MathUtils.clamp(g, 0, cols - 1);
   };
-  const toRow = (u) => THREE.MathUtils.clamp(Math.round(clampRegionParam(u) * (rows - 1)), 0, rows - 1);
+  const toRow = (u) => THREE.MathUtils.clamp(Math.round(branchRegion.clampRegionParam(u) * (rows - 1)), 0, rows - 1);
   const rowA = toRow(region.cross.up.u);
   const rowB = toRow(region.cross.down.u);
   // v follows the parent's lateral width (projection onto the guide's frame.x at the
   // region's middle row), so v=0.5 lands on the hair's lateral center. A cross-section
   // ring wraps around, so the ring-index middle column is the far side, not the center.
-  let toCol = (v) => THREE.MathUtils.clamp(Math.round(clampRegionParam(v) * (colCount - 1)), 0, colCount - 1);
+  let toCol = (v) => THREE.MathUtils.clamp(Math.round(branchRegion.clampRegionParam(v) * (colCount - 1)), 0, colCount - 1);
   const positionAttr = geometry?.getAttribute?.("position");
   if (positionAttr && colCount >= 2 && faceStartCols.length === colCount) {
     const probeRow = Math.round((Math.min(rowA, rowB) + Math.max(rowA, rowB)) / 2);
@@ -23173,7 +22468,7 @@ function branchRootRegionSurface(lock) {
       });
       const arcScale = colCount * 0.6;
       toCol = (v) => {
-        const offset = Math.round((clampRegionParam(v) - 0.5) * arcScale);
+        const offset = Math.round((branchRegion.clampRegionParam(v) - 0.5) * arcScale);
         return ((front + offset) % colCount + colCount) % colCount;
       };
     } catch (e) {
@@ -23236,13 +22531,13 @@ function branchRootRegionWorldPoints(lock) {
   // 3D center marker follows the stable anchor (region.center), clamped into the hole.
   const anchor = lock?.branchRootRegion?.center;
   const anchorRow = THREE.MathUtils.clamp(
-    Math.round(clampRegionParam(anchor?.u ?? rowC / Math.max(1, surface.rows - 1)) * (surface.rows - 1)),
+    Math.round(branchRegion.clampRegionParam(anchor?.u ?? rowC / Math.max(1, surface.rows - 1)) * (surface.rows - 1)),
     surface.rowMin,
     surface.rowMax
   );
   let anchorCol = colC;
   if (anchor && typeof surface.toCol === "function" && typeof surface.toGridCol === "function") {
-    anchorCol = surface.toGridCol(surface.toCol(clampRegionParam(anchor.v)));
+    anchorCol = surface.toGridCol(surface.toCol(branchRegion.clampRegionParam(anchor.v)));
   }
   return {
     up: pointAt(surface.rowMin, colC),
@@ -23359,7 +22654,7 @@ function attachDrawnLocksAsBranches(stroke, created) {
     lock.branchParentId = parent.id;
     lock.branchParentParameter = parameter;
     delete lock.clumpShapeCurveInheritance;
-    lock.branchRootRegion = branchRootRegionFromParam(parameter);
+    lock.branchRootRegion = branchRegion.branchRootRegionFromParam(parameter);
     captureBranchLocalState(lock);
   });
   updateBranchChildren(parent);
@@ -28283,7 +27578,7 @@ function selectLock(id, options = {}) {
     syncActiveInputs: true
   });
   retargetFloatingStrandEditors();
-  retargetBranchRegionEditor();
+  branchRegion.retargetBranchRegionEditor();
 }
 
 function deselectStrandsForGuideEditor() {
@@ -33049,36 +32344,36 @@ taperCurveCanvas.addEventListener("pointercancel", finishTaperCurveDrag);
 // Branch root region editor (2D u/v rectangle).
 const branchRegionCanvas = document.querySelector("#branchRegionCanvas");
 const branchRegionDialog = document.querySelector("#branchRegionEditor");
-document.querySelector("#closeBranchRegion").addEventListener("click", closeBranchRegionEditor);
+document.querySelector("#closeBranchRegion").addEventListener("click", branchRegion.closeBranchRegionEditor);
 document.querySelector("#resetBranchRegion").addEventListener("click", () => {
   if (!sculptState.state.branchRegionEdit) return;
   const lock = locks.find((item) => item.id === sculptState.state.branchRegionEdit);
   if (!lock) return;
   pushUndoState();
-  lock.branchRootRegion = branchRootRegionFromParam(lock.branchParentParameter ?? 0.4);
-  setBranchRootRegionPoint(lock, "up", lock.branchRootRegion.cross.up);
-  renderBranchRegionEditor();
+  lock.branchRootRegion = branchRegion.branchRootRegionFromParam(lock.branchParentParameter ?? 0.4);
+  branchRegion.setBranchRootRegionPoint(lock, "up", lock.branchRootRegion.cross.up);
+  branchRegion.renderBranchRegionEditor();
 });
-branchRegionDialog.addEventListener("cancel", closeBranchRegionEditor);
+branchRegionDialog.addEventListener("cancel", branchRegion.closeBranchRegionEditor);
 const branchRegionMeshPointsToggle = document.querySelector("#branchRegionMeshPointsToggle");
 if (branchRegionMeshPointsToggle) {
   branchRegionMeshPointsToggle.checked = hairState.state.branchRegionMeshPointsVisible;
   branchRegionMeshPointsToggle.addEventListener("change", () => {
     hairState.state.branchRegionMeshPointsVisible = branchRegionMeshPointsToggle.checked;
-    if (hairState.state.branchRegionMeshPointsVisible) updateBranchRegionMeshPoints();
+    if (hairState.state.branchRegionMeshPointsVisible) branchRegion.updateBranchRegionMeshPoints();
     else branchRegionMeshPointsGroup.visible = false;
   });
 }
-branchRegionCanvas.addEventListener("pointerdown", beginBranchRegionCanvasNav, true);
-branchRegionCanvas.addEventListener("pointermove", updateBranchRegionCanvasNav);
-branchRegionCanvas.addEventListener("pointerup", endBranchRegionCanvasNav);
-branchRegionCanvas.addEventListener("pointercancel", endBranchRegionCanvasNav);
-branchRegionCanvas.addEventListener("wheel", onBranchRegionCanvasWheel, { passive: false });
-branchRegionCanvas.addEventListener("pointerdown", beginBranchRegionCanvasDrag);
-branchRegionCanvas.addEventListener("pointermove", updateBranchRegionCanvasDrag);
-branchRegionCanvas.addEventListener("pointerup", endBranchRegionCanvasDrag);
-branchRegionCanvas.addEventListener("pointercancel", endBranchRegionCanvasDrag);
-document.querySelector("#resetBranchRegionZoom").addEventListener("click", resetBranchRegionZoom);
+branchRegionCanvas.addEventListener("pointerdown", branchRegion.beginBranchRegionCanvasNav, true);
+branchRegionCanvas.addEventListener("pointermove", branchRegion.updateBranchRegionCanvasNav);
+branchRegionCanvas.addEventListener("pointerup", branchRegion.endBranchRegionCanvasNav);
+branchRegionCanvas.addEventListener("pointercancel", branchRegion.endBranchRegionCanvasNav);
+branchRegionCanvas.addEventListener("wheel", branchRegion.onBranchRegionCanvasWheel, { passive: false });
+branchRegionCanvas.addEventListener("pointerdown", branchRegion.beginBranchRegionCanvasDrag);
+branchRegionCanvas.addEventListener("pointermove", branchRegion.updateBranchRegionCanvasDrag);
+branchRegionCanvas.addEventListener("pointerup", branchRegion.endBranchRegionCanvasDrag);
+branchRegionCanvas.addEventListener("pointercancel", branchRegion.endBranchRegionCanvasDrag);
+document.querySelector("#resetBranchRegionZoom").addEventListener("click", branchRegion.resetBranchRegionZoom);
 
 function beginTaperMeshPointDrag(event) {
   if (
@@ -37864,10 +37159,10 @@ window.addEventListener("pointercancel", () => {
 });
 window.addEventListener("pointerup", clearViewportPointer);
 window.addEventListener("pointercancel", clearViewportPointer);
-renderer.domElement.addEventListener("pointerdown", beginBranchSweepStartDrag, true);
-renderer.domElement.addEventListener("pointermove", updateBranchSweepStartDrag);
-renderer.domElement.addEventListener("pointerup", endBranchSweepStartDrag);
-renderer.domElement.addEventListener("pointercancel", endBranchSweepStartDrag);
+renderer.domElement.addEventListener("pointerdown", branchRegion.beginBranchSweepStartDrag, true);
+renderer.domElement.addEventListener("pointermove", branchRegion.updateBranchSweepStartDrag);
+renderer.domElement.addEventListener("pointerup", branchRegion.endBranchSweepStartDrag);
+renderer.domElement.addEventListener("pointercancel", branchRegion.endBranchSweepStartDrag);
 ["pointerdown", "click", "dblclick"].forEach((eventName) => {
   renderer.domElement.addEventListener(eventName, blockProportionalSizingEvent, true);
 });

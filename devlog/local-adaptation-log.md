@@ -147,6 +147,7 @@
 - [x] Front Bangs 1-3 视口三角观感修复（0.2.55）：createPanelStrandGeometry 的 addQuad 跳过退化（角点重合）与反射折叠（两三角法线相反）quad，最大二面角 180/90° → ≤10.7°；导出一直是四边面不受影响
 - [x] 面板线框三角面真正修复（0.2.56）：绕序翻转后同步交换 triangleEdgeMasks 的 [1]/[2]，quad 对角线不再被描边；0.2.55 的退化/反射折叠清理保留
 - [x] 重构：localization 词典拆数据文件（0.2.57）：JA/ZH 词典从 modules/localization.js 拆到 modules/loc-ja.js / loc-zh.js（export default Object.freeze），localization.js 改 import 两词典，逻辑零改动；拆分前后 key 数一致（JA 667 / ZH 653）；verify-smoke.mjs 6/6 通过（页面加载 0 异常、zh/ja/en 翻译正常、0043.ahs 加载重建无异常）
+- [x] 3d 第三批：region-panel 迁出（0.2.57，3d-3a）：31 个 Branch Root Region 面板/选区函数 → modules/geometry/branch-region-panel.js（createBranchRegionApi(deps)，脚本提取+依赖替换生成）；踩坑：调用点替换误伤 resetBranchRegionZoom 选择器（已修）；app.js 38,386→37,681；verify 13/13
 - [x] 3d 第二批：shape preset 系统迁出（0.2.57）：8 个核心逻辑 → modules/io/shape-presets.js；cloneShapePresetValue 改模块级导出（creation-presets 改模块间 import，去 deps 注入）；踩坑：deps 项被批量替换误伤 + 模块导出缺失（已修）；app.js 38,437→38,386 行；verify 13/13
 - [x] 3d 第一批：creation preset 系统迁出（0.2.57）：10 个核心逻辑函数 → modules/io/creation-presets.js（createCreationPresetsApi(deps) 依赖注入）；app.js 38,605→38,437 行；踩坑：async function 前缀被替换破坏（已修）；verify 13/13
 - [x] 重构：misc store（0.2.57，3c 收尾）：modules/core/misc-store.js 收敛 19 个杂项（tool/radial/偏好/fps/braid/重复放置参数）；全局 let 20→1（仅 camera）；阶段 3 全部完成；verify 13/13
