@@ -281,7 +281,7 @@ function renderBranchRegionEditor() {
     circle.setAttribute("stroke", "#ffffff");
     circle.setAttribute("stroke-width", "1.5");
     circle.setAttribute("data-region-point", name);
-    circle.style.cursor = "move";
+    circle.style.cursor = name === "up" || name === "down" ? "ns-resize" : "ew-resize";
     g.appendChild(circle);
   });
   // Region center marker (orange): the bridge anchor. Dragging it translates the
@@ -308,10 +308,10 @@ function renderBranchRegionEditor() {
   const leftV = clampRegionParam(cross.left.v);
   const rightV = clampRegionParam(cross.right.v);
   const corners = [
-    { name: "topleft", u: upU, v: leftV, cursor: "nwse-resize" },
-    { name: "topright", u: upU, v: rightV, cursor: "nesw-resize" },
-    { name: "bottomleft", u: downU, v: leftV, cursor: "nesw-resize" },
-    { name: "bottomright", u: downU, v: rightV, cursor: "nwse-resize" }
+    { name: "topleft", u: upU, v: leftV, cursor: "nesw-resize" },
+    { name: "topright", u: upU, v: rightV, cursor: "nwse-resize" },
+    { name: "bottomleft", u: downU, v: leftV, cursor: "nwse-resize" },
+    { name: "bottomright", u: downU, v: rightV, cursor: "nesw-resize" }
   ];
   corners.forEach((corner) => {
     const cp = branchRegionUVToCanvas(corner.u, corner.v);

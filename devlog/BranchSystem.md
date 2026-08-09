@@ -32,6 +32,8 @@
 - `modules/geometry/branch-connect.js`：**纯函数桥接核心**（squareChildRing / holeBoundary / connectSide / connectBoundaryToRing，无 THREE 依赖）——已经是模块，迁移时直接复用
 - store：branch（参数/视图）、sel（选中）、sculptState（taperCurveEdit 等）、projectState、guideState、draw、hair 均已就绪
 
+> **Region 面板 cursor 规范**：SVG y 向下，角点对角线 cursor 按拖拽位移方向约定（topleft=nesw/topright=nwse），与 y 向上的 DCC 直觉相反，勿翻回。
+
 ## 4. 拆分方案（建议批次）
 
 | 批次 | 迁出 | 新模块 | 依赖注入 |
