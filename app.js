@@ -13460,6 +13460,86 @@ function splitForkT(lock, segmentIndex, splits) {
   return heights.length ? 1 - Math.max(...heights) : 1;
 }
 
+const TIP_WIDTH_CONTROL_POINTS = 5;
+
+// Per-side fork for the tip width control: the left edge is exposed below the LEFT
+// zipper (splits[segment-1]), the right edge below the RIGHT zipper (splits[segment]).
+// Boundary sides without a zipper fall back to the segment fork (bounded by the other
+// side's zipper), so left/right control regions can differ.
+function tipWidthSideForkT(lock, segmentIndex, splits, side) {
+  const leftZipper = splits[segmentIndex - 1]?.height;
+  const rightZipper = splits[segmentIndex]?.height;
+  const segmentForkT = 1 - Math.max(leftZipper ?? 0, rightZipper ?? 0);
+  if (side < 0) return leftZipper != null ? 1 - leftZipper : segmentForkT;
+  return rightZipper != null ? 1 - rightZipper : segmentForkT;
+}
+
+// Replicates the panel geometry's width sampling so viewport width handles can read
+// and write the same multiplier the geometry consumes (bone.taperCurve/secondary).
+function tipPanelWidthAt(lock, t, side, bone) {
+  const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
+  const multiplier = sampleAsymmetricTaperCurve(
+    bone?.taperCurve || lock.taperCurve,
+    bone?.taperCurveSecondary || lock.taperCurveSecondary,
+    bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve,
+    side,
+    t
+  );
+  return Math.max(0.0001, fullWidth * multiplier);
+}
+
+function buildTipWidthCurve(lock, segmentIndex, splits, bone, side) {
+  const forkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
+  const globalCurve = side < 0 ? (lock.taperCurveSecondary || lock.taperCurve) : lock.taperCurve;
+  const current = side < 0 ? bone.taperCurveSecondary : bone.taperCurve;
+  const points = [];
+  for (let i = 0; i <= 10; i += 1) {
+    const ti = i / 10;
+    const value = ti < forkT - 1e-4
+      ? sampleTaperCurve(globalCurve, ti)
+      : (current && current.length ? sampleTaperCurve(current, ti) : sampleTaperCurve(globalCurve, ti));
+    points.push({ position: ti, value: THREE.MathUtils.clamp(value, 0.02, 2), interpolation: "linear" });
+  }
+  return points;
+}
+
+// Set the width multiplier at chain parameter t for one side, then rebuild both sides'
+// curves so the above-zipper (locked) region tracks the global default and left/right
+// stay independent (asymmetric width profile).
+function setTipWidthCurveValue(lock, segmentIndex, splits, bone, side, t, value) {
+  if (!bone.taperCurve) bone.taperCurve = buildTipWidthCurve(lock, segmentIndex, splits, bone, 1);
+  if (!bone.taperCurveSecondary) bone.taperCurveSecondary = buildTipWidthCurve(lock, segmentIndex, splits, bone, -1);
+  bone.asymmetricWidthCurve = true;
+  const curve = side < 0 ? bone.taperCurveSecondary : bone.taperCurve;
+  const clamped = THREE.MathUtils.clamp(Number(value) || 0.5, 0.02, 2);
+  curve.forEach((point) => {
+    if (Math.abs(point.position - t) < 1e-3) point.value = clamped;
+  });
+  bone.taperCurve = buildTipWidthCurve(lock, segmentIndex, splits, bone, 1);
+  bone.taperCurveSecondary = buildTipWidthCurve(lock, segmentIndex, splits, bone, -1);
+}
+
+// Viewport placement of a tip width control point: on the exposed chain edge at t,
+// offset laterally by the current half width.
+function tipWidthControlPlacement(lock, segmentIndex, splits, bone, side, pointIndex) {
+  const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
+  if (!tip || tip.points.length < 2) return null;
+  const forkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
+  if (forkT >= 1) return null;
+  const curve = new THREE.CatmullRomCurve3(tip.points);
+  const t = TIP_WIDTH_CONTROL_POINTS > 1
+    ? THREE.MathUtils.lerp(forkT, 1, pointIndex / (TIP_WIDTH_CONTROL_POINTS - 1))
+    : forkT;
+  const center = curve.getPoint(t);
+  const tangent = curve.getTangent(t).normalize();
+  const mainFrame = strandFrameAt(lock, t);
+  const lateral = new THREE.Vector3().crossVectors(tangent, mainFrame.z);
+  if (lateral.lengthSq() < 0.0001) lateral.copy(mainFrame.x);
+  lateral.normalize();
+  const width = tipPanelWidthAt(lock, t, side, bone);
+  return { point: center.clone().addScaledVector(lateral, side * width * 0.5), t, center, lateral };
+}
+
 function tipHighlightMaterial() {
   const material = new THREE.MeshBasicMaterial({
     vertexColors: true,
@@ -24932,6 +25012,7 @@ function createCurveObjects(lock) {
   const panelSegmentHandles = [];
   const panelTipHandles = [];
   const panelTipLines = [];
+  const tipWidthHandles = [];
   if (isPanelGeometry(lock)) {
     lock.panelSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     lock.panelSplits.forEach((split, index) => {
@@ -24995,6 +25076,31 @@ function createCurveObjects(lock) {
       group.add(line);
       panelTipLines.push(line);
     }
+    // Tip width control points (repurposed green segment controller): per side along
+    // the exposed (below-zipper) chain. Only the selected tip segment's points show.
+    for (let segment = 0; segment < lock.panelSplits.length + 1; segment += 1) {
+      const sideHandles = { left: [], right: [] };
+      for (const side of [-1, 1]) {
+        for (let point = 0; point < TIP_WIDTH_CONTROL_POINTS; point += 1) {
+          const handle = createSplitControlHandle();
+          handle.scale.setScalar(0.34);
+          handle.material = new THREE.MeshBasicMaterial({
+            color: 0x5df0a8,
+            depthTest: false,
+            depthWrite: false,
+            transparent: true,
+            opacity: 0.95
+          });
+          handle.userData.lockId = lock.id;
+          handle.userData.tipWidthSegment = segment;
+          handle.userData.tipWidthSide = side;
+          handle.userData.tipWidthIndex = point;
+          group.add(handle);
+          sideHandles[side < 0 ? "left" : "right"].push(handle);
+        }
+      }
+      tipWidthHandles.push(sideHandles);
+    }
   }
   let strandSplitHandle = null;
   let strandSplitLine = null;
@@ -25037,6 +25143,7 @@ function createCurveObjects(lock) {
     panelSegmentHandles,
     panelTipHandles,
     panelTipLines,
+    tipWidthHandles,
     strandSplitHandle,
     strandSplitLine,
     branchSweepStartHandle,
@@ -25326,6 +25433,7 @@ function updateCurveObjects(lock, options = {}) {
     edge.material.color.set(active || hovered ? 0xff42cf : 0xe7a95d);
     edge.material.opacity = active ? 0.95 : hovered ? 0.82 : 0.22;
     edge.visible = lock.id === sel.state.selectedId
+      && !tipUiActive
       && !sculptBrushHelpersSuppressed
       && !sel.state.clumpViewportSelection
       && lock.geometryType === "strand"
@@ -25456,7 +25564,8 @@ function updateCurveObjects(lock, options = {}) {
   const segmentBoundaries = [-1, ...splits.map((split) => split.position), 1];
   const segmentSplitBones = splitBonesFor(lock);
   lock.curveObjects.panelSegmentHandles?.forEach((handle, segment) => {
-    const visible = !sculptBrushHelpersSuppressed
+    const visible = !tipUiActive
+      && !sculptBrushHelpersSuppressed
       && !brushDebugVisible
       && isPanelGeometry(lock)
       && lock.panelSplitEnabled !== false;
@@ -25540,6 +25649,40 @@ function updateCurveObjects(lock, options = {}) {
     line.material.opacity = sculptState.state.panelTipSelection?.lockId === lock.id
       && sculptState.state.panelTipSelection.segmentIndex === segment
       ? 0.95 : 0.45;
+  });
+  const tipWidthSelection = sculptState.state.panelTipSelection;
+  lock.curveObjects.tipWidthHandles?.forEach((sideHandles, segment) => {
+    const selected = tipWidthSelection
+      && tipWidthSelection.lockId === lock.id
+      && tipWidthSelection.segmentIndex === segment;
+    const baseVisible = Boolean(selected)
+      && (!sculptBrushHelpersSuppressed || tipUiActive)
+      && !brushDebugVisible
+      && isPanelGeometry(lock)
+      && lock.panelSplitEnabled !== false
+      && tipSplits.length > 0;
+    for (const side of [-1, 1]) {
+      const list = side < 0 ? sideHandles.left : sideHandles.right;
+      list.forEach((handle, index) => {
+        if (!baseVisible) {
+          handle.visible = false;
+          return;
+        }
+        const placement = tipWidthControlPlacement(lock, segment, tipSplits, tipSplitBones[segment] || null, side, index);
+        if (!placement) {
+          handle.visible = false;
+          return;
+        }
+        handle.visible = true;
+        handle.position.copy(placement.point);
+        const dragging = sculptState.state.panelSplitDrag?.lockId === lock.id
+          && sculptState.state.panelSplitDrag.kind === "tipWidth"
+          && sculptState.state.panelSplitDrag.splitIndex === segment
+          && sculptState.state.panelSplitDrag.tipWidthSide === side
+          && sculptState.state.panelSplitDrag.tipWidthIndex === index;
+        handle.material.opacity = dragging ? 1 : 0.9;
+      });
+    }
   });
   updateTipHighlight(lock);
   const strandSplitVisible = !sculptBrushHelpersSuppressed
@@ -34137,6 +34280,12 @@ function disposeCurveObjects(lock) {
     line.geometry.dispose();
     line.material.dispose();
   });
+  lock.curveObjects.tipWidthHandles?.forEach((seg) => {
+    [...seg.left, ...seg.right].forEach((handle) => {
+      handle.geometry.dispose();
+      handle.material.dispose();
+    });
+  });
   if (lock.curveObjects.tipHighlightMesh) {
     lock.curveObjects.tipHighlightMesh.geometry.dispose();
     lock.curveObjects.tipHighlightMesh.material.dispose();
@@ -34183,13 +34332,16 @@ function beginPanelSplitHandleDrag(event) {
   const tipHandles = isPanelGeometry(lock) && lock.curveObjects?.group.visible
     ? lock.curveObjects.panelTipHandles || []
     : [];
+  const tipWidthHandles = isPanelGeometry(lock) && lock.curveObjects?.group.visible
+    ? (lock.curveObjects.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right])
+    : [];
   const strandHandle = lock?.geometryType === "strand"
     && lock.strandSplitEnabled
     && lock.curveObjects?.group.visible
     && lock.curveObjects.strandSplitHandle?.visible
     ? [lock.curveObjects.strandSplitHandle]
     : [];
-  const handles = [...panelHandles, ...segmentHandles, ...tipHandles, ...strandHandle];
+  const handles = [...panelHandles, ...segmentHandles, ...tipWidthHandles, ...tipHandles, ...strandHandle];
   if (!handles.length) return false;
   const hit = raycaster.intersectObjects(handles.filter((handle) => handle.visible), false)[0];
   if (!hit) return false;
@@ -34197,7 +34349,12 @@ function beginPanelSplitHandleDrag(event) {
   transformControls.detach();
   const tipIndex = hit.object.userData.panelTipIndex != null ? hit.object.userData.panelTipIndex : null;
   const tipPoint = hit.object.userData.panelTipPoint != null ? hit.object.userData.panelTipPoint : null;
+  const tipWidthIndex = hit.object.userData.tipWidthIndex != null ? hit.object.userData.tipWidthIndex : null;
+  const tipWidthSegment = hit.object.userData.tipWidthSegment != null ? hit.object.userData.tipWidthSegment : null;
+  const tipWidthSide = hit.object.userData.tipWidthSide != null ? hit.object.userData.tipWidthSide : null;
   let tipStartWorld = null;
+  let tipWidthT = null;
+  let tipWidthStartWorld = null;
   if (tipIndex != null && tipPoint != null) {
     // Selecting a tip sub-bone: remember it and point the segment controls at it.
     sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: tipIndex };
@@ -34206,20 +34363,35 @@ function beginPanelSplitHandleDrag(event) {
     const tipSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const tip = splitTipForSegment(lock, tipIndex, tipSplits, splitBonesFor(lock)[tipIndex] || null);
     if (tip && tip.points[tipPoint]) tipStartWorld = tip.points[tipPoint].clone();
+  } else if (tipWidthSegment != null && tipWidthSide != null && tipWidthIndex != null) {
+    // Selecting a tip width control point also selects that tip sub-bone.
+    sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: tipWidthSegment };
+    sculptState.state.panelSegmentIndex = tipWidthSegment;
+    syncPanelSegmentControls(lock);
+    const tipSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const placement = tipWidthControlPlacement(lock, tipWidthSegment, tipSplits, splitBonesFor(lock)[tipWidthSegment] || null, tipWidthSide, tipWidthIndex);
+    if (placement) {
+      tipWidthT = placement.t;
+      tipWidthStartWorld = placement.point.clone();
+    }
   }
   sculptState.state.panelSplitDrag = {
     pointerId: event.pointerId,
     lockId: lock.id,
-    kind: tipIndex != null ? "tip" : hit.object.userData.strandSplitHandle
+    kind: tipWidthIndex != null ? "tipWidth" : tipIndex != null ? "tip" : hit.object.userData.strandSplitHandle
       ? "strand"
       : hit.object.userData.panelSegmentIndex != null
         ? "segment"
         : "panel",
-    splitIndex: tipIndex != null ? tipIndex : hit.object.userData.panelSegmentIndex != null
+    splitIndex: tipWidthSegment != null ? tipWidthSegment : tipIndex != null ? tipIndex : hit.object.userData.panelSegmentIndex != null
       ? hit.object.userData.panelSegmentIndex
       : hit.object.userData.panelSplitIndex,
     tipPoint,
-    tipStartWorld
+    tipStartWorld,
+    tipWidthSide,
+    tipWidthIndex,
+    tipWidthT,
+    tipWidthStartWorld
   };
   renderer.domElement.setPointerCapture?.(event.pointerId);
   renderer.domElement.style.cursor = "grabbing";
@@ -34305,6 +34477,41 @@ function updatePanelSplitHandleDrag(event) {
     authored.restPoints = rest.map((p) => ({ x: p.x, y: p.y, z: p.z }));
     authored.active = true;
     bone.tip = authored;
+    updateLockGeometry(lock, { immediate: true });
+    updateCurveObjects(lock, { visible: true });
+    syncActiveMirror(lock, { deferGeometry: false });
+    updateTopologyStats();
+    event.preventDefault();
+    return;
+  }
+  if (sculptState.state.panelSplitDrag.kind === "tipWidth") {
+    const drag = sculptState.state.panelSplitDrag;
+    const segment = drag.splitIndex;
+    const side = drag.tipWidthSide;
+    const t = drag.tipWidthT;
+    if (segment == null || side == null || t == null) return;
+    const splitsForWidth = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bones = materializeSplitBones(lock);
+    const bone = bones[segment];
+    if (!bone) return;
+    const tip = splitTipForSegment(lock, segment, splitsForWidth, bone);
+    if (!tip || tip.points.length < 2) return;
+    const curve = new THREE.CatmullRomCurve3(tip.points);
+    const center = curve.getPoint(t);
+    const tangent = curve.getTangent(t).normalize();
+    const mainFrame = strandFrameAt(lock, t);
+    const lateral = new THREE.Vector3().crossVectors(tangent, mainFrame.z);
+    if (lateral.lengthSq() < 0.0001) lateral.copy(mainFrame.x);
+    lateral.normalize();
+    const startWorld = drag.tipWidthStartWorld || center;
+    const startProj = startWorld.clone().project(camera);
+    const ndcX = (2 * targetX) / rect.width - 1;
+    const ndcY = -((2 * targetY) / rect.height - 1);
+    const cursorWorld = new THREE.Vector3(ndcX, ndcY, startProj.z).unproject(camera);
+    const latOffset = cursorWorld.clone().sub(center).dot(lateral);
+    const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
+    const newWidthMult = (2 * Math.abs(latOffset)) / fullWidth;
+    setTipWidthCurveValue(lock, segment, splitsForWidth, bone, side, t, newWidthMult);
     updateLockGeometry(lock, { immediate: true });
     updateCurveObjects(lock, { visible: true });
     syncActiveMirror(lock, { deferGeometry: false });
@@ -35488,11 +35695,15 @@ function beginSculptMoveStroke(event) {
   event.stopImmediatePropagation();
 }
 
+function isHairCreateTool(tool = sel.state.activeTool) {
+  return ["draw", "procedural-draw", "braid", "panel", "curve-surface", "surface-loft", "place", "draw-capsule-guide"].includes(tool);
+}
+
 function syncStrandHoverOutline(lock) {
   if (!lock?.hoverOutline) return;
   lock.hoverOutline.visible = Boolean(
     hairState.state.hoveredStrandId === lock.id
-    && sculptBrushToolActive()
+    && !isHairCreateTool()
     && sculptState.state.viewportEditMode === "strand"
     && lock.id !== sel.state.selectedId
     && strandVisibleForDisplay(lock)
@@ -35501,7 +35712,7 @@ function syncStrandHoverOutline(lock) {
 }
 
 function updateStrandBrushHover(event) {
-  if (!sculptBrushToolActive() || sculptState.state.viewportEditMode !== "strand") {
+  if (isHairCreateTool() || sculptState.state.viewportEditMode !== "strand") {
     if (hairState.state.hoveredStrandId) {
       hairState.state.hoveredStrandId = null;
       locks.forEach(syncStrandHoverOutline);
@@ -36534,7 +36745,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
         altCandidate = { kind: "tip", lockId: altLock.id, segmentIndex: altHover.segmentIndex };
       }
     }
-    if (!altCandidate && sculptBrushToolActive()) {
+    if (!altCandidate && !isHairCreateTool()) {
       const hoveredId = hairState.state.hoveredStrandId;
       const selectedId = getSelectedLock()?.id;
       if (hoveredId && hoveredId !== selectedId) altCandidate = { kind: "strand", lockId: hoveredId };
@@ -36990,6 +37201,8 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     syncStrandHoverOutline,
     splitTipForSegment,
     applySubBoneBrushSample,
+    tipWidthSideForkT,
+    sampleTaperCurve,
     splitForkT,
     clonePanelSplits,
     materializeSplitBones,

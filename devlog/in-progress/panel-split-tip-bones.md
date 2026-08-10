@@ -164,6 +164,17 @@ splitBone.tip = {
 **5. Push 笔刷动不了（真实 bug）✅**：`applySubBoneBrushSample` 的 push 分支对 `stroke.planeNormal.clone().projectOnPlane(...)`——而 `stroke.planeNormal` 来自 `cameraFacingPlaneNormal`（modules/sculpt/sculpt-brush.js），返回**纯 `{x,y,z}` 对象**（不是 THREE.Vector3）→ `.clone` 不存在 → 抛 TypeError → 该次采样中断、发尖不更新。主发丝 push 用 `guidedNormalAt`（不碰 planeNormal）所以一直正常，只有 tip 路径崩。修复：先 `new THREE.Vector3(planeNormal.x, planeNormal.y, planeNormal.z)` 再投影。回归验证：push 后发尖链移动（pushMax 0.0099）。
 
 **验证**：verify-tip-select.mjs 24/24（新增：每段手柄、scale 均匀径向、orient 改变切线 11.21°、undo 精确回退 maxDiff 0、笔刷 bones-only、alt+点击发尖/发丝、push 移动发尖）；三档 smoke 11/11、12/12 通过。
+### 8.10 悬停/alt+点击全模式、tip width 控制点取代绿色控制器（0.2.59 已落地）
+
+**1. 悬停高亮 + alt+点击切换扩展到全模式（除 create 类）✅**：新增 `isHairCreateTool(tool)`（draw/procedural-draw/braid/panel/curve-surface/surface-loft/place/draw-capsule-guide）。`updateStrandBrushHover`/`syncStrandHoverOutline` 的触发门由「笔刷激活」改为「非 create 工具 + strand 模式」——Q 选择模式下悬停其它发丝也显示柔和橙描边、alt+左键（真点击）切换选中；select/move/rotate/scale/relax/笔刷等非 create 模式全部生效。create 类工具 pointerdown 会起笔画，跳过以免冲突。
+
+**2+3. 绿色控制器 → tip width 控制点（左右独立、zipper 截断）✅**：
+- 每段每侧 5 个绿色控制点（`tipWidthHandles`，侧 fork 到尖端之间），仅当该发尖被选中时显示；此时**隐藏绿色 spread 手柄与主发片 width 边缘控制**。
+- 数据：写 `bone.taperCurve`（右）/`bone.taperCurveSecondary`（左）+ `asymmetricWidthCurve=true`；左右侧各自独立（`tipWidthSideForkT`：左边界用左侧 zipper 高度、右边界用右侧 zipper 高度，无 zipper 的边界段回退到段 fork——左右可控制区可不同）。
+- **截断/锁定**：构建宽度曲线时 t < 该侧 forkT 的区段强制取全局默认（`lock.taperCurve`/secondary 采样），用户只能拖动暴露区控制点；zipper 拉上去（forkT 减小）→ 新暴露区保持默认直到被拖动；zipper 拉下来 → 下次拖动重建时新锁定区重置为默认。
+- 拖动：`beginPanelSplitHandleDrag` kind="tipWidth"（按视平面侧向偏移计算新半宽 → 写曲线 → 重建几何）。注：笔刷工具 pointerdown 被笔刷笔画 consume，width 控制点拖动在 select/move 等非笔刷工具下操作（与 tip 链手柄一致）。
+
+**回归测试（scripts/verify-tip-select.mjs，28/28 新增）**：tip 选中时 width 控制点显示（左右各 5）+ 绿色手柄 0 + 主 width 边缘 0；拖动右侧控制点 → 右/左曲线生成、asymmetric=true、锁定区与全局默认一致（rightForkT 0.8125）；select 模式悬停其它发丝 outline=true、alt+点击切换选中。三档 smoke 11/11、12/12 通过。
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

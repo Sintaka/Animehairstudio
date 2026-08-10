@@ -444,6 +444,90 @@ try {
   const altTip = JSON.parse(await evalJS(cdp, `(() => { const t = window.__ahsTest; return JSON.stringify(t.sculptState.state.panelTipSelection); })()`));
   check("alt+click switches to hovered tip segment", !!(altTip && altTip.lockId === lockId && altTip.segmentIndex === 2), `altTip=${JSON.stringify(altTip)}`);
 
+  // ============ Issue 2+3: tip width control points replace the green controller ============
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 2 }; t.updateCurveObjects(t.locks.find((l) => l.id === ${JSON.stringify(lockId)}), { visible: true }); return true; })()`);
+  await sleep(300);
+  const widthVis = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const seg = lock.curveObjects.tipWidthHandles ? lock.curveObjects.tipWidthHandles[2] : null;
+    const leftVis = seg ? seg.left.filter((h) => h.visible).length : 0;
+    const rightVis = seg ? seg.right.filter((h) => h.visible).length : 0;
+    const greenVis = (lock.curveObjects.panelSegmentHandles || []).filter((h) => h.visible).length;
+    const widthEdgeVis = (lock.curveObjects.widthEdgeLines || []).filter((e) => e.visible).length;
+    return JSON.stringify({ leftVis, rightVis, greenVis, widthEdgeVis });
+  })()`));
+  check("tip width control points show when tip selected (green + main width hidden)", widthVis.leftVis > 0 && widthVis.rightVis > 0 && widthVis.greenVis === 0 && widthVis.widthEdgeVis === 0, `width=${JSON.stringify(widthVis)}`);
+
+  // drag a right-side width handle (select tool; brush tools consume pointerdown)
+  await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="select"]'); if (btn) btn.click(); return true; })()`);
+  await sleep(300);
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 2 }; t.updateCurveObjects(t.locks.find((l) => l.id === ${JSON.stringify(lockId)}), { visible: true }); return true; })()`);
+  const widthDrag = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const h = lock.curveObjects.tipWidthHandles[2].right.find((hh) => hh.visible);
+    if (!h) return JSON.stringify({ ok: false });
+    const c = t.projectToClient(h.getWorldPosition(new t.THREE.Vector3()));
+    return JSON.stringify({ ok: true, x: c.x, y: c.y });
+  })()`));
+  if (widthDrag.ok) {
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: widthDrag.x, y: widthDrag.y });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: widthDrag.x, y: widthDrag.y, button: "left", clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: widthDrag.x + 30, y: widthDrag.y + 5, button: "left", buttons: 1 });
+    await sleep(250);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: widthDrag.x + 30, y: widthDrag.y + 5, button: "left", clickCount: 1 });
+    await sleep(400);
+  }
+  const widthAfter = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[2] || null;
+    if (!bone) return JSON.stringify({ ok: false });
+    const rightCurve = bone.taperCurve || null;
+    const leftCurve = bone.taperCurveSecondary || null;
+    const rightForkT = t.tipWidthSideForkT ? t.tipWidthSideForkT(lock, 2, splits, 1) : null;
+    // locked region sample comparison: value at 0.3 (must be < forkT for seg2 right = 0.8125)
+    const globalAt = t.sampleTaperCurve ? t.sampleTaperCurve(lock.taperCurve, 0.3) : null;
+    const bakedAt = rightCurve ? rightCurve.find((pt) => Math.abs(pt.position - 0.3) < 1e-3)?.value : null;
+    return JSON.stringify({ ok: true, hasRight: !!rightCurve, hasLeft: !!leftCurve, asym: bone.asymmetricWidthCurve === true, rightForkT, lockedMatch: globalAt != null && bakedAt != null && Math.abs(globalAt - bakedAt) < 1e-3, changedFromDefault: !!rightCurve });
+  })()`));
+  check("tip width drag authors right curve (asymmetric, locked region = global)", widthAfter.ok === true && widthAfter.hasRight === true && widthAfter.hasLeft === true && widthAfter.asym === true && widthAfter.lockedMatch === true, `width=${JSON.stringify(widthAfter)}`);
+
+  // ============ Issue 1: hover + alt+click in select mode (non-create tools) ============
+  await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="select"]'); if (btn) btn.click(); return true; })()`);
+  await sleep(300);
+  const selOther = await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id !== ${JSON.stringify(lockId)} && l.geometryType === "strand" && l.mesh && !l.locked);
+    return lock ? lock.id : null;
+  })()`);
+  if (selOther) {
+    const selPt = JSON.parse(await evalJS(cdp, `(() => {
+      const t = window.__ahsTest;
+      const lock = t.locks.find((l) => l.id === ${JSON.stringify(selOther)});
+      const last = lock.points[lock.points.length - 1];
+      const c = t.projectToClient(new t.THREE.Vector3(last.x, last.y, last.z));
+      return JSON.stringify({ x: c.x, y: c.y });
+    })()`));
+    await evalJS(cdp, `(() => { const t = window.__ahsTest; t.updateStrandBrushHover({ clientX: ${selPt.x}, clientY: ${selPt.y} }); return true; })()`);
+    await sleep(200);
+    const selHover = JSON.parse(await evalJS(cdp, `(() => {
+      const t = window.__ahsTest;
+      const hovered = t.hairState.state.hoveredStrandId;
+      const lock = hovered ? t.locks.find((l) => l.id === hovered) : null;
+      return JSON.stringify({ hovered, outline: lock?.hoverOutline?.visible, tool: t.sel.state.activeTool });
+    })()`));
+    check("select mode hover highlights another strand", !!selHover.hovered && selHover.outline === true && selHover.tool === "select", `selHover=${JSON.stringify(selHover)}`);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: selPt.x, y: selPt.y, button: "left", modifiers: 1, clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: selPt.x, y: selPt.y, button: "left", modifiers: 1, clickCount: 1 });
+    await sleep(500);
+    const selAlt = await evalJS(cdp, `(() => { const t = window.__ahsTest; const l = t.getSelectedLock(); return l ? l.id : null; })()`);
+    check("select mode alt+click switches to hovered strand", selAlt === selHover.hovered, `selAlt=${selAlt} hovered=${selHover.hovered}`);
+    await evalJS(cdp, `(() => { const t = window.__ahsTest; t.selectLock(${JSON.stringify(lockId)}, {}); return true; })()`);
+  }
+
   // ============ Issue 6: strand hover highlight during brush + alt+click switch ============
   // find another (non-panel) strand
   const otherId = await evalJS(cdp, `(() => {
