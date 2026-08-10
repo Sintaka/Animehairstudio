@@ -789,7 +789,12 @@ function applyBranchRootRegionCarving(lock, geometry) {
       }
       return;
     }
-    const facesPerRow = Math.round(faces.length / Math.max(1, rows - 1));
+    // Use the build-time per-row face count (gridFacesPerRow): the region's row/col
+    // mapping in branchRootRegionSurface is based on it, and the flat quadFaces array
+    // can legitimately contain extra faces beyond the grid (e.g. procedural merges or
+    // already-carved holes), which would otherwise drift the row/col stride.
+    const facesPerRow = Number(geometry?.userData?.gridFacesPerRow)
+      || Math.round(faces.length / Math.max(1, rows - 1));
     if (facesPerRow < 2) return;
     faces.forEach((face, faceIndex) => {
       if (removed.has(faceIndex)) return;

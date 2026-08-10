@@ -14745,6 +14745,7 @@ function createBaseHairGeometry(lock) {
     lock,
     curve,
     profilePoints: profileSlotPoints,
+    profileEdges: profileTopology.edges,
     startT: 0,
     seedFrame: null,
     rootRelative: false

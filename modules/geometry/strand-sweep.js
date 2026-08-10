@@ -12,6 +12,7 @@ export function createStrandSweepApi(deps) {
       lock,
       curve,
       profilePoints,          // array of {x, z(, t?)} profile points (closed ring)
+      profileEdges = null,    // quad edges (start/end slot indices); default = consecutive ring
       startT = 0,
       seedFrame = null,       // first-row frame override (child root bone)
       rootRelative = false    // child: normalize per-ring warp to the root ring
@@ -68,18 +69,20 @@ export function createStrandSweepApi(deps) {
         colors.push(color.r, color.g, color.b);
       });
     });
+    const edges = Array.isArray(profileEdges) && profileEdges.length
+      ? profileEdges
+      : profilePoints.map((_, index) => ({ start: index, end: (index + 1) % profileCount }));
     const indices = [];
     const quadFaces = [];
     for (let row = 0; row < actualLengthSegments; row += 1) {
-      for (let s = 0; s < profileCount; s += 1) {
-        const s2 = (s + 1) % profileCount;
-        const a = row * profileCount + s;
-        const b = row * profileCount + s2;
-        const c = (row + 1) * profileCount + s;
-        const d = (row + 1) * profileCount + s2;
+      edges.forEach((edge) => {
+        const a = row * profileCount + edge.start;
+        const b = row * profileCount + edge.end;
+        const c = (row + 1) * profileCount + edge.start;
+        const d = (row + 1) * profileCount + edge.end;
         indices.push(a, c, b, b, c, d);
         quadFaces.push([a, c, d, b]);
-      }
+      });
     }
     return {
       vertices,
