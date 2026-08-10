@@ -319,11 +319,32 @@ try {
     const c = t.projectToClient(new t.THREE.Vector3(last.x, last.y, last.z));
     return JSON.stringify({ x: c.x, y: c.y });
   })()`));
+  const normalBefore = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[1] || null;
+    const tip = t.splitTipForSegment(lock, 1, splits, bone);
+    const curve = new t.THREE.CatmullRomCurve3(tip.points.map((p) => new t.THREE.Vector3(p.x, p.y, p.z)));
+    const restCurve = new t.THREE.CatmullRomCurve3(tip.restPoints.map((p) => new t.THREE.Vector3(p.x, p.y, p.z)));
+    const tp = 0.9;
+    const tangent = curve.getTangent(tp).normalize();
+    const point = curve.getPoint(tp);
+    const restTangent = restCurve.getTangent(tp).normalize();
+    const dq = new t.THREE.Quaternion().setFromUnitVectors(restTangent, tangent);
+    const mf = t.strandFrameAt(lock, tp);
+    const normal = mf.z.clone().applyQuaternion(dq).normalize();
+    const camDir = t.camera().position.clone().sub(point).projectOnPlane(tangent);
+    if (camDir.lengthSq() > 1e-6) camDir.normalize();
+    return JSON.stringify(Math.acos(Math.min(1, Math.max(-1, normal.dot(camDir)))) * 180 / Math.PI);
+  })()`));
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: oStart.x, y: oStart.y });
   await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: oStart.x, y: oStart.y, button: "left", clickCount: 1 });
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: oStart.x + 55, y: oStart.y + 10, button: "left", buttons: 1 });
-  await sleep(250);
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: oStart.x + 55, y: oStart.y + 10, button: "left", clickCount: 1 });
+  for (let mv = 1; mv <= 6; mv++) {
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: oStart.x + 9 * mv, y: oStart.y + 2 * mv, button: "left", buttons: 1 });
+    await sleep(80);
+  }
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: oStart.x + 54, y: oStart.y + 12, button: "left", clickCount: 1 });
   await sleep(400);
   const oAfter = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
@@ -333,26 +354,41 @@ try {
     const tip = t.splitTipForSegment(lock, 1, splits, bone);
     return JSON.stringify({ pts: tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })) });
   })()`));
-  let orientChanged = false;
+  let orientChainMoved = false;
   for (let i = 0; i < Math.min(oBefore.pts.length, oAfter.pts.length); i++) {
-    if (Math.hypot(oAfter.pts[i].x - oBefore.pts[i].x, oAfter.pts[i].y - oBefore.pts[i].y, oAfter.pts[i].z - oBefore.pts[i].z) > 1e-4) { orientChanged = true; break; }
+    if (Math.hypot(oAfter.pts[i].x - oBefore.pts[i].x, oAfter.pts[i].y - oBefore.pts[i].y, oAfter.pts[i].z - oBefore.pts[i].z) > 1e-4) { orientChainMoved = true; break; }
   }
-  check("orient brush changes tip chain", orientChanged === true, `orientDelta=${orientChanged}`);
-  // Issue 4: orient edits the tip FRAME (tangent), not just positions -> the section
-  // now rotates to follow the chain (authored tangent != rest tangent at the tip).
-  const orientRot = JSON.parse(await evalJS(cdp, `(() => {
+  // New orient semantics: rolls the tip section around its chain tangent so the tip's
+  // NORMAL faces the viewport; the chain (bone position) does NOT move.
+  const orientInfo = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const bone = t.materializeSplitBones(lock)[1] || null;
     const tip = t.splitTipForSegment(lock, 1, splits, bone);
-    if (!tip || tip.points.length < 2 || !tip.restPoints || tip.restPoints.length < 2) return JSON.stringify({ ok: false });
-    const aTan = new t.THREE.CatmullRomCurve3(tip.points.map((p) => new t.THREE.Vector3(p.x, p.y, p.z))).getTangent(1).normalize();
-    const rTan = new t.THREE.CatmullRomCurve3(tip.restPoints.map((p) => new t.THREE.Vector3(p.x, p.y, p.z))).getTangent(1).normalize();
-    const angle = Math.acos(Math.min(1, Math.max(-1, aTan.dot(rTan))));
-    return JSON.stringify({ ok: true, angleDeg: (angle * 180 / Math.PI).toFixed(2) });
+    const tw = tip && Array.isArray(tip.twists) ? tip.twists : [];
+    const nonZero = tw.filter((v) => Math.abs(v) > 0.01).length;
+    let normalToCam = null;
+    if (tip && tip.points.length >= 2 && tip.restPoints && tip.restPoints.length >= 2 && tw.length >= 2) {
+      const curve = new t.THREE.CatmullRomCurve3(tip.points.map((p) => new t.THREE.Vector3(p.x, p.y, p.z)));
+      const restCurve = new t.THREE.CatmullRomCurve3(tip.restPoints.map((p) => new t.THREE.Vector3(p.x, p.y, p.z)));
+      const tp = 0.9;
+      const tangent = curve.getTangent(tp).normalize();
+      const point = curve.getPoint(tp);
+      const restTangent = restCurve.getTangent(tp).normalize();
+      const dq = new t.THREE.Quaternion().setFromUnitVectors(restTangent, tangent);
+      const mf = t.strandFrameAt(lock, tp);
+      const idx = Math.min(tw.length - 1, Math.round(tp * (tw.length - 1)));
+      const twist = Number(tw[idx]) || 0;
+      const normal = mf.z.clone().applyQuaternion(dq).applyAxisAngle(tangent, twist).normalize();
+      const camDir = t.camera().position.clone().sub(point).projectOnPlane(tangent);
+      if (camDir.lengthSq() > 1e-6) camDir.normalize();
+      normalToCam = Math.acos(Math.min(1, Math.max(-1, normal.dot(camDir)))) * 180 / Math.PI;
+    }
+    return JSON.stringify({ count: tw.length, nonZero, normalToCamDeg: normalToCam != null ? Number(normalToCam.toFixed(1)) : null });
   })()`));
-  check("orient rotates the tip frame (tangent changes)", orientRot.ok === true && Number(orientRot.angleDeg) > 5, `orientRot=${JSON.stringify(orientRot)}`);
+  const normalImproved = orientInfo.normalToCamDeg != null && Number(normalBefore) - orientInfo.normalToCamDeg > 0.5;
+  check("orient rolls tip section toward viewport (chain unchanged)", orientChainMoved === false && orientInfo.nonZero > 0 && normalImproved === true, `orient=${JSON.stringify(orientInfo)} before=${Number(normalBefore).toFixed(1)} chainMoved=${orientChainMoved}`);
   // undo
   const undoSelBefore = await evalJS(cdp, `(() => { const t = window.__ahsTest; return JSON.stringify(t.sculptState.state.panelTipSelection); })()`);
   await evalJS(cdp, `(() => { const btn = document.querySelector('#undoAction'); if (btn && !btn.disabled) btn.click(); return true; })()`);

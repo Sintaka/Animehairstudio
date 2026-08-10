@@ -214,6 +214,15 @@ splitBone.tip = {
 **3. width 控制跟随发尖子骨骼帧 ✅**：宽度控制点/曲线改为用几何同款 tip 变形公式放置——`authoredCenter + dq·(baseEdge − restCenter)`（dq = rest→authored 切线旋转），`baseEdge` 用主面板扫掠截面（width/depth 曲线 + camber + 非对称中心，`tipMainSectionPoint` 复刻 `rawPanelPoint`）。大刘海边缘发尖的 tangent 偏差大时，宽度控制随发尖子骨骼的弯曲/朝向走，不再只参考主骨骼。修复过程中发现 `strandFrameAt` 不含 `point`（geometry 的 panelFrameAt 才有），改用 `strandGeometryCurve(lock).getPoint(t)` 作原点。
 
 **回归测试（scripts/verify-tip-select.mjs，28/28）**：orient 切线弯曲 16.05°（>5°）；宽度绿色曲线/小点显示在子发片边缘（左右长度不同 0.87 vs 0.33）；拖右控制点 → 曲线生成、asymmetric、锁定区=全局默认、发尖链不变；0 异常。三档 smoke 11/11、12/12 通过。
+### 8.14 orient 改为绕切线滚动（法线朝视口）、push 用法线、width 拖拽稳定比例（0.2.59 已落地）
+
+**1. orient 笔刷彻底重做 ✅**：之前「朝拖拽方向弯曲链」把骨骼当橡皮拖着走，方向错了。现改为与主发丝 orient 一致的语义——**绕链切线滚动截面，让发尖法线面向视口**；链（骨骼位置）完全不动。数据层新增 `bone.tip.twists`（每链点滚动角数组，随 splitBones/registry 序列化、镜像翻转符号、undo 保留）；几何 `addPatch` 用 `dqRoll = R(authoredTangent, twist)·dq` 旋转截面；orient 累加「当前法线与相机朝向（投影到切线平面）的带符号夹角」×权重×strength×0.2，多次采样收敛到法线朝视口。回归：orient 后链不动、twists 非零、法线-相机夹角 13.0°→10.9°。
+
+**2. push 笔刷方向 ✅**：`up` 由「相机朝向平面法线投影」改为**发尖截面自身法线**（主面板法线经 dq 运输 + orient 滚动），侧面/边缘发尖不再过分倾斜（原先是初始法线参考主骨骼导致）。
+
+**3. width 拖拽塌缩 ✅**：原公式 `2·latOffset/((edgeU−centerU)·fullWidth)` 依赖当前宽度形成反馈 → 往回缩、定死、退行。改为**稳定比例**：拖动起点记录 `startLatOffset`（边缘到链中心的副切线距离）与 `startMult`（当前宽度倍数），拖拽时 `newMult = startMult × (latOffset/startLatOffset)`（clamp [0.02,2]），无反馈、可反复拖动。
+
+**回归测试（scripts/verify-tip-select.mjs，27/27 更新）**：orient 滚动截面（链不动 + twists 非零 + 法线朝视口更近）；push 移动发尖；width 拖拽 author 曲线（asymmetric、锁定区=全局、链不变）；0 异常。三档 smoke 11/11、12/12 通过。
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

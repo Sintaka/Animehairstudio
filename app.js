@@ -13701,6 +13701,9 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
     restPoints.push(panelSplitControlPoint(lock, { position: centerU, height: 1 - t }, t, curve, segmentIndex, splitBone));
   }
   const authored = splitBone?.tip;
+  const twists = (authored && Array.isArray(authored.twists))
+    ? restPoints.map((_, index) => Number(authored.twists[index]) || 0)
+    : restPoints.map(() => 0);
   if (
     authored
     && Array.isArray(authored.points)
@@ -13715,10 +13718,11 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
     return {
       restPoints,
       points: restPoints.map((point, index) => point.clone().add(delta[index])),
+      twists,
       active: authored.active !== false
     };
   }
-  return { restPoints, points: restPoints.map((point) => point.clone()), active: true };
+  return { restPoints, points: restPoints.map((point) => point.clone()), twists, active: true };
 }
 
 function createPanelStrandGeometry(lock) {
@@ -13913,7 +13917,13 @@ function createPanelStrandGeometry(lock) {
             Math.PI
           )
           : (new THREE.Quaternion()).setFromUnitVectors(restTangent, authoredTangent);
-        tipTransform = { authoredCenter, restCenter, dq, weight };
+        // Orient roll around the authored tangent (tip.twists), so the section's
+        // normal can be turned to face the viewport without moving the chain.
+        const twist = Array.isArray(tip.twists) ? sampleArray(tip.twists, t) : 0;
+        const dqRoll = Math.abs(twist) > 1e-6
+          ? (new THREE.Quaternion()).setFromAxisAngle(authoredTangent, twist).multiply(dq)
+          : dq;
+        tipTransform = { authoredCenter, restCenter, dq: dqRoll, weight };
       }
       const frontRow = [];
       const backRow = [];
@@ -34459,6 +34469,8 @@ function beginPanelSplitHandleDrag(event) {
   let tipStartWorld = null;
   let tipWidthT = null;
   let tipWidthStartWorld = null;
+  let tipWidthStartLatOffset = null;
+  let tipWidthStartMult = null;
   if (tipIndex != null && tipPoint != null) {
     // Selecting a tip sub-bone: remember it and point the segment controls at it.
     sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: tipIndex };
@@ -34473,10 +34485,18 @@ function beginPanelSplitHandleDrag(event) {
     sculptState.state.panelSegmentIndex = tipWidthSegment;
     syncPanelSegmentControls(lock);
     const tipSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    const placement = tipWidthControlPlacement(lock, tipWidthSegment, tipSplits, splitBonesFor(lock)[tipWidthSegment] || null, tipWidthSide, tipWidthIndex);
+    const tipBone = splitBonesFor(lock)[tipWidthSegment] || null;
+    const placement = tipWidthControlPlacement(lock, tipWidthSegment, tipSplits, tipBone, tipWidthSide, tipWidthIndex);
     if (placement) {
       tipWidthT = placement.t;
       tipWidthStartWorld = placement.point.clone();
+      // Stable drag basis: the edge's signed lateral distance and the current width
+      // multiplier, so dragging scales width by a ratio (no feedback collapse).
+      tipWidthStartLatOffset = placement.point.clone().sub(placement.center).dot(placement.lateral);
+      const boundaries = [-1, ...tipSplits.map((split) => split.position), 1];
+      const edgeU = boundaries[tipWidthSide < 0 ? tipWidthSegment : tipWidthSegment + 1];
+      const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
+      tipWidthStartMult = tipPanelWidthAt(lock, placement.t, edgeU, tipBone) / fullWidth;
     }
   }
   sculptState.state.panelSplitDrag = {
@@ -34495,7 +34515,9 @@ function beginPanelSplitHandleDrag(event) {
     tipWidthSide,
     tipWidthIndex,
     tipWidthT,
-    tipWidthStartWorld
+    tipWidthStartWorld,
+    tipWidthStartLatOffset,
+    tipWidthStartMult
   };
   renderer.domElement.setPointerCapture?.(event.pointerId);
   renderer.domElement.style.cursor = "grabbing";
@@ -34610,14 +34632,11 @@ function updatePanelSplitHandleDrag(event) {
     const ndcY = -((2 * targetY) / rect.height - 1);
     const cursorWorld = new THREE.Vector3(ndcX, ndcY, startProj.z).unproject(camera);
     const latOffset = cursorWorld.clone().sub(center).dot(lateral);
-    const boundaries = [-1, ...splitsForWidth.map((split) => split.position), 1];
-    const edgeU = boundaries[side < 0 ? segment : segment + 1];
-    const centerU = (boundaries[segment] + boundaries[segment + 1]) * 0.5;
-    const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
-    // New width multiplier maps the dragged edge (signed lateral distance from the
-    // chain center) onto the segment's edge span; only the exposed (below-zipper)
-    // part changes, above stays default.
-    const newWidthMult = (2 * latOffset) / ((edgeU - centerU) * fullWidth);
+    // Stable ratio: scale the start width by how far the cursor moved the edge
+    // relative to its start lateral distance (no feedback collapse on the current
+    // width). setTipWidthCurveValue clamps to [0.02, 2].
+    const newWidthMult = (drag.tipWidthStartMult ?? 1)
+      * (latOffset / Math.max(0.0001, drag.tipWidthStartLatOffset || 0.0001));
     setTipWidthCurveValue(lock, segment, splitsForWidth, bone, side, t, newWidthMult);
     updateLockGeometry(lock, { immediate: true });
     updateCurveObjects(lock, { visible: true });
@@ -35928,19 +35947,25 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
       changed = true;
     }
   } else if (tool === "sculpt-push") {
-    // stroke.planeNormal is a plain {x,y,z} (from sculpt-brush cameraFacingPlaneNormal);
-    // promote it to a Vector3 before the plane-projection math (clone()/projectOnPlane).
-    const pushPlaneNormal = new THREE.Vector3(
-      Number(stroke.planeNormal?.x) || 0,
-      Number(stroke.planeNormal?.y) || 0,
-      Number(stroke.planeNormal?.z) || 0
-    );
     const curve = new THREE.CatmullRomCurve3(current);
+    const restCurve = new THREE.CatmullRomCurve3(rest);
     for (let index = firstBelow; index < current.length; index += 1) {
       if (weights[index] <= 0) continue;
       const t = index / Math.max(1, current.length - 1);
       const tangent = curve.getTangent(t).normalize();
-      const up = pushPlaneNormal.clone().projectOnPlane(tangent);
+      // Push along the tip section's OWN normal (main panel normal transported by dq +
+      // orient roll). The camera-facing plane normal is too slanted on side/edge tips.
+      const restTangent = restCurve.getTangent(t).normalize();
+      const dq = restTangent.dot(tangent) < -0.9999
+        ? (new THREE.Quaternion()).setFromAxisAngle(
+          Math.abs(restTangent.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0),
+          Math.PI
+        )
+        : (new THREE.Quaternion()).setFromUnitVectors(restTangent, tangent);
+      const mainFrame = strandFrameAt(lock, t);
+      let up = mainFrame.z.clone().applyQuaternion(dq);
+      const twist = Array.isArray(authored.twists) ? Number(authored.twists[index]) || 0 : 0;
+      up.applyAxisAngle(tangent, twist);
       if (up.lengthSq() < 0.0001) up.set(0, 1, 0).projectOnPlane(tangent);
       up.normalize();
       const dragWorld = sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
@@ -35958,31 +35983,36 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
       changed = true;
     }
   } else if (tool === "sculpt-orient") {
-    // Bend the exposed chain TOWARD THE DRAG so the tip's tangent direction rotates
-    // (the geometry follows via the frame delta). Rotating around the view axis (old
-    // behavior) mostly spun the lateral/binormal for camera-facing tips, making the
-    // tangent look "locked". The bend axis is perpendicular to the chain tangent and
-    // the drag direction, so a horizontal drag bends the tip horizontally, etc.
+    // Roll the tip section around its chain tangent so the tip's NORMAL faces the
+    // viewport (same semantics as the main hair's orient brush). Only the section
+    // orientation changes; the chain (bone position) does NOT move.
     const curve = new THREE.CatmullRomCurve3(current);
-    const root = current[firstBelow] || current[0];
-    const rootT = firstBelow / Math.max(1, current.length - 1);
-    const rootTangent = curve.getTangent(rootT).normalize();
-    const rootFrame = strandFrameAt(lock, rootT);
-    const dragWorld = sculptBrushWorldDelta(root, deltaX, deltaY, rect);
-    let dragDir = dragWorld.clone().normalize();
-    if (dragDir.lengthSq() < 0.0001) dragDir.set(1, 0, 0);
-    let bendAxis = new THREE.Vector3().crossVectors(rootTangent, dragDir);
-    // Fallback when the drag is along the chain: bend around the chain's own binormal
-    // instead of an arbitrary world axis (that was the "weird" flips).
-    if (bendAxis.lengthSq() < 0.0001) bendAxis.crossVectors(rootTangent, rootFrame.z);
-    bendAxis.normalize();
-    const amount = (reverse ? -1 : 1) * strength * Math.hypot(deltaX, deltaY) * 0.012;
+    const restCurve = new THREE.CatmullRomCurve3(rest);
+    const twistArr = (Array.isArray(authored.twists) && authored.twists.length === current.length)
+      ? authored.twists.map((v) => Number(v) || 0)
+      : current.map(() => 0);
     for (let index = firstBelow; index < current.length; index += 1) {
-      const offset = points[index].clone().sub(root);
-      offset.applyAxisAngle(bendAxis, amount);
-      points[index].copy(root).add(offset);
+      if (weights[index] <= 0) continue;
+      const t = index / Math.max(1, current.length - 1);
+      const tangent = curve.getTangent(t).normalize();
+      const point = curve.getPoint(t);
+      const restTangent = restCurve.getTangent(t).normalize();
+      const dq = restTangent.dot(tangent) < -0.9999
+        ? (new THREE.Quaternion()).setFromAxisAngle(
+          Math.abs(restTangent.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0),
+          Math.PI
+        )
+        : (new THREE.Quaternion()).setFromUnitVectors(restTangent, tangent);
+      const mainFrame = strandFrameAt(lock, t);
+      const currentNormal = mainFrame.z.clone().applyQuaternion(dq).applyAxisAngle(tangent, twistArr[index]).normalize();
+      let targetUp = camera.position.clone().sub(point).projectOnPlane(tangent);
+      if (targetUp.lengthSq() < 0.0001) targetUp.copy(currentNormal);
+      targetUp.normalize();
+      const angle = signedAngleAroundAxis(currentNormal, targetUp, tangent);
+      twistArr[index] = twistArr[index] + angle * weights[index] * strength * 0.2;
       changed = true;
     }
+    if (changed) authored.twists = twistArr.map((v) => Number(v) || 0);
   } else {
     // move (and any fallback): masked view-plane translation
     for (let index = firstBelow; index < current.length; index += 1) {

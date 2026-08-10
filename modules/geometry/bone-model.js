@@ -40,6 +40,7 @@ export function normalizeSplitBones(value, splits, lock) {
         ? {
           points: src.tip.points.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })),
           restPoints: Array.isArray(src.tip.restPoints) ? src.tip.restPoints.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })) : null,
+          twists: Array.isArray(src.tip.twists) ? src.tip.twists.map((v) => Number(v) || 0) : null,
           active: src.tip.active !== false
         }
         : null,
@@ -189,6 +190,7 @@ export function splitBonesToData(bones) {
       ? {
         points: bone.tip.points.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })),
         restPoints: Array.isArray(bone.tip.restPoints) ? bone.tip.restPoints.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })) : null,
+        twists: Array.isArray(bone.tip.twists) ? bone.tip.twists.map((v) => Number(v) || 0) : null,
         active: bone.tip.active !== false
       }
       : null
@@ -210,7 +212,8 @@ export function mirrorSplitBones(bones) {
       bone.tip = {
         ...bone.tip,
         points: bone.tip.points.map((p) => ({ x: -p.x, y: p.y, z: p.z })),
-        restPoints: Array.isArray(bone.tip.restPoints) ? bone.tip.restPoints.map((p) => ({ x: -p.x, y: p.y, z: p.z })) : null
+        restPoints: Array.isArray(bone.tip.restPoints) ? bone.tip.restPoints.map((p) => ({ x: -p.x, y: p.y, z: p.z })) : null,
+        twists: Array.isArray(bone.tip.twists) ? bone.tip.twists.map((v) => -Number(v)) : null
       };
     }
   });
@@ -249,6 +252,7 @@ export function normalizeBone(value, fallback = null, lock = null) {
       ? {
         points: src.tip.points.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })),
         restPoints: Array.isArray(src.tip.restPoints) ? src.tip.restPoints.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })) : null,
+        twists: Array.isArray(src.tip.twists) ? src.tip.twists.map((v) => Number(v) || 0) : null,
         active: src.tip.active !== false
       }
       : (fb.tip && Array.isArray(fb.tip.points) ? { ...fb.tip } : null),
@@ -315,7 +319,8 @@ export function mirrorBones(bones) {
       ? {
         ...bone.tip,
         points: bone.tip.points.map((p) => ({ x: -p.x, y: p.y, z: p.z })),
-        restPoints: Array.isArray(bone.tip.restPoints) ? bone.tip.restPoints.map((p) => ({ x: -p.x, y: p.y, z: p.z })) : null
+        restPoints: Array.isArray(bone.tip.restPoints) ? bone.tip.restPoints.map((p) => ({ x: -p.x, y: p.y, z: p.z })) : null,
+        twists: Array.isArray(bone.tip.twists) ? bone.tip.twists.map((v) => -Number(v)) : null
       }
       : null
   }, null, null));
