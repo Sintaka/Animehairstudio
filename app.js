@@ -24782,6 +24782,7 @@ function createCurveObjects(lock) {
   const panelSplitLines = [];
   const panelSegmentHandles = [];
   const panelTipHandles = [];
+  const panelTipLines = [];
   if (isPanelGeometry(lock)) {
     lock.panelSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     lock.panelSplits.forEach((split, index) => {
@@ -24836,6 +24837,14 @@ function createCurveObjects(lock) {
         group.add(handle);
         panelTipHandles.push(handle);
       }
+      // Guide line connecting the sub-bone chain points (like a strand guide).
+      const line = new THREE.Line(
+        new THREE.BufferGeometry(),
+        new THREE.LineBasicMaterial({ color: 0xffd84d, transparent: true, opacity: 0.7, depthTest: false })
+      );
+      line.renderOrder = 6;
+      group.add(line);
+      panelTipLines.push(line);
     }
   }
   let strandSplitHandle = null;
@@ -24878,6 +24887,7 @@ function createCurveObjects(lock) {
     panelSplitLines,
     panelSegmentHandles,
     panelTipHandles,
+    panelTipLines,
     strandSplitHandle,
     strandSplitLine,
     branchSweepStartHandle,
@@ -24959,6 +24969,7 @@ function populatePolyEditObjects(lock, target) {
     panelSplitHandles: [],
     panelSplitLines: [],
     panelTipHandles: [],
+    panelTipLines: [],
     strandSplitHandle: null,
     strandSplitLine: null,
     branchSweepStartHandle: null,
@@ -25329,11 +25340,33 @@ function updateCurveObjects(lock, options = {}) {
       return;
     }
     handle.position.copy(tip.points[point]);
-    handle.material.opacity = sculptState.state.panelSplitDrag?.lockId === lock.id
+    const isSelected = sculptState.state.panelTipSelection?.lockId === lock.id
+      && sculptState.state.panelTipSelection.segmentIndex === segment;
+    const isDragged = sculptState.state.panelSplitDrag?.lockId === lock.id
       && sculptState.state.panelSplitDrag.kind === "tip"
       && sculptState.state.panelSplitDrag.splitIndex === segment
-      && sculptState.state.panelSplitDrag.tipPoint === point
-      ? 0.95 : 0.75;
+      && sculptState.state.panelSplitDrag.tipPoint === point;
+    handle.material.opacity = isDragged ? 0.95 : (isSelected ? 0.95 : 0.4);
+  });
+  // Guide lines connecting each sub-bone chain (selected bright, others dimmed).
+  lock.curveObjects.panelTipLines?.forEach((line, segment) => {
+    const visible = !sculptBrushHelpersSuppressed
+      && !brushDebugVisible
+      && isPanelGeometry(lock)
+      && lock.panelSplitEnabled !== false
+      && tipSplits.length > 0;
+    line.visible = visible;
+    if (!visible) return;
+    const tip = splitTipForSegment(lock, segment, tipSplits, tipSplitBones[segment] || null);
+    if (!tip || tip.points.length < 2) {
+      line.visible = false;
+      return;
+    }
+    line.geometry.dispose();
+    line.geometry = new THREE.BufferGeometry().setFromPoints(tip.points);
+    line.material.opacity = sculptState.state.panelTipSelection?.lockId === lock.id
+      && sculptState.state.panelTipSelection.segmentIndex === segment
+      ? 0.95 : 0.45;
   });
   const strandSplitVisible = !sculptBrushHelpersSuppressed
     && !brushDebugVisible
@@ -33913,6 +33946,14 @@ function disposeCurveObjects(lock) {
     handle.geometry.dispose();
     handle.material.dispose();
   });
+  lock.curveObjects.panelTipHandles?.forEach((handle) => {
+    handle.geometry.dispose();
+    handle.material.dispose();
+  });
+  lock.curveObjects.panelTipLines?.forEach((line) => {
+    line.geometry.dispose();
+    line.material.dispose();
+  });
   if (lock.curveObjects.strandSplitHandle) {
     lock.curveObjects.strandSplitHandle.geometry.dispose();
     lock.curveObjects.strandSplitHandle.material.dispose();
@@ -33971,6 +34012,10 @@ function beginPanelSplitHandleDrag(event) {
   const tipPoint = hit.object.userData.panelTipPoint != null ? hit.object.userData.panelTipPoint : null;
   let tipStartWorld = null;
   if (tipIndex != null && tipPoint != null) {
+    // Selecting a tip sub-bone: remember it and point the segment controls at it.
+    sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: tipIndex };
+    sculptState.state.panelSegmentIndex = tipIndex;
+    syncPanelSegmentControls(lock);
     const tipSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const tip = splitTipForSegment(lock, tipIndex, tipSplits, splitBonesFor(lock)[tipIndex] || null);
     if (tip && tip.points[tipPoint]) tipStartWorld = tip.points[tipPoint].clone();
@@ -35256,12 +35301,88 @@ function beginSculptMoveStroke(event) {
   event.stopImmediatePropagation();
 }
 
+function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
+  // When a split tip sub-bone is selected, the brush edits only that sub-bone's chain
+  // points (masked by screen distance), never other sub-bones or the main chain.
+  // Scale is centered on the sub-bone's exposed root (first below-fork chain point).
+  const selection = sculptState.state.panelTipSelection;
+  if (!selection) return false;
+  const lock = locks.find((item) => item.id === selection.lockId);
+  if (!lock || !isPanelGeometry(lock) || lock.panelSplitEnabled === false) return false;
+  const segmentIndex = selection.segmentIndex;
+  const splits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+  if (segmentIndex == null || segmentIndex < 0 || segmentIndex >= splits.length + 1) return false;
+  if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
+  const bones = materializeSplitBones(lock);
+  const bone = bones[segmentIndex];
+  if (!bone) return false;
+  const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
+  if (!tip || tip.restPoints.length < 2) return false;
+  const rest = tip.restPoints;
+  const authored = (Array.isArray(bone.tip?.points) && bone.tip.points.length === rest.length)
+    ? bone.tip
+    : {
+      points: rest.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+      restPoints: rest.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+      active: true
+    };
+  const current = authored.points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+  const points = current.map((p) => p.clone());
+  const rect = renderer.domElement.getBoundingClientRect();
+  const cursor = new THREE.Vector2(clientX - rect.left, clientY - rect.top);
+  const radius = Number(sculptBrushRadiusInput.value);
+  const falloff = Number(sculptBrushFalloffInput.value);
+  const strength = Number(sculptBrushStrengthByTool[effectiveSculptBrushTool()] ?? sculptBrushStrengthInput.value);
+  const reverse = Boolean(stroke.reverse);
+  const tool = effectiveSculptBrushTool();
+  const forkT = splitForkT(lock, segmentIndex, splits);
+  const firstBelow = Math.min(rest.length - 1, Math.max(1, Math.ceil(forkT * (rest.length - 1))));
+  const scaleCenter = current[firstBelow] || current[0];
+  let changed = false;
+  for (let index = firstBelow; index < current.length; index += 1) {
+    const weight = sculptBrushPointWeight(current[index], cursor, rect, radius, falloff);
+    if (weight <= 0) continue;
+    if (tool === "sculpt-scale") {
+      const dir = current[index].clone().sub(scaleCenter);
+      const amount = (reverse ? -1 : 1) * weight * strength * (deltaX + deltaY) * 0.004;
+      points[index].addScaledVector(dir, amount);
+      changed = true;
+    } else if (tool === "sculpt-slide") {
+      const curve = new THREE.CatmullRomCurve3(current);
+      const t = index / Math.max(1, current.length - 1);
+      const tangent = curve.getTangent(t).normalize();
+      const dragWorld = sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
+      const amount = (reverse ? -1 : 1) * weight * strength * dragWorld.dot(tangent);
+      points[index].addScaledVector(tangent, amount);
+      changed = true;
+    } else {
+      // move / push / orient fall back to masked view-plane translation
+      const dragWorld = sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
+      points[index].addScaledVector(dragWorld, (reverse ? -1 : 1) * weight * strength);
+      changed = true;
+    }
+  }
+  if (!changed) return false;
+  authored.points = points.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+  authored.restPoints = rest.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+  authored.active = true;
+  bone.tip = authored;
+  stroke.editedLockIds.add(lock.id);
+  updateLockGeometry(lock, { immediate: true });
+  updateCurveObjects(lock, { visible: true });
+  updateTopologyStats();
+  return true;
+}
+
 function applySculptMoveStrokeSample(stroke, clientX, clientY) {
   const deltaX = clientX - stroke.lastX;
   const deltaY = clientY - stroke.lastY;
   stroke.lastX = clientX;
   stroke.lastY = clientY;
   if (Math.abs(deltaX) + Math.abs(deltaY) < 0.01) return;
+
+  // Selected sub-bone brush (masked to that sub-bone; scale centers on its exposed root).
+  if (applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY)) return;
 
   const rect = renderer.domElement.getBoundingClientRect();
   const cursor = new THREE.Vector2(clientX - rect.left, clientY - rect.top);
