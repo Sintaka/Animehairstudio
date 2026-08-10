@@ -36,7 +36,15 @@ export function createProjectSaveApi(deps) {
   const fileExportAvailability = Object.freeze({
     mesh: true,
     curves: true,
-    bones: false,
+    // Bone export is available when the scene has any authored skeleton: authored
+    // split sub-bones, authored registry bones, or child-strand (branch) relationships.
+    get bones() {
+      return deps.locks.some((lock) => (
+        (Array.isArray(lock.splitBones) && lock.splitBones.length > 0)
+        || (Array.isArray(lock.bones) && lock.bones.length > 0)
+        || deps.locks.some((candidate) => candidate.branchParentId === lock.id)
+      ));
+    },
     weights: false
   });
   const fileExportDescriptions = Object.freeze({
@@ -157,6 +165,7 @@ export function createProjectSaveApi(deps) {
   } = {}) {
     const meshes = [];
     const curves = [];
+    const skeletons = [];
     deps.locks.forEach((lock) => {
       if (includeMesh) {
         const geometry = lock.mesh.geometry;
@@ -198,11 +207,30 @@ export function createProjectSaveApi(deps) {
         });
       }
     });
-    void includeBones;
+    if (includeBones && typeof deps.bonesFor === "function") {
+      // One SkelRoot per lock: the lock's own main chain + split sub-bones (child
+      // strands export their own skeleton as separate locks).
+      deps.locks.forEach((lock) => {
+        const bones = deps.bonesFor(lock, { locks: deps.locks })
+          .filter((bone) => !bone.name.startsWith("child."));
+        if (bones.length < 2) return;
+        const firstMain = bones.find((bone) => bone.name.startsWith("main."));
+        skeletons.push({
+          name: (lock.name || "Hair") + " Skeleton",
+          joints: bones.map((bone) => ({
+            name: bone.name,
+            parent: bone.parent === "main" && firstMain ? firstMain.name : bone.parent,
+            p: bone.p ? [bone.p.x, bone.p.y, bone.p.z] : null,
+            orient: bone.orient ? [bone.orient.w, bone.orient.x, bone.orient.y, bone.orient.z] : null
+          }))
+        });
+      });
+    }
     void includeWeights;
     return exportAnimeHairUsda({
       meshes,
       curves,
+      skeletons,
       rootName: rootName || "Anime Hair Studio"
     });
   }

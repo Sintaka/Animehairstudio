@@ -121,9 +121,50 @@ function curveBlock(curve, identifier) {
   ].join("\n");
 }
 
+function quatTuple(orient) {
+  return `(${formatNumber(orient?.[0] ?? 1)}, ${formatNumber(orient?.[1] ?? 0)}, ${formatNumber(orient?.[2] ?? 0)}, ${formatNumber(orient?.[3] ?? 0)})`;
+}
+
+function pointTuple(p) {
+  return `(${formatNumber(p?.[0] ?? 0)}, ${formatNumber(p?.[1] ?? 0)}, ${formatNumber(p?.[2] ?? 0)})`;
+}
+
+// Emit a SkelRoot with nested SkelJoint prims (hierarchy = prim nesting). Each joint
+// carries a translate (P) and an orient quaternion; parent linkage via nesting.
+function skeletonBlock(skeleton, usedNames) {
+  const identifier = uniqueIdentifier(`${skeleton?.name || "Hair"}_Skel`, usedNames, "HairSkel");
+  const joints = Array.isArray(skeleton?.joints) ? skeleton.joints : [];
+  if (!joints.length) return "";
+  const names = new Set(joints.map((joint) => joint.name));
+  const roots = joints.filter((joint) => !joint.parent || !names.has(joint.parent));
+  const childrenOf = (parentName) => joints.filter((joint) => joint.parent === parentName);
+  const jointBlock = (joint, depth) => {
+    const indent = "    ".repeat(depth + 1);
+    const childLines = childrenOf(joint.name).map((child) => jointBlock(child, depth + 1));
+    return [
+      `${indent}def SkelJoint "${usdIdentifier(joint.name, "Joint")}"`,
+      `${indent}{`,
+      `${indent}    quatf orient = ${quatTuple(joint.orient)}`,
+      `${indent}    point3f xformOp:translate = ${pointTuple(joint.p)}`,
+      `${indent}    uniform token[] xformOpOrder = ["xformOp:translate"]`,
+      ...childLines,
+      `${indent}}`
+    ].join("\n");
+  };
+  const block = [
+    `def SkelRoot "${identifier}"`,
+    "{",
+    ...roots.map((root) => jointBlock(root, 1)),
+    "}"
+  ].join("\n");
+  // Indent to sit inside the Skeletons Scope (8 spaces like mesh/curve prims).
+  return block.split("\n").map((line) => `        ${line}`).join("\n");
+}
+
 export function exportAnimeHairUsda({
   meshes = [],
   curves = [],
+  skeletons = [],
   rootName = "AnimeHairStudio"
 } = {}) {
   const usedMeshNames = new Set();
@@ -135,6 +176,11 @@ export function exportAnimeHairUsda({
     .filter((curve) => Array.isArray(curve?.points) && curve.points.length >= 4)
     .map((curve) => curveBlock(curve, uniqueIdentifier(`${curve.name || "Hair"}_Curve`, usedCurveNames, "HairCurve")));
   const rootIdentifier = usdIdentifier(rootName, "AnimeHairStudio");
+  const usedSkeletonNames = new Set();
+  const skeletonBlocks = skeletons
+    .filter((skeleton) => Array.isArray(skeleton?.joints) && skeleton.joints.length)
+    .map((skeleton) => skeletonBlock(skeleton, usedSkeletonNames))
+    .filter(Boolean);
 
   return [
     "#usda 1.0",
@@ -154,6 +200,11 @@ export function exportAnimeHairUsda({
     '    def Scope "CenterCurves"',
     "    {",
     curveBlocks.join("\n\n"),
+    "    }",
+    "",
+    '    def Scope "Skeletons"',
+    "    {",
+    skeletonBlocks.join("\n\n"),
     "    }",
     "}",
     ""
