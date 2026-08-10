@@ -182,7 +182,16 @@ export function splitBonesToData(bones) {
     depthCurve: bone.depthCurve ? bone.depthCurve.map((p) => ({ ...p })) : null,
     depthCurveSecondary: bone.depthCurveSecondary ? bone.depthCurveSecondary.map((p) => ({ ...p })) : null,
     asymmetricWidthCurve: bone.asymmetricWidthCurve == null ? null : Boolean(bone.asymmetricWidthCurve),
-    asymmetricDepthCurve: bone.asymmetricDepthCurve == null ? null : Boolean(bone.asymmetricDepthCurve)
+    asymmetricDepthCurve: bone.asymmetricDepthCurve == null ? null : Boolean(bone.asymmetricDepthCurve),
+    kind: bone.kind || "split",
+    meta: bone.meta ? { ...bone.meta } : null,
+    tip: bone.tip && Array.isArray(bone.tip.points)
+      ? {
+        points: bone.tip.points.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })),
+        restPoints: Array.isArray(bone.tip.restPoints) ? bone.tip.restPoints.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })) : null,
+        active: bone.tip.active !== false
+      }
+      : null
   }));
 }
 

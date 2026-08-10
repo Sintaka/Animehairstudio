@@ -221,6 +221,217 @@ try {
   const selOff = await evalJS(cdp, `(() => { const s = window.__ahsTest.sculptState.state; return JSON.stringify(s.panelTipSelection); })()`);
   check("second click toggles back to main selection", selOff === "null", `sel=${selOff}`);
 
+  // ============ Issue 1: every segment (incl. boundary) exposes a tip chain ============
+  const allSegs = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const res = [];
+    const count = lock.panelSplits.length + 1;
+    for (let seg = 0; seg < count; seg++) {
+      t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: seg };
+      t.updateCurveObjects(lock, { visible: true });
+      let handles = 0;
+      lock.curveObjects.panelTipHandles.forEach((h) => { if (h.visible && h.userData.panelTipIndex === seg) handles++; });
+      res.push({ seg, handles });
+    }
+    t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 0 };
+    return JSON.stringify({ count, res });
+  })()`));
+  const allSegsOk = allSegs.res.length === allSegs.count && allSegs.res.every((r) => r.handles > 0);
+  check("every segment exposes tip handles (boundary seg fixed)", allSegsOk, `all=${JSON.stringify(allSegs)}`);
+
+  // ============ Issue 2: scale brush = uniform radial transform (not move) ============
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 1 }; return true; })()`);
+  await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="sculpt-scale"]'); if (btn) btn.click(); return true; })()`);
+  await sleep(400);
+  const scaleBefore = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[1] || null;
+    const tip = t.splitTipForSegment(lock, 1, splits, bone);
+    return JSON.stringify({ pts: tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })), forkT: t.splitForkT(lock, 1, splits) });
+  })()`));
+  const scaleStart = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[1] || null;
+    const tip = t.splitTipForSegment(lock, 1, splits, bone);
+    const last = tip.points[tip.points.length - 1];
+    const c = t.projectToClient(new t.THREE.Vector3(last.x, last.y, last.z));
+    return JSON.stringify({ x: c.x, y: c.y });
+  })()`));
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: scaleStart.x, y: scaleStart.y });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: scaleStart.x, y: scaleStart.y, button: "left", clickCount: 1 });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: scaleStart.x + 45, y: scaleStart.y, button: "left", buttons: 1 });
+  await sleep(250);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: scaleStart.x + 45, y: scaleStart.y, button: "left", clickCount: 1 });
+  await sleep(400);
+  const scaleAfter = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[1] || null;
+    const tip = t.splitTipForSegment(lock, 1, splits, bone);
+    return JSON.stringify({ pts: tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })) });
+  })()`));
+  const scaleInfo = (() => {
+    const n = Math.min(scaleBefore.pts.length, scaleAfter.pts.length);
+    const firstBelow = Math.min(n - 1, Math.max(1, Math.ceil(scaleBefore.forkT * (n - 1))));
+    const root = scaleBefore.pts[firstBelow];
+    const deltas = [];
+    for (let i = firstBelow; i < n; i++) deltas.push({ dx: scaleAfter.pts[i].x - scaleBefore.pts[i].x, dy: scaleAfter.pts[i].y - scaleBefore.pts[i].y, dz: scaleAfter.pts[i].z - scaleBefore.pts[i].z });
+    const d0 = deltas[0];
+    let maxDeltaDiff = 0;
+    for (const d of deltas) maxDeltaDiff = Math.max(maxDeltaDiff, Math.hypot(d.dx - d0.dx, d.dy - d0.dy, d.dz - d0.dz));
+    let minCos = 1;
+    for (let i = 0; i < deltas.length; i++) {
+      const dir = { x: scaleBefore.pts[firstBelow + i].x - root.x, y: scaleBefore.pts[firstBelow + i].y - root.y, z: scaleBefore.pts[firstBelow + i].z - root.z };
+      const dl = Math.hypot(deltas[i].dx, deltas[i].dy, deltas[i].dz);
+      const il = Math.hypot(dir.x, dir.y, dir.z);
+      if (dl < 1e-9 || il < 1e-9) continue;
+      const cos = (deltas[i].dx * dir.x + deltas[i].dy * dir.y + deltas[i].dz * dir.z) / (dl * il);
+      minCos = Math.min(minCos, cos);
+    }
+    return { maxDeltaDiff, minCos };
+  })();
+  check("scale brush scales tip chain uniformly (radial, not move)", scaleInfo.maxDeltaDiff > 0.01 && scaleInfo.minCos > 0.995, `scale=${JSON.stringify(scaleInfo)}`);
+
+  // ============ Issue 3: undo records the tip edit; selection survives ============
+  await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="sculpt-orient"]'); if (btn) btn.click(); return true; })()`);
+  await sleep(300);
+  const oBefore = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[1] || null;
+    const tip = t.splitTipForSegment(lock, 1, splits, bone);
+    return JSON.stringify({ pts: tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })) });
+  })()`));
+  const oStart = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[1] || null;
+    const tip = t.splitTipForSegment(lock, 1, splits, bone);
+    const last = tip.points[tip.points.length - 1];
+    const c = t.projectToClient(new t.THREE.Vector3(last.x, last.y, last.z));
+    return JSON.stringify({ x: c.x, y: c.y });
+  })()`));
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: oStart.x, y: oStart.y });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: oStart.x, y: oStart.y, button: "left", clickCount: 1 });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: oStart.x + 55, y: oStart.y + 10, button: "left", buttons: 1 });
+  await sleep(250);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: oStart.x + 55, y: oStart.y + 10, button: "left", clickCount: 1 });
+  await sleep(400);
+  const oAfter = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[1] || null;
+    const tip = t.splitTipForSegment(lock, 1, splits, bone);
+    return JSON.stringify({ pts: tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })) });
+  })()`));
+  let orientChanged = false;
+  for (let i = 0; i < Math.min(oBefore.pts.length, oAfter.pts.length); i++) {
+    if (Math.hypot(oAfter.pts[i].x - oBefore.pts[i].x, oAfter.pts[i].y - oBefore.pts[i].y, oAfter.pts[i].z - oBefore.pts[i].z) > 1e-4) { orientChanged = true; break; }
+  }
+  check("orient brush changes tip chain", orientChanged === true, `orientDelta=${orientChanged}`);
+  // undo
+  const undoSelBefore = await evalJS(cdp, `(() => { const t = window.__ahsTest; return JSON.stringify(t.sculptState.state.panelTipSelection); })()`);
+  await evalJS(cdp, `(() => { const btn = document.querySelector('#undoAction'); if (btn && !btn.disabled) btn.click(); return true; })()`);
+  await sleep(600);
+  const undoCheck = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[1] || null;
+    const tip = t.splitTipForSegment(lock, 1, splits, bone);
+    const before = ${JSON.stringify(oBefore.pts)};
+    let reverted = true;
+    let maxDiff = 0;
+    for (let i = 0; i < Math.min(before.length, tip.points.length); i++) {
+      const d = Math.hypot(tip.points[i].x - before[i].x, tip.points[i].y - before[i].y, tip.points[i].z - before[i].z);
+      if (d > maxDiff) maxDiff = d;
+      if (d > 2e-3) { reverted = false; }
+    }
+    const bone2 = t.materializeSplitBones(lock)[1] || null;
+    const restoredTip = bone2 && bone2.tip ? bone2.tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })) : null;
+    const hasSplitBones = Array.isArray(lock.splitBones) && lock.splitBones.length === splits.length + 1;
+    const hasRegistryBones = Array.isArray(lock.bones) && lock.bones.length > 0;
+    return JSON.stringify({ reverted, maxDiff, sel: t.sculptState.state.panelTipSelection, hasSplitBones, hasRegistryBones, restoredTip });
+  })()`));
+
+  check("undo reverts only the tip stroke (selection survives)", undoCheck.reverted === true && undoCheck.sel && undoCheck.sel.segmentIndex === 1, `undo=${JSON.stringify(undoCheck)}`);
+
+  // ============ Issue 4: bones-only view during brush with no tip selected ============
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipSelection = null; t.sculptState.state.panelTipHover = { lockId: null, segmentIndex: null }; return true; })()`);
+  await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="sculpt-scale"]'); if (btn) btn.click(); return true; })()`);
+  await sleep(400);
+  const bonesOnly = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    t.updateCurveObjects(lock, { visible: true });
+    const mainHandlesVisible = (lock.curveObjects?.handles || []).filter((h) => h.visible).length;
+    return JSON.stringify({ group: lock.curveObjects?.group.visible, line: lock.curveObjects?.line.visible, mainHandlesVisible });
+  })()`));
+  check("brush bones-only: group+line visible, main handles hidden", bonesOnly.group === true && bonesOnly.line === true && bonesOnly.mainHandlesVisible === 0, `bones=${JSON.stringify(bonesOnly)}`);
+
+  // ============ Issue 5: alt+click on a hovered tip switches tip selection ============
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipHover = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 2 }; return true; })()`);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: clickPt.x, y: clickPt.y, button: "left", modifiers: 1, clickCount: 1 });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: clickPt.x, y: clickPt.y, button: "left", modifiers: 1, clickCount: 1 });
+  await sleep(400);
+  const altTip = JSON.parse(await evalJS(cdp, `(() => { const t = window.__ahsTest; return JSON.stringify(t.sculptState.state.panelTipSelection); })()`));
+  check("alt+click switches to hovered tip segment", !!(altTip && altTip.lockId === lockId && altTip.segmentIndex === 2), `altTip=${JSON.stringify(altTip)}`);
+
+  // ============ Issue 6: strand hover highlight during brush + alt+click switch ============
+  // find another (non-panel) strand
+  const otherId = await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id !== ${JSON.stringify(lockId)} && l.geometryType === "strand" && l.mesh && !l.locked);
+    return lock ? lock.id : null;
+  })()`);
+  if (otherId) {
+    await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipHover = { lockId: null, segmentIndex: null }; return true; })()`);
+    await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="sculpt-move"]'); if (btn) btn.click(); return true; })()`);
+    await sleep(300);
+    const otherPt = JSON.parse(await evalJS(cdp, `(() => {
+      const t = window.__ahsTest;
+      const lock = t.locks.find((l) => l.id === ${JSON.stringify(otherId)});
+      const last = lock.points[lock.points.length - 1];
+      const c = t.projectToClient(new t.THREE.Vector3(last.x, last.y, last.z));
+      return JSON.stringify({ x: c.x, y: c.y });
+    })()`));
+    await evalJS(cdp, `(() => { const t = window.__ahsTest; t.updateStrandBrushHover({ clientX: ${otherPt.x}, clientY: ${otherPt.y} }); return true; })()`);
+    await sleep(200);
+    const strandHover = JSON.parse(await evalJS(cdp, `(() => {
+      const t = window.__ahsTest;
+      const hoveredId = t.hairState.state.hoveredStrandId;
+      const lock = hoveredId ? t.locks.find((l) => l.id === hoveredId) : null;
+      return JSON.stringify({
+        hovered: hoveredId,
+        outlineVisible: lock?.hoverOutline?.visible,
+        tool: t.sel.state.activeTool,
+        hoveredIsSelected: hoveredId === t.getSelectedLock()?.id,
+        hoveredVisible: lock ? t.strandVisibleForDisplay(lock) : null
+      });
+    })()`));
+    const hoveredId = strandHover.hovered;
+    check("move brush hover highlights another strand", !!hoveredId && hoveredId !== lockId && strandHover.outlineVisible === true && strandHover.tool === "sculpt-move", `strandHover=${JSON.stringify(strandHover)}`);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: otherPt.x, y: otherPt.y, button: "left", modifiers: 1, clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: otherPt.x, y: otherPt.y, button: "left", modifiers: 1, clickCount: 1 });
+    await sleep(500);
+    const altSwitch = await evalJS(cdp, `(() => { const t = window.__ahsTest; const l = t.getSelectedLock(); return l ? l.id : null; })()`);
+    check("alt+click switches selection to hovered strand", altSwitch === hoveredId, `altSwitch=${altSwitch} hovered=${hoveredId}`);
+
+    // restore panel selection for cleanliness
+    await evalJS(cdp, `(() => { const t = window.__ahsTest; t.selectLock(${JSON.stringify(lockId)}, {}); return true; })()`);
+  } else {
+    check("move brush hover highlights another strand", false, "no other strand found");
+  }
+
   const errAfter = cdp.events.filter((e) => e.method === "Runtime.exceptionThrown").length;
   check("0 exceptions during interaction", errAfter === bootErr, `total=${errAfter} (start=${bootErr})`);
 

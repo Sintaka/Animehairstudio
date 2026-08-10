@@ -15098,12 +15098,12 @@ function createHairMaterial(lock) {
 const STRAND_SELECTION_OUTLINE_COLOR = 0xffd45e;
 const STRAND_MIRROR_OUTLINE_COLOR = 0x5ef2ff;
 
-function createStrandSelectionOutline(geometry) {
+function createStrandSelectionOutline(geometry, options = {}) {
   const material = new THREE.ShaderMaterial({
     name: "StrandSelectionOutlineMaterial",
     uniforms: {
-      uColor: { value: new THREE.Color(STRAND_SELECTION_OUTLINE_COLOR) },
-      uOutlineWidth: { value: 0.007 }
+      uColor: { value: new THREE.Color(options.color ?? STRAND_SELECTION_OUTLINE_COLOR) },
+      uOutlineWidth: { value: options.width ?? 0.007 }
     },
     vertexShader: `
       uniform float uOutlineWidth;
@@ -15119,7 +15119,8 @@ function createStrandSelectionOutline(geometry) {
       }
     `,
     side: THREE.BackSide,
-    transparent: false,
+    transparent: options.opacity != null && options.opacity < 1,
+    opacity: options.opacity ?? 1,
     depthTest: true,
     depthWrite: false,
     toneMapped: false
@@ -15127,7 +15128,7 @@ function createStrandSelectionOutline(geometry) {
   const outline = new THREE.Mesh(geometry, material);
   outline.name = "StrandSelectionOutline";
   outline.visible = false;
-  outline.renderOrder = 2;
+  outline.renderOrder = options.renderOrder ?? 2;
   outline.raycast = () => {};
   return outline;
 }
@@ -16704,6 +16705,12 @@ function addLock(presetName, overrides = {}, options = {}) {
     : THREE.FrontSide;
   lock.selectionOutline = createStrandSelectionOutline(lock.mesh.geometry);
   lock.mesh.add(lock.selectionOutline);
+  lock.hoverOutline = createStrandSelectionOutline(lock.mesh.geometry, {
+    color: 0x8fd8ff,
+    opacity: 0.72,
+    renderOrder: 2
+  });
+  lock.mesh.add(lock.hoverOutline);
   lock.wireOverlay = createHairTopologyOverlay(lock.mesh.geometry);
   lock.mesh.add(lock.wireOverlay);
   lock.mesh.castShadow = true;
@@ -18697,6 +18704,12 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     : THREE.FrontSide;
   lock.selectionOutline = createStrandSelectionOutline(lock.mesh.geometry);
   lock.mesh.add(lock.selectionOutline);
+  lock.hoverOutline = createStrandSelectionOutline(lock.mesh.geometry, {
+    color: 0x8fd8ff,
+    opacity: 0.72,
+    renderOrder: 2
+  });
+  lock.mesh.add(lock.hoverOutline);
   lock.wireOverlay = createHairTopologyOverlay(lock.mesh.geometry);
   lock.mesh.add(lock.wireOverlay);
   lock.mesh.castShadow = true;
@@ -25196,6 +25209,9 @@ function updateCurveObjects(lock, options = {}) {
   // tool is active when a tip sub-bone is selected, so the user can see what they edit.
   const tipUiActive = isPanelGeometry(lock)
     && sculptState.state.panelTipSelection?.lockId === lock.id;
+  // During a brush, show only the selected strand's bone (guide line); the control
+  // handles, width edges and split/segment helpers stay hidden (bones-only view).
+  const brushBonesOnly = sculptBrushHelpersSuppressed && lock.id === sel.state.selectedId;
   lock.curveObjects.line.material.color.set(
     brushDebugVisible && lock.id !== sel.state.selectedId
       ? 0x58f6ff
@@ -25273,8 +25289,8 @@ function updateCurveObjects(lock, options = {}) {
       return;
     }
     const controllerIndex = activeCurveSurfaceControllerIndex(lock);
-    handle.visible = lock.geometryType !== "curve-surface"
-      || (controllerIndex !== null && Math.floor(index / lock.curveSurfaceRows) === controllerIndex);
+    handle.visible = !brushBonesOnly && (lock.geometryType !== "curve-surface"
+      || (controllerIndex !== null && Math.floor(index / lock.curveSurfaceRows) === controllerIndex));
     const frame = lock.geometryType === "surface" ? null
       : (lock.branchParentId && index === 0 ? branchRootBone.branchRootGizmoFrame(lock) : strandControlPointFrame(lock, index));
     const pointScale = lock.pointScales?.[index] || { x: lock.pointWidths[index] || 1, z: lock.pointWidths[index] || 1 };
@@ -25402,11 +25418,13 @@ function updateCurveObjects(lock, options = {}) {
   const tipSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
   const tipSplitBones = splitBonesFor(lock);
   // Cache each segment's sub-bone chain once (handles + guide lines share it).
+  // One sub-bone chain per SEGMENT (splits.length + 1); mapping over the splits
+  // themselves would drop the last (boundary) segment's chain.
   const tipChains = tipSplits.length
-    ? tipSplits.map((_, segment) => splitTipForSegment(lock, segment, tipSplits, tipSplitBones[segment] || null))
+    ? Array.from({ length: tipSplits.length + 1 }, (_, segment) => splitTipForSegment(lock, segment, tipSplits, tipSplitBones[segment] || null))
     : [];
   const tipForkTs = tipSplits.length
-    ? tipSplits.map((_, segment) => splitForkT(lock, segment, tipSplits))
+    ? Array.from({ length: tipSplits.length + 1 }, (_, segment) => splitForkT(lock, segment, tipSplits))
     : [];
   lock.curveObjects.panelTipHandles?.forEach((handle) => {
     const segment = handle.userData.panelTipIndex;
@@ -25520,8 +25538,8 @@ function updateCurveObjects(lock, options = {}) {
 
   if ("visible" in options) {
     const brushCurveVisibilityAllowed = !sculptBrushToolActive() || sculptBrushShowCurvesInput.checked;
-    lock.curveObjects.group.visible = (brushCurveVisibilityAllowed || tipUiActive)
-      && ((options.visible && componentEditModeActive()) || brushDebugVisible || tipUiActive)
+    lock.curveObjects.group.visible = (brushCurveVisibilityAllowed || tipUiActive || brushBonesOnly)
+      && ((options.visible && componentEditModeActive()) || brushDebugVisible || tipUiActive || brushBonesOnly)
       && !lock.locked
       && strandVisibleForDisplay(lock);
   }
@@ -35404,6 +35422,39 @@ function beginSculptMoveStroke(event) {
   event.stopImmediatePropagation();
 }
 
+function syncStrandHoverOutline(lock) {
+  if (!lock?.hoverOutline) return;
+  lock.hoverOutline.visible = Boolean(
+    hairState.state.hoveredStrandId === lock.id
+    && sculptBrushToolActive()
+    && sculptState.state.viewportEditMode === "strand"
+    && lock.id !== sel.state.selectedId
+    && strandVisibleForDisplay(lock)
+    && !lock.locked
+  );
+}
+
+function updateStrandBrushHover(event) {
+  if (!sculptBrushToolActive() || sculptState.state.viewportEditMode !== "strand") {
+    if (hairState.state.hoveredStrandId) {
+      hairState.state.hoveredStrandId = null;
+      locks.forEach(syncStrandHoverOutline);
+    }
+    return;
+  }
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const targets = locks.filter((lock) => strandAvailableForViewportInteraction(lock) && lock.mesh);
+  const hit = raycaster.intersectObjects(targets.map((lock) => lock.mesh), false)[0];
+  const id = hit?.object?.userData?.lockId || null;
+  if (hairState.state.hoveredStrandId !== id) {
+    hairState.state.hoveredStrandId = id;
+    locks.forEach(syncStrandHoverOutline);
+  }
+}
+
 function updatePanelTipHover(event) {
   const lock = getSelectedLock();
   let hover = { lockId: null, segmentIndex: null };
@@ -35472,11 +35523,13 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   }
   let changed = false;
   if (tool === "sculpt-scale") {
+    // Uniform scale of the whole exposed chain around the exposed root (ZBrush-like
+    // sub-tool transform). Cursor falloff is intentionally not applied so the result
+    // reads as a scale, not a cursor-masked nudge that looks like a move.
     const amount = (reverse ? -1 : 1) * strength * (deltaX + deltaY) * 0.004;
     for (let index = firstBelow; index < current.length; index += 1) {
-      if (weights[index] <= 0) continue;
       const dir = current[index].clone().sub(scaleCenter);
-      points[index].addScaledVector(dir, amount * weights[index]);
+      points[index].addScaledVector(dir, amount);
       changed = true;
     }
   } else if (tool === "sculpt-slide") {
@@ -35514,12 +35567,13 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
       changed = true;
     }
   } else if (tool === "sculpt-orient") {
+    // Uniform rotation of the whole exposed chain around the exposed root around the
+    // view axis (sub-tool orient, not a cursor-masked nudge).
     const axis = camera.position.clone().sub(scaleCenter).normalize();
     const amount = (reverse ? -1 : 1) * strength * (deltaX * 0.008);
     for (let index = firstBelow; index < current.length; index += 1) {
-      if (weights[index] <= 0) continue;
       const offset = points[index].clone().sub(scaleCenter);
-      offset.applyAxisAngle(axis, amount * weights[index]);
+      offset.applyAxisAngle(axis, amount);
       points[index].copy(scaleCenter).add(offset);
       changed = true;
     }
@@ -36169,6 +36223,7 @@ window.addEventListener("pointermove", updateReferenceCrop, true);
 window.addEventListener("pointermove", updateReferenceOverlayDrag, true);
 window.addEventListener("pointermove", updateSculptMoveStroke, true);
 window.addEventListener("pointermove", updatePanelTipHover);
+window.addEventListener("pointermove", updateStrandBrushHover);
 window.addEventListener("pointermove", updateBrushSizeDrag, true);
 window.addEventListener("pointermove", updateStrandWidthEdgeDrag, true);
 window.addEventListener("pointermove", updateViewSnap, true);
@@ -36393,6 +36448,40 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     return;
   }
   if (scalpState.state.scalpShapeEditing) return;
+  if (event.altKey && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+    // Alt+click a hovered tip sub-bone -> switch the tip selection to it (ZBrush-like
+    // sub-tool switching). Works in any tool including brushes.
+    const altLock = getSelectedLock();
+    if (altLock && isPanelGeometry(altLock) && altLock.panelSplitEnabled !== false) {
+      const altHover = sculptState.state.panelTipHover;
+      if (altHover && altHover.lockId === altLock.id && altHover.segmentIndex != null) {
+        const altSeg = altHover.segmentIndex;
+        const altCur = sculptState.state.panelTipSelection;
+        if (altCur && altCur.lockId === altLock.id && altCur.segmentIndex === altSeg) {
+          sculptState.state.panelTipSelection = null;
+        } else {
+          sculptState.state.panelTipSelection = { lockId: altLock.id, segmentIndex: altSeg };
+          sculptState.state.panelSegmentIndex = altSeg;
+        }
+        updateCurveObjects(altLock, { visible: true });
+        syncPanelSegmentControls(altLock);
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+    }
+    // Alt+click another strand while a brush is active -> switch selection to it.
+    if (sculptBrushToolActive()) {
+      const hoveredId = hairState.state.hoveredStrandId;
+      const selectedId = getSelectedLock()?.id;
+      if (hoveredId && hoveredId !== selectedId) {
+        selectLock(hoveredId, {});
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+    }
+  }
   if (beginPanelSplitHandleDrag(event)) {
     event.preventDefault();
     return;
@@ -36830,8 +36919,17 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     getSelectedLock,
     selectLock,
     sel,
+    hairState,
+    undoHistory,
     updateCurveObjects,
     updateTipHighlight,
+    updateStrandBrushHover,
+    syncStrandHoverOutline,
+    splitTipForSegment,
+    splitForkT,
+    clonePanelSplits,
+    materializeSplitBones,
+    strandVisibleForDisplay,
     isPanelGeometry,
     projectToClient(world) {
       const v = world.clone().project(camera);

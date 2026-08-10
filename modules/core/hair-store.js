@@ -14,6 +14,7 @@ export function createHairStore() {
     strandRadialActions: [],
     pendingLockGeometryFrame: null,
     hoveredStrandWidthEdge: null,
+    hoveredStrandId: null,
     headMeshVisible: true,
     bodyMeshVisible: true,
     hairMaterialIndex: 1,

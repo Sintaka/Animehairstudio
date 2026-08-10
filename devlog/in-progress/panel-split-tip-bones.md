@@ -100,6 +100,22 @@ splitBone.tip = {
   - 全程 0 异常。
 - 三档 smoke（0041/0042/0044）11/11、12/12 通过。
 
+### 8.8 边界段骨骼、笔刷统一变换、undo tip 持久化、笔刷 bones-only、alt+点击切换（0.2.59）
+
+**1. 最左/最右边界段发尖骨骼不显示 ✅**：`updateCurveObjects` 里 `tipChains`/`tipForkTs` 用 `tipSplits.map(...)` 构建——只有 `splits.length` 个条目，而段数是 `splits.length+1`，最后一段（边界段）的 chain 是 undefined → 手柄/链线全被隐藏。改为 `Array.from({ length: tipSplits.length + 1 }, ...)`。0044 Front Bangs 1 现在 5 段全部有手柄（seg0=2、seg1-4=3）。
+
+**2. orient/scale 笔刷表现成 move ✅**：`applySubBoneBrushSample` 的 scale/orient 原来按屏幕距离 falloff 逐点加权，光标在发尖时几乎只动尖端几个点 → 观感像 move。改为**对整个暴露段（fork 以下）统一变换**：scale 以暴露根部为中心整体缩放、orient 绕视轴整体旋转（ZBrush 子工具式），不再按光标遮罩。
+
+**3. undo 丢失 tip 编辑 ✅（真 bug）**：`snapshotState` 的 undo 快照走 `splitBonesToData`，而它**没序列化 `tip`** → undo 后 tip 变回默认（发尖改动一起被「撤回」，且与主链操作混在一个快照里）。项目保存走 `registryForSave`（含 tip）所以保存/重载不丢。修复：`splitBonesToData` 补 `kind/meta/tip`（与 `bonesToData` 对齐）；`normalizeSplitBones` 本来就保留 tip。验证：orient 笔刷后 undo → `reverted:true, maxDiff:0`，`panelTipSelection` 仍在。
+
+**4. 笔刷下引导几何全消失 ✅**：`updateCurveObjects` 新增 `brushBonesOnly = sculptBrushHelpersSuppressed && lock.id===selectedId`——任意笔刷下只显示选中发丝的**骨骼线**（main line + tip 链线），主控制点手柄在笔刷下隐藏、width/split/segment 控件仍隐藏；`sculptBrushShowCurves` 勾选行为不受影响。
+
+**5. alt+点击切换发尖（ZBrush 式）✅**：pointerdown 里 alt+点击悬停的发尖段 → toggle 选中/取消该段（任意工具下生效，含笔刷）；悬停高亮保持。
+
+**6. 笔刷下其它发丝悬停高亮 + alt+点击切换 ✅**：`hair-store` 加 `hoveredStrandId`；每 lock 加 `hoverOutline`（青色半透明描边，`createStrandSelectionOutline` 支持 color/opacity/renderOrder 选项）；`updateStrandBrushHover`（pointermove，仅笔刷+strand 模式）raycast 所有 strand mesh 并更新悬停描边；alt+点击悬停发丝 → `selectLock` 切换选择。
+
+**回归测试（scripts/verify-tip-select.mjs，22/22）**：边界段手柄、scale 均匀径向（maxDeltaDiff>0.01 && minCos≈1）、orient 生效、undo 精确回退（maxDiff 0 + 选择保留）、笔刷 bones-only（group+line 可见、主手柄 0）、alt+点击发尖/发丝切换。三档 smoke 11/11、12/12 通过。
+
 ### 8.7 双段高亮 + 笔刷下保留 tip UI（0.2.59）
 
 **症状**：
@@ -117,6 +133,22 @@ splitBone.tip = {
 - 双段高亮：选中 seg0 后把 hover 设到 seg1 → overlay aFade 同时覆盖 seg0（32 顶点）与 seg1（64 顶点），opacity 0.62。
 - 笔刷保留：点击真实 Scale Brush 按钮（sculpt-scale）+ updateCurveObjects 同步 → tool=sculpt-scale、group.visible=true、tipHighlightMesh.visible=true、11 个 tip 手柄 + 4 条链线可见；切回 select 后点击②仍能 toggle 取消。
 - 三档 smoke（0041/0042/0044）11/11、12/12 通过。
+
+### 8.8 边界段骨骼、笔刷统一变换、undo tip 持久化、笔刷 bones-only、alt+点击切换（0.2.59）
+
+**1. 最左/最右边界段发尖骨骼不显示 ✅**：`updateCurveObjects` 里 `tipChains`/`tipForkTs` 用 `tipSplits.map(...)` 构建——只有 `splits.length` 个条目，而段数是 `splits.length+1`，最后一段（边界段）的 chain 是 undefined → 手柄/链线全被隐藏。改为 `Array.from({ length: tipSplits.length + 1 }, ...)`。0044 Front Bangs 1 现在 5 段全部有手柄（seg0=2、seg1-4=3）。
+
+**2. orient/scale 笔刷表现成 move ✅**：`applySubBoneBrushSample` 的 scale/orient 原来按屏幕距离 falloff 逐点加权，光标在发尖时几乎只动尖端几个点 → 观感像 move。改为**对整个暴露段（fork 以下）统一变换**：scale 以暴露根部为中心整体缩放、orient 绕视轴整体旋转（ZBrush 子工具式），不再按光标遮罩。
+
+**3. undo 丢失 tip 编辑 ✅（真 bug）**：`snapshotState` 的 undo 快照走 `splitBonesToData`，而它**没序列化 `tip`** → undo 后 tip 变回默认（发尖改动一起被「撤回」，且与主链操作混在一个快照里）。项目保存走 `registryForSave`（含 tip）所以保存/重载不丢。修复：`splitBonesToData` 补 `kind/meta/tip`（与 `bonesToData` 对齐）；`normalizeSplitBones` 本来就保留 tip。验证：orient 笔刷后 undo → `reverted:true, maxDiff:0`，`panelTipSelection` 仍在。
+
+**4. 笔刷下引导几何全消失 ✅**：`updateCurveObjects` 新增 `brushBonesOnly = sculptBrushHelpersSuppressed && lock.id===selectedId`——任意笔刷下只显示选中发丝的**骨骼线**（main line + tip 链线），主控制点手柄在笔刷下隐藏、width/split/segment 控件仍隐藏；`sculptBrushShowCurves` 勾选行为不受影响。
+
+**5. alt+点击切换发尖（ZBrush 式）✅**：pointerdown 里 alt+点击悬停的发尖段 → toggle 选中/取消该段（任意工具下生效，含笔刷）；悬停高亮保持。
+
+**6. 笔刷下其它发丝悬停高亮 + alt+点击切换 ✅**：`hair-store` 加 `hoveredStrandId`；每 lock 加 `hoverOutline`（青色半透明描边，`createStrandSelectionOutline` 支持 color/opacity/renderOrder 选项）；`updateStrandBrushHover`（pointermove，仅笔刷+strand 模式）raycast 所有 strand mesh 并更新悬停描边；alt+点击悬停发丝 → `selectLock` 切换选择。
+
+**回归测试（scripts/verify-tip-select.mjs，22/22）**：边界段手柄、scale 均匀径向（maxDeltaDiff>0.01 && minCos≈1）、orient 生效、undo 精确回退（maxDiff 0 + 选择保留）、笔刷 bones-only（group+line 可见、主手柄 0）、alt+点击发尖/发丝切换。三档 smoke 11/11、12/12 通过。
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。
