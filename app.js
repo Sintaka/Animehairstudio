@@ -13748,16 +13748,35 @@ function createPanelStrandGeometry(lock) {
       const weight = segmentWeightAt(segment, t);
       const mainJoint = mainPointCount ? Math.round(t * (mainPointCount - 1)) : -1;
       const segmentIndex = latticeControlled ? -1 : segment;
+      // Sub-bone frame follow: below the fork, the section is translated to the
+      // authored chain center AND rotated by the chain's tangent delta (rest ->
+      // authored), so orient edits rotate the tip cross-section instead of only
+      // sweeping it. Computed once per row; at rest authored==rest => identity.
+      let tipTransform = null;
+      if (tipCurve && weight > 0) {
+        const authoredCenter = tipCurve.getPoint(t);
+        const authoredTangent = tipCurve.getTangent(t).normalize();
+        const restCenter = tipRestCurve.getPoint(t);
+        const restTangent = tipRestCurve.getTangent(t).normalize();
+        const dq = restTangent.dot(authoredTangent) < -0.9999
+          ? (new THREE.Quaternion()).setFromAxisAngle(
+            Math.abs(restTangent.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0),
+            Math.PI
+          )
+          : (new THREE.Quaternion()).setFromUnitVectors(restTangent, authoredTangent);
+        tipTransform = { authoredCenter, restCenter, dq, weight };
+      }
       const frontRow = [];
       const backRow = [];
       for (let column = 0; column <= columns; column += 1) {
         const u = THREE.MathUtils.lerp(uStart(row), uEnd(row), column / columns);
         const frontPoint = panelPoint(row, u, 1, bone);
         const backPoint = panelPoint(row, u, -1, bone);
-        if (tipCurve && weight > 0) {
-          const deltaCenter = tipCurve.getPoint(t).sub(tipRestCurve.getPoint(t));
-          frontPoint.addScaledVector(deltaCenter, weight);
-          backPoint.addScaledVector(deltaCenter, weight);
+        if (tipTransform) {
+          const transformedFront = frontPoint.clone().sub(tipTransform.restCenter).applyQuaternion(tipTransform.dq).add(tipTransform.authoredCenter);
+          frontPoint.lerp(transformedFront, tipTransform.weight);
+          const transformedBack = backPoint.clone().sub(tipTransform.restCenter).applyQuaternion(tipTransform.dq).add(tipTransform.authoredCenter);
+          backPoint.lerp(transformedBack, tipTransform.weight);
         }
         frontRow.push(positions.length / 3);
         positions.push(frontPoint.x, frontPoint.y, frontPoint.z);
@@ -16706,7 +16725,7 @@ function addLock(presetName, overrides = {}, options = {}) {
   lock.selectionOutline = createStrandSelectionOutline(lock.mesh.geometry);
   lock.mesh.add(lock.selectionOutline);
   lock.hoverOutline = createStrandSelectionOutline(lock.mesh.geometry, {
-    color: 0x8fd8ff,
+    color: 0xffb45e,
     opacity: 0.72,
     renderOrder: 2
   });
@@ -18705,7 +18724,7 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
   lock.selectionOutline = createStrandSelectionOutline(lock.mesh.geometry);
   lock.mesh.add(lock.selectionOutline);
   lock.hoverOutline = createStrandSelectionOutline(lock.mesh.geometry, {
-    color: 0x8fd8ff,
+    color: 0xffb45e,
     opacity: 0.72,
     renderOrder: 2
   });
@@ -24223,6 +24242,44 @@ function endSelectPointerCapture(event) {
   updateInteractionLocks();
 }
 
+function applyAltClickCandidate(candidate) {
+  if (!candidate) return false;
+  if (candidate.kind === "tip") {
+    const lock = locks.find((item) => item.id === candidate.lockId);
+    if (!lock || !isPanelGeometry(lock) || lock.panelSplitEnabled === false) return false;
+    const altCur = sculptState.state.panelTipSelection;
+    if (altCur && altCur.lockId === lock.id && altCur.segmentIndex === candidate.segmentIndex) {
+      sculptState.state.panelTipSelection = null;
+    } else {
+      sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: candidate.segmentIndex };
+      sculptState.state.panelSegmentIndex = candidate.segmentIndex;
+    }
+    updateCurveObjects(lock, { visible: true });
+    syncPanelSegmentControls(lock);
+    return true;
+  }
+  if (candidate.kind === "strand") {
+    const target = locks.find((item) => item.id === candidate.lockId);
+    if (target && target.id !== getSelectedLock()?.id) {
+      selectLock(target.id, {});
+      return true;
+    }
+  }
+  return false;
+}
+
+function finishBrushAltClick(event) {
+  const candidate = sculptState.state.altClickCandidate;
+  sculptState.state.altClickCandidate = null;
+  if (!candidate || candidate.pointerId !== event.pointerId) return;
+  // Only a real click (no drag) switches; alt+drag stays navigation.
+  if (Math.hypot(event.clientX - candidate.startX, event.clientY - candidate.startY) >= 6) return;
+  if (applyAltClickCandidate(candidate)) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+}
+
 function endAltOrbit(event) {
   if (!sculptState.state.altOrbitDrag || event.pointerId !== sculptState.state.altOrbitDrag.pointerId) return;
   sculptState.state.altOrbitDrag = null;
@@ -26342,6 +26399,15 @@ function selectLock(id, options = {}) {
   });
   applyStrandSelectionState(nextSelection);
   id = nextSelection.activeId;
+  // Switching the main selection invalidates any tip sub-bone selection/hover that
+  // belonged to the previously selected lock (e.g. alt+click switching to another
+  // panel or strand), so its emphasis highlight does not linger.
+  if (sculptState.state.panelTipSelection && sculptState.state.panelTipSelection.lockId !== id) {
+    sculptState.state.panelTipSelection = null;
+  }
+  if (sculptState.state.panelTipHover && sculptState.state.panelTipHover.lockId !== id) {
+    sculptState.state.panelTipHover = null;
+  }
   clearMultiPointSelection();
   const selectedCurveSurfaceLock = locks.find((item) => item.id === sel.state.selectedId && item.geometryType === "curve-surface");
   const requestedControllerIndex = Math.round(Number(options.curveSurfaceControllerIndex));
@@ -35544,12 +35610,19 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
       changed = true;
     }
   } else if (tool === "sculpt-push") {
+    // stroke.planeNormal is a plain {x,y,z} (from sculpt-brush cameraFacingPlaneNormal);
+    // promote it to a Vector3 before the plane-projection math (clone()/projectOnPlane).
+    const pushPlaneNormal = new THREE.Vector3(
+      Number(stroke.planeNormal?.x) || 0,
+      Number(stroke.planeNormal?.y) || 0,
+      Number(stroke.planeNormal?.z) || 0
+    );
     const curve = new THREE.CatmullRomCurve3(current);
     for (let index = firstBelow; index < current.length; index += 1) {
       if (weights[index] <= 0) continue;
       const t = index / Math.max(1, current.length - 1);
       const tangent = curve.getTangent(t).normalize();
-      const up = stroke.planeNormal.clone().projectOnPlane(tangent);
+      const up = pushPlaneNormal.clone().projectOnPlane(tangent);
       if (up.lengthSq() < 0.0001) up.set(0, 1, 0).projectOnPlane(tangent);
       up.normalize();
       const dragWorld = sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
@@ -36273,6 +36346,7 @@ window.addEventListener("pointerup", finishPolyAltDelete, true);
 window.addEventListener("pointerup", finishCurvePointInsertion, true);
 window.addEventListener("pointerup", finishPointRemoval, true);
 window.addEventListener("pointerup", endBlenderNavigation);
+window.addEventListener("pointerup", finishBrushAltClick);
 window.addEventListener("pointerup", endAltOrbit);
 window.addEventListener("pointerup", endHoudiniZoomDrag);
 window.addEventListener("pointerup", endSelectPointerCapture);
@@ -36449,37 +36523,26 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   }
   if (scalpState.state.scalpShapeEditing) return;
   if (event.altKey && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
-    // Alt+click a hovered tip sub-bone -> switch the tip selection to it (ZBrush-like
-    // sub-tool switching). Works in any tool including brushes.
+    // Alt+click (not alt+drag) switches the hovered tip sub-bone / strand, like ZBrush
+    // sub-tool switching. Record the candidate on pointerdown; a pointerup without
+    // significant movement applies it, so alt+drag navigation never triggers it.
     const altLock = getSelectedLock();
+    let altCandidate = null;
     if (altLock && isPanelGeometry(altLock) && altLock.panelSplitEnabled !== false) {
       const altHover = sculptState.state.panelTipHover;
       if (altHover && altHover.lockId === altLock.id && altHover.segmentIndex != null) {
-        const altSeg = altHover.segmentIndex;
-        const altCur = sculptState.state.panelTipSelection;
-        if (altCur && altCur.lockId === altLock.id && altCur.segmentIndex === altSeg) {
-          sculptState.state.panelTipSelection = null;
-        } else {
-          sculptState.state.panelTipSelection = { lockId: altLock.id, segmentIndex: altSeg };
-          sculptState.state.panelSegmentIndex = altSeg;
-        }
-        updateCurveObjects(altLock, { visible: true });
-        syncPanelSegmentControls(altLock);
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return;
+        altCandidate = { kind: "tip", lockId: altLock.id, segmentIndex: altHover.segmentIndex };
       }
     }
-    // Alt+click another strand while a brush is active -> switch selection to it.
-    if (sculptBrushToolActive()) {
+    if (!altCandidate && sculptBrushToolActive()) {
       const hoveredId = hairState.state.hoveredStrandId;
       const selectedId = getSelectedLock()?.id;
-      if (hoveredId && hoveredId !== selectedId) {
-        selectLock(hoveredId, {});
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return;
-      }
+      if (hoveredId && hoveredId !== selectedId) altCandidate = { kind: "strand", lockId: hoveredId };
+    }
+    if (altCandidate) {
+      sculptState.state.altClickCandidate = { ...altCandidate, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY };
+    } else if (sculptState.state.altClickCandidate) {
+      sculptState.state.altClickCandidate = null;
     }
   }
   if (beginPanelSplitHandleDrag(event)) {
@@ -36926,6 +36989,7 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     updateStrandBrushHover,
     syncStrandHoverOutline,
     splitTipForSegment,
+    applySubBoneBrushSample,
     splitForkT,
     clonePanelSplits,
     materializeSplitBones,

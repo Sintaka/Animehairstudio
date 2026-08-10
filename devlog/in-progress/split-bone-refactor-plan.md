@@ -2,6 +2,7 @@
 
 > 分支：0.2.58-panel-split-refactor；目标版本 `0.1.4-Sintaka.0.2.59`。本文件为 P1 **实施规范**（原 `panel-split-refactor-plan.md` 改写迁移至此）。
 > **superseded**：旧提案的 `panelSegmentCurves`（每段曲线 override 数组）被 `lock.splitBones`（每段一个完整变换骨骼：P + orient + 段曲线）取代，不再单独实现。
+> **✅ 已实现（0.2.59）**：P1 全部落地——`lock.splitBones` 数据/序列化/几何重铸（段内 u' + 每段曲线 + 相对 spread）/UI/视口段手柄/镜像段序，见 bone-system-roadmap.md §4.5；panel 尖端子骨骼（0.2.59 后续）见 panel-split-tip-bones.md §8.5–§8.9。下文 §3/§6 为实现规范，最终细节以代码为准。
 > 相关函数/关键词：createPanelStrandGeometry、panelPoint、addPatch、splitOpening、panelSplitControlPoint、normalizePanelSplits、snapPanelSplitHeight、begin/update/endPanelSplitHandleDrag、changePanelSplitCount、syncPanelShapeInputs、lock.splitBones、bonesFor、0.2.55 addQuad 退化/反射跳过、0.2.58 crossover 根因（annotations-split.md 末条）
 
 ## 1. 现状与问题（摘要）

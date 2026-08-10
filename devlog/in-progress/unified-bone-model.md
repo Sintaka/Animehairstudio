@@ -2,6 +2,7 @@
 
 > 分支：0.2.58-panel-split-refactor；目标版本 `0.1.4-Sintaka.0.2.59`。本文件为 P1 统一骨骼模型的**设计规范**；实施见 split-bone-refactor-plan.md（P1）。
 > 灵感：Houdini KineFX——所有骨骼都是普通点，带 `name` 和 transform；本项目无矩阵，只有 **P（位置）+ 旋转（四元数）**。
+> **✅ 已实现（0.2.59）**：Phase A/B/C 全部落地——`bonesFor` 被 app.js 消费（USDA 骨骼导出）、main 链架空 role 语义、`lock.bones` 统一 registry 双写，见 bone-system-roadmap.md §4.5 实施状态；panel 尖端子骨骼见 panel-split-tip-bones.md §8.5–§8.9。下文 §4.5 审计中「未接入/未落地」表述已过时，以 bone-system-roadmap.md §4.5 为准。
 
 ## 1. 统一视图 bonesFor(lock)
 

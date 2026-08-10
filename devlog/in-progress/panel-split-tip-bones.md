@@ -1,5 +1,6 @@
 ﻿# Panel split 尖端子骨骼分析：每 split 段一个「类普通发丝尖端」的子骨骼（0.2.59 规划）
 
+> **✅ 已实现（0.2.59 落地）+ 本轮进行中**：本文档由「规划」转为「实施 + 修复记录」——尖端子骨骼 S1–S6（程序化权重 / 数据模型 / 几何跟随 / 视口手柄 / 关联系统 / USDA 蒙皮）见 §8.5；点击 toggle 选中 + 主发丝保持 + overlay z-fighting 见 §8.6；双段高亮 + 笔刷保留 tip UI 见 §8.7；边界段 / 笔刷统一变换 / undo 持久化 / bones-only / alt+点击见 §8.8；本轮 5 项改动（0.2.59 进行中）见 §8.9。§1–§7 与「§8 待确认（实施前）」为规划期内容，已被实施取代，保留作历史。
 > 目标：让用户能控制 panel 每个尖端的长短和走向；在尖端建立与普通发丝一样的子骨骼部分，以兼容现有工具。
 > 分支：0.2.58-panel-split-refactor；关联：unified-bone-model.md（bonesFor/架空）、bone-system-roadmap.md（registry）、split-bone-refactor-plan.md（splitBones）。
 
@@ -149,6 +150,20 @@ splitBone.tip = {
 **6. 笔刷下其它发丝悬停高亮 + alt+点击切换 ✅**：`hair-store` 加 `hoveredStrandId`；每 lock 加 `hoverOutline`（青色半透明描边，`createStrandSelectionOutline` 支持 color/opacity/renderOrder 选项）；`updateStrandBrushHover`（pointermove，仅笔刷+strand 模式）raycast 所有 strand mesh 并更新悬停描边；alt+点击悬停发丝 → `selectLock` 切换选择。
 
 **回归测试（scripts/verify-tip-select.mjs，22/22）**：边界段手柄、scale 均匀径向（maxDeltaDiff>0.01 && minCos≈1）、orient 生效、undo 精确回退（maxDiff 0 + 选择保留）、笔刷 bones-only（group+line 可见、主手柄 0）、alt+点击发尖/发丝切换。三档 smoke 11/11、12/12 通过。
+
+### 8.9 悬停橙色高亮、主选中切换清理、alt+真点击门、tip 完整正交帧、Push 笔刷修复（0.2.59 已落地）
+
+**1. 发丝悬停高亮改柔和橙色 ✅**：`hoverOutline` 颜色由 `0x8fd8ff`（蓝）改为 `0xffb45e`（柔和橙），`createStrandSelectionOutline` 支持 color/opacity/renderOrder 选项；与选中橙色、tip 高亮区分、更柔和。
+
+**2. 切换主选中时清除旧发尖选中/悬停 ✅**：`selectLock` 在 `id = nextSelection.activeId` 后，若 `panelTipSelection.lockId !== id`（或 hover 不匹配新 id）则清空——alt+点击切到别的 panel/发丝、或点空白取消选择时，旧锁的 tip 高亮/手柄不再残留。
+
+**3. alt+点击切换只在真点击触发 ✅**：pointerdown（alt、无修饰键）只**记录候选**（`altClickCandidate` = hovered tip 段或 hovered 发丝 + 起始坐标 + pointerId），不再立即切换；新增 `finishBrushAltClick`（pointerup）在**位移 < 6px** 时才 `applyAltClickCandidate`（tip toggle 或 `selectLock(hoveredStrand)`）。alt+拖拽 = 导航（beginAltOrbit），不再误触发切换。
+
+**4. tip 子骨骼完整正交帧 + orient 旋转 ✅**：tip 链的帧（tangent/bitangent/normal）由 authored 链曲线**派生**（`getTangent` + 截面几何）；`createPanelStrandGeometry` 的段内行把截面从 rest 中心平移到 authored 中心并**按 `dq = setFromUnitVectors(restTangent, authoredTangent)` 旋转**（`final = lerp(base, authoredCenter + dq·(base−restCenter), weight)`；rest 时恒等、零回归）。orient 笔刷弯曲链 → 切线变化 → 尖端截面真实旋转（回归验证：orient 后尖端切线夹角 11.21°）。
+
+**5. Push 笔刷动不了（真实 bug）✅**：`applySubBoneBrushSample` 的 push 分支对 `stroke.planeNormal.clone().projectOnPlane(...)`——而 `stroke.planeNormal` 来自 `cameraFacingPlaneNormal`（modules/sculpt/sculpt-brush.js），返回**纯 `{x,y,z}` 对象**（不是 THREE.Vector3）→ `.clone` 不存在 → 抛 TypeError → 该次采样中断、发尖不更新。主发丝 push 用 `guidedNormalAt`（不碰 planeNormal）所以一直正常，只有 tip 路径崩。修复：先 `new THREE.Vector3(planeNormal.x, planeNormal.y, planeNormal.z)` 再投影。回归验证：push 后发尖链移动（pushMax 0.0099）。
+
+**验证**：verify-tip-select.mjs 24/24（新增：每段手柄、scale 均匀径向、orient 改变切线 11.21°、undo 精确回退 maxDiff 0、笔刷 bones-only、alt+点击发尖/发丝、push 移动发尖）；三档 smoke 11/11、12/12 通过。
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

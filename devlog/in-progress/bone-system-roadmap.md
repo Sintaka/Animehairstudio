@@ -2,6 +2,7 @@
 
 > 分支：0.2.58-panel-split-refactor；目标版本 `0.1.4-Sintaka.0.2.59+`。本文为骨骼系统「如何推进 + 后续持久化多骨骼如何实现」的**规划**（Task 3），实施按 Phase 分批。
 > 关联：unified-bone-model.md（P1 设计）、split-bone-refactor-plan.md（P1 实施）、annotations-panel-zipper.md / annotations-split.md（0.2.58 调研）。
+> **✅ 已实现（0.2.59）**：Phase A（bonesFor 接入 + USDA 骨骼导出）、Phase B（架空 role）、Phase C（`lock.bones` 注册表）全部落地——见下文 §4.5 实施状态；panel 尖端子骨骼见 panel-split-tip-bones.md §8.5–§8.9。
 
 ## 1. 现状（0.2.59 audit 摘要）
 

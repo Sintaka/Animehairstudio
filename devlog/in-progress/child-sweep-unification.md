@@ -2,6 +2,7 @@
 
 > 分支：0.2.58-panel-split-refactor；目标版本 `0.1.4-Sintaka.0.2.59`。本文件为 P2 **设计规范**。
 > 目标：子发片**不是**分离的第二套系统，而是「在默认扫掠上增加桥接系统 + 优化根部移动逻辑」。
+> **✅ 已实现（0.2.59）**：P2 落地——共享扫掠内核 `modules/geometry/strand-sweep.js`（commit 86cc8d5 引入、462f17b 修复 quad 边 / carve facesPerRow），`createBaseHairGeometry` strand 路径与 `createBranchChildGeometry` 均切换内核，桥接 / 根部移动优化层保留；实现细节以代码为准。
 
 ## 1. 现状问题
 

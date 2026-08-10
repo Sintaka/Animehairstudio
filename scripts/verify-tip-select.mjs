@@ -338,6 +338,21 @@ try {
     if (Math.hypot(oAfter.pts[i].x - oBefore.pts[i].x, oAfter.pts[i].y - oBefore.pts[i].y, oAfter.pts[i].z - oBefore.pts[i].z) > 1e-4) { orientChanged = true; break; }
   }
   check("orient brush changes tip chain", orientChanged === true, `orientDelta=${orientChanged}`);
+  // Issue 4: orient edits the tip FRAME (tangent), not just positions -> the section
+  // now rotates to follow the chain (authored tangent != rest tangent at the tip).
+  const orientRot = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[1] || null;
+    const tip = t.splitTipForSegment(lock, 1, splits, bone);
+    if (!tip || tip.points.length < 2 || !tip.restPoints || tip.restPoints.length < 2) return JSON.stringify({ ok: false });
+    const aTan = new t.THREE.CatmullRomCurve3(tip.points.map((p) => new t.THREE.Vector3(p.x, p.y, p.z))).getTangent(1).normalize();
+    const rTan = new t.THREE.CatmullRomCurve3(tip.restPoints.map((p) => new t.THREE.Vector3(p.x, p.y, p.z))).getTangent(1).normalize();
+    const angle = Math.acos(Math.min(1, Math.max(-1, aTan.dot(rTan))));
+    return JSON.stringify({ ok: true, angleDeg: (angle * 180 / Math.PI).toFixed(2) });
+  })()`));
+  check("orient rotates the tip frame (tangent changes)", orientRot.ok === true && Number(orientRot.angleDeg) > 1, `orientRot=${JSON.stringify(orientRot)}`);
   // undo
   const undoSelBefore = await evalJS(cdp, `(() => { const t = window.__ahsTest; return JSON.stringify(t.sculptState.state.panelTipSelection); })()`);
   await evalJS(cdp, `(() => { const btn = document.querySelector('#undoAction'); if (btn && !btn.disabled) btn.click(); return true; })()`);
@@ -364,6 +379,49 @@ try {
   })()`));
 
   check("undo reverts only the tip stroke (selection survives)", undoCheck.reverted === true && undoCheck.sel && undoCheck.sel.segmentIndex === 1, `undo=${JSON.stringify(undoCheck)}`);
+
+  // ============ Issue 5: push brush moves a selected tip chain ============
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 1 }; return true; })()`);
+  await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="sculpt-push"]'); if (btn) btn.click(); return true; })()`);
+  await sleep(400);
+  const pushBefore = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[1] || null;
+    const tip = t.splitTipForSegment(lock, 1, splits, bone);
+    return JSON.stringify({ pts: tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })), forkT: t.splitForkT(lock, 1, splits) });
+  })()`));
+  const pushStart = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[1] || null;
+    const tip = t.splitTipForSegment(lock, 1, splits, bone);
+    const last = tip.points[tip.points.length - 1];
+    const c = t.projectToClient(new t.THREE.Vector3(last.x, last.y, last.z));
+    return JSON.stringify({ x: c.x, y: c.y });
+  })()`));
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pushStart.x, y: pushStart.y });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: pushStart.x, y: pushStart.y, button: "left", clickCount: 1 });
+  await sleep(120);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pushStart.x + 10, y: pushStart.y + 6, button: "left", buttons: 1 });
+  await sleep(250);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: pushStart.x + 10, y: pushStart.y + 6, button: "left", clickCount: 1 });
+  await sleep(400);
+  const pushAfter = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[1] || null;
+    const tip = t.splitTipForSegment(lock, 1, splits, bone);
+    return JSON.stringify({ pts: tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })) });
+  })()`));
+  let pushMax = 0;
+  for (let i = 0; i < Math.min(pushBefore.pts.length, pushAfter.pts.length); i++) {
+    pushMax = Math.max(pushMax, Math.hypot(pushAfter.pts[i].x - pushBefore.pts[i].x, pushAfter.pts[i].y - pushBefore.pts[i].y, pushAfter.pts[i].z - pushBefore.pts[i].z));
+  }
+  check("push brush moves selected tip chain", pushMax > 1e-4, `pushMax=${pushMax.toFixed(5)}`);
 
   // ============ Issue 4: bones-only view during brush with no tip selected ============
   await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipSelection = null; t.sculptState.state.panelTipHover = { lockId: null, segmentIndex: null }; return true; })()`);
