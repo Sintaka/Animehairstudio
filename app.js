@@ -36411,6 +36411,9 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
       }
       updateCurveObjects(selectedLockNow, { visible: true });
       syncPanelSegmentControls(selectedLockNow);
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
     } else if (selected && selected.lockId === selectedLockNow?.id) {
       sculptState.state.panelTipSelection = null;
       updateCurveObjects(selectedLockNow, { visible: true });
@@ -36803,3 +36806,24 @@ updateAttributeEditorMode();
 setSideNamingPerspective(miscState.state.sideNamingPerspective, { persist: false });
 resize();
 animate();
+
+// __AHS_TEST_SEAM__ — test-only hooks for scripts/verify-tip-select.mjs (inert unless ?ahstest=1)
+if (new URLSearchParams(location.search).has("ahstest")) {
+  window.__ahsTest = {
+    sculptState,
+    THREE,
+    locks,
+    scene,
+    camera: () => camera,
+    renderer,
+    raycaster,
+    getSelectedLock,
+    selectLock,
+    isPanelGeometry,
+    projectToClient(world) {
+      const v = world.clone().project(camera);
+      const rect = renderer.domElement.getBoundingClientRect();
+      return { x: (v.x * 0.5 + 0.5) * rect.width + rect.left, y: (-v.y * 0.5 + 0.5) * rect.height + rect.top };
+    }
+  };
+}

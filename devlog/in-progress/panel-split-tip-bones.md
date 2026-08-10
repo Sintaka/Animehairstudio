@@ -1,4 +1,4 @@
-# Panel split 尖端子骨骼分析：每 split 段一个「类普通发丝尖端」的子骨骼（0.2.59 规划）
+﻿# Panel split 尖端子骨骼分析：每 split 段一个「类普通发丝尖端」的子骨骼（0.2.59 规划）
 
 > 目标：让用户能控制 panel 每个尖端的长短和走向；在尖端建立与普通发丝一样的子骨骼部分，以兼容现有工具。
 > 分支：0.2.58-panel-split-refactor；关联：unified-bone-model.md（bonesFor/架空）、bone-system-roadmap.md（registry）、split-bone-refactor-plan.md（splitBones）。
@@ -78,6 +78,27 @@ splitBone.tip = {
 - **S6 USDA 蒙皮 ✅**：Mesh 施加 SkelBindingAPI + rel skel:bindTransforms + skel:joints + primvars skel:joints/skel:weights（vertex）；buildHairUsda 从 panelWeights 计算每顶点 [main, N+segment]×[1-w,w]。0044 导出 3 面板带 binding（修 Houdini "no Skeleton children"）。
 
 **验证**：Sussurro_v1_0041/0042/0044 三档 11/11 smoke；尖端 authoring 保存/重载不丢、镜像翻转、rest 零回归。
+
+### 8.6 选中/高亮交互修复（0.2.59，commit 14d6f2c→18eac4a→待提交）
+
+**症状**：视口不卡了，但「选中不了子骨骼」——鼠标悬浮有高亮强调，点击却没有任何选中效果；拉远时高亮与 panel shader 共面 z-fighting 像素抽搐。
+
+**根因（点击不选）**：
+1. 原 pointerdown 的 tip 处理块只在「已有 panelTipSelection」时**取消**选择，从不**创建**选择 → 点击面板体永远无法选中子骨骼（只有点 tip 手柄能选，且之前手柄点击还触发视口冻结）。
+2. 更隐蔽：即使 tip 块设置了 `panelTipSelection`，它**不 return**，流程继续落到 select 工具的 selection-marquee 逻辑——marquee 会重新 raycast 所有 strand mesh 并**把当前选中切换成点击点最前面的那根发丝**（实测 0044 中点击 Front Bangs 1 面板体后 `getSelectedLock()` 变成 Back 5）。用户看到的现象就是「选中了但立刻没了/没反应」。
+
+**修复（app.js）**：
+- 点击面板体（hover 命中段）→ **toggle 选中**该段 tip 子骨骼；再点同一区域 → 取消、回到主发丝选择（仅当主发丝已选中 + 有 split；无 split 的 panel 不触发；手柄/笔刷/draw/place 工具下不 toggle）。
+- tip 块成功处理点击后 `event.preventDefault(); event.stopImmediatePropagation(); return;` —— 不再落到 marquee/选择逻辑，主发丝保持选中。
+- overlay `tipHighlightMaterial` 设 `depthTest:false`（`depthWrite:false` 已有）→ 高亮与 panel shader 共面不再 z-fighting 抽搐；overlay `renderOrder:7`、`frustumCulled:false`。
+- 之前 overlay index 用 `setIndex(rawTypedArray)` 在 THREE r165 被忽略导致数组为空 → 视口冻结（commit ab8a707），改 `new THREE.BufferAttribute(array,1)`。
+
+**新增回归测试**：`scripts/verify-tip-select.mjs`（依赖 app.js 末尾 `?ahstest=1` 才激活的 `__AHS_TEST_SEAM__`）：
+- 加载 0044 → 选中 split panel（Front Bangs 1）→ 找一个**无任何 3D 手柄遮挡**的面板体屏幕点（segment 0、权重>0.5、raycast 所有 handles 均不命中）→ 真实 CDP pointer 事件点击：
+  - 点击①：`panelTipSelection={lockId,0}`、主发丝保持选中（不再被 marquee 切换）、overlay visible + `depthTest:false` + opacity 0.62。
+  - 点击②：toggle 取消、回到主发丝选择。
+  - 全程 0 异常。
+- 三档 smoke（0041/0042/0044）11/11、12/12 通过。
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。
