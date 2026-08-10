@@ -68,6 +68,16 @@ splitBone.tip = {
 - tip 是控制数据非真实网格骨骼：不新增 mesh，只改尖端行的采样。
 - 与 USDA 骨骼导出/未来 skinning 的关系：tip 可作为该段 Skeleton 的额外关节（后续）。
 
+## 8.5 实施状态（0.2.59 已落地，S1–S6）
+
+- **S1 程序化权重字段 ✅**：createPanelStrandGeometry 每顶点算 [mainJoint, segment, weight]；weight = smoothstep((t-forkT)/band)，forkT = 1-max(该段两侧 zipper 高度)，u 方向权重 1（zipper 线硬分配、一发尖一骨骼）；geometry.userData.panelWeights（weld 同步）。无 zipper → 权重 0（主骨骼直接驱动）。
+- **S2 尖端子骨骼数据模型 ✅**：splitBone.tip = { points, restPoints, active } 照抄主骨骼尾部拓扑（parentMainIndex = fork 最近主控制点）；normalizeSplitBones/normalizeBone/bonesToData/mirrorSplitBones 保留 tip；splitTipForSegment 派生命 rest = 主尾副本、author 存绝对点 + rest（delta 保留）。
+- **S3 尖端几何跟随 ✅**：zipper 以下 final = base + w×(author 链截面 - rest 链截面)；rest 恒等（验证 maxDiff 0）；author 只动本段（seg0 动、seg2 不动）。长短 = 子骨骼链长变化、走向 = 链方向。墙/capEnd/焊接/退化跳过保留。
+- **S4 视口编辑 ✅**：每段黄色 tip 手柄（panelTipHandles），视平面拖拽写 bone.tip（rest+delta）；zipper 以上无手柄、spread/曲线照常（上部保持现状）。验证：Front Bangs 1 5 手柄、拖拽移动尖端。
+- **S5 关联系统改造 ✅**：splitBone p/orient 预留驱动被 tip 链+权重取代；bonesFor 输出 split.<k>.tip.*（role=leaf）；主骨骼有 split 时 role=root（架空）。
+- **S6 USDA 蒙皮 ✅**：Mesh 施加 SkelBindingAPI + rel skel:bindTransforms + skel:joints + primvars skel:joints/skel:weights（vertex）；buildHairUsda 从 panelWeights 计算每顶点 [main, N+segment]×[1-w,w]。0044 导出 3 面板带 binding（修 Houdini "no Skeleton children"）。
+
+**验证**：Sussurro_v1_0041/0042/0044 三档 11/11 smoke；尖端 authoring 保存/重载不丢、镜像翻转、rest 零回归。
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。
