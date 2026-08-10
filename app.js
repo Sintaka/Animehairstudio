@@ -13519,7 +13519,21 @@ function setTipWidthCurveValue(lock, segmentIndex, splits, bone, side, t, value)
   bone.taperCurveSecondary = buildTipWidthCurve(lock, segmentIndex, splits, bone, -1);
 }
 
-// Pink width-curve edge points for a tip side: the exposed (below-zipper) edge from
+// Signed lateral offset (binormal direction) from the tip chain center to the
+// segment's own edge at parameter t. Uses the segment's u boundaries (left zipper /
+// right zipper), NOT the panel's +/-1 outer edges, so the width control sits on the
+// SUB-BONE's edges rather than the main panel's width profile.
+function tipWidthEdgeLateral(lock, splits, segmentIndex, side, t, bone) {
+  const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
+  if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return 0;
+  const edgeU = boundaries[side < 0 ? segmentIndex : segmentIndex + 1];
+  const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
+  const widthEdge = tipPanelWidthAt(lock, t, edgeU, bone);
+  const widthCenter = tipPanelWidthAt(lock, t, centerU, bone);
+  return (edgeU * widthEdge - centerU * widthCenter) * 0.5;
+}
+
+// Width-curve edge points for a tip side: the exposed (below-zipper) segment edge from
 // the side's fork to the tip, offset laterally by the current width (binormal).
 function tipWidthEdgePoints(lock, segmentIndex, splits, bone, side) {
   const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
@@ -13537,8 +13551,8 @@ function tipWidthEdgePoints(lock, segmentIndex, splits, bone, side) {
     const lateral = new THREE.Vector3().crossVectors(tangent, mainFrame.z);
     if (lateral.lengthSq() < 0.0001) lateral.copy(mainFrame.x);
     lateral.normalize();
-    const width = tipPanelWidthAt(lock, t, side, bone);
-    points.push(center.clone().addScaledVector(lateral, side * width * 0.5));
+    const edgeLateral = tipWidthEdgeLateral(lock, splits, segmentIndex, side, t, bone);
+    points.push(center.clone().addScaledVector(lateral, edgeLateral));
   }
   return points;
 }
@@ -13551,8 +13565,10 @@ function tipWidthControlPlacement(lock, segmentIndex, splits, bone, side, pointI
   const forkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
   if (forkT >= 1) return null;
   const curve = new THREE.CatmullRomCurve3(tip.points);
+  // Midpoints of equal bins across the exposed range: keeps the first control point
+  // off the exact fork (where the zipper handle sits) and the last off the tip end.
   const t = TIP_WIDTH_CONTROL_POINTS > 1
-    ? THREE.MathUtils.lerp(forkT, 1, pointIndex / (TIP_WIDTH_CONTROL_POINTS - 1))
+    ? THREE.MathUtils.lerp(forkT, 1, (pointIndex + 0.5) / TIP_WIDTH_CONTROL_POINTS)
     : forkT;
   const center = curve.getPoint(t);
   const tangent = curve.getTangent(t).normalize();
@@ -13560,8 +13576,8 @@ function tipWidthControlPlacement(lock, segmentIndex, splits, bone, side, pointI
   const lateral = new THREE.Vector3().crossVectors(tangent, mainFrame.z);
   if (lateral.lengthSq() < 0.0001) lateral.copy(mainFrame.x);
   lateral.normalize();
-  const width = tipPanelWidthAt(lock, t, side, bone);
-  return { point: center.clone().addScaledVector(lateral, side * width * 0.5), t, center, lateral };
+  const edgeLateral = tipWidthEdgeLateral(lock, splits, segmentIndex, side, t, bone);
+  return { point: center.clone().addScaledVector(lateral, edgeLateral), t, center, lateral };
 }
 
 function tipHighlightMaterial() {
@@ -25093,9 +25109,9 @@ function createCurveObjects(lock) {
       for (const side of [-1, 1]) {
         for (let point = 0; point < TIP_WIDTH_CONTROL_POINTS; point += 1) {
           const handle = createSplitControlHandle();
-          handle.scale.setScalar(0.34);
+          handle.scale.setScalar(0.26);
           handle.material = new THREE.MeshBasicMaterial({
-            color: 0xff42cf,
+            color: 0x5df0a8,
             depthTest: false,
             depthWrite: false,
             transparent: true,
@@ -25110,7 +25126,7 @@ function createCurveObjects(lock) {
         }
         const line = new THREE.Line(
           new THREE.BufferGeometry(),
-          new THREE.LineBasicMaterial({ color: 0xff42cf, transparent: true, opacity: 0.85, depthTest: false })
+          new THREE.LineBasicMaterial({ color: 0x5df0a8, transparent: true, opacity: 0.85, depthTest: false })
         );
         line.renderOrder = 6;
         line.userData.lockId = lock.id;
@@ -25561,7 +25577,11 @@ function updateCurveObjects(lock, options = {}) {
   lock.curveObjects.panelSplitHandles?.forEach((handle, index) => {
     const split = splits[index];
     const line = lock.curveObjects.panelSplitLines?.[index];
-    const visible = !sculptBrushHelpersSuppressed
+    // Hide the zipper handles while a tip sub-bone is selected: the tip width control
+    // points sit on the segment edges (zipper u), so the bigger zipper sphere would
+    // steal the drag. The zipper LINES stay visible; deselect the tip to drag zippers.
+    const visible = !tipUiActive
+      && !sculptBrushHelpersSuppressed
       && !brushDebugVisible
       && isPanelGeometry(lock)
       && lock.panelSplitEnabled !== false
@@ -34396,7 +34416,7 @@ function beginPanelSplitHandleDrag(event) {
     && lock.curveObjects.strandSplitHandle?.visible
     ? [lock.curveObjects.strandSplitHandle]
     : [];
-  const handles = [...panelHandles, ...segmentHandles, ...tipWidthHandles, ...tipHandles, ...strandHandle];
+  const handles = [...tipWidthHandles, ...panelHandles, ...segmentHandles, ...tipHandles, ...strandHandle];
   if (!handles.length) return false;
   const hit = raycaster.intersectObjects(handles.filter((handle) => handle.visible), false)[0];
   if (!hit) return false;
@@ -34564,8 +34584,14 @@ function updatePanelSplitHandleDrag(event) {
     const ndcY = -((2 * targetY) / rect.height - 1);
     const cursorWorld = new THREE.Vector3(ndcX, ndcY, startProj.z).unproject(camera);
     const latOffset = cursorWorld.clone().sub(center).dot(lateral);
+    const boundaries = [-1, ...splitsForWidth.map((split) => split.position), 1];
+    const edgeU = boundaries[side < 0 ? segment : segment + 1];
+    const centerU = (boundaries[segment] + boundaries[segment + 1]) * 0.5;
     const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
-    const newWidthMult = (2 * Math.abs(latOffset)) / fullWidth;
+    // New width multiplier maps the dragged edge (signed lateral distance from the
+    // chain center) onto the segment's edge span; only the exposed (below-zipper)
+    // part changes, above stays default.
+    const newWidthMult = (2 * latOffset) / ((edgeU - centerU) * fullWidth);
     setTipWidthCurveValue(lock, segment, splitsForWidth, bone, side, t, newWidthMult);
     updateLockGeometry(lock, { immediate: true });
     updateCurveObjects(lock, { visible: true });

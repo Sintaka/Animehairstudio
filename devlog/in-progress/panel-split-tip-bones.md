@@ -194,6 +194,17 @@ splitBone.tip = {
 - 宽度数据仍写 `bone.taperCurve`/`taperCurveSecondary` + 自动 `asymmetricWidthCurve=true`；拖控制点 = 副切线(横向)方向改变半宽。
 
 **回归测试（scripts/verify-tip-select.mjs，28/28）**：orient 切线弯曲 >5°；粉色曲线/小点显示 + 绿色手柄 0 + 主 width 边缘 0 + 左右曲线长度不同；宽度拖动 author 右曲线（asymmetric、锁定区=全局默认）。三档 smoke 11/11、12/12 通过。
+### 8.12 发尖 width 控制点修正：子发片边缘定位 + 拖拽不再动发尖 + 绿色小点（0.2.59 已落地）
+
+**1. 拖动宽度点却带动发尖子骨骼（真 bug）✅**：宽度控制点按段边缘 u 放置，而段右/左边缘 = zipper 的 u——第 1 个宽度控制点（t=fork）与 zipper 手柄在同一世界位置，zipper 手柄更大且 raycast 更近 → 命中 kind="panel"（拖 zipper → 发尖跟着变）。修复：① 宽度控制点改**中点分布**（`(i+0.5)/N`，避开 fork 与尖端端点）；② 命中测试把 `tipWidthHandles` 放最前；③ **选中发尖时隐藏 zipper 手柄**（`panelSplitHandles` 加 `!tipUiActive`，zipper 线仍显示；取消发尖选中即可拖 zipper）。验证：pointerdown 后 `panelSplitDrag.kind==="tipWidth"`，拖完发尖链不变（chainMoved=false）。
+
+**2. 宽度点显示位置 = 子发片边缘而非主发片全宽 ✅**：新增 `tipWidthEdgeLateral` —— 用段自身 u 边界（左/右 zipper position）计算「链中心到段边缘」的副切线偏移 = `(edgeU·widthEdge − centerU·widthCenter)/2`，控制点与粉色/绿色曲线都落到子发片的实际边缘；边界段回到面板外缘。宽度拖拽公式同步改为按段边缘跨度映射（`2·latOffset/((edgeU−centerU)·fullWidth)`），锁定区（zipper 以上）仍强制全局默认。
+
+**3. 控制点半径 ✅**：scale 0.34 → 0.26（比之前更小、更接近普通发丝控制点观感）。
+
+**4. 颜色改绿 ✅**：宽度控制点 + 控制曲线由粉 `#ff42cf` 改为绿 `#5df0a8`，与主发片宽度控制（粉/棕）区分。
+
+**回归测试（scripts/verify-tip-select.mjs，28/28 新增）**：绿色曲线/小点显示在子发片边缘（左右各 5 点、左右曲线长度不同 0.91 vs 0.34、`#5df0a8`、zipper 手柄隐藏、主 width 边缘隐藏）；拖右控制点 → 右/左曲线生成、asymmetric=true、锁定区=全局默认、**发尖链不变**。三档 smoke 11/11、12/12 通过。
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

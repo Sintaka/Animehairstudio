@@ -470,7 +470,7 @@ try {
     const widthEdgeVis = (lock.curveObjects.widthEdgeLines || []).filter((e) => e.visible).length;
     return JSON.stringify({ leftVis, rightVis, leftLine: !!lines && lines.left.visible, rightLine: !!lines && lines.right.visible, leftLen: Number(leftLen.toFixed(4)), rightLen: Number(rightLen.toFixed(4)), handleColor, greenVis, widthEdgeVis });
   })()`));
-  check("tip width pink curve+points show, green removed, side lengths differ", widthVis.leftVis > 0 && widthVis.rightVis > 0 && widthVis.leftLine === true && widthVis.rightLine === true && widthVis.handleColor === "#ff42cf" && widthVis.greenVis === 0 && widthVis.widthEdgeVis === 0 && Math.abs(widthVis.leftLen - widthVis.rightLen) > 0.01, `width=${JSON.stringify(widthVis)}`);
+  check("tip width green curve+points show (sub-bone edges), green removed, side lengths differ", widthVis.leftVis > 0 && widthVis.rightVis > 0 && widthVis.leftLine === true && widthVis.rightLine === true && widthVis.handleColor === "#5df0a8" && widthVis.greenVis === 0 && widthVis.widthEdgeVis === 0 && Math.abs(widthVis.leftLen - widthVis.rightLen) > 0.01, `width=${JSON.stringify(widthVis)}`);
 
   // drag a right-side width handle (select tool; brush tools consume pointerdown)
   await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="select"]'); if (btn) btn.click(); return true; })()`);
@@ -492,6 +492,14 @@ try {
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: widthDrag.x + 30, y: widthDrag.y + 5, button: "left", clickCount: 1 });
     await sleep(400);
   }
+  const widthChainBefore = await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[2] || null;
+    const tip = t.splitTipForSegment(lock, 2, splits, bone);
+    return JSON.stringify(tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })));
+  })()`);
   const widthAfter = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
@@ -506,7 +514,23 @@ try {
     const bakedAt = rightCurve ? rightCurve.find((pt) => Math.abs(pt.position - 0.3) < 1e-3)?.value : null;
     return JSON.stringify({ ok: true, hasRight: !!rightCurve, hasLeft: !!leftCurve, asym: bone.asymmetricWidthCurve === true, rightForkT, lockedMatch: globalAt != null && bakedAt != null && Math.abs(globalAt - bakedAt) < 1e-3, changedFromDefault: !!rightCurve });
   })()`));
-  check("tip width drag authors right curve (asymmetric, locked region = global)", widthAfter.ok === true && widthAfter.hasRight === true && widthAfter.hasLeft === true && widthAfter.asym === true && widthAfter.lockedMatch === true, `width=${JSON.stringify(widthAfter)}`);
+    let widthChainMoved = false;
+  if (widthAfter.ok) {
+    const chainNow = await evalJS(cdp, `(() => {
+      const t = window.__ahsTest;
+      const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+      const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+      const bone = t.materializeSplitBones(lock)[2] || null;
+      const tip = t.splitTipForSegment(lock, 2, splits, bone);
+      return JSON.stringify(tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })));
+    })()`);
+    const before = JSON.parse(widthChainBefore);
+    const after = JSON.parse(chainNow);
+    for (let i = 0; i < Math.min(before.length, after.length); i++) {
+      if (Math.hypot(after[i].x - before[i].x, after[i].y - before[i].y, after[i].z - before[i].z) > 1e-5) { widthChainMoved = true; break; }
+    }
+  }
+  check("tip width drag authors right curve (chain unchanged, asymmetric, locked = global)", widthAfter.ok === true && widthAfter.hasRight === true && widthAfter.hasLeft === true && widthAfter.asym === true && widthAfter.lockedMatch === true && widthChainMoved === false, `width=${JSON.stringify(widthAfter)} chainMoved=${widthChainMoved}`);
 
   // ============ Issue 1: hover + alt+click in select mode (non-create tools) ============
   await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="select"]'); if (btn) btn.click(); return true; })()`);
