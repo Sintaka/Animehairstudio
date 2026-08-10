@@ -13483,8 +13483,11 @@ function tipHighlightMaterial() {
 
 function updateTipHighlight(lock) {
   const selection = sculptState.state.panelTipSelection;
-  const isTarget = selection && selection.lockId === lock.id && isPanelGeometry(lock) && lock.panelSplitEnabled !== false;
-  if (!isTarget || !lock.curveObjects) {
+  const hover = sculptState.state.panelTipHover;
+  let target = null;
+  if (selection && selection.lockId === lock.id) target = { segmentIndex: selection.segmentIndex, selected: true };
+  else if (hover && hover.lockId === lock.id) target = { segmentIndex: hover.segmentIndex, selected: false };
+  if (!target || !isPanelGeometry(lock) || lock.panelSplitEnabled === false || !lock.curveObjects) {
     if (lock.curveObjects?.tipHighlightMesh) lock.curveObjects.tipHighlightMesh.visible = false;
     return;
   }
@@ -13506,7 +13509,7 @@ function updateTipHighlight(lock) {
   const overlayGeometry = overlay.geometry;
   overlayGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(position.array.slice()), 3));
   overlayGeometry.setIndex(new (geometry.index.array.constructor)(geometry.index.array.slice()));
-  const segmentIndex = selection.segmentIndex;
+  const segmentIndex = target.segmentIndex;
   const colors = new Float32Array(position.count * 3);
   const fades = new Float32Array(position.count);
   for (let vertex = 0; vertex < position.count; vertex += 1) {
@@ -13521,6 +13524,7 @@ function updateTipHighlight(lock) {
   }
   overlayGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   overlayGeometry.setAttribute("aFade", new THREE.BufferAttribute(fades, 1));
+  overlay.material.opacity = target.selected ? 0.62 : 0.34;
   overlay.visible = true;
 }
 
@@ -13534,10 +13538,11 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
   const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
   const mainCount = Array.isArray(lock.points) ? lock.points.length : 0;
   if (mainCount < 2) return null;
+  const curve = strandGeometryCurve(lock);
   const restPoints = [];
   for (let index = 0; index < mainCount; index += 1) {
     const t = index / Math.max(1, mainCount - 1);
-    restPoints.push(panelSplitControlPoint(lock, { position: centerU, height: 1 - t }, t, null, segmentIndex));
+    restPoints.push(panelSplitControlPoint(lock, { position: centerU, height: 1 - t }, t, curve, segmentIndex, splitBone));
   }
   const authored = splitBone?.tip;
   if (
@@ -24553,7 +24558,7 @@ function strandSplitControlPoint(lock, split, tOverride = null, curveOverride = 
   return point.add(offset).addScaledVector(frame.z, 0.012);
 }
 
-function panelSplitControlPoint(lock, split, tOverride = null, curveOverride = null, splitIndex = null) {
+function panelSplitControlPoint(lock, split, tOverride = null, curveOverride = null, splitIndex = null, boneOverride = null) {
   const t = THREE.MathUtils.clamp(tOverride ?? (1 - Number(split.height || 0)), 0, 1);
   const u = THREE.MathUtils.clamp(Number(split.position || 0), -1, 1);
   const sampleT = t;
@@ -24568,9 +24573,8 @@ function panelSplitControlPoint(lock, split, tOverride = null, curveOverride = n
   const x = new THREE.Vector3().crossVectors(tangent, z).normalize();
   // Width follows the split sub-bone of the segment to the left of this zipper so the
   // handle stays on the surface when per-segment curves are authored.
-  const bone = splitIndex == null
-    ? null
-    : splitBonesFor(lock)[splitIndex] || null;
+  const bone = boneOverride
+    || (splitIndex == null ? null : splitBonesFor(lock)[splitIndex] || null);
   const panelWidthAt = (side) => Math.max(0.0001, Number(lock.width ?? 0.62) * sampleAsymmetricTaperCurve(
     bone?.taperCurve || lock.taperCurve,
     bone?.taperCurveSecondary || lock.taperCurveSecondary,
@@ -25382,6 +25386,13 @@ function updateCurveObjects(lock, options = {}) {
   });
   const tipSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
   const tipSplitBones = splitBonesFor(lock);
+  // Cache each segment's sub-bone chain once (handles + guide lines share it).
+  const tipChains = tipSplits.length
+    ? tipSplits.map((_, segment) => splitTipForSegment(lock, segment, tipSplits, tipSplitBones[segment] || null))
+    : [];
+  const tipForkTs = tipSplits.length
+    ? tipSplits.map((_, segment) => splitForkT(lock, segment, tipSplits))
+    : [];
   lock.curveObjects.panelTipHandles?.forEach((handle) => {
     const segment = handle.userData.panelTipIndex;
     const point = handle.userData.panelTipPoint;
@@ -25392,12 +25403,12 @@ function updateCurveObjects(lock, options = {}) {
       && tipSplits.length > 0;
     handle.visible = visible;
     if (!visible) return;
-    const tip = splitTipForSegment(lock, segment, tipSplits, tipSplitBones[segment] || null);
+    const tip = tipChains[segment];
     if (!tip || point >= tip.points.length) {
       handle.visible = false;
       return;
     }
-    const forkT = splitForkT(lock, segment, tipSplits);
+    const forkT = tipForkTs[segment] ?? 1;
     const t = point / Math.max(1, tip.points.length - 1);
     // Only expose sub-bone points below the segment's fork (zipper); above stays current.
     if (t <= forkT) {
@@ -25413,7 +25424,7 @@ function updateCurveObjects(lock, options = {}) {
       && sculptState.state.panelSplitDrag.tipPoint === point;
     handle.material.opacity = isDragged ? 0.95 : (isSelected ? 0.95 : 0.4);
   });
-  // Guide lines connecting each sub-bone chain (selected bright, others dimmed).
+  // Guide lines connecting each sub-bone's exposed (below-fork) chain portion.
   lock.curveObjects.panelTipLines?.forEach((line, segment) => {
     const visible = !sculptBrushHelpersSuppressed
       && !brushDebugVisible
@@ -25422,12 +25433,12 @@ function updateCurveObjects(lock, options = {}) {
       && tipSplits.length > 0;
     line.visible = visible;
     if (!visible) return;
-    const tip = splitTipForSegment(lock, segment, tipSplits, tipSplitBones[segment] || null);
+    const tip = tipChains[segment];
     if (!tip || tip.points.length < 2) {
       line.visible = false;
       return;
     }
-    const forkT = splitForkT(lock, segment, tipSplits);
+    const forkT = tipForkTs[segment] ?? 1;
     const firstBelow = Math.min(tip.points.length - 1, Math.max(1, Math.ceil(forkT * (tip.points.length - 1))));
     const exposed = tip.points.slice(firstBelow);
     if (exposed.length < 2) {
@@ -35378,6 +35389,29 @@ function beginSculptMoveStroke(event) {
   event.stopImmediatePropagation();
 }
 
+function updatePanelTipHover(event) {
+  const lock = getSelectedLock();
+  let hover = { lockId: null, segmentIndex: null };
+  if (lock && isPanelGeometry(lock) && lock.panelSplitEnabled !== false && Array.isArray(lock.panelSplits) && lock.panelSplits.length) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const pointerNDC = new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    raycaster.setFromCamera(pointerNDC, camera);
+    const hit = raycaster.intersectObject(lock.mesh, false)[0];
+    const panelWeights = lock.mesh.geometry?.userData?.panelWeights;
+    if (hit && hit.face && panelWeights) {
+      const segment = panelWeights[hit.face.a * 3 + 1];
+      if (segment >= 0) hover = { lockId: lock.id, segmentIndex: segment };
+    }
+  }
+  const changed = sculptState.state.panelTipHover?.lockId !== hover.lockId
+    || sculptState.state.panelTipHover?.segmentIndex !== hover.segmentIndex;
+  sculptState.state.panelTipHover = hover;
+  if (changed) updateTipHighlight(lock);
+}
+
 function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   // When a split tip sub-bone is selected, the brush edits ONLY that sub-bone's chain
   // points (masked by screen distance) - never other sub-bones or the main chain.
@@ -36119,6 +36153,7 @@ window.addEventListener("pointermove", updateDuplicatePlacement, true);
 window.addEventListener("pointermove", updateReferenceCrop, true);
 window.addEventListener("pointermove", updateReferenceOverlayDrag, true);
 window.addEventListener("pointermove", updateSculptMoveStroke, true);
+window.addEventListener("pointermove", updatePanelTipHover);
 window.addEventListener("pointermove", updateBrushSizeDrag, true);
 window.addEventListener("pointermove", updateStrandWidthEdgeDrag, true);
 window.addEventListener("pointermove", updateViewSnap, true);
