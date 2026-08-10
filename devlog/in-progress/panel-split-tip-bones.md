@@ -99,6 +99,24 @@ splitBone.tip = {
   - 点击②：toggle 取消、回到主发丝选择。
   - 全程 0 异常。
 - 三档 smoke（0041/0042/0044）11/11、12/12 通过。
+
+### 8.7 双段高亮 + 笔刷下保留 tip UI（0.2.59）
+
+**症状**：
+1. 选中一个发尖后，再悬停其它发尖不再出现浮动高亮（`updateTipHighlight` 只渲染一个 target：有 selection 就只画选中段，hover 被忽略）。
+2. 切到 Scale Brush 后，高亮 + 控制点 + 骨骼全部消失（`curveObjects.group.visible` 在笔刷下被关；tip 手柄/链线又被 `sculptBrushHelpersSuppressed` 单独关掉）。
+
+**修复（app.js）**：
+- `updateTipHighlight`：`selectedSeg` 与 `hoveredSeg` 各自独立求值；overlay 每顶点同时写选中段（fade=weight、material.opacity 0.62）与悬停段（fade=weight×(0.34/0.62) → 有效 alpha 0.34）；两者可同屏。无 selection 时仍走纯 hover 路径（opacity 0.34）。
+- `updateCurveObjects` 新增 `tipUiActive = isPanelGeometry(lock) && panelTipSelection?.lockId === lock.id`：
+  - tip 手柄/链线 visible 条件由 `!sculptBrushHelpersSuppressed` 放宽为 `(!sculptBrushHelpersSuppressed || tipUiActive)`；
+  - group visible 在笔刷下额外 `|| tipUiActive`，且绕过 `sculptBrushShowCurvesInput` 的 checkbox 门（`(brushCurveVisibilityAllowed || tipUiActive)`）——选中子骨骼时笔刷下也显示高亮 + 控制点 + 骨骼；未选中时笔刷下保持原样（不打扰）。
+- 主发丝手柄/箭头/split/segment 手柄在笔刷下仍按原逻辑隐藏（`sculptBrushHelpersSuppressed` 未放宽），只有 tip UI 例外。
+
+**回归测试（scripts/verify-tip-select.mjs，14/14）**：
+- 双段高亮：选中 seg0 后把 hover 设到 seg1 → overlay aFade 同时覆盖 seg0（32 顶点）与 seg1（64 顶点），opacity 0.62。
+- 笔刷保留：点击真实 Scale Brush 按钮（sculpt-scale）+ updateCurveObjects 同步 → tool=sculpt-scale、group.visible=true、tipHighlightMesh.visible=true、11 个 tip 手柄 + 4 条链线可见；切回 select 后点击②仍能 toggle 取消。
+- 三档 smoke（0041/0042/0044）11/11、12/12 通过。
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

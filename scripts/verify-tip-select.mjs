@@ -167,6 +167,52 @@ try {
   check("highlight depthTest=false (no z-fighting)", hl.depthTest === false, `depthTest=${hl.depthTest}`);
   check("highlight selected opacity 0.62", Math.abs((hl.opacity ?? 0) - 0.62) < 0.01, `opacity=${hl.opacity}`);
 
+  // --- Hover on another tip while one is selected (dual highlight) ---
+  const dual = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    t.sculptState.state.panelTipHover = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 1 };
+    t.updateTipHighlight(lock);
+    const m = lock.curveObjects.tipHighlightMesh;
+    const w = lock.mesh.geometry.userData.panelWeights;
+    const pos = lock.mesh.geometry.attributes.position;
+    const fade = m.geometry.attributes.aFade;
+    let seg0 = 0; let seg1 = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const seg = w[i * 3 + 1];
+      if (seg === 0 && fade.getX(i) > 0.001) seg0++;
+      if (seg === 1 && fade.getX(i) > 0.001) seg1++;
+    }
+    return JSON.stringify({ seg0Verts: seg0, seg1Verts: seg1, opacity: m.material.opacity, visible: m.visible });
+  })()`));
+  check("hover on other tip shows while one is selected", dual.seg0Verts > 0 && dual.seg1Verts > 0 && dual.opacity > 0.6, `dual=${JSON.stringify(dual)}`);
+
+  // --- Scale Brush keeps tip UI (highlight + handles + guide lines) visible ---
+  await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="sculpt-scale"]'); if (!btn) return 'no-button'; btn.click(); return 'clicked'; })()`);
+  await sleep(400);
+  // run the same sync the app runs on tool/selection changes
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)}); t.updateCurveObjects(lock, { visible: true }); return true; })()`);
+  const brush = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const visHandles = (lock.curveObjects?.panelTipHandles || []).filter((h) => h.visible).length;
+    const visLines = (lock.curveObjects?.panelTipLines || []).filter((l) => l.visible).length;
+    return JSON.stringify({
+      tool: t.sel.state.activeTool,
+      selection: t.sculptState.state.panelTipSelection,
+      groupVisible: lock.curveObjects?.group.visible,
+      highlightVisible: lock.curveObjects?.tipHighlightMesh?.visible,
+      visHandles,
+      visLines
+    });
+  })()`));
+  check("scale brush active", brush.tool === "sculpt-scale", `tool=${brush.tool}`);
+  check("tip UI visible during scale brush", brush.groupVisible === true && brush.highlightVisible === true && brush.visHandles > 0 && brush.visLines > 0, `brush=${JSON.stringify(brush)}`);
+
+  // back to select tool so the toggle-click below takes the tip-selection path
+  await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="select"]'); if (btn) btn.click(); return true; })()`);
+  await sleep(300);
+
   // Click #2 -> toggle back to main selection
   await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipHover = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 0 }; return true; })()`);
   await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: clickPt.x, y: clickPt.y, button: "left", clickCount: 1 });

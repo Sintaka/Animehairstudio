@@ -13485,10 +13485,9 @@ function tipHighlightMaterial() {
 function updateTipHighlight(lock) {
   const selection = sculptState.state.panelTipSelection;
   const hover = sculptState.state.panelTipHover;
-  let target = null;
-  if (selection && selection.lockId === lock.id) target = { segmentIndex: selection.segmentIndex, selected: true };
-  else if (hover && hover.lockId === lock.id) target = { segmentIndex: hover.segmentIndex, selected: false };
-  if (!target || !isPanelGeometry(lock) || lock.panelSplitEnabled === false || !lock.curveObjects) {
+  const selectedSeg = selection && selection.lockId === lock.id ? selection.segmentIndex : null;
+  const hoveredSeg = hover && hover.lockId === lock.id ? hover.segmentIndex : null;
+  if ((selectedSeg == null && hoveredSeg == null) || !isPanelGeometry(lock) || lock.panelSplitEnabled === false || !lock.curveObjects) {
     if (lock.curveObjects?.tipHighlightMesh) lock.curveObjects.tipHighlightMesh.visible = false;
     return;
   }
@@ -13514,22 +13513,29 @@ function updateTipHighlight(lock) {
     ? srcIndex.slice()
     : new Uint32Array(srcIndex);
   overlayGeometry.setIndex(new THREE.BufferAttribute(indexArray, 1));
-  const segmentIndex = target.segmentIndex;
+  const selectedOpacity = 0.62;
+  const hoverOpacity = 0.34;
+  const hoverFadeScale = selectedSeg != null ? hoverOpacity / selectedOpacity : 1;
   const colors = new Float32Array(position.count * 3);
   const fades = new Float32Array(position.count);
   for (let vertex = 0; vertex < position.count; vertex += 1) {
     const segment = panelWeights[vertex * 3 + 1];
     const weight = panelWeights[vertex * 3 + 2];
-    if (segment === segmentIndex && weight > 0.001) {
+    if (selectedSeg != null && segment === selectedSeg && weight > 0.001) {
       colors[vertex * 3] = 1.0;
       colors[vertex * 3 + 1] = 0.55;
       colors[vertex * 3 + 2] = 0.1;
       fades[vertex] = weight;
+    } else if (hoveredSeg != null && segment === hoveredSeg && weight > 0.001) {
+      colors[vertex * 3] = 1.0;
+      colors[vertex * 3 + 1] = 0.55;
+      colors[vertex * 3 + 2] = 0.1;
+      fades[vertex] = weight * hoverFadeScale;
     }
   }
   overlayGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   overlayGeometry.setAttribute("aFade", new THREE.BufferAttribute(fades, 1));
-  overlay.material.opacity = target.selected ? 0.62 : 0.34;
+  overlay.material.opacity = selectedSeg != null ? selectedOpacity : hoverOpacity;
   overlay.visible = true;
 }
 
@@ -25186,6 +25192,10 @@ function updateCurveObjects(lock, options = {}) {
   const brushDebugVisible = sculptBrushDebugCurveVisible(lock);
   const sculptBrushHelpersSuppressed = sculptBrushToolActive()
     && sculptState.state.viewportEditMode === "strand";
+  // Keep the tip sub-bone UI (highlight + handles + guide lines) visible while a brush
+  // tool is active when a tip sub-bone is selected, so the user can see what they edit.
+  const tipUiActive = isPanelGeometry(lock)
+    && sculptState.state.panelTipSelection?.lockId === lock.id;
   lock.curveObjects.line.material.color.set(
     brushDebugVisible && lock.id !== sel.state.selectedId
       ? 0x58f6ff
@@ -25401,7 +25411,7 @@ function updateCurveObjects(lock, options = {}) {
   lock.curveObjects.panelTipHandles?.forEach((handle) => {
     const segment = handle.userData.panelTipIndex;
     const point = handle.userData.panelTipPoint;
-    const visible = !sculptBrushHelpersSuppressed
+    const visible = (!sculptBrushHelpersSuppressed || tipUiActive)
       && !brushDebugVisible
       && isPanelGeometry(lock)
       && lock.panelSplitEnabled !== false
@@ -25431,7 +25441,7 @@ function updateCurveObjects(lock, options = {}) {
   });
   // Guide lines connecting each sub-bone's exposed (below-fork) chain portion.
   lock.curveObjects.panelTipLines?.forEach((line, segment) => {
-    const visible = !sculptBrushHelpersSuppressed
+    const visible = (!sculptBrushHelpersSuppressed || tipUiActive)
       && !brushDebugVisible
       && isPanelGeometry(lock)
       && lock.panelSplitEnabled !== false
@@ -25510,8 +25520,8 @@ function updateCurveObjects(lock, options = {}) {
 
   if ("visible" in options) {
     const brushCurveVisibilityAllowed = !sculptBrushToolActive() || sculptBrushShowCurvesInput.checked;
-    lock.curveObjects.group.visible = brushCurveVisibilityAllowed
-      && ((options.visible && componentEditModeActive()) || brushDebugVisible)
+    lock.curveObjects.group.visible = (brushCurveVisibilityAllowed || tipUiActive)
+      && ((options.visible && componentEditModeActive()) || brushDebugVisible || tipUiActive)
       && !lock.locked
       && strandVisibleForDisplay(lock);
   }
@@ -36819,6 +36829,9 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     raycaster,
     getSelectedLock,
     selectLock,
+    sel,
+    updateCurveObjects,
+    updateTipHighlight,
     isPanelGeometry,
     projectToClient(world) {
       const v = world.clone().project(camera);
