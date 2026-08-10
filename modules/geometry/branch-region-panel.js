@@ -146,7 +146,6 @@ function cloneBranchRootRegion(region, { mirror = false } = {}) {
 function normalizeBranchRootRegion(lock) {
   const cross = lock?.branchRootRegion?.cross;
   if (!cross) return false;
-  const MIN_REGION_SPAN = 0.02;
   let changed = false;
   const offsets = lock?.branchRootRegion?.edgeOffsets;
   if (cross.up.u >= cross.down.u) {
@@ -161,23 +160,14 @@ function normalizeBranchRootRegion(lock) {
     if (offsets) { const t = offsets.left; offsets.left = offsets.right; offsets.right = t; }
     changed = true;
   }
-  if (cross.down.u - cross.up.u < MIN_REGION_SPAN) {
-    cross.up.u = clampRegionParam(cross.down.u - MIN_REGION_SPAN);
-    if (cross.down.u - cross.up.u < MIN_REGION_SPAN) cross.down.u = clampRegionParam(cross.up.u + MIN_REGION_SPAN);
-    changed = true;
-  }
-  if (cross.left.v - cross.right.v < MIN_REGION_SPAN) {
-    cross.right.v = clampRegionParam(cross.left.v - MIN_REGION_SPAN);
-    if (cross.left.v - cross.right.v < MIN_REGION_SPAN) cross.left.v = clampRegionParam(cross.right.v + MIN_REGION_SPAN);
-    changed = true;
-  }
+  // Allow the up/down (and left/right) pair to collapse to the center (direct bridge
+  // / extreme topology): only fix inverted pairs, never re-expand a zero span.
   return changed;
 }
 
 function setBranchRootRegionPoint(lock, name, param) {
   const cross = lock?.branchRootRegion?.cross;
   if (!cross?.[name] || !param) return;
-  const MIN_REGION_SPAN = 0.02;
   const u = clampRegionParam(param.u);
   const v = clampRegionParam(param.v);
   // Normalize first: an inverted pair would make the clamps snap the dragged point
@@ -188,14 +178,16 @@ function setBranchRootRegionPoint(lock, name, param) {
   const center = lock?.branchRootRegion?.center;
   const cu = clampRegionParam(center?.u ?? (cross.up.u + cross.down.u) / 2);
   const cv = clampRegionParam(center?.v ?? (cross.left.v + cross.right.v) / 2);
+  // A side point may coincide with the orange center (direct bridge / extreme
+  // topology): clamp only to stay on its own side of the center (never cross it).
   if (name === "up") {
-    cross.up = { u: clampRegionParam(Math.min(u, Math.min(cross.down.u, cu) - MIN_REGION_SPAN)), v };
+    cross.up = { u: clampRegionParam(Math.min(u, Math.min(cross.down.u, cu))), v };
   } else if (name === "down") {
-    cross.down = { u: clampRegionParam(Math.max(u, Math.max(cross.up.u, cu) + MIN_REGION_SPAN)), v };
+    cross.down = { u: clampRegionParam(Math.max(u, Math.max(cross.up.u, cu))), v };
   } else if (name === "left") {
-    cross.left = { u, v: clampRegionParam(Math.max(v, Math.max(cross.right.v, cv) + MIN_REGION_SPAN)) };
+    cross.left = { u, v: clampRegionParam(Math.max(v, Math.max(cross.right.v, cv))) };
   } else {
-    cross.right = { u, v: clampRegionParam(Math.min(v, Math.min(cross.left.v, cv) - MIN_REGION_SPAN)) };
+    cross.right = { u, v: clampRegionParam(Math.min(v, Math.min(cross.left.v, cv))) };
   }
   syncBranchRootRegionOffsets(lock);
   // Rebuild the parent from scratch so carving always starts from the full grid:
@@ -469,10 +461,10 @@ function beginBranchRegionCanvasDrag(event) {
     if (!cross) return;
     const centerU = clampRegionParam(lock.branchRootRegion.center?.u ?? (cross.up.u + cross.down.u) / 2);
     const centerV = clampRegionParam(lock.branchRootRegion.center?.v ?? (cross.left.v + cross.right.v) / 2);
-    // Ctrl+drag the center = mirror-scale: the side you drag toward and the opposite
-    // side both move apart symmetrically around the fixed center.
+    // Ctrl+drag the center = uniform center scale: all four edges move symmetrically
+    // around the fixed orange anchor (drag outward to enlarge).
     deps.sculptState.branchRegionCanvasDrag = {
-      mode: event.ctrlKey ? "center-mirror" : "move",
+      mode: event.ctrlKey ? "center-scale" : "move",
       pointerId: event.pointerId,
       startU: centerU,
       startV: centerV,
@@ -602,24 +594,27 @@ function updateBranchRegionCanvasDrag(event) {
     renderBranchRegionEditor();
     return;
   }
-  if (deps.sculptState.branchRegionCanvasDrag.mode === "center-mirror") {
+  if (deps.sculptState.branchRegionCanvasDrag.mode === "center-scale") {
     const start = deps.sculptState.branchRegionCanvasDrag.startRegion;
     if (!start) return;
     const region = lock.branchRootRegion;
     const offsets = region.edgeOffsets || syncBranchRootRegionOffsets(lock);
     const centerU = clampRegionParam(region.center?.u ?? (start.up.u + start.down.u) / 2);
     const centerV = clampRegionParam(region.center?.v ?? (start.left.v + start.right.v) / 2);
-    const du = uv.u - deps.sculptState.branchRegionCanvasDrag.startU;
-    const dv = uv.v - deps.sculptState.branchRegionCanvasDrag.startV;
-    if (Math.abs(du) >= Math.abs(dv)) {
-      // Mirror along u (top/bottom): both edges move away from the fixed center.
-      cross.up.u = clampRegionParam(centerU - (offsets.up + du));
-      cross.down.u = clampRegionParam(centerU + (offsets.down + du));
-    } else {
-      // Mirror along v (left/right).
-      cross.left.v = clampRegionParam(centerV + (offsets.left + dv));
-      cross.right.v = clampRegionParam(centerV - (offsets.right + dv));
-    }
+    // Uniform center scale: all four edges move symmetrically around the fixed orange
+    // anchor. The scale follows the pointer's radial distance from the center
+    // (drag outward = enlarge; release back at the center = start size).
+    const base = Math.max(0.05, (offsets.up + offsets.down + offsets.left + offsets.right) * 0.5);
+    const startDist = Math.hypot(
+      deps.sculptState.branchRegionCanvasDrag.startU - centerU,
+      deps.sculptState.branchRegionCanvasDrag.startV - centerV
+    );
+    const curDist = Math.hypot(uv.u - centerU, uv.v - centerV);
+    const scale = THREE.MathUtils.clamp(1 + (curDist - startDist) / base, 0.02, 8);
+    cross.up.u = clampRegionParam(centerU - offsets.up * scale);
+    cross.down.u = clampRegionParam(centerU + offsets.down * scale);
+    cross.left.v = clampRegionParam(centerV + offsets.left * scale);
+    cross.right.v = clampRegionParam(centerV - offsets.right * scale);
     normalizeBranchRootRegion(lock);
     syncBranchRootRegionOffsets(lock);
     const parent = deps.locks.find((item) => item.id === lock?.branchParentId);
