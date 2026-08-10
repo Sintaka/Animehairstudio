@@ -182,6 +182,13 @@ export function mirrorSplitBones(bones) {
   mirrored.reverse();
   mirrored.forEach((bone) => {
     if (bone.p) bone.p = { x: -bone.p.x, y: bone.p.y, z: bone.p.z };
+    if (bone.tip && Array.isArray(bone.tip.points)) {
+      bone.tip = {
+        ...bone.tip,
+        points: bone.tip.points.map((p) => ({ x: -p.x, y: p.y, z: p.z })),
+        restPoints: Array.isArray(bone.tip.restPoints) ? bone.tip.restPoints.map((p) => ({ x: -p.x, y: p.y, z: p.z })) : null
+      };
+    }
   });
   return mirrored;
 }
