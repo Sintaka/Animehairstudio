@@ -4,6 +4,7 @@ import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260809-16";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260809-15";
 import { splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones } from "./modules/geometry/bone-model.js?v=20260810-1";
+import { createStrandSweepApi } from "./modules/geometry/strand-sweep.js?v=20260810-2";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-14";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";
 import { createMiscStore } from "./modules/core/misc-store.js?v=20260809-12";
@@ -14646,10 +14647,15 @@ function proceduralBranchGeometryLock(parent, template, index) {
   return branch;
 }
 
+const strandSweep = createStrandSweepApi({
+  strandCurveParameters, strandGeometryFrameAt, strandProfileTopologyAt,
+  strandInfluenceColor, sampleScale
+});
 const branchBridge = createBranchBridgeApi({
   strandCurveParameters, strandGeometryFrameAt, strandProfileTopologyAt,
   strandControlPointFrame, curveFrameAt, guidedNormalAt, controlPointRotationAt,
   strandGeometryCurve, strandInfluenceColor,
+  strandSweep,
   branchChildrenFor: branchHierarchy.branchChildrenFor, updateBranchChildren: branchHierarchy.updateBranchChildren, locks,
   BRANCH_CONNECTION_ENABLED, BRANCH_SIDE_FILL_ENABLED,
   branchState: branch.state
@@ -14733,39 +14739,17 @@ function createBaseHairGeometry(lock) {
   const radialSegments = THREE.MathUtils.clamp(Math.round(lock.radialSegments || 10), 4, 24);
   const profileTopology = branchSweep.createSweepProfileTopology(profilePoints, radialSegments, profileCurve);
   const profileVertexCount = profileTopology.slots.length;
-  const curlSegments = lock.curlEnabled ? Math.ceil(Number(lock.curlCount ?? 4) * 14) : 0;
-  const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), curlSegments), 4, 256);
-  const curveParameters = strandCurveParameters(lock, curve, lengthSegments);
-  const actualLengthSegments = curveParameters.length - 1;
-  const vertices = [];
-  const normals = [];
-  const tangents = [];
-  const uvs = [];
-  const colors = [];
-  const indices = [];
   const profileSlotPoints = profileTopology.slots.map((profileSample) => profileSample.point);
-
-  let previousFrame = null;
-  curveParameters.forEach((t) => {
-    const point = curve.getPoint(t);
-    const frame = strandGeometryFrameAt(lock, curve, t, previousFrame);
-    previousFrame = frame;
-    const scaleX = sampleScale(lock.pointScales, t, "x");
-    const scaleZ = sampleScale(lock.pointScales, t, "z");
-    const warpedProfile = strandProfileTopologyAt(lock, t, profileSlotPoints, scaleX, scaleZ);
-    const color = strandInfluenceColor(lock, t);
-
-    profileTopology.slots.forEach((profileSample, index) => {
-      const warped = warpedProfile[index];
-      const ring = frame.x.clone().multiplyScalar(warped.x);
-      ring.add(frame.z.clone().multiplyScalar(warped.z));
-      vertices.push(point.x + ring.x, point.y + ring.y, point.z + ring.z);
-      normals.push(ring.x, ring.y, ring.z);
-      tangents.push(frame.y.x, frame.y.y, frame.y.z, 1);
-      uvs.push(profileSample.t, t);
-      colors.push(color.r, color.g, color.b);
-    });
+  // Shared sweep kernel: default strand path uses absolute taper scaling from t=0.
+  const sweep = strandSweep.sweepSide({
+    lock,
+    curve,
+    profilePoints: profileSlotPoints,
+    startT: 0,
+    seedFrame: null,
+    rootRelative: false
   });
+  const { vertices, normals, tangents, uvs, colors, indices, quadFaces, actualLengthSegments } = sweep;
 
   const startPoint = curve.getPoint(0);
   const endPoint = curve.getPoint(1);
@@ -14785,18 +14769,6 @@ function createBaseHairGeometry(lock) {
   uvs.push(0.5, 1);
   const endColor = strandInfluenceColor(lock, 1);
   colors.push(endColor.r, endColor.g, endColor.b);
-
-  const sweepQuadFaces = [];
-  for (let i = 0; i < actualLengthSegments; i += 1) {
-    profileTopology.edges.forEach((edge) => {
-      const a = i * profileVertexCount + edge.start;
-      const b = i * profileVertexCount + edge.end;
-      const c = (i + 1) * profileVertexCount + edge.start;
-      const d = (i + 1) * profileVertexCount + edge.end;
-      indices.push(a, c, b, b, c, d);
-      sweepQuadFaces.push([a, c, d, b]);
-    });
-  }
 
   profileTopology.edges.forEach((edge) => {
     const a = edge.start;
@@ -14820,7 +14792,7 @@ function createBaseHairGeometry(lock) {
   geometry.userData.gridColumns = profileTopology.slots.length;
   geometry.userData.gridFacesPerRow = profileTopology.edges.length;
   geometry.userData.gridSkipCol = gridProfileSkipCol(profileTopology.edges, profileTopology.slots.length);
-  geometry.userData.quadFaces = sweepQuadFaces;
+  geometry.userData.quadFaces = quadFaces;
   geometry.computeVertexNormals();
   return geometry;
 }

@@ -588,27 +588,16 @@ function createBranchChildGeometry(lock) {
   lock.branchRingWidthSegments = ringWidthSegments;
   const curve = deps.strandGeometryCurve(lock);
   const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), 4), 4, 256);
-  const curveParameters = deps.strandCurveParameters(lock, curve, lengthSegments);
-  const actualLengthSegments = curveParameters.length - 1;
   const ringCount = ring.points.length;
   // Sweep starts at branchSweepStartT of the child guide (default 0.1), normalized back
   // to [0,1]; the [0, start] root portion is filled by the bridge (hole -> row-0 ring).
   const SWEEP_START_T = THREE.MathUtils.clamp(Number(lock.branchSweepStartT ?? 0.1), 0.02, 0.6);
-  // Child taper/depth curves drive the sweep width (relative to the root) so editing the
-  // width/depth curve (child's own or the parent's, via deps.updateBranchChildren remap) changes
-  // the child; the root ring stays matched to the carved parent hole.
-  const rootWarp = deps.strandProfileTopologyAt(lock, SWEEP_START_T, ring.points, 1, 1);
-  const sweepVertices = [];
-  const sweepNormals = [];
-  const sweepTangents = [];
-  const sweepUvs = [];
-  const sweepColors = [];
-  let previousFrame = null;
   // Seed the sweep frames with a stable "up" (the parent surface tangent at the
   // root, pointing toward the parent root). The child grows along the parent's
   // normal, so its own surface normals are near-parallel to its tangent and
   // deps.guidedNormalAt degenerates (the sweep up flips when the root is dragged to an
   // edge). Transporting from this seed keeps the sweep ring orientation stable.
+  let seedFrame = null;
   const branchParentForSweep = deps.locks.find((item) => item.id === lock?.branchParentId);
   if (branchParentForSweep) {
     try {
@@ -629,7 +618,7 @@ function createBranchChildGeometry(lock) {
         if (rootTwist) up.applyAxisAngle(seedTangent, rootTwist).normalize();
         const x = new THREE.Vector3().crossVectors(seedTangent, up).normalize();
         const matrix = new THREE.Matrix4().makeBasis(x, seedTangent, up);
-        previousFrame = {
+        seedFrame = {
           x,
           y: seedTangent.clone(),
           z: up,
@@ -641,30 +630,23 @@ function createBranchChildGeometry(lock) {
       }
     } catch (e) { /* keep null seed */ }
   }
-  curveParameters.forEach((t, row) => {
-    const guideT = SWEEP_START_T + (1 - SWEEP_START_T) * t;
-    const point = curve.getPoint(guideT);
-    // Row 0 is the root ring: use the seeded frame directly (parent-tangent
-    // constraint + the user's full root twist) so the root bone rotates with the
-    // gizmo/offset 1:1, then parallel-transport along the curve from there.
-    const frame = row === 0 && previousFrame
-      ? previousFrame
-      : deps.strandGeometryFrameAt(lock, curve, guideT, previousFrame);
-    previousFrame = frame;
-    const color = deps.strandInfluenceColor(lock, guideT);
-    const warped = deps.strandProfileTopologyAt(lock, guideT, ring.points, 1, 1);
-    ring.points.forEach((p, index) => {
-      const sx = rootWarp[index]?.x ? warped[index].x / rootWarp[index].x : 1;
-      const sz = rootWarp[index]?.z ? warped[index].z / rootWarp[index].z : 1;
-      const ringVector = frame.x.clone().multiplyScalar(p.x * sx).addScaledVector(frame.z, p.z * sz);
-      const v = point.clone().add(ringVector);
-      sweepVertices.push(v.x, v.y, v.z);
-      sweepNormals.push(ringVector.x, ringVector.y, ringVector.z);
-      sweepTangents.push(frame.y.x, frame.y.y, frame.y.z, 1);
-      sweepUvs.push(index / ringCount, guideT);
-      sweepColors.push(color.r, color.g, color.b);
-    });
+  // Shared sweep kernel: child = default sweep + bridge + root movement. The sweep
+  // starts at SWEEP_START_T with the seeded root frame and root-relative taper scaling
+  // (the root ring stays matched to the carved parent hole).
+  const sweep = deps.strandSweep.sweepSide({
+    lock,
+    curve,
+    profilePoints: ring.points,
+    startT: SWEEP_START_T,
+    seedFrame,
+    rootRelative: true
   });
+  const sweepVertices = sweep.vertices;
+  const sweepNormals = sweep.normals;
+  const sweepTangents = sweep.tangents;
+  const sweepUvs = sweep.uvs;
+  const sweepColors = sweep.colors;
+  const actualLengthSegments = sweep.actualLengthSegments;
   // The bridge attaches to the sweep's row-0 ring (guideT = SWEEP_START_T), i.e.
   // the swept ring, not the raw root which sits buried inside the parent.
   const ringWorld = [];
