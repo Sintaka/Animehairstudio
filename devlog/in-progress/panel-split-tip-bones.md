@@ -205,6 +205,15 @@ splitBone.tip = {
 **4. 颜色改绿 ✅**：宽度控制点 + 控制曲线由粉 `#ff42cf` 改为绿 `#5df0a8`，与主发片宽度控制（粉/棕）区分。
 
 **回归测试（scripts/verify-tip-select.mjs，28/28 新增）**：绿色曲线/小点显示在子发片边缘（左右各 5 点、左右曲线长度不同 0.91 vs 0.34、`#5df0a8`、zipper 手柄隐藏、主 width 边缘隐藏）；拖右控制点 → 右/左曲线生成、asymmetric=true、锁定区=全局默认、**发尖链不变**。三档 smoke 11/11、12/12 通过。
+### 8.13 orient 弯曲增强、zipper 上端线性权重过渡、width 控制跟随发尖帧（0.2.59 已落地）
+
+**1. orient 笔刷改发尖切线旋转 ✅**：数据层此前已能改切线（各段 8–10°/60px），观感弱且有「怪异翻转」。增强：弯曲量 `0.006→0.012`（现 17–20.5°/60px，seg0/2/4 实测 20.5/17.0/19.3°）；fallback 弯曲轴由任意世界轴改为**链自身副切线**（`rootTangent × rootFrame.z`），拖拽方向与链平行时不再随机翻转。
+
+**2. Zipper 上端开裂 ✅**：权重过渡由「fork 附近窄带 smoothstep（band≈0.2，之后立即满权重）」改为**暴露区全程线性过渡**（fork=0 → tip=1）。未分开（zipper 以上）几何权重恒 0、不跟发尖；线性衰减把 tip 变形沿整段均匀摊开，消除 fork 处突转造成的折痕/开裂。
+
+**3. width 控制跟随发尖子骨骼帧 ✅**：宽度控制点/曲线改为用几何同款 tip 变形公式放置——`authoredCenter + dq·(baseEdge − restCenter)`（dq = rest→authored 切线旋转），`baseEdge` 用主面板扫掠截面（width/depth 曲线 + camber + 非对称中心，`tipMainSectionPoint` 复刻 `rawPanelPoint`）。大刘海边缘发尖的 tangent 偏差大时，宽度控制随发尖子骨骼的弯曲/朝向走，不再只参考主骨骼。修复过程中发现 `strandFrameAt` 不含 `point`（geometry 的 panelFrameAt 才有），改用 `strandGeometryCurve(lock).getPoint(t)` 作原点。
+
+**回归测试（scripts/verify-tip-select.mjs，28/28）**：orient 切线弯曲 16.05°（>5°）；宽度绿色曲线/小点显示在子发片边缘（左右长度不同 0.87 vs 0.33）；拖右控制点 → 曲线生成、asymmetric、锁定区=全局默认、发尖链不变；0 异常。三档 smoke 11/11、12/12 通过。
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

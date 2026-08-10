@@ -13519,65 +13519,90 @@ function setTipWidthCurveValue(lock, segmentIndex, splits, bone, side, t, value)
   bone.taperCurveSecondary = buildTipWidthCurve(lock, segmentIndex, splits, bone, -1);
 }
 
-// Signed lateral offset (binormal direction) from the tip chain center to the
-// segment's own edge at parameter t. Uses the segment's u boundaries (left zipper /
-// right zipper), NOT the panel's +/-1 outer edges, so the width control sits on the
-// SUB-BONE's edges rather than the main panel's width profile.
-function tipWidthEdgeLateral(lock, splits, segmentIndex, side, t, bone) {
+// Replicates the panel geometry's section point (rawPanelPoint) on the main panel
+// frame, so width controls land on the geometry's real edges (width + depth curves,
+// camber and asymmetric centers included).
+function tipMainSectionPoint(lock, t, u, shell, bone) {
+  const frame = strandFrameAt(lock, t);
+  const origin = strandGeometryCurve(lock).getPoint(t);
+  const width = tipPanelWidthAt(lock, t, u, bone);
+  const halfWidth = width * 0.5;
+  const thickness = Math.max(0.0001, Number(lock.panelThickness ?? 0.08) * sampleAsymmetricTaperCurve(
+    bone?.depthCurve || lock.depthCurve,
+    bone?.depthCurveSecondary || lock.depthCurveSecondary,
+    bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve,
+    shell,
+    t
+  ));
+  const camber = Number(lock.panelCurvature ?? 0.18) * halfWidth * (1 - u * u);
+  const centerX = lock.centerAsymmetricProfile && (bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve)
+    ? (tipPanelWidthAt(lock, t, 1, bone) - tipPanelWidthAt(lock, t, -1, bone)) * 0.25
+    : 0;
+  const centerZ = lock.centerAsymmetricProfile && (bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve)
+    ? (tipPanelWidthAt(lock, t, 1, bone) - tipPanelWidthAt(lock, t, -1, bone)) * 0.25
+    : 0;
+  return origin.clone()
+    .addScaledVector(frame.x, u * halfWidth + centerX * profileTopologyCenterWeight(u, -1, 1))
+    .addScaledVector(
+      frame.z,
+      camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1)
+    );
+}
+
+// Edge position of a tip side at chain parameter t, matching the geometry's own tip
+// deformation: authoredCenter + dq*(baseEdge - restCenter). The dq rotation (rest ->
+// authored tangent) makes the width control follow the TIP sub-bone's orientation
+// (bend/roll), not just the main bone, so edge tips of curved bangs stay correct.
+function tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t) {
+  const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
+  if (!tip || tip.points.length < 2 || !tip.restPoints || tip.restPoints.length < 2) return null;
+  const curve = new THREE.CatmullRomCurve3(tip.points);
+  const restCurve = new THREE.CatmullRomCurve3(tip.restPoints);
+  const authoredCenter = curve.getPoint(t);
+  const restCenter = restCurve.getPoint(t);
+  const authoredTangent = curve.getTangent(t).normalize();
+  const restTangent = restCurve.getTangent(t).normalize();
+  const dq = restTangent.dot(authoredTangent) < -0.9999
+    ? (new THREE.Quaternion()).setFromAxisAngle(
+      Math.abs(restTangent.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0),
+      Math.PI
+    )
+    : (new THREE.Quaternion()).setFromUnitVectors(restTangent, authoredTangent);
   const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
-  if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return 0;
+  if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return null;
   const edgeU = boundaries[side < 0 ? segmentIndex : segmentIndex + 1];
-  const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
-  const widthEdge = tipPanelWidthAt(lock, t, edgeU, bone);
-  const widthCenter = tipPanelWidthAt(lock, t, centerU, bone);
-  return (edgeU * widthEdge - centerU * widthCenter) * 0.5;
+  const baseEdge = tipMainSectionPoint(lock, t, edgeU, 0, bone);
+  const rel = baseEdge.clone().sub(restCenter).applyQuaternion(dq);
+  const point = authoredCenter.clone().add(rel);
+  return { point, center: authoredCenter.clone(), lateral: rel.clone().normalize(), t };
 }
 
 // Width-curve edge points for a tip side: the exposed (below-zipper) segment edge from
-// the side's fork to the tip, offset laterally by the current width (binormal).
+// the side's fork to the tip, following the tip sub-bone's frame.
 function tipWidthEdgePoints(lock, segmentIndex, splits, bone, side) {
-  const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
-  if (!tip || tip.points.length < 2) return [];
   const forkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
   if (forkT >= 1) return [];
-  const curve = new THREE.CatmullRomCurve3(tip.points);
   const points = [];
   const count = 24;
   for (let i = 0; i <= count; i += 1) {
     const t = THREE.MathUtils.lerp(forkT, 1, i / count);
-    const center = curve.getPoint(t);
-    const tangent = curve.getTangent(t).normalize();
-    const mainFrame = strandFrameAt(lock, t);
-    const lateral = new THREE.Vector3().crossVectors(tangent, mainFrame.z);
-    if (lateral.lengthSq() < 0.0001) lateral.copy(mainFrame.x);
-    lateral.normalize();
-    const edgeLateral = tipWidthEdgeLateral(lock, splits, segmentIndex, side, t, bone);
-    points.push(center.clone().addScaledVector(lateral, edgeLateral));
+    const edge = tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t);
+    if (edge) points.push(edge.point);
   }
   return points;
 }
 
 // Viewport placement of a tip width control point: on the exposed chain edge at t,
-// offset laterally by the current half width.
+// following the tip sub-bone's frame (midpoints so the fork point clears the zipper).
 function tipWidthControlPlacement(lock, segmentIndex, splits, bone, side, pointIndex) {
-  const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
-  if (!tip || tip.points.length < 2) return null;
   const forkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
   if (forkT >= 1) return null;
-  const curve = new THREE.CatmullRomCurve3(tip.points);
-  // Midpoints of equal bins across the exposed range: keeps the first control point
-  // off the exact fork (where the zipper handle sits) and the last off the tip end.
   const t = TIP_WIDTH_CONTROL_POINTS > 1
     ? THREE.MathUtils.lerp(forkT, 1, (pointIndex + 0.5) / TIP_WIDTH_CONTROL_POINTS)
     : forkT;
-  const center = curve.getPoint(t);
-  const tangent = curve.getTangent(t).normalize();
-  const mainFrame = strandFrameAt(lock, t);
-  const lateral = new THREE.Vector3().crossVectors(tangent, mainFrame.z);
-  if (lateral.lengthSq() < 0.0001) lateral.copy(mainFrame.x);
-  lateral.normalize();
-  const edgeLateral = tipWidthEdgeLateral(lock, splits, segmentIndex, side, t, bone);
-  return { point: center.clone().addScaledVector(lateral, edgeLateral), t, center, lateral };
+  const edge = tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t);
+  if (!edge) return null;
+  return { point: edge.point, t: edge.t, center: edge.center, lateral: edge.lateral };
 }
 
 function tipHighlightMaterial() {
@@ -13732,9 +13757,13 @@ function createPanelStrandGeometry(lock) {
     })
     : [1];
   const segmentWeightAt = (segment, t) => {
+    // Linear control-weight ramp over the exposed (below-zipper) region: 0 at the
+    // fork, 1 at the tip. Unsplit (above-zipper) geometry keeps weight 0 and does not
+    // follow the tip sub-bone; the linear falloff avoids the abrupt twist/crease at
+    // the top of the zipper that a narrow smoothstep band caused.
     const forkT = segmentForkT[segment] ?? 1;
     if (forkT >= 1 || t <= forkT) return 0;
-    return THREE.MathUtils.smoothstep((t - forkT) / forkBand, 0, 1);
+    return THREE.MathUtils.clamp((t - forkT) / Math.max(0.0001, 1 - forkT), 0, 1);
   };
   const frames = [];
   let previousFrame = null;
@@ -34571,13 +34600,10 @@ function updatePanelSplitHandleDrag(event) {
     if (!bone) return;
     const tip = splitTipForSegment(lock, segment, splitsForWidth, bone);
     if (!tip || tip.points.length < 2) return;
-    const curve = new THREE.CatmullRomCurve3(tip.points);
-    const center = curve.getPoint(t);
-    const tangent = curve.getTangent(t).normalize();
-    const mainFrame = strandFrameAt(lock, t);
-    const lateral = new THREE.Vector3().crossVectors(tangent, mainFrame.z);
-    if (lateral.lengthSq() < 0.0001) lateral.copy(mainFrame.x);
-    lateral.normalize();
+    const edge = tipWidthEdgePosition(lock, segment, splitsForWidth, bone, side, t);
+    if (!edge) return;
+    const center = edge.center;
+    const lateral = edge.lateral;
     const startWorld = drag.tipWidthStartWorld || center;
     const startProj = startWorld.clone().project(camera);
     const ndcX = (2 * targetX) / rect.width - 1;
@@ -35939,14 +35965,18 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
     // the drag direction, so a horizontal drag bends the tip horizontally, etc.
     const curve = new THREE.CatmullRomCurve3(current);
     const root = current[firstBelow] || current[0];
-    const rootTangent = curve.getTangent(firstBelow / Math.max(1, current.length - 1)).normalize();
+    const rootT = firstBelow / Math.max(1, current.length - 1);
+    const rootTangent = curve.getTangent(rootT).normalize();
+    const rootFrame = strandFrameAt(lock, rootT);
     const dragWorld = sculptBrushWorldDelta(root, deltaX, deltaY, rect);
     let dragDir = dragWorld.clone().normalize();
     if (dragDir.lengthSq() < 0.0001) dragDir.set(1, 0, 0);
     let bendAxis = new THREE.Vector3().crossVectors(rootTangent, dragDir);
-    if (bendAxis.lengthSq() < 0.0001) bendAxis.set(0, 1, 0).crossVectors(rootTangent, bendAxis);
+    // Fallback when the drag is along the chain: bend around the chain's own binormal
+    // instead of an arbitrary world axis (that was the "weird" flips).
+    if (bendAxis.lengthSq() < 0.0001) bendAxis.crossVectors(rootTangent, rootFrame.z);
     bendAxis.normalize();
-    const amount = (reverse ? -1 : 1) * strength * Math.hypot(deltaX, deltaY) * 0.006;
+    const amount = (reverse ? -1 : 1) * strength * Math.hypot(deltaX, deltaY) * 0.012;
     for (let index = firstBelow; index < current.length; index += 1) {
       const offset = points[index].clone().sub(root);
       offset.applyAxisAngle(bendAxis, amount);
