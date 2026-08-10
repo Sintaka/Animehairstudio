@@ -3,6 +3,7 @@ import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260809-17";
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260809-16";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260809-15";
+import { splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones } from "./modules/geometry/bone-model.js?v=20260810-1";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-14";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";
 import { createMiscStore } from "./modules/core/misc-store.js?v=20260809-12";
@@ -13454,13 +13455,14 @@ function createPanelStrandGeometry(lock) {
   const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
   const baseThickness = Math.max(0.001, Number(lock.panelThickness ?? 0.08));
   const curvature = Number(lock.panelCurvature ?? 0.18);
-  const leftEdgeTrim = THREE.MathUtils.clamp(Number(lock.panelLeftEdgeTrim ?? 0), 0, 0.75);
-  const rightEdgeTrim = THREE.MathUtils.clamp(Number(lock.panelRightEdgeTrim ?? 0), 0, 0.75);
   const splitEnabled = lock.panelSplitEnabled !== false;
-  const splitGap = THREE.MathUtils.clamp(Number(lock.panelSplitGap ?? 0.07), 0, 0.28);
   const splits = splitEnabled
     ? normalizePanelSplits(lock.panelSplits, lock.panelSplitHeight, widthLoops - 1).filter((split) => split.height > 0.005)
     : [];
+  // One split sub-bone per segment (segments = splits + 1). Derived defaults when not
+  // authored; each bone carries per-segment width/depth curves + a relative tip gap
+  // (spread) that replaces the old absolute panelSplitGap displacement.
+  const splitBones = splits.length ? cloneSplitBones(lock.splitBones, splits, lock) : [];
   const frames = [];
   let previousFrame = null;
   if (!latticeControlled) {
@@ -13510,20 +13512,20 @@ function createPanelStrandGeometry(lock) {
       triangleEdgeMasks.push([1, 0, 1], [1, 1, 0]);
     }
   };
-  const panelWidthAt = (t, side) => {
+  const panelWidthAt = (t, side, bone) => {
     return Math.max(0.0001, fullWidth * sampleAsymmetricTaperCurve(
-      lock.taperCurve,
-      lock.taperCurveSecondary,
-      lock.asymmetricWidthCurve,
+      bone?.taperCurve || lock.taperCurve,
+      bone?.taperCurveSecondary || lock.taperCurveSecondary,
+      bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve,
       side,
       t
     ));
   };
-  const panelThicknessAt = (t, side) => {
+  const panelThicknessAt = (t, side, bone) => {
     return Math.max(0.0001, baseThickness * sampleAsymmetricTaperCurve(
-      lock.depthCurve,
-      lock.depthCurveSecondary,
-      lock.asymmetricDepthCurve,
+      bone?.depthCurve || lock.depthCurve,
+      bone?.depthCurveSecondary || lock.depthCurveSecondary,
+      bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve,
       side,
       t
     ));
@@ -13546,18 +13548,18 @@ function createPanelStrandGeometry(lock) {
     z = new THREE.Vector3().crossVectors(x, y).normalize();
     return { point, x, y, z };
   };
-  const rawPanelPoint = (sampleT, u, shell) => {
+  const rawPanelPoint = (sampleT, u, shell, bone = null) => {
     if (latticeControlled) return surfacePanelPoint(lock, sampleT, u, shell);
     const frame = panelFrameAt(sampleT);
-    const width = panelWidthAt(sampleT, u);
-    const thickness = panelThicknessAt(sampleT, shell);
+    const width = panelWidthAt(sampleT, u, bone);
+    const thickness = panelThicknessAt(sampleT, shell, bone);
     const halfWidth = width * 0.5;
     const camber = curvature * halfWidth * (1 - u * u);
-    const centerX = lock.centerAsymmetricProfile && lock.asymmetricWidthCurve
-      ? (panelWidthAt(sampleT, 1) - panelWidthAt(sampleT, -1)) * 0.25
+    const centerX = lock.centerAsymmetricProfile && (bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve)
+      ? (panelWidthAt(sampleT, 1, bone) - panelWidthAt(sampleT, -1, bone)) * 0.25
       : 0;
-    const centerZ = lock.centerAsymmetricProfile && lock.asymmetricDepthCurve
-      ? (panelThicknessAt(sampleT, 1) - panelThicknessAt(sampleT, -1)) * 0.25
+    const centerZ = lock.centerAsymmetricProfile && (bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve)
+      ? (panelThicknessAt(sampleT, 1, bone) - panelThicknessAt(sampleT, -1, bone)) * 0.25
       : 0;
     return frame.point.clone()
       .addScaledVector(frame.x, u * halfWidth + centerX * profileTopologyCenterWeight(u, -1, 1))
@@ -13566,13 +13568,11 @@ function createPanelStrandGeometry(lock) {
         camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1)
       );
   };
-  const panelPoint = (row, u, shell) => {
+  const panelPoint = (row, u, shell, bone = null) => {
     const t = row / lengthLoops;
-    const edgeTrim = THREE.MathUtils.lerp(leftEdgeTrim, rightEdgeTrim, (u + 1) * 0.5);
-    const sampleT = THREE.MathUtils.clamp(t * (1 - edgeTrim), 0, 1);
-    return rawPanelPoint(sampleT, u, shell);
+    return rawPanelPoint(t, u, shell, bone);
   };
-  const addPatch = (rowStart, rowEnd, uStart, uEnd, columns, options = {}) => {
+  const addPatch = (rowStart, rowEnd, uStart, uEnd, columns, options = {}, bone = null) => {
     const rows = rowEnd - rowStart;
     const front = [];
     const back = [];
@@ -13583,8 +13583,8 @@ function createPanelStrandGeometry(lock) {
       const backRow = [];
       for (let column = 0; column <= columns; column += 1) {
         const u = THREE.MathUtils.lerp(uStart(row), uEnd(row), column / columns);
-        const frontPoint = panelPoint(row, u, 1);
-        const backPoint = panelPoint(row, u, -1);
+        const frontPoint = panelPoint(row, u, 1, bone);
+        const backPoint = panelPoint(row, u, -1, bone);
         frontRow.push(positions.length / 3);
         positions.push(frontPoint.x, frontPoint.y, frontPoint.z);
         uvs.push((u + 1) * 0.5, row / lengthLoops);
@@ -13623,11 +13623,10 @@ function createPanelStrandGeometry(lock) {
     }
   };
 
-  const splitOpening = (split, row) => {
-    const start = 1 - split.height;
+  const segmentRamp = (start, row) => {
     const t = row / lengthLoops;
     if (t <= start) return 0;
-    return splitGap * THREE.MathUtils.smoothstep((t - start) / Math.max(0.0001, 1 - start), 0, 1);
+    return THREE.MathUtils.smoothstep((t - start) / Math.max(0.0001, 1 - start), 0, 1);
   };
   const boundaries = [-1, ...splits.map((split) => split.position), 1];
   const segmentSpans = boundaries.slice(0, -1).map((boundary, index) => boundaries[index + 1] - boundary);
@@ -13647,18 +13646,24 @@ function createPanelStrandGeometry(lock) {
     const leftSplit = splits[segment - 1] || null;
     const rightSplit = splits[segment] || null;
     const columns = segmentColumns[segment];
+    const bone = splitBones[segment] || null;
+    const span = segmentSpans[segment];
+    // Relative per-segment tip gap: each side opens by at most half the segment's own
+    // span times the bone spread (< 1), so the u-range never inverts and the tips
+    // narrow proportionally instead of crossing over (old absolute splitOpening).
+    const halfGap = (start, row) => 0.5 * (bone?.spread ?? 0) * span * segmentRamp(start, row);
     const uStart = (row) => leftSplit
-      ? leftSplit.position + splitOpening(leftSplit, row)
+      ? boundaries[segment] + halfGap(1 - leftSplit.height, row)
       : -1;
     const uEnd = (row) => rightSplit
-      ? rightSplit.position - splitOpening(rightSplit, row)
+      ? boundaries[segment + 1] - halfGap(1 - rightSplit.height, row)
       : 1;
     addPatch(0, lengthLoops, uStart, uEnd, columns, {
       capStart: true,
       capEnd: true,
       leftWallStartRow: leftSplit ? Math.ceil((1 - leftSplit.height) * lengthLoops) : 0,
       rightWallStartRow: rightSplit ? Math.ceil((1 - rightSplit.height) * lengthLoops) : 0
-    });
+    }, bone);
   }
 
   // Curve-driven panels use X = tangent x outward, which reverses the patch
@@ -16435,6 +16440,7 @@ function addLock(presetName, overrides = {}, options = {}) {
     lock.panelSplits.forEach((split) => { split.height = snapPanelSplitHeight(split.height, lock.panelLengthLoops); });
   }
   lock.panelSplitGap = Number(base.panelSplitGap ?? panelCreationDefaults.panelSplitGap);
+  lock.splitBones = Array.isArray(base.splitBones) ? splitBonesFromData(base.splitBones, lock.panelSplits, lock) : null;
   lock.curlEnabled = Boolean(base.curlEnabled);
   lock.curlCount = THREE.MathUtils.clamp(Number(base.curlCount ?? 4), 0.25, 24);
   lock.curlDisplacement = THREE.MathUtils.clamp(Number(base.curlDisplacement ?? 0.18), 0, 1.2);
@@ -16781,6 +16787,7 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
     .map((split) => ({ ...split, position: -split.position }))
     .sort((a, b) => a.position - b.position);
   partner.panelSplitGap = Number(lock.panelSplitGap ?? panelCreationDefaults.panelSplitGap);
+  partner.splitBones = mirrorSplitBones(lock.splitBones);
   partner.curlEnabled = Boolean(lock.curlEnabled);
   partner.curlCount = Number(lock.curlCount ?? 4);
   partner.curlDisplacement = Number(lock.curlDisplacement ?? 0.18);
@@ -16993,6 +17000,7 @@ function snapshotState() {
       panelSplitHeight: Number(lock.panelSplitHeight ?? panelCreationDefaults.panelSplitHeight),
       panelSplits: clonePanelSplits(lock.panelSplits, lock.panelSplitHeight),
       panelSplitGap: Number(lock.panelSplitGap ?? panelCreationDefaults.panelSplitGap),
+      splitBones: lock.splitBones ? splitBonesToData(lock.splitBones) : null,
       curlEnabled: Boolean(lock.curlEnabled),
       curlCount: Number(lock.curlCount ?? 4),
       curlDisplacement: Number(lock.curlDisplacement ?? 0.18),
@@ -18353,6 +18361,7 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
         : split.height
     })),
     panelSplitGap: Number(snapshot.panelSplitGap ?? panelCreationDefaults.panelSplitGap),
+    splitBones: Array.isArray(snapshot.splitBones) ? splitBonesFromData(snapshot.splitBones, snapshot.panelSplits, snapshot) : null,
     curlEnabled: Boolean(snapshot.curlEnabled),
     curlCount: THREE.MathUtils.clamp(Number(snapshot.curlCount ?? 4), 0.25, 24),
     curlDisplacement: THREE.MathUtils.clamp(Number(snapshot.curlDisplacement ?? 0.18), 0, 1.2),
@@ -21781,6 +21790,7 @@ function updateDrawStrandPreview() {
       extensionLock?.panelSplitHeight ?? sculptState.state.drawStrandStroke.panelSplitHeight
     ),
     panelSplitGap: extensionLock?.panelSplitGap ?? sculptState.state.drawStrandStroke.panelSplitGap,
+    splitBones: extensionLock?.splitBones ? splitBonesToData(extensionLock.splitBones) : null,
     curlEnabled: sculptState.state.drawStrandStroke.outputType === "strand"
       ? Boolean(sculptState.state.drawStrandStroke.curlEnabled)
       : Boolean(extensionLock?.curlEnabled),
@@ -24329,13 +24339,10 @@ function strandSplitControlPoint(lock, split, tOverride = null, curveOverride = 
   return point.add(offset).addScaledVector(frame.z, 0.012);
 }
 
-function panelSplitControlPoint(lock, split, tOverride = null, curveOverride = null) {
+function panelSplitControlPoint(lock, split, tOverride = null, curveOverride = null, splitIndex = null) {
   const t = THREE.MathUtils.clamp(tOverride ?? (1 - Number(split.height || 0)), 0, 1);
   const u = THREE.MathUtils.clamp(Number(split.position || 0), -1, 1);
-  const leftEdgeTrim = THREE.MathUtils.clamp(Number(lock.panelLeftEdgeTrim ?? 0), 0, 0.75);
-  const rightEdgeTrim = THREE.MathUtils.clamp(Number(lock.panelRightEdgeTrim ?? 0), 0, 0.75);
-  const edgeTrim = THREE.MathUtils.lerp(leftEdgeTrim, rightEdgeTrim, (u + 1) * 0.5);
-  const sampleT = t * (1 - edgeTrim);
+  const sampleT = t;
   if (lock.geometryType === "surface") return surfacePanelPoint(lock, sampleT, u, 1);
   const curve = curveOverride || strandGeometryCurve(lock);
   const point = curve.getPoint(sampleT);
@@ -24345,26 +24352,31 @@ function panelSplitControlPoint(lock, split, tOverride = null, curveOverride = n
   if (z.lengthSq() < 0.0001) z.copy(outwardNormalAtPoint(point, tangent));
   z.normalize();
   const x = new THREE.Vector3().crossVectors(tangent, z).normalize();
+  // Width follows the split sub-bone of the segment to the left of this zipper so the
+  // handle stays on the surface when per-segment curves are authored.
+  const bone = splitIndex == null
+    ? null
+    : splitBonesFor(lock)[splitIndex] || null;
   const panelWidthAt = (side) => Math.max(0.0001, Number(lock.width ?? 0.62) * sampleAsymmetricTaperCurve(
-    lock.taperCurve,
-    lock.taperCurveSecondary,
-    lock.asymmetricWidthCurve,
+    bone?.taperCurve || lock.taperCurve,
+    bone?.taperCurveSecondary || lock.taperCurveSecondary,
+    bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve,
     side,
     sampleT
   ));
   const panelThicknessAt = (side) => Math.max(0.0001, Number(lock.panelThickness ?? 0.08) * sampleAsymmetricTaperCurve(
-    lock.depthCurve,
-    lock.depthCurveSecondary,
-    lock.asymmetricDepthCurve,
+    bone?.depthCurve || lock.depthCurve,
+    bone?.depthCurveSecondary || lock.depthCurveSecondary,
+    bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve,
     side,
     sampleT
   ));
   const width = panelWidthAt(u);
   const thickness = panelThicknessAt(1);
-  const centerX = lock.centerAsymmetricProfile && lock.asymmetricWidthCurve
+  const centerX = lock.centerAsymmetricProfile && (bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve)
     ? (panelWidthAt(1) - panelWidthAt(-1)) * 0.25
     : 0;
-  const centerZ = lock.centerAsymmetricProfile && lock.asymmetricDepthCurve
+  const centerZ = lock.centerAsymmetricProfile && (bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve)
     ? (panelThicknessAt(1) - panelThicknessAt(-1)) * 0.25
     : 0;
   const camber = Number(lock.panelCurvature ?? 0.18) * width * 0.5 * (1 - u * u);
@@ -25067,7 +25079,7 @@ function updateCurveObjects(lock, options = {}) {
       if (line) line.visible = false;
       return;
     }
-    handle.position.copy(panelSplitControlPoint(lock, split));
+    handle.position.copy(panelSplitControlPoint(lock, split, null, null, index));
     handle.material.opacity = sculptState.state.panelSplitDrag?.lockId === lock.id && sculptState.state.panelSplitDrag.splitIndex === index ? 0.9 : 0.68;
     if (!line) return;
     line.visible = true;
@@ -25075,7 +25087,7 @@ function updateCurveObjects(lock, options = {}) {
     const points = [];
     const startT = 1 - split.height;
     for (let step = 0; step <= 12; step += 1) {
-      points.push(panelSplitControlPoint(lock, split, THREE.MathUtils.lerp(startT, 1, step / 12)));
+      points.push(panelSplitControlPoint(lock, split, THREE.MathUtils.lerp(startT, 1, step / 12), null, index));
     }
     line.geometry = new THREE.BufferGeometry().setFromPoints(points);
   });
@@ -33693,7 +33705,13 @@ function updatePanelSplitHandleDrag(event) {
     const t = THREE.MathUtils.lerp(0.22, 1, tStep / 42);
     for (let uStep = 0; uStep <= 48; uStep += 1) {
       const u = THREE.MathUtils.lerp(-0.88, 0.88, uStep / 48);
-      const projected = panelSplitControlPoint(lock, { position: u, height: 1 - t }, t, curve).project(camera);
+      const projected = panelSplitControlPoint(
+        lock,
+        { position: u, height: 1 - t },
+        t,
+        curve,
+        sculptState.state.panelSplitDrag.splitIndex
+      ).project(camera);
       if (projected.z < -1 || projected.z > 1) continue;
       const x = (projected.x * 0.5 + 0.5) * rect.width;
       const y = (-projected.y * 0.5 + 0.5) * rect.height;
