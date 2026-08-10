@@ -223,6 +223,19 @@ splitBone.tip = {
 **3. width 拖拽塌缩 ✅**：原公式 `2·latOffset/((edgeU−centerU)·fullWidth)` 依赖当前宽度形成反馈 → 往回缩、定死、退行。改为**稳定比例**：拖动起点记录 `startLatOffset`（边缘到链中心的副切线距离）与 `startMult`（当前宽度倍数），拖拽时 `newMult = startMult × (latOffset/startLatOffset)`（clamp [0.02,2]），无反馈、可反复拖动。
 
 **回归测试（scripts/verify-tip-select.mjs，27/27 更新）**：orient 滚动截面（链不动 + twists 非零 + 法线朝视口更近）；push 移动发尖；width 拖拽 author 曲线（asymmetric、锁定区=全局、链不变）；0 异常。三档 smoke 11/11、12/12 通过。
+### 8.15 width 拖拽塌缩修复 + push 方向统一 + zipper 根部权重死区 + alt+点击 orbit 泄漏（0.2.59 已落地）
+
+**1. 绿色 width 控制点依旧坍缩（两个真 bug）✅**
+- **编辑点丢失**：`setTipWidthCurveValue` 只在「曲线位置与手柄 t 误差<1e-3」时写入，而手柄 t（如 0.90625）落不到固定 0.1 步长点 → 编辑被丢弃；`buildTipWidthCurve` 重建时也只保留固定网格点。修复：setTipWidthCurveValue 在 t 处**插入曲线点**；buildTipWidthCurve 重建时**保留 current 曲线暴露区的原始点**（含任意 t 的编辑点），锁定区（zipper 以上）仍强制全局默认。
+- **拖拽映射不响应/易误缩**：改为**沿屏幕副切线方向投影拖拽量**（同主发丝 width 边缘拖拽），按起点边缘屏幕距离缩放 → 任意方向有横向分量都改变宽度；仍用起点比例（startMult×latOffset/startLatOffset）无反馈。最小宽度 0.02→0.08，避免塌缩成细条叠到链上不可再拖。验证：向外拖 v=2、向内拖 v=0.631，链不变。
+
+**2. push 方向用主发丝同款机制 ✅**：不再特殊化，直接 `guidedNormalAt(lock, 链点, 链切线, t) + 发尖 twist`（与主发丝 push 一致），侧面/边缘发尖不再沿副切线偏斜。
+
+**3. zipper 根部权重死区 ✅**：`segmentWeightAt` 在 fork 之上加 `weightDeadZone=max(1/lengthLoops,0.02)` 的零权区，之后线性过渡到 1——笔刷不再把未分开（zipper 以上）的头发刷开。
+
+**4. alt+点击后相机漂移（真实产品 bug）✅**：`finishBrushAltClick` 调 `stopImmediatePropagation()` 阻止了紧接注册的 `endAltOrbit` 在 pointerup 清除 `altOrbitDrag` → 下一次鼠标移动触发 orbit 把相机转走。修复：不再 stopImmediatePropagation，让 endAltOrbit 正常收尾。
+
+**回归测试（scripts/verify-tip-select.mjs，27/27 更新）**：width 拖拽沿边缘屏幕方向多次移动 → 曲线生成、asymmetric、锁定区=全局、编辑值改变、链不变；orient 滚动截面；push 移动发尖；select 模式悬停/alt+点击（相机保持默认位，验证 orbit 泄漏已修）。三档 smoke 11/11、12/12 通过。
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

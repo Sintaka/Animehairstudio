@@ -13498,7 +13498,22 @@ function buildTipWidthCurve(lock, segmentIndex, splits, bone, side) {
     const value = ti < forkT - 1e-4
       ? sampleTaperCurve(globalCurve, ti)
       : (current && current.length ? sampleTaperCurve(current, ti) : sampleTaperCurve(globalCurve, ti));
-    points.push({ position: ti, value: THREE.MathUtils.clamp(value, 0.02, 2), interpolation: "linear" });
+    points.push({ position: ti, value: THREE.MathUtils.clamp(value, 0.08, 2), interpolation: "linear" });
+  }
+  // Preserve the current curve's own points in the exposed region (width handles edit
+  // at arbitrary parameters, e.g. 0.90625, which the fixed 0.1 grid would drop).
+  if (current && current.length) {
+    for (const point of current) {
+      const position = THREE.MathUtils.clamp(Number(point.position) || 0, 0, 1);
+      if (position < forkT - 1e-4) continue;
+      if (points.some((existing) => Math.abs(existing.position - position) < 1e-4)) continue;
+      points.push({
+        position,
+        value: THREE.MathUtils.clamp(Number(point.value) ?? 0.5, 0.08, 2),
+        interpolation: "linear"
+      });
+    }
+    points.sort((a, b) => a.position - b.position);
   }
   return points;
 }
@@ -13511,10 +13526,13 @@ function setTipWidthCurveValue(lock, segmentIndex, splits, bone, side, t, value)
   if (!bone.taperCurveSecondary) bone.taperCurveSecondary = buildTipWidthCurve(lock, segmentIndex, splits, bone, -1);
   bone.asymmetricWidthCurve = true;
   const curve = side < 0 ? bone.taperCurveSecondary : bone.taperCurve;
-  const clamped = THREE.MathUtils.clamp(Number(value) || 0.5, 0.02, 2);
-  curve.forEach((point) => {
-    if (Math.abs(point.position - t) < 1e-3) point.value = clamped;
-  });
+  const clamped = THREE.MathUtils.clamp(Number(value) || 0.5, 0.08, 2);
+  // Insert/update a curve point at the handle's exact parameter t (the fixed 0.1-step
+  // positions rarely land on a handle, so matching would silently drop the edit).
+  const existing = curve.find((point) => Math.abs(point.position - t) < 1e-3);
+  if (existing) existing.value = clamped;
+  else curve.push({ position: THREE.MathUtils.clamp(t, 0, 1), value: clamped, interpolation: "linear" });
+  curve.sort((a, b) => a.position - b.position);
   bone.taperCurve = buildTipWidthCurve(lock, segmentIndex, splits, bone, 1);
   bone.taperCurveSecondary = buildTipWidthCurve(lock, segmentIndex, splits, bone, -1);
 }
@@ -13760,14 +13778,14 @@ function createPanelStrandGeometry(lock) {
       return heights.length ? 1 - Math.max(...heights) : 1;
     })
     : [1];
+  // Rows near the zipper root keep weight 0 (dead zone) so brushes cannot pull apart
+  // the still-connected hair there; the control weight then ramps linearly to 1.
+  const weightDeadZone = Math.max(1 / lengthLoops, 0.02);
   const segmentWeightAt = (segment, t) => {
-    // Linear control-weight ramp over the exposed (below-zipper) region: 0 at the
-    // fork, 1 at the tip. Unsplit (above-zipper) geometry keeps weight 0 and does not
-    // follow the tip sub-bone; the linear falloff avoids the abrupt twist/crease at
-    // the top of the zipper that a narrow smoothstep band caused.
     const forkT = segmentForkT[segment] ?? 1;
-    if (forkT >= 1 || t <= forkT) return 0;
-    return THREE.MathUtils.clamp((t - forkT) / Math.max(0.0001, 1 - forkT), 0, 1);
+    const start = forkT + weightDeadZone;
+    if (forkT >= 1 || t <= start) return 0;
+    return THREE.MathUtils.clamp((t - start) / Math.max(0.0001, 1 - start), 0, 1);
   };
   const frames = [];
   let previousFrame = null;
@@ -24435,7 +24453,8 @@ function finishBrushAltClick(event) {
   if (Math.hypot(event.clientX - candidate.startX, event.clientY - candidate.startY) >= 6) return;
   if (applyAltClickCandidate(candidate)) {
     event.preventDefault();
-    event.stopImmediatePropagation();
+    // Do NOT stopImmediatePropagation: endAltOrbit (registered right after) must still
+    // run to clear altOrbitDrag, otherwise the next pointermove would orbit the camera.
   }
 }
 
@@ -34471,6 +34490,9 @@ function beginPanelSplitHandleDrag(event) {
   let tipWidthStartWorld = null;
   let tipWidthStartLatOffset = null;
   let tipWidthStartMult = null;
+  let tipWidthStartClientX = null;
+  let tipWidthStartClientY = null;
+  let tipWidthStartEdgeScreenDist = null;
   if (tipIndex != null && tipPoint != null) {
     // Selecting a tip sub-bone: remember it and point the segment controls at it.
     sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: tipIndex };
@@ -34497,6 +34519,10 @@ function beginPanelSplitHandleDrag(event) {
       const edgeU = boundaries[tipWidthSide < 0 ? tipWidthSegment : tipWidthSegment + 1];
       const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
       tipWidthStartMult = tipPanelWidthAt(lock, placement.t, edgeU, tipBone) / fullWidth;
+      tipWidthStartClientX = event.clientX;
+      tipWidthStartClientY = event.clientY;
+      const rect = renderer.domElement.getBoundingClientRect();
+      tipWidthStartEdgeScreenDist = Math.max(0.0001, viewportPixelPoint(placement.center, rect).distanceTo(viewportPixelPoint(placement.point, rect)));
     }
   }
   sculptState.state.panelSplitDrag = {
@@ -34517,7 +34543,10 @@ function beginPanelSplitHandleDrag(event) {
     tipWidthT,
     tipWidthStartWorld,
     tipWidthStartLatOffset,
-    tipWidthStartMult
+    tipWidthStartMult,
+    tipWidthStartClientX,
+    tipWidthStartClientY,
+    tipWidthStartEdgeScreenDist
   };
   renderer.domElement.setPointerCapture?.(event.pointerId);
   renderer.domElement.style.cursor = "grabbing";
@@ -34631,12 +34660,27 @@ function updatePanelSplitHandleDrag(event) {
     const ndcX = (2 * targetX) / rect.width - 1;
     const ndcY = -((2 * targetY) / rect.height - 1);
     const cursorWorld = new THREE.Vector3(ndcX, ndcY, startProj.z).unproject(camera);
-    const latOffset = cursorWorld.clone().sub(center).dot(lateral);
-    // Stable ratio: scale the start width by how far the cursor moved the edge
-    // relative to its start lateral distance (no feedback collapse on the current
-    // width). setTipWidthCurveValue clamps to [0.02, 2].
-    const newWidthMult = (drag.tipWidthStartMult ?? 1)
-      * (latOffset / Math.max(0.0001, drag.tipWidthStartLatOffset || 0.0001));
+    // Responsive + stable: project the screen drag onto the edge's screen direction
+    // (like the main width-edge drag), scaled by the start edge screen distance, so
+    // any drag with a lateral component changes width and there is no feedback loop
+    // that collapses the tip.
+    const cProj = center.clone().project(camera);
+    const eProj = edge.point.clone().project(camera);
+    const cpx = (cProj.x * 0.5 + 0.5) * rect.width;
+    const cpy = (-cProj.y * 0.5 + 0.5) * rect.height;
+    const epx = (eProj.x * 0.5 + 0.5) * rect.width;
+    const epy = (-eProj.y * 0.5 + 0.5) * rect.height;
+    let sdx = epx - cpx;
+    let sdy = epy - cpy;
+    const slen = Math.hypot(sdx, sdy) || 1;
+    sdx /= slen;
+    sdy /= slen;
+    const startLatOffset = drag.tipWidthStartLatOffset || 0.0001;
+    const dragAlong = (event.clientX - drag.tipWidthStartClientX) * sdx
+      + (event.clientY - drag.tipWidthStartClientY) * sdy;
+    const latOffset = startLatOffset
+      + dragAlong * (startLatOffset / (drag.tipWidthStartEdgeScreenDist || 1));
+    const newWidthMult = (drag.tipWidthStartMult ?? 1) * (latOffset / startLatOffset);
     setTipWidthCurveValue(lock, segment, splitsForWidth, bone, side, t, newWidthMult);
     updateLockGeometry(lock, { immediate: true });
     updateCurveObjects(lock, { visible: true });
@@ -35948,26 +35992,17 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
     }
   } else if (tool === "sculpt-push") {
     const curve = new THREE.CatmullRomCurve3(current);
-    const restCurve = new THREE.CatmullRomCurve3(rest);
     for (let index = firstBelow; index < current.length; index += 1) {
       if (weights[index] <= 0) continue;
       const t = index / Math.max(1, current.length - 1);
+      const point = curve.getPoint(t);
       const tangent = curve.getTangent(t).normalize();
-      // Push along the tip section's OWN normal (main panel normal transported by dq +
-      // orient roll). The camera-facing plane normal is too slanted on side/edge tips.
-      const restTangent = restCurve.getTangent(t).normalize();
-      const dq = restTangent.dot(tangent) < -0.9999
-        ? (new THREE.Quaternion()).setFromAxisAngle(
-          Math.abs(restTangent.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0),
-          Math.PI
-        )
-        : (new THREE.Quaternion()).setFromUnitVectors(restTangent, tangent);
-      const mainFrame = strandFrameAt(lock, t);
-      let up = mainFrame.z.clone().applyQuaternion(dq);
+      // Same push direction as the main hair brush: the strand's guided normal
+      // (radial outward / authored surface normal) + twist. No tip special case.
       const twist = Array.isArray(authored.twists) ? Number(authored.twists[index]) || 0 : 0;
-      up.applyAxisAngle(tangent, twist);
-      if (up.lengthSq() < 0.0001) up.set(0, 1, 0).projectOnPlane(tangent);
-      up.normalize();
+      const up = guidedNormalAt(lock, point, tangent, t)
+        .applyAxisAngle(tangent, twist)
+        .normalize();
       const dragWorld = sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
       const amount = (reverse ? -1 : 1) * weights[index] * strength * dragWorld.dot(up);
       points[index].addScaledVector(up, amount);
@@ -37354,6 +37389,7 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     splitTipForSegment,
     applySubBoneBrushSample,
     tipWidthSideForkT,
+    tipWidthEdgePosition,
     sampleTaperCurve,
     strandFrameAt,
     splitForkT,

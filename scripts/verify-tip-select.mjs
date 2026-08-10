@@ -521,11 +521,26 @@ try {
     return JSON.stringify({ ok: true, x: c.x, y: c.y });
   })()`));
   if (widthDrag.ok) {
+    // screen direction of the edge (chain center -> edge) so the drag reliably changes width
+    const edgeDir = JSON.parse(await evalJS(cdp, `(() => {
+      const t = window.__ahsTest;
+      const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+      const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+      const bone = t.materializeSplitBones(lock)[2] || null;
+      const edge = t.tipWidthEdgePosition(lock, 2, splits, bone, 1, 0.90625);
+      const a = t.projectToClient(edge.center.clone());
+      const b = t.projectToClient(edge.point.clone());
+      let dx = b.x - a.x, dy = b.y - a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      return JSON.stringify({ dx: dx / len, dy: dy / len });
+    })()`));
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: widthDrag.x, y: widthDrag.y });
     await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: widthDrag.x, y: widthDrag.y, button: "left", clickCount: 1 });
-    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: widthDrag.x + 30, y: widthDrag.y + 5, button: "left", buttons: 1 });
-    await sleep(250);
-    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: widthDrag.x + 30, y: widthDrag.y + 5, button: "left", clickCount: 1 });
+    for (let mv = 1; mv <= 5; mv++) {
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: widthDrag.x + edgeDir.dx * 10 * mv, y: widthDrag.y + edgeDir.dy * 10 * mv, button: "left", buttons: 1 });
+      await sleep(80);
+    }
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: widthDrag.x + edgeDir.dx * 50, y: widthDrag.y + edgeDir.dy * 50, button: "left", clickCount: 1 });
     await sleep(400);
   }
   const widthChainBefore = await evalJS(cdp, `(() => {
@@ -545,10 +560,19 @@ try {
     const rightCurve = bone.taperCurve || null;
     const leftCurve = bone.taperCurveSecondary || null;
     const rightForkT = t.tipWidthSideForkT ? t.tipWidthSideForkT(lock, 2, splits, 1) : null;
+    const forkT = rightForkT != null ? rightForkT : 0;
+    let valueChanged = false;
+    if (rightCurve) {
+      for (const pt of rightCurve) {
+        if (pt.position < forkT - 1e-3) continue;
+        const def = t.sampleTaperCurve(lock.taperCurve, pt.position);
+        if (Math.abs(Number(pt.value) - def) > 0.01) { valueChanged = true; break; }
+      }
+    }
     // locked region sample comparison: value at 0.3 (must be < forkT for seg2 right = 0.8125)
     const globalAt = t.sampleTaperCurve ? t.sampleTaperCurve(lock.taperCurve, 0.3) : null;
     const bakedAt = rightCurve ? rightCurve.find((pt) => Math.abs(pt.position - 0.3) < 1e-3)?.value : null;
-    return JSON.stringify({ ok: true, hasRight: !!rightCurve, hasLeft: !!leftCurve, asym: bone.asymmetricWidthCurve === true, rightForkT, lockedMatch: globalAt != null && bakedAt != null && Math.abs(globalAt - bakedAt) < 1e-3, changedFromDefault: !!rightCurve });
+    return JSON.stringify({ ok: true, hasRight: !!rightCurve, hasLeft: !!leftCurve, asym: bone.asymmetricWidthCurve === true, rightForkT, lockedMatch: globalAt != null && bakedAt != null && Math.abs(globalAt - bakedAt) < 1e-3, changedFromDefault: !!rightCurve, valueChanged });
   })()`));
     let widthChainMoved = false;
   if (widthAfter.ok) {
@@ -566,7 +590,7 @@ try {
       if (Math.hypot(after[i].x - before[i].x, after[i].y - before[i].y, after[i].z - before[i].z) > 1e-5) { widthChainMoved = true; break; }
     }
   }
-  check("tip width drag authors right curve (chain unchanged, asymmetric, locked = global)", widthAfter.ok === true && widthAfter.hasRight === true && widthAfter.hasLeft === true && widthAfter.asym === true && widthAfter.lockedMatch === true && widthChainMoved === false, `width=${JSON.stringify(widthAfter)} chainMoved=${widthChainMoved}`);
+  check("tip width drag authors right curve (chain unchanged, asymmetric, locked = global)", widthAfter.ok === true && widthAfter.hasRight === true && widthAfter.hasLeft === true && widthAfter.asym === true && widthAfter.lockedMatch === true && widthAfter.valueChanged === true && widthChainMoved === false, `width=${JSON.stringify(widthAfter)} chainMoved=${widthChainMoved}`);
 
   // ============ Issue 1: hover + alt+click in select mode (non-create tools) ============
   await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="select"]'); if (btn) btn.click(); return true; })()`);
