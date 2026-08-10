@@ -24706,6 +24706,7 @@ function createCurveObjects(lock) {
   });
   const panelSplitHandles = [];
   const panelSplitLines = [];
+  const panelSegmentHandles = [];
   if (isPanelGeometry(lock)) {
     lock.panelSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     lock.panelSplits.forEach((split, index) => {
@@ -24722,6 +24723,23 @@ function createCurveObjects(lock) {
       group.add(handle);
       panelSplitHandles.push(handle);
     });
+    // One split sub-bone handle per segment: dragging it laterally sets the segment's
+    // relative tip gap (spread). The handle acts as a per-segment spread track.
+    for (let segment = 0; segment < lock.panelSplits.length + 1; segment += 1) {
+      const handle = createSplitControlHandle();
+      handle.scale.setScalar(0.72);
+      handle.material = new THREE.MeshBasicMaterial({
+        color: 0x5df0a8,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.85
+      });
+      handle.userData.lockId = lock.id;
+      handle.userData.panelSegmentIndex = segment;
+      group.add(handle);
+      panelSegmentHandles.push(handle);
+    }
   }
   let strandSplitHandle = null;
   let strandSplitLine = null;
@@ -24761,6 +24779,7 @@ function createCurveObjects(lock) {
     arrows,
     panelSplitHandles,
     panelSplitLines,
+    panelSegmentHandles,
     strandSplitHandle,
     strandSplitLine,
     branchSweepStartHandle,
@@ -25166,6 +25185,25 @@ function updateCurveObjects(lock, options = {}) {
       points.push(panelSplitControlPoint(lock, split, THREE.MathUtils.lerp(startT, 1, step / 12), null, index));
     }
     line.geometry = new THREE.BufferGeometry().setFromPoints(points);
+  });
+  const segmentBoundaries = [-1, ...splits.map((split) => split.position), 1];
+  const segmentSplitBones = splitBonesFor(lock);
+  lock.curveObjects.panelSegmentHandles?.forEach((handle, segment) => {
+    const visible = !sculptBrushHelpersSuppressed
+      && !brushDebugVisible
+      && isPanelGeometry(lock)
+      && lock.panelSplitEnabled !== false;
+    handle.visible = visible;
+    if (!visible) return;
+    const bone = segmentSplitBones[segment] || null;
+    const span = Math.max(0.0001, segmentBoundaries[segment + 1] - segmentBoundaries[segment]);
+    const spread = bone?.spread ?? 0;
+    const handleU = segmentBoundaries[segment] + (spread / 0.9) * span;
+    handle.position.copy(panelSplitControlPoint(lock, { position: handleU, height: 0 }, null, null, segment));
+    handle.material.opacity = sculptState.state.panelSplitDrag?.lockId === lock.id
+      && sculptState.state.panelSplitDrag.kind === "segment"
+      && sculptState.state.panelSplitDrag.splitIndex === segment
+      ? 0.9 : 0.68;
   });
   const strandSplitVisible = !sculptBrushHelpersSuppressed
     && !brushDebugVisible
@@ -33741,6 +33779,10 @@ function disposeCurveObjects(lock) {
     line.geometry.dispose();
     line.material.dispose();
   });
+  lock.curveObjects.panelSegmentHandles?.forEach((handle) => {
+    handle.geometry.dispose();
+    handle.material.dispose();
+  });
   if (lock.curveObjects.strandSplitHandle) {
     lock.curveObjects.strandSplitHandle.geometry.dispose();
     lock.curveObjects.strandSplitHandle.material.dispose();
@@ -33777,13 +33819,16 @@ function beginPanelSplitHandleDrag(event) {
   const panelHandles = isPanelGeometry(lock) && lock.curveObjects?.group.visible
     ? lock.curveObjects.panelSplitHandles || []
     : [];
+  const segmentHandles = isPanelGeometry(lock) && lock.curveObjects?.group.visible
+    ? lock.curveObjects.panelSegmentHandles || []
+    : [];
   const strandHandle = lock?.geometryType === "strand"
     && lock.strandSplitEnabled
     && lock.curveObjects?.group.visible
     && lock.curveObjects.strandSplitHandle?.visible
     ? [lock.curveObjects.strandSplitHandle]
     : [];
-  const handles = [...panelHandles, ...strandHandle];
+  const handles = [...panelHandles, ...segmentHandles, ...strandHandle];
   if (!handles.length) return false;
   const hit = raycaster.intersectObjects(handles.filter((handle) => handle.visible), false)[0];
   if (!hit) return false;
@@ -33792,8 +33837,14 @@ function beginPanelSplitHandleDrag(event) {
   sculptState.state.panelSplitDrag = {
     pointerId: event.pointerId,
     lockId: lock.id,
-    kind: hit.object.userData.strandSplitHandle ? "strand" : "panel",
-    splitIndex: hit.object.userData.panelSplitIndex
+    kind: hit.object.userData.strandSplitHandle
+      ? "strand"
+      : hit.object.userData.panelSegmentIndex != null
+        ? "segment"
+        : "panel",
+    splitIndex: hit.object.userData.panelSegmentIndex != null
+      ? hit.object.userData.panelSegmentIndex
+      : hit.object.userData.panelSplitIndex
   };
   renderer.domElement.setPointerCapture?.(event.pointerId);
   renderer.domElement.style.cursor = "grabbing";
@@ -33837,6 +33888,38 @@ function updatePanelSplitHandleDrag(event) {
     if (!best) return;
     lock.strandSplitPosition = THREE.MathUtils.clamp(best.position, -0.8, 0.8);
     lock.strandSplitHeight = THREE.MathUtils.clamp(best.height, 0.02, 0.8);
+    updateLockGeometry(lock, { immediate: true });
+    updateCurveObjects(lock, { visible: true });
+    syncActiveMirror(lock, { deferGeometry: false });
+    updateTopologyStats();
+    event.preventDefault();
+    return;
+  }
+  if (sculptState.state.panelSplitDrag.kind === "segment") {
+    const segmentSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const segment = sculptState.state.panelSplitDrag.splitIndex;
+    const segBoundaries = [-1, ...segmentSplits.map((split) => split.position), 1];
+    if (segment < 0 || segment >= segBoundaries.length - 1) {
+      endPanelSplitHandleDrag(event);
+      return;
+    }
+    const span = Math.max(0.0001, segBoundaries[segment + 1] - segBoundaries[segment]);
+    let segmentBest = null;
+    for (let uStep = 0; uStep <= 48; uStep += 1) {
+      const u = THREE.MathUtils.lerp(segBoundaries[segment], segBoundaries[segment + 1], uStep / 48);
+      const projected = panelSplitControlPoint(lock, { position: u, height: 0 }, 1, curve, segment).project(camera);
+      if (projected.z < -1 || projected.z > 1) continue;
+      const x = (projected.x * 0.5 + 0.5) * rect.width;
+      const y = (-projected.y * 0.5 + 0.5) * rect.height;
+      const distanceSq = (x - targetX) ** 2 + (y - targetY) ** 2;
+      if (!segmentBest || distanceSq < segmentBest.distanceSq) segmentBest = { distanceSq, u };
+    }
+    if (!segmentBest) return;
+    const bones = materializeSplitBones(lock);
+    const bone = bones[segment];
+    if (bone) {
+      bone.spread = THREE.MathUtils.clamp(((segmentBest.u - segBoundaries[segment]) / span) * 0.9, 0, 0.9);
+    }
     updateLockGeometry(lock, { immediate: true });
     updateCurveObjects(lock, { visible: true });
     syncActiveMirror(lock, { deferGeometry: false });
