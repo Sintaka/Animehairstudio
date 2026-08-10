@@ -3,7 +3,7 @@ import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260809-17";
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260809-16";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260809-15";
-import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones } from "./modules/geometry/bone-model.js?v=20260810-1";
+import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave } from "./modules/geometry/bone-model.js?v=20260810-1";
 import { createStrandSweepApi } from "./modules/geometry/strand-sweep.js?v=20260810-2";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-14";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";
@@ -16486,6 +16486,7 @@ function addLock(presetName, overrides = {}, options = {}) {
   }
   lock.panelSplitGap = Number(base.panelSplitGap ?? panelCreationDefaults.panelSplitGap);
   lock.splitBones = Array.isArray(base.splitBones) ? splitBonesFromData(base.splitBones, lock.panelSplits, lock) : null;
+  lock.bones = Array.isArray(base.bones) ? bonesFromData(base.bones, lock) : null;
   lock.curlEnabled = Boolean(base.curlEnabled);
   lock.curlCount = THREE.MathUtils.clamp(Number(base.curlCount ?? 4), 0.25, 24);
   lock.curlDisplacement = THREE.MathUtils.clamp(Number(base.curlDisplacement ?? 0.18), 0, 1.2);
@@ -16833,6 +16834,7 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
     .sort((a, b) => a.position - b.position);
   partner.panelSplitGap = Number(lock.panelSplitGap ?? panelCreationDefaults.panelSplitGap);
   partner.splitBones = mirrorSplitBones(lock.splitBones);
+  partner.bones = mirrorBones(lock.bones);
   partner.curlEnabled = Boolean(lock.curlEnabled);
   partner.curlCount = Number(lock.curlCount ?? 4);
   partner.curlDisplacement = Number(lock.curlDisplacement ?? 0.18);
@@ -17046,6 +17048,7 @@ function snapshotState() {
       panelSplits: clonePanelSplits(lock.panelSplits, lock.panelSplitHeight),
       panelSplitGap: Number(lock.panelSplitGap ?? panelCreationDefaults.panelSplitGap),
       splitBones: lock.splitBones ? splitBonesToData(lock.splitBones) : null,
+      bones: registryForSave(lock),
       curlEnabled: Boolean(lock.curlEnabled),
       curlCount: Number(lock.curlCount ?? 4),
       curlDisplacement: Number(lock.curlDisplacement ?? 0.18),
@@ -18408,6 +18411,7 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     })),
     panelSplitGap: Number(snapshot.panelSplitGap ?? panelCreationDefaults.panelSplitGap),
     splitBones: Array.isArray(snapshot.splitBones) ? splitBonesFromData(snapshot.splitBones, snapshot.panelSplits, snapshot) : null,
+    bones: Array.isArray(snapshot.bones) ? bonesFromData(snapshot.bones, snapshot) : null,
     curlEnabled: Boolean(snapshot.curlEnabled),
     curlCount: THREE.MathUtils.clamp(Number(snapshot.curlCount ?? 4), 0.25, 24),
     curlDisplacement: THREE.MathUtils.clamp(Number(snapshot.curlDisplacement ?? 0.18), 0, 1.2),
@@ -21837,6 +21841,7 @@ function updateDrawStrandPreview() {
     ),
     panelSplitGap: extensionLock?.panelSplitGap ?? sculptState.state.drawStrandStroke.panelSplitGap,
     splitBones: extensionLock?.splitBones ? splitBonesToData(extensionLock.splitBones) : null,
+    bones: extensionLock?.bones ? bonesToData(extensionLock.bones) : null,
     curlEnabled: sculptState.state.drawStrandStroke.outputType === "strand"
       ? Boolean(sculptState.state.drawStrandStroke.curlEnabled)
       : Boolean(extensionLock?.curlEnabled),
@@ -22048,6 +22053,7 @@ function beginDrawStrandStroke(event, hit, extensionLock = null, branchStart = n
     splitBones: panelCreationDefaults.splitBones
       ? splitBonesFromData(panelCreationDefaults.splitBones, panelCreationDefaults.panelSplits, panelCreationDefaults)
       : null,
+    bones: panelCreationDefaults.bones ? bonesFromData(panelCreationDefaults.bones, panelCreationDefaults) : null,
     curlEnabled: !drawingBraid && !drawingProcedural && hairState.state.drawStrandMode === "coil",
     curlCount: Number(strandCreationDefaults.curlCount),
     curlDisplacement: Number(strandCreationDefaults.curlDisplacement),
@@ -22469,6 +22475,7 @@ function createDrawnPanel(stroke) {
     panelSplits: clonePanelSplits(stroke.panelSplits, stroke.panelSplitHeight),
     panelSplitGap: stroke.panelSplitGap,
     splitBones: stroke.splitBones ? splitBonesFromData(stroke.splitBones, stroke.panelSplits, stroke) : null,
+    bones: stroke.bones ? bonesFromData(stroke.bones, stroke) : null,
     taperCurve: panelCreationDefaults.taperCurve.map((point) => ({ ...point })),
     depthCurve: panelCreationDefaults.depthCurve.map((point) => ({ ...point })),
     taperCurveSecondary: panelCreationDefaults.taperCurveSecondary.map((point) => ({ ...point })),
