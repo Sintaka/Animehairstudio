@@ -43,3 +43,8 @@
    - 根因：P2 共享扫掠内核 `strand-sweep.sweepSide` 的侧面 quad 循环按 **slot 数**（profileCount=11）而非 **edge 数**（10）发射 quad——profile 在硬点（linear）处有一个重复 seam slot，slot 3→4 是同一样本，按 slot 循环每行多出 1 个退化 quad（26 行 → 282 quadFaces，正确应为 260），quadFaces 布局与 `gridFacesPerRow=10` 脱节；`applyBranchRootRegionCarving` 又用 `round(faces.length/(rows-1))` 重算 facesPerRow（282/26→11），导致行/列错位，洞只删到部分面。
    - 修复：① 内核新增 `profileEdges` 选项，按 profile edges 发射 quad（base 传 `profileTopology.edges`，child ring 保持连续边）；② `applyBranchRootRegionCarving` 改用 build-time `gridFacesPerRow`（回退重算），即使 quadFaces 含额外面（procedural 合并等）也不漂移。
    - 验证：父发片 fresh quadFaces 260（原 282），carve 精确删除 region 面 [122,123,132,133]（行 12-13 × 面列 2-3，skipCol=3 下 grid 列 2/4），洞完整；Sussurro_v1_0041/0042/0044 三档 11/11 smoke。
+
+2. **USDA 骨骼导出：Houdini Character Import 报 "Primitive does not have any Skeleton children"（0.2.59 记录，未修）**
+   - 现象：0044 导出 USDA（勾选 Bones）后，Houdini `USD Character Import` 报 `Invalid source /obj/geo1/usdcharacterimport1/**skin**` / "Primitive does not have any Skeleton children"。
+   - 根因：v1 骨骼导出只输出 `SkelRoot`（`Scope "Skeletons"` 下嵌套 `SkelJoint`），**没有任何蒙皮绑定**——Mesh 上没有 `SkelBindingAPI`（`skel:joints` / `skel:bindTransforms` / `rel skel:bindTransforms`），也没有含 Skeleton 的 `skin` prim。Houdini Character Import 要导入的是「蒙皮角色」（skin 下有 Skeleton），找不到 → 该报错。这属于计划中已推迟的 weights/binding 功能（`exportIncludeWeights` 保持禁用）。
+   - 修复方向（后续）：导出时给每个 Mesh 施加 `SkelBindingAPI`——`skel:joints` = 该锁 main+split 关节序列、`skel:bindTransforms` = rest 位姿、`rel skel:bindTransforms` 指向该锁 SkelRoot；如需要变形再补权重（无权重时网格停在 bind pose，Houdini 可能仍提示缺权重）。记录在案，本轮不修（见 devlog/in-progress/bone-system-roadmap.md）。
