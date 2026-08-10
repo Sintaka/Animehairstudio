@@ -13519,6 +13519,30 @@ function setTipWidthCurveValue(lock, segmentIndex, splits, bone, side, t, value)
   bone.taperCurveSecondary = buildTipWidthCurve(lock, segmentIndex, splits, bone, -1);
 }
 
+// Pink width-curve edge points for a tip side: the exposed (below-zipper) edge from
+// the side's fork to the tip, offset laterally by the current width (binormal).
+function tipWidthEdgePoints(lock, segmentIndex, splits, bone, side) {
+  const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
+  if (!tip || tip.points.length < 2) return [];
+  const forkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
+  if (forkT >= 1) return [];
+  const curve = new THREE.CatmullRomCurve3(tip.points);
+  const points = [];
+  const count = 24;
+  for (let i = 0; i <= count; i += 1) {
+    const t = THREE.MathUtils.lerp(forkT, 1, i / count);
+    const center = curve.getPoint(t);
+    const tangent = curve.getTangent(t).normalize();
+    const mainFrame = strandFrameAt(lock, t);
+    const lateral = new THREE.Vector3().crossVectors(tangent, mainFrame.z);
+    if (lateral.lengthSq() < 0.0001) lateral.copy(mainFrame.x);
+    lateral.normalize();
+    const width = tipPanelWidthAt(lock, t, side, bone);
+    points.push(center.clone().addScaledVector(lateral, side * width * 0.5));
+  }
+  return points;
+}
+
 // Viewport placement of a tip width control point: on the exposed chain edge at t,
 // offset laterally by the current half width.
 function tipWidthControlPlacement(lock, segmentIndex, splits, bone, side, pointIndex) {
@@ -25013,6 +25037,7 @@ function createCurveObjects(lock) {
   const panelTipHandles = [];
   const panelTipLines = [];
   const tipWidthHandles = [];
+  const tipWidthLines = [];
   if (isPanelGeometry(lock)) {
     lock.panelSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     lock.panelSplits.forEach((split, index) => {
@@ -25029,23 +25054,7 @@ function createCurveObjects(lock) {
       group.add(handle);
       panelSplitHandles.push(handle);
     });
-    // One split sub-bone handle per segment: dragging it laterally sets the segment's
-    // relative tip gap (spread). The handle acts as a per-segment spread track.
-    for (let segment = 0; segment < lock.panelSplits.length + 1; segment += 1) {
-      const handle = createSplitControlHandle();
-      handle.scale.setScalar(0.72);
-      handle.material = new THREE.MeshBasicMaterial({
-        color: 0x5df0a8,
-        depthTest: false,
-        depthWrite: false,
-        transparent: true,
-        opacity: 0.85
-      });
-      handle.userData.lockId = lock.id;
-      handle.userData.panelSegmentIndex = segment;
-      group.add(handle);
-      panelSegmentHandles.push(handle);
-    }
+    // (green segment spread handles removed - replaced by per-side tip width control)
     // Tip sub-bone handles: one per sub-bone chain point (full chain like the main
     // bone, laterally offset to the segment center). Only points below the segment's
     // fork (zipper) are exposed in updateCurveObjects.
@@ -25076,16 +25085,17 @@ function createCurveObjects(lock) {
       group.add(line);
       panelTipLines.push(line);
     }
-    // Tip width control points (repurposed green segment controller): per side along
-    // the exposed (below-zipper) chain. Only the selected tip segment's points show.
+    // Tip width control (pink curve + control points, per side along the exposed
+    // below-zipper chain). Only the selected tip segment's points/curve show.
     for (let segment = 0; segment < lock.panelSplits.length + 1; segment += 1) {
       const sideHandles = { left: [], right: [] };
+      const sideLines = { left: null, right: null };
       for (const side of [-1, 1]) {
         for (let point = 0; point < TIP_WIDTH_CONTROL_POINTS; point += 1) {
           const handle = createSplitControlHandle();
           handle.scale.setScalar(0.34);
           handle.material = new THREE.MeshBasicMaterial({
-            color: 0x5df0a8,
+            color: 0xff42cf,
             depthTest: false,
             depthWrite: false,
             transparent: true,
@@ -25098,8 +25108,19 @@ function createCurveObjects(lock) {
           group.add(handle);
           sideHandles[side < 0 ? "left" : "right"].push(handle);
         }
+        const line = new THREE.Line(
+          new THREE.BufferGeometry(),
+          new THREE.LineBasicMaterial({ color: 0xff42cf, transparent: true, opacity: 0.85, depthTest: false })
+        );
+        line.renderOrder = 6;
+        line.userData.lockId = lock.id;
+        line.userData.tipWidthLineSegment = segment;
+        line.userData.tipWidthLineSide = side;
+        group.add(line);
+        sideLines[side < 0 ? "left" : "right"] = line;
       }
       tipWidthHandles.push(sideHandles);
+      tipWidthLines.push(sideLines);
     }
   }
   let strandSplitHandle = null;
@@ -25144,6 +25165,7 @@ function createCurveObjects(lock) {
     panelTipHandles,
     panelTipLines,
     tipWidthHandles,
+    tipWidthLines,
     strandSplitHandle,
     strandSplitLine,
     branchSweepStartHandle,
@@ -25682,6 +25704,33 @@ function updateCurveObjects(lock, options = {}) {
           && sculptState.state.panelSplitDrag.tipWidthIndex === index;
         handle.material.opacity = dragging ? 1 : 0.9;
       });
+    }
+  });
+  lock.curveObjects.tipWidthLines?.forEach((sideLines, segment) => {
+    const selected = tipWidthSelection
+      && tipWidthSelection.lockId === lock.id
+      && tipWidthSelection.segmentIndex === segment;
+    const lineBase = Boolean(selected)
+      && (!sculptBrushHelpersSuppressed || tipUiActive)
+      && !brushDebugVisible
+      && isPanelGeometry(lock)
+      && lock.panelSplitEnabled !== false
+      && tipSplits.length > 0;
+    for (const side of [-1, 1]) {
+      const line = side < 0 ? sideLines.left : sideLines.right;
+      if (!line) continue;
+      if (!lineBase) {
+        line.visible = false;
+        continue;
+      }
+      const edgePoints = tipWidthEdgePoints(lock, segment, tipSplits, tipSplitBones[segment] || null, side);
+      if (edgePoints.length < 2) {
+        line.visible = false;
+        continue;
+      }
+      line.geometry.dispose();
+      line.geometry = new THREE.BufferGeometry().setFromPoints(edgePoints);
+      line.visible = true;
     }
   });
   updateTipHighlight(lock);
@@ -34286,6 +34335,12 @@ function disposeCurveObjects(lock) {
       handle.material.dispose();
     });
   });
+  lock.curveObjects.tipWidthLines?.forEach((seg) => {
+    [seg.left, seg.right].filter(Boolean).forEach((line) => {
+      line.geometry.dispose();
+      line.material.dispose();
+    });
+  });
   if (lock.curveObjects.tipHighlightMesh) {
     lock.curveObjects.tipHighlightMesh.geometry.dispose();
     lock.curveObjects.tipHighlightMesh.material.dispose();
@@ -35851,14 +35906,25 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
       changed = true;
     }
   } else if (tool === "sculpt-orient") {
-    // Uniform rotation of the whole exposed chain around the exposed root around the
-    // view axis (sub-tool orient, not a cursor-masked nudge).
-    const axis = camera.position.clone().sub(scaleCenter).normalize();
-    const amount = (reverse ? -1 : 1) * strength * (deltaX * 0.008);
+    // Bend the exposed chain TOWARD THE DRAG so the tip's tangent direction rotates
+    // (the geometry follows via the frame delta). Rotating around the view axis (old
+    // behavior) mostly spun the lateral/binormal for camera-facing tips, making the
+    // tangent look "locked". The bend axis is perpendicular to the chain tangent and
+    // the drag direction, so a horizontal drag bends the tip horizontally, etc.
+    const curve = new THREE.CatmullRomCurve3(current);
+    const root = current[firstBelow] || current[0];
+    const rootTangent = curve.getTangent(firstBelow / Math.max(1, current.length - 1)).normalize();
+    const dragWorld = sculptBrushWorldDelta(root, deltaX, deltaY, rect);
+    let dragDir = dragWorld.clone().normalize();
+    if (dragDir.lengthSq() < 0.0001) dragDir.set(1, 0, 0);
+    let bendAxis = new THREE.Vector3().crossVectors(rootTangent, dragDir);
+    if (bendAxis.lengthSq() < 0.0001) bendAxis.set(0, 1, 0).crossVectors(rootTangent, bendAxis);
+    bendAxis.normalize();
+    const amount = (reverse ? -1 : 1) * strength * Math.hypot(deltaX, deltaY) * 0.006;
     for (let index = firstBelow; index < current.length; index += 1) {
-      const offset = points[index].clone().sub(scaleCenter);
-      offset.applyAxisAngle(axis, amount);
-      points[index].copy(scaleCenter).add(offset);
+      const offset = points[index].clone().sub(root);
+      offset.applyAxisAngle(bendAxis, amount);
+      points[index].copy(root).add(offset);
       changed = true;
     }
   } else {
@@ -37203,6 +37269,7 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     applySubBoneBrushSample,
     tipWidthSideForkT,
     sampleTaperCurve,
+    strandFrameAt,
     splitForkT,
     clonePanelSplits,
     materializeSplitBones,

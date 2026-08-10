@@ -175,6 +175,25 @@ splitBone.tip = {
 - 拖动：`beginPanelSplitHandleDrag` kind="tipWidth"（按视平面侧向偏移计算新半宽 → 写曲线 → 重建几何）。注：笔刷工具 pointerdown 被笔刷笔画 consume，width 控制点拖动在 select/move 等非笔刷工具下操作（与 tip 链手柄一致）。
 
 **回归测试（scripts/verify-tip-select.mjs，28/28 新增）**：tip 选中时 width 控制点显示（左右各 5）+ 绿色手柄 0 + 主 width 边缘 0；拖动右侧控制点 → 右/左曲线生成、asymmetric=true、锁定区与全局默认一致（rightForkT 0.8125）；select 模式悬停其它发丝 outline=true、alt+点击切换选中。三档 smoke 11/11、12/12 通过。
+### 8.11 发尖 TBN 帧调查 + orient 改弯曲 + width 粉色曲线/删绿色控制器（0.2.59 已落地）
+
+**调查①：发尖子骨骼 TBN 与主骨骼一致吗？**
+- 约定一致：发尖链与主链同为 y=切线、x=副切线(横向/宽度方向)、z=法线。
+- rest 链实测（Front Bangs 1 seg2，t=0.3/0.6/0.9）：副切线 vs 主 x 偏差 0.2–3.9°；切线 vs 主 y、法线 vs 主 z 偏差 0.8–11.7°（链端约 10–12°）。**不是 90°**。偏差来源：段中心线是横向偏移到段中心 u 的曲线，panel 宽度沿 t 变化使中心线相对主曲线轻微倾斜（链端切线偏 10° 左右属正常几何）。
+- **结论：帧约定一致，存在小的几何偏差（~10° 级），无需改 TBN 定义。**
+
+**调查②：发尖旋转被锁死了吗？**
+- 数据层：`splitTipForSegment` 的 authored 是逐点绝对坐标 + 编辑时 rest，组合为 `当前 rest + delta`（平移 delta 保留）；几何用 `dq = setFromUnitVectors(restTangent, authoredTangent)` 旋转截面——旋转**没有被锁死**。
+- 真正问题：旧 orient 笔刷把链点绕**视轴（相机→根）**旋转——发尖朝向相机时≈绕链自转 → 主要转副切线/横向，切线方向变化很小 → 观感「切线锁死、转的是副切线」。实测旧行为：55px 拖拽 tangent 变 10.4°、lateral 也变 10.6°（两者相当）。
+
+**修改（orient 改弯曲）✅**：发尖 orient 改为**朝拖拽方向弯曲链**——弯曲轴 = 链根切线 × 拖拽方向（垂直于链、朝向拖拽），绕根旋转暴露段；拖横→尖横弯、拖竖→尖竖弯，**切线方向明显旋转**，几何经 dq 跟随。回归：orient 后尖端切线夹角 8.03°（>5° 断言）。
+
+**修改②：tip width 粉色曲线 + 删绿色控制器 ✅**
+- 删除绿色 spread 手柄（`panelSegmentHandles` 视口句柄，保留 spread 数据/滑杆）。
+- tip width 控制 = 每侧**粉色曲线**（`tipWidthLines`，0xff42cf）+ **粉色控制点**（`tipWidthHandles` 改 0xff42cf），选中发尖即显示；左右曲线从各自侧 fork 到尖端、**长度不同**（seg2 实测左 0.97 / 右 0.37）。
+- 宽度数据仍写 `bone.taperCurve`/`taperCurveSecondary` + 自动 `asymmetricWidthCurve=true`；拖控制点 = 副切线(横向)方向改变半宽。
+
+**回归测试（scripts/verify-tip-select.mjs，28/28）**：orient 切线弯曲 >5°；粉色曲线/小点显示 + 绿色手柄 0 + 主 width 边缘 0 + 左右曲线长度不同；宽度拖动 author 右曲线（asymmetric、锁定区=全局默认）。三档 smoke 11/11、12/12 通过。
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

@@ -352,7 +352,7 @@ try {
     const angle = Math.acos(Math.min(1, Math.max(-1, aTan.dot(rTan))));
     return JSON.stringify({ ok: true, angleDeg: (angle * 180 / Math.PI).toFixed(2) });
   })()`));
-  check("orient rotates the tip frame (tangent changes)", orientRot.ok === true && Number(orientRot.angleDeg) > 1, `orientRot=${JSON.stringify(orientRot)}`);
+  check("orient rotates the tip frame (tangent changes)", orientRot.ok === true && Number(orientRot.angleDeg) > 5, `orientRot=${JSON.stringify(orientRot)}`);
   // undo
   const undoSelBefore = await evalJS(cdp, `(() => { const t = window.__ahsTest; return JSON.stringify(t.sculptState.state.panelTipSelection); })()`);
   await evalJS(cdp, `(() => { const btn = document.querySelector('#undoAction'); if (btn && !btn.disabled) btn.click(); return true; })()`);
@@ -451,13 +451,26 @@ try {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const seg = lock.curveObjects.tipWidthHandles ? lock.curveObjects.tipWidthHandles[2] : null;
+    const lines = lock.curveObjects.tipWidthLines ? lock.curveObjects.tipWidthLines[2] : null;
     const leftVis = seg ? seg.left.filter((h) => h.visible).length : 0;
     const rightVis = seg ? seg.right.filter((h) => h.visible).length : 0;
+    const lineLen = (line) => {
+      const pos = line && line.visible ? line.geometry.attributes.position : null;
+      if (!pos) return 0;
+      let len = 0;
+      for (let i = 1; i < pos.count; i++) {
+        len += Math.hypot(pos.getX(i)-pos.getX(i-1), pos.getY(i)-pos.getY(i-1), pos.getZ(i)-pos.getZ(i-1));
+      }
+      return len;
+    };
+    const leftLen = lineLen(lines ? lines.left : null);
+    const rightLen = lineLen(lines ? lines.right : null);
+    const handleColor = seg && seg.left[0] ? '#' + seg.left[0].material.color.getHexString() : null;
     const greenVis = (lock.curveObjects.panelSegmentHandles || []).filter((h) => h.visible).length;
     const widthEdgeVis = (lock.curveObjects.widthEdgeLines || []).filter((e) => e.visible).length;
-    return JSON.stringify({ leftVis, rightVis, greenVis, widthEdgeVis });
+    return JSON.stringify({ leftVis, rightVis, leftLine: !!lines && lines.left.visible, rightLine: !!lines && lines.right.visible, leftLen: Number(leftLen.toFixed(4)), rightLen: Number(rightLen.toFixed(4)), handleColor, greenVis, widthEdgeVis });
   })()`));
-  check("tip width control points show when tip selected (green + main width hidden)", widthVis.leftVis > 0 && widthVis.rightVis > 0 && widthVis.greenVis === 0 && widthVis.widthEdgeVis === 0, `width=${JSON.stringify(widthVis)}`);
+  check("tip width pink curve+points show, green removed, side lengths differ", widthVis.leftVis > 0 && widthVis.rightVis > 0 && widthVis.leftLine === true && widthVis.rightLine === true && widthVis.handleColor === "#ff42cf" && widthVis.greenVis === 0 && widthVis.widthEdgeVis === 0 && Math.abs(widthVis.leftLen - widthVis.rightLen) > 0.01, `width=${JSON.stringify(widthVis)}`);
 
   // drag a right-side width handle (select tool; brush tools consume pointerdown)
   await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="select"]'); if (btn) btn.click(); return true; })()`);
