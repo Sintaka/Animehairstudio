@@ -191,3 +191,5 @@
 - **子发片深度重置 2.2b（挖洞索引修复）**：挖洞改为只删除对应面片的 6 个索引，保留两端封口三角形与原作者法线（不再 computeVertexNormals 覆盖），并同步更新 sideTriangleCount，避免 shader/高亮因索引与法线不一致而只渲染每 quad 一半三角形。验证：Side Left 2 index 1584 = 254 面×6 + 60 封口，maxIndex 298，quadFaces 254。
 
 - **子发片深度重置 2.2（程序化挖洞 + 根部偏移）**：.ahs 只存引导参数、加载时程序化重建网格，因此挖洞做成数据驱动、每次重建时重放——父级（有分支子级的发带/发片）按子级 branchRootRegion 的 (u,v) 区域把 quad 网格对应面片删除（面映射按 quadFaces 数组行列位置，兼容剖面缺边/闭合 wrap）；区域默认「左侧 2 格宽 × 上 2 行下 1 行」（BRANCH_ROOT_REGION_DEFAULTS，centerV=0.25）。子级根部（points[0]）偏移到区域中心（applyBranchRootOffset）。恢复存档后统一跑一遍挖洞+偏移（restoreSceneCollectionsForStateRestore）。验证：Sussurro v0012 的 Side Left 2 面数 260→254（删 6 面），Side Left 3 根部已偏移。
+
+  - **子发片扫掠统一（0.2.59，P2）**：提取共享扫掠内核 `modules/geometry/strand-sweep.js`（`createStrandSweepApi` → `sweepSide({lock, curve, profilePoints, startT, seedFrame, rootRelative})`）；`createBaseHairGeometry` strand 路径（startT=0、绝对 taper）与 `createBranchChildGeometry`（startT=SWEEP_START_T、种子帧、rootRelative 相对缩放）共用——子发片 = **默认扫掠 + 桥接 + 根部移动优化**，不再是分离系统。`createBranchChildGeometry` 的种子帧/gizmo 根帧/rootWarp/桥接/端盖/法线恢复全部原样保留；几何输出与 0.2.57 字节一致。验证：Sussurro_v1_0041/0042/0044 三档 11/11 smoke，子发片重建 0 异常、bridge smooth per-lock 正常。

@@ -41,6 +41,7 @@
 | Branch Bridge Smooth（Strength / Detail） | 启用 | 独立 Branch Bridge 面板，仅选中子发片时显示；标准 float+滑杆+重置（0.2.45–0.2.47） |
 | Region 同步速度滑块（Sync L/R、Sync U/D） | 启用 | Branch Root Region 面板；默认 L/R 0.45、U/D 1.0；`updateBranchRootRegionCenter` 按速度缩放（0.2.52–0.2.53） |
 | 刘海 / 面板线框三角面显示修复 | 启用 | 显示层 masks 修复（0.2.54–0.2.56）；导出数据一直是四边面；详见 bug-fixes.md #3 |
+| Panel Split 子骨骼 / 统一骨骼模型（Split Spacing/Trim 重铸） | 启用 | 0.2.59 起：每 split 段一个 `lock.splitBones` 完整变换骨骼（P/orient 四元数/spread + 每段 Width/Depth 曲线，混合持久化）；`createPanelStrandGeometry` 段内局部 u' + 每段曲线 + 相对缩放（根除 crossover），删除 trim/gap 位移；`bonesFor(lock)` 统一骨骼视图；子发片扫掠内核统一（modules/geometry/strand-sweep.js） |
 | 状态管理 store 体系（scene-store + 15 个域 store） | 启用 | 全局 let 241→20；新状态一律进对应 store（清单见 STATE_MANAGEMENT.md）；app.js 不新增全局 let |
 | 拖放统一分发 | deprecated | main 0.1.4 已有应用文件拖放确认对话框，本地实现已删除 |
 | 雕刻笔刷选择遮罩 | deprecated | main 0.1.4 已有 sculptBrushSelectionAllows，本地实现已删除 |
