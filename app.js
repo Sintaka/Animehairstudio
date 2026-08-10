@@ -25340,7 +25340,13 @@ function updateCurveObjects(lock, options = {}) {
       const last = tip.points[tip.points.length - 1];
       const prev = tip.points[tip.points.length - 2];
       const dir = last.clone().sub(prev).normalize();
-      handle.position.copy(last).addScaledVector(dir, 0.02);
+      // At rest all sub-bone tip points coincide with the panel apex (main tail tip),
+      // so nudge each handle toward its own segment's tip surface point to keep them
+      // individually grabbable and visible.
+      const centerU = (segmentBoundaries[segment] + segmentBoundaries[segment + 1]) * 0.5;
+      const surface = panelSplitControlPoint(lock, { position: centerU, height: 0 }, null, null, segment);
+      handle.position.copy(surface).multiplyScalar(0.72).addScaledVector(last, 0.28);
+      handle.position.addScaledVector(dir, 0.02);
     } else {
       handle.position.copy(panelSplitControlPoint(lock, { position: 0, height: 0 }, null, null, segment));
     }
