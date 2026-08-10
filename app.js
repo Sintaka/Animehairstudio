@@ -2866,21 +2866,15 @@ const panelShapeInputs = {
   panelLengthLoops: document.querySelector("#panelLengthLoops"),
   panelWidthLoops: document.querySelector("#panelWidthLoops"),
   panelCurvature: document.querySelector("#panelCurvature"),
-  panelLeftEdgeTrim: document.querySelector("#panelLeftEdgeTrim"),
-  panelRightEdgeTrim: document.querySelector("#panelRightEdgeTrim"),
   panelSplitEnabled: document.querySelector("#panelSplitEnabled"),
-  panelSplitSnapToLoops: document.querySelector("#panelSplitSnapToLoops"),
-  panelSplitGap: document.querySelector("#panelSplitGap")
+  panelSplitSnapToLoops: document.querySelector("#panelSplitSnapToLoops")
 };
 const panelShapeValues = {
   width: document.querySelector("#panelWidthValue"),
   panelThickness: document.querySelector("#panelThicknessValue"),
   panelLengthLoops: document.querySelector("#panelLengthLoopsValue"),
   panelWidthLoops: document.querySelector("#panelWidthLoopsValue"),
-  panelCurvature: document.querySelector("#panelCurvatureValue"),
-  panelLeftEdgeTrim: document.querySelector("#panelLeftEdgeTrimValue"),
-  panelRightEdgeTrim: document.querySelector("#panelRightEdgeTrimValue"),
-  panelSplitGap: document.querySelector("#panelSplitGapValue")
+  panelCurvature: document.querySelector("#panelCurvatureValue")
 };
 const strandSplitInputs = {
   strandSplitEnabled: document.querySelector("#strandSplitEnabled"),
@@ -2892,6 +2886,15 @@ const strandSplitValues = {
 const panelSplitCountValue = document.querySelector("#panelSplitCount");
 const addPanelSplitButton = document.querySelector("#addPanelSplit");
 const removePanelSplitButton = document.querySelector("#removePanelSplit");
+const panelSegmentLabel = document.querySelector("#panelSegmentLabel");
+const previousPanelSegmentButton = document.querySelector("#previousPanelSegment");
+const nextPanelSegmentButton = document.querySelector("#nextPanelSegment");
+const panelSegmentSpread = document.querySelector("#panelSegmentSpread");
+const panelSegmentSpreadValue = document.querySelector("#panelSegmentSpreadValue");
+const editPanelSegmentWidthCurveButton = document.querySelector("#editPanelSegmentWidthCurve");
+const editPanelSegmentDepthCurveButton = document.querySelector("#editPanelSegmentDepthCurve");
+const segmentTaperPreview = document.querySelector("#segmentTaperPreview");
+const segmentDepthPreview = document.querySelector("#segmentDepthPreview");
 const groupInputs = {
   lengthScale: document.querySelector("#groupLengthScale"),
   widthScale: document.querySelector("#groupWidthScale"),
@@ -15426,6 +15429,21 @@ function renderHairCardCoveragePath(path, profile, visible, mapPoint) {
 
 function activeTaperTarget() {
   if (!sculptState.state.taperCurveEdit) return null;
+  if (sculptState.state.taperCurveEdit.type === "segment") {
+    // The editor target for a segment is its split sub-bone (live reference into
+    // lock.splitBones); curve edits mutate the bone directly.
+    const lock = locks.find((item) => item.id === sculptState.state.taperCurveEdit.id);
+    if (!lock) return null;
+    const bones = materializeSplitBones(lock);
+    const bone = bones[sculptState.state.taperCurveEdit.segmentIndex] || null;
+    if (!bone) return null;
+    const curveKey = sculptState.state.taperCurveEdit.curveKey;
+    if (!Array.isArray(bone[curveKey]) || !bone[curveKey].length) {
+      bone[curveKey] = shapePresets.cloneShapePresetValue(lock[curveKey]);
+    }
+    if (bone.centerAsymmetricProfile == null) bone.centerAsymmetricProfile = Boolean(lock.centerAsymmetricProfile);
+    return bone;
+  }
   if (sculptState.state.taperCurveEdit.type === "group") return strandGroupDefaults[sculptState.state.taperCurveEdit.id] || null;
   if (sculptState.state.taperCurveEdit.type === "creation") return activeCreationShapeDefaults();
   return locks.find((lock) => lock.id === sculptState.state.taperCurveEdit.id) || null;
@@ -16132,6 +16150,24 @@ function applyTaperCurveEdit({ interactive = false } = {}) {
       );
     }
     if (sculptState.state.drawStrandStroke) updateDrawStrandPreview();
+  } else if (sculptState.state.taperCurveEdit.type === "segment") {
+    const lock = locks.find((item) => item.id === sculptState.state.taperCurveEdit.id);
+    const bone = activeTaperTarget();
+    if (lock && bone) {
+      const curveKey = sculptState.state.taperCurveEdit.curveKey;
+      if (Array.isArray(bone[curveKey])) bone[curveKey] = normalizeTaperCurve(bone[curveKey]);
+      const secondaryKey = shapePresets.taperSecondaryKey(curveKey);
+      if (Array.isArray(bone[secondaryKey])) bone[secondaryKey] = normalizeTaperCurve(bone[secondaryKey]);
+      bone[shapePresets.taperAsymmetryKey(curveKey)] = Boolean(bone[shapePresets.taperAsymmetryKey(curveKey)]);
+      bone.centerAsymmetricProfile = Boolean(bone.centerAsymmetricProfile);
+      updateLockGeometry(lock, { immediate: true, updateBranches: false });
+      syncActiveMirror(lock, { deferGeometry: false });
+    }
+    renderTaperPreview(
+      sculptState.state.taperCurveEdit.curveKey === "depthCurve" ? segmentDepthPreview : segmentTaperPreview,
+      activeTaperTarget(),
+      sculptState.state.taperCurveEdit.curveKey
+    );
   } else {
     const lock = locks.find((item) => item.id === sculptState.state.taperCurveEdit.id);
     if (lock) {
@@ -16235,6 +16271,42 @@ function openTaperCurveEditor(curveKey = "taperCurve") {
     nextEdit.type !== "strand" || branchSweep.proceduralBranchCurveEditing(curveKey)
   );
   renderTaperCurveEditor();
+  taperCurveEditor.show();
+  updateViewportStatsVisibility();
+}
+
+function openPanelSegmentCurveEditor(curveKey = "taperCurve") {
+  const selectedLock = getSelectedLock();
+  if (!selectedLock || !isPanelGeometry(selectedLock)) return;
+  const { index } = selectedPanelSegment(selectedLock);
+  const bones = materializeSplitBones(selectedLock);
+  const bone = bones[index];
+  if (!bone) return;
+  if (!Array.isArray(bone[curveKey]) || !bone[curveKey].length) {
+    bone[curveKey] = shapePresets.cloneShapePresetValue(selectedLock[curveKey]);
+  }
+  if (sweepProfileEditor.open) branchSweep.closeSweepProfileEditor();
+  sculptState.state.taperCurveEdit = {
+    type: "segment",
+    id: selectedLock.id,
+    segmentIndex: index,
+    curveKey,
+    side: "primary",
+    selectedIndex: 0,
+    dragPointerId: null,
+    dragDisplayRange: null
+  };
+  ensureSecondaryTaperCurve(activeTaperTarget(), curveKey);
+  document.querySelector("#taperCurveTitle").textContent = curveKey === "depthCurve" ? "Depth Curve" : "Width Curve";
+  updateTaperCurveEditorTargetLabel();
+  setTaperMeshPointsVisible(false);
+  taperMeshPointsToggleRow.classList.add("hidden");
+  renderTaperCurveEditor();
+  renderTaperPreview(
+    curveKey === "depthCurve" ? segmentDepthPreview : segmentTaperPreview,
+    activeTaperTarget(),
+    curveKey
+  );
   taperCurveEditor.show();
   updateViewportStatsVisibility();
 }
@@ -21999,6 +22071,9 @@ function beginDrawStrandStroke(event, hit, extensionLock = null, branchStart = n
     panelSplitHeight: Number(panelCreationDefaults.panelSplitHeight),
     panelSplits: clonePanelSplits(panelCreationDefaults.panelSplits, panelCreationDefaults.panelSplitHeight),
     panelSplitGap: Number(panelCreationDefaults.panelSplitGap),
+    splitBones: panelCreationDefaults.splitBones
+      ? splitBonesFromData(panelCreationDefaults.splitBones, panelCreationDefaults.panelSplits, panelCreationDefaults)
+      : null,
     curlEnabled: !drawingBraid && !drawingProcedural && hairState.state.drawStrandMode === "coil",
     curlCount: Number(strandCreationDefaults.curlCount),
     curlDisplacement: Number(strandCreationDefaults.curlDisplacement),
@@ -22419,6 +22494,7 @@ function createDrawnPanel(stroke) {
     panelSplitHeight: stroke.panelSplitHeight,
     panelSplits: clonePanelSplits(stroke.panelSplits, stroke.panelSplitHeight),
     panelSplitGap: stroke.panelSplitGap,
+    splitBones: stroke.splitBones ? splitBonesFromData(stroke.splitBones, stroke.panelSplits, stroke) : null,
     taperCurve: panelCreationDefaults.taperCurve.map((point) => ({ ...point })),
     depthCurve: panelCreationDefaults.depthCurve.map((point) => ({ ...point })),
     taperCurveSecondary: panelCreationDefaults.taperCurveSecondary.map((point) => ({ ...point })),
@@ -26243,6 +26319,30 @@ function syncViewportDrawSettings() {
   viewportDrawLayerInput.value = normalizeHairLayer(strandCreationDefaults.hairLayer);
 }
 
+function selectedPanelSegment(lock) {
+  const count = Math.max(1, (Array.isArray(lock?.panelSplits) ? lock.panelSplits.length : 0) + 1);
+  const index = THREE.MathUtils.clamp(Math.round(Number(sculptState.state.panelSegmentIndex || 0)), 0, count - 1);
+  return { index, count };
+}
+
+function syncPanelSegmentControls(target = activeStrandShapeTarget()) {
+  if (!target) return;
+  const { index, count } = selectedPanelSegment(target);
+  const bone = splitBonesFor(target)[index] || null;
+  if (panelSegmentLabel) panelSegmentLabel.textContent = String(index + 1);
+  if (previousPanelSegmentButton) previousPanelSegmentButton.disabled = index === 0;
+  if (nextPanelSegmentButton) nextPanelSegmentButton.disabled = index >= count - 1;
+  if (panelSegmentSpread) panelSegmentSpread.value = String(bone?.spread ?? 0);
+  if (panelSegmentSpreadValue) panelSegmentSpreadValue.textContent = (bone?.spread ?? 0).toFixed(2);
+  const previewTarget = {
+    ...(bone || {}),
+    taperCurve: bone?.taperCurve || target.taperCurve,
+    depthCurve: bone?.depthCurve || target.depthCurve
+  };
+  renderTaperPreview(segmentTaperPreview, previewTarget, "taperCurve");
+  renderTaperPreview(segmentDepthPreview, previewTarget, "depthCurve");
+}
+
 function syncPanelShapeInputs(target = activeStrandShapeTarget()) {
   if (!target) return;
   const splits = clonePanelSplits(target.panelSplits, target.panelSplitHeight);
@@ -26267,6 +26367,7 @@ function syncPanelShapeInputs(target = activeStrandShapeTarget()) {
   if (panelSplitCountValue) panelSplitCountValue.textContent = String(splits.length);
   if (removePanelSplitButton) removePanelSplitButton.disabled = splits.length === 0;
   if (addPanelSplitButton) addPanelSplitButton.disabled = splits.length >= Math.min(23, target.panelWidthLoops - 1);
+  syncPanelSegmentControls(target);
 }
 
 function syncStrandSplitInputs(target = activeStrandShapeTarget()) {
@@ -31857,6 +31958,48 @@ function changePanelSplitCount(delta) {
 
 addPanelSplitButton?.addEventListener("click", () => changePanelSplitCount(1));
 removePanelSplitButton?.addEventListener("click", () => changePanelSplitCount(-1));
+previousPanelSegmentButton?.addEventListener("click", () => {
+  const selected = getSelectedLock();
+  const target = isPanelGeometry(selected) ? selected : activeStrandShapeTarget();
+  if (!target) return;
+  const { index } = selectedPanelSegment(target);
+  sculptState.state.panelSegmentIndex = Math.max(0, index - 1);
+  syncPanelSegmentControls(target);
+});
+nextPanelSegmentButton?.addEventListener("click", () => {
+  const selected = getSelectedLock();
+  const target = isPanelGeometry(selected) ? selected : activeStrandShapeTarget();
+  if (!target) return;
+  const { index, count } = selectedPanelSegment(target);
+  sculptState.state.panelSegmentIndex = Math.min(count - 1, index + 1);
+  syncPanelSegmentControls(target);
+});
+if (panelSegmentSpread) {
+  bindUndoCapture(panelSegmentSpread);
+  panelSegmentSpread.addEventListener("input", () => {
+    const selected = getSelectedLock();
+    const target = isPanelGeometry(selected)
+      ? selected
+      : sel.state.activeTool === "panel" ? panelCreationDefaults : null;
+    if (!target) return;
+    const bones = materializeSplitBones(target);
+    const { index } = selectedPanelSegment(target);
+    const value = THREE.MathUtils.clamp(Number(panelSegmentSpread.value || 0), 0, 0.9);
+    if (bones[index]) bones[index].spread = value;
+    if (panelSegmentSpreadValue) panelSegmentSpreadValue.textContent = value.toFixed(2);
+    if (isPanelGeometry(selected)) {
+      updateLockGeometry(selected, { immediate: true });
+      syncActiveMirror(selected, { deferGeometry: false });
+      updateTopologyStats();
+    }
+    if (sculptState.state.drawStrandStroke?.outputType === "panel" && target === panelCreationDefaults) {
+      sculptState.state.drawStrandStroke.splitBones = splitBonesToData(bones);
+      updateDrawStrandPreview();
+    }
+  });
+}
+editPanelSegmentWidthCurveButton?.addEventListener("click", () => openPanelSegmentCurveEditor("taperCurve"));
+editPanelSegmentDepthCurveButton?.addEventListener("click", () => openPanelSegmentCurveEditor("depthCurve"));
 [
   [braidWidthInput, braidWidthValue],
   [braidDepthInput, braidDepthValue],

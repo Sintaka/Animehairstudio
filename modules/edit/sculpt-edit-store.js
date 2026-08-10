@@ -11,7 +11,7 @@ export function createSculptEditStore() {
     altOrbitDrag: null, blenderNavigationDrag: null, pointRemovalCandidate: null, houdiniZoomDrag: null,
     curvePointInsertionCandidate: null, selectPointerCapture: null, relaxEdit: null, placeEdit: null,
     drawStrandStroke: null, capsuleGuideDrawStroke: null, polyBrushStroke: null, curveSurfaceDraft: null,
-    panelSplitDrag: null, activeCapsuleGuideEdit: null, placementPointer: null, emptySelectionPointer: null,
+    panelSplitDrag: null, panelSegmentIndex: 0, activeCapsuleGuideEdit: null, placementPointer: null, emptySelectionPointer: null,
     proportionalSizeEdit: null, proportionalHotkeyPress: null, brushSizeDrag: null, strandWidthEdgeDrag: null,
     brushSizeHotkeyHeld: false, viewSnapDrag: null, viewPlaneMoveEnabled: false, viewPlaneNormalMoveHeld: false,
     viewPlaneMoveDrag: null, pullMoveEnabled: false, pullCollisionEnabled: true, pullRigidity: 0.65,

@@ -968,9 +968,24 @@
             <label class="topology-control" title="Controls the number of vertical loops along the panel.">Vertical Loops <input id="panelLengthLoops" type="range" min="3" max="32" step="1" value="10" /><output id="panelLengthLoopsValue" class="slider-value">10</output></label>
             <label class="topology-control" title="Controls the number of horizontal loops across the panel.">Horizontal Loops <input id="panelWidthLoops" type="range" min="3" max="24" step="1" value="6" /><output id="panelWidthLoopsValue" class="slider-value">6</output></label>
             <label id="panelCurvatureControl" class="topology-control" title="Bows the flat panel across its width while preserving its center path.">Horizontal Curvature <input id="panelCurvature" type="range" min="-1" max="1" step="0.01" value="0.18" /><output id="panelCurvatureValue" class="slider-value">0.18</output></label>
-            <div class="subsection-label">Edge Length</div>
-            <label class="topology-control" title="Shortens the left boundary toward the root while leaving the opposite edge at full length.">Left Edge Trim <input id="panelLeftEdgeTrim" type="range" min="0" max="0.75" step="0.01" value="0" /><output id="panelLeftEdgeTrimValue" class="slider-value">0.00</output></label>
-            <label class="topology-control" title="Shortens the right boundary toward the root while leaving the opposite edge at full length.">Right Edge Trim <input id="panelRightEdgeTrim" type="range" min="0" max="0.75" step="0.01" value="0" /><output id="panelRightEdgeTrimValue" class="slider-value">0.00</output></label>
+            <div class="subsection-label">Split Segments</div>
+            <div class="panel-zipper-count-row" title="Selects the split segment to adjust (per-segment spread + width/depth curves).">
+              <span>Segment</span>
+              <div class="panel-zipper-stepper">
+                <button id="previousPanelSegment" type="button" title="Previous segment" aria-label="Previous segment">&#8249;</button>
+                <output id="panelSegmentLabel">1</output>
+                <button id="nextPanelSegment" type="button" title="Next segment" aria-label="Next segment">&#8250;</button>
+              </div>
+            </div>
+            <label class="topology-control" title="Controls how far this segment's tip narrows relative to its own width (per-segment Split Spacing).">Segment Spread <input id="panelSegmentSpread" type="range" min="0" max="0.9" step="0.01" value="0.5" /><output id="panelSegmentSpreadValue" class="slider-value">0.50</output></label>
+            <div class="panel-zipper-count-row" title="Edits this segment's own width/depth curve (falls back to the global curve when empty).">
+              <button id="editPanelSegmentWidthCurve" type="button" title="Edit this segment's width curve" aria-label="Edit this segment's width curve">Edit Segment Width Curve</button>
+              <button id="editPanelSegmentDepthCurve" type="button" title="Edit this segment's depth curve" aria-label="Edit this segment's depth curve">Edit Segment Depth Curve</button>
+            </div>
+            <div class="panel-segment-preview-row" title="Selected segment width/depth curve preview.">
+              <svg class="taper-preview" viewBox="0 0 160 70" preserveAspectRatio="none" role="img" aria-label="Selected segment width curve preview"><path id="segmentTaperPreview"></path></svg>
+              <svg class="taper-preview" viewBox="0 0 160 70" preserveAspectRatio="none" role="img" aria-label="Selected segment depth curve preview"><path id="segmentDepthPreview"></path></svg>
+            </div>
             <div class="subsection-label">Split Tip</div>
             <label class="toggle-row" for="panelSplitEnabled" title="Shows independent zipper handles for adding and positioning tip slits."><span>Split Geometry</span><input id="panelSplitEnabled" type="checkbox" checked /></label>
             <label class="toggle-row" for="panelSplitSnapToLoops" title="Snaps vertical zipper movement to the panel's vertical topology loops."><span>Snap Zippers to Loops</span><input id="panelSplitSnapToLoops" type="checkbox" checked /></label>
@@ -982,7 +997,7 @@
                 <button id="addPanelSplit" type="button" title="Add a zipper control" aria-label="Add a zipper control">+</button>
               </div>
             </div>
-            <label class="topology-control" title="Controls the width of the openings made by the zipper handles.">Split Spacing <input id="panelSplitGap" type="range" min="0" max="0.28" step="0.01" value="0.07" /><output id="panelSplitGapValue" class="slider-value">0.07</output></label>
+
           </div>
           <label class="topology-control strand-dimension-scale width-dimension-scale"><span id="widthScaleLabel">Width</span> <input id="widthScale" type="range" min="0.1" max="3" step="0.01" value="1" /><output id="widthScaleValue" class="slider-value">1.00</output></label>
           <label id="strandDepthControl" class="topology-control strand-dimension-scale depth-dimension-scale" title="Sets the base front-to-back depth before the depth curve is applied."><span id="depthScaleLabel">Depth</span> <input id="depthScale" type="range" min="0.01" max="3" step="0.01" value="0.24" /><output id="depthScaleValue" class="slider-value">0.24</output></label>
