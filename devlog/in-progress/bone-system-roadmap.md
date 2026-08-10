@@ -51,6 +51,14 @@ lock.bones = [{
   - 几何（后续）：`meta.deform` 条目可驱动局部偏移（panel split 用 spread/曲线；strand 多骨骼编辑待定）。
 - **验证**：.ahs 往返（splitBones→bones 不丢）、快照/镜像/stroke 回归、bonesFor 一致性断言、三档 smoke。
 
+## 4.5 实施状态（0.2.59 已落地）
+
+- **Phase A（bonesFor 接入 + USDA 骨骼导出）✅**：app.js import `bonesFor` 并注入 project-files deps；`exportAnimeHairUsda` 新增 `skeletons` 参数，输出 `SkelRoot` + 嵌套 `SkelJoint`（translate P + orient 四元数）；`buildHairUsda` 在 includeBones 时按锁构建骨架（main 链 + split.*，子发片独立 SkelRoot）；`#exportIncludeBones` 在有创作骨骼或子发片关系时启用。验证：0044 导出 USDA 含 26 SkelRoot / 187 SkelJoint（173 main_ + 14 split_）。
+- **Phase B（架空语义）✅**：`bonesFor` 输出 `role`——strand 有 split 段或 branch children 时 main 链 `role:"root"`（层级根），否则 `"geometry"`；split/child/custom 为 `"leaf"`。纯视图标记，几何零改动。
+- **Phase C（lock.bones 注册表）✅**：新增 `lock.bones`（可选，kind=split/child/custom + meta；split 专用字段保持在条目顶层）；`normalizeBone/normalizeBones/bonesToData/bonesFromData/mirrorBones/registryForSave`；`splitBonesFor` 读取优先级 = 活 splitBones → registry kind=split → 派生；`materializeSplitBones` 双写 lock.bones + lock.splitBones；serializer 写 `bones`（extras + 新鲜 splitBones），deserializer/snapshot/mirror/stroke/creation 全部补齐；`bonesFor` 输出非 split 注册表条目。验证：双写一致、活数据优先、保存注册表新鲜、角色正确；0041/0042/0044 11/11 smoke。
+
+**实现说明（与计划的小偏差）**：`splitBonesFor` 优先读活 `lock.splitBones`（编辑器直接改它）再回退 registry，避免双写副本漂移；`lock.bones` 在保存时由 `registryForSave` 从新鲜 splitBones + extras 重建。USDA 每锁一个 SkelRoot，父锁不含 child.*（子发片各自导出）。
+
 ## 4. 决策 / 假设
 
 - 旋转统一四元数 `{x,y,z,w}`；**不引入矩阵**。
