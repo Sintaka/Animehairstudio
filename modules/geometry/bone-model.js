@@ -36,6 +36,13 @@ export function normalizeSplitBones(value, splits, lock) {
         z: Number(src.orient.z),
         w: Number(src.orient.w ?? 1)
       } : null,
+      tip: src?.tip && Array.isArray(src.tip.points)
+        ? {
+          points: src.tip.points.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })),
+          restPoints: Array.isArray(src.tip.restPoints) ? src.tip.restPoints.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })) : null,
+          active: src.tip.active !== false
+        }
+        : null,
       spread: THREE.MathUtils.clamp(Number(src?.spread ?? fallbackSpread), 0, SPREAD_MAX),
       taperCurve: srcCurve("taperCurve"),
       taperCurveSecondary: srcCurve("taperCurveSecondary"),
@@ -207,6 +214,13 @@ export function normalizeBone(value, fallback = null, lock = null) {
       : (fb.scale ? { x: Number(fb.scale.x), z: Number(fb.scale.z) } : null),
     kind,
     meta: src.meta ? { ...src.meta } : (fb.meta ? { ...fb.meta } : null),
+    tip: src.tip && Array.isArray(src.tip.points)
+      ? {
+        points: src.tip.points.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })),
+        restPoints: Array.isArray(src.tip.restPoints) ? src.tip.restPoints.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })) : null,
+        active: src.tip.active !== false
+      }
+      : (fb.tip && Array.isArray(fb.tip.points) ? { ...fb.tip } : null),
     spread: THREE.MathUtils.clamp(Number(pick("spread") ?? defaultSplitSpread(lock)), 0, 0.9),
     taperCurve: curve("taperCurve"),
     taperCurveSecondary: curve("taperCurveSecondary"),
@@ -244,6 +258,13 @@ export function bonesToData(bones) {
       asymmetricDepthCurve: bone.asymmetricDepthCurve == null ? null : Boolean(bone.asymmetricDepthCurve)
     };
     if (bone.meta) data.meta = { ...bone.meta };
+    if (bone.tip && Array.isArray(bone.tip.points)) {
+      data.tip = {
+        points: bone.tip.points.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })),
+        restPoints: Array.isArray(bone.tip.restPoints) ? bone.tip.restPoints.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })) : null,
+        active: bone.tip.active !== false
+      };
+    }
     return data;
   });
 }
@@ -258,7 +279,14 @@ export function mirrorBones(bones) {
   if (!Array.isArray(bones) || !bones.length) return null;
   const mirrored = bones.map((bone) => normalizeBone({
     ...bone,
-    p: bone.p ? { ...bone.p, x: -bone.p.x } : null
+    p: bone.p ? { ...bone.p, x: -bone.p.x } : null,
+    tip: bone.tip && Array.isArray(bone.tip.points)
+      ? {
+        ...bone.tip,
+        points: bone.tip.points.map((p) => ({ x: -p.x, y: p.y, z: p.z })),
+        restPoints: Array.isArray(bone.tip.restPoints) ? bone.tip.restPoints.map((p) => ({ x: -p.x, y: p.y, z: p.z })) : null
+      }
+      : null
   }, null, null));
   if (mirrored.every((bone) => bone.kind === "split")) mirrored.reverse();
   return mirrored;

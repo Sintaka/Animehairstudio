@@ -13453,6 +13453,46 @@ function surfacePanelPoint(lock, t, u, shell = 0) {
   );
 }
 
+function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
+  // Tip sub-bone chain mirrors the main bone's tail topology (same point count):
+  // from the main control point nearest the segment's fork (deeper bounding zipper)
+  // down to the tip. Rest pose = main tail copy; authored edits are stored as
+  // absolute points + their rest, so the chain follows the main bone (delta preserved).
+  const heights = [];
+  const leftSplit = splits[segmentIndex - 1] || null;
+  const rightSplit = splits[segmentIndex] || null;
+  if (leftSplit) heights.push(Number(leftSplit.height) || 0);
+  if (rightSplit) heights.push(Number(rightSplit.height) || 0);
+  if (!heights.length || !Array.isArray(lock.points) || lock.points.length < 2) return null;
+  const forkT = 1 - Math.max(...heights);
+  const parentMainIndex = THREE.MathUtils.clamp(
+    Math.round(forkT * (lock.points.length - 1)),
+    1,
+    lock.points.length - 1
+  );
+  const restPoints = lock.points.slice(parentMainIndex).map((point) => point.clone());
+  const authored = splitBone?.tip;
+  if (
+    authored
+    && Array.isArray(authored.points)
+    && Array.isArray(authored.restPoints)
+    && authored.points.length === restPoints.length
+    && authored.restPoints.length === restPoints.length
+  ) {
+    const delta = authored.points.map((point, index) => {
+      const rest = authored.restPoints[index] || { x: 0, y: 0, z: 0 };
+      return new THREE.Vector3(point.x - rest.x, point.y - rest.y, point.z - rest.z);
+    });
+    return {
+      parentMainIndex,
+      restPoints,
+      points: restPoints.map((point, index) => point.clone().add(delta[index])),
+      active: authored.active !== false
+    };
+  }
+  return { parentMainIndex, restPoints, points: restPoints.map((point) => point.clone()), active: true };
+}
+
 function createPanelStrandGeometry(lock) {
   const latticeControlled = lock.geometryType === "surface";
   const curve = latticeControlled ? null : strandGeometryCurve(lock);
@@ -13602,8 +13642,45 @@ function createPanelStrandGeometry(lock) {
     const t = row / lengthLoops;
     return rawPanelPoint(t, u, shell, bone);
   };
+  // Tip sub-bone cross-section on a given chain curve: rebuild the panel cross-section
+  // on the chain frame (center sampled at tLocal = (t-forkT)/(1-forkT)). The below-zipper
+  // deformation is the DIFFERENCE between the authored chain and the rest chain (main
+  // tail copy), so at rest the delta is exactly zero (no regression).
+  const subBoneCrossSection = (curve, t, u, shell, bone, forkT) => {
+    const span = Math.max(0.0001, 1 - forkT);
+    const tLocal = THREE.MathUtils.clamp((t - forkT) / span, 0, 1);
+    const center = curve.getPoint(tLocal);
+    const tangent = curve.getTangent(tLocal).normalize();
+    const baseFrame = panelFrameAt(forkT);
+    let z = baseFrame.z.clone().projectOnPlane(tangent);
+    if (z.lengthSq() < 0.0001) z.copy(outwardNormalAtPoint(center, tangent));
+    z.normalize();
+    const x = new THREE.Vector3().crossVectors(tangent, z).normalize();
+    z = new THREE.Vector3().crossVectors(x, tangent).normalize();
+    const width = panelWidthAt(t, u, bone);
+    const thickness = panelThicknessAt(t, shell, bone);
+    const halfWidth = width * 0.5;
+    const camber = curvature * halfWidth * (1 - u * u);
+    const centerX = lock.centerAsymmetricProfile && (bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve)
+      ? (panelWidthAt(t, 1, bone) - panelWidthAt(t, -1, bone)) * 0.25
+      : 0;
+    const centerZ = lock.centerAsymmetricProfile && (bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve)
+      ? (panelThicknessAt(t, 1, bone) - panelThicknessAt(t, -1, bone)) * 0.25
+      : 0;
+    return center.clone()
+      .addScaledVector(x, u * halfWidth + centerX * profileTopologyCenterWeight(u, -1, 1))
+      .addScaledVector(z, camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1));
+  };
   const addPatch = (rowStart, rowEnd, uStart, uEnd, columns, options = {}, bone = null, segment = -1) => {
     const rows = rowEnd - rowStart;
+    const forkT = segmentForkT[segment] ?? 1;
+    const tip = (!latticeControlled && segment >= 0 && forkT < 1)
+      ? splitTipForSegment(lock, segment, splits, bone)
+      : null;
+    const tipCurve = tip && tip.points.length >= 2 ? new THREE.CatmullRomCurve3(tip.points) : null;
+    const tipRestCurve = tip && tip.restPoints && tip.restPoints.length >= 2
+      ? new THREE.CatmullRomCurve3(tip.restPoints)
+      : tipCurve;
     const front = [];
     const back = [];
     for (let localRow = 0; localRow <= rows; localRow += 1) {
@@ -13619,6 +13696,15 @@ function createPanelStrandGeometry(lock) {
         const u = THREE.MathUtils.lerp(uStart(row), uEnd(row), column / columns);
         const frontPoint = panelPoint(row, u, 1, bone);
         const backPoint = panelPoint(row, u, -1, bone);
+        if (tipCurve && weight > 0) {
+          // Deform by the authored-vs-rest chain deviation so rest = exact identity.
+          const deltaFront = subBoneCrossSection(tipCurve, t, u, 1, bone, forkT)
+            .sub(subBoneCrossSection(tipRestCurve, t, u, 1, bone, forkT));
+          frontPoint.addScaledVector(deltaFront, weight);
+          const deltaBack = subBoneCrossSection(tipCurve, t, u, -1, bone, forkT)
+            .sub(subBoneCrossSection(tipRestCurve, t, u, -1, bone, forkT));
+          backPoint.addScaledVector(deltaBack, weight);
+        }
         frontRow.push(positions.length / 3);
         positions.push(frontPoint.x, frontPoint.y, frontPoint.z);
         uvs.push((u + 1) * 0.5, t);
