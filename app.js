@@ -13453,24 +13453,28 @@ function surfacePanelPoint(lock, t, u, shell = 0) {
   );
 }
 
-function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
-  // Tip sub-bone chain mirrors the main bone's tail topology (same point count):
-  // from the main control point nearest the segment's fork (deeper bounding zipper)
-  // down to the tip. Rest pose = main tail copy; authored edits are stored as
-  // absolute points + their rest, so the chain follows the main bone (delta preserved).
-  const heights = [];
+function splitForkT(lock, segmentIndex, splits) {
   const leftSplit = splits[segmentIndex - 1] || null;
   const rightSplit = splits[segmentIndex] || null;
-  if (leftSplit) heights.push(Number(leftSplit.height) || 0);
-  if (rightSplit) heights.push(Number(rightSplit.height) || 0);
-  if (!heights.length || !Array.isArray(lock.points) || lock.points.length < 2) return null;
-  const forkT = 1 - Math.max(...heights);
-  const parentMainIndex = THREE.MathUtils.clamp(
-    Math.round(forkT * (lock.points.length - 1)),
-    1,
-    lock.points.length - 1
-  );
-  const restPoints = lock.points.slice(parentMainIndex).map((point) => point.clone());
+  const heights = [leftSplit?.height, rightSplit?.height].filter((height) => height != null);
+  return heights.length ? 1 - Math.max(...heights) : 1;
+}
+
+function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
+  // Tip sub-bone chain mirrors the MAIN BONE topology (same point count), laterally
+  // offset to the segment's center (u = segment center). Rest pose = the segment's
+  // center line on the base panel; authored edits are stored as absolute points + their
+  // rest, so the chain follows the main bone while preserving the user's delta.
+  const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
+  if (segmentIndex == null || segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return null;
+  const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
+  const mainCount = Array.isArray(lock.points) ? lock.points.length : 0;
+  if (mainCount < 2) return null;
+  const restPoints = [];
+  for (let index = 0; index < mainCount; index += 1) {
+    const t = index / Math.max(1, mainCount - 1);
+    restPoints.push(panelSplitControlPoint(lock, { position: centerU, height: 1 - t }, t, null, segmentIndex));
+  }
   const authored = splitBone?.tip;
   if (
     authored
@@ -13484,13 +13488,12 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
       return new THREE.Vector3(point.x - rest.x, point.y - rest.y, point.z - rest.z);
     });
     return {
-      parentMainIndex,
       restPoints,
       points: restPoints.map((point, index) => point.clone().add(delta[index])),
       active: authored.active !== false
     };
   }
-  return { parentMainIndex, restPoints, points: restPoints.map((point) => point.clone()), active: true };
+  return { restPoints, points: restPoints.map((point) => point.clone()), active: true };
 }
 
 function createPanelStrandGeometry(lock) {
@@ -13642,35 +13645,10 @@ function createPanelStrandGeometry(lock) {
     const t = row / lengthLoops;
     return rawPanelPoint(t, u, shell, bone);
   };
-  // Tip sub-bone cross-section on a given chain curve: rebuild the panel cross-section
-  // on the chain frame (center sampled at tLocal = (t-forkT)/(1-forkT)). The below-zipper
-  // deformation is the DIFFERENCE between the authored chain and the rest chain (main
-  // tail copy), so at rest the delta is exactly zero (no regression).
-  const subBoneCrossSection = (curve, t, u, shell, bone, forkT) => {
-    const span = Math.max(0.0001, 1 - forkT);
-    const tLocal = THREE.MathUtils.clamp((t - forkT) / span, 0, 1);
-    const center = curve.getPoint(tLocal);
-    const tangent = curve.getTangent(tLocal).normalize();
-    const baseFrame = panelFrameAt(forkT);
-    let z = baseFrame.z.clone().projectOnPlane(tangent);
-    if (z.lengthSq() < 0.0001) z.copy(outwardNormalAtPoint(center, tangent));
-    z.normalize();
-    const x = new THREE.Vector3().crossVectors(tangent, z).normalize();
-    z = new THREE.Vector3().crossVectors(x, tangent).normalize();
-    const width = panelWidthAt(t, u, bone);
-    const thickness = panelThicknessAt(t, shell, bone);
-    const halfWidth = width * 0.5;
-    const camber = curvature * halfWidth * (1 - u * u);
-    const centerX = lock.centerAsymmetricProfile && (bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve)
-      ? (panelWidthAt(t, 1, bone) - panelWidthAt(t, -1, bone)) * 0.25
-      : 0;
-    const centerZ = lock.centerAsymmetricProfile && (bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve)
-      ? (panelThicknessAt(t, 1, bone) - panelThicknessAt(t, -1, bone)) * 0.25
-      : 0;
-    return center.clone()
-      .addScaledVector(x, u * halfWidth + centerX * profileTopologyCenterWeight(u, -1, 1))
-      .addScaledVector(z, camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1));
-  };
+  // Tip sub-bone deformation: the segment follows its guide chain CENTER. At each row t
+  // below the fork, the below-zipper region translates by (authored chain point - rest
+  // chain point) blended by weight; at rest the delta is exactly zero (no regression).
+  // Length and direction come from editing the chain's points.
   const addPatch = (rowStart, rowEnd, uStart, uEnd, columns, options = {}, bone = null, segment = -1) => {
     const rows = rowEnd - rowStart;
     const forkT = segmentForkT[segment] ?? 1;
@@ -13697,13 +13675,9 @@ function createPanelStrandGeometry(lock) {
         const frontPoint = panelPoint(row, u, 1, bone);
         const backPoint = panelPoint(row, u, -1, bone);
         if (tipCurve && weight > 0) {
-          // Deform by the authored-vs-rest chain deviation so rest = exact identity.
-          const deltaFront = subBoneCrossSection(tipCurve, t, u, 1, bone, forkT)
-            .sub(subBoneCrossSection(tipRestCurve, t, u, 1, bone, forkT));
-          frontPoint.addScaledVector(deltaFront, weight);
-          const deltaBack = subBoneCrossSection(tipCurve, t, u, -1, bone, forkT)
-            .sub(subBoneCrossSection(tipRestCurve, t, u, -1, bone, forkT));
-          backPoint.addScaledVector(deltaBack, weight);
+          const deltaCenter = tipCurve.getPoint(t).sub(tipRestCurve.getPoint(t));
+          frontPoint.addScaledVector(deltaCenter, weight);
+          backPoint.addScaledVector(deltaCenter, weight);
         }
         frontRow.push(positions.length / 3);
         positions.push(frontPoint.x, frontPoint.y, frontPoint.z);
@@ -24841,22 +24815,27 @@ function createCurveObjects(lock) {
       group.add(handle);
       panelSegmentHandles.push(handle);
     }
-    // Tip sub-bone handles: one per segment, at the sub-bone tip point (drives the
-    // segment tip's length/direction via the procedural weight field).
+    // Tip sub-bone handles: one per sub-bone chain point (full chain like the main
+    // bone, laterally offset to the segment center). Only points below the segment's
+    // fork (zipper) are exposed in updateCurveObjects.
+    const tipMainPointCount = Array.isArray(lock.points) ? lock.points.length : 0;
     for (let segment = 0; segment < lock.panelSplits.length + 1; segment += 1) {
-      const handle = createSplitControlHandle();
-      handle.scale.setScalar(0.5);
-      handle.material = new THREE.MeshBasicMaterial({
-        color: 0xffd84d,
-        depthTest: false,
-        depthWrite: false,
-        transparent: true,
-        opacity: 0.9
-      });
-      handle.userData.lockId = lock.id;
-      handle.userData.panelTipIndex = segment;
-      group.add(handle);
-      panelTipHandles.push(handle);
+      for (let point = 0; point < tipMainPointCount; point += 1) {
+        const handle = createSplitControlHandle();
+        handle.scale.setScalar(0.42);
+        handle.material = new THREE.MeshBasicMaterial({
+          color: 0xffd84d,
+          depthTest: false,
+          depthWrite: false,
+          transparent: true,
+          opacity: 0.9
+        });
+        handle.userData.lockId = lock.id;
+        handle.userData.panelTipIndex = segment;
+        handle.userData.panelTipPoint = point;
+        group.add(handle);
+        panelTipHandles.push(handle);
+      }
     }
   }
   let strandSplitHandle = null;
@@ -25327,7 +25306,9 @@ function updateCurveObjects(lock, options = {}) {
   });
   const tipSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
   const tipSplitBones = splitBonesFor(lock);
-  lock.curveObjects.panelTipHandles?.forEach((handle, segment) => {
+  lock.curveObjects.panelTipHandles?.forEach((handle) => {
+    const segment = handle.userData.panelTipIndex;
+    const point = handle.userData.panelTipPoint;
     const visible = !sculptBrushHelpersSuppressed
       && !brushDebugVisible
       && isPanelGeometry(lock)
@@ -25336,23 +25317,22 @@ function updateCurveObjects(lock, options = {}) {
     handle.visible = visible;
     if (!visible) return;
     const tip = splitTipForSegment(lock, segment, tipSplits, tipSplitBones[segment] || null);
-    if (tip && tip.points.length >= 2) {
-      const last = tip.points[tip.points.length - 1];
-      const prev = tip.points[tip.points.length - 2];
-      const dir = last.clone().sub(prev).normalize();
-      // At rest all sub-bone tip points coincide with the panel apex (main tail tip),
-      // so nudge each handle toward its own segment's tip surface point to keep them
-      // individually grabbable and visible.
-      const centerU = (segmentBoundaries[segment] + segmentBoundaries[segment + 1]) * 0.5;
-      const surface = panelSplitControlPoint(lock, { position: centerU, height: 0 }, null, null, segment);
-      handle.position.copy(surface).multiplyScalar(0.72).addScaledVector(last, 0.28);
-      handle.position.addScaledVector(dir, 0.02);
-    } else {
-      handle.position.copy(panelSplitControlPoint(lock, { position: 0, height: 0 }, null, null, segment));
+    if (!tip || point >= tip.points.length) {
+      handle.visible = false;
+      return;
     }
+    const forkT = splitForkT(lock, segment, tipSplits);
+    const t = point / Math.max(1, tip.points.length - 1);
+    // Only expose sub-bone points below the segment's fork (zipper); above stays current.
+    if (t <= forkT) {
+      handle.visible = false;
+      return;
+    }
+    handle.position.copy(tip.points[point]);
     handle.material.opacity = sculptState.state.panelSplitDrag?.lockId === lock.id
       && sculptState.state.panelSplitDrag.kind === "tip"
       && sculptState.state.panelSplitDrag.splitIndex === segment
+      && sculptState.state.panelSplitDrag.tipPoint === point
       ? 0.95 : 0.75;
   });
   const strandSplitVisible = !sculptBrushHelpersSuppressed
@@ -33988,11 +33968,12 @@ function beginPanelSplitHandleDrag(event) {
   pushUndoState();
   transformControls.detach();
   const tipIndex = hit.object.userData.panelTipIndex != null ? hit.object.userData.panelTipIndex : null;
+  const tipPoint = hit.object.userData.panelTipPoint != null ? hit.object.userData.panelTipPoint : null;
   let tipStartWorld = null;
-  if (tipIndex != null) {
+  if (tipIndex != null && tipPoint != null) {
     const tipSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const tip = splitTipForSegment(lock, tipIndex, tipSplits, splitBonesFor(lock)[tipIndex] || null);
-    if (tip && tip.points.length) tipStartWorld = tip.points[tip.points.length - 1].clone();
+    if (tip && tip.points[tipPoint]) tipStartWorld = tip.points[tipPoint].clone();
   }
   sculptState.state.panelSplitDrag = {
     pointerId: event.pointerId,
@@ -34005,6 +33986,7 @@ function beginPanelSplitHandleDrag(event) {
     splitIndex: tipIndex != null ? tipIndex : hit.object.userData.panelSegmentIndex != null
       ? hit.object.userData.panelSegmentIndex
       : hit.object.userData.panelSplitIndex,
+    tipPoint,
     tipStartWorld
   };
   renderer.domElement.setPointerCapture?.(event.pointerId);
@@ -34066,19 +34048,31 @@ function updatePanelSplitHandleDrag(event) {
     const ndcY = -((2 * targetY) / rect.height - 1);
     const newWorld = new THREE.Vector3(ndcX, ndcY, startProj.z).unproject(camera);
     const segment = sculptState.state.panelSplitDrag.splitIndex;
+    const point = sculptState.state.panelSplitDrag.tipPoint;
     const bones = materializeSplitBones(lock);
     const bone = bones[segment];
     if (!bone) return;
     const splitsForTip = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const tip = splitTipForSegment(lock, segment, splitsForTip, bone);
-    if (!tip || tip.restPoints.length < 1) return;
+    if (!tip || tip.restPoints.length < 1 || point == null || point >= tip.restPoints.length) return;
     const rest = tip.restPoints;
-    const delta = newWorld.clone().sub(rest[rest.length - 1]);
-    bone.tip = {
-      points: rest.map((p) => ({ x: p.x + delta.x, y: p.y + delta.y, z: p.z + delta.z })),
-      restPoints: rest.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-      active: true
+    // Preserve deltas on other chain points; only the dragged point moves.
+    const authored = (Array.isArray(bone.tip?.points) && bone.tip.points.length === rest.length)
+      ? bone.tip
+      : {
+        points: rest.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+        restPoints: rest.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+        active: true
+      };
+    const delta = newWorld.clone().sub(rest[point]);
+    authored.points[point] = {
+      x: rest[point].x + delta.x,
+      y: rest[point].y + delta.y,
+      z: rest[point].z + delta.z
     };
+    authored.restPoints = rest.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+    authored.active = true;
+    bone.tip = authored;
     updateLockGeometry(lock, { immediate: true });
     updateCurveObjects(lock, { visible: true });
     syncActiveMirror(lock, { deferGeometry: false });
