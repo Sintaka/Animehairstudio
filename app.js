@@ -13460,6 +13460,70 @@ function splitForkT(lock, segmentIndex, splits) {
   return heights.length ? 1 - Math.max(...heights) : 1;
 }
 
+function tipHighlightMaterial() {
+  const material = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.62,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = 'attribute float aFade;\nvarying float vFade;\n' + shader.vertexShader.replace(
+      '#include <color_vertex>',
+      '#include <color_vertex>\n\tvFade = aFade;'
+    );
+    shader.fragmentShader = 'varying float vFade;\n' + shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      '#include <color_fragment>\n\tdiffuseColor.a *= vFade;'
+    );
+  };
+  return material;
+}
+
+function updateTipHighlight(lock) {
+  const selection = sculptState.state.panelTipSelection;
+  const isTarget = selection && selection.lockId === lock.id && isPanelGeometry(lock) && lock.panelSplitEnabled !== false;
+  if (!isTarget || !lock.curveObjects) {
+    if (lock.curveObjects?.tipHighlightMesh) lock.curveObjects.tipHighlightMesh.visible = false;
+    return;
+  }
+  const geometry = lock.mesh?.geometry;
+  const position = geometry?.getAttribute?.("position");
+  const panelWeights = geometry?.userData?.panelWeights;
+  if (!position || !geometry?.index || !panelWeights || panelWeights.length !== position.count * 3) {
+    if (lock.curveObjects?.tipHighlightMesh) lock.curveObjects.tipHighlightMesh.visible = false;
+    return;
+  }
+  let overlay = lock.curveObjects.tipHighlightMesh;
+  if (!overlay) {
+    overlay = new THREE.Mesh(new THREE.BufferGeometry(), tipHighlightMaterial());
+    overlay.renderOrder = 7;
+    overlay.frustumCulled = false;
+    lock.curveObjects.tipHighlightMesh = overlay;
+    lock.curveObjects.group.add(overlay);
+  }
+  const overlayGeometry = overlay.geometry;
+  overlayGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(position.array.slice()), 3));
+  overlayGeometry.setIndex(new (geometry.index.array.constructor)(geometry.index.array.slice()));
+  const segmentIndex = selection.segmentIndex;
+  const colors = new Float32Array(position.count * 3);
+  const fades = new Float32Array(position.count);
+  for (let vertex = 0; vertex < position.count; vertex += 1) {
+    const segment = panelWeights[vertex * 3 + 1];
+    const weight = panelWeights[vertex * 3 + 2];
+    if (segment === segmentIndex && weight > 0.001) {
+      colors[vertex * 3] = 1.0;
+      colors[vertex * 3 + 1] = 0.55;
+      colors[vertex * 3 + 2] = 0.1;
+      fades[vertex] = weight;
+    }
+  }
+  overlayGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  overlayGeometry.setAttribute("aFade", new THREE.BufferAttribute(fades, 1));
+  overlay.visible = true;
+}
+
 function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
   // Tip sub-bone chain mirrors the MAIN BONE topology (same point count), laterally
   // offset to the segment's center (u = segment center). Rest pose = the segment's
@@ -24970,6 +25034,7 @@ function populatePolyEditObjects(lock, target) {
     panelSplitLines: [],
     panelTipHandles: [],
     panelTipLines: [],
+    tipHighlightMesh: null,
     strandSplitHandle: null,
     strandSplitLine: null,
     branchSweepStartHandle: null,
@@ -25362,12 +25427,20 @@ function updateCurveObjects(lock, options = {}) {
       line.visible = false;
       return;
     }
+    const forkT = splitForkT(lock, segment, tipSplits);
+    const firstBelow = Math.min(tip.points.length - 1, Math.max(1, Math.ceil(forkT * (tip.points.length - 1))));
+    const exposed = tip.points.slice(firstBelow);
+    if (exposed.length < 2) {
+      line.visible = false;
+      return;
+    }
     line.geometry.dispose();
-    line.geometry = new THREE.BufferGeometry().setFromPoints(tip.points);
+    line.geometry = new THREE.BufferGeometry().setFromPoints(exposed);
     line.material.opacity = sculptState.state.panelTipSelection?.lockId === lock.id
       && sculptState.state.panelTipSelection.segmentIndex === segment
       ? 0.95 : 0.45;
   });
+  updateTipHighlight(lock);
   const strandSplitVisible = !sculptBrushHelpersSuppressed
     && !brushDebugVisible
     && lock.geometryType === "strand"
@@ -33954,6 +34027,10 @@ function disposeCurveObjects(lock) {
     line.geometry.dispose();
     line.material.dispose();
   });
+  if (lock.curveObjects.tipHighlightMesh) {
+    lock.curveObjects.tipHighlightMesh.geometry.dispose();
+    lock.curveObjects.tipHighlightMesh.material.dispose();
+  }
   if (lock.curveObjects.strandSplitHandle) {
     lock.curveObjects.strandSplitHandle.geometry.dispose();
     lock.curveObjects.strandSplitHandle.material.dispose();
@@ -35302,22 +35379,24 @@ function beginSculptMoveStroke(event) {
 }
 
 function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
-  // When a split tip sub-bone is selected, the brush edits only that sub-bone's chain
-  // points (masked by screen distance), never other sub-bones or the main chain.
-  // Scale is centered on the sub-bone's exposed root (first below-fork chain point).
+  // When a split tip sub-bone is selected, the brush edits ONLY that sub-bone's chain
+  // points (masked by screen distance) - never other sub-bones or the main chain.
+  // The brush is consumed even when no chain point is under the cursor, so a selected
+  // sub-bone blocks main-bone edits until it is deselected. Scale/orient center on the
+  // sub-bone's exposed root (first below-fork chain point).
   const selection = sculptState.state.panelTipSelection;
   if (!selection) return false;
   const lock = locks.find((item) => item.id === selection.lockId);
   if (!lock || !isPanelGeometry(lock) || lock.panelSplitEnabled === false) return false;
   const segmentIndex = selection.segmentIndex;
   const splits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-  if (segmentIndex == null || segmentIndex < 0 || segmentIndex >= splits.length + 1) return false;
+  if (segmentIndex == null || segmentIndex < 0 || segmentIndex >= splits.length + 1) return true;
   if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
   const bones = materializeSplitBones(lock);
   const bone = bones[segmentIndex];
-  if (!bone) return false;
+  if (!bone) return true;
   const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
-  if (!tip || tip.restPoints.length < 2) return false;
+  if (!tip || tip.restPoints.length < 2) return true;
   const rest = tip.restPoints;
   const authored = (Array.isArray(bone.tip?.points) && bone.tip.points.length === rest.length)
     ? bone.tip
@@ -35338,39 +35417,82 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   const forkT = splitForkT(lock, segmentIndex, splits);
   const firstBelow = Math.min(rest.length - 1, Math.max(1, Math.ceil(forkT * (rest.length - 1))));
   const scaleCenter = current[firstBelow] || current[0];
-  let changed = false;
+  const weights = new Array(current.length).fill(0);
   for (let index = firstBelow; index < current.length; index += 1) {
-    const weight = sculptBrushPointWeight(current[index], cursor, rect, radius, falloff);
-    if (weight <= 0) continue;
-    if (tool === "sculpt-scale") {
+    weights[index] = sculptBrushPointWeight(current[index], cursor, rect, radius, falloff);
+  }
+  let changed = false;
+  if (tool === "sculpt-scale") {
+    const amount = (reverse ? -1 : 1) * strength * (deltaX + deltaY) * 0.004;
+    for (let index = firstBelow; index < current.length; index += 1) {
+      if (weights[index] <= 0) continue;
       const dir = current[index].clone().sub(scaleCenter);
-      const amount = (reverse ? -1 : 1) * weight * strength * (deltaX + deltaY) * 0.004;
-      points[index].addScaledVector(dir, amount);
+      points[index].addScaledVector(dir, amount * weights[index]);
       changed = true;
-    } else if (tool === "sculpt-slide") {
-      const curve = new THREE.CatmullRomCurve3(current);
+    }
+  } else if (tool === "sculpt-slide") {
+    const curve = new THREE.CatmullRomCurve3(current);
+    for (let index = firstBelow; index < current.length; index += 1) {
+      if (weights[index] <= 0) continue;
       const t = index / Math.max(1, current.length - 1);
       const tangent = curve.getTangent(t).normalize();
       const dragWorld = sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
-      const amount = (reverse ? -1 : 1) * weight * strength * dragWorld.dot(tangent);
+      const amount = (reverse ? -1 : 1) * weights[index] * strength * dragWorld.dot(tangent);
       points[index].addScaledVector(tangent, amount);
       changed = true;
-    } else {
-      // move / push / orient fall back to masked view-plane translation
+    }
+  } else if (tool === "sculpt-push") {
+    const curve = new THREE.CatmullRomCurve3(current);
+    for (let index = firstBelow; index < current.length; index += 1) {
+      if (weights[index] <= 0) continue;
+      const t = index / Math.max(1, current.length - 1);
+      const tangent = curve.getTangent(t).normalize();
+      const up = stroke.planeNormal.clone().projectOnPlane(tangent);
+      if (up.lengthSq() < 0.0001) up.set(0, 1, 0).projectOnPlane(tangent);
+      up.normalize();
       const dragWorld = sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
-      points[index].addScaledVector(dragWorld, (reverse ? -1 : 1) * weight * strength);
+      const amount = (reverse ? -1 : 1) * weights[index] * strength * dragWorld.dot(up);
+      points[index].addScaledVector(up, amount);
+      changed = true;
+    }
+  } else if (tool === "sculpt-smooth") {
+    const smoothDeltas = smoothSculptPointDeltas(points, weights, strength, 0.04);
+    for (let index = firstBelow; index < current.length; index += 1) {
+      const d = smoothDeltas[index];
+      points[index].x += d.x;
+      points[index].y += d.y;
+      points[index].z += d.z;
+      changed = true;
+    }
+  } else if (tool === "sculpt-orient") {
+    const axis = camera.position.clone().sub(scaleCenter).normalize();
+    const amount = (reverse ? -1 : 1) * strength * (deltaX * 0.008);
+    for (let index = firstBelow; index < current.length; index += 1) {
+      if (weights[index] <= 0) continue;
+      const offset = points[index].clone().sub(scaleCenter);
+      offset.applyAxisAngle(axis, amount * weights[index]);
+      points[index].copy(scaleCenter).add(offset);
+      changed = true;
+    }
+  } else {
+    // move (and any fallback): masked view-plane translation
+    for (let index = firstBelow; index < current.length; index += 1) {
+      if (weights[index] <= 0) continue;
+      const dragWorld = sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
+      points[index].addScaledVector(dragWorld, (reverse ? -1 : 1) * weights[index] * strength);
       changed = true;
     }
   }
-  if (!changed) return false;
-  authored.points = points.map((p) => ({ x: p.x, y: p.y, z: p.z }));
-  authored.restPoints = rest.map((p) => ({ x: p.x, y: p.y, z: p.z }));
-  authored.active = true;
-  bone.tip = authored;
-  stroke.editedLockIds.add(lock.id);
-  updateLockGeometry(lock, { immediate: true });
-  updateCurveObjects(lock, { visible: true });
-  updateTopologyStats();
+  if (changed) {
+    authored.points = points.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+    authored.restPoints = rest.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+    authored.active = true;
+    bone.tip = authored;
+    stroke.editedLockIds.add(lock.id);
+    updateLockGeometry(lock, { immediate: true });
+    updateCurveObjects(lock, { visible: true });
+    updateTopologyStats();
+  }
   return true;
 }
 
@@ -36224,6 +36346,22 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   if (beginPanelSplitHandleDrag(event)) {
     event.preventDefault();
     return;
+  }
+  if (
+    sculptState.state.panelTipSelection
+    && event.button === 0
+    && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
+    && !sculptBrushToolActive()
+    && !["draw", "procedural-draw", "braid", "panel", "curve-surface", "surface-loft", "place"].includes(sel.state.activeTool)
+  ) {
+    // Clicking the panel body (not a sub-bone handle) cancels the tip sub-bone
+    // selection and returns to the main-hair selection state.
+    sculptState.state.panelTipSelection = null;
+    const selectedLockNow = getSelectedLock();
+    if (selectedLockNow) {
+      updateCurveObjects(selectedLockNow, { visible: true });
+      syncPanelSegmentControls(selectedLockNow);
+    }
   }
   if (sel.state.activeTool === "draw-capsule-guide") {
     if (event.ctrlKey || event.altKey || event.metaKey) return;
