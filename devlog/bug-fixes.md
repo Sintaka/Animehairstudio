@@ -36,3 +36,10 @@
    - 根因：`createPanelStrandGeometry` 结尾绕序翻转（交换三角形 v1/v2）后**未同步交换 `triangleEdgeMasks`**，mask 错位导致 quad 对角线被描边 → 看似三角。
    - 修复：翻转后同步交换 mask 的 [1]/[2]（`masks.forEach(m => [m[1],m[2]]=[m[2],m[1]])`）。
    - 验证：Front Bangs 1/2/3 `diagDrawn=0`、0 NaN；0.2.55 的退化/反射折叠清理保留（二者独立）。
+## 本地新增功能的实现问题 / Local feature regressions
+
+1. **子发片父发片挖洞不干净（0.2.59 修复，P2 扫掠内核回归）**
+   - 问题：0044 Side Bangs Left 3（父）+ Left 6（子）桥接中，父发片挖洞只删了 2 个面，洞没删干净。
+   - 根因：P2 共享扫掠内核 `strand-sweep.sweepSide` 的侧面 quad 循环按 **slot 数**（profileCount=11）而非 **edge 数**（10）发射 quad——profile 在硬点（linear）处有一个重复 seam slot，slot 3→4 是同一样本，按 slot 循环每行多出 1 个退化 quad（26 行 → 282 quadFaces，正确应为 260），quadFaces 布局与 `gridFacesPerRow=10` 脱节；`applyBranchRootRegionCarving` 又用 `round(faces.length/(rows-1))` 重算 facesPerRow（282/26→11），导致行/列错位，洞只删到部分面。
+   - 修复：① 内核新增 `profileEdges` 选项，按 profile edges 发射 quad（base 传 `profileTopology.edges`，child ring 保持连续边）；② `applyBranchRootRegionCarving` 改用 build-time `gridFacesPerRow`（回退重算），即使 quadFaces 含额外面（procedural 合并等）也不漂移。
+   - 验证：父发片 fresh quadFaces 260（原 282），carve 精确删除 region 面 [122,123,132,133]（行 12-13 × 面列 2-3，skipCol=3 下 grid 列 2/4），洞完整；Sussurro_v1_0041/0042/0044 三档 11/11 smoke。

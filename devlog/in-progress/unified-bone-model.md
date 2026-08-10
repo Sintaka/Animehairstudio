@@ -33,6 +33,13 @@
 - 子发片系统字段（branchParentId/branchParentParameter/branchRootRegion/branchLocalPoints）全部原样；层级视图中的 `child.*` 骨骼由它们派生。
 - panel 暂不支持桥接类子骨骼（范围外）。
 
+## 4.5 实施状态审计（0.2.59，Task 1）
+
+- **split 子骨骼（P1a–P1d）：符合计划、已落地**——`lock.splitBones` 数据/混合持久化/序列化链路（serializer/snapshot/mirror/stroke/creation）、几何（段内 u' + 每段曲线 + 相对 spread）、UI（段选择器/spread 滑杆/taperCurveEditor segment 模式）、视口段手柄、镜像段序反转全部接入。
+- **统一视图 `bonesFor(lock)`：结构符合计划但未接入 app**——主链 `main.0..N-1`（链式 parent）+ `split.*` + `child.<lockId>.i`（根 parent=`"main"`、parentParam=branchParentParameter）输出正确；但 app.js **未 import/未消费**，子发片链从未进入任何运行路径，「框架内统一包含子发片和主发丝多骨骼」尚未实现（当前仅是未使用的模块 API）。
+- **「主骨骼架空」语义：未落地**——无代码把 main 链当纯层级根；panel 几何仍由主曲线 + splitBones（spread/曲线）驱动，split 子骨骼的 p/orient 是视图/手柄数据，未替换主链作几何驱动。
+- **后续计划（决策）**：① 为 bonesFor 找真实消费方（导出骨骼、调试视图、或后续「多骨骼编辑」）；② 接入时传 `options.locks` 使其包含子发片链；③ 「架空」语义随消费方一起落地（有 split/child 时 main 链作层级根）。在此之前 bonesFor 保持为只读 scaffold，不影响现有路径。
+
 ## 5. 里程碑
 
 - P1a：bone-model.js（bonesFor）+ splitBones 数据/序列化链路（零几何变化）。
