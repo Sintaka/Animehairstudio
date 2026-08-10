@@ -171,7 +171,7 @@ export function createProjectSaveApi(deps) {
         const geometry = lock.mesh.geometry;
         const position = geometry.getAttribute("position");
         if (position) {
-          meshes.push({
+          const mesh = {
             name: lock.name,
             group: lock.group || "unassigned",
             layer: lock.layer || "mid",
@@ -181,7 +181,37 @@ export function createProjectSaveApi(deps) {
             colors: bufferAttributeTuples(geometry.getAttribute("color"), 3),
             tangents: bufferAttributeTuples(geometry.getAttribute("tangent"), 4),
             faces: hairFaceIndices(geometry)
-          });
+          };
+          if (includeBones && typeof deps.bonesFor === "function") {
+            const bones = deps.bonesFor(lock, { locks: deps.locks })
+              .filter((bone) => !bone.name.startsWith("child."));
+            if (bones.length >= 2) {
+              const joints = bones.map((bone) => bone.name);
+              const mainCount = joints.filter((name) => name.startsWith("main.")).length;
+              const panelWeights = geometry.userData?.panelWeights;
+              if (panelWeights && panelWeights.length === position.count * 3) {
+                const skelIndices = [];
+                const skelWeights = [];
+                for (let vertex = 0; vertex < position.count; vertex += 1) {
+                  const main = Math.round(panelWeights[vertex * 3]);
+                  const segment = Math.round(panelWeights[vertex * 3 + 1]);
+                  const weight = Number(panelWeights[vertex * 3 + 2]) || 0;
+                  if (segment >= 0 && weight > 0.0001) {
+                    skelIndices.push([main, mainCount + segment]);
+                    skelWeights.push([1 - weight, weight]);
+                  } else {
+                    skelIndices.push([main]);
+                    skelWeights.push([1]);
+                  }
+                }
+                mesh.skelRootName = (lock.name || "Hair") + " Skeleton";
+                mesh.skelJoints = joints;
+                mesh.skelIndices = skelIndices;
+                mesh.skelWeights = skelWeights;
+              }
+            }
+          }
+          meshes.push(mesh);
         }
       }
       if (includeCurves && lock.geometryType !== "poly") {

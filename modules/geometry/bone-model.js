@@ -128,7 +128,22 @@ export function bonesFor(lock, options = {}) {
   if (["panel", "surface"].includes(lock?.geometryType)) {
     const splitBones = splitBonesFor(lock);
     splitBones.forEach((bone, k) => {
-      bones.push({ ...bone, name: bone.name || `split.${k}`, kind: "split", role: "leaf" });
+      const name = bone.name || `split.${k}`;
+      bones.push({ ...bone, name, kind: "split", role: "leaf" });
+      if (bone.tip && Array.isArray(bone.tip.points) && bone.tip.points.length) {
+        bone.tip.points.forEach((p, i) => {
+          bones.push({
+            name: `${name}.tip.${i}`,
+            parent: name,
+            parentParam: i / Math.max(1, bone.tip.points.length - 1),
+            p: p ? { x: Number(p.x), y: Number(p.y), z: Number(p.z) } : null,
+            orient: null,
+            scale: null,
+            kind: "tip",
+            role: "leaf"
+          });
+        });
+      }
     });
   }
   if (Array.isArray(lock?.bones)) {

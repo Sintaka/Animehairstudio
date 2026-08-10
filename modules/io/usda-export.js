@@ -69,14 +69,21 @@ function primvarLines(type, name, values, interpolation, indices = null) {
   return lines;
 }
 
-function meshBlock(mesh, identifier) {
+function meshBlock(mesh, identifier, skelId = null) {
   const points = Array.isArray(mesh.points) ? mesh.points : [];
   const faces = (Array.isArray(mesh.faces) ? mesh.faces : [])
     .filter((face) => Array.isArray(face) && face.length >= 3);
   const faceVertexCounts = faces.map((face) => face.length);
   const faceVertexIndices = faces.flat();
+  const hasSkin = skelId
+    && Array.isArray(mesh.skelJoints) && mesh.skelJoints.length
+    && Array.isArray(mesh.skelIndices) && mesh.skelIndices.length === points.length
+    && Array.isArray(mesh.skelWeights) && mesh.skelWeights.length === points.length;
+  const header = hasSkin
+    ? `        def Mesh "${identifier}" (` + "\n" + '            prepend apiSchemas = ["SkelBindingAPI"]' + "\n" + "        )"
+    : `        def Mesh "${identifier}"`;
   const lines = [
-    `        def Mesh "${identifier}"`,
+    header,
     "        {",
     `            point3f[] points = ${tupleArray(points)}`,
     `            int[] faceVertexCounts = ${numberArray(faceVertexCounts)}`,
@@ -84,6 +91,18 @@ function meshBlock(mesh, identifier) {
     '            uniform token subdivisionScheme = "none"'
   ];
 
+  if (hasSkin) {
+    lines.push(
+      `            rel skel:bindTransforms = </${skelId}>`,
+      `            uniform token[] skel:joints = [${mesh.skelJoints.map((name) => `"${usdIdentifier(name, "Joint")}"`).join(", ")}]`,
+      `            int2[] primvars:skel:joints = ${tupleArray(mesh.skelIndices)} (`,
+      '                interpolation = "vertex"',
+      "            )",
+      `            float2[] primvars:skel:weights = ${tupleArray(mesh.skelWeights)} (`,
+      '                interpolation = "vertex"',
+      "            )"
+    );
+  }
   if (Array.isArray(mesh.normals) && mesh.normals.length === points.length) {
     lines.push(
       `            normal3f[] normals = ${tupleArray(mesh.normals)}`,
@@ -169,14 +188,28 @@ export function exportAnimeHairUsda({
 } = {}) {
   const usedMeshNames = new Set();
   const usedCurveNames = new Set();
+  const rootIdentifier = usdIdentifier(rootName, "AnimeHairStudio");
+  const usedSkeletonNames = new Set();
+  const skeletonNameToId = new Map();
+  skeletons
+    .filter((skeleton) => Array.isArray(skeleton?.joints) && skeleton.joints.length)
+    .forEach((skeleton) => {
+      skeletonNameToId.set(
+        skeleton.name,
+        uniqueIdentifier(`${skeleton?.name || "Hair"}_Skel`, usedSkeletonNames, "HairSkel")
+      );
+    });
   const meshBlocks = meshes
     .filter((mesh) => Array.isArray(mesh?.points) && mesh.points.length && Array.isArray(mesh?.faces) && mesh.faces.length)
-    .map((mesh) => meshBlock(mesh, uniqueIdentifier(mesh.name, usedMeshNames, "HairMesh")));
+    .map((mesh) => {
+      const identifier = uniqueIdentifier(mesh.name, usedMeshNames, "HairMesh");
+      const skelId = mesh.skelRootName ? skeletonNameToId.get(mesh.skelRootName) : null;
+      const skelPath = skelId ? `${rootIdentifier}/Skeletons/${skelId}` : null;
+      return meshBlock(mesh, identifier, skelPath);
+    });
   const curveBlocks = curves
     .filter((curve) => Array.isArray(curve?.points) && curve.points.length >= 4)
     .map((curve) => curveBlock(curve, uniqueIdentifier(`${curve.name || "Hair"}_Curve`, usedCurveNames, "HairCurve")));
-  const rootIdentifier = usdIdentifier(rootName, "AnimeHairStudio");
-  const usedSkeletonNames = new Set();
   const skeletonBlocks = skeletons
     .filter((skeleton) => Array.isArray(skeleton?.joints) && skeleton.joints.length)
     .map((skeleton) => skeletonBlock(skeleton, usedSkeletonNames))
