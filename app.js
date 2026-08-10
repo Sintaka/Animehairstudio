@@ -13508,7 +13508,11 @@ function updateTipHighlight(lock) {
   }
   const overlayGeometry = overlay.geometry;
   overlayGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(position.array.slice()), 3));
-  overlayGeometry.setIndex(new (geometry.index.array.constructor)(geometry.index.array.slice()));
+  const srcIndex = geometry.index.array;
+  const indexArray = (srcIndex instanceof Uint8Array || srcIndex instanceof Uint16Array || srcIndex instanceof Uint32Array)
+    ? srcIndex.slice()
+    : new Uint32Array(srcIndex);
+  overlayGeometry.setIndex(new THREE.BufferAttribute(indexArray, 1));
   const segmentIndex = target.segmentIndex;
   const colors = new Float32Array(position.count * 3);
   const fades = new Float32Array(position.count);
