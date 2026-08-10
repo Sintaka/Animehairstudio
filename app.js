@@ -13465,6 +13465,7 @@ function tipHighlightMaterial() {
     vertexColors: true,
     transparent: true,
     opacity: 0.62,
+    depthTest: false,
     depthWrite: false,
     side: THREE.DoubleSide
   });
@@ -36387,17 +36388,31 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     return;
   }
   if (
-    sculptState.state.panelTipSelection
-    && event.button === 0
+    event.button === 0
     && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
     && !sculptBrushToolActive()
     && !["draw", "procedural-draw", "braid", "panel", "curve-surface", "surface-loft", "place"].includes(sel.state.activeTool)
   ) {
-    // Clicking the panel body (not a sub-bone handle) cancels the tip sub-bone
-    // selection and returns to the main-hair selection state.
-    sculptState.state.panelTipSelection = null;
+    // Clicking a split panel's body selects the hovered sub-bone (toggle: click the same
+    // region again to return to the main-hair selection). Only split panels while the
+    // main hair is selected.
     const selectedLockNow = getSelectedLock();
-    if (selectedLockNow) {
+    const isPanel = selectedLockNow && isPanelGeometry(selectedLockNow) && selectedLockNow.panelSplitEnabled !== false
+      && Array.isArray(selectedLockNow.panelSplits) && selectedLockNow.panelSplits.length > 0;
+    const hover = sculptState.state.panelTipHover;
+    const hoverSeg = isPanel && hover && hover.lockId === selectedLockNow.id ? hover.segmentIndex : null;
+    const selected = sculptState.state.panelTipSelection;
+    if (isPanel && hoverSeg != null) {
+      if (selected && selected.lockId === selectedLockNow.id && selected.segmentIndex === hoverSeg) {
+        sculptState.state.panelTipSelection = null; // click again -> back to main selection
+      } else {
+        sculptState.state.panelTipSelection = { lockId: selectedLockNow.id, segmentIndex: hoverSeg };
+        sculptState.state.panelSegmentIndex = hoverSeg;
+      }
+      updateCurveObjects(selectedLockNow, { visible: true });
+      syncPanelSegmentControls(selectedLockNow);
+    } else if (selected && selected.lockId === selectedLockNow?.id) {
+      sculptState.state.panelTipSelection = null;
       updateCurveObjects(selectedLockNow, { visible: true });
       syncPanelSegmentControls(selectedLockNow);
     }
