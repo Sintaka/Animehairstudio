@@ -32,7 +32,7 @@ python -m http.server 8080 --bind 127.0.0.1
 | 迁移方法论（脚本化提取 / 依赖注入 / 模块间 import / 9 点验证清单） | [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) |
 | 开发规范 / 持续修改功能（本地适配清单）/ 许可证 | [development-standards.md](development-standards.md) |
 | JS 改动标注（索引 + 6 个子系统专题） | [js-change-annotations.md](js-change-annotations.md)（索引）+ [annotations-bridge.md](annotations-bridge.md) / [annotations-region-panel.md](annotations-region-panel.md) / [annotations-root-bone.md](annotations-root-bone.md) / [annotations-split.md](annotations-split.md) / [annotations-display-fixes.md](annotations-display-fixes.md) / [annotations-adapt.md](annotations-adapt.md) |
-| Panel Split Zipper 调研 / 重构计划（0.2.58） | [annotations-panel-zipper.md](annotations-panel-zipper.md)（单骨骼结论 + zipper 拓扑分析）+ [panel-split-refactor-plan.md](panel-split-refactor-plan.md)（Split 模块重铸计划：抛弃 Trim/Split Spacing 位移 → 按 split 段独立 WidthCurve） |
+| **进行中计划 / In-progress plans** | [in-progress/split-bone-refactor-plan.md](in-progress/split-bone-refactor-plan.md)（Split Spacing/Trim → split 子骨骼）+ [in-progress/unified-bone-model.md](in-progress/unified-bone-model.md)（KineFX 式统一骨骼模型）+ [in-progress/child-sweep-unification.md](in-progress/child-sweep-unification.md)（子发片=默认扫掠+桥接+根部移动）；完成后归档 [plans/archive/](plans/archive/) |
 | Bug 修复 / 已知问题 | [bug-fixes.md](bug-fixes.md) |
 | 修改型笔刷开发规范 | [brush-dev-spec.md](brush-dev-spec.md) |
 | 本地适配进度 | [local-adaptation-log.md](local-adaptation-log.md) |
@@ -48,6 +48,8 @@ python -m http.server 8080 --bind 127.0.0.1
 - **本地持久化功能（简体中文、Houdini 导航、Quick Save/Export 等）**：development-standards.md「持续修改功能」。
 
 ## 最近版本 / Latest
+
+- 统一骨骼模型 + 子发片扫掠进化 + devlog 整理（0.2.59，分支 0.2.58-panel-split-refactor，实施中）：devlog 新开 `in-progress/` 计划文件夹（split-bone-refactor-plan / unified-bone-model / child-sweep-unification），完成后归档到 `plans/archive/`；Panel Split Spacing/Trim 从绝对位移重铸为 **split 子骨骼**（`lock.splitBones`：P + orient 四元数 + 每段 Width/Depth 曲线，混合持久化），Split Spacing 改相对变换根除 crossover，保留 zipper 水密拓扑；新增 `bonesFor(lock)` 统一骨骼视图（main 链 / split.* / child.* 命名空间隔离，主骨骼有子骨骼才架空）；子发片进化为「默认扫掠 + 桥接 + 根部移动优化」（共享扫掠内核 `sweepStrandGeometry`）。调研详见 annotations-panel-zipper.md / annotations-split.md（0.2.58 条目）。
 
 - Panel Split Zipper 调研与重构计划（0.2.58，分支 0.2.58-panel-split-refactor，仅文档无代码）：Split Spacing（`panelSplitGap`）末端 crossover 根因定位——`splitOpening` 是 u 空间**绝对位移**（非相对缩放），相邻 split 同时打开且 `2*splitGap>段 span` 时 tip 行 `uStart>uEnd` 反转 → 列序倒置 → quad 折叠交叉（Sussurro_v1_0044 Front Bangs 1 实测 span 0.367 / gap 0.19 恰在 t=1 反转）；左右 Trim（`sampleT=t*(1-edgeTrim)`）同为参数位移。决策：**抛弃 Trim + Split Spacing 位移**，重铸为按 split 段的独立 WidthCurve 系统（`panelSegmentCurves`，相对缩放根除反转），**保留 zipper 水密拓扑**（墙 quad / capStart+capEnd 端盖 / snap-to-loops / 退化+反射折叠跳过 / 焊接 / 法线平滑）。调研结论：panel 只有一个主骨骼链（`points`），**无隐藏多骨骼可复用**；zipper 是纯拓扑特征（position/height 标量），段边界可作为未来每段 WidthCurve 的虚拟骨骼骨架（详见 annotations-panel-zipper.md 与 panel-split-refactor-plan.md）。
 
