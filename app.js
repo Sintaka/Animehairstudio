@@ -13369,13 +13369,14 @@ function smoothCoincidentPanelNormals(geometry, tolerance = 0.0001) {
   normals.needsUpdate = true;
 }
 
-function weldPanelGeometryData(positions, uvs, colors, indices, quadFaces, tolerance = 0.00001) {
+function weldPanelGeometryData(positions, uvs, colors, indices, quadFaces, tolerance = 0.00001, weights = null) {
   const inverseTolerance = 1 / tolerance;
   const vertexMap = new Map();
   const remap = new Array(positions.length / 3);
   const weldedPositions = [];
   const weldedUvs = [];
   const weldedColors = [];
+  const weldedWeights = weights ? [] : null;
   for (let vertex = 0; vertex < remap.length; vertex += 1) {
     const positionOffset = vertex * 3;
     const uvOffset = vertex * 2;
@@ -13397,6 +13398,10 @@ function weldPanelGeometryData(positions, uvs, colors, indices, quadFaces, toler
         colors[positionOffset + 1],
         colors[positionOffset + 2]
       );
+      if (weldedWeights) {
+        const weightOffset = vertex * 3;
+        weldedWeights.push(weights[weightOffset], weights[weightOffset + 1], weights[weightOffset + 2]);
+      }
     }
     remap[vertex] = weldedVertex;
   }
@@ -13404,6 +13409,7 @@ function weldPanelGeometryData(positions, uvs, colors, indices, quadFaces, toler
     positions: weldedPositions,
     uvs: weldedUvs,
     colors: weldedColors,
+    weights: weldedWeights,
     indices: indices.map((index) => remap[index]),
     quadFaces: quadFaces.map((face) => face.map((index) => remap[index]))
   };
@@ -13467,6 +13473,26 @@ function createPanelStrandGeometry(lock) {
   // authored; each bone carries per-segment width/depth curves + a relative tip gap
   // (spread) that replaces the old absolute panelSplitGap displacement.
   const splitBones = splits.length ? cloneSplitBones(lock.splitBones, splits, lock) : [];
+  // Procedural per-vertex weight framework (S1): each vertex carries
+  // [mainJointIndex, segmentIndex, weight]. The zipper boundaries decide the control
+  // region (segment assignment = hard by u); weight ramps smoothly from 0 at the
+  // segment's fork (deeper bounding zipper) to 1 at the tip. One tip = one sub-bone.
+  const panelWeights = [];
+  const mainPointCount = latticeControlled ? 0 : lock.points.length;
+  const forkBand = Math.max(2 / lengthLoops, 0.02);
+  const segmentForkT = splits.length
+    ? Array.from({ length: splits.length + 1 }, (_, segment) => {
+      const leftSplit = splits[segment - 1] || null;
+      const rightSplit = splits[segment] || null;
+      const heights = [leftSplit?.height, rightSplit?.height].filter((height) => height != null);
+      return heights.length ? 1 - Math.max(...heights) : 1;
+    })
+    : [1];
+  const segmentWeightAt = (segment, t) => {
+    const forkT = segmentForkT[segment] ?? 1;
+    if (forkT >= 1 || t <= forkT) return 0;
+    return THREE.MathUtils.smoothstep((t - forkT) / forkBand, 0, 1);
+  };
   const frames = [];
   let previousFrame = null;
   if (!latticeControlled) {
@@ -13576,13 +13602,17 @@ function createPanelStrandGeometry(lock) {
     const t = row / lengthLoops;
     return rawPanelPoint(t, u, shell, bone);
   };
-  const addPatch = (rowStart, rowEnd, uStart, uEnd, columns, options = {}, bone = null) => {
+  const addPatch = (rowStart, rowEnd, uStart, uEnd, columns, options = {}, bone = null, segment = -1) => {
     const rows = rowEnd - rowStart;
     const front = [];
     const back = [];
     for (let localRow = 0; localRow <= rows; localRow += 1) {
       const row = rowStart + localRow;
-      const color = strandInfluenceColor(lock, row / lengthLoops);
+      const t = row / lengthLoops;
+      const color = strandInfluenceColor(lock, t);
+      const weight = segmentWeightAt(segment, t);
+      const mainJoint = mainPointCount ? Math.round(t * (mainPointCount - 1)) : -1;
+      const segmentIndex = latticeControlled ? -1 : segment;
       const frontRow = [];
       const backRow = [];
       for (let column = 0; column <= columns; column += 1) {
@@ -13591,12 +13621,14 @@ function createPanelStrandGeometry(lock) {
         const backPoint = panelPoint(row, u, -1, bone);
         frontRow.push(positions.length / 3);
         positions.push(frontPoint.x, frontPoint.y, frontPoint.z);
-        uvs.push((u + 1) * 0.5, row / lengthLoops);
+        uvs.push((u + 1) * 0.5, t);
         colors.push(color.r, color.g, color.b);
+        panelWeights.push(mainJoint, segmentIndex, weight);
         backRow.push(positions.length / 3);
         positions.push(backPoint.x, backPoint.y, backPoint.z);
-        uvs.push((u + 1) * 0.5, row / lengthLoops);
+        uvs.push((u + 1) * 0.5, t);
         colors.push(color.r, color.g, color.b);
+        panelWeights.push(mainJoint, segmentIndex, weight);
       }
       front.push(frontRow);
       back.push(backRow);
@@ -13667,7 +13699,7 @@ function createPanelStrandGeometry(lock) {
       capEnd: true,
       leftWallStartRow: leftSplit ? Math.ceil((1 - leftSplit.height) * lengthLoops) : 0,
       rightWallStartRow: rightSplit ? Math.ceil((1 - rightSplit.height) * lengthLoops) : 0
-    }, bone);
+    }, bone, segment);
   }
 
   // Curve-driven panels use X = tangent x outward, which reverses the patch
@@ -13682,7 +13714,7 @@ function createPanelStrandGeometry(lock) {
     triangleEdgeMasks.forEach((mask) => { [mask[1], mask[2]] = [mask[2], mask[1]]; });
   }
 
-  const welded = weldPanelGeometryData(positions, uvs, colors, indices, quadFaces);
+  const welded = weldPanelGeometryData(positions, uvs, colors, indices, quadFaces, 0.00001, panelWeights);
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(welded.positions, 3));
@@ -13691,6 +13723,7 @@ function createPanelStrandGeometry(lock) {
   geometry.setIndex(welded.indices);
   geometry.userData.quadFaces = welded.quadFaces;
   geometry.userData.triangleEdgeMasks = triangleEdgeMasks;
+  geometry.userData.panelWeights = welded.weights;
   geometry.computeVertexNormals();
   smoothCoincidentPanelNormals(geometry);
   geometry.computeBoundingSphere();
