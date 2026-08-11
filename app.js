@@ -13554,10 +13554,9 @@ function tipWidthMultiplierAt(lock, t, u, bone, segmentIndex = -1, splits = null
   }
   const side = u < 0 ? -1 : 1;
   const forkT = tipWidthSideForkT(lock, segmentIndex, segSplits, side);
-  // Reset 后曲线从 0 覆盖整段：跳过锁定区回退，整段都用骨曲线采样。
-  const boneCurve = side < 0 ? bone?.taperCurveSecondary : bone?.taperCurve;
-  const coversWhole = Array.isArray(boneCurve) && boneCurve.length > 0 && Number(boneCurve[0].position) < 0.001;
-  if (forkT >= 1 || (t < forkT - 1e-4 && !coversWhole)) {
+  // 锁定区（t < 本侧 fork，未暴露控制区）始终回退全局曲线：发尖 WidthCurve 只控制
+  // 暴露区，Zipper 上半部分直接跟随主骨骼，Reset 后不会开裂。
+  if (forkT >= 1 || t < forkT - 1e-4) {
     return sampleAsymmetricTaperCurve(
       lock.taperCurve,
       lock.taperCurveSecondary,
@@ -13724,11 +13723,42 @@ function tipMainSectionPoint(lock, t, u, shell, bone, segmentIndex = -1, splits 
     );
 }
 
-// 发尖子骨骼链在 t 处的自身 frame：y = 链切线（authored），z = 主面板法线经
+// 发尖子骨骼表面帧：在段中心 u=centerU 处用面板几何（含 camber/曲率）计算真正
+// 垂直于面板表面的法线（z）与位于表面切平面内的横向（x），而不是沿用主骨骼
+// 法线。rest 链与 tipChainFrameAt 共用，让发尖子骨骼跟随主发片构建曲线的表面
+// 曲率（弯曲刘海侧面与主面板法线出现明显夹角，宽度拖拽也沿表面切平面）。
+function tipSurfaceFrameAt(lock, t, centerU = null, segmentIndex = -1, splits = null) {
+  const panel = tipPanelFrameAt(lock, t);
+  const y = panel.y;
+  const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
+  const center = centerU == null
+    ? (segmentIndex >= 0 && segmentIndex < boundaries.length - 1
+      ? (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5
+      : 0)
+    : centerU;
+  // 沿 u 差分采样面板表面点（front face）得到截面切线 dP/du；camber 会让截面
+  // 切线偏离 frame.x，从而法线也相应倾斜，贴合实际面板曲面。
+  const step = THREE.MathUtils.clamp((boundaries[1] - boundaries[0]) * 0.2, 0.01, 0.04);
+  const lower = tipMainSectionPoint(lock, t, THREE.MathUtils.clamp(center - step, -1, 1), 1, null, segmentIndex, splits);
+  const upper = tipMainSectionPoint(lock, t, THREE.MathUtils.clamp(center + step, -1, 1), 1, null, segmentIndex, splits);
+  const sectionTangent = new THREE.Vector3().subVectors(upper, lower);
+  if (!Number.isFinite(sectionTangent.x) || sectionTangent.lengthSq() < 1e-8) sectionTangent.copy(panel.x);
+  else sectionTangent.normalize();
+  let z = new THREE.Vector3().crossVectors(y, sectionTangent).negate();
+  z.addScaledVector(y, -z.dot(y));
+  if (z.lengthSq() < 0.0001) z.copy(panel.z);
+  z.normalize();
+  const x = new THREE.Vector3().crossVectors(y, z).normalize();
+  const point = tipMainSectionPoint(lock, t, center, 1, null, segmentIndex, splits);
+  return { point, x, y, z };
+}
+
+// 发尖子骨骼链在 t 处的自身 frame：y = 链切线（authored），z = 面板表面法线经
 // rest→authored 弯曲旋转后对 y 做 Gram-Schmidt 正交化的链自身法线，x = 链横向
 // （副法线）。宽度控制点的移动方向应垂直于发尖子骨骼自身法线（x 横向），而不是
-// 被主骨骼法线限制。
-function tipChainFrameAt(lock, tip, restTip, t) {
+// 被主骨骼法线限制。segment 段中心使用 tipSurfaceFrameAt（垂直于面板表面、含
+// camber/曲率），非 segment 回退 tipPanelFrameAt。
+function tipChainFrameAt(lock, tip, restTip, t, segmentIndex = -1, splits = null) {
   const curve = new THREE.CatmullRomCurve3(tip.points);
   const rest = restTip && Array.isArray(restTip.restPoints) ? restTip : tip;
   const restCurve = new THREE.CatmullRomCurve3(rest.restPoints);
@@ -13742,7 +13772,12 @@ function tipChainFrameAt(lock, tip, restTip, t) {
     : (new THREE.Quaternion()).setFromUnitVectors(restTangent, authoredTangent);
   const y = authoredTangent;
   const panel = tipPanelFrameAt(lock, t);
-  const z = panel.z.clone().applyQuaternion(dq);
+  // 段中心处用面板表面帧（垂直于面板表面、含 camber/曲率）作为参考法线，而不是
+  // 直接沿用主面板法线：发尖子骨骼的横向/法线跟随主发片构建曲线的表面曲率。
+  const referenceZ = (segmentIndex >= 0 && Array.isArray(splits) && splits.length)
+    ? tipSurfaceFrameAt(lock, t, null, segmentIndex, splits).z
+    : panel.z;
+  const z = referenceZ.clone().applyQuaternion(dq);
   z.addScaledVector(y, -z.dot(y));
   if (z.lengthSq() < 1e-8) z.copy(panel.z);
   z.normalize();
@@ -13771,7 +13806,7 @@ function tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t) {
   const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
   // 把手位置沿发尖链自身横向（tipChainFrameAt.x）：发尖链中心 + 链横向 × 半宽，
   // 使宽度拖拽的运动轨迹垂直于发尖子骨骼自身法线（不再被主骨骼法线限制）。
-  const chainFrame = tipChainFrameAt(lock, tip, tip, t);
+  const chainFrame = tipChainFrameAt(lock, tip, tip, t, segmentIndex, splits);
   const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
   const multiplier = tipWidthMultiplierAt(lock, t, edgeU, bone, segmentIndex, splits);
   const point = authoredCenter.clone()
@@ -13905,13 +13940,13 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
   const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
   const mainCount = Array.isArray(lock.points) ? lock.points.length : 0;
   if (mainCount < 2) return null;
-  const curve = strandGeometryCurve(lock);
   const restPoints = [];
   for (let index = 0; index < mainCount; index += 1) {
     const t = index / Math.max(1, mainCount - 1);
-    // {} forces the GLOBAL width curves: the rest chain is the stable base-panel
-    // centerline, so width edits move the edge but never the tip sub-bone chain.
-    restPoints.push(panelSplitControlPoint(lock, { position: centerU, height: 1 - t }, t, curve, segmentIndex, {}));
+    // 发尖子骨骼 rest 链沿主发片构建曲线在段中心的表面曲率生成（法线垂直于面板
+    // 表面、含 camber/曲率），不再沿用主骨骼法线。rest 基准变化后，旧数据的
+    // authored delta 会在新 rest 上重新叠加，无需改动 .ahs 文件。
+    restPoints.push(tipSurfaceFrameAt(lock, t, centerU, segmentIndex, splits).point);
   }
   const authored = splitBone?.tip;
   const twists = (authored && Array.isArray(authored.twists))
@@ -15988,7 +16023,13 @@ function activeTaperTarget() {
     // lock.splitBones); curve edits mutate the bone directly.
     const lock = locks.find((item) => item.id === sculptState.state.taperCurveEdit.id);
     if (!lock) return null;
-    const bones = materializeSplitBones(lock);
+    // 复用已 materialize 的 lock.splitBones（live 引用）：每次重新调用
+    // materializeSplitBones 都会深克隆曲线数组，导致浮动面板拖动 segment 曲线点
+    // 时写进临时数组、宽度不生效。length 不匹配（splits 变化）时才重新 materialize。
+    const splitCount = (Array.isArray(lock.panelSplits) ? lock.panelSplits.length : 0) + 1;
+    const bones = (Array.isArray(lock.splitBones) && lock.splitBones.length === splitCount)
+      ? lock.splitBones
+      : materializeSplitBones(lock);
     const bone = bones[sculptState.state.taperCurveEdit.segmentIndex] || null;
     if (!bone) return null;
     const curveKey = sculptState.state.taperCurveEdit.curveKey;
@@ -16505,6 +16546,19 @@ function renderTaperCurveEditor() {
   const asymmetric = !editingTwist && !editingProceduralBranch && Boolean(target?.[shapePresets.taperAsymmetryKey()]);
   taperCurveOptions.classList.toggle("hidden", editingProceduralBranch);
   const segmentEditing = sculptState.state.taperCurveEdit.type === "segment";
+  // 发尖子骨骼（segment）宽度曲线的隐藏/记录点：t < 本侧 fork 的点只用于保持两侧
+  // 控制参数一致，不应在浮动面板里被拖动。primary→+1，secondary→-1。
+  const segmentLock = segmentEditing ? locks.find((item) => item.id === sculptState.state.taperCurveEdit.id) : null;
+  const segmentSplits = segmentLock ? clonePanelSplits(segmentLock.panelSplits, segmentLock.panelSplitHeight) : null;
+  const tipSideForkFor = (curveSide) => {
+    if (!segmentLock || !segmentSplits || !segmentSplits.length) return 0;
+    return tipWidthSideForkT(
+      segmentLock,
+      sculptState.state.taperCurveEdit.segmentIndex,
+      segmentSplits,
+      curveSide === "secondary" ? -1 : 1
+    );
+  };
   taperAsymmetryToggleRow.classList.toggle("hidden", editingTwist || editingProceduralBranch || segmentEditing);
   taperAsymmetryToggle.checked = asymmetric;
   centerAsymmetricProfileRow.classList.toggle("hidden", !asymmetric || segmentEditing);
@@ -16552,6 +16606,10 @@ function renderTaperCurveEditor() {
       handle.setAttribute("class", `profile-point${selected ? " selected" : ""}`);
       handle.dataset.taperPoint = index;
       handle.dataset.curveSide = side;
+      if (segmentEditing && point.position < tipSideForkFor(side) - 1e-4) {
+        handle.dataset.tipHidden = "1";
+        handle.classList.add("tip-hidden");
+      }
       taperCurvePoints.appendChild(handle);
     });
   });
@@ -25931,7 +25989,7 @@ function updateCurveObjects(lock, options = {}) {
       const tip = tipChains[segment];
       const chainT = point / Math.max(1, tip.points.length - 1);
       arrow.position.copy(tip.points[point]);
-      arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tipChainFrameAt(lock, tip, tip, chainT).z);
+      arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tipChainFrameAt(lock, tip, tip, chainT, segment, tipSplits).z);
       arrow.scale.setScalar(0.14);
     };
     const visible = (!sculptBrushHelpersSuppressed || tipUiActive)
@@ -31698,6 +31756,8 @@ centerAsymmetricProfileToggle.addEventListener("change", () => {
 taperCurveCanvas.addEventListener("pointerdown", (event) => {
   const pointIndex = Number(event.target?.dataset?.taperPoint);
   if (!Number.isInteger(pointIndex) || !sculptState.state.taperCurveEdit) return;
+  // 隐藏/记录点（segment 曲线里 t < 本侧 fork）不可拖。
+  if (event.target.dataset.tipHidden === "1") return;
   releaseTaperCurveEditorFieldFocus();
   pushUndoState();
   sculptState.state.taperCurveEdit.side = event.target.dataset.curveSide === "secondary" ? "secondary" : "primary";
@@ -36264,8 +36324,16 @@ function syncStrandHoverOutline(lock) {
   );
 }
 
+// 鼠标在浮动面板（taperCurveEditor）上时不触发后面头发/发尖的高亮。
+function pointerOverTaperEditor(event) {
+  if (!taperCurveEditor.open) return false;
+  const rect = taperCurveEditor.getBoundingClientRect();
+  return event.clientX >= rect.left && event.clientX <= rect.right
+    && event.clientY >= rect.top && event.clientY <= rect.bottom;
+}
+
 function updateStrandBrushHover(event) {
-  if (isHairCreateTool() || sculptState.state.viewportEditMode !== "strand") {
+  if (pointerOverTaperEditor(event) || isHairCreateTool() || sculptState.state.viewportEditMode !== "strand") {
     if (hairState.state.hoveredStrandId) {
       hairState.state.hoveredStrandId = null;
       locks.forEach(syncStrandHoverOutline);
@@ -36286,6 +36354,13 @@ function updateStrandBrushHover(event) {
 }
 
 function updatePanelTipHover(event) {
+  if (pointerOverTaperEditor(event)) {
+    if (sculptState.state.panelTipHover) {
+      sculptState.state.panelTipHover = { lockId: null, segmentIndex: null };
+      updateTipHighlight(getSelectedLock());
+    }
+    return;
+  }
   const lock = getSelectedLock();
   let hover = { lockId: null, segmentIndex: null };
   if (lock && isPanelGeometry(lock) && lock.panelSplitEnabled !== false && Array.isArray(lock.panelSplits) && lock.panelSplits.length) {
@@ -37778,6 +37853,7 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     tipWidthControlPlacement,
     tipWidthEdgePosition,
     tipPanelFrameAt,
+    tipSurfaceFrameAt,
     tipChainFrameAt,
     tipPanelWidthAt,
     tipWidthMultiplierAt,

@@ -349,6 +349,18 @@ splitBone.tip = {
 
 **回归测试（scripts/verify-tip-select.mjs，38/38）**：新增 Reset 整段全 1（两侧、所有 t）、右侧 segmentTaperPreview 热更新、对称拖拽两侧同值、lateral 与发尖子骨骼切线垂直（maxPerpDeviation<5°）；原 34 项全过。三档 smoke（0041/0042/0044）11/11 通过。
 
+### 8.24 发尖子骨骼 orient 与面板交互修复（0.2.59）
+
+**1. 鼠标在浮动面板上触发后面头发高亮**：`updatePanelTipHover`/`updateStrandBrushHover` 挂 window pointermove，鼠标移到 taperCurveEditor 上仍 raycast 头发 → 高亮穿透。修复：新增 `pointerOverTaperEditor(event)`（面板 open 且指针在面板矩形内则 true），两个 hover 函数开头跳过（tip hover 还会清掉旧 hover）。
+
+**2. Reset 后未暴露控制区开裂**：上一轮加的 `coversWhole`（骨曲线从 0 开始就整段用它）让 Zipper 上半部分宽度跟随骨曲线（=1），与主骨骼/全局宽度不一致 → 开裂。修复：**回退 coversWhole**——`tipWidthMultiplierAt` 对 t<本侧 fork（未暴露控制区）始终回退全局曲线，Zipper 上半部分直接跟随主骨骼；Reset 只重置暴露区 + 保留 [0,1] 记录数据（zipper 拉高后重新暴露仍是 1）。
+
+**3. 发尖子骨骼 orient 跟随表面曲率**：此前 rest 链用 `panelSplitControlPoint`（guidedNormalAt 主链法线 + 主链 twist）生成，发尖子骨骼朝向与主骨骼一致，弯曲大刘海侧面穿帮；且 WidthCurve 点绝对位移让 poly 像「移动」而非「缩放」。修复：rest 链/发尖 frame 改用主发片构建曲线在段中心的**表面曲率**帧（面板平行运输帧），法线垂直于面板表面。因 tip 点是「rest+delta」，rest 生成逻辑修正后旧数据（0044.ahs）自动用新基准 + 原 delta，无需改文件。
+
+**4. 浮动面板无法拖动 + 只能拖暴露点**：定位 segment 曲线点拖动失效原因并修复；`renderTaperCurveEditor` 给 t<本侧 fork 的隐藏点打标记，`taperCurveCanvas` pointerdown 跳过 → 只能拖动暴露的控制点。
+
+**回归测试（scripts/verify-tip-select.mjs，40/40）**：新增面板悬停不穿透（pointerOverTaperEditor）、Reset 后未暴露区跟随全局（不裂）、发尖表面法线与主法线在弯曲段有夹角且与链切线正交、浮动面板隐藏点打 data-tip-hidden 不可拖；原 38 项全过。三档 smoke（0041/0042/0044）11/11 通过。
+
 ## 踩坑记录：发尖 WidthCurve 专项（8.10–8.20 复盘）
 
 > 这一轮发尖 WidthCurve 前后改了 11 个版本（8.10–8.20）才真正修对，把踩过的坑记下来，避免重蹈。
