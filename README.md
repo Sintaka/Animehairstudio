@@ -14,6 +14,8 @@
 4. 或直接双击 `start-dev-server.cmd`（自动打开浏览器）。
 5. 不要用 `file://` 直接打开 `index.html`（浏览器安全限制会阻止模块加载）。
 
+或者（需要 Node.js）：内置静态服务器兼原生保存对话框代理 —— 项目根目录运行 `node server.js`，打开 `http://127.0.0.1:5173/`（改端口：`PORT=xxxx node server.js`，Windows PowerShell 用 `$env:PORT=xxxx; node server.js`）。也可以直接用 npm 通用静态代理 `npx http-server . -p 8080`。
+
 ## 本仓库新增功能（摘要）
 
 - **简体中文 UI**（Settings → Language，3D 术语保留英文）
@@ -21,6 +23,7 @@
 - **子发片**（低模水密桥接 + 父发片挖洞 + Region 选区 + 根骨骼 gizmo/twist/H 模式 + Bridge Smooth）
 - **4 个自定义雕刻笔刷**（Slide / Scale·Cut-Extend / Push / Orient）+ Smooth twist；Ctrl=反向
 - **快速保存/导出优化**：Ctrl+S 快速保存（记住最近项目文件句柄）、Ctrl+Shift+S 另存为、Ctrl+Alt+S 快速导出复刻上次导出（优先 File System Access API 直接写盘，避免下载 (1) 后缀）
+- File 菜单**移除**了 3 个 Local dev 选项（Local Save / Local Export to OBJ / Local Export to USDA，原走 server.js 本地服务），保存/导出统一为新增的三个快捷键（见下）。File 菜单**新增**三个保存/导出快捷键：Ctrl+S Quick Save、Ctrl+Shift+S Save as、Ctrl+Alt+S Quick Export；保存/导出优先用 File System Access API 直写盘（记住文件句柄、覆盖写同一文件、不再产生下载 (1) 后缀），浏览器不支持时回退下载/对话框。快捷键帮助有独立「Sintaka Fork」分区。
 - **Houdini 导航（默认）**：Alt+左键旋转 / Alt+中键平移 / Alt+右键缩放 / 滚轮缩放
 - **S+左键拖动调节笔刷大小**（含雕刻笔刷）；Delete 删除多余材质；Ctrl+Z 撤销修复（非文本输入控件可用）
 - **拖放 .ahs/.animehair.json 直接打开项目**；浮动面板跟随选中
@@ -38,6 +41,17 @@
 - **Ctrl + 左键拖动**（其它地方）：特殊/反转功能——雕刻笔刷反向（Ctrl=反向）、选择工具 Ctrl+左键从选中移除。
 - **快速保存优化**：Ctrl+S 快速保存到最近一次的项目文件（记住文件句柄，覆盖写同一文件）；Ctrl+Shift+S 另存为；Ctrl+Alt+S 快速导出复刻上次导出。
 - **其它自定义快捷键**：S+左键拖动调笔刷大小、Houdini 导航（Alt+左/中/右键）、Delete 删多余材质、H 层级编辑（根骨骼工作流）、Ctrl+Z 撤销（含非文本输入控件）。
+
+## 子发片（低模水密桥接）
+
+![低模子发片桥接](devlog/assets/lowpoly-child-strand-basemesh.png)
+
+父发片被挖洞打开，子发片通过低模水密桥接（父洞边界 → 子发片根环 → 顶/底带 + 侧边四边形）连接；父表面 Region 选区（2D u/v 面板 + 3D 标记）、直接/间接桥接、均匀平滑（Strength/Detail）；子发片根骨骼工作流（gizmo 携带 twist、H 层级刚性移动、Region 锚定中心）；父发片不使用拓扑连接（如 Split Geometry）时回退直接生成（从根部扫掠）；**UV 布局尚未解决**。
+
+## 已知限制
+
+- **UV**：子发片/桥接区域的 UV 布局尚未解决（未展开）；部分 panel 结构下 UV 也可能不理想。
+- **导出**：目前 USDA 导出以 NURBS 曲线（BasisCurves）为主，**尚未输出完整的 USD 骨骼（Skeleton/SkelBindingAPI 蒙皮绑定）**——骨骼/蒙皮数据暂未作为可用骨架导出。
 
 ## 开发文档
 

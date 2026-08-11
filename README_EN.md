@@ -12,7 +12,7 @@ This repository is a local adaptation of the original project. My own code chang
 
 ## What's changed (summary)
 
-- **Quick Save (Ctrl+S) / Save as (Ctrl+Shift+S)** — Ctrl+S re-saves to the last saved project file; Save as picks a new location (File System Access API when available, download fallback otherwise).
+- **Quick Save (Ctrl+S) / Save as (Ctrl+Shift+S)** — Ctrl+S re-saves to the last saved project file; Save as picks a new location (File System Access API when available, download fallback otherwise). The File menu **removes** the 3 Local dev options (Local Save / Local Export to OBJ / Local Export to USDA, previously routed through the `server.js` local service), unifying save/export under the three new shortcuts. The File menu **adds** three save/export shortcuts: Ctrl+S Quick Save, Ctrl+Shift+S Save as, Ctrl+Alt+S Quick Export; save/export prefers the File System Access API to write directly to disk (remembered file handle, overwrites the same file, no more download (1) suffixes), falling back to a download/dialog when the browser doesn't support it. The shortcuts help has a dedicated "Sintaka Fork" section.
 - **Drag & drop project files** — dragging a `.ahs` / `.animehair.json` project onto the app opens it (no longer treated as a reference image); images still drop as 2D/3D references with the original drop overlay.
 - **Sculpt brush selection mask** — with nothing selected, only visible hair can be sculpted; with a selection, only the selected hair is sculpted (invisible hair is never sculpted).
 - **Material deletion** — delete extra materials via the panel button or the Delete key; affected hair reverts to the default material, which cannot be deleted.
@@ -48,6 +48,11 @@ Shortcuts:
 - **Ctrl + Left-drag on a green tip WidthCurve handle** — asymmetric width edit (only the dragged side); without Ctrl it mirrors both sides.
 - **Ctrl + Left-drag elsewhere** — reverse / special: sculpt brushes act in reverse; selection Ctrl+click removes from selection.
 
+## Known limitations
+
+- **UV**: UV layout for child strands / bridge regions is not solved yet (not unwrapped); UVs can also be suboptimal under some panel structures.
+- **Export**: USDA export is currently centered on NURBS curves (BasisCurves); **full USD skeletons are not exported yet (Skeleton / SkelBindingAPI skin binding)** — bone/skin data is not yet exported as a usable skeleton.
+
 ## Local deployment
 
 1. Install Python 3.
@@ -55,3 +60,5 @@ Shortcuts:
 3. Open `http://127.0.0.1:8080/` in your browser.
 4. Or just double-click `start-dev-server.cmd` (it opens the browser automatically).
 5. Don't open `index.html` directly via `file://` — browser security restrictions block module loading.
+
+Alternatively (requires Node.js): the built-in static server also doubles as a proxy for the native save dialog — run `node server.js` in the project root and open `http://127.0.0.1:5173/` (change the port with `PORT=xxxx node server.js`, or `$env:PORT=xxxx; node server.js` in Windows PowerShell). You can also use the generic npm static server: `npx http-server . -p 8080`.
