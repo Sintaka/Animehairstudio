@@ -45,7 +45,7 @@
 - [x] **阶段 3d-3d-a**：hierarchy 迁出（modules/geometry/branch-hierarchy.js，6 函数：attachDrawnLocksAsBranches/updateBranchRigidTransform…）
 - [x] **阶段 3d-3d-b**：sweep-profile 迁出（modules/geometry/branch-sweep.js，20 函数）
 - [x] **阶段 3d（剩余·scalp，批次 4）**：scalp 系统函数迁出（modules/scalp/scalp-builder.js，120 函数，createScalpBuilderApi(deps) 渐进填充；app.js 37,914→35,050 行；verify-smoke 10/11 与基线一致，.ahs 加载 88 locks 无异常；0.2.59）
-- [ ] **阶段 3d（剩余·curve/guide，批次 5）**：curve/guide 系统函数迁出（~151 函数/约 2,950 行，引用图见 devlog/in-progress/curve-guide-refactor-map.md）；app.js 最终瘦身为编排层
+- [x] **阶段 3d（剩余·curve/guide，批次 5）**：curve/guide 系统函数迁出（modules/geometry/guide-system.js，129 函数/2,637 行，createGuideSystemApi(deps)；app.js 35,057→32,530 行；跨批次重接 scalpBuilderDeps 7 项；verify-smoke 10/11 与基线一致；0.2.59）
 
 > 批量替换验证清单（3b/3c 教训，替换后必须逐项扫）：(1) 双重替换 `.store.state.`（对象属性名被误替换，曾致项目加载静默失败）；(2) 函数参数/绑定位置（`function f(store.state.x)`）；(3) 对象简写残留（含**跨行** `{ x,\n store.state.y,`，单行正则会漏，曾致 SyntaxError）；(4) 对象属性访问 `obj.name`（用 `(?<!\.)` 排除）；(5) `name:` key 位置（用 `(?!\s*:)` 排除）；(6) 字符串/选择器字面量（`document.querySelector("#name")` 曾把 `"#viewPlaneMoveSnappedOnly"` 误改成 `"#ui.state.viewPlaneMoveSnappedOnly"`，需用精确字符串字面量扫描）；(7) getter/setter 方法名（`get importedHeadAsset()` 曾被误改成 `get head.state.importedHeadAsset()`，对象字面量 get/set 方法名位置要排除）；(8) 无逗号简写（对象最后一项 `X,`→修复成 `X: v` 时若函数参数最后一项也会误伤——需按括号上下文判断：`(` 内回退为 `v`、`{` 内保留 `X: v`，含带逗号与不带逗号两种；三目/表达式分支也可能漏替换，替换后必须全文件扫裸引用）。每步替换后先跑这 5 项扫描再 node --check + verify-smoke 全量。
 - [ ] **阶段 3d：app.js 瘦身为编排层**（业务逻辑迁入模块，模块显式依赖 store；IO 的 createProjectSaveApi(deps) 从 25 个散装依赖收敛为单个 store）
@@ -56,7 +56,7 @@
 2. 文档类改动：改完 `Select-String` 抽查渲染/链接。
 3. 拆分只允许「独立 commit + 失败回滚」，不允许「拆完未验证」。
 
-## 阶段 3d：app.js 瘦身为编排层（进行中）
+- [ ] **阶段 3d：app.js 瘦身为编排层**（批次 1-5 已完成；剩余：IO 的 createProjectSaveApi(deps) 从 25 个散装依赖收敛为单个 store）
 
 目标：把 app.js（36,064 行）的业务逻辑按子系统迁入模块，app.js 只保留「初始化 + store 装配 + 事件绑定」。
 模式：依赖注入（如 IO 的 createProjectSaveApi(deps)）——迁出函数通过 deps 接收 app.js 函数引用 + store。
@@ -69,7 +69,7 @@
 3c. hierarchy（attachDrawnLocksAsBranches/updateBranchRigidTransform 等 6 函数 → modules/geometry/branch-hierarchy.js）✅ 3d-3d-a
 4. scalp 系统函数 ✅ 批次 4（0.2.59）
 4. scalp 系统函数 ✅ 批次 4（0.2.59）
-5. curve/guide 系统函数
+5. curve/guide 系统函数 ✅ 批次 5（0.2.59）
 每批独立 commit + verify-smoke 13/13 回归；依赖注入 deps 随迁移逐步收敛为「store + 少量核心函数」。
 
 ## 待办（用户反馈，3d 后统一修）

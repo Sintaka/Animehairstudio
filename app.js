@@ -1,4 +1,5 @@
 import { createScalpBuilderApi } from "./modules/scalp/scalp-builder.js?v=20260811-1";
+import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260811-3";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260809-19";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260809-18";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260809-17";
@@ -812,7 +813,7 @@ transformControls.addEventListener("dragging-changed", (event) => {
   if (transformControls.object?.userData.capsuleGuideLoopHandle) {
     if (event.value) {
       pushUndoState();
-      beginCapsuleGuideLoopTransform();
+      guideApi.beginCapsuleGuideLoopTransform();
     } else {
       guideState.state.activeCapsuleGuideLoopTransform = null;
       capsuleGuideLoopHandle.scale.set(1, 1, 1);
@@ -822,7 +823,7 @@ transformControls.addEventListener("dragging-changed", (event) => {
   if (transformControls.object?.userData.capsuleGuidePointIndex !== undefined) {
     if (event.value) {
       pushUndoState();
-      beginCapsuleGuideHandleEdit(transformControls.object);
+      guideApi.beginCapsuleGuideHandleEdit(transformControls.object);
     } else {
       sculptState.state.activeCapsuleGuideEdit = null;
     }
@@ -842,7 +843,7 @@ transformControls.addEventListener("dragging-changed", (event) => {
   if (event.value) {
     pushUndoState();
     if (transformControls.object?.userData.curveLatticeGuideId !== undefined) {
-      beginCurveLatticeMultiEdit(transformControls.object);
+      guideApi.beginCurveLatticeMultiEdit(transformControls.object);
     } else if (transformControls.object?.userData.scalpLatticeIndex === undefined) {
       beginHandleEdit();
     }
@@ -903,16 +904,16 @@ transformControls.addEventListener("objectChange", () => {
     return;
   }
   if (handle.userData.capsuleGuideLoopHandle) {
-    updateCapsuleGuideLoopTransform();
+    guideApi.updateCapsuleGuideLoopTransform();
     return;
   }
   if (handle.userData.capsuleGuidePointIndex !== undefined) {
-    updateCapsuleGuideFromHandle(handle);
+    guideApi.updateCapsuleGuideFromHandle(handle);
     return;
   }
   if (handle.userData.curveLatticeGuideId !== undefined) {
-    if (sculptState.state.activeLatticeMultiEdit) applyCurveLatticeMultiTransform(handle);
-    else updateCurveLatticeFromHandle(handle);
+    if (sculptState.state.activeLatticeMultiEdit) guideApi.applyCurveLatticeMultiTransform(handle);
+    else guideApi.updateCurveLatticeFromHandle(handle);
     return;
   }
   const lock = locks.find((item) => item.id === handle.userData.lockId);
@@ -1502,6 +1503,11 @@ const scalpBuilderGroup = new THREE.Group();
 scalpBuilderGroup.visible = false;
 scalpBuilderGroup.renderOrder = 14;
 scene.add(scalpBuilderGroup);
+
+// Guide / curve system api (refactor 3d batch 5): deps filled in-place before boot-time guide calls
+// and in one batch after the last dep is defined; see devlog/in-progress/curve-guide-refactor-map.md.
+const guideDeps = {};
+const guideApi = createGuideSystemApi(guideDeps);
 const scalpBuilderTemplateOverlay = new THREE.Group();
 scalpBuilderTemplateOverlay.visible = false;
 scene.add(scalpBuilderTemplateOverlay);
@@ -2762,15 +2768,6 @@ const FULL_BODY_TARGET_HEIGHT = GUIDE_HEAD_TARGET_HEIGHT * FULL_BODY_HEAD_COUNT;
 const FULL_BODY_FRAME_BOTTOM_MARGIN = GUIDE_HEAD_TARGET_HEIGHT * 0.9;
 const GUIDE_BOUNDS_EXCLUDED_GROUPS = new Set(["body_clean_nosupport"]);
 
-function guideHeadBounds(model) {
-  const box = new THREE.Box3();
-  model.updateMatrixWorld(true);
-  model.traverse((child) => {
-    if (!child.isMesh || GUIDE_BOUNDS_EXCLUDED_GROUPS.has(child.name)) return;
-    box.expandByObject(child);
-  });
-  return box.isEmpty() ? new THREE.Box3().setFromObject(model) : box;
-}
 
 
 function disposeGuideModel(model) {
@@ -2828,7 +2825,7 @@ function resetHeadTransform() {
 
 function installGuideModel(obj, options = {}) {
   const { normalize = false, frame = true, fullBody = false } = options;
-  const box = fullBody ? new THREE.Box3().setFromObject(obj) : guideHeadBounds(obj);
+  const box = fullBody ? new THREE.Box3().setFromObject(obj) : guideApi.guideHeadBounds(obj);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
   const sourceSize = fullBody ? size.y : Math.max(size.x, size.y, size.z);
@@ -3156,7 +3153,7 @@ function frameGuideModel({
     return;
   }
   ui.state.shiftSnappedViewActive = false;
-  const box = guideHeadBounds(guideState.state.guideModel);
+  const box = guideApi.guideHeadBounds(guideState.state.guideModel);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
   const radius = Math.max(size.x, size.y, size.z) * 0.62;
@@ -3389,7 +3386,7 @@ Object.assign(scalpBuilderDeps, {
   SCALP_REGION_CURVE_VISUALIZATION_ENABLED,
   SCALP_TEMPLATE_MATERIAL_REGIONS,
   activeStrokeSurfaceValue,
-  addCapsuleGuide,
+  addCapsuleGuide: guideApi.addCapsuleGuide,
   advancedLatticeButton,
   applyHeadTransform,
   braidAutoShowScalpInput,
@@ -3402,7 +3399,7 @@ Object.assign(scalpBuilderDeps, {
   createRootAttachment,
   curveNetworkSection,
   dataToVector,
-  defaultCurveLatticePoints,
+  defaultCurveLatticePoints: guideApi.defaultCurveLatticePoints,
   deselectStrands,
   deselectStrandsForGuideEditor,
   drawAutoShowScalpInput,
@@ -3411,7 +3408,7 @@ Object.assign(scalpBuilderDeps, {
   exitSetupEditor,
   exitSetupEditorLabel,
   generateScalpBuilderButton,
-  guideHeadBounds,
+  guideHeadBounds: guideApi.guideHeadBounds,
   guideState: guideState.state,
   head,
   headMeshes,
@@ -3441,7 +3438,7 @@ Object.assign(scalpBuilderDeps, {
   quadraticWeights,
   rayFromViewportEvent,
   raycaster,
-  renderGuideOutliner,
+  renderGuideOutliner: guideApi.renderGuideOutliner,
   renderLockList,
   scalpArtistInputs,
   scalpArtistShape,
@@ -3497,7 +3494,7 @@ Object.assign(scalpBuilderDeps, {
   spaceToggle,
   surfaceGuideDefaults,
   syncDisplayVisibilityInputs,
-  syncGuideInputs,
+  syncGuideInputs: guideApi.syncGuideInputs,
   syncHeadTransformInputs,
   syncLockFromCurve,
   syncRootAttachmentMetadata,
@@ -3507,11 +3504,11 @@ Object.assign(scalpBuilderDeps, {
   updateAttributeEditorMode,
   updateCount,
   updateCurveObjects,
-  updateGuideViewToggle,
+  updateGuideViewToggle: guideApi.updateGuideViewToggle,
   updateInteractionLocks,
   updateLockGeometry,
   updatePlacementStatus,
-  updateViewportToolVisibility,
+  updateViewportToolVisibility: guideApi.updateViewportToolVisibility,
   upperContourCurve,
 });
 
@@ -3731,36 +3728,9 @@ function exitSetupEditors() {
   if (scalpState.state.scalpPaintEditing) scalpBuilder.setScalpPaintEditing(false);
   if (sculptState.state.headSetupEditing) setHeadSetupEditing(false);
   if (scalpState.state.scalpShapeEditing) scalpBuilder.setScalpShapeEditing(false);
-  if (sculptState.state.capsuleGuideEditing) setCapsuleGuideEditing(false);
+  if (sculptState.state.capsuleGuideEditing) guideApi.setCapsuleGuideEditing(false);
 }
 
-function setCapsuleGuideEditing(enabled) {
-  if (enabled && sculptState.state.viewportEditMode !== "guide") setViewportEditMode("guide");
-  if (enabled) deselectStrandsForGuideEditor();
-  sculptState.state.capsuleGuideEditing = Boolean(enabled);
-  if (sculptState.state.capsuleGuideEditing) {
-    setActiveTool("select");
-  } else {
-    sculptState.state.capsuleGuideLoopDrag = null;
-    sculptState.state.capsuleGuideLoopSelection = null;
-    guideState.state.activeCapsuleGuideLoopTransform = null;
-    setCapsuleGuideLoopHover(null);
-    renderer.domElement.style.cursor = "";
-    if (
-      transformControls.object?.userData.capsuleGuidePointIndex !== undefined
-      || transformControls.object?.userData.capsuleGuideLoopHandle
-    ) transformControls.detach();
-  }
-  guides.filter((guide) => guide.type === "capsule").forEach((guide) => {
-    const visible = sculptState.state.capsuleGuideEditing && guide.id === sel.state.selectedGuideId;
-    if (guide.handlesGroup) guide.handlesGroup.visible = visible;
-    if (guide.loopLinesGroup) guide.loopLinesGroup.visible = visible;
-  });
-  scalpBuilder.updateScalpEditingVisibility();
-  updateAttributeEditorMode();
-  updatePlacementStatus();
-  applyCapsuleGuideDisplayVisibility();
-}
 
 function syncAppMenuVisibility() {
   const menuOpen = appMenuDropdowns.some((menu) => !menu.classList.contains("hidden"));
@@ -4232,7 +4202,7 @@ function selectReferenceImage(id) {
   sel.state.selectedCurveSurfaceController = null;
   sel.state.selectedGuideId = undefined;
   sel.state.selectedStrandGroup = null;
-  clearMultiPointSelection();
+  guideApi.clearMultiPointSelection();
   transformControls.detach();
   updateReferenceSelectionVisuals();
   locks.forEach((lock) => {
@@ -4242,7 +4212,7 @@ function selectReferenceImage(id) {
   attachReferenceImageTransform();
   setOutlinerTab("references");
   renderLockList();
-  updateGuideControlsVisibility();
+  guideApi.updateGuideControlsVisibility();
   updateAttributeEditorMode();
   renderReferenceImagePanel();
   refreshRebuildCurveDialog();
@@ -4349,7 +4319,7 @@ function setOutlinerTab(tab) {
   lockList.classList.toggle("hidden", !strandsActive);
   guideOutliner.classList.toggle("hidden", !guidesActive);
   referenceOutliner.classList.toggle("hidden", !referencesActive);
-  if (guidesActive) renderGuideOutliner();
+  if (guidesActive) guideApi.renderGuideOutliner();
   if (referencesActive) renderReferenceOutliner();
 }
 
@@ -4388,7 +4358,7 @@ function refreshSelectionModeVisuals() {
   sculptState.state.activeHandleEdit = null;
   hairState.state.activeStrandObjectTransform = null;
   guideState.state.activeGuideObjectTransform = null;
-  clearMultiPointSelection();
+  guideApi.clearMultiPointSelection();
   sel.state.selectedPoint = null;
   sel.state.selectedCurveLatticePoint = null;
   sel.state.selectedSurfaceObjectAnchorId = null;
@@ -4408,7 +4378,7 @@ function refreshSelectionModeVisuals() {
   if (!componentMode && sculptState.state.viewportEditMode === "guide") attachGuideObjectTransform();
   updateSelectedPointLabel();
   updateViewPlaneGrid();
-  updateViewportToolVisibility();
+  guideApi.updateViewportToolVisibility();
   updatePlacementStatus();
 }
 
@@ -4461,7 +4431,7 @@ function setViewportEditMode(mode, options = {}) {
     setAttributeEditorTab("main");
   }
   if (activateSelect && sel.state.activeTool !== "select") setActiveTool("select");
-  updateGuideControlsVisibility();
+  guideApi.updateGuideControlsVisibility();
   updateAttributeEditorMode();
   updatePlacementStatus();
 }
@@ -4492,22 +4462,7 @@ function setLocksOutlinerVisibility(targets, visible) {
   renderLockList();
 }
 
-function outlinerGuides() {
-  return guides.filter((guide) => (
-    guide.type !== "curve-lattice"
-    || (CURVE_LATTICE_FEATURE_ENABLED && guide.standalone)
-  ));
-}
 
-function guideOutlinerLabel(guide, index) {
-  if (guide.name) return guide.name;
-  if (guide.type === "capsule") return `Capsule Guide ${index + 1}`;
-  if (guide.type === "curve-lattice") {
-    const region = strandRegionDisplayLabel(guide.scalpRegion) || guide.scalpRegion || "Group";
-    return guide.standalone ? "Curve Lattice Guide" : `${region} Curve Lattice`;
-  }
-  return guide.name || `Curve Guide ${index + 1}`;
-}
 
 function normalizeOutlinerName(value, fallback) {
   const name = typeof value === "string" ? value.trim().slice(0, 60) : "";
@@ -4566,63 +4521,6 @@ function handleOutlinerRenameClick(event, options) {
 }
 
 
-function renderGuideOutliner() {
-  guideOutliner.replaceChildren();
-  guideOutliner.appendChild(scalpBuilder.createScalpGuideOutlinerRow());
-  const visibleGuides = outlinerGuides();
-  visibleGuides.forEach((guide, index) => {
-    const label = guideOutlinerLabel(guide, index);
-    const row = document.createElement("div");
-    row.className = "guide-outliner-row";
-    const visible = guide.outlinerVisible !== false
-      && (guide.type !== "capsule" || guideState.state.capsuleGuidesVisible);
-    const visibility = createOutlinerVisibilityToggle({
-      visible,
-      label,
-      onToggle: () => {
-        pushUndoState();
-        guide.outlinerVisible = !visible;
-        if (guide.outlinerVisible && guide.type === "capsule") guideState.state.capsuleGuidesVisible = true;
-        applyDisplayVisibilityFilters();
-        renderGuideOutliner();
-      }
-    });
-    const item = document.createElement("button");
-    item.className = `guide-outliner-item${guide.id === sel.state.selectedGuideId ? " active" : ""}`;
-    item.type = "button";
-    item.title = label;
-    item.setAttribute("aria-pressed", String(guide.id === sel.state.selectedGuideId));
-    const icon = document.createElement("span");
-    icon.className = `guide-outliner-icon${guide.type === "capsule" ? "" : guide.type === "curve-lattice" ? " lattice-guide" : " curve-guide"}`;
-    if (guide.type === "capsule") icon.style.background = normalizeCapsuleGuideColor(guide.color);
-    const name = document.createElement("span");
-    name.className = "guide-outliner-name";
-    name.textContent = label;
-    const kind = document.createElement("span");
-    kind.className = "guide-outliner-kind";
-    kind.textContent = guide.type === "capsule" ? "Surface" : guide.type === "curve-lattice" ? "Lattice" : "Curve";
-    item.append(icon, name, kind);
-    item.addEventListener("click", (event) => handleOutlinerRenameClick(event, {
-      label: name,
-      value: label,
-      onSelect: () => selectGuide(guide.id),
-      onCommit: (nextName) => {
-        guide.name = nextName;
-        if (guide.type === "capsule" && guide.id === sel.state.selectedGuideId) {
-          surfaceGuideNameInput.value = nextName;
-        }
-        refreshLiveSurfaceOptions();
-      },
-      rerender: renderGuideOutliner
-    }));
-    item.addEventListener("contextmenu", (event) => showOutlinerContextMenu(event, {
-      type: "guide",
-      guideId: guide.id
-    }));
-    row.append(visibility, item);
-    guideOutliner.appendChild(row);
-  });
-}
 
 function referenceOutlinerGroup(reference) {
   return reference.type === "overlay" ? "overlay" : reference.view;
@@ -5250,62 +5148,11 @@ function setHeadSetupEditing(enabled) {
 
 
 
-function currentGuideViewMode() {
-  return GUIDE_VIEW_MODES.find((mode) => (
-    mode.scalp === scalpState.state.scalpGuideVisible
-    && mode.capsules === guideState.state.capsuleGuidesVisible
-    && mode.lattices === guideState.state.curveLatticeGuidesVisible
-  )) || null;
-}
 
-function updateGuideViewToggle() {
-  const mode = currentGuideViewMode();
-  const label = mode?.label || "Custom Guide View";
-  const anyVisible = scalpState.state.scalpGuideVisible || guideState.state.capsuleGuidesVisible || guideState.state.curveLatticeGuidesVisible;
-  scalpGuideVisibilityToggle.classList.toggle("active", anyVisible);
-  scalpGuideVisibilityToggle.setAttribute("aria-pressed", String(anyVisible));
-  scalpGuideVisibilityToggle.dataset.guideViewMode = mode?.id || "custom";
-  scalpGuideVisibilityToggle.title = `Guide view: ${label}. Click to cycle; right-click to choose`;
-  scalpGuideVisibilityToggle.setAttribute("aria-label", scalpGuideVisibilityToggle.title);
-  guideViewModeActions.forEach((button) => {
-    const active = button.dataset.guideViewMode === mode?.id;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-checked", String(active));
-  });
-}
 
-function setGuideViewMode(modeId) {
-  const mode = GUIDE_VIEW_MODES.find((item) => item.id === modeId) || GUIDE_VIEW_MODES[0];
-  guideState.state.capsuleGuidesVisible = mode.capsules;
-  guideState.state.curveLatticeGuidesVisible = mode.lattices;
-  scalpBuilder.setScalpGuideVisibility(mode.scalp);
-  applyCapsuleGuideDisplayVisibility();
-  applyCurveLatticeGuideDisplayVisibility();
-  syncDisplayVisibilityInputs();
-  updateGuideViewToggle();
-}
 
-function cycleGuideViewMode() {
-  const currentIndex = GUIDE_VIEW_MODES.findIndex((mode) => mode.id === currentGuideViewMode()?.id);
-  setGuideViewMode(GUIDE_VIEW_MODES[(currentIndex + 1) % GUIDE_VIEW_MODES.length].id);
-}
 
-function hideGuideViewContextMenu() {
-  guideViewContextMenu.classList.add("hidden");
-}
 
-function showGuideViewContextMenu(event) {
-  event.preventDefault();
-  event.stopPropagation();
-  updateGuideViewToggle();
-  guideViewContextMenu.classList.remove("hidden");
-  const margin = 8;
-  const left = Math.min(event.clientX, window.innerWidth - guideViewContextMenu.offsetWidth - margin);
-  const top = Math.min(event.clientY, window.innerHeight - guideViewContextMenu.offsetHeight - margin);
-  guideViewContextMenu.style.left = `${Math.max(margin, left)}px`;
-  guideViewContextMenu.style.top = `${Math.max(margin, top)}px`;
-  guideViewContextMenu.querySelector("button.active")?.focus();
-}
 
 function strandPassesDisplayFilters(lock) {
   if (!lock) return false;
@@ -5412,7 +5259,7 @@ function syncDisplayVisibilityInputs() {
     allGuidesVisibilityInput,
     [scalpDisplayVisibilityInput, capsuleDisplayVisibilityInput, curveLatticeDisplayVisibilityInput].filter(Boolean)
   );
-  updateGuideViewToggle();
+  guideApi.updateGuideViewToggle();
 }
 
 function applyCharacterMeshDisplayVisibility() {
@@ -5442,1100 +5289,187 @@ function applyStrandDisplayVisibility() {
   }
 }
 
-function applyCapsuleGuideDisplayVisibility() {
-  guides.filter((guide) => guide.type === "capsule").forEach((guide) => {
-    const visible = guideState.state.capsuleGuidesVisible && guide.outlinerVisible !== false;
-    guide.mesh.visible = visible;
-    if (guide.wire) guide.wire.visible = visible;
-    if (guide.controlWire) guide.controlWire.visible = visible;
-    if (guide.handlesGroup) {
-      guide.handlesGroup.visible = visible
-        && guide.id === sel.state.selectedGuideId
-        && sculptState.state.capsuleGuideEditing;
-    }
-    if (guide.loopLinesGroup) {
-      guide.loopLinesGroup.visible = visible
-        && guide.id === sel.state.selectedGuideId
-        && sculptState.state.capsuleGuideEditing;
-    }
-  });
-  const selected = getSelectedGuide();
-  if (selected?.type === "capsule" && (!guideState.state.capsuleGuidesVisible || selected.outlinerVisible === false)) {
-    transformControls.detach();
-  }
-}
 
-function applyOtherGuideDisplayVisibility() {
-  guides.filter((guide) => guide.type !== "capsule" && guide.type !== "curve-lattice").forEach((guide) => {
-    const visible = guide.outlinerVisible !== false;
-    guide.mesh.visible = visible;
-    if (guide.wire) guide.wire.visible = visible;
-  });
-}
 
-function applyCurveLatticeGuideDisplayVisibility() {
-  filterCurveLatticesToGroup(sel.state.selectedGuideId);
-  if (!guideState.state.curveLatticeGuidesVisible && getSelectedGuide()?.type === "curve-lattice") {
-    transformControls.detach();
-  }
-}
 
 function applyDisplayVisibilityFilters() {
   applyCharacterMeshDisplayVisibility();
   applyStrandDisplayVisibility();
-  applyCapsuleGuideDisplayVisibility();
-  applyCurveLatticeGuideDisplayVisibility();
-  applyOtherGuideDisplayVisibility();
+  guideApi.applyCapsuleGuideDisplayVisibility();
+  guideApi.applyCurveLatticeGuideDisplayVisibility();
+  guideApi.applyOtherGuideDisplayVisibility();
   syncDisplayVisibilityInputs();
   renderLockList();
-  renderGuideOutliner();
+  guideApi.renderGuideOutliner();
 }
 
 
 
 
-function defaultCurveLatticePoints(columns = 3, rows = 3) {
-  const points = [];
-  scalpSurfaceGroup.updateMatrixWorld(true);
-  const probe = new THREE.Raycaster();
-  for (let row = 0; row < rows; row += 1) {
-    const v = row / Math.max(1, rows - 1);
-    const y = THREE.MathUtils.lerp(1.35, 0.08, v);
-    for (let column = 0; column < columns; column += 1) {
-      const u = column / Math.max(1, columns - 1);
-      const x = THREE.MathUtils.lerp(-0.78, 0.78, u);
-      probe.set(new THREE.Vector3(x, y, 4), new THREE.Vector3(0, 0, -1));
-      const hit = probe.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0];
-      if (hit) {
-        const normalMatrix = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
-        const normal = hit.face.normal.clone().applyMatrix3(normalMatrix).normalize();
-        if (normal.z < 0) normal.negate();
-        points.push(hit.point.clone().addScaledVector(normal, 0.035));
-      } else {
-        const normalizedX = x / 0.9;
-        points.push(new THREE.Vector3(x, y, 0.62 + Math.sqrt(Math.max(0, 1 - normalizedX * normalizedX)) * 0.28));
-      }
-    }
-  }
-  return points;
-}
-
-function flatCurveLatticePoints(
-  columns = DEFAULT_CURVE_LATTICE_PLANE.columns,
-  rows = DEFAULT_CURVE_LATTICE_PLANE.rows
-) {
-  return flatCurveLatticePointData({ columns, rows }).map(
-    (point) => new THREE.Vector3(point.x, point.y, point.z)
-  );
-}
 
 
 
-function createCurveLatticeGuideSet() {
-  const regions = STRAND_GROUPS.map((group) => group.id).filter((region) => region !== "unassigned");
-  return regions.map((region) => {
-    const columns = 3;
-    const rows = region === "bangs" ? 3 : 4;
-    return addCurveLattice({
-      columns,
-      rows,
-      scalpRegion: region,
-      color: SCALP_REGIONS[region].color,
-      points: scalpBuilder.curveLatticePointsForScalpRegion(region, columns, rows)
-    }, { deferUi: true });
-  });
-}
 
-function curveLatticeControlPoint(guide, column, row) {
-  return guide.points[row * guide.columns + column];
-}
 
-function circularArcTangent(rowPoints, column) {
-  if (rowPoints.length < 3) return null;
-  const first = THREE.MathUtils.clamp(column - 1, 0, rowPoints.length - 3);
-  const a = rowPoints[first];
-  const b = rowPoints[first + 1];
-  const c = rowPoints[first + 2];
-  const ab = b.clone().sub(a);
-  const ac = c.clone().sub(a);
-  const planeNormal = new THREE.Vector3().crossVectors(ab, ac);
-  const bendStrength = planeNormal.length() / Math.max(1e-8, ab.length() * ac.length());
-  if (bendStrength < 0.035) return null;
-  const denominator = 2 * planeNormal.lengthSq();
-  if (denominator < 1e-8) return null;
 
-  const center = a.clone().add(
-    new THREE.Vector3().crossVectors(ac, planeNormal).multiplyScalar(ab.lengthSq())
-      .add(new THREE.Vector3().crossVectors(planeNormal, ab).multiplyScalar(ac.lengthSq()))
-      .divideScalar(denominator)
-  );
-  const point = rowPoints[column];
-  const radiusVector = point.clone().sub(center);
-  const radius = radiusVector.length();
-  const localSpan = Math.max(ab.length(), b.distanceTo(c));
-  if (radius < 1e-5 || radius > localSpan * 8 || !Number.isFinite(radius)) return null;
 
-  const direction = new THREE.Vector3().crossVectors(planeNormal, radiusVector).normalize();
-  const previous = rowPoints[Math.max(0, column - 1)];
-  const next = rowPoints[Math.min(rowPoints.length - 1, column + 1)];
-  const travelDirection = next.clone().sub(previous);
-  if (direction.dot(travelDirection) < 0) direction.negate();
 
-  const arcLengthTo = (neighbor) => {
-    const chord = point.distanceTo(neighbor);
-    const angle = 2 * Math.asin(THREE.MathUtils.clamp(chord / (2 * radius), 0, 1));
-    return radius * angle;
-  };
-  const lengths = [];
-  if (column > 0) lengths.push(arcLengthTo(previous));
-  if (column < rowPoints.length - 1) lengths.push(arcLengthTo(next));
-  const tangentLength = lengths.reduce((sum, length) => sum + length, 0) / Math.max(1, lengths.length);
-  return direction.multiplyScalar(tangentLength);
-}
 
-function defaultCurveLatticeFrames(points, columns, rows) {
-  const tangents = [];
-  const verticalTangents = [];
-  const normals = [];
-  for (let row = 0; row < rows; row += 1) {
-    const rowPoints = Array.from({ length: columns }, (_, column) => points[row * columns + column]);
-    for (let column = 0; column < columns; column += 1) {
-      const index = row * columns + column;
-      const left = points[row * columns + Math.max(0, column - 1)];
-      const right = points[row * columns + Math.min(columns - 1, column + 1)];
-      const circularTangent = circularArcTangent(rowPoints, column);
-      const tangent = circularTangent || right.clone().sub(left);
-      if (!circularTangent && column > 0 && column < columns - 1) tangent.multiplyScalar(0.5);
 
-      const above = points[Math.max(0, row - 1) * columns + column];
-      const below = points[Math.min(rows - 1, row + 1) * columns + column];
-      const normal = above.clone().sub(below);
-      const tangentDirection = tangent.clone().normalize();
-      normal.addScaledVector(tangentDirection, -normal.dot(tangentDirection));
-      if (normal.lengthSq() < 1e-6) normal.set(0, 1, 0);
-      normals[index] = normal.normalize();
-      tangents[index] = tangent;
-    }
-  }
-  for (let column = 0; column < columns; column += 1) {
-    const columnPoints = Array.from({ length: rows }, (_, row) => points[row * columns + column]);
-    for (let row = 0; row < rows; row += 1) {
-      const index = row * columns + column;
-      const above = columnPoints[Math.max(0, row - 1)];
-      const below = columnPoints[Math.min(rows - 1, row + 1)];
-      const circularTangent = circularArcTangent(columnPoints, row);
-      const tangent = circularTangent || below.clone().sub(above);
-      if (!circularTangent && row > 0 && row < rows - 1) tangent.multiplyScalar(0.5);
-      verticalTangents[index] = tangent;
-    }
-  }
-  return { tangents, verticalTangents, normals };
-}
 
-function sampleHermiteCurve(points, tangents, t) {
-  if (points.length === 1) return points[0].clone();
-  const scaled = THREE.MathUtils.clamp(t, 0, 1) * (points.length - 1);
-  const segment = Math.min(points.length - 2, Math.floor(scaled));
-  const u = scaled - segment;
-  const u2 = u * u;
-  const u3 = u2 * u;
-  const h00 = 2 * u3 - 3 * u2 + 1;
-  const h10 = u3 - 2 * u2 + u;
-  const h01 = -2 * u3 + 3 * u2;
-  const h11 = u3 - u2;
-  return points[segment].clone().multiplyScalar(h00)
-    .addScaledVector(tangents[segment], h10)
-    .addScaledVector(points[segment + 1], h01)
-    .addScaledVector(tangents[segment + 1], h11);
-}
 
-function sampleCurveLattice(guide, u, v) {
-  const across = [];
-  const acrossTangents = [];
-  for (let column = 0; column < guide.columns; column += 1) {
-    const columnPoints = Array.from({ length: guide.rows }, (_, row) => curveLatticeControlPoint(guide, column, row));
-    const columnCurveTangents = Array.from(
-      { length: guide.rows },
-      (_, row) => guide.verticalTangents[row * guide.columns + column]
-    );
-    across.push(sampleHermiteCurve(columnPoints, columnCurveTangents, v));
-    const columnTangents = Array.from(
-      { length: guide.rows },
-      (_, row) => guide.acrossTangents[row * guide.columns + column]
-    );
-    acrossTangents.push(new THREE.CatmullRomCurve3(columnTangents, false, "centripetal", 0.5).getPoint(v));
-  }
-  return sampleHermiteCurve(across, acrossTangents, u);
-}
 
-function curveLatticeNormal(guide, u, v) {
-  const step = 0.002;
-  const left = sampleCurveLattice(guide, Math.max(0, u - step), v);
-  const right = sampleCurveLattice(guide, Math.min(1, u + step), v);
-  const top = sampleCurveLattice(guide, u, Math.max(0, v - step));
-  const bottom = sampleCurveLattice(guide, u, Math.min(1, v + step));
-  const normal = right.sub(left).cross(bottom.sub(top)).normalize();
-  if (normal.z < 0) normal.negate();
-  return normal;
-}
 
-function createCurveLatticeGeometry(guide) {
-  const uSegments = Math.max(12, (guide.columns - 1) * 10);
-  const vSegments = Math.max(18, (guide.rows - 1) * 10);
-  const vertices = [];
-  const indices = [];
-  for (let row = 0; row <= vSegments; row += 1) {
-    const v = row / vSegments;
-    for (let column = 0; column <= uSegments; column += 1) {
-      const point = sampleCurveLattice(guide, column / uSegments, v);
-      vertices.push(point.x, point.y, point.z);
-    }
-  }
-  const stride = uSegments + 1;
-  for (let row = 0; row < vSegments; row += 1) {
-    for (let column = 0; column < uSegments; column += 1) {
-      const a = row * stride + column;
-      const b = a + 1;
-      const c = a + stride;
-      const d = c + 1;
-      indices.push(a, c, b, b, c, d);
-    }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
-}
 
-function createCurveLatticeLineGeometry(guide) {
-  const vertices = [];
-  const appendCurve = (points, segments, tangents = null) => {
-    const curve = new THREE.CatmullRomCurve3(points, false, "centripetal", 0.5);
-    const sample = (t) => tangents ? sampleHermiteCurve(points, tangents, t) : curve.getPoint(t);
-    let previous = sample(0);
-    for (let index = 1; index <= segments; index += 1) {
-      const next = sample(index / segments);
-      vertices.push(previous.x, previous.y, previous.z, next.x, next.y, next.z);
-      previous = next;
-    }
-  };
-  for (let column = 0; column < guide.columns; column += 1) {
-    appendCurve(
-      Array.from({ length: guide.rows }, (_, row) => curveLatticeControlPoint(guide, column, row)),
-      36,
-      Array.from({ length: guide.rows }, (_, row) => guide.verticalTangents[row * guide.columns + column])
-    );
-  }
-  for (let row = 0; row < guide.rows; row += 1) {
-    appendCurve(
-      Array.from({ length: guide.columns }, (_, column) => curveLatticeControlPoint(guide, column, row)),
-      28,
-      Array.from({ length: guide.columns }, (_, column) => guide.acrossTangents[row * guide.columns + column])
-    );
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-  return geometry;
-}
 
-function curveLatticeLoopPickerGeometry(points, tangents, segments) {
-  const curve = new THREE.CatmullRomCurve3(points, false, "centripetal", 0.5);
-  const sample = (t) => tangents ? sampleHermiteCurve(points, tangents, t) : curve.getPoint(t);
-  const vertices = [];
-  let previous = sample(0);
-  for (let index = 1; index <= segments; index += 1) {
-    const next = sample(index / segments);
-    vertices.push(previous.x, previous.y, previous.z, next.x, next.y, next.z);
-    previous = next;
-  }
-  return new THREE.BufferGeometry().setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(vertices, 3)
-  );
-}
 
-function createCurveLatticeLoopPickers(guide) {
-  const group = new THREE.Group();
-  const addPicker = (axis, loopIndex, points, tangents, segments) => {
-    const picker = new THREE.LineSegments(
-      curveLatticeLoopPickerGeometry(points, tangents, segments),
-      new THREE.LineBasicMaterial({
-        color: 0xff5bd1,
-        transparent: true,
-        opacity: 0,
-        depthTest: false,
-        depthWrite: false
-      })
-    );
-    picker.renderOrder = 12;
-    picker.userData.guideId = guide.id;
-    picker.userData.curveLatticeGuideId = guide.id;
-    picker.userData.curveLatticeLoopAxis = axis;
-    picker.userData.curveLatticeLoopIndex = loopIndex;
-    group.add(picker);
-  };
-  for (let column = 0; column < guide.columns; column += 1) {
-    addPicker(
-      "vertical",
-      column,
-      Array.from({ length: guide.rows }, (_, row) => curveLatticeControlPoint(guide, column, row)),
-      Array.from({ length: guide.rows }, (_, row) => guide.verticalTangents[row * guide.columns + column]),
-      36
-    );
-  }
-  for (let row = 0; row < guide.rows; row += 1) {
-    addPicker(
-      "horizontal",
-      row,
-      Array.from({ length: guide.columns }, (_, column) => curveLatticeControlPoint(guide, column, row)),
-      Array.from({ length: guide.columns }, (_, column) => guide.acrossTangents[row * guide.columns + column]),
-      28
-    );
-  }
-  return group;
-}
 
-function rebuildCurveLatticeLoopPickers(guide) {
-  if (guide.loopPickersGroup) {
-    guideSurfaceGroup.remove(guide.loopPickersGroup);
-    guide.loopPickersGroup.children.forEach((picker) => {
-      picker.geometry.dispose();
-      picker.material.dispose();
-    });
-  }
-  guide.loopPickersGroup = createCurveLatticeLoopPickers(guide);
-  guideSurfaceGroup.add(guide.loopPickersGroup);
-  refreshCurveLatticeLoopHover();
-}
 
-function curveLatticeHasRootExtension(guide) {
-  return ["side-bangs-left", "side-bangs-right", "side-left", "side-right"].includes(guide.scalpRegion);
-}
 
-function defaultCurveLatticeRootPoints(guide) {
-  if (!curveLatticeHasRootExtension(guide)) return [];
-  const probe = new THREE.Raycaster();
-  return Array.from({ length: guide.columns }, (_, column) => {
-    const boundary = curveLatticeControlPoint(guide, column, 0);
-    probe.set(new THREE.Vector3(0, 4, boundary.z), new THREE.Vector3(0, -1, 0));
-    let hit = probe.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0];
-    if (!hit) {
-      probe.set(new THREE.Vector3(0, boundary.y, 4), new THREE.Vector3(0, 0, -1));
-      hit = probe.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0];
-    }
-    if (!hit) return boundary.clone().setX(0);
-    const point = hit.point.clone();
-    point.x = 0;
-    return point;
-  });
-}
 
-function curveLatticeEditablePoint(guide, pointIndex) {
-  if (pointIndex < guide.points.length) return guide.points[pointIndex];
-  const rootIndex = pointIndex - guide.points.length;
-  if (rootIndex < (guide.rootPoints?.length || 0)) return guide.rootPoints[rootIndex];
-  return undefined;
-}
 
-function curveLatticePointSection(guide, pointIndex) {
-  if (pointIndex < guide.points.length) {
-    return { type: "lattice", localIndex: pointIndex };
-  }
-  const afterLattice = pointIndex - guide.points.length;
-  if (afterLattice < (guide.rootPoints?.length || 0)) {
-    return { type: "root", localIndex: afterLattice };
-  }
-  return { type: "unknown", localIndex: -1 };
-}
 
-function curveLatticeRestPoint(guide, pointIndex) {
-  const section = curveLatticePointSection(guide, pointIndex);
-  if (section.type === "root") return guide.deformRestRootPoints?.[section.localIndex] || null;
-  return guide.deformRestPoints?.[section.localIndex] || null;
-}
 
-function editingCurveLatticeDeformation(guide) {
-  if ((!CURVE_LATTICE_FEATURE_ENABLED && !GROUP_CURVE_FEATURE_ENABLED) || !sel.state.selectedStrandGroup || !guide) return false;
-  return guide.scalpRegion === sel.state.selectedStrandGroup
-    || (sculptState.state.mirrorXEditing && guide.scalpRegion === scalpBuilder.mirroredScalpRegion(sel.state.selectedStrandGroup));
-}
 
-function curveLatticeRootColumns(guide) {
-  return Array.from({ length: guide.columns }, (_, column) => {
-    const boundary = curveLatticeControlPoint(guide, column, 0).clone();
-    return { boundary, root: guide.rootPoints[column].clone() };
-  });
-}
 
-function curveTangentsForPoints(points) {
-  return points.map((point, index) => {
-    const circularTangent = circularArcTangent(points, index);
-    if (circularTangent) return circularTangent;
-    const previous = points[Math.max(0, index - 1)];
-    const next = points[Math.min(points.length - 1, index + 1)];
-    const tangent = next.clone().sub(previous);
-    if (index > 0 && index < points.length - 1) tangent.multiplyScalar(0.5);
-    return tangent;
-  });
-}
 
-function createCurveLatticeRootGeometry(guide) {
-  const columns = curveLatticeRootColumns(guide);
-  const boundaryPoints = columns.map((column) => column.boundary);
-  const rootPoints = columns.map((column) => column.root);
-  const boundaryTangents = curveTangentsForPoints(boundaryPoints);
-  const rootTangents = curveTangentsForPoints(rootPoints);
-  const uSegments = Math.max(16, (guide.columns - 1) * 10);
-  const vSegments = 6;
-  const vertices = [];
-  const indices = [];
-  for (let row = 0; row <= vSegments; row += 1) {
-    const v = row / vSegments;
-    for (let column = 0; column <= uSegments; column += 1) {
-      const u = column / uSegments;
-      const boundary = sampleHermiteCurve(boundaryPoints, boundaryTangents, u);
-      const root = sampleHermiteCurve(rootPoints, rootTangents, u);
-      const point = boundary.lerp(root, v);
-      vertices.push(point.x, point.y, point.z);
-    }
-  }
-  const stride = uSegments + 1;
-  for (let row = 0; row < vSegments; row += 1) {
-    for (let column = 0; column < uSegments; column += 1) {
-      const a = row * stride + column;
-      const b = a + 1;
-      const c = a + stride;
-      const d = c + 1;
-      indices.push(a, c, b, b, c, d);
-    }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
-}
 
-function createCurveLatticeRootLineGeometry(guide) {
-  const columns = curveLatticeRootColumns(guide);
-  const boundaryPoints = columns.map((column) => column.boundary);
-  const rootPoints = columns.map((column) => column.root);
-  const boundaryTangents = curveTangentsForPoints(boundaryPoints);
-  const rootTangents = curveTangentsForPoints(rootPoints);
-  const vertices = [];
-  const appendCurve = (points, tangents) => {
-    let previous = sampleHermiteCurve(points, tangents, 0);
-    for (let index = 1; index <= 30; index += 1) {
-      const next = sampleHermiteCurve(points, tangents, index / 30);
-      vertices.push(previous.x, previous.y, previous.z, next.x, next.y, next.z);
-      previous = next;
-    }
-  };
-  appendCurve(boundaryPoints, boundaryTangents);
-  appendCurve(rootPoints, rootTangents);
-  columns.forEach(({ boundary, root }) => {
-    vertices.push(boundary.x, boundary.y, boundary.z, root.x, root.y, root.z);
-  });
-  return new THREE.BufferGeometry().setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(vertices, 3)
-  );
-}
 
-function rebuildCurveLatticeHandles(guide) {
-  const wasVisible = guide.handlesGroup?.visible ?? false;
-  if (guide.handlesGroup?.children.includes(transformControls.object)) transformControls.detach();
-  if (guide.handlesGroup) {
-    guideSurfaceGroup.remove(guide.handlesGroup);
-    guide.handlesGroup.children.forEach((handle) => {
-      handle.geometry.dispose();
-      handle.material.dispose();
-    });
-  }
-  sel.state.selectedCurveLatticePoint = null;
-  sel.state.selectedControlPoints = sel.state.selectedControlPoints.filter((point) => point.type !== "lattice" || point.guideId !== guide.id);
-  guide.handlesGroup = createCurveLatticeHandles(guide);
-  guide.handlesGroup.visible = wasVisible;
-  guideSurfaceGroup.add(guide.handlesGroup);
-}
 
-function resampleCurveLatticeGuide(guide, nextColumns, nextRows) {
-  const columns = THREE.MathUtils.clamp(Math.round(Number(nextColumns)), 2, 12);
-  const rows = THREE.MathUtils.clamp(Math.round(Number(nextRows)), 2, 12);
-  if (columns === guide.columns && rows === guide.rows) return;
-  const previousColumns = guide.columns;
-  const previousRows = guide.rows;
-  const sourcePoints = guide.points;
-  const sourceRestPoints = guide.deformRestPoints || sourcePoints;
-  const sourceRootPoints = guide.rootPoints || [];
-  const sourceRestRootPoints = guide.deformRestRootPoints || sourceRootPoints;
-  const resampleGrid = (points) => resampleCurveLatticePointData(
-    points,
-    previousColumns,
-    previousRows,
-    columns,
-    rows
-  ).map(dataToVector);
 
-  guide.points = resampleGrid(sourcePoints);
-  guide.deformRestPoints = resampleGrid(sourceRestPoints);
-  if (sourceRootPoints.length) {
-    guide.rootPoints = resampleCurveLatticeLineData(sourceRootPoints, columns).map(dataToVector);
-    guide.deformRestRootPoints = resampleCurveLatticeLineData(
-      sourceRestRootPoints,
-      columns
-    ).map(dataToVector);
-  }
-  locks.filter((lock) => lock.curveLatticeBinding?.guideId === guide.id).forEach((lock) => {
-    const normalizedColumn = lock.curveLatticeBinding.column / Math.max(1, previousColumns - 1);
-    lock.curveLatticeBinding.column = Math.round(normalizedColumn * (columns - 1));
-  });
-  guide.columns = columns;
-  guide.rows = rows;
-  rebuildCurveLatticeHandles(guide);
-  updateCurveLatticeGeometry(guide);
-}
 
-function controlPointIsSelected(type, ownerId, pointIndex) {
-  return sel.state.selectedControlPoints.some((point) => (
-    point.type === type
-    && (type === "lattice" ? point.guideId === ownerId : point.lockId === ownerId)
-    && point.pointIndex === pointIndex
-  ));
-}
 
-function clearMultiPointSelection() {
-  sel.state.selectedControlPoints = [];
-}
 
-function createCurveLatticeHandles(guide) {
-  const group = new THREE.Group();
-  const editablePoints = [...guide.points, ...(guide.rootPoints || [])];
-  editablePoints.forEach((point, index) => {
-    const handle = new THREE.Mesh(
-      new THREE.SphereGeometry(0.045, 16, 12),
-      new THREE.MeshBasicMaterial({ color: 0x58f6ff, transparent: true, opacity: 0.72, depthTest: false })
-    );
-    handle.position.copy(point);
-    handle.renderOrder = 10;
-    handle.userData.guideId = guide.id;
-    handle.userData.curveLatticeGuideId = guide.id;
-    handle.userData.curveLatticePointIndex = index;
-    handle.userData.curveLatticeRootPointIndex = index >= guide.points.length
-      && index < guide.points.length + (guide.rootPoints?.length || 0)
-      ? index - guide.points.length
-      : undefined;
-    group.add(handle);
-  });
-  return group;
-}
 
-function addCurveLattice(overrides = {}, options = {}) {
-  const columns = Number(overrides.columns || 3);
-  const rows = Number(overrides.rows || 3);
-  const standalone = Boolean(overrides.standalone);
-  const points = overrides.points?.map((point) => point.clone?.() || dataToVector(point))
-    || (standalone ? flatCurveLatticePoints(columns, rows) : defaultCurveLatticePoints(columns, rows));
-  const frames = defaultCurveLatticeFrames(points, columns, rows);
-  const scalpRegion = standalone ? "unassigned" : overrides.scalpRegion || "bangs";
-  const color = new THREE.Color(
-    overrides.color ?? SCALP_REGIONS[scalpRegion]?.color ?? 0x75c9ff
-  ).getHex();
-  const guide = {
-    id: overrides.id || crypto.randomUUID(),
-    type: "curve-lattice",
-    standalone,
-    name: normalizeOutlinerName(
-      overrides.name,
-      overrides.standalone
-        ? "Curve Lattice Guide"
-        : `${SCALP_REGIONS[scalpRegion]?.label || scalpRegion || "Group"} Curve Lattice`
-    ),
-    outlinerVisible: overrides.outlinerVisible !== false,
-    columns,
-    rows,
-    opacity: Number(overrides.opacity ?? 0.12),
-    scalpRegion,
-    color,
-    points,
-    acrossTangents: frames.tangents,
-    verticalTangents: frames.verticalTangents,
-    pointNormals: frames.normals
-  };
-  guide.rootPoints = curveLatticeHasRootExtension(guide)
-    ? overrides.rootPoints?.length === columns
-      ? overrides.rootPoints.map((point) => point.clone?.() || dataToVector(point))
-      : defaultCurveLatticeRootPoints(guide)
-    : [];
-  guide.deformRestPoints = overrides.deformRestPoints?.length === guide.points.length
-    ? overrides.deformRestPoints.map((point) => point.clone?.() || dataToVector(point))
-    : guide.points.map((point) => point.clone());
-  guide.deformRestRootPoints = overrides.deformRestRootPoints?.length === guide.rootPoints.length
-    ? overrides.deformRestRootPoints.map((point) => point.clone?.() || dataToVector(point))
-    : guide.rootPoints.map((point) => point.clone());
-  guide.mesh = new THREE.Mesh(
-    createCurveLatticeGeometry(guide),
-    new THREE.MeshLambertMaterial({
-      color,
-      transparent: true,
-      opacity: guide.opacity,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    })
-  );
-  guide.mesh.userData.guideId = guide.id;
-  guide.mesh.userData.curveLatticeGuideId = guide.id;
-  guide.wire = new THREE.LineSegments(
-    createCurveLatticeLineGeometry(guide),
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.78, depthWrite: false })
-  );
-  guide.wire.userData.guideId = guide.id;
-  guide.wire.userData.curveLatticeGuideId = guide.id;
-  if (curveLatticeHasRootExtension(guide)) {
-    guide.rootMesh = new THREE.Mesh(
-      createCurveLatticeRootGeometry(guide),
-      new THREE.MeshLambertMaterial({
-        color,
-        transparent: true,
-        opacity: guide.opacity,
-        side: THREE.DoubleSide,
-        depthWrite: false
-      })
-    );
-    guide.rootWire = new THREE.LineSegments(
-      createCurveLatticeRootLineGeometry(guide),
-      new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.78, depthWrite: false })
-    );
-    [guide.rootMesh, guide.rootWire].forEach((object) => {
-      object.userData.guideId = guide.id;
-      object.userData.curveLatticeGuideId = guide.id;
-    });
-  }
-  guide.loopPickersGroup = createCurveLatticeLoopPickers(guide);
-  guide.handlesGroup = createCurveLatticeHandles(guide);
-  guide.handlesGroup.visible = false;
-  guideSurfaceGroup.add(
-    guide.mesh,
-    guide.wire,
-    ...(guide.rootMesh ? [guide.rootMesh, guide.rootWire] : []),
-    guide.loopPickersGroup,
-    guide.handlesGroup
-  );
-  if (
-    (!CURVE_LATTICE_FEATURE_ENABLED || !REGION_CURVE_VISUALIZATION_ENABLED)
-    && !guide.standalone
-  ) {
-    [guide.mesh, guide.wire, guide.rootMesh, guide.rootWire]
-      .filter(Boolean)
-      .forEach((object) => { object.visible = false; });
-    guide.loopPickersGroup.visible = false;
-    guide.handlesGroup.visible = false;
-  }
-  guides.push(guide);
-  if (!options.deferUi) {
-    selectGuide(guide.id);
-    updateCount();
-  }
-  return guide;
-}
 
-function updateCurveLatticeGeometry(guide, options = {}) {
-  const frames = defaultCurveLatticeFrames(guide.points, guide.columns, guide.rows);
-  guide.acrossTangents = frames.tangents;
-  guide.verticalTangents = frames.verticalTangents;
-  guide.pointNormals = frames.normals;
-  guide.mesh.geometry.dispose();
-  guide.wire.geometry.dispose();
-  guide.mesh.geometry = createCurveLatticeGeometry(guide);
-  guide.wire.geometry = createCurveLatticeLineGeometry(guide);
-  guide.mesh.material.opacity = guide.opacity;
-  rebuildCurveLatticeLoopPickers(guide);
-  if (guide.rootMesh) {
-    guide.rootMesh.geometry.dispose();
-    guide.rootWire.geometry.dispose();
-    guide.rootMesh.geometry = createCurveLatticeRootGeometry(guide);
-    guide.rootWire.geometry = createCurveLatticeRootLineGeometry(guide);
-    guide.rootMesh.material.opacity = guide.opacity;
-  }
-  if (options.syncHandles !== false) {
-    guide.handlesGroup.children.forEach((handle, index) => {
-      const point = curveLatticeEditablePoint(guide, index);
-      if (point) handle.position.copy(point);
-    });
-  }
-  updateGroupCurveDisplay(guide);
-  if (GROUP_CURVE_FEATURE_ENABLED && sel.state.selectedStrandGroup) {
-    filterCurveLatticesToGroup(sel.state.activeCurveLatticeGuideId);
-  }
-  updateBoundCurveLatticeStrands(guide);
-}
 
-function mirroredCurveLatticePointIndex(guide, pointIndex) {
-  const row = Math.floor(pointIndex / guide.columns);
-  const column = pointIndex % guide.columns;
-  return row * guide.columns + (guide.columns - 1 - column);
-}
 
-function mirroredCurveLatticeTarget(guide, pointIndex) {
-  const mirroredRegion = scalpBuilder.mirroredScalpRegion(guide.scalpRegion);
-  const section = curveLatticePointSection(guide, pointIndex);
-  if (mirroredRegion === guide.scalpRegion) {
-    if (section.type === "root") {
-      return {
-        guide,
-        pointIndex: guide.points.length + (guide.columns - 1 - section.localIndex)
-      };
-    }
-    return { guide, pointIndex: mirroredCurveLatticePointIndex(guide, pointIndex) };
-  }
-  const targetGuide = guides.find((item) => (
-    item.type === "curve-lattice" && item.scalpRegion === mirroredRegion
-  ));
-  if (!targetGuide) return null;
-  if (section.type === "root") {
-    const targetRootIndex = Math.round(
-      (section.localIndex / Math.max(1, guide.columns - 1)) * Math.max(0, targetGuide.columns - 1)
-    );
-    return {
-      guide: targetGuide,
-      pointIndex: targetGuide.points.length + targetRootIndex
-    };
-  }
-  const sourceRow = Math.floor(section.localIndex / guide.columns);
-  const sourceColumn = section.localIndex % guide.columns;
-  const targetRow = Math.round(
-    (sourceRow / Math.max(1, guide.rows - 1)) * Math.max(0, targetGuide.rows - 1)
-  );
-  const targetColumn = Math.round(
-    (sourceColumn / Math.max(1, guide.columns - 1)) * Math.max(0, targetGuide.columns - 1)
-  );
-  return {
-    guide: targetGuide,
-    pointIndex: targetRow * targetGuide.columns + targetColumn
-  };
-}
 
-function updateCurveLatticeHandleColors(guide) {
-  if (!guide?.handlesGroup) return;
-  const selectedIndex = sel.state.selectedCurveLatticePoint?.guideId === guide.id
-    ? sel.state.selectedCurveLatticePoint.pointIndex
-    : -1;
-  const selectedGuide = sel.state.selectedCurveLatticePoint
-    ? guides.find((item) => item.id === sel.state.selectedCurveLatticePoint.guideId)
-    : null;
-  const mirroredTarget = sculptState.state.mirrorXEditing && selectedGuide
-    ? mirroredCurveLatticeTarget(selectedGuide, sel.state.selectedCurveLatticePoint.pointIndex)
-    : null;
-  const mirroredIndex = mirroredTarget?.guide.id === guide.id ? mirroredTarget.pointIndex : -1;
 
-  guide.handlesGroup.children.forEach((handle, index) => {
-    const isSelected = index === selectedIndex || controlPointIsSelected("lattice", guide.id, index);
-    const isMirrored = index === mirroredIndex && mirroredIndex !== selectedIndex;
-    handle.material.color.set(isSelected ? CONTROL_POINT_SELECTED_COLOR : isMirrored ? 0xf0d95d : 0x58f6ff);
-    handle.material.opacity = isSelected ? 1 : isMirrored ? 0.9 : 0.58;
-  });
-}
 
-function curveLatticeLoopHitFromEvent(event, guide = selectedCurveLatticeGuide()) {
-  if (!guide?.loopPickersGroup || !guide.handlesGroup?.visible) return null;
-  rayFromViewportEvent(event);
-  const previousThreshold = raycaster.params.Line.threshold;
-  raycaster.params.Line.threshold = 0.055;
-  const hit = raycaster.intersectObjects(guide.loopPickersGroup.children, false)[0] || null;
-  raycaster.params.Line.threshold = previousThreshold;
-  if (!hit) return null;
-  const surfaceHit = raycaster.intersectObject(guide.mesh, false)[0] || null;
-  if (surfaceHit && hit.distance > surfaceHit.distance + 0.09) return null;
-  return {
-    guide,
-    axis: hit.object.userData.curveLatticeLoopAxis,
-    loopIndex: hit.object.userData.curveLatticeLoopIndex
-  };
-}
 
-function refreshCurveLatticeLoopHover() {
-  guides.forEach((guide) => guide.loopPickersGroup?.children.forEach((picker) => {
-    const hovered = guideState.state.curveLatticeLoopHover?.guideId === guide.id
-      && guideState.state.curveLatticeLoopHover.axis === picker.userData.curveLatticeLoopAxis
-      && guideState.state.curveLatticeLoopHover.loopIndex === picker.userData.curveLatticeLoopIndex;
-    picker.material.opacity = hovered ? 0.96 : 0;
-  }));
-}
 
-function setCurveLatticeLoopHover(result = null) {
-  guideState.state.curveLatticeLoopHover = result
-    ? { guideId: result.guide.id, axis: result.axis, loopIndex: result.loopIndex }
-    : null;
-  refreshCurveLatticeLoopHover();
-}
 
-function updateCurveLatticeLoopHover(event) {
-  const applicableTool = ["select", "move"].includes(sel.state.activeTool);
-  const blocked = !applicableTool
-    || sculptState.state.viewportEditMode !== "guide"
-    || !componentEditModeActive()
-    || sculptState.state.transformDragging
-    || event.shiftKey
-    || event.ctrlKey
-    || event.altKey
-    || event.metaKey
-    || guideState.state.hoveredControlPoint
-    || pointerHitsTransformGizmo(event);
-  const result = blocked ? null : curveLatticeLoopHitFromEvent(event);
-  setCurveLatticeLoopHover(result);
-  if (renderer.domElement.contains(event.target)) {
-    renderer.domElement.style.cursor = result ? "pointer" : "";
-  }
-}
 
-function selectCurveLatticeLoop(guide, axis, loopIndex) {
-  const indices = curveLatticeLoopPointIndices(
-    guide?.columns,
-    guide?.rows,
-    axis,
-    loopIndex
-  );
-  if (!guide || indices.length < 2) return false;
-  sel.state.selectedControlPoints = indices.map((pointIndex) => ({
-    type: "lattice",
-    guideId: guide.id,
-    pointIndex
-  }));
-  sel.state.selectedCurveLatticePoint = { guideId: guide.id, pointIndex: indices[0] };
-  sel.state.selectedPoint = null;
-  guides.filter((item) => item.type === "curve-lattice").forEach(updateCurveLatticeHandleColors);
-  transformControls.detach();
-  if (
-    sel.state.activeTool === "move"
-    && !(sel.state.activeTool === "move" && viewPlaneMoveActiveForView())
-  ) {
-    configureTransformControls(sel.state.activeTool);
-    transformControls.attach(guide.handlesGroup.children[indices[0]]);
-  }
-  updateSelectedPointLabel();
-  updatePlacementStatus();
-  return true;
-}
 
-function selectCurveLatticePoint(guide, pointIndex, attachTransform = sel.state.activeTool === "move", preserveMulti = false) {
-  if (!guide?.handlesGroup?.children[pointIndex]) return;
-  sel.state.selectedCurveLatticePoint = { guideId: guide.id, pointIndex };
-  sel.state.selectedPoint = null;
-  if (!preserveMulti) sel.state.selectedControlPoints = [{ type: "lattice", guideId: guide.id, pointIndex }];
-  guides.filter((item) => item.type === "curve-lattice").forEach(updateCurveLatticeHandleColors);
-  if (attachTransform) {
-    transformControls.setMode("translate");
-    transformControls.setSpace("world");
-    transformControls.attach(guide.handlesGroup.children[pointIndex]);
-  } else {
-    transformControls.detach();
-  }
-}
 
-function updateCurveLatticeFromHandle(handle) {
-  const guide = guides.find((item) => item.id === handle.userData.curveLatticeGuideId);
-  const pointIndex = handle.userData.curveLatticePointIndex;
-  if (!guide || pointIndex === undefined) return;
-  const editedPoint = curveLatticeEditablePoint(guide, pointIndex);
-  if (!editedPoint) return;
-  const previousPoint = editedPoint.clone();
-  editedPoint.copy(handle.position);
-  const guideOnlyEdit = !editingCurveLatticeDeformation(guide);
-  const editDelta = editedPoint.clone().sub(previousPoint);
-  if (guideOnlyEdit) curveLatticeRestPoint(guide, pointIndex)?.add(editDelta);
 
-  if (sculptState.state.mirrorXEditing) {
-    const mirroredTarget = mirroredCurveLatticeTarget(guide, pointIndex);
-    if (mirroredTarget?.guide.id === guide.id && mirroredTarget.pointIndex === pointIndex) {
-      editedPoint.x = 0;
-      handle.position.x = 0;
-      if (guideOnlyEdit) {
-        const restPoint = curveLatticeRestPoint(guide, pointIndex);
-        if (restPoint) restPoint.x = 0;
-      }
-    } else if (mirroredTarget) {
-      const mirroredPoint = curveLatticeEditablePoint(mirroredTarget.guide, mirroredTarget.pointIndex);
-      if (!mirroredPoint) return;
-      const previousMirroredPoint = mirroredPoint.clone();
-      mirroredPoint.set(-handle.position.x, handle.position.y, handle.position.z);
-      const mirroredGuideOnlyEdit = !editingCurveLatticeDeformation(mirroredTarget.guide);
-      const mirroredDelta = mirroredPoint.clone().sub(previousMirroredPoint);
-      if (mirroredGuideOnlyEdit) {
-        curveLatticeRestPoint(mirroredTarget.guide, mirroredTarget.pointIndex)?.add(mirroredDelta);
-      }
-      mirroredTarget.guide.handlesGroup.children[mirroredTarget.pointIndex]?.position.copy(mirroredPoint);
-      if (mirroredTarget.guide.id !== guide.id) {
-        updateCurveLatticeGeometry(mirroredTarget.guide);
-      }
-    }
-  }
 
-  updateCurveLatticeGeometry(guide);
-  guides.filter((item) => item.type === "curve-lattice").forEach(updateCurveLatticeHandleColors);
-}
-
-function beginCurveLatticeMultiEdit(handle) {
-  const guide = guides.find((item) => item.id === handle?.userData.curveLatticeGuideId);
-  if (!guide) return;
-  const selectedIndices = sel.state.selectedControlPoints
-    .filter((point) => point.type === "lattice" && point.guideId === guide.id)
-    .map((point) => point.pointIndex);
-  if (selectedIndices.length < 2 || !selectedIndices.includes(handle.userData.curveLatticePointIndex)) {
-    sculptState.state.activeLatticeMultiEdit = null;
-    return;
-  }
-  sculptState.state.activeLatticeMultiEdit = {
-    guideId: guide.id,
-    pointIndex: handle.userData.curveLatticePointIndex,
-    selectedIndices,
-    points: selectedIndices.map((index) => ({ index, point: curveLatticeEditablePoint(guide, index).clone() })),
-    handlePosition: handle.position.clone(),
-    handleQuaternion: handle.quaternion.clone(),
-    handleScale: handle.scale.clone()
-  };
-}
-
-function applyCurveLatticeMultiTransform(handle) {
-  const edit = sculptState.state.activeLatticeMultiEdit;
-  const guide = guides.find((item) => item.id === edit?.guideId);
-  if (!guide || sel.state.activeTool !== "move" || transformControls.mode !== "translate") return;
-  const selectedSet = new Set(edit.selectedIndices);
-  const delta = handle.position.clone().sub(edit.handlePosition);
-
-  edit.points.forEach(({ index, point }) => {
-    const target = curveLatticeEditablePoint(guide, index);
-    target.copy(point).add(delta);
-  });
-
-  const guideOnlyEdit = !editingCurveLatticeDeformation(guide);
-  if (guideOnlyEdit) {
-    edit.points.forEach(({ index, point }) => {
-      const target = curveLatticeEditablePoint(guide, index);
-      curveLatticeRestPoint(guide, index)?.add(target.clone().sub(point));
-    });
-  }
-
-  const mirroredGuides = new Set();
-  if (sculptState.state.mirrorXEditing) {
-    edit.selectedIndices.forEach((index) => {
-      const mirrored = mirroredCurveLatticeTarget(guide, index);
-      if (!mirrored || (mirrored.guide.id === guide.id && selectedSet.has(mirrored.pointIndex))) return;
-      const source = curveLatticeEditablePoint(guide, index);
-      const target = curveLatticeEditablePoint(mirrored.guide, mirrored.pointIndex);
-      if (!source || !target) return;
-      const previousTarget = target.clone();
-      target.set(-source.x, source.y, source.z);
-      if (!editingCurveLatticeDeformation(mirrored.guide)) {
-        curveLatticeRestPoint(mirrored.guide, mirrored.pointIndex)?.add(target.clone().sub(previousTarget));
-      }
-      mirroredGuides.add(mirrored.guide);
-    });
-  }
-  updateCurveLatticeGeometry(guide);
-  mirroredGuides.forEach((mirroredGuide) => {
-    updateCurveLatticeGeometry(mirroredGuide);
-  });
-  guides.filter((item) => item.type === "curve-lattice").forEach(updateCurveLatticeHandleColors);
-}
-
-function curveLatticeColumnPoints(guide, column, count = guide.rows) {
-  const controlPoints = Array.from({ length: guide.rows }, (_, row) => curveLatticeControlPoint(guide, column, row));
-  const tangents = curveTangentsForPoints(controlPoints);
-  return Array.from(
-    { length: count },
-    (_, index) => sampleHermiteCurve(controlPoints, tangents, index / Math.max(1, count - 1))
-  );
-}
-
-function groupCurveControlIndices(guide) {
-  const column = Math.floor(guide.columns / 2);
-  const indices = Array.from({ length: guide.rows }, (_, row) => row * guide.columns + column);
-  return indices;
-}
-
-function groupCurveControlPoints(guide) {
-  return groupCurveControlIndices(guide)
-    .map((index) => curveLatticeEditablePoint(guide, index))
-    .filter(Boolean);
-}
-
-function updateGroupCurveDisplay(guide) {
-  if (!guide.groupCurveLine) return;
-  const points = groupCurveControlPoints(guide);
-  const displayPoints = points.length > 1
-    ? new THREE.CatmullRomCurve3(points).getPoints(48)
-    : points;
-  guide.groupCurveLine.geometry.dispose();
-  guide.groupCurveLine.geometry = new THREE.BufferGeometry().setFromPoints(displayPoints);
-}
-
-function ensureGroupCurveDisplay(guide) {
-  if (!guide.groupCurveLine) {
-    guide.groupCurveLine = new THREE.Line(
-      new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({
-        color: guide.color,
-        transparent: true,
-        opacity: 0.9,
-        depthTest: false,
-        depthWrite: false
-      })
-    );
-    guide.groupCurveLine.renderOrder = 9;
-    guide.groupCurveLine.visible = false;
-    guideSurfaceGroup.add(guide.groupCurveLine);
-  }
-  updateGroupCurveDisplay(guide);
-  return guide.groupCurveLine;
-}
 
 const REGION_CURVE_VISUALIZATION_ENABLED = false;
+// Fill guide/curve deps after the last dep is defined (stores use the .state accessor;
+// scalpBuilder couplings route through the scalp api; plain values pass by reference).
+Object.assign(guideDeps, {
+  CONTROL_POINT_SELECTED_COLOR,
+  DEFAULT_CAPSULE_GUIDE_COLOR,
+  GUIDE_BOUNDS_EXCLUDED_GROUPS,
+  GUIDE_VIEW_MODES,
+  REGION_CURVE_VISUALIZATION_ENABLED,
+  activeScalpSurfaceMesh: scalpBuilder.activeScalpSurfaceMesh,
+  activeStrokeDynamicEnabled,
+  activeStrokeSurfaceValue,
+  applyDisplayVisibilityFilters,
+  attachGuideObjectTransform,
+  camera,
+  capsuleGuideDrawDefaults,
+  capsuleGuideDrawPreview,
+  capsuleGuideLoopHandle,
+  capsuleGuideProfilePath,
+  clearStrandSelectionState,
+  componentEditModeActive,
+  configureTransformControls,
+  contextualPlaneAtOrigin,
+  createOutlinerVisibilityToggle,
+  createScalpGuideOutlinerRow: scalpBuilder.createScalpGuideOutlinerRow,
+  curveLatticeControls,
+  curveLatticeHorizontalLoopsInput,
+  curveLatticeHorizontalLoopsValue,
+  curveLatticeOpacityInput,
+  curveLatticePointsForScalpRegion: scalpBuilder.curveLatticePointsForScalpRegion,
+  curveLatticeToggle,
+  curveLatticeVerticalLoopsInput,
+  curveLatticeVerticalLoopsValue,
+  dataToVector,
+  deselectStrandsForGuideEditor,
+  drawSurfaceHitFromEvent,
+  filterCurveLatticesToGroup,
+  getSelectedLock,
+  guideControls,
+  guideInputs,
+  guideOutliner,
+  guidePanelTitle,
+  guideState: guideState.state,
+  guideSurfaceGroup,
+  guideViewContextMenu,
+  guideViewModeActions,
+  guides,
+  handleOutlinerRenameClick,
+  locks,
+  loftSurfaceProfilePoints,
+  loftSurfaceSampleFromHit,
+  mirroredScalpRegion: scalpBuilder.mirroredScalpRegion,
+  modeToolButtons,
+  normalizeOutlinerName,
+  pointer,
+  pointerHitsTransformGizmo,
+  pushUndoState,
+  rayFromViewportEvent,
+  raycaster,
+  refreshLiveSurfaceOptions,
+  refreshRebuildCurveDialog,
+  renderLockList,
+  renderer,
+  scalpBuilderProportionalWeight: scalpBuilder.scalpBuilderProportionalWeight,
+  scalpGuideVisibilityToggle,
+  scalpState: scalpState.state,
+  scalpSurfaceGroup,
+  sculptBrushDock,
+  sculptState: sculptState.state,
+  sel: sel.state,
+  selectedCurveLatticeGuide,
+  setActiveTool,
+  setOutlinerTab,
+  setScalpGuideVisibility: scalpBuilder.setScalpGuideVisibility,
+  setSculptBrushCursorVisible,
+  setStrandSelectionVisual,
+  setViewportEditMode,
+  showOutlinerContextMenu,
+  strandRegionDisplayLabel,
+  strokeSurfaceIsContextual,
+  subdivideScalpBuilderCage: scalpBuilder.subdivideScalpBuilderCage,
+  surfaceGuideColorInput,
+  surfaceGuideDefaults,
+  surfaceGuideFresnelInput,
+  surfaceGuideInputs,
+  surfaceGuideNameInput,
+  surfaceGuideValues,
+  syncDisplayVisibilityInputs,
+  transformControls,
+  updateAttributeEditorMode,
+  updateBoundCurveLatticeStrands,
+  updateCount,
+  updateCurveObjects,
+  updateInteractionLocks,
+  updatePlacementStatus,
+  updateScalpEditingVisibility: scalpBuilder.updateScalpEditingVisibility,
+  updateSelectedPointLabel,
+  vectorToData,
+  viewPlaneMoveActiveForView,
+  viewPlaneNormal,
+  viewportCapsuleGuideTool,
+  viewportCurveLatticeGuideTool,
+  viewportDrawCapsuleGuideTool,
+});
 
-function groupCurveDeformationPairs(guide) {
-  return groupCurveControlIndices(guide).map((index) => ({
-    rest: curveLatticeRestPoint(guide, index),
-    current: curveLatticeEditablePoint(guide, index)
-  })).filter((pair) => pair.rest && pair.current);
-}
 
-function curveLatticeDeformationPairs(guide) {
-  const pairs = [];
-  const appendPairs = (restPoints, currentPoints) => {
-    const count = Math.min(restPoints?.length || 0, currentPoints?.length || 0);
-    for (let index = 0; index < count; index += 1) {
-      pairs.push({ rest: restPoints[index], current: currentPoints[index] });
-    }
-  };
-  appendPairs(guide.deformRestPoints, guide.points);
-  appendPairs(guide.deformRestRootPoints, guide.rootPoints);
-  return pairs;
-}
 
-function groupLatticeOffsetAtPoint(point, deformationPairs) {
-  const nearest = deformationPairs
-    .map((pair) => ({ pair, distanceSq: point.distanceToSquared(pair.rest) }))
-    .sort((a, b) => a.distanceSq - b.distanceSq)
-    .slice(0, Math.min(6, deformationPairs.length));
-  if (!nearest.length) return new THREE.Vector3();
-  if (nearest[0].distanceSq < 1e-8) {
-    return nearest[0].pair.current.clone().sub(nearest[0].pair.rest);
-  }
-  const offset = new THREE.Vector3();
-  let totalWeight = 0;
-  nearest.forEach(({ pair, distanceSq }) => {
-    const weight = 1 / Math.pow(distanceSq + 0.0125, 1.5);
-    offset.addScaledVector(pair.current.clone().sub(pair.rest), weight);
-    totalWeight += weight;
-  });
-  return offset.divideScalar(Math.max(1e-8, totalWeight));
-}
+
 
 function updateGroupCurveLatticeStrands(guide) {
-  if (!editingCurveLatticeDeformation(guide)) return;
+  if (!guideApi.editingCurveLatticeDeformation(guide)) return;
   const deformationPairs = GROUP_CURVE_FEATURE_ENABLED
-    ? groupCurveDeformationPairs(guide)
-    : curveLatticeDeformationPairs(guide);
+    ? guideApi.groupCurveDeformationPairs(guide)
+    : guideApi.curveLatticeDeformationPairs(guide);
   if (!deformationPairs.length) return;
   locks
     .filter((lock) => (lock.scalpRegion || "unassigned") === guide.scalpRegion)
@@ -6545,7 +5479,7 @@ function updateGroupCurveLatticeStrands(guide) {
       }
       lock.points.forEach((point, index) => {
         const basePoint = lock.groupLatticeBasePoints[index];
-        point.copy(basePoint).add(groupLatticeOffsetAtPoint(basePoint, deformationPairs));
+        point.copy(basePoint).add(guideApi.groupLatticeOffsetAtPoint(basePoint, deformationPairs));
       });
       syncLockFromCurve(lock);
       updateLockGeometry(lock);
@@ -6555,12 +5489,12 @@ function updateGroupCurveLatticeStrands(guide) {
 function updateBoundCurveLatticeStrands(guide) {
   locks.filter((lock) => (
     CURVE_LATTICE_FEATURE_ENABLED
-    && editingCurveLatticeDeformation(guide)
+    && guideApi.editingCurveLatticeDeformation(guide)
     && lock.curveLatticeBinding?.guideId === guide.id
   )).forEach((lock) => {
     const column = THREE.MathUtils.clamp(lock.curveLatticeBinding.column, 0, guide.columns - 1);
     const pointCount = Math.max(4, guide.rows);
-    lock.points = curveLatticeColumnPoints(guide, column, pointCount);
+    lock.points = guideApi.curveLatticeColumnPoints(guide, column, pointCount);
     fitPointAttributes(lock, lock.points.length);
     if (lock.curveObjects.handles.length !== lock.points.length) rebuildCurveObjects(lock);
     syncLockFromCurve(lock);
@@ -6582,7 +5516,7 @@ function createStrandsFromCurveLattice(guide) {
       continue;
     }
     const pointCount = Math.max(4, guide.rows);
-    const points = curveLatticeColumnPoints(guide, column, pointCount);
+    const points = guideApi.curveLatticeColumnPoints(guide, column, pointCount);
     const root = points[0];
     const lock = addLock("front", {
       x: root.x,
@@ -6605,1472 +5539,73 @@ function createStrandsFromCurveLattice(guide) {
   if (created.length) selectLock(created[Math.floor(created.length / 2)].id);
 }
 
-function capsuleGuideCapHeight(radius) {
-  return Math.max(0.02, Number(radius)) * 0.72;
-}
-
-function hideCapsuleGuideDrawPreview() {
-  capsuleGuideDrawPreview.visible = false;
-  capsuleGuideDrawPreview.geometry.setFromPoints([]);
-}
-
-function currentCapsuleGuideDrawProfile() {
-  return capsuleGuideDrawDefaults.profile.map((point) => ({ ...point }));
-}
-
-function updateCapsuleGuideProfilePreview() {
-  const profile = currentCapsuleGuideDrawProfile();
-  const samples = Array.from({ length: 33 }, (_, index) => {
-    const t = index / 32;
-    const value = sampleCapsuleRadialProfile(profile, t);
-    return { x: 8 + t * 204, y: 28 - Math.min(2, value) / 2 * 22 };
-  });
-  const upper = samples.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" L ");
-  const lower = [...samples].reverse().map((point) => `${point.x.toFixed(2)},${(56 - point.y).toFixed(2)}`).join(" L ");
-  capsuleGuideProfilePath.setAttribute("d", `M ${upper} L ${lower} Z`);
-}
-
-function capsuleGuideDrawPoints(samples = sculptState.state.capsuleGuideDrawStroke?.samples, surfaceOffset = 0) {
-  const sourceSamples = samples || [];
-  const adjustedSamples = sourceSamples.map((sample, index) => ({
-    ...sample,
-    point: sample.onSurface && sample.normal && surfaceOffset
-      ? sample.point.clone().addScaledVector(
-          sample.normal,
-          typeof surfaceOffset === "function"
-            ? surfaceOffset(sourceSamples.length > 1 ? index / (sourceSamples.length - 1) : 0)
-            : surfaceOffset
-        )
-      : sample.point.clone()
-  }));
-  return loftSurfaceProfilePoints(adjustedSamples);
-}
-
-function updateCapsuleGuideDrawPreview() {
-  const points = capsuleGuideDrawPoints();
-  capsuleGuideDrawPreview.geometry.setFromPoints(points);
-  capsuleGuideDrawPreview.visible = points.length > 1;
-}
-
-function beginCapsuleGuideDrawStroke(event, hit) {
-  if (event.button !== 0 || !hit || event.ctrlKey || event.altKey || event.metaKey) return false;
-  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur?.();
-  const surfaceMode = activeStrokeSurfaceValue();
-  const dynamicContextual = activeStrokeDynamicEnabled(surfaceMode);
-  const sample = hit.contextualPlaneNormal
-    ? { point: hit.point.clone(), normal: hit.contextualPlaneNormal.clone(), onSurface: false }
-    : loftSurfaceSampleFromHit(hit);
-  sculptState.state.capsuleGuideDrawStroke = {
-    pointerId: event.pointerId,
-    surfaceMode,
-    dynamicContextual,
-    samples: [sample],
-    lastX: event.clientX,
-    lastY: event.clientY,
-    freePlane: surfaceMode === "contextual-plane" ? contextualPlaneAtOrigin() : null
-  };
-  renderer.domElement.setPointerCapture?.(event.pointerId);
-  renderer.domElement.style.cursor = "crosshair";
-  updateCapsuleGuideDrawPreview();
-  updateInteractionLocks();
-  updatePlacementStatus();
-  event.preventDefault();
-  return true;
-}
-
-function updateCapsuleGuideDrawStroke(event) {
-  const stroke = sculptState.state.capsuleGuideDrawStroke;
-  if (!stroke || event.pointerId !== stroke.pointerId) return;
-  if (Math.hypot(event.clientX - stroke.lastX, event.clientY - stroke.lastY) < 4) return;
-  let nextSample = null;
-  if (!stroke.freePlane) {
-    const hit = drawSurfaceHitFromEvent(event);
-    if (hit) nextSample = loftSurfaceSampleFromHit(hit);
-    else if (strokeSurfaceIsContextual(stroke.surfaceMode, stroke.dynamicContextual)) {
-      const normal = viewPlaneNormal();
-      const origin = stroke.samples.at(-1).point.clone();
-      stroke.freePlane = {
-        origin,
-        normal,
-        plane: new THREE.Plane().setFromNormalAndCoplanarPoint(normal, origin)
-      };
-    }
-  }
-  if (stroke.freePlane && !nextSample) {
-    const point = rayFromViewportEvent(event).intersectPlane(stroke.freePlane.plane, new THREE.Vector3());
-    if (point) nextSample = { point, normal: stroke.freePlane.normal.clone(), onSurface: false };
-  }
-  if (!nextSample || nextSample.point.distanceTo(stroke.samples.at(-1).point) < 0.008) return;
-  stroke.samples.push(nextSample);
-  stroke.lastX = event.clientX;
-  stroke.lastY = event.clientY;
-  updateCapsuleGuideDrawPreview();
-  event.preventDefault();
-}
-
-function createCapsuleGuideAlongCurve(samples) {
-  const radius = Math.max(0.02, Number(surfaceGuideInputs.radius.value || surfaceGuideDefaults.radius));
-  const radialProfile = currentCapsuleGuideDrawProfile();
-  const centerline = capsuleGuideDrawPoints(
-    samples,
-    (amount) => radius * sampleCapsuleRadialProfile(radialProfile, amount)
-  );
-  const centerlineData = centerline.map(vectorToData);
-  const authoredLength = polylineLength(centerlineData);
-  if (centerline.length < 2 || authoredLength < 0.12) return null;
-  const cageLength = Math.max(radius * 2, authoredLength);
-  const radialLoops = Math.max(6, Math.round(Number(surfaceGuideInputs.radialLoops.value || surfaceGuideDefaults.radialLoops) / 2) * 2);
-  const curveStep = THREE.MathUtils.clamp(Number(capsuleGuideDrawDefaults.curveStep), 0.05, 0.5);
-  const lengthLoops = THREE.MathUtils.clamp(Math.ceil(authoredLength / curveStep), 4, 32);
-  const baseGeometry = createCapsuleGuideGeometry(radius, cageLength, radialLoops, lengthLoops);
-  const baseData = capsuleControlDataFromGeometry(baseGeometry);
-  const preferredNormal = samples.find((sample) => sample.normal)?.normal || null;
-  const worldControlData = curveDeformedCapsulePoints({
-    centerline: centerlineData,
-    cagePoints: baseData.points.map(vectorToData),
-    guideLength: cageLength,
-    preferredNormal: preferredNormal ? vectorToData(preferredNormal) : null,
-    radialProfile,
-    capAtEnd: true,
-    frameSamples: Math.max(65, lengthLoops * 8 + 1)
-  });
-  const start = centerline[0].clone();
-  let direction = centerline.at(-1).clone().sub(start);
-  if (direction.lengthSq() < 1e-8) direction = centerline[1].clone().sub(start);
-  if (direction.lengthSq() < 1e-8) direction.set(0, -1, 0);
-  direction.normalize();
-  const end = start.clone().addScaledVector(direction, cageLength);
-  const midpoint = start.clone().add(end).multiplyScalar(0.5);
-  const orientation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), direction);
-  const inverseOrientation = orientation.clone().invert();
-  const controlPoints = worldControlData.map((point) => (
-    dataToVector(point).sub(midpoint).applyQuaternion(inverseOrientation)
-  ));
-  baseGeometry.dispose();
-  return addCapsuleGuide({
-    start,
-    end,
-    radius,
-    radialLoops,
-    lengthLoops,
-    subdivisionSteps: Number(surfaceGuideInputs.subdivisionSteps.value || surfaceGuideDefaults.subdivisionSteps),
-    opacity: Number(surfaceGuideInputs.opacity.value || surfaceGuideDefaults.opacity),
-    fresnel: surfaceGuideFresnelInput.checked,
-    centerVisibility: Number(surfaceGuideInputs.centerVisibility.value || surfaceGuideDefaults.centerVisibility),
-    controlPoints,
-    controlFaces: baseData.faces
-  });
-}
-
-function finishCapsuleGuideDrawStroke(event, { cancel = false } = {}) {
-  const stroke = sculptState.state.capsuleGuideDrawStroke;
-  if (!stroke) return false;
-  if (event?.pointerId !== undefined && event.pointerId !== stroke.pointerId) return false;
-  if (!cancel && event?.clientX !== undefined) updateCapsuleGuideDrawStroke(event);
-  sculptState.state.capsuleGuideDrawStroke = null;
-  if (renderer.domElement.hasPointerCapture?.(stroke.pointerId)) {
-    renderer.domElement.releasePointerCapture(stroke.pointerId);
-  }
-  renderer.domElement.style.cursor = "";
-  hideCapsuleGuideDrawPreview();
-  if (!cancel && polylineLength(capsuleGuideDrawPoints(stroke.samples).map(vectorToData)) >= 0.12) {
-    pushUndoState();
-    createCapsuleGuideAlongCurve(stroke.samples);
-  }
-  updateInteractionLocks();
-  updatePlacementStatus();
-  event?.preventDefault();
-  return true;
-}
-
-function createCapsuleGuideGeometry(radius, length, radialLoops = 12, lengthLoops = 8) {
-  const r = Math.max(0.02, Number(radius));
-  const totalLength = Math.max(r * 2, Number(length));
-  const around = Math.max(6, Math.round(radialLoops / 2) * 2);
-  const along = Math.max(4, Math.round(lengthLoops));
-  const capHeight = capsuleGuideCapHeight(r);
-  const topPoleY = totalLength * 0.5;
-  const topCylinderY = topPoleY - capHeight;
-  const bottomY = -totalLength * 0.5;
-  const positions = [];
-  const indices = [];
-  const faces = [];
-  const horizontalLoops = [];
-
-  function vertex(point) {
-    const index = positions.length / 3;
-    positions.push(point.x, point.y, point.z);
-    return index;
-  }
-
-  function addFace(face) {
-    const points = face.map((pointIndex) => new THREE.Vector3().fromArray(positions, pointIndex * 3));
-    const centroid = points.reduce((sum, point) => sum.add(point), new THREE.Vector3())
-      .multiplyScalar(1 / points.length);
-    const centerline = new THREE.Vector3(
-      0,
-      THREE.MathUtils.clamp(centroid.y, bottomY, topCylinderY),
-      0
-    );
-    const outward = centroid.clone().sub(centerline);
-    const normal = points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0]));
-    const oriented = normal.dot(outward) < 0 ? [...face].reverse() : face;
-    faces.push(oriented);
-    for (let corner = 1; corner < oriented.length - 1; corner += 1) {
-      indices.push(oriented[0], oriented[corner], oriented[corner + 1]);
-    }
-  }
-
-  function addRing(y, ringRadius) {
-    const ring = Array.from({ length: around }, (_, aroundIndex) => {
-      const angle = aroundIndex / around * Math.PI * 2;
-      return vertex(new THREE.Vector3(
-        Math.cos(angle) * ringRadius,
-        y,
-        Math.sin(angle) * ringRadius
-      ));
-    });
-    horizontalLoops.push(ring);
-    return ring;
-  }
-
-  const capSegments = Math.max(1, Math.min(Math.floor(along / 4), along - 1));
-  const cylinderSegments = Math.max(1, along - capSegments);
-  for (let capIndex = 1; capIndex <= capSegments; capIndex += 1) {
-    const angle = capIndex / capSegments * Math.PI * 0.5;
-    addRing(topCylinderY + Math.cos(angle) * capHeight, Math.sin(angle) * r);
-  }
-  for (let cylinderIndex = 1; cylinderIndex <= cylinderSegments; cylinderIndex += 1) {
-    addRing(
-      THREE.MathUtils.lerp(topCylinderY, bottomY, cylinderIndex / cylinderSegments),
-      r
-    );
-  }
-
-  const topPole = vertex(new THREE.Vector3(0, topPoleY, 0));
-  const firstRing = horizontalLoops[0];
-  for (let aroundIndex = 0; aroundIndex < around; aroundIndex += 1) {
-    const next = (aroundIndex + 1) % around;
-    addFace([topPole, firstRing[aroundIndex], firstRing[next]]);
-    for (let ringIndex = 0; ringIndex < horizontalLoops.length - 1; ringIndex += 1) {
-      const currentRing = horizontalLoops[ringIndex];
-      const nextRing = horizontalLoops[ringIndex + 1];
-      addFace([
-        currentRing[aroundIndex],
-        currentRing[next],
-        nextRing[next],
-        nextRing[aroundIndex]
-      ]);
-    }
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  geometry.userData.quadFaces = faces;
-  geometry.userData.horizontalLoops = horizontalLoops;
-  geometry.userData.topology = "quad-rings-with-top-pole-open-bottom";
-  geometry.userData.controlVertexCount = positions.length / 3;
-  return geometry;
-}
-
-function capsuleGuideTopologyFeature(point, radius, length) {
-  const safeRadius = Math.max(0.0001, radius);
-  const safeHalfLength = Math.max(safeRadius, length * 0.5);
-  return new THREE.Vector3(
-    point.x / safeRadius,
-    point.y / safeHalfLength,
-    point.z / safeRadius
-  );
-}
-
-function retopologizeCapsuleGuide(guide, radialLoops, lengthLoops) {
-  const oldBaseGeometry = createCapsuleGuideGeometry(
-    guide.radius,
-    guide.length,
-    guide.radialLoops,
-    guide.lengthLoops
-  );
-  const oldBaseData = capsuleControlDataFromGeometry(oldBaseGeometry);
-  const oldPoints = guide.controlPoints.map((point) => point.clone());
-  const canTransfer = oldBaseData.points.length === oldPoints.length;
-  const oldSamples = canTransfer ? oldBaseData.points.map((basePoint, pointIndex) => ({
-    feature: capsuleGuideTopologyFeature(basePoint, guide.radius, guide.length),
-    displacement: oldPoints[pointIndex].clone().sub(basePoint)
-  })) : [];
-
-  const newBaseGeometry = createCapsuleGuideGeometry(
-    guide.radius,
-    guide.length,
-    radialLoops,
-    lengthLoops
-  );
-  const newData = capsuleControlDataFromGeometry(newBaseGeometry);
-  if (canTransfer) {
-    newData.points.forEach((point) => {
-      const feature = capsuleGuideTopologyFeature(point, guide.radius, guide.length);
-      const nearest = oldSamples
-        .map((sample) => ({
-          sample,
-          distance: feature.distanceToSquared(sample.feature)
-        }))
-        .sort((a, b) => a.distance - b.distance)
-        .slice(0, 8);
-      if (nearest[0]?.distance < 1e-10) {
-        point.add(nearest[0].sample.displacement);
-        return;
-      }
-      const displacement = new THREE.Vector3();
-      let weightTotal = 0;
-      nearest.forEach(({ sample, distance }) => {
-        const weight = 1 / Math.max(1e-6, distance);
-        displacement.addScaledVector(sample.displacement, weight);
-        weightTotal += weight;
-      });
-      if (weightTotal > 0) point.addScaledVector(displacement, 1 / weightTotal);
-    });
-  }
-
-  oldBaseGeometry.dispose();
-  newBaseGeometry.dispose();
-  guide.radialLoops = radialLoops;
-  guide.lengthLoops = lengthLoops;
-  guide.controlPoints = newData.points;
-  guide.controlFaces = newData.faces;
-  guide.controlLoops = capsuleGuideHorizontalLoopsFromTopology(
-    newData.points,
-    newData.faces,
-    newData.loops
-  );
-  guide.selectedPointIndex = -1;
-  sculptState.state.capsuleGuideLoopSelection = null;
-  guideState.state.activeCapsuleGuideLoopTransform = null;
-  updateCapsuleGuideGeometry(guide, { preserveControlPoints: true });
-  refreshCapsuleGuideLoopInfluence();
-}
-
-function resizeCapsuleGuideCylinder(guide, nextLength) {
-  const previousLength = Math.max(guide.radius * 2, guide.length);
-  const clampedLength = Math.max(guide.radius * 2, nextLength);
-  const capHeight = capsuleGuideCapHeight(guide.radius);
-  const previousTopCylinder = previousLength * 0.5 - capHeight;
-  const nextTopCylinder = clampedLength * 0.5 - capHeight;
-  const previousBottom = -previousLength * 0.5;
-  const nextBottom = -clampedLength * 0.5;
-  const baseGeometry = createCapsuleGuideGeometry(
-    guide.radius,
-    previousLength,
-    guide.radialLoops,
-    guide.lengthLoops
-  );
-  const basePoints = capsuleControlDataFromGeometry(baseGeometry).points;
-  const canMapCage = basePoints.length === guide.controlPoints.length;
-
-  if (canMapCage) {
-    guide.controlPoints.forEach((point, pointIndex) => {
-      const baseY = basePoints[pointIndex].y;
-      let targetBaseY = baseY;
-      if (baseY >= previousTopCylinder) {
-        targetBaseY += (clampedLength - previousLength) * 0.5;
-      } else {
-        const cylinderT = THREE.MathUtils.inverseLerp(
-          previousBottom,
-          previousTopCylinder,
-          baseY
-        );
-        targetBaseY = THREE.MathUtils.lerp(nextBottom, nextTopCylinder, cylinderT);
-      }
-      point.y += targetBaseY - baseY;
-    });
-  } else {
-    const fallbackScale = clampedLength / previousLength;
-    guide.controlPoints.forEach((point) => {
-      point.y *= fallbackScale;
-    });
-  }
-  baseGeometry.dispose();
-
-  const direction = guide.end.clone().sub(guide.start);
-  if (direction.lengthSq() < 1e-8) direction.set(0, -1, 0);
-  guide.end.copy(guide.start).addScaledVector(direction.normalize(), clampedLength);
-}
-
-function capsuleControlDataFromGeometry(geometry) {
-  const position = geometry.getAttribute("position");
-  return {
-    points: Array.from({ length: position.count }, (_, index) => new THREE.Vector3(
-      position.getX(index),
-      position.getY(index),
-      position.getZ(index)
-    )),
-    faces: (geometry.userData.quadFaces || []).map((face) => [...face]),
-    loops: (geometry.userData.horizontalLoops || []).map((loop) => [...loop])
-  };
-}
-
-function capsuleControlGeometryFromData(points, faces) {
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(
-    points.flatMap((point) => [point.x, point.y, point.z]),
-    3
-  ));
-  geometry.setIndex(faces.flatMap((face) => {
-    const triangles = [];
-    for (let corner = 1; corner < face.length - 1; corner += 1) {
-      triangles.push(face[0], face[corner], face[corner + 1]);
-    }
-    return triangles;
-  }));
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  geometry.userData.quadFaces = faces.map((face) => [...face]);
-  geometry.userData.topology = "quads";
-  geometry.userData.controlVertexCount = points.length;
-  return geometry;
-}
-
-function capsuleGuidePointWorldPosition(guide, pointIndex) {
-  guide.mesh.updateMatrixWorld(true);
-  return guide.controlPoints[pointIndex].clone().applyMatrix4(guide.mesh.matrixWorld);
-}
-
-function capsuleGuidePointDistances(guide, originIndex) {
-  const adjacency = Array.from({ length: guide.controlPoints.length }, () => new Set());
-  guide.controlFaces.forEach((face) => face.forEach((pointIndex, corner) => {
-    const nextIndex = face[(corner + 1) % face.length];
-    adjacency[pointIndex]?.add(nextIndex);
-    adjacency[nextIndex]?.add(pointIndex);
-  }));
-  const distances = new Array(guide.controlPoints.length).fill(Infinity);
-  distances[originIndex] = 0;
-  const queue = [originIndex];
-  while (queue.length) {
-    const pointIndex = queue.shift();
-    adjacency[pointIndex].forEach((neighbor) => {
-      if (distances[neighbor] <= distances[pointIndex] + 1) return;
-      distances[neighbor] = distances[pointIndex] + 1;
-      queue.push(neighbor);
-    });
-  }
-  return distances;
-}
-
-function capsuleGuideHorizontalLoopsFromTopology(points, faces, preferredLoops = []) {
-  const edgeKeys = new Set();
-  faces.forEach((face) => face.forEach((pointIndex, corner) => {
-    const nextIndex = face[(corner + 1) % face.length];
-    edgeKeys.add(pointIndex < nextIndex ? `${pointIndex}:${nextIndex}` : `${nextIndex}:${pointIndex}`);
-  }));
-  const loops = preferredLoops
-    .map((loop) => [...new Set(loop)].filter((pointIndex) => pointIndex >= 0 && pointIndex < points.length))
-    .filter((loop) => loop.length >= 4)
-    .filter((loop) => loop.every((pointIndex, index) => {
-      const nextIndex = loop[(index + 1) % loop.length];
-      const key = pointIndex < nextIndex ? `${pointIndex}:${nextIndex}` : `${nextIndex}:${pointIndex}`;
-      return edgeKeys.has(key);
-    }));
-  if (loops.length !== preferredLoops.length) {
-    console.warn("Capsule guide contains an incomplete horizontal control loop.");
-  }
-  return loops;
-}
-
-function capsuleGuideLoopCenter(points, indices) {
-  return indices.reduce((sum, pointIndex) => sum.add(points[pointIndex]), new THREE.Vector3())
-    .multiplyScalar(1 / indices.length);
-}
-
-function normalizeCapsuleGuideColor(value) {
-  if (typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)) return value.toLowerCase();
-  if (Number.isFinite(value)) return `#${new THREE.Color(value).getHexString()}`;
-  return DEFAULT_CAPSULE_GUIDE_COLOR;
-}
-
-function normalizeCapsuleGuideName(value, fallback) {
-  const name = typeof value === "string" ? value.trim().slice(0, 60) : "";
-  return name || fallback;
-}
-
-function capsuleGuideAccentColor(guide, mix = 0) {
-  return new THREE.Color(normalizeCapsuleGuideColor(guide?.color))
-    .lerp(new THREE.Color(0xffffff), mix);
-}
-
-function updateCapsuleGuideDisplayColor(guide) {
-  if (!guide || guide.type !== "capsule") return;
-  guide.color = normalizeCapsuleGuideColor(guide.color);
-  guide.mesh?.material.color.set(0xffffff);
-  guide.wire?.material.color.copy(capsuleGuideAccentColor(guide));
-  guide.controlWire?.material.color.copy(capsuleGuideAccentColor(guide, 0.3));
-  updateCapsuleGuideHandleColors(guide, guide.selectedPointIndex ?? -1);
-  const active = sculptState.state.capsuleGuideLoopDrag || sculptState.state.capsuleGuideLoopSelection || guideState.state.capsuleGuideLoopHover;
-  refreshCapsuleGuideFillInfluence(guide, active);
-}
-
-function updateCapsuleGuideLoopLines(guide) {
-  if (!guide.loopLinesGroup) return;
-  guide.loopLinesGroup.position.copy(guide.mesh.position);
-  guide.loopLinesGroup.quaternion.copy(guide.mesh.quaternion);
-  guide.controlLoops.forEach((indices, loopIndex) => {
-    const line = guide.loopLinesGroup.children[loopIndex];
-    if (!line) return;
-    line.geometry.setFromPoints(indices.map((pointIndex) => guide.controlPoints[pointIndex]));
-    line.geometry.computeBoundingSphere();
-  });
-}
-
-function rebuildCapsuleGuideLoopLines(guide) {
-  if (guide.loopLinesGroup) {
-    guideSurfaceGroup.remove(guide.loopLinesGroup);
-    guide.loopLinesGroup.children.forEach((line) => {
-      line.geometry.dispose();
-      line.material.dispose();
-    });
-  }
-  const group = new THREE.Group();
-  group.userData.capsuleGuideId = guide.id;
-  guide.controlLoops.forEach((indices, loopIndex) => {
-    const line = new THREE.LineLoop(
-      new THREE.BufferGeometry().setFromPoints(indices.map((pointIndex) => guide.controlPoints[pointIndex])),
-      new THREE.LineBasicMaterial({
-        color: 0xff5bd1,
-        transparent: true,
-        opacity: 0,
-        depthTest: true,
-        depthWrite: false
-      })
-    );
-    line.userData.capsuleGuideId = guide.id;
-    line.userData.capsuleGuideLoopIndex = loopIndex;
-    line.renderOrder = 28;
-    group.add(line);
-  });
-  guide.loopLinesGroup = group;
-  guideSurfaceGroup.add(group);
-  updateCapsuleGuideLoopLines(guide);
-  group.visible = sculptState.state.capsuleGuideEditing && sel.state.selectedGuideId === guide.id;
-}
-
-function createCapsuleGuideHandles(guide) {
-  const group = new THREE.Group();
-  group.userData.capsuleGuideId = guide.id;
-  guide.controlPoints.forEach((point, pointIndex) => {
-    const handle = new THREE.Mesh(
-      new THREE.SphereGeometry(0.035, 12, 8),
-      new THREE.MeshBasicMaterial({
-        color: capsuleGuideAccentColor(guide, 0.18),
-        transparent: true,
-        opacity: 0.68,
-        depthTest: true,
-        depthWrite: false
-      })
-    );
-    handle.position.copy(capsuleGuidePointWorldPosition(guide, pointIndex));
-    handle.userData.capsuleGuideId = guide.id;
-    handle.userData.capsuleGuidePointIndex = pointIndex;
-    group.add(handle);
-  });
-  group.visible = sculptState.state.capsuleGuideEditing && sel.state.selectedGuideId === guide.id;
-  return group;
-}
-
-function rebuildCapsuleGuideHandles(guide) {
-  const wasAttached = transformControls.object?.userData.capsuleGuideId === guide.id;
-  if (wasAttached) transformControls.detach();
-  if (guide.handlesGroup) {
-    guideSurfaceGroup.remove(guide.handlesGroup);
-    guide.handlesGroup.children.forEach((handle) => {
-      handle.geometry.dispose();
-      handle.material.dispose();
-    });
-  }
-  guide.handlesGroup = createCapsuleGuideHandles(guide);
-  guide.handlesGroup.visible = componentEditModeActive()
-    && sculptState.state.capsuleGuideEditing
-    && guide.id === sel.state.selectedGuideId;
-  guideSurfaceGroup.add(guide.handlesGroup);
-  rebuildCapsuleGuideLoopLines(guide);
-  if (guide.loopLinesGroup) guide.loopLinesGroup.visible = guide.handlesGroup.visible;
-}
-
-function syncCapsuleGuideHandles(guide) {
-  guide.handlesGroup?.children.forEach((handle, pointIndex) => {
-    handle.position.copy(capsuleGuidePointWorldPosition(guide, pointIndex));
-  });
-  updateCapsuleGuideLoopLines(guide);
-}
-
-function capsuleGuideMirrorMap(points) {
-  return points.map((point, pointIndex) => {
-    const reflected = new THREE.Vector3(-point.x, point.y, point.z);
-    let closestIndex = pointIndex;
-    let closestDistance = Infinity;
-    points.forEach((candidate, candidateIndex) => {
-      const distance = candidate.distanceToSquared(reflected);
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestIndex = candidateIndex;
-      }
-    });
-    return closestIndex;
-  });
-}
-
-function mirrorCapsuleGuidePointEdits(points, startPoints, mirrorMap, sourceSide) {
-  if (!sculptState.state.mirrorXEditing) return;
-  if (sourceSide === 0) {
-    points.forEach((point, pointIndex) => {
-      const mirrorIndex = mirrorMap[pointIndex];
-      if (mirrorIndex === pointIndex) point.x = 0;
-    });
-    return;
-  }
-  startPoints.forEach((startPoint, pointIndex) => {
-    if (Math.sign(startPoint.x) !== sourceSide) return;
-    const mirrorIndex = mirrorMap[pointIndex];
-    if (mirrorIndex === pointIndex || mirrorMap[mirrorIndex] !== pointIndex) return;
-    points[mirrorIndex].set(-points[pointIndex].x, points[pointIndex].y, points[pointIndex].z);
-  });
-}
-
-function updateCapsuleGuideHandleColors(guide, selectedIndex = -1) {
-  const distances = selectedIndex >= 0 ? capsuleGuidePointDistances(guide, selectedIndex) : null;
-  const mirrorMap = sculptState.state.mirrorXEditing && selectedIndex >= 0 ? capsuleGuideMirrorMap(guide.controlPoints) : null;
-  const mirroredIndex = mirrorMap?.[selectedIndex] ?? -1;
-  guide.handlesGroup?.children.forEach((handle, pointIndex) => {
-    const selected = pointIndex === selectedIndex;
-    const mirrored = pointIndex === mirroredIndex && mirroredIndex !== selectedIndex;
-    const influenced = distances && scalpBuilder.scalpBuilderProportionalWeight(distances[pointIndex]) > 0;
-    if (selected) handle.material.color.set(CONTROL_POINT_SELECTED_COLOR);
-    else if (mirrored || influenced) handle.material.color.set(0xf2b35f);
-    else handle.material.color.copy(capsuleGuideAccentColor(guide, 0.18));
-    handle.material.opacity = selected ? 1 : mirrored || influenced ? 0.88 : 0.68;
-  });
-}
-
-function updateCapsuleGuideFromHandle(handle) {
-  const guide = guides.find((item) => item.id === handle.userData.capsuleGuideId && item.type === "capsule");
-  const pointIndex = handle.userData.capsuleGuidePointIndex;
-  if (!guide || pointIndex === undefined || !guide.controlPoints[pointIndex]) return;
-  guide.mesh.updateMatrixWorld(true);
-  const localPosition = handle.position.clone().applyMatrix4(guide.mesh.matrixWorld.clone().invert());
-  const edit = sculptState.state.activeCapsuleGuideEdit?.guideId === guide.id && sculptState.state.activeCapsuleGuideEdit.pointIndex === pointIndex
-    ? activeCapsuleGuideEdit
-    : null;
-  if (edit) {
-    const delta = localPosition.sub(edit.startPoints[pointIndex]);
-    const selectedX = edit.startPoints[pointIndex].x;
-    const sourceSide = Math.abs(selectedX) < 1e-5 ? 0 : Math.sign(selectedX);
-    if (sculptState.state.mirrorXEditing && sourceSide === 0) delta.x = 0;
-    guide.controlPoints.forEach((point, index) => {
-      if (sculptState.state.mirrorXEditing && sourceSide !== 0 && Math.sign(edit.startPoints[index].x) !== sourceSide) {
-        point.copy(edit.startPoints[index]);
-        return;
-      }
-      const weight = scalpBuilder.scalpBuilderProportionalWeight(edit.distances[index]);
-      point.copy(edit.startPoints[index]).addScaledVector(delta, weight);
-    });
-    mirrorCapsuleGuidePointEdits(guide.controlPoints, edit.startPoints, edit.mirrorMap, sourceSide);
-  } else {
-    const startPoints = guide.controlPoints.map((point) => point.clone());
-    const mirrorMap = capsuleGuideMirrorMap(startPoints);
-    guide.controlPoints[pointIndex].copy(localPosition);
-    if (sculptState.state.mirrorXEditing) {
-      const sourceSide = Math.abs(localPosition.x) < 1e-5 ? 0 : Math.sign(localPosition.x);
-      mirrorCapsuleGuidePointEdits(guide.controlPoints, startPoints, mirrorMap, sourceSide);
-    }
-  }
-  updateCapsuleGuideGeometry(guide, { preserveControlPoints: true, rebuildHandles: false });
-  syncCapsuleGuideHandles(guide);
-  updateCapsuleGuideHandleColors(guide, pointIndex);
-}
-
-function beginCapsuleGuideHandleEdit(handle) {
-  const guide = guides.find((item) => item.id === handle?.userData.capsuleGuideId && item.type === "capsule");
-  if (!guide) return;
-  const startPoints = guide.controlPoints.map((point) => point.clone());
-  if (handle.userData.capsuleGuidePointIndex !== undefined) {
-    const pointIndex = handle.userData.capsuleGuidePointIndex;
-    sculptState.state.activeCapsuleGuideEdit = {
-      guideId: guide.id,
-      pointIndex,
-      startPoints,
-      distances: capsuleGuidePointDistances(guide, pointIndex),
-      mirrorMap: capsuleGuideMirrorMap(startPoints)
-    };
-  }
-}
-
-function selectCapsuleGuidePoint(guide, pointIndex) {
-  const handle = guide?.handlesGroup?.children[pointIndex];
-  if (!handle) return;
-  sculptState.state.capsuleGuideLoopSelection = null;
-  guideState.state.activeCapsuleGuideLoopTransform = null;
-  sel.state.selectedCurveLatticePoint = null;
-  sel.state.selectedControlPoints = [];
-  guide.selectedPointIndex = pointIndex;
-  updateCapsuleGuideHandleColors(guide, pointIndex);
-  if (sel.state.activeTool === "select") {
-    transformControls.detach();
-    return;
-  }
-  configureTransformControls(sel.state.activeTool);
-  transformControls.attach(handle);
-}
-
-function capsuleGuideLoopTransformGuide() {
-  return sculptState.state.capsuleGuideLoopSelection
-    ? guides.find((guide) => guide.id === sculptState.state.capsuleGuideLoopSelection.guideId && guide.type === "capsule")
-    : null;
-}
-
-function attachCapsuleGuideLoopTransform() {
-  const guide = capsuleGuideLoopTransformGuide();
-  const loopIndex = sculptState.state.capsuleGuideLoopSelection?.loopIndex;
-  const loop = guide?.controlLoops?.[loopIndex];
-  if (!guide || !loop?.length || !["move", "rotate", "scale"].includes(sel.state.activeTool)) {
-    if (transformControls.object?.userData.capsuleGuideLoopHandle) transformControls.detach();
-    return;
-  }
-  guide.mesh.updateMatrixWorld(true);
-  capsuleGuideLoopHandle.position.copy(capsuleGuideLoopCenter(guide.controlPoints, loop)).applyMatrix4(guide.mesh.matrixWorld);
-  guide.mesh.getWorldQuaternion(capsuleGuideLoopHandle.quaternion);
-  capsuleGuideLoopHandle.scale.set(1, 1, 1);
-  capsuleGuideLoopHandle.userData.capsuleGuideId = guide.id;
-  capsuleGuideLoopHandle.userData.capsuleGuideLoopIndex = loopIndex;
-  configureTransformControls(sel.state.activeTool);
-  if (sel.state.activeTool === "scale") {
-    // Plane scaling must stay in the loop's fixed local basis. Showing a
-    // world-space gizmo while TransformControls applies local object scale can
-    // make the active plane appear to jump or change axes during the drag.
-    transformControls.setSpace("local");
-    transformControls.showX = true;
-    transformControls.showY = true;
-    transformControls.showZ = true;
-  }
-  transformControls.attach(capsuleGuideLoopHandle);
-}
-
-function selectCapsuleGuideLoop(guide, loopIndex) {
-  if (!guide?.controlLoops?.[loopIndex]?.length) return;
-  guide.selectedPointIndex = -1;
-  sel.state.selectedCurveLatticePoint = null;
-  sel.state.selectedControlPoints = [];
-  sculptState.state.capsuleGuideLoopSelection = { guideId: guide.id, loopIndex };
-  guideState.state.activeCapsuleGuideLoopTransform = null;
-  updateCapsuleGuideHandleColors(guide);
-  setCapsuleGuideLoopHover(guide, loopIndex);
-  attachCapsuleGuideLoopTransform();
-}
-
-function beginCapsuleGuideLoopTransform() {
-  const guide = capsuleGuideLoopTransformGuide();
-  const loopIndex = sculptState.state.capsuleGuideLoopSelection?.loopIndex;
-  if (!guide?.controlLoops?.[loopIndex]?.length || !["move", "rotate", "scale"].includes(sel.state.activeTool)) return;
-  guide.mesh.updateMatrixWorld(true);
-  guideState.state.activeCapsuleGuideLoopTransform = {
-    guideId: guide.id,
-    loopIndex,
-    mode: sel.state.activeTool,
-    startPoints: guide.controlPoints.map((point) => point.clone()),
-    loopCenters: guide.controlLoops.map((indices) => capsuleGuideLoopCenter(guide.controlPoints, indices)),
-    worldMatrix: guide.mesh.matrixWorld.clone(),
-    inverseWorldMatrix: guide.mesh.matrixWorld.clone().invert(),
-    startPosition: capsuleGuideLoopHandle.position.clone(),
-    startQuaternion: capsuleGuideLoopHandle.quaternion.clone(),
-    startScale: capsuleGuideLoopHandle.scale.clone()
-  };
-}
-
-function updateCapsuleGuideLoopTransform() {
-  const edit = guideState.state.activeCapsuleGuideLoopTransform;
-  if (!edit) return;
-  const guide = guides.find((item) => item.id === edit.guideId && item.type === "capsule");
-  if (!guide) return;
-  const worldDelta = capsuleGuideLoopHandle.position.clone().sub(edit.startPosition);
-  const rotationDelta = capsuleGuideLoopHandle.quaternion.clone().multiply(edit.startQuaternion.clone().invert());
-  const scaleDelta = capsuleGuideLoopHandle.scale.clone().divide(edit.startScale);
-  const identity = new THREE.Quaternion();
-  const scalePivot = edit.loopCenters[edit.loopIndex];
-  guide.controlLoops.forEach((indices, loopIndex) => {
-    const distance = Math.abs(loopIndex - edit.loopIndex);
-    const weight = loopIndex === edit.loopIndex
-      ? 1
-      : sculptState.state.proportionalEditing ? scalpBuilder.scalpBuilderProportionalWeight(distance) : 0;
-    if (weight <= 0) return;
-    const centerWorld = edit.loopCenters[loopIndex].clone().applyMatrix4(edit.worldMatrix);
-    const weightedRotation = identity.clone().slerp(rotationDelta, weight);
-    indices.forEach((pointIndex) => {
-      const worldPoint = edit.startPoints[pointIndex].clone().applyMatrix4(edit.worldMatrix);
-      if (edit.mode === "move") {
-        worldPoint.addScaledVector(worldDelta, weight);
-        guide.controlPoints[pointIndex].copy(worldPoint.applyMatrix4(edit.inverseWorldMatrix));
-      } else if (edit.mode === "rotate") {
-        worldPoint.sub(centerWorld).applyQuaternion(weightedRotation).add(centerWorld);
-        guide.controlPoints[pointIndex].copy(worldPoint.applyMatrix4(edit.inverseWorldMatrix));
-      } else {
-        const weightedScale = new THREE.Vector3(
-          THREE.MathUtils.lerp(1, scaleDelta.x, weight),
-          THREE.MathUtils.lerp(1, scaleDelta.y, weight),
-          THREE.MathUtils.lerp(1, scaleDelta.z, weight)
-        );
-        const point = edit.startPoints[pointIndex];
-        guide.controlPoints[pointIndex].copy(point)
-          .sub(scalePivot)
-          .multiply(weightedScale)
-          .add(scalePivot);
-      }
-    });
-  });
-  updateCapsuleGuideGeometry(guide, { preserveControlPoints: true, rebuildHandles: false });
-  syncCapsuleGuideHandles(guide);
-  refreshCapsuleGuideLoopInfluence();
-}
-
-function refreshCapsuleGuideFillInfluence(guide, active) {
-  const position = guide.mesh?.geometry?.getAttribute("position");
-  if (!position) return;
-  let color = guide.mesh.geometry.getAttribute("color");
-  if (!color || color.count !== position.count) {
-    color = new THREE.Float32BufferAttribute(new Float32Array(position.count * 3), 3);
-    guide.mesh.geometry.setAttribute("color", color);
-  }
-  const base = capsuleGuideAccentColor(guide);
-  const selectedColor = new THREE.Color(0xff77dc);
-  const influencedColor = new THREE.Color(0xffc56c);
-  const matchesGuide = active && active.guideId === guide.id;
-  const loopY = guide.controlLoops.map((indices) => capsuleGuideLoopCenter(guide.controlPoints, indices).y);
-  for (let vertexIndex = 0; vertexIndex < position.count; vertexIndex += 1) {
-    let nearestLoop = -1;
-    let nearestDistance = Infinity;
-    if (matchesGuide) {
-      loopY.forEach((y, loopIndex) => {
-        const distance = Math.abs(position.getY(vertexIndex) - y);
-        if (distance < nearestDistance) {
-          nearestDistance = distance;
-          nearestLoop = loopIndex;
-        }
-      });
-    }
-    const loopDistance = nearestLoop >= 0 ? Math.abs(nearestLoop - active.loopIndex) : Infinity;
-    const weight = nearestLoop >= 0 ? scalpBuilder.scalpBuilderProportionalWeight(loopDistance) : 0;
-    const next = base.clone();
-    if (nearestLoop === active?.loopIndex) next.lerp(selectedColor, 0.98);
-    else if (weight > 0) next.lerp(influencedColor, 0.92 * Math.sqrt(weight));
-    color.setXYZ(vertexIndex, next.r, next.g, next.b);
-  }
-  color.needsUpdate = true;
-}
-
-function refreshCapsuleGuideLoopInfluence() {
-  const active = sculptState.state.capsuleGuideLoopDrag || sculptState.state.capsuleGuideLoopSelection || guideState.state.capsuleGuideLoopHover;
-  guides.forEach((guide) => guide.loopLinesGroup?.children.forEach((line) => {
-    const loopIndex = line.userData.capsuleGuideLoopIndex;
-    const matchesGuide = active && guide.id === active.guideId;
-    const distance = matchesGuide ? Math.abs(loopIndex - active.loopIndex) : Infinity;
-    const weight = matchesGuide ? scalpBuilder.scalpBuilderProportionalWeight(distance) : 0;
-    const selected = matchesGuide && distance === 0;
-    line.material.color.setHex(selected ? 0xff5bd1 : 0xf2b35f);
-    line.material.opacity = selected ? 0.96 : weight > 0 ? 0.12 + weight * 0.68 : 0;
-  }));
-  guides.filter((guide) => guide.type === "capsule").forEach((guide) => refreshCapsuleGuideFillInfluence(guide, active));
-}
-
-function setCapsuleGuideLoopHover(guide, loopIndex = -1) {
-  const next = guide && loopIndex >= 0 ? { guideId: guide.id, loopIndex } : null;
-  guideState.state.capsuleGuideLoopHover = next;
-  refreshCapsuleGuideLoopInfluence();
-}
-
-function capsuleGuideLoopHitFromEvent(event) {
-  const guide = getSelectedGuide();
-  if (!sculptState.state.capsuleGuideEditing || guide?.type !== "capsule" || !guide.loopLinesGroup?.visible) return null;
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  const previousThreshold = raycaster.params.Line.threshold;
-  raycaster.params.Line.threshold = 0.055;
-  const hit = raycaster.intersectObjects(guide.loopLinesGroup.children, false)[0] || null;
-  raycaster.params.Line.threshold = previousThreshold;
-  if (!hit) return null;
-  const surfaceHit = raycaster.intersectObject(guide.mesh, false)[0] || null;
-  if (surfaceHit && hit.distance > surfaceHit.distance + 0.09) return null;
-  return { guide, hit, loopIndex: hit.object.userData.capsuleGuideLoopIndex };
-}
-
-function updateCapsuleGuideLoopHover(event) {
-  if (!sculptState.state.capsuleGuideEditing || sculptState.state.capsuleGuideLoopDrag || sculptState.state.transformDragging) return;
-  if (!renderer.domElement.contains(event.target) || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
-    setCapsuleGuideLoopHover(null);
-    return;
-  }
-  const result = capsuleGuideLoopHitFromEvent(event);
-  setCapsuleGuideLoopHover(result?.guide, result?.loopIndex ?? -1);
-  renderer.domElement.style.cursor = result ? "pointer" : "";
-}
-
-function beginCapsuleGuideLoopDrag(event) {
-  if (!sculptState.state.capsuleGuideEditing || !["select", "move", "rotate", "scale"].includes(sel.state.activeTool)) return false;
-  const result = capsuleGuideLoopHitFromEvent(event);
-  if (!result) return false;
-  const { guide, loopIndex } = result;
-  const loop = guide.controlLoops[loopIndex];
-  if (!loop?.length) return false;
-  selectCapsuleGuideLoop(guide, loopIndex);
-  return true;
-}
-
-function updateCapsuleGuideLoopDrag(event) {
-  const drag = sculptState.state.capsuleGuideLoopDrag;
-  if (!drag || event.pointerId !== drag.pointerId) return;
-  const guide = guides.find((item) => item.id === drag.guideId && item.type === "capsule");
-  if (!guide) return;
-  const pointerDelta = new THREE.Vector2(event.clientX - drag.startX, event.clientY - drag.startY);
-  const radialPixels = pointerDelta.dot(drag.radialScreen);
-  const targetScale = THREE.MathUtils.clamp(Math.exp(radialPixels / 150), 0.08, 12);
-  guide.controlLoops.forEach((indices, loopIndex) => {
-    const distance = Math.abs(loopIndex - drag.loopIndex);
-    const weight = loopIndex === drag.loopIndex
-      ? 1
-      : sculptState.state.proportionalEditing ? scalpBuilder.scalpBuilderProportionalWeight(distance) : 0;
-    if (weight <= 0) return;
-    const scale = 1 + (targetScale - 1) * weight;
-    const center = drag.loopCenters[loopIndex];
-    indices.forEach((pointIndex) => {
-      const source = drag.startPoints[pointIndex];
-      guide.controlPoints[pointIndex].set(
-        center.x + (source.x - center.x) * scale,
-        source.y,
-        center.z + (source.z - center.z) * scale
-      );
-    });
-  });
-  updateCapsuleGuideGeometry(guide, { preserveControlPoints: true, rebuildHandles: false });
-  syncCapsuleGuideHandles(guide);
-  event.preventDefault();
-}
-
-function endCapsuleGuideLoopDrag(event) {
-  const drag = sculptState.state.capsuleGuideLoopDrag;
-  if (!drag || (event?.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
-  sculptState.state.capsuleGuideLoopDrag = null;
-  if (renderer.domElement.hasPointerCapture?.(drag.pointerId)) renderer.domElement.releasePointerCapture(drag.pointerId);
-  renderer.domElement.style.cursor = "";
-  updateInteractionLocks();
-  updateCapsuleGuideLoopHover(event || { target: null });
-}
-
-function createSubdividedQuadGeometry(controlGeometry, iterations = 2) {
-  const position = controlGeometry.getAttribute("position");
-  const controlPoints = Array.from({ length: position.count }, (_, index) => new THREE.Vector3(
-    position.getX(index),
-    position.getY(index),
-    position.getZ(index)
-  ));
-  const controlFaces = (controlGeometry.userData.quadFaces || []).map((indices) => ({
-    indices: [...indices],
-    region: "surface-guide"
-  }));
-  const controlEdgeKeys = new Set();
-  controlFaces.forEach((face) => {
-    face.indices.forEach((start, corner) => {
-      const end = face.indices[(corner + 1) % face.indices.length];
-      controlEdgeKeys.add(start < end ? `${start}:${end}` : `${end}:${start}`);
-    });
-  });
-  const subdivided = scalpBuilder.subdivideScalpBuilderCage(controlPoints, controlFaces, iterations, controlEdgeKeys);
-  const positions = subdivided.points.flatMap((point) => [point.x, point.y, point.z]);
-  const quads = subdivided.faces.map((face) => face.indices);
-  const indices = quads.flatMap((face) => {
-    const triangles = [];
-    for (let corner = 1; corner < face.length - 1; corner += 1) {
-      triangles.push(face[0], face[corner], face[corner + 1]);
-    }
-    return triangles;
-  });
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  geometry.userData.quadFaces = quads;
-  geometry.userData.topology = "subdivided-quads";
-  geometry.userData.subdivisionLevel = iterations;
-  geometry.userData.controlVertexCount = position.count;
-  geometry.userData.emphasizedEdges = subdivided.trackedEdges;
-  return geometry;
-}
-
-function createEmphasizedSubdivisionEdges(geometry) {
-  const position = geometry.getAttribute("position");
-  const edgePositions = [];
-  (geometry.userData.emphasizedEdges || []).forEach((key) => {
-    const [a, b] = key.split(":").map(Number);
-    edgePositions.push(
-      position.getX(a), position.getY(a), position.getZ(a),
-      position.getX(b), position.getY(b), position.getZ(b)
-    );
-  });
-  const emphasized = new THREE.BufferGeometry();
-  emphasized.setAttribute("position", new THREE.Float32BufferAttribute(edgePositions, 3));
-  emphasized.userData.topology = "subdivided-control-edges";
-  return emphasized;
-}
-
-function createQuadCageGeometry(geometry) {
-  const position = geometry.getAttribute("position");
-  const quads = geometry.userData.quadFaces || [];
-  const edgeKeys = new Set();
-  const edgePositions = [];
-  quads.forEach((quad) => {
-    for (let index = 0; index < quad.length; index += 1) {
-      const a = quad[index];
-      const b = quad[(index + 1) % quad.length];
-      const key = a < b ? `${a}:${b}` : `${b}:${a}`;
-      if (edgeKeys.has(key)) continue;
-      edgeKeys.add(key);
-      edgePositions.push(
-        position.getX(a), position.getY(a), position.getZ(a),
-        position.getX(b), position.getY(b), position.getZ(b)
-      );
-    }
-  });
-  const cage = new THREE.BufferGeometry();
-  cage.setAttribute("position", new THREE.Float32BufferAttribute(edgePositions, 3));
-  cage.userData.topology = "quad-cage";
-  return cage;
-}
-
-
-
-function updateCapsuleGuideGeometry(guide, { preserveControlPoints = false, rebuildHandles = true } = {}) {
-  const start = guide.start.clone();
-  const end = guide.end.clone();
-  const direction = end.clone().sub(start);
-  const minimumLength = 0.04;
-  if (direction.lengthSq() < 1e-8) direction.set(0, -1, 0);
-  direction.setLength(Math.max(minimumLength, direction.length()));
-  guide.end.copy(start).add(direction);
-  guide.length = direction.length();
-  guide.x = (guide.start.x + guide.end.x) * 0.5;
-  guide.y = (guide.start.y + guide.end.y) * 0.5;
-  guide.z = (guide.start.z + guide.end.z) * 0.5;
-  guide.width = guide.radius * 2;
-  guide.height = guide.length;
-  guide.depth = guide.radius * 2;
-  let controlGeometry;
-  if (preserveControlPoints && guide.controlPoints?.length && guide.controlFaces?.length) {
-    controlGeometry = capsuleControlGeometryFromData(guide.controlPoints, guide.controlFaces);
-  } else {
-    controlGeometry = createCapsuleGuideGeometry(guide.radius, guide.length, guide.radialLoops, guide.lengthLoops);
-    const controlData = capsuleControlDataFromGeometry(controlGeometry);
-    guide.controlPoints = controlData.points;
-    guide.controlFaces = controlData.faces;
-    guide.controlLoops = capsuleGuideHorizontalLoopsFromTopology(
-      controlData.points,
-      controlData.faces,
-      controlData.loops
-    );
-  }
-  const geometry = createSubdividedQuadGeometry(controlGeometry, guide.subdivisionSteps);
-  guide.controlGeometry?.dispose();
-  guide.mesh.geometry.dispose();
-  guide.wire.geometry.dispose();
-  guide.controlWire.geometry.dispose();
-  guide.controlGeometry = controlGeometry;
-  guide.mesh.geometry = geometry;
-  guide.wire.geometry = createQuadCageGeometry(geometry);
-  guide.controlWire.geometry = createEmphasizedSubdivisionEdges(geometry);
-  guide.mesh.position.set(guide.x, guide.y, guide.z);
-  guide.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), direction.normalize());
-  guide.wire.position.copy(guide.mesh.position);
-  guide.wire.quaternion.copy(guide.mesh.quaternion);
-  guide.controlWire.position.copy(guide.mesh.position);
-  guide.controlWire.quaternion.copy(guide.mesh.quaternion);
-  guide.mesh.material.opacity = guide.opacity;
-  updateCapsuleGuideFresnelMaterial(guide);
-  refreshCapsuleGuideFillInfluence(
-    guide,
-    sculptState.state.capsuleGuideLoopDrag || sculptState.state.capsuleGuideLoopSelection || guideState.state.capsuleGuideLoopHover
-  );
-  if (rebuildHandles) rebuildCapsuleGuideHandles(guide);
-}
-
-function createCapsuleGuideMaterial(guide) {
-  const material = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: 0.58,
-    metalness: 0,
-    vertexColors: true,
-    transparent: true,
-    opacity: guide.opacity,
-    side: THREE.DoubleSide,
-    depthWrite: false
-  });
-  const uniforms = {
-    enabled: { value: guide.fresnel ? 1 : 0 },
-    centerVisibility: { value: guide.centerVisibility }
-  };
-  material.userData.capsuleFresnelUniforms = uniforms;
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.capsuleFresnelEnabled = uniforms.enabled;
-    shader.uniforms.capsuleCenterVisibility = uniforms.centerVisibility;
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        "void main() {",
-        "uniform float capsuleFresnelEnabled;\nuniform float capsuleCenterVisibility;\nvoid main() {"
-      )
-      .replace(
-        "#include <opaque_fragment>",
-        `float capsuleFacing = clamp(abs(dot(normalize(normal), normalize(vViewPosition))), 0.0, 1.0);
-         float capsuleRim = pow(1.0 - capsuleFacing, 4.0);
-         float capsuleCenterAlpha = capsuleCenterVisibility * capsuleCenterVisibility;
-         float capsuleAlpha = mix(capsuleCenterAlpha, 1.0, capsuleRim);
-         diffuseColor.a *= mix(1.0, capsuleAlpha, capsuleFresnelEnabled);
-         #include <opaque_fragment>`
-      );
-  };
-  material.customProgramCacheKey = () => "capsule-fresnel-v2";
-  return material;
-}
-
-function updateCapsuleGuideWireOpacity(guide, selected = guide?.id === sel.state.selectedGuideId) {
-  if (!guide || guide.type !== "capsule") return;
-  const centerVisibility = THREE.MathUtils.clamp(Number(guide.centerVisibility ?? 0.5), 0, 1);
-  const fade = guide.fresnel && !selected
-    ? 0.02 + centerVisibility * centerVisibility * 0.98
-    : 1;
-  if (guide.wire) guide.wire.material.opacity = (selected ? 0.16 : 0.06) * fade;
-  if (guide.controlWire) guide.controlWire.material.opacity = (selected ? 0.7 : 0.25) * fade;
-}
-
-function updateCapsuleGuideFresnelMaterial(guide) {
-  const uniforms = guide?.mesh?.material?.userData?.capsuleFresnelUniforms;
-  if (!uniforms) return;
-  uniforms.enabled.value = guide.fresnel ? 1 : 0;
-  uniforms.centerVisibility.value = THREE.MathUtils.clamp(Number(guide.centerVisibility ?? 0.5), 0, 1);
-  updateCapsuleGuideWireOpacity(guide);
-}
-
-function addCapsuleGuide(overrides = {}, { deferUi = false } = {}) {
-  const start = overrides.start?.isVector3 ? overrides.start.clone() : dataToVector(overrides.start || { x: 0, y: 1.4, z: 0 });
-  const fallbackEnd = start.clone().add(new THREE.Vector3(0, -Number(overrides.length ?? surfaceGuideDefaults.length), 0));
-  const fallbackName = `Capsule Guide ${guides.filter((item) => item.type === "capsule").length + 1}`;
-  const guide = {
-    id: overrides.id || crypto.randomUUID(),
-    type: "capsule",
-    name: normalizeCapsuleGuideName(overrides.name, fallbackName),
-    color: normalizeCapsuleGuideColor(overrides.color),
-    start,
-    end: overrides.end?.isVector3 ? overrides.end.clone() : overrides.end ? dataToVector(overrides.end) : fallbackEnd,
-    radius: Math.max(0.02, Number(overrides.radius ?? surfaceGuideDefaults.radius)),
-    radialLoops: Math.max(6, Math.round(Number(overrides.radialLoops ?? surfaceGuideDefaults.radialLoops) / 2) * 2),
-    lengthLoops: Math.max(4, Math.round(Number(overrides.lengthLoops ?? surfaceGuideDefaults.lengthLoops))),
-    subdivisionSteps: THREE.MathUtils.clamp(Math.round(Number(overrides.subdivisionSteps ?? surfaceGuideDefaults.subdivisionSteps)), 0, 2),
-    opacity: Number(overrides.opacity ?? surfaceGuideDefaults.opacity),
-    fresnel: overrides.fresnel ?? surfaceGuideDefaults.fresnel,
-    centerVisibility: THREE.MathUtils.clamp(Number(overrides.centerVisibility ?? surfaceGuideDefaults.centerVisibility), 0, 1),
-    outlinerVisible: overrides.outlinerVisible !== false,
-    bend: 0,
-    verticalBend: 0,
-    topCurve: 0,
-    bottomCurve: 0,
-    density: 8
-  };
-  guide.length = Math.max(guide.radius * 2, guide.start.distanceTo(guide.end));
-  guide.controlGeometry = createCapsuleGuideGeometry(guide.radius, guide.length, guide.radialLoops, guide.lengthLoops);
-  const initialControlData = capsuleControlDataFromGeometry(guide.controlGeometry);
-  guide.controlPoints = overrides.controlPoints?.length
-    ? overrides.controlPoints.map((point) => point.isVector3 ? point.clone() : dataToVector(point))
-    : initialControlData.points;
-  guide.controlFaces = overrides.controlFaces?.length
-    ? overrides.controlFaces.map((face) => [...face])
-    : initialControlData.faces;
-  guide.controlLoops = capsuleGuideHorizontalLoopsFromTopology(
-    guide.controlPoints,
-    guide.controlFaces,
-    initialControlData.loops
-  );
-  guide.mesh = new THREE.Mesh(
-    createSubdividedQuadGeometry(guide.controlGeometry, guide.subdivisionSteps),
-    createCapsuleGuideMaterial(guide)
-  );
-  guide.wire = new THREE.LineSegments(
-    createQuadCageGeometry(guide.mesh.geometry),
-    new THREE.LineBasicMaterial({ color: capsuleGuideAccentColor(guide), transparent: true, opacity: 0.16, depthWrite: false })
-  );
-  guide.controlWire = new THREE.LineSegments(
-    createEmphasizedSubdivisionEdges(guide.mesh.geometry),
-    new THREE.LineBasicMaterial({ color: capsuleGuideAccentColor(guide, 0.3), transparent: true, opacity: 0.7, depthWrite: false })
-  );
-  guide.mesh.userData.guideId = guide.id;
-  guide.wire.userData.guideId = guide.id;
-  guide.controlWire.userData.guideId = guide.id;
-  guides.push(guide);
-  guideSurfaceGroup.add(guide.mesh, guide.wire, guide.controlWire);
-  updateCapsuleGuideGeometry(guide, {
-    preserveControlPoints: Boolean(overrides.controlPoints?.length && overrides.controlFaces?.length)
-  });
-  updateCapsuleGuideDisplayColor(guide);
-  refreshLiveSurfaceOptions();
-  if (!deferUi) {
-    selectGuide(guide.id);
-    updateCount();
-  }
-  applyCapsuleGuideDisplayVisibility();
-  return guide;
-}
-
-function addGuide(overrides = {}) {
-  const guide = {
-    id: crypto.randomUUID(),
-    x: 0,
-    y: 0.72,
-    z: 0.42,
-    width: 1.7,
-    height: 1.5,
-    depth: 1,
-    bend: 95,
-    verticalBend: 0,
-    topCurve: 0,
-    bottomCurve: 0,
-    density: 12,
-    opacity: 0.28,
-    outlinerVisible: overrides.outlinerVisible !== false,
-    ...overrides
-  };
-  guide.mesh = new THREE.Mesh(
-    createGuideGeometry(guide),
-    new THREE.MeshStandardMaterial({
-      color: 0x75c9ff,
-      roughness: 0.54,
-      metalness: 0,
-      transparent: true,
-      opacity: guide.opacity,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    })
-  );
-  guide.mesh.position.set(guide.x, guide.y, guide.z);
-  if (guide.objectQuaternion) {
-    guide.mesh.quaternion.set(
-      Number(guide.objectQuaternion.x || 0),
-      Number(guide.objectQuaternion.y || 0),
-      Number(guide.objectQuaternion.z || 0),
-      Number(guide.objectQuaternion.w ?? 1)
-    ).normalize();
-  }
-  if (guide.objectScale) {
-    guide.mesh.scale.set(
-      Number(guide.objectScale.x ?? 1),
-      Number(guide.objectScale.y ?? 1),
-      Number(guide.objectScale.z ?? 1)
-    );
-  }
-  guide.mesh.userData.guideId = guide.id;
-  guide.wire = new THREE.LineSegments(
-    new THREE.WireframeGeometry(guide.mesh.geometry),
-    new THREE.LineBasicMaterial({ color: 0xb8e7ff, transparent: true, opacity: 0.62, depthWrite: false })
-  );
-  guide.wire.position.copy(guide.mesh.position);
-  guide.wire.quaternion.copy(guide.mesh.quaternion);
-  guide.wire.scale.copy(guide.mesh.scale);
-  guide.wire.userData.guideId = guide.id;
-  guideSurfaceGroup.add(guide.mesh, guide.wire);
-  guides.push(guide);
-  selectGuide(guide.id);
-  updateCount();
-}
-
-function createGuideGeometry(guide) {
-  const bendRadians = THREE.MathUtils.degToRad(guide.bend);
-  const verticalRadians = THREE.MathUtils.degToRad(guide.verticalBend);
-  const xSegments = Math.max(2, Math.ceil(guide.width * guide.density));
-  const ySegments = Math.max(2, Math.ceil(guide.height * guide.density));
-  const vertices = [];
-  const indices = [];
-
-  for (let iy = 0; iy <= ySegments; iy += 1) {
-    const v = iy / ySegments;
-    const flatY = (v - 0.5) * guide.height;
-    for (let ix = 0; ix <= xSegments; ix += 1) {
-      const u = ix / xSegments;
-      const flatX = (u - 0.5) * guide.width;
-      let x = flatX;
-      let y = flatY;
-      let z = 0;
-      if (Math.abs(bendRadians) > 0.001) {
-        const radius = guide.width / bendRadians;
-        const phi = (u - 0.5) * bendRadians;
-        x = Math.sin(phi) * radius;
-        z = (Math.cos(phi) - 1) * radius * guide.depth;
-      }
-      if (Math.abs(verticalRadians) > 0.001) {
-        const edgeCurve = THREE.MathUtils.lerp(guide.bottomCurve, guide.topCurve, v);
-        const phiY = (v - 0.5) * verticalRadians;
-        const radiusY = guide.height / Math.max(Math.abs(verticalRadians), 0.001);
-        const influence = Math.min(1, Math.abs(edgeCurve));
-        const curvedY = Math.sin(phiY) * radiusY;
-        const curvedZ = (Math.cos(phiY) - 1) * radiusY * guide.depth * Math.sign(verticalRadians);
-        y = THREE.MathUtils.lerp(flatY, curvedY, influence);
-        z += curvedZ * edgeCurve;
-      }
-      vertices.push(x, y, z);
-    }
-  }
-
-  const row = xSegments + 1;
-  for (let iy = 0; iy < ySegments; iy += 1) {
-    for (let ix = 0; ix < xSegments; ix += 1) {
-      const a = iy * row + ix;
-      const b = a + 1;
-      const c = a + row;
-      const d = c + 1;
-      indices.push(a, c, b, b, c, d);
-    }
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
-function selectGuide(id) {
-  setViewportEditMode("guide", { clearSelection: false, activateSelect: false });
-  setCurveLatticeLoopHover(null);
-  sculptState.state.capsuleGuideLoopSelection = null;
-  guideState.state.activeCapsuleGuideLoopTransform = null;
-  clearMultiPointSelection();
-  clearStrandSelectionState();
-  sel.state.selectedCurveSurfaceController = null;
-  sel.state.clumpViewportSelection = false;
-  sel.state.selectedStrandGroup = null;
-  sel.state.selectedGuideId = id;
-  sel.state.selectedReferenceImageId = null;
-  sel.state.selectedPoint = null;
-  sel.state.selectedSurfaceObjectAnchorId = null;
-  sel.state.selectedCurveLatticePoint = null;
-  setOutlinerTab("guides");
-  updateSelectedPointLabel();
-  const guide = getSelectedGuide();
-  if (guide?.type === "curve-lattice") sel.state.activeCurveLatticeGuideId = guide.id;
-  const editingCurveLattice = guide?.type === "curve-lattice";
-  if (componentEditModeActive() && editingCurveLattice && ["rotate", "scale"].includes(sel.state.activeTool)) setActiveTool("move");
-  curveLatticeToggle.classList.toggle("active", editingCurveLattice);
-  curveLatticeToggle.setAttribute("aria-pressed", String(editingCurveLattice));
-  filterCurveLatticesToGroup(editingCurveLattice ? guide.id : null);
-  updateGuideControlsVisibility();
-  transformControls.detach();
-  locks.forEach((lock) => {
-    setStrandSelectionVisual(lock);
-    updateCurveObjects(lock, { visible: false });
-  });
-  renderLockList();
-  renderGuideOutliner();
-  updateAttributeEditorMode();
-  guides.forEach((item) => {
-    const selected = item.id === id;
-    if (item.type === "curve-lattice") {
-      const displayColor = new THREE.Color(item.color);
-      if (selected) displayColor.lerp(new THREE.Color(0xffffff), 0.18);
-      item.mesh.material.color.copy(displayColor);
-      item.wire.material.color.copy(displayColor);
-      item.rootMesh?.material.color.copy(displayColor);
-      item.rootWire?.material.color.copy(displayColor);
-    } else {
-      updateCapsuleGuideDisplayColor(item);
-    }
-    item.mesh.material.opacity = selected ? item.opacity : Math.min(item.opacity, 0.16);
-    if (item.rootMesh) item.rootMesh.material.opacity = item.mesh.material.opacity;
-    item.wire.material.opacity = selected ? 0.7 : 0.25;
-    if (item.type === "capsule") updateCapsuleGuideWireOpacity(item, selected);
-    else if (item.controlWire) item.controlWire.material.opacity = selected ? 0.7 : 0.25;
-    if (item.rootWire) item.rootWire.material.opacity = item.wire.material.opacity;
-    if (item.handlesGroup) {
-      item.handlesGroup.visible = componentEditModeActive()
-        && selected
-        && (item.type !== "capsule" || sculptState.state.capsuleGuideEditing);
-    }
-    if (item.loopLinesGroup) {
-      item.loopLinesGroup.visible = componentEditModeActive() && selected && sculptState.state.capsuleGuideEditing;
-    }
-  });
-  applyCapsuleGuideDisplayVisibility();
-  refreshRebuildCurveDialog();
-  if (!guide) return;
-  syncGuideInputs(guide);
-  updatePlacementStatus();
-  if (!componentEditModeActive()) attachGuideObjectTransform();
-}
-
-function updateGuideControlsVisibility() {
-  const guide = getSelectedGuide();
-  const hasSelectedGuide = Boolean(guide);
-  guideControls.forEach((element) => {
-    element.classList.toggle("hidden", !hasSelectedGuide);
-  });
-  document.querySelector("#guideControls").classList.toggle("hidden", !hasSelectedGuide || ["curve-lattice", "capsule"].includes(guide?.type));
-  const showCurveLatticeControls = CURVE_LATTICE_FEATURE_ENABLED
-    && guide?.type === "curve-lattice"
-    && guide.standalone;
-  curveLatticeControls.classList.toggle("hidden", !showCurveLatticeControls);
-  curveLatticeControls.hidden = !showCurveLatticeControls;
-  curveLatticeControls.setAttribute("aria-hidden", String(!showCurveLatticeControls));
-  guidePanelTitle.textContent = guide?.type === "curve-lattice" ? "Curve Lattice Guide" : guide?.type === "capsule" ? "Capsule Guide" : "Curve Guides";
-  updateViewportToolVisibility();
-}
-
-function updateViewportToolVisibility() {
-  const guideMode = sculptState.state.viewportEditMode === "guide";
-  const referenceMode = sculptState.state.viewportEditMode === "reference";
-  const setupEditorActive = scalpState.state.scalpShapeEditing
-    || scalpState.state.scalpPaintEditing
-    || sculptState.state.headSetupEditing
-    || scalpState.state.scalpBuilderEditing
-    || sculptState.state.capsuleGuideEditing;
-  const selectedGuide = getSelectedGuide();
-  const latticeSelected = selectedGuide?.type === "curve-lattice";
-  const surfaceSelected = sculptState.state.viewportEditMode === "strand" && getSelectedLock()?.geometryType === "surface";
-  const surfaceAnchorSelected = surfaceSelected && sel.state.selectedSurfaceObjectAnchorId === getSelectedLock()?.id;
-  modeToolButtons.forEach((button) => {
-    const tool = button.dataset.tool;
-    const guideToolAllowed = ["select", "move", "rotate", "scale", "draw-capsule-guide"].includes(tool)
-      && !(componentEditModeActive() && latticeSelected && ["rotate", "scale"].includes(tool));
-    const surfaceToolBlocked = surfaceSelected
-      && (tool === "relax" || (!surfaceAnchorSelected && ["rotate", "scale"].includes(tool)));
-    const referenceToolAllowed = ["select", "move", "scale"].includes(tool);
-    button.classList.toggle(
-      "edit-mode-tool-hidden",
-      (guideMode && !guideToolAllowed)
-        || (referenceMode && !referenceToolAllowed)
-        || surfaceToolBlocked
-    );
-  });
-  viewportCapsuleGuideTool.classList.toggle("hidden", !guideMode);
-  viewportCapsuleGuideTool.classList.toggle("active", guideMode && sculptState.state.capsuleGuideEditing);
-  viewportCapsuleGuideTool.setAttribute("aria-pressed", String(guideMode && sculptState.state.capsuleGuideEditing));
-  viewportDrawCapsuleGuideTool.classList.toggle("hidden", !guideMode);
-  viewportDrawCapsuleGuideTool.classList.toggle("active", guideMode && sel.state.activeTool === "draw-capsule-guide");
-  viewportDrawCapsuleGuideTool.setAttribute("aria-pressed", String(guideMode && sel.state.activeTool === "draw-capsule-guide"));
-  viewportCurveLatticeGuideTool.classList.toggle("hidden", !guideMode || !CURVE_LATTICE_FEATURE_ENABLED);
-  viewportCurveLatticeGuideTool.classList.toggle("active", guideMode && latticeSelected);
-  viewportCurveLatticeGuideTool.setAttribute("aria-pressed", String(guideMode && latticeSelected));
-  sculptBrushDock.classList.toggle("hidden", sculptState.state.viewportEditMode !== "strand" || setupEditorActive);
-  if (sculptState.state.viewportEditMode !== "strand" || setupEditorActive) setSculptBrushCursorVisible(false);
-}
-
-function getSelectedGuide() {
-  return guides.find((guide) => guide.id === sel.state.selectedGuideId);
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 function selectedViewportFocusBounds() {
   const lock = getSelectedLock();
-  const guide = getSelectedGuide();
+  const guide = guideApi.getSelectedGuide();
   const objects = lock?.mesh
     ? [lock.mesh]
     : guide
@@ -8158,69 +5693,7 @@ function cycleViewportFraming() {
   return framed;
 }
 
-function syncGuideInputs(guide) {
-  if (guide.type === "capsule") {
-    surfaceGuideNameInput.value = guide.name;
-    surfaceGuideColorInput.value = normalizeCapsuleGuideColor(guide.color);
-    surfaceGuideInputs.radius.value = guide.radius;
-    surfaceGuideInputs.length.value = guide.length;
-    surfaceGuideInputs.radialLoops.value = guide.radialLoops;
-    surfaceGuideInputs.lengthLoops.value = guide.lengthLoops;
-    surfaceGuideInputs.subdivisionSteps.value = guide.subdivisionSteps;
-    surfaceGuideInputs.opacity.value = guide.opacity;
-    surfaceGuideInputs.centerVisibility.value = guide.centerVisibility;
-    surfaceGuideFresnelInput.checked = guide.fresnel;
-    surfaceGuideValues.radius.textContent = guide.radius.toFixed(2);
-    surfaceGuideValues.length.textContent = guide.length.toFixed(2);
-    surfaceGuideValues.radialLoops.textContent = String(guide.radialLoops);
-    surfaceGuideValues.lengthLoops.textContent = String(guide.lengthLoops);
-    surfaceGuideValues.subdivisionSteps.textContent = String(guide.subdivisionSteps);
-    surfaceGuideValues.opacity.textContent = guide.opacity.toFixed(2);
-    surfaceGuideValues.centerVisibility.textContent = guide.centerVisibility.toFixed(2);
-    return;
-  }
-  if (guide.type === "curve-lattice") {
-    curveLatticeOpacityInput.value = guide.opacity;
-    curveLatticeHorizontalLoopsInput.value = guide.rows;
-    curveLatticeHorizontalLoopsValue.value = String(guide.rows);
-    curveLatticeVerticalLoopsInput.value = guide.columns;
-    curveLatticeVerticalLoopsValue.value = String(guide.columns);
-    return;
-  }
-  guideInputs.x.value = guide.x;
-  guideInputs.y.value = guide.y;
-  guideInputs.z.value = guide.z;
-  guideInputs.width.value = guide.width;
-  guideInputs.height.value = guide.height;
-  guideInputs.depth.value = guide.depth;
-  guideInputs.bend.value = guide.bend;
-  guideInputs.verticalBend.value = guide.verticalBend;
-  guideInputs.topCurve.value = guide.topCurve;
-  guideInputs.bottomCurve.value = guide.bottomCurve;
-  guideInputs.density.value = guide.density;
-  guideInputs.opacity.value = guide.opacity;
-}
 
-function updateGuideGeometry(guide) {
-  if (guide.type === "capsule") {
-    updateCapsuleGuideGeometry(guide);
-    selectGuide(guide.id);
-    return;
-  }
-  if (guide.type === "curve-lattice") {
-    updateCurveLatticeGeometry(guide);
-    selectGuide(guide.id);
-    return;
-  }
-  guide.mesh.geometry.dispose();
-  guide.wire.geometry.dispose();
-  guide.mesh.geometry = createGuideGeometry(guide);
-  guide.wire.geometry = new THREE.WireframeGeometry(guide.mesh.geometry);
-  guide.mesh.position.set(guide.x, guide.y, guide.z);
-  guide.wire.position.copy(guide.mesh.position);
-  guide.mesh.material.opacity = guide.opacity;
-  selectGuide(guide.id);
-}
 
 function sculptBrushToolActive(tool = sel.state.activeTool) {
   return ["sculpt-move", "sculpt-smooth", "sculpt-inflate", "sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient"].includes(tool);
@@ -8294,18 +5767,18 @@ function setActiveTool(tool) {
   if (leavingLoftSurface) cancelLoftSurfaceDraft();
   if (leavingCurveSurface) cancelCurveSurfaceDraft();
   if (sel.state.activeTool === "draw-capsule-guide" && tool !== "draw-capsule-guide") {
-    finishCapsuleGuideDrawStroke(null, { cancel: true });
+    guideApi.finishCapsuleGuideDrawStroke(null, { cancel: true });
   }
   if (tool === "surface-guide") {
     exitSetupEditors();
-    setCapsuleGuideEditing(true);
+    guideApi.setCapsuleGuideEditing(true);
     return;
   }
   if (
     ["rotate", "scale"].includes(tool)
     && sculptState.state.viewportEditMode === "guide"
     && componentEditModeActive()
-    && getSelectedGuide()?.type === "curve-lattice"
+    && guideApi.getSelectedGuide()?.type === "curve-lattice"
   ) tool = "move";
   if (sculptState.state.viewportEditMode === "strand") {
     const selectedGeometryType = getSelectedLock()?.geometryType;
@@ -8370,7 +5843,7 @@ function setActiveTool(tool) {
     const visible = componentEditModeActive() && sculptState.state.capsuleGuideEditing && guide.id === sel.state.selectedGuideId;
     guide.handlesGroup.visible = visible;
     if (guide.loopLinesGroup) guide.loopLinesGroup.visible = visible;
-    if (!sculptState.state.capsuleGuideEditing) updateCapsuleGuideHandleColors(guide);
+    if (!sculptState.state.capsuleGuideEditing) guideApi.updateCapsuleGuideHandleColors(guide);
   });
   if (!["relax", "place", "draw", "procedural-draw", "poly", "braid", "panel", "surface-loft", "curve-surface", "draw-capsule-guide"].includes(tool) && !sculptBrushToolActive(tool)) configureTransformControls(tool);
   if (["move", "scale"].includes(tool) && selectedReferenceImage()?.type === "plane") {
@@ -8380,7 +5853,7 @@ function setActiveTool(tool) {
     const handle = scalpState.state.scalpBuilderCurveLattice?.handles[scalpState.state.scalpBuilderCurveLattice.selectedIndex];
     if (handle) transformControls.attach(handle);
   }
-  if (sculptState.state.capsuleGuideEditing && sculptState.state.capsuleGuideLoopSelection) attachCapsuleGuideLoopTransform();
+  if (sculptState.state.capsuleGuideEditing && sculptState.state.capsuleGuideLoopSelection) guideApi.attachCapsuleGuideLoopTransform();
   locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
   if (!componentEditModeActive() && sculptState.state.viewportEditMode === "strand") {
     attachStrandObjectTransform();
@@ -8462,9 +5935,9 @@ function setProportionalEditing(enabled) {
     locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
   }
   scalpBuilder.updateScalpBuilderHandleColors();
-  const capsule = getSelectedGuide();
-  if (capsule?.type === "capsule") updateCapsuleGuideHandleColors(capsule, capsule.selectedPointIndex ?? -1);
-  refreshCapsuleGuideLoopInfluence();
+  const capsule = guideApi.getSelectedGuide();
+  if (capsule?.type === "capsule") guideApi.updateCapsuleGuideHandleColors(capsule, capsule.selectedPointIndex ?? -1);
+  guideApi.refreshCapsuleGuideLoopInfluence();
   if (!sculptState.state.proportionalEditing) endProportionalSizeEdit();
   updateInteractionLocks();
   updateAttributeEditorMode();
@@ -8514,9 +5987,9 @@ function refreshProportionalPreview() {
   locks.forEach((lock) => updateLockGeometry(lock));
   locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
   scalpBuilder.updateScalpBuilderHandleColors();
-  const capsule = getSelectedGuide();
-  if (capsule?.type === "capsule") updateCapsuleGuideHandleColors(capsule, capsule.selectedPointIndex ?? -1);
-  refreshCapsuleGuideLoopInfluence();
+  const capsule = guideApi.getSelectedGuide();
+  if (capsule?.type === "capsule") guideApi.updateCapsuleGuideHandleColors(capsule, capsule.selectedPointIndex ?? -1);
+  guideApi.refreshCapsuleGuideLoopInfluence();
 }
 
 function activeBrushSizeInput() {
@@ -8760,7 +6233,7 @@ function guideObjectTransformQuaternion(guide) {
 }
 
 function attachGuideObjectTransform() {
-  const guide = sculptState.state.viewportEditMode === "guide" ? getSelectedGuide() : null;
+  const guide = sculptState.state.viewportEditMode === "guide" ? guideApi.getSelectedGuide() : null;
   if (
     componentEditModeActive()
     || !guide
@@ -8808,7 +6281,7 @@ function guideObjectTransformSnapshot(guide, handle) {
 
 function beginGuideObjectTransform(handle) {
   if (handle !== guideObjectTransformHandle || componentEditModeActive()) return;
-  const guide = getSelectedGuide();
+  const guide = guideApi.getSelectedGuide();
   if (!guide || handle.userData.guideId !== guide.id) return;
   guideState.state.activeGuideObjectTransform = guideObjectTransformSnapshot(guide, handle);
 }
@@ -8845,7 +6318,7 @@ function updateGuideObjectTransform(handle) {
     guide.rootPoints = snapshot.rootPoints?.map((point) => transformPoint(point, snapshot.pivot)) || [];
     guide.deformRestPoints = snapshot.deformRestPoints?.map((point) => transformPoint(point, snapshot.pivot)) || [];
     guide.deformRestRootPoints = snapshot.deformRestRootPoints?.map((point) => transformPoint(point, snapshot.pivot)) || [];
-    updateCurveLatticeGeometry(guide);
+    guideApi.updateCurveLatticeGeometry(guide);
     return;
   }
   if (guide.type === "capsule") {
@@ -8862,7 +6335,7 @@ function updateGuideObjectTransform(handle) {
     guide.controlPoints = snapshot.controlWorldPoints.map((point) => (
       transformPoint(point, snapshot.pivot).sub(midpoint).applyQuaternion(inverseOrientation)
     ));
-    updateCapsuleGuideGeometry(guide, { preserveControlPoints: true });
+    guideApi.updateCapsuleGuideGeometry(guide, { preserveControlPoints: true });
     return;
   }
   updateLegacyGuideObjectTransform(snapshot, worldMatrixForPivot(snapshot.pivot));
@@ -8872,7 +6345,7 @@ function finishGuideObjectTransform() {
   const snapshot = guideState.state.activeGuideObjectTransform;
   guideState.state.activeGuideObjectTransform = null;
   if (!snapshot?.guide) return;
-  syncGuideInputs(snapshot.guide);
+  guideApi.syncGuideInputs(snapshot.guide);
   refreshLiveSurfaceOptions();
   attachGuideObjectTransform();
 }
@@ -9230,9 +6703,9 @@ function selectSurfaceObjectAnchor(lock, attachTransform = ["move", "rotate", "s
   sel.state.selectedSurfaceObjectAnchorId = lock.id;
   sel.state.selectedPoint = null;
   sel.state.selectedCurveLatticePoint = null;
-  clearMultiPointSelection();
+  guideApi.clearMultiPointSelection();
   updateSelectedPointLabel();
-  updateViewportToolVisibility();
+  guideApi.updateViewportToolVisibility();
   updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
   transformControls.detach();
   if (attachTransform) attachSurfaceObjectAnchorTransform(lock);
@@ -9596,7 +7069,7 @@ function updateViewPlaneGrid() {
     ? guides.find((item) => item.id === sel.state.selectedCurveLatticePoint.guideId)
     : null;
   const latticePoint = latticeGuide && sel.state.selectedCurveLatticePoint
-    ? curveLatticeEditablePoint(latticeGuide, sel.state.selectedCurveLatticePoint.pointIndex)
+    ? guideApi.curveLatticeEditablePoint(latticeGuide, sel.state.selectedCurveLatticePoint.pointIndex)
     : null;
   const selectedMovePoint = latticePoint || point;
   const selectedMoveHandle = latticePoint
@@ -9755,7 +7228,7 @@ function beginViewPlaneMove(lock, handle, event) {
 
   pushUndoState();
   transformControls.detach();
-  if (isLatticePoint) beginCurveLatticeMultiEdit(handle);
+  if (isLatticePoint) guideApi.beginCurveLatticeMultiEdit(handle);
   else beginHandleEdit(handle);
   const dragHandle = !isLatticePoint && pullMoveActive() ? pullTarget : handle;
   if (dragHandle === pullTarget) {
@@ -9823,8 +7296,8 @@ function updateViewPlaneMove(event) {
       endViewPlaneMove(event);
       return;
     }
-    if (sculptState.state.activeLatticeMultiEdit) applyCurveLatticeMultiTransform(sculptState.state.viewPlaneMoveDrag.handle);
-    else updateCurveLatticeFromHandle(sculptState.state.viewPlaneMoveDrag.handle);
+    if (sculptState.state.activeLatticeMultiEdit) guideApi.applyCurveLatticeMultiTransform(sculptState.state.viewPlaneMoveDrag.handle);
+    else guideApi.updateCurveLatticeFromHandle(sculptState.state.viewPlaneMoveDrag.handle);
     event.preventDefault();
     event.stopImmediatePropagation();
     return;
@@ -15027,9 +12500,9 @@ function setMirrorXEditing(enabled) {
     : "Enable X axis mirror. New strands will create linked mirror instances";
   if (sculptState.state.drawStrandStroke) updateDrawStrandPreview();
   if (sel.state.activeTool === "curve-surface") updateCurveSurfacePreview();
-  guides.filter((guide) => guide.type === "curve-lattice").forEach(updateCurveLatticeHandleColors);
+  guides.filter((guide) => guide.type === "curve-lattice").forEach(guideApi.updateCurveLatticeHandleColors);
   guides.filter((guide) => guide.type === "capsule").forEach((guide) => {
-    updateCapsuleGuideHandleColors(guide, guide.selectedPointIndex ?? -1);
+    guideApi.updateCapsuleGuideHandleColors(guide, guide.selectedPointIndex ?? -1);
   });
   scalpBuilder.updateScalpBuilderHandleColors();
   if (scalpState.state.scalpBuilderCurveLattice) {
@@ -15251,7 +12724,7 @@ function snapshotState() {
       id: guide.id,
       type: guide.type,
       name: guide.name,
-      color: normalizeCapsuleGuideColor(guide.color),
+      color: guideApi.normalizeCapsuleGuideColor(guide.color),
       outlinerVisible: guide.outlinerVisible !== false,
       start: vectorToData(guide.start),
       end: vectorToData(guide.end),
@@ -16115,9 +13588,9 @@ function reapplySelectionAfterStateRestore(restorePlan) {
     const groupToRestore = sel.state.selectedStrandGroup;
     sel.state.selectedStrandGroup = null;
     selectStrandGroup(groupToRestore);
-  } else if (sel.state.selectedGuideId) selectGuide(sel.state.selectedGuideId);
+  } else if (sel.state.selectedGuideId) guideApi.selectGuide(sel.state.selectedGuideId);
   else {
-    updateGuideControlsVisibility();
+    guideApi.updateGuideControlsVisibility();
     renderLockList();
     updateAttributeEditorMode();
     updateSelectedPointLabel();
@@ -16126,22 +13599,22 @@ function reapplySelectionAfterStateRestore(restorePlan) {
   if (pointToRestore) selectCurvePoint(pointToRestore.lockId, pointToRestore.pointIndex);
   else if (latticePointToRestore) {
     const guide = guides.find((item) => item.id === latticePointToRestore.guideId);
-    if (guide) selectCurveLatticePoint(guide, latticePointToRestore.pointIndex, false);
+    if (guide) guideApi.selectCurveLatticePoint(guide, latticePointToRestore.pointIndex, false);
   }
   if (controlsToRestore.length > 1) {
     sel.state.selectedControlPoints = controlsToRestore.filter((point) => (
       point.type === "strand"
         ? locks.some((lock) => lock.id === point.lockId && !lock.locked && point.pointIndex < lock.points.length)
-        : guides.some((guide) => guide.id === point.guideId && curveLatticeEditablePoint(guide, point.pointIndex))
+        : guides.some((guide) => guide.id === point.guideId && guideApi.curveLatticeEditablePoint(guide, point.pointIndex))
     ));
     locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
-    guides.filter((guide) => guide.type === "curve-lattice").forEach(updateCurveLatticeHandleColors);
+    guides.filter((guide) => guide.type === "curve-lattice").forEach(guideApi.updateCurveLatticeHandleColors);
     updateSelectedPointLabel();
   }
 }
 
 function finalizeStateRestore(state) {
-  const editingCurveLattice = getSelectedGuide()?.type === "curve-lattice";
+  const editingCurveLattice = guideApi.getSelectedGuide()?.type === "curve-lattice";
   curveLatticeToggle.classList.toggle("active", editingCurveLattice);
   curveLatticeToggle.setAttribute("aria-pressed", String(editingCurveLattice));
   restoreRefreshes.run({ state });
@@ -16418,7 +13891,7 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
 
 function restoreGuide(snapshot) {
   if (snapshot.type === "capsule") {
-    addCapsuleGuide({
+    guideApi.addCapsuleGuide({
       ...snapshot,
       start: dataToVector(snapshot.start),
       end: dataToVector(snapshot.end)
@@ -16426,7 +13899,7 @@ function restoreGuide(snapshot) {
     return;
   }
   if (snapshot.type === "curve-lattice") {
-    addCurveLattice({
+    guideApi.addCurveLattice({
       ...snapshot,
       points: snapshot.points.map(dataToVector),
       rootPoints: snapshot.rootPoints?.map(dataToVector),
@@ -16437,7 +13910,7 @@ function restoreGuide(snapshot) {
   }
   const guide = { ...snapshot };
   guide.mesh = new THREE.Mesh(
-    createGuideGeometry(guide),
+    guideApi.createGuideGeometry(guide),
     new THREE.MeshStandardMaterial({
       color: 0x75c9ff,
       roughness: 0.54,
@@ -18405,7 +15878,7 @@ function beginPolyBrushPointer(event) {
     clearPolyFillPreview();
     const target = polyTargetAtEvent(event);
     const removingSelectedVertex = target?.type === "vertex"
-      && controlPointIsSelected("strand", selectedPolyMesh()?.id, target.index);
+      && guideApi.controlPointIsSelected("strand", selectedPolyMesh()?.id, target.index);
     draw.state.polyAltDeleteCandidate = !removingSelectedVertex && target
       ? { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY }
       : null;
@@ -21734,7 +19207,7 @@ function updatePlacementStatus() {
 }
 
 function deselectStrands() {
-  clearMultiPointSelection();
+  guideApi.clearMultiPointSelection();
   clearStrandSelectionState();
   sel.state.selectedCurveSurfaceController = null;
   sel.state.clumpViewportSelection = false;
@@ -22033,7 +19506,7 @@ function selectPointsInMarquee(drag) {
     sel.state.selectedPoint = null;
     sel.state.selectedCurveLatticePoint = null;
   }
-  guides.filter((guide) => guide.type === "curve-lattice").forEach(updateCurveLatticeHandleColors);
+  guides.filter((guide) => guide.type === "curve-lattice").forEach(guideApi.updateCurveLatticeHandleColors);
   locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
   updateSelectedPointLabel();
   updateViewPlaneGrid();
@@ -22163,7 +19636,7 @@ function selectObjectsInMarquee(drag) {
         .filter((object) => object?.visible !== false)
         .some((object) => objectInsideSelectionMarquee(object, bounds, viewportRect))
     ));
-    selectGuide(match?.id);
+    guideApi.selectGuide(match?.id);
   }
 }
 
@@ -22179,7 +19652,7 @@ function finishSelectionMarquee(event, options = {}) {
     if (componentEditModeActive()) selectPointsInMarquee(drag);
     else selectObjectsInMarquee(drag);
   } else if (drag.surface?.type === "guide") {
-    selectGuide(drag.surface.hit.object.userData.guideId);
+    guideApi.selectGuide(drag.surface.hit.object.userData.guideId);
   } else if (drag.surface?.type === "strand") {
     selectLock(drag.surface.hit.object.userData.lockId, {
       individualClumpMember: true,
@@ -23015,7 +20488,7 @@ function updateCurveObjects(lock, options = {}) {
       handle.quaternion.identity();
     }
     const selectedHandle = (sel.state.selectedPoint?.lockId === lock.id && sel.state.selectedPoint.pointIndex === index)
-      || controlPointIsSelected("strand", lock.id, index);
+      || guideApi.controlPointIsSelected("strand", lock.id, index);
     handle.scale.set(
       (["surface", "curve-surface"].includes(lock.geometryType) ? 1 : pointScale.x || 1) * controlPointDisplayScale,
       controlPointDisplayScale,
@@ -23541,7 +21014,7 @@ function handleColor(lock, index) {
   const selectedLock = lock.id === sel.state.selectedId;
   if (!selectedLock) return 0x476472;
   const selectedHandle = (sel.state.selectedPoint?.lockId === lock.id && sel.state.selectedPoint.pointIndex === index)
-    || controlPointIsSelected("strand", lock.id, index);
+    || guideApi.controlPointIsSelected("strand", lock.id, index);
   const sameCurve = lock.geometryType !== "curve-surface"
     || Math.floor(index / lock.curveSurfaceRows) === Math.floor(sel.state.selectedPoint?.pointIndex / lock.curveSurfaceRows);
   const hierarchyAffected = sculptState.state.hierarchyEditing && sel.state.selectedPoint?.lockId === lock.id && sameCurve && index > sel.state.selectedPoint.pointIndex;
@@ -24073,7 +21546,7 @@ function refreshStrandCurveSelectionVisuals() {
 
 function resetGuideSelectionVisuals() {
   guides.forEach((guide) => {
-    if (guide.type === "capsule") updateCapsuleGuideDisplayColor(guide);
+    if (guide.type === "capsule") guideApi.updateCapsuleGuideDisplayColor(guide);
     else {
       guide.mesh.material.color.set(guide.color);
       guide.wire.material.color.set(guide.color);
@@ -24083,7 +21556,7 @@ function resetGuideSelectionVisuals() {
     guide.mesh.material.opacity = Math.min(guide.opacity, 0.16);
     if (guide.rootMesh) guide.rootMesh.material.opacity = guide.mesh.material.opacity;
     guide.wire.material.opacity = 0.25;
-    if (guide.type === "capsule") updateCapsuleGuideWireOpacity(guide, false);
+    if (guide.type === "capsule") guideApi.updateCapsuleGuideWireOpacity(guide, false);
     else if (guide.controlWire) guide.controlWire.material.opacity = 0.25;
     if (guide.rootWire) guide.rootWire.material.opacity = 0.25;
     if (guide.handlesGroup) guide.handlesGroup.visible = false;
@@ -24112,7 +21585,7 @@ function refreshStrandSelectionConsumers({
   if (updateGeometry) locks.forEach((item) => updateLockGeometry(item));
   renderLockList();
   updateAttributeEditorMode();
-  updateGuideControlsVisibility();
+  guideApi.updateGuideControlsVisibility();
   updateSelectedPointLabel();
   if (updateTopology) updateTopologyStats();
   refreshRebuildCurveDialog();
@@ -24154,7 +21627,7 @@ function selectLock(id, options = {}) {
   if (sculptState.state.panelTipHover && sculptState.state.panelTipHover.lockId !== id) {
     sculptState.state.panelTipHover = null;
   }
-  clearMultiPointSelection();
+  guideApi.clearMultiPointSelection();
   const selectedCurveSurfaceLock = locks.find((item) => item.id === sel.state.selectedId && item.geometryType === "curve-surface");
   const requestedControllerIndex = Math.round(Number(options.curveSurfaceControllerIndex));
   sel.state.selectedCurveSurfaceController = selectedCurveSurfaceLock
@@ -24559,7 +22032,7 @@ function syncProceduralAccessoryEditControls(guide = proceduralGuideForLock(getS
 function updateAttributeEditorMode() {
   const editingGroup = Boolean(sel.state.selectedStrandGroup);
   const editingStrand = Boolean(getSelectedLock());
-  const selectedGuide = getSelectedGuide();
+  const selectedGuide = guideApi.getSelectedGuide();
   const editingGuide = sculptState.state.viewportEditMode === "guide" && Boolean(selectedGuide);
   const editingCapsuleGuide = editingGuide && selectedGuide.type === "capsule";
   const editingLegacyGuide = editingGuide && !editingCapsuleGuide;
@@ -24720,7 +22193,7 @@ function pinActiveToolSettingsPanel() {
   else if (sel.state.activeTool === "poly") panel = polyBrushToolPanel;
   else if (sel.state.activeTool === "braid") panel = braidToolPanel;
   else if (sel.state.activeTool === "panel") panel = panelStrandToolPanel;
-  else if (sel.state.activeTool === "draw-capsule-guide" || sculptState.state.capsuleGuideEditing || (sculptState.state.viewportEditMode === "guide" && getSelectedGuide()?.type === "capsule")) panel = surfaceGuideToolPanel;
+  else if (sel.state.activeTool === "draw-capsule-guide" || sculptState.state.capsuleGuideEditing || (sculptState.state.viewportEditMode === "guide" && guideApi.getSelectedGuide()?.type === "capsule")) panel = surfaceGuideToolPanel;
   else if (sel.state.activeTool === "relax") panel = relaxToolPanel;
   else if (["move", "rotate", "scale"].includes(sel.state.activeTool)) panel = transformToolPanel;
   if (panel && !panel.classList.contains("hidden")) {
@@ -24735,7 +22208,7 @@ function curveLatticeForGroup(region, createIfMissing = false) {
   if (!guide && createIfMissing && region !== "unassigned") {
     const columns = 3;
     const rows = region === "bangs" ? 3 : 4;
-    guide = addCurveLattice({
+    guide = guideApi.addCurveLattice({
       columns,
       rows,
       scalpRegion: region,
@@ -24776,14 +22249,14 @@ function filterCurveLatticesToGroup(selectedGuideId = null) {
     if (guide.rootWire) guide.rootWire.visible = latticeVisible;
     if (guide.loopPickersGroup) guide.loopPickersGroup.visible = latticeVisible;
     if (REGION_CURVE_VISUALIZATION_ENABLED) {
-      ensureGroupCurveDisplay(guide).visible = groupCurveVisible;
+      guideApi.ensureGroupCurveDisplay(guide).visible = groupCurveVisible;
     } else if (guide.groupCurveLine) {
       guide.groupCurveLine.visible = false;
     }
     if (guide.handlesGroup) {
       guide.handlesGroup.visible = groupCurveVisible || (latticeVisible && guide.id === selectedGuideId);
       if (groupCurveVisible) {
-        const visibleIndices = new Set(groupCurveControlIndices(guide));
+        const visibleIndices = new Set(guideApi.groupCurveControlIndices(guide));
         guide.handlesGroup.children.forEach((handle, index) => {
           handle.visible = visibleIndices.has(index);
         });
@@ -24798,12 +22271,12 @@ function createStandaloneCurveLatticeGuide() {
   const rows = DEFAULT_CURVE_LATTICE_PLANE.rows;
   const index = guides.filter((guide) => guide.type === "curve-lattice" && guide.standalone).length + 1;
   pushUndoState();
-  const guide = addCurveLattice({
+  const guide = guideApi.addCurveLattice({
     standalone: true,
     name: `Curve Lattice Guide ${index}`,
     columns,
     rows,
-    points: flatCurveLatticePoints(columns, rows)
+    points: guideApi.flatCurveLatticePoints(columns, rows)
   });
   refreshLiveSurfaceOptions();
   return guide;
@@ -24841,8 +22314,8 @@ function showCurveLatticeForGroup(region) {
     }
     if (item.loopLinesGroup) item.loopLinesGroup.visible = false;
   });
-  if (guide) syncGuideInputs(guide);
-  updateGuideControlsVisibility();
+  if (guide) guideApi.syncGuideInputs(guide);
+  guideApi.updateGuideControlsVisibility();
   updatePlacementStatus();
 }
 
@@ -24862,14 +22335,14 @@ function selectStrandGroup(region) {
     curveLatticeToggle.classList.remove("active");
     curveLatticeToggle.setAttribute("aria-pressed", "false");
     updateAttributeEditorMode();
-    updateGuideControlsVisibility();
+    guideApi.updateGuideControlsVisibility();
     updatePlacementStatus();
     renderLockList();
     refreshRebuildCurveDialog();
     return;
   }
   sel.state.selectedStrandGroup = region;
-  clearMultiPointSelection();
+  guideApi.clearMultiPointSelection();
   clearStrandSelectionState();
   sel.state.selectedCurveSurfaceController = null;
   sel.state.clumpViewportSelection = false;
@@ -24882,7 +22355,7 @@ function selectStrandGroup(region) {
   showCurveLatticeForGroup(region);
   syncGroupInputs();
   updateAttributeEditorMode();
-  updateGuideControlsVisibility();
+  guideApi.updateGuideControlsVisibility();
   updateSelectedPointLabel();
   renderLockList();
   refreshRebuildCurveDialog();
@@ -24899,7 +22372,7 @@ function selectCurvePoint(lockId, pointIndex, preserveMulti = false) {
     updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
   });
   updateViewPlaneGrid();
-  updateViewportToolVisibility();
+  guideApi.updateViewportToolVisibility();
 }
 
 function updateSelectedPointLabel() {
@@ -25354,7 +22827,7 @@ function rebuildSelectedCurves() {
   }
 
   pushUndoState();
-  clearMultiPointSelection();
+  guideApi.clearMultiPointSelection();
   selection.forEach((lock) => {
     const pointCount = requestedCount ?? lock.points.length;
     const curve = new THREE.CatmullRomCurve3(lock.points.map((point) => point.clone()));
@@ -25481,13 +22954,13 @@ function deleteGuide(guide) {
   disposeGuide(guide);
   guides.splice(guides.indexOf(guide), 1);
   refreshLiveSurfaceOptions();
-  selectGuide(guides.at(-1)?.id);
+  guideApi.selectGuide(guides.at(-1)?.id);
   updateCount();
   return true;
 }
 
 function deleteSelectedGuide() {
-  return deleteGuide(getSelectedGuide());
+  return deleteGuide(guideApi.getSelectedGuide());
 }
 
 function deleteSelectedReferenceImage() {
@@ -25507,14 +22980,14 @@ function hasDeletableSelection() {
   return Boolean(
     selectedReferenceImage()
     || selectedLocksInOrder().length
-    || getSelectedGuide()
+    || guideApi.getSelectedGuide()
   );
 }
 
 function deleteCurrentSelection() {
   if (selectedReferenceImage()) return deleteSelectedReferenceImage();
   if (selectedLocksInOrder().length) return deleteSelectedStrands();
-  if (getSelectedGuide()) return deleteSelectedGuide();
+  if (guideApi.getSelectedGuide()) return deleteSelectedGuide();
   // The permanent scalp guide is intentionally not represented as a deletable guide.
   return false;
 }
@@ -26060,7 +23533,7 @@ function configureContextualRadialMenu(kind, options, listOptions = []) {
 function beginStrandRadialGesture() {
   if (!ui.state.radialMenusEnabled || hairState.state.strandRadialGesture || sculptState.state.duplicatePlacement) return false;
   const lock = getSelectedLock();
-  const hasOtherSelection = Boolean(sel.state.selectedStrandGroup || getSelectedGuide() || selectedReferenceImage());
+  const hasOtherSelection = Boolean(sel.state.selectedStrandGroup || guideApi.getSelectedGuide() || selectedReferenceImage());
   if (!lock && hasOtherSelection) return false;
   const selectedClumpGuide = sel.state.clumpViewportSelection ? clumpGuideForLock(lock) : null;
   const kind = selectedClumpGuide
@@ -28128,10 +25601,10 @@ function renderLockList() {
 
 function updateCount() {
   const lockText = `${locks.length} ${locks.length === 1 ? "strand" : "strands"}`;
-  const accessibleGuideCount = outlinerGuides().length;
+  const accessibleGuideCount = guideApi.outlinerGuides().length;
   const guideText = `${accessibleGuideCount} ${accessibleGuideCount === 1 ? "guide" : "guides"}`;
   document.querySelector("#strandCount").textContent = `${guideText}, ${lockText}`;
-  renderGuideOutliner();
+  guideApi.renderGuideOutliner();
   updateTopologyStats();
 }
 
@@ -28478,7 +25951,7 @@ document.addEventListener("pointerdown", (event) => {
     hideOutlinerContextMenu();
   }
   if (!guideViewContextMenu.classList.contains("hidden") && !guideViewContextMenu.contains(event.target)) {
-    hideGuideViewContextMenu();
+    guideApi.hideGuideViewContextMenu();
   }
   if (!strandRadialMenu.classList.contains("hidden") && !strandRadialMenu.contains(event.target)) {
     cancelStrandRadialGesture();
@@ -28581,16 +26054,16 @@ function updateTransformScalePointer(event) {
 }
 window.addEventListener("blur", () => {
   hideOutlinerContextMenu();
-  hideGuideViewContextMenu();
+  guideApi.hideGuideViewContextMenu();
 });
 window.addEventListener("resize", () => {
   hideOutlinerContextMenu();
-  hideGuideViewContextMenu();
+  guideApi.hideGuideViewContextMenu();
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     hideOutlinerContextMenu();
-    hideGuideViewContextMenu();
+    guideApi.hideGuideViewContextMenu();
   }
 });
 
@@ -29396,21 +26869,21 @@ presetFilterButtons.forEach((button) => button.addEventListener("click", () => {
 presetLibrary.addEventListener("pointerdown", (event) => event.stopPropagation());
 presetLibrary.addEventListener("wheel", (event) => event.stopPropagation());
 document.querySelector("#centerGuide").addEventListener("click", () => {
-  const guide = getSelectedGuide();
+  const guide = guideApi.getSelectedGuide();
   if (!guide) return;
   pushUndoState();
   if (guide.type === "capsule") {
     const direction = guide.end.clone().sub(guide.start);
     guide.start.copy(direction).multiplyScalar(-0.5);
     guide.end.copy(direction).multiplyScalar(0.5);
-    updateCapsuleGuideGeometry(guide);
+    guideApi.updateCapsuleGuideGeometry(guide);
     return;
   }
   if (guide.type === "curve-lattice") {
     guide.points = guide.standalone
-      ? flatCurveLatticePoints(guide.columns, guide.rows)
+      ? guideApi.flatCurveLatticePoints(guide.columns, guide.rows)
       : scalpBuilder.curveLatticePointsForScalpRegion(guide.scalpRegion, guide.columns, guide.rows);
-    guide.rootPoints = defaultCurveLatticeRootPoints(guide);
+    guide.rootPoints = guideApi.defaultCurveLatticeRootPoints(guide);
     guide.deformRestPoints = guide.points.map((point) => point.clone());
     guide.deformRestRootPoints = guide.rootPoints.map((point) => point.clone());
     if (guide.handlesGroup.children.includes(transformControls.object)) transformControls.detach();
@@ -29419,24 +26892,24 @@ document.querySelector("#centerGuide").addEventListener("click", () => {
       handle.geometry.dispose();
       handle.material.dispose();
     });
-    guide.handlesGroup = createCurveLatticeHandles(guide);
+    guide.handlesGroup = guideApi.createCurveLatticeHandles(guide);
     guide.handlesGroup.visible = true;
     guideSurfaceGroup.add(guide.handlesGroup);
-    updateCurveLatticeGeometry(guide);
-    selectGuide(guide.id);
+    guideApi.updateCurveLatticeGeometry(guide);
+    guideApi.selectGuide(guide.id);
     return;
   }
   guide.x = 0;
   guide.y = 0.72;
   guide.z = 0.42;
-  updateGuideGeometry(guide);
+  guideApi.updateGuideGeometry(guide);
 });
 document.querySelector("#deleteGuide").addEventListener("click", () => {
   deleteSelectedGuide();
 });
 curveLatticeToggle.addEventListener("click", (event) => {
   if (!CURVE_LATTICE_FEATURE_ENABLED) return;
-  if (!event.shiftKey && getSelectedGuide()?.type === "curve-lattice") {
+  if (!event.shiftKey && guideApi.getSelectedGuide()?.type === "curve-lattice") {
     deselectStrands();
     updatePlacementStatus();
     updateViewPlaneGrid();
@@ -29444,22 +26917,22 @@ curveLatticeToggle.addEventListener("click", (event) => {
   }
   const existing = selectedCurveLatticeGuide() || guides.find((guide) => guide.type === "curve-lattice");
   if (existing && !event.shiftKey) {
-    selectGuide(existing.id);
+    guideApi.selectGuide(existing.id);
     return;
   }
   pushUndoState();
   if (event.shiftKey) {
-    addCurveLattice({ scalpRegion: scalpState.state.activeScalpRegion, color: SCALP_REGIONS[scalpState.state.activeScalpRegion].color });
+    guideApi.addCurveLattice({ scalpRegion: scalpState.state.activeScalpRegion, color: SCALP_REGIONS[scalpState.state.activeScalpRegion].color });
     return;
   }
-  const created = createCurveLatticeGuideSet();
+  const created = guideApi.createCurveLatticeGuideSet();
   const frontBangs = created.find((guide) => guide.scalpRegion === "bangs") || created[0];
-  if (frontBangs) selectGuide(frontBangs.id);
+  if (frontBangs) guideApi.selectGuide(frontBangs.id);
   updateCount();
 });
 bindUndoCapture(curveLatticeOpacityInput);
 curveLatticeOpacityInput.addEventListener("input", () => {
-  const guide = getSelectedGuide();
+  const guide = guideApi.getSelectedGuide();
   if (guide?.type !== "curve-lattice") return;
   guide.opacity = Number(curveLatticeOpacityInput.value);
   guide.mesh.material.opacity = guide.opacity;
@@ -29467,28 +26940,28 @@ curveLatticeOpacityInput.addEventListener("input", () => {
 });
 bindUndoCapture(curveLatticeHorizontalLoopsInput);
 curveLatticeHorizontalLoopsInput.addEventListener("input", () => {
-  const guide = getSelectedGuide();
+  const guide = guideApi.getSelectedGuide();
   if (guide?.type !== "curve-lattice") return;
-  resampleCurveLatticeGuide(guide, guide.columns, curveLatticeHorizontalLoopsInput.value);
+  guideApi.resampleCurveLatticeGuide(guide, guide.columns, curveLatticeHorizontalLoopsInput.value);
   curveLatticeHorizontalLoopsValue.value = String(guide.rows);
 });
 bindUndoCapture(curveLatticeVerticalLoopsInput);
 curveLatticeVerticalLoopsInput.addEventListener("input", () => {
-  const guide = getSelectedGuide();
+  const guide = guideApi.getSelectedGuide();
   if (guide?.type !== "curve-lattice") return;
-  resampleCurveLatticeGuide(guide, curveLatticeVerticalLoopsInput.value, guide.rows);
+  guideApi.resampleCurveLatticeGuide(guide, curveLatticeVerticalLoopsInput.value, guide.rows);
   curveLatticeVerticalLoopsValue.value = String(guide.columns);
 });
 document.querySelector("#createLatticeStrands").addEventListener("click", () => {
-  createStrandsFromCurveLattice(getSelectedGuide());
+  createStrandsFromCurveLattice(guideApi.getSelectedGuide());
 });
 Object.entries(guideInputs).forEach(([key, input]) => {
   bindUndoCapture(input);
   input.addEventListener("input", () => {
-    const guide = getSelectedGuide();
+    const guide = guideApi.getSelectedGuide();
     if (!guide) return;
     guide[key] = Number(input.value);
-    updateGuideGeometry(guide);
+    guideApi.updateGuideGeometry(guide);
   });
 });
 
@@ -29499,7 +26972,7 @@ Object.entries(surfaceGuideInputs).forEach(([key, input]) => {
     const value = integer ? Math.round(Number(input.value)) : Number(input.value);
     surfaceGuideDefaults[key] = value;
     surfaceGuideValues[key].textContent = integer ? String(value) : value.toFixed(2);
-    const guide = getSelectedGuide();
+    const guide = guideApi.getSelectedGuide();
     if (guide?.type !== "capsule") return;
     if (key === "opacity") {
       guide.opacity = value;
@@ -29508,9 +26981,9 @@ Object.entries(surfaceGuideInputs).forEach(([key, input]) => {
     }
     if (key === "centerVisibility") {
       guide.centerVisibility = value;
-      updateCapsuleGuideFresnelMaterial(guide);
+      guideApi.updateCapsuleGuideFresnelMaterial(guide);
       guide.mesh.material.opacity = Math.min(guide.opacity, 0.16);
-      updateCapsuleGuideWireOpacity(guide, false);
+      guideApi.updateCapsuleGuideWireOpacity(guide, false);
       return;
     }
     if (key === "radius") {
@@ -29523,57 +26996,57 @@ Object.entries(surfaceGuideInputs).forEach(([key, input]) => {
         radiusScale
       );
       guide.controlPoints.forEach((point, index) => point.copy(dataToVector(scaledPoints[index])));
-      updateCapsuleGuideGeometry(guide, { preserveControlPoints: true });
+      guideApi.updateCapsuleGuideGeometry(guide, { preserveControlPoints: true });
     } else if (key === "length") {
       const nextLength = Math.max(value, guide.radius * 2);
-      resizeCapsuleGuideCylinder(guide, nextLength);
-      updateCapsuleGuideGeometry(guide, { preserveControlPoints: true });
+      guideApi.resizeCapsuleGuideCylinder(guide, nextLength);
+      guideApi.updateCapsuleGuideGeometry(guide, { preserveControlPoints: true });
     } else if (key === "subdivisionSteps") {
       guide.subdivisionSteps = value;
-      updateCapsuleGuideGeometry(guide, { preserveControlPoints: true });
-      refreshCapsuleGuideLoopInfluence();
+      guideApi.updateCapsuleGuideGeometry(guide, { preserveControlPoints: true });
+      guideApi.refreshCapsuleGuideLoopInfluence();
     } else if (integer) {
       const radialLoops = key === "radialLoops" ? value : guide.radialLoops;
       const lengthLoops = key === "lengthLoops" ? value : guide.lengthLoops;
-      retopologizeCapsuleGuide(guide, radialLoops, lengthLoops);
+      guideApi.retopologizeCapsuleGuide(guide, radialLoops, lengthLoops);
     } else {
       guide[key] = value;
-      updateCapsuleGuideGeometry(guide, { preserveControlPoints: true });
+      guideApi.updateCapsuleGuideGeometry(guide, { preserveControlPoints: true });
     }
     refreshLiveSurfaceOptions();
   });
 });
 bindUndoCapture(surfaceGuideNameInput);
 surfaceGuideNameInput.addEventListener("change", () => {
-  const guide = getSelectedGuide();
+  const guide = guideApi.getSelectedGuide();
   if (guide?.type !== "capsule") return;
-  guide.name = normalizeCapsuleGuideName(surfaceGuideNameInput.value, guide.name);
+  guide.name = guideApi.normalizeCapsuleGuideName(surfaceGuideNameInput.value, guide.name);
   surfaceGuideNameInput.value = guide.name;
-  renderGuideOutliner();
+  guideApi.renderGuideOutliner();
   refreshLiveSurfaceOptions();
   updatePlacementStatus();
 });
 bindUndoCapture(surfaceGuideColorInput);
 surfaceGuideColorInput.addEventListener("input", () => {
-  const guide = getSelectedGuide();
+  const guide = guideApi.getSelectedGuide();
   if (guide?.type !== "capsule") return;
-  guide.color = normalizeCapsuleGuideColor(surfaceGuideColorInput.value);
-  updateCapsuleGuideDisplayColor(guide);
-  renderGuideOutliner();
+  guide.color = guideApi.normalizeCapsuleGuideColor(surfaceGuideColorInput.value);
+  guideApi.updateCapsuleGuideDisplayColor(guide);
+  guideApi.renderGuideOutliner();
 });
 surfaceGuideInputs.centerVisibility.addEventListener("change", () => {
-  const guide = getSelectedGuide();
+  const guide = guideApi.getSelectedGuide();
   if (guide?.type !== "capsule") return;
   guide.mesh.material.opacity = guide.opacity;
-  updateCapsuleGuideWireOpacity(guide, true);
+  guideApi.updateCapsuleGuideWireOpacity(guide, true);
 });
 surfaceGuideFresnelInput.addEventListener("change", () => {
   pushUndoState();
   surfaceGuideDefaults.fresnel = surfaceGuideFresnelInput.checked;
-  const guide = getSelectedGuide();
+  const guide = guideApi.getSelectedGuide();
   if (guide?.type !== "capsule") return;
   guide.fresnel = surfaceGuideFresnelInput.checked;
-  updateCapsuleGuideFresnelMaterial(guide);
+  guideApi.updateCapsuleGuideFresnelMaterial(guide);
 });
 surfaceGuideFitScalpButton.addEventListener("click", () => {
   scalpBuilder.createScalpFittedCapsuleGuide();
@@ -29660,7 +27133,7 @@ Object.entries(capsuleGuideProfileInputs).forEach(([key, input]) => {
     const value = Number(input.value);
     capsuleGuideDrawDefaults.profile[index].value = value;
     capsuleGuideProfileValues[key].textContent = value.toFixed(2);
-    updateCapsuleGuideProfilePreview();
+    guideApi.updateCapsuleGuideProfilePreview();
   });
 });
 exitSetupEditor.addEventListener("click", exitSetupEditors);
@@ -31225,7 +28698,7 @@ headSetupMode.addEventListener("click", () => {
   scalpBuilder.setScalpSetupMenuOpen(false);
 });
 function toggleCapsuleGuideTool() {
-  if (sculptState.state.capsuleGuideEditing) setCapsuleGuideEditing(false);
+  if (sculptState.state.capsuleGuideEditing) guideApi.setCapsuleGuideEditing(false);
   else setActiveTool("surface-guide");
   scalpBuilder.setScalpSetupMenuOpen(false);
 }
@@ -31269,12 +28742,12 @@ document.addEventListener("pointerdown", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeAppMenus();
 });
-scalpGuideVisibilityToggle.addEventListener("click", cycleGuideViewMode);
-scalpGuideVisibilityToggle.addEventListener("contextmenu", showGuideViewContextMenu);
+scalpGuideVisibilityToggle.addEventListener("click", guideApi.cycleGuideViewMode);
+scalpGuideVisibilityToggle.addEventListener("contextmenu", guideApi.showGuideViewContextMenu);
 guideViewModeActions.forEach((button) => {
   button.addEventListener("click", () => {
-    setGuideViewMode(button.dataset.guideViewMode);
-    hideGuideViewContextMenu();
+    guideApi.setGuideViewMode(button.dataset.guideViewMode);
+    guideApi.hideGuideViewContextMenu();
   });
 });
 allRegionsVisibilityInput.addEventListener("change", () => {
@@ -31316,8 +28789,8 @@ allGuidesVisibilityInput.addEventListener("change", () => {
   guideState.state.capsuleGuidesVisible = visible;
   guideState.state.curveLatticeGuidesVisible = visible;
   scalpBuilder.setScalpGuideVisibility(visible);
-  applyCapsuleGuideDisplayVisibility();
-  applyCurveLatticeGuideDisplayVisibility();
+  guideApi.applyCapsuleGuideDisplayVisibility();
+  guideApi.applyCurveLatticeGuideDisplayVisibility();
   syncDisplayVisibilityInputs();
 });
 scalpDisplayVisibilityInput.addEventListener("change", () => {
@@ -31325,12 +28798,12 @@ scalpDisplayVisibilityInput.addEventListener("change", () => {
 });
 capsuleDisplayVisibilityInput.addEventListener("change", () => {
   guideState.state.capsuleGuidesVisible = capsuleDisplayVisibilityInput.checked;
-  applyCapsuleGuideDisplayVisibility();
+  guideApi.applyCapsuleGuideDisplayVisibility();
   syncDisplayVisibilityInputs();
 });
 curveLatticeDisplayVisibilityInput.addEventListener("change", () => {
   guideState.state.curveLatticeGuidesVisible = curveLatticeDisplayVisibilityInput.checked;
-  applyCurveLatticeGuideDisplayVisibility();
+  guideApi.applyCurveLatticeGuideDisplayVisibility();
   syncDisplayVisibilityInputs();
 });
 headMeshDisplayVisibilityInput.addEventListener("change", () => {
@@ -31508,7 +28981,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (event.key === "Escape" && sel.state.activeTool === "draw-capsule-guide" && sculptState.state.capsuleGuideDrawStroke) {
-    finishCapsuleGuideDrawStroke(event, { cancel: true });
+    guideApi.finishCapsuleGuideDrawStroke(event, { cancel: true });
     event.preventDefault();
     return;
   }
@@ -32626,7 +30099,7 @@ function activateStrandControlPoint(handle, event) {
     return true;
   }
   const preserveMulti = sel.state.selectedControlPoints.length > 1
-    && controlPointIsSelected("strand", handle.userData.lockId, handle.userData.pointIndex);
+    && guideApi.controlPointIsSelected("strand", handle.userData.lockId, handle.userData.pointIndex);
   transformControls.detach();
   sculptState.state.activeHandleEdit = null;
   sculptState.state.transformDragging = false;
@@ -32685,7 +30158,7 @@ function refreshStrandControlPointSelection(lock) {
   }
   updateSelectedPointLabel();
   updateViewPlaneGrid();
-  updateViewportToolVisibility();
+  guideApi.updateViewportToolVisibility();
   updateInteractionLocks();
   updatePlacementStatus();
 }
@@ -34253,7 +31726,7 @@ function visibleControlPointHoverTargets() {
   if (scalpState.state.scalpBuilderEditing) return scalpState.state.scalpBuilderCurveLattice?.handles || [];
   if (scalpState.state.scalpLatticeEditing) return scalpLatticeHandles;
   if (sculptState.state.capsuleGuideEditing) {
-    const guide = getSelectedGuide();
+    const guide = guideApi.getSelectedGuide();
     return guide?.type === "capsule" && guide.handlesGroup?.visible
       ? guide.handlesGroup.children
       : [];
@@ -34300,7 +31773,7 @@ function updateControlPointHover(event) {
 
 window.addEventListener("resize", resize);
 new ResizeObserver(invalidateUvInspector).observe(uvInspectorWindow);
-updateGuideControlsVisibility();
+guideApi.updateGuideControlsVisibility();
 updateHistoryButtons();
 setObjectSpaceEditing(sculptState.state.objectSpaceEditing);
 setViewPlaneMove(false);
@@ -34309,8 +31782,8 @@ setProportionalEditing(false);
 scalpBuilder.setScalpShapeEditing(false);
 scalpBuilder.setScalpPaintEditing(false);
 scalpBuilder.setScalpBuilderEditing(false);
-setCapsuleGuideEditing(false);
-updateCapsuleGuideProfilePreview();
+guideApi.setCapsuleGuideEditing(false);
+guideApi.updateCapsuleGuideProfilePreview();
 syncSculptBrushControls();
 updateLightAngleFromInputs();
 applyDisplayVisibilityFilters();
@@ -34333,7 +31806,7 @@ window.addEventListener("pointermove", updateViewPlaneMove);
 window.addEventListener("pointermove", updateRelaxEdit);
 window.addEventListener("pointermove", updatePlaceEdit);
 window.addEventListener("pointermove", updateDrawStrandStroke);
-window.addEventListener("pointermove", updateCapsuleGuideDrawStroke);
+window.addEventListener("pointermove", guideApi.updateCapsuleGuideDrawStroke);
 window.addEventListener("pointermove", updateCurveSurfaceStroke);
 window.addEventListener("pointermove", updatePolyFillPreview);
 window.addEventListener("pointermove", updatePolyBrushStroke, true);
@@ -34344,8 +31817,8 @@ window.addEventListener("pointermove", scalpBuilder.updateScalpLatticeDrag);
 window.addEventListener("pointermove", scalpBuilder.updateScalpPaint);
 window.addEventListener("pointermove", scalpBuilder.updateScalpBuilderStroke);
 window.addEventListener("pointermove", updatePanelSplitHandleDrag);
-window.addEventListener("pointermove", updateCapsuleGuideLoopHover);
-window.addEventListener("pointermove", updateCapsuleGuideLoopDrag);
+window.addEventListener("pointermove", guideApi.updateCapsuleGuideLoopHover);
+window.addEventListener("pointermove", guideApi.updateCapsuleGuideLoopDrag);
 window.addEventListener("pointermove", updateHoudiniZoomDrag, true);
 window.addEventListener("pointerup", endViewSnap);
 window.addEventListener("pointerup", finishTaperMeshPointDrag, true);
@@ -34358,7 +31831,7 @@ window.addEventListener("pointerup", endViewPlaneMove);
 window.addEventListener("pointerup", endRelaxEdit);
 window.addEventListener("pointerup", endPlaceEdit);
 window.addEventListener("pointerup", finishDrawStrandStroke);
-window.addEventListener("pointerup", finishCapsuleGuideDrawStroke);
+window.addEventListener("pointerup", guideApi.finishCapsuleGuideDrawStroke);
 window.addEventListener("pointerup", finishPolyBrushStroke, true);
 window.addEventListener("pointerup", finishLoftSurfaceStroke);
 window.addEventListener("pointerup", finishCurveSurfaceStroke);
@@ -34369,7 +31842,7 @@ window.addEventListener("pointerup", scalpBuilder.endScalpLatticeDrag);
 window.addEventListener("pointerup", scalpBuilder.endScalpPaint);
 window.addEventListener("pointerup", scalpBuilder.finishScalpBuilderStroke);
 window.addEventListener("pointerup", endPanelSplitHandleDrag);
-window.addEventListener("pointerup", endCapsuleGuideLoopDrag);
+window.addEventListener("pointerup", guideApi.endCapsuleGuideLoopDrag);
 window.addEventListener("pointerup", finishSelectionMarquee);
 window.addEventListener("pointerup", finishPolyAltDelete, true);
 window.addEventListener("pointerup", finishCurvePointInsertion, true);
@@ -34395,7 +31868,7 @@ window.addEventListener("pointercancel", endViewPlaneMove);
 window.addEventListener("pointercancel", endRelaxEdit);
 window.addEventListener("pointercancel", endPlaceEdit);
 window.addEventListener("pointercancel", (event) => finishDrawStrandStroke(event, { cancel: true }));
-window.addEventListener("pointercancel", (event) => finishCapsuleGuideDrawStroke(event, { cancel: true }));
+window.addEventListener("pointercancel", (event) => guideApi.finishCapsuleGuideDrawStroke(event, { cancel: true }));
 window.addEventListener("pointercancel", (event) => finishLoftSurfaceStroke(event, { cancel: true }));
 window.addEventListener("pointercancel", (event) => finishCurveSurfaceStroke(event, { cancel: true }));
 renderer.domElement.addEventListener("pointercancel", (event) => finishCurveSurfaceStroke(event, { cancel: true }), true);
@@ -34403,7 +31876,7 @@ window.addEventListener("pointercancel", scalpBuilder.endScalpLatticeDrag);
 window.addEventListener("pointercancel", scalpBuilder.endScalpPaint);
 window.addEventListener("pointercancel", (event) => scalpBuilder.finishScalpBuilderStroke(event, { cancel: true }));
 window.addEventListener("pointercancel", endPanelSplitHandleDrag);
-window.addEventListener("pointercancel", endCapsuleGuideLoopDrag);
+window.addEventListener("pointercancel", guideApi.endCapsuleGuideLoopDrag);
 window.addEventListener("pointercancel", () => {
   sculptState.state.emptySelectionPointer = null;
 });
@@ -34445,7 +31918,7 @@ renderer.domElement.addEventListener("pointerdown", prepareCurvePointSelection, 
 renderer.domElement.addEventListener("pointerdown", beginAltOrbit, true);
 renderer.domElement.addEventListener("pointerdown", scalpBuilder.prioritizeScalpBuilderPointSelection, true);
 renderer.domElement.addEventListener("pointermove", updateControlPointHover);
-renderer.domElement.addEventListener("pointermove", updateCurveLatticeLoopHover);
+renderer.domElement.addEventListener("pointermove", guideApi.updateCurveLatticeLoopHover);
 renderer.domElement.addEventListener("pointermove", updateReferenceOverlayCursor);
 referenceCropHandles.addEventListener("pointerover", () => setReferenceOverlayScaleHandleHover(null));
 renderer.domElement.addEventListener("pointermove", updateStrandWidthEdgeHover);
@@ -34455,7 +31928,7 @@ renderer.domElement.addEventListener("pointerleave", () => {
   clearPolyFillPreview();
   clearCurvePointTopologyCursor();
   setHoveredControlPoint(null);
-  setCurveLatticeLoopHover(null);
+  guideApi.setCurveLatticeLoopHover(null);
   setHoveredStrandWidthEdge(null);
   setReferenceOverlayScaleHandleHover(null);
   renderer.domElement.style.cursor = "";
@@ -34464,7 +31937,7 @@ window.addEventListener("pointercancel", () => {
   clearPolyFillPreview();
   clearCurvePointTopologyCursor();
   setHoveredControlPoint(null);
-  setCurveLatticeLoopHover(null);
+  guideApi.setCurveLatticeLoopHover(null);
   setHoveredStrandWidthEdge(null);
 });
 window.addEventListener("keydown", updateCurvePointTopologyCursor, true);
@@ -34613,22 +32086,22 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   }
   if (sel.state.activeTool === "draw-capsule-guide") {
     if (event.ctrlKey || event.altKey || event.metaKey) return;
-    beginCapsuleGuideDrawStroke(event, drawSurfaceHitFromEvent(event, { root: true }));
+    guideApi.beginCapsuleGuideDrawStroke(event, drawSurfaceHitFromEvent(event, { root: true }));
     return;
   }
   if (sculptState.state.capsuleGuideEditing) {
     if (!event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
-      const guide = getSelectedGuide();
+      const guide = guideApi.getSelectedGuide();
       const pointHit = guide?.type === "capsule" && guide.handlesGroup?.visible
         ? raycaster.intersectObjects(guide.handlesGroup.children.filter((handle) => handle.visible), false)[0]
         : null;
       const surfaceHit = guide?.type === "capsule" ? raycaster.intersectObject(guide.mesh, false)[0] : null;
       if (pointHit && (!surfaceHit || pointHit.distance <= surfaceHit.distance + 0.05)) {
-        selectCapsuleGuidePoint(guide, pointHit.object.userData.capsuleGuidePointIndex);
+        guideApi.selectCapsuleGuidePoint(guide, pointHit.object.userData.capsuleGuidePointIndex);
         event.preventDefault();
         return;
       }
-      if (beginCapsuleGuideLoopDrag(event)) {
+      if (guideApi.beginCapsuleGuideLoopDrag(event)) {
         event.preventDefault();
         return;
       }
@@ -34640,7 +32113,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
       )[0] || null;
       const capsuleGuideId = capsuleHit?.object?.userData?.guideId;
       if (capsuleGuideId && capsuleGuideId !== sel.state.selectedGuideId) {
-        selectGuide(capsuleGuideId);
+        guideApi.selectGuide(capsuleGuideId);
         event.preventDefault();
         return;
       }
@@ -34743,11 +32216,11 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
       : null;
     if (latticePointHit) {
       sculptState.state.selectionMarqueeDrag = null;
-      selectCurveLatticePoint(selectedLattice, latticePointHit.object.userData.curveLatticePointIndex, false);
+      guideApi.selectCurveLatticePoint(selectedLattice, latticePointHit.object.userData.curveLatticePointIndex, false);
       return;
     }
-    const latticeLoopHit = curveLatticeLoopHitFromEvent(event, selectedLattice);
-    if (latticeLoopHit && selectCurveLatticeLoop(
+    const latticeLoopHit = guideApi.curveLatticeLoopHitFromEvent(event, selectedLattice);
+    if (latticeLoopHit && guideApi.selectCurveLatticeLoop(
       selectedLattice,
       latticeLoopHit.axis,
       latticeLoopHit.loopIndex
@@ -34786,8 +32259,8 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
       const directMove = sel.state.activeTool === "move" && viewPlaneMoveActiveForView();
       const pointIndex = latticePointHit.object.userData.curveLatticePointIndex;
       const preserveMulti = sel.state.selectedControlPoints.length > 1
-        && controlPointIsSelected("lattice", selectedLattice.id, pointIndex);
-      selectCurveLatticePoint(
+        && guideApi.controlPointIsSelected("lattice", selectedLattice.id, pointIndex);
+      guideApi.selectCurveLatticePoint(
         selectedLattice,
         pointIndex,
         !directMove,
@@ -34797,8 +32270,8 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       return;
     }
-    const latticeLoopHit = curveLatticeLoopHitFromEvent(event, selectedLattice);
-    if (latticeLoopHit && selectCurveLatticeLoop(
+    const latticeLoopHit = guideApi.curveLatticeLoopHitFromEvent(event, selectedLattice);
+    if (latticeLoopHit && guideApi.selectCurveLatticeLoop(
       selectedLattice,
       latticeLoopHit.axis,
       latticeLoopHit.loopIndex
@@ -34856,7 +32329,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     if (selectedSurface?.type === "guide") {
       const guideId = selectedSurface.hit.object.userData.guideId;
       if (guideId && guideId !== sel.state.selectedGuideId) {
-        selectGuide(guideId);
+        guideApi.selectGuide(guideId);
         event.preventDefault();
         return;
       }
