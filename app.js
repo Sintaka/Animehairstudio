@@ -81,7 +81,7 @@ import {
   twistRateUnitsFromDegrees,
   upperProfileArcIndices,
   uniformCurveParameters
-} from "./modules/geometry/curve-math.js?v=20260806-3";
+} from "./modules/geometry/curve-math.js?v=20260811-1";
 import {
   curveLatticeLoopPointIndices,
   DEFAULT_CURVE_LATTICE_PLANE,
@@ -13523,9 +13523,9 @@ function buildTipWidthCurve(lock, segmentIndex, splits, bone, side) {
   return points;
 }
 
-// Set the width multiplier at chain parameter t for one side, then rebuild both sides'
-// curves so the above-zipper (locked) region tracks the global default and left/right
-// stay independent (asymmetric width profile).
+// Set the width multiplier at chain parameter t for one side, then rebuild only the
+// edited side's curve so the above-zipper (locked) region tracks the global default
+// and left/right stay independent (asymmetric width profile).
 function setTipWidthCurveValue(lock, segmentIndex, splits, bone, side, t, value) {
   if (!bone.taperCurve) bone.taperCurve = buildTipWidthCurve(lock, segmentIndex, splits, bone, 1);
   if (!bone.taperCurveSecondary) bone.taperCurveSecondary = buildTipWidthCurve(lock, segmentIndex, splits, bone, -1);
@@ -13538,8 +13538,8 @@ function setTipWidthCurveValue(lock, segmentIndex, splits, bone, side, t, value)
   if (existing) existing.value = clamped;
   else curve.push({ position: THREE.MathUtils.clamp(t, 0, 1), value: clamped, interpolation: "linear" });
   curve.sort((a, b) => a.position - b.position);
-  bone.taperCurve = buildTipWidthCurve(lock, segmentIndex, splits, bone, 1);
-  bone.taperCurveSecondary = buildTipWidthCurve(lock, segmentIndex, splits, bone, -1);
+  if (side < 0) bone.taperCurveSecondary = buildTipWidthCurve(lock, segmentIndex, splits, bone, -1);
+  else bone.taperCurve = buildTipWidthCurve(lock, segmentIndex, splits, bone, 1);
 }
 
 // Replicates the panel geometry's frame (panelFrameAt: parallel-transported frames
@@ -13628,10 +13628,15 @@ function tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t) {
   const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
   if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return null;
   const edgeU = boundaries[side < 0 ? segmentIndex : segmentIndex + 1];
-  const baseEdge = tipMainSectionPoint(lock, t, edgeU, 0, bone);
+  const baseEdge = tipMainSectionPoint(lock, t, edgeU, 1, bone);
   const rel = baseEdge.clone().sub(restCenter).applyQuaternion(dq);
+  // 用当前发尖自己的 authored 宽度轴（frame.x 经 dq 旋转）并定向到本侧边缘，
+  // 修复绿色控制点/曲线拖拽方向偏离真实宽度轴（此前 rel 相对宽度轴倾斜 7°~170°）。
+  const frame = tipPanelFrameAt(lock, t);
+  const lateral = frame.x.clone().applyQuaternion(dq).normalize();
+  if (lateral.dot(rel) < 0) lateral.negate();
   const point = authoredCenter.clone().add(rel);
-  return { point, center: authoredCenter.clone(), lateral: rel.clone().normalize(), t };
+  return { point, center: authoredCenter.clone(), lateral, t };
 }
 
 // Width-curve edge points for a tip side: the exposed (below-zipper) segment edge from
@@ -34533,6 +34538,7 @@ function beginPanelSplitHandleDrag(event) {
   let tipWidthStartClientX = null;
   let tipWidthStartClientY = null;
   let tipWidthStartEdgeScreenDist = null;
+  let tipWidthBones = null;
   if (tipIndex != null && tipPoint != null) {
     // Selecting a tip sub-bone: remember it and point the segment controls at it.
     sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: tipIndex };
@@ -34547,7 +34553,10 @@ function beginPanelSplitHandleDrag(event) {
     sculptState.state.panelSegmentIndex = tipWidthSegment;
     syncPanelSegmentControls(lock);
     const tipSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    const tipBone = splitBonesFor(lock)[tipWidthSegment] || null;
+    // 拖拽开始时只 materialize 一次（深克隆 + 双写 lock.splitBones/lock.bones），
+    // 拖拽期间复用同一数组，避免每个 pointermove 都重复深克隆全部骨骼。
+    tipWidthBones = materializeSplitBones(lock);
+    const tipBone = tipWidthBones[tipWidthSegment] || null;
     const placement = tipWidthControlPlacement(lock, tipWidthSegment, tipSplits, tipBone, tipWidthSide, tipWidthIndex);
     if (placement) {
       tipWidthT = placement.t;
@@ -34586,7 +34595,8 @@ function beginPanelSplitHandleDrag(event) {
     tipWidthStartMult,
     tipWidthStartClientX,
     tipWidthStartClientY,
-    tipWidthStartEdgeScreenDist
+    tipWidthStartEdgeScreenDist,
+    tipWidthBones
   };
   renderer.domElement.setPointerCapture?.(event.pointerId);
   renderer.domElement.style.cursor = "grabbing";
@@ -34686,7 +34696,11 @@ function updatePanelSplitHandleDrag(event) {
     const t = drag.tipWidthT;
     if (segment == null || side == null || t == null) return;
     const splitsForWidth = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    const bones = materializeSplitBones(lock);
+    // 复用拖拽开始时 materialize 的骨骼数组（它就是 lock.splitBones，编辑持续生效）；
+    // 缺失或数量不对时回退重新 materialize，避免每个 pointermove 都深克隆全部骨骼。
+    const bones = Array.isArray(drag.tipWidthBones) && drag.tipWidthBones.length === splitsForWidth.length + 1
+      ? drag.tipWidthBones
+      : materializeSplitBones(lock);
     const bone = bones[segment];
     if (!bone) return;
     const tip = splitTipForSegment(lock, segment, splitsForWidth, bone);
@@ -37424,6 +37438,10 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     applySubBoneBrushSample,
     tipWidthSideForkT,
     tipWidthEdgePosition,
+    tipPanelFrameAt,
+    tipMainSectionPoint,
+    setTipWidthCurveValue,
+    buildTipWidthCurve,
     sampleTaperCurve,
     sampleAsymmetricTaperCurve,
     strandFrameAt,

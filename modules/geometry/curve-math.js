@@ -232,10 +232,16 @@ export function sampleAsymmetricTaperCurve(
   signedCoordinate,
   t
 ) {
-  const curve = asymmetric && signedCoordinate < 0 && secondaryCurve?.length >= 2
-    ? secondaryCurve
-    : primaryCurve;
-  return sampleTaperCurve(curve, t);
+  // 非对称时： signedCoordinate = -1 完全用副曲线（左）， +1 完全用主曲线（右），中间线性过渡
+  if (asymmetric && secondaryCurve?.length >= 2) {
+    const primaryValue = sampleTaperCurve(primaryCurve, t);
+    const secondaryValue = sampleTaperCurve(secondaryCurve, t);
+    const coordinate = Number(signedCoordinate);
+    if (!Number.isFinite(coordinate)) return primaryValue;
+    const alpha = clamp((coordinate + 1) * 0.5, 0, 1);
+    return lerp(secondaryValue, primaryValue, alpha);
+  }
+  return sampleTaperCurve(primaryCurve, t);
 }
 
 export function profileTopologyCenterWeight(coordinate, minimum, maximum) {

@@ -268,6 +268,31 @@ splitBone.tip = {
 **修复**：`buildTipWidthCurve` 对左侧 `globalCurve` 取「该侧编辑前的有效曲线」=`(lock.asymmetricWidthCurve && lock.taperCurveSecondary) ? lock.taperCurveSecondary : lock.taperCurve` —— 面板对称时左侧烘焙自主曲线，开 asymmetric 不再改变左侧参考。实测：拖右侧后 left 保持 1.0287（不再跳变）、right 独立可编辑。
 
 **回归测试（scripts/verify-tip-select.mjs，27/27）**：width 拖拽（编辑值改变、链不变、锁定区=全局）；orient 滚动；push；select 悬停/alt+点击；0 异常。三档 smoke 11/11、12/12 通过。
+### 8.19 发尖 WidthCurve 拖拽方向 + 非对称中间线性过渡 + 拖拽去重（0.2.59 已修复）
+
+**症状 1（拖拽方向/坐标系混乱）**：拖绿色宽度控制点时手感像梯形——滑动方向不是沿当前发尖自己的宽度轴，而是偏向主骨骼/面板法线方向。实测（0044 Front Bangs 1 各段、t=0.6/0.8/0.95）：`tipWidthEdgePosition` 返回的 `lateral` 相对真正宽度轴 `dq*主帧x` 倾斜，右边缘 7°~51°（越靠尖端越大）、左边缘 131°~170°（几乎反向）。
+
+**根因**：`lateral` 此前是 `rel.normalize()`，其中 `rel = dq*(baseEdge − restCenter)`：`baseEdge` 用 `tipMainSectionPoint(..., shell=0)`（面板中平面），而 `restCenter` 在面板前表面（`panelSplitControlPoint` 带 thickness*0.58 的 z 偏移）→ rel 混入约 0.5×thickness 的**法线方向分量**，被 dq 旋转后 lateral 偏离宽度平面；且 baseEdge 用的是主面板帧（`tipPanelFrameAt`），与发尖链自身帧存在 ~10° 几何偏差（§8.11 已调查）——两层坐标系混淆叠加，就是「指向主骨骼而不是当前发尖自己的子骨骼」的观感。
+
+**修复（app.js `tipWidthEdgePosition`）**：
+- `baseEdge` 的 shell 由 0 改为 1（前表面）→ 绿色控制点/曲线精确落在网格前边缘（几何 addPatch 用 shell=1 的 frontPoint），不再陷进面板内部。
+- `lateral` 改为当前发尖自己的 authored 宽度轴：`dq * tipPanelFrameAt(t).x`，并定向到本侧边缘（`dot(rel)<0` 则取反）→ 实测各段 `maxTilt=0°`（此前 7°~170°），拖拽沿真实宽度轴、无梯形感。
+- 位置公式 `point = authoredCenter + dq*(baseEdge − restCenter)` 不变（与网格一致）。
+
+**症状 2（非对称宽度中间硬切分）**：拖右侧到 1.45 后，t=0.9 剖面在 u=0 处从 1.0287 直接跳到 1.45（左半=副曲线、右半=主曲线），中间起棱、一调就很硬。
+
+**根因**：`sampleAsymmetricTaperCurve`（modules/geometry/curve-math.js）对 `signedCoordinate<0` 硬切副曲线、否则主曲线（「一半一半常数」）。
+
+**修复**：改为按 signedCoordinate 线性插值——u=-1 完全副曲线、u=+1 完全主曲线、中间 `lerp(副, 主, (u+1)/2)` 线性过渡（NaN/非数值回退主曲线）。实测：u=0 = 两值平均、中心步长 0.42→0.042（连续）。该函数同时被主面板非对称宽度/厚度、strand 非对称半径共用，属一致性平滑。
+
+**症状 3（拖拽重复写入）**：拖拽中每次 pointermove 都 `materializeSplitBones` 深克隆全部骨骼 + 双写 lock.splitBones/lock.bones，且 `setTipWidthCurveValue` 每次重建左右两条曲线。
+
+**修复（app.js）**：
+- `beginPanelSplitHandleDrag` tipWidth 块只 materialize 一次，把骨骼数组存入 `panelSplitDrag.tipWidthBones`；`updatePanelSplitHandleDrag` 复用（缺失/数量不符才回退）。
+- `setTipWidthCurveValue` 只重建被编辑侧曲线（未编辑侧锁定区已烘焙、暴露区点已保留）。
+
+**回归测试（scripts/verify-tip-select.mjs，29/29）**：新增 2 项——`tip width lateral follows tip sub-bone width axis`（maxTilt<5°、lateral 与发尖切线夹角>60°）；`asymmetric tip width blends linearly at center`（u=0=均值、±0.5 线性、中心步长<0.1、左右不等）。原 27 项全过（宽度拖拽编辑值改变/链不变/锁定区=全局/asymmetric；orient/push/undo/悬停/alt+点击 0 异常）。三档 smoke（0041/0042/0044）11/11 通过。
+
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

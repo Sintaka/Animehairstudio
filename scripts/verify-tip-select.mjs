@@ -591,6 +591,76 @@ try {
     }
   }
   check("tip width drag authors right curve (chain unchanged, asymmetric, locked = global)", widthAfter.ok === true && widthAfter.hasRight === true && widthAfter.hasLeft === true && widthAfter.asym === true && widthAfter.lockedMatch === true && widthAfter.valueChanged === true && widthChainMoved === false, `width=${JSON.stringify(widthAfter)} chainMoved=${widthChainMoved}`);
+  // ============ 8.19: tip width lateral follows the TIP sub-bone's own width axis ============
+  // The green handle drag direction (tipWidthEdgePosition.lateral) must be the tip's own
+  // authored width axis (dq * mainFrameX), not the mixed main-panel-frame vector that used
+  // to tilt 7-51deg (right) / 131-170deg (left) - the "trapezoid" feel.
+  const latCheck = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bones = t.materializeSplitBones(lock);
+    let maxTilt = 0;
+    let minTangentAngle = 180;
+    for (let seg = 0; seg <= splits.length; seg++) {
+      const bone = bones[seg] || null;
+      const tip = t.splitTipForSegment(lock, seg, splits, bone);
+      if (!tip || tip.points.length < 2) continue;
+      const curve = new t.THREE.CatmullRomCurve3(tip.points);
+      const restCurve = new t.THREE.CatmullRomCurve3(tip.restPoints);
+      for (const tt of [0.6, 0.8, 0.95]) {
+        const at = curve.getTangent(tt).normalize();
+        const rt = restCurve.getTangent(tt).normalize();
+        const dq = rt.dot(at) < -0.9999
+          ? (new t.THREE.Quaternion()).setFromAxisAngle(new t.THREE.Vector3(0, 1, 0), Math.PI)
+          : (new t.THREE.Quaternion()).setFromUnitVectors(rt, at);
+        const frame = t.tipPanelFrameAt(lock, tt);
+        const authoredLat = frame.x.clone().applyQuaternion(dq).normalize();
+        for (const side of [-1, 1]) {
+          const edge = t.tipWidthEdgePosition(lock, seg, splits, bone, side, tt);
+          if (!edge) continue;
+          const cos = t.THREE.MathUtils.clamp(Math.abs(edge.lateral.dot(authoredLat)), -1, 1);
+          maxTilt = Math.max(maxTilt, Math.acos(cos) * 180 / Math.PI);
+          const cosT = t.THREE.MathUtils.clamp(Math.abs(edge.lateral.dot(at)), -1, 1);
+          minTangentAngle = Math.min(minTangentAngle, Math.acos(cosT) * 180 / Math.PI);
+        }
+      }
+    }
+    return JSON.stringify({ maxTilt: Number(maxTilt.toFixed(2)), minTangentAngle: Number(minTangentAngle.toFixed(1)) });
+  })()`));
+  check("tip width lateral follows tip sub-bone width axis", latCheck.maxTilt < 5 && latCheck.minTangentAngle > 60, `lat=${JSON.stringify(latCheck)}`);
+
+  // ============ 8.19: asymmetric tip width blends linearly at the center (no hard split) ============
+  // Left/right curves used to hard-switch at u=0 (left half = left curve, right half = right
+  // curve). After a right-side edit, u=0 must be the linear midpoint and the profile must be
+  // continuous (center step ~10x smaller than the old hard step).
+  const blendCheck = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bones = t.materializeSplitBones(lock);
+    const bone = bones[2] || null;
+    if (!bone) return JSON.stringify({ ok: false });
+    t.setTipWidthCurveValue(lock, 2, splits, bone, 1, 0.9, 1.45);
+    const w = (u) => t.sampleAsymmetricTaperCurve(bone.taperCurve, bone.taperCurveSecondary, bone.asymmetricWidthCurve, u, 0.9);
+    const left = w(-1);
+    const right = w(1);
+    const mid = w(0);
+    const stepAtCenter = Math.abs(w(-0.1) - w(0.1));
+    const linear = Math.abs(mid - (left + right) * 0.5) < 1e-3
+      && Math.abs(w(-0.5) - (left * 0.75 + right * 0.25)) < 1e-3
+      && Math.abs(w(0.5) - (left * 0.25 + right * 0.75)) < 1e-3;
+    return JSON.stringify({
+      ok: true,
+      left: Number(left.toFixed(4)),
+      right: Number(right.toFixed(4)),
+      mid: Number(mid.toFixed(4)),
+      midIsAvg: Math.abs(mid - (left + right) * 0.5) < 1e-3,
+      stepAtCenter: Number(stepAtCenter.toFixed(4)),
+      linear
+    });
+  })()`));
+  check("asymmetric tip width blends linearly at center (no hard split)", blendCheck.ok === true && blendCheck.midIsAvg === true && blendCheck.linear === true && blendCheck.stepAtCenter < 0.1 && blendCheck.left !== blendCheck.right, `blend=${JSON.stringify(blendCheck)}`);
 
   // ============ Issue 1: hover + alt+click in select mode (non-create tools) ============
   await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="select"]'); if (btn) btn.click(); return true; })()`);
