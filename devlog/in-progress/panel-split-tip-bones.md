@@ -256,6 +256,18 @@ splitBone.tip = {
 - 拖拽映射改**世界空间相对比例**（`startMult × (1 + (latOffset/startLatOffset − 1) × 0.5)`）：消除屏幕透视放大；敏感度减半（拖满边缘≈+50% 而非 +100%），5px 拖拽变化从 22% 降到 ~11%、手柄位移从 ~4cm 降到 ~2.6cm，不再「瞬间跳变」。
 
 **回归测试（scripts/verify-tip-select.mjs，27/27）**：width 拖拽（编辑值改变、链不变、锁定区=全局）；orient 滚动截面；push 移动发尖；select 悬停/alt+点击；0 异常。三档 smoke 11/11、12/12 通过。
+### 8.18 一侧 widthCurve 跳变根因：烘焙左侧时错误切到副曲线（0.2.59 已修复）
+
+**症状**：拖右侧绿色宽度控制点，左侧 widthCurve 一起跳变（像从主曲线切到副曲线 / mid 层跳到底层）。
+
+**根因（浏览器实测 Front Bangs 1 seg2 确认）**：
+- 面板本身有 `taperCurveSecondary` 且 `lock.asymmetricWidthCurve=false`（默认对称）→ 左侧宽度原本用主曲线（1.0287）。
+- `setTipWidthCurveValue` 首次编辑会**创建/重建两侧曲线并设 `bone.asymmetricWidthCurve=true`**；而 `buildTipWidthCurve` 对左侧的 `globalCurve` 用 `lock.taperCurveSecondary || lock.taperCurve`（**不看 asymmetric 标志**）→ 烘焙出的左侧=面板副曲线。
+- 几何 `panelWidthAt`/`sampleAsymmetricTaperCurve` 在 asymmetric=true 且 side<0 时切到副曲线 → 拖右侧瞬间左侧从 1.0287 跳到 0.7222（实测）。子智能体（对比 git 历史）确认：原版 `applyEditableStrandWidth` 只改标量 width、`taperCurveEditor` 只动被选侧曲线，从不无谓烘焙另一侧。
+
+**修复**：`buildTipWidthCurve` 对左侧 `globalCurve` 取「该侧编辑前的有效曲线」=`(lock.asymmetricWidthCurve && lock.taperCurveSecondary) ? lock.taperCurveSecondary : lock.taperCurve` —— 面板对称时左侧烘焙自主曲线，开 asymmetric 不再改变左侧参考。实测：拖右侧后 left 保持 1.0287（不再跳变）、right 独立可编辑。
+
+**回归测试（scripts/verify-tip-select.mjs，27/27）**：width 拖拽（编辑值改变、链不变、锁定区=全局）；orient 滚动；push；select 悬停/alt+点击；0 异常。三档 smoke 11/11、12/12 通过。
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

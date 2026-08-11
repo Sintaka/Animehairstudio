@@ -13490,7 +13490,12 @@ function tipPanelWidthAt(lock, t, side, bone) {
 
 function buildTipWidthCurve(lock, segmentIndex, splits, bone, side) {
   const forkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
-  const globalCurve = side < 0 ? (lock.taperCurveSecondary || lock.taperCurve) : lock.taperCurve;
+  // The curve this side was EFFECTIVELY using before any tip-width edit. Using the
+  // panel secondary unconditionally here made the un-dragged LEFT side jump from the
+  // primary to the secondary the moment a right drag turned on asymmetric width.
+  const globalCurve = side < 0
+    ? ((lock.asymmetricWidthCurve && lock.taperCurveSecondary) ? lock.taperCurveSecondary : lock.taperCurve)
+    : lock.taperCurve;
   const current = side < 0 ? bone.taperCurveSecondary : bone.taperCurve;
   const points = [];
   for (let i = 0; i <= 10; i += 1) {
@@ -37420,6 +37425,7 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     tipWidthSideForkT,
     tipWidthEdgePosition,
     sampleTaperCurve,
+    sampleAsymmetricTaperCurve,
     strandFrameAt,
     splitForkT,
     clonePanelSplits,
