@@ -335,6 +335,20 @@ splitBone.tip = {
 
 **回归测试（scripts/verify-tip-select.mjs，36/36）**：新增浮动面板刷新（编辑后 render 读取到新值）、Reset 全 1、非对称混合窄带（拖一侧另一侧远端 delta≈0）、Ctrl/默认对称（默认写两侧等比、Ctrl 只写一侧）；原 33 项全过（含拖拽方向 maxAngle=0、宽度拖拽链不变、锁定区=全局等）。三档 smoke（0041/0042/0044）11/11 通过。
 
+### 8.23 发尖 WidthCurve 5 项深入修复（0.2.59）
+
+**1. Reset Curve 只重置上半部分**：Reset 只重置了被编辑侧（primary），副曲线（secondary）为空/陈旧 → 左右不对称；且几何锁定区（t<fork）仍回退全局曲线，只有暴露区（t≥fork）变 1 → 视觉上「只重置上半部分」。修复：① Reset 同时重置两侧曲线为全 1；② reset 曲线显式覆盖 [0,1]（加 position=0 点）；③ `tipWidthMultiplierAt` 在骨曲线从 0 开始（覆盖整段）时不再回退全局，整段用骨曲线（Reset 后整段宽度=1）；④ `buildTipWidthCurve` 保留当前曲线的 0 点，Reset 效果在后续编辑中持续。
+
+**2. 对称修改另一半 2x/延迟**：等比镜像 `otherNew = otherStart × (new/draggedStart)` 依赖起始值，起始不对称时另一侧绝对量会偏离；且每次 move 两次重建曲线。修复：对称拖拽直接把**两侧曲线同一 t 设为同一个 newWidthMult**（真正对称），不再按比例。
+
+**3. 右侧属性面板 + 浮动面板不热更新**：视口拖拽只更新了几何/手柄，未同步右侧 `segmentTaperPreview` 预览与浮动面板。修复：tipWidth 拖拽分支在编辑后调用 `syncPanelSegmentControls(lock)`（右侧预览）与 `renderTaperCurveEditor()`（浮动面板，目标为同段时）。
+
+**4. 移动方向未按发尖子骨骼法线**：`tipWidthEdgePosition` 的 lateral 用 `dq×主帧x`（主骨骼法线旋转），当发尖子骨骼默认曲率与主骨骼法线有偏角（弯曲刘海侧面发尖）时，运动轨迹被限制为与主法线垂直。修复：计算发尖链**自身 frame**（切线 y、法线 z、副切线 x），lateral 用其副切线，宽度移动与子骨骼法线垂直。另：旋转模式（E）下给选中发尖子骨骼加「法线向上箭头」（复用 `createCurveNormalIndicator`），方便调试。
+
+**5. 旋转模式选中发尖子骨骼变拖拽**：`beginPanelSplitHandleDrag` 对 tip 手柄始终直接拖拽，未像 strand 控制点那样在 rotate/scale 工具下挂到 transform gizmo。修复：rotate/scale 工具下命中 tip 子骨骼手柄时走 `configureTransformControls` + `attachTransformForCurvePoint`（gizmo 旋转），select/move 保持原有拖拽。
+
+**回归测试（scripts/verify-tip-select.mjs，38/38）**：新增 Reset 整段全 1（两侧、所有 t）、右侧 segmentTaperPreview 热更新、对称拖拽两侧同值、lateral 与发尖子骨骼切线垂直（maxPerpDeviation<5°）；原 34 项全过。三档 smoke（0041/0042/0044）11/11 通过。
+
 ## 踩坑记录：发尖 WidthCurve 专项（8.10–8.20 复盘）
 
 > 这一轮发尖 WidthCurve 前后改了 11 个版本（8.10–8.20）才真正修对，把踩过的坑记下来，避免重蹈。

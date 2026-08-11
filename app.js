@@ -788,6 +788,17 @@ transformControls.addEventListener("dragging-changed", (event) => {
     }
     return;
   }
+  // Tip 子骨骼手柄：rotate 拖拽开始时记录 startQuaternion/startPoints（objectChange
+  // 里按总旋转增量应用，避免累积），结束时清理；scale 工具只附着、不应用。
+  if (transformControls.object?.userData.panelTipIndex != null) {
+    if (event.value && transformControls.mode === "rotate") {
+      pushUndoState();
+      beginTipSubBoneRotate(transformControls.object);
+    } else if (!event.value) {
+      sculptState.state.tipSubBoneRotateDrag = null;
+    }
+    return;
+  }
   if (transformControls.object?.userData.surfaceObjectAnchor) {
     if (event.value) {
       pushUndoState();
@@ -905,6 +916,11 @@ transformControls.addEventListener("objectChange", () => {
   }
   const lock = locks.find((item) => item.id === handle.userData.lockId);
   if (!lock) return;
+  if (handle.userData.panelTipIndex != null) {
+    // Tip 子骨骼手柄：旋转增量应用到 tip 链（scale 暂不应用）。
+    applyTipSubBoneTransform(lock, handle);
+    return;
+  }
   const pointIndex = handle.userData.pointIndex;
   if (!sculptState.state.activeHandleEdit || sculptState.state.activeHandleEdit.lockId !== lock.id || sculptState.state.activeHandleEdit.pointIndex !== pointIndex) {
     beginHandleEdit();
@@ -13496,7 +13512,8 @@ function tipWidthCommonForkT(lock, segmentIndex, splits) {
 function tipWidthResetCurve(lock, segmentIndex, splits, side) {
   const sideForkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
   const commonForkT = tipWidthCommonForkT(lock, segmentIndex, splits);
-  const points = [{ position: sideForkT, value: 1, interpolation: "linear" }];
+  const points = [{ position: 0, value: 1, interpolation: "linear" }];
+  points.push({ position: sideForkT, value: 1, interpolation: "linear" });
   for (const position of tipWidthControlTs(commonForkT)) {
     points.push({ position, value: 1, interpolation: "linear" });
   }
@@ -13537,7 +13554,10 @@ function tipWidthMultiplierAt(lock, t, u, bone, segmentIndex = -1, splits = null
   }
   const side = u < 0 ? -1 : 1;
   const forkT = tipWidthSideForkT(lock, segmentIndex, segSplits, side);
-  if (forkT >= 1 || t < forkT - 1e-4) {
+  // Reset 后曲线从 0 覆盖整段：跳过锁定区回退，整段都用骨曲线采样。
+  const boneCurve = side < 0 ? bone?.taperCurveSecondary : bone?.taperCurve;
+  const coversWhole = Array.isArray(boneCurve) && boneCurve.length > 0 && Number(boneCurve[0].position) < 0.001;
+  if (forkT >= 1 || (t < forkT - 1e-4 && !coversWhole)) {
     return sampleAsymmetricTaperCurve(
       lock.taperCurve,
       lock.taperCurveSecondary,
@@ -13591,6 +13611,9 @@ function buildTipWidthCurve(lock, segmentIndex, splits, bone, side) {
   // fork (deepest zipper) so both sides share chain parameters, and the tip end (t=1)
   // is part of the control array (addPoint dedupes). Points below this side's fork
   // stay in the curve data but the sampler ignores them.
+  // 保留当前曲线已有的 0 点：Reset 的整段覆盖在后续编辑中持续。
+  const zeroPoint = current && current.find((point) => Math.abs(Number(point.position) || 0) < 1e-4);
+  if (zeroPoint) addPoint(0, zeroPoint.value);
   addPoint(sideForkT, sampleTaperCurve(globalCurve, sideForkT));
   const controlTs = tipWidthControlTs(tipWidthCommonForkT(lock, segmentIndex, splits));
   for (const position of controlTs) {
@@ -13701,17 +13724,14 @@ function tipMainSectionPoint(lock, t, u, shell, bone, segmentIndex = -1, splits 
     );
 }
 
-// Edge position of a tip side at chain parameter t, matching the geometry's own tip
-// transform (rest identity preserved). The width is measured from the TIP sub-bone
-// chain (the segment center), so the handle sits on the mesh edge AND moves along the
-// tip's own lateral when the width changes - not along the main-bone line.
-function tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t) {
-  const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
-  if (!tip || tip.points.length < 2 || !tip.restPoints || tip.restPoints.length < 2) return null;
+// 发尖子骨骼链在 t 处的自身 frame：y = 链切线（authored），z = 主面板法线经
+// rest→authored 弯曲旋转后对 y 做 Gram-Schmidt 正交化的链自身法线，x = 链横向
+// （副法线）。宽度控制点的移动方向应垂直于发尖子骨骼自身法线（x 横向），而不是
+// 被主骨骼法线限制。
+function tipChainFrameAt(lock, tip, restTip, t) {
   const curve = new THREE.CatmullRomCurve3(tip.points);
-  const restCurve = new THREE.CatmullRomCurve3(tip.restPoints);
-  const authoredCenter = curve.getPoint(t);
-  const restCenter = restCurve.getPoint(t);
+  const rest = restTip && Array.isArray(restTip.restPoints) ? restTip : tip;
+  const restCurve = new THREE.CatmullRomCurve3(rest.restPoints);
   const authoredTangent = curve.getTangent(t).normalize();
   const restTangent = restCurve.getTangent(t).normalize();
   const dq = restTangent.dot(authoredTangent) < -0.9999
@@ -13720,6 +13740,25 @@ function tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t) {
       Math.PI
     )
     : (new THREE.Quaternion()).setFromUnitVectors(restTangent, authoredTangent);
+  const y = authoredTangent;
+  const panel = tipPanelFrameAt(lock, t);
+  const z = panel.z.clone().applyQuaternion(dq);
+  z.addScaledVector(y, -z.dot(y));
+  if (z.lengthSq() < 1e-8) z.copy(panel.z);
+  z.normalize();
+  const x = new THREE.Vector3().crossVectors(y, z).normalize();
+  return { x, y, z };
+}
+
+// Edge position of a tip side at chain parameter t, matching the geometry's own tip
+// transform (rest identity preserved). The width is measured from the TIP sub-bone
+// chain (the segment center), so the handle sits on the mesh edge AND moves along the
+// tip's own lateral when the width changes - not along the main-bone line.
+function tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t) {
+  const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
+  if (!tip || tip.points.length < 2 || !tip.restPoints || tip.restPoints.length < 2) return null;
+  const curve = new THREE.CatmullRomCurve3(tip.points);
+  const authoredCenter = curve.getPoint(t);
   const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
   if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return null;
   // The segment's tip-narrowing gap moves the edge inward as spread grows; the handle
@@ -13730,21 +13769,17 @@ function tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t) {
     ? boundaries[segmentIndex] + spreadGap
     : boundaries[segmentIndex + 1] - spreadGap;
   const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
-  // The section reference is the segment-center point (tip sub-bone) in the SAME frame;
-  // both points use the tip-relative width formula, so at rest the handle is exactly the
-  // mesh edge and the edge moves along the tip's own lateral when the width changes.
-  const baseEdge = tipMainSectionPoint(lock, t, edgeU, 1, bone, segmentIndex, splits);
-  const segCenter = tipMainSectionPoint(lock, t, centerU, 1, bone, segmentIndex, splits);
-  const rel = baseEdge.sub(segCenter).applyQuaternion(dq);
-  const point = authoredCenter.clone().add(rel);
-  // Drag axis: the direction from the TIP sub-bone chain to this side's edge (the
-  // main panel lateral rotated by the tip's bend), oriented toward the edge - so the
-  // handle tracks the cursor along the tip's own width line, not the main bone's line.
-  const frame = tipPanelFrameAt(lock, t);
-  let lateral = frame.x.clone().applyQuaternion(dq);
-  if (lateral.lengthSq() < 1e-8) lateral.copy(rel);
-  lateral.normalize();
-  if (lateral.dot(rel) < 0) lateral.negate();
+  // 把手位置沿发尖链自身横向（tipChainFrameAt.x）：发尖链中心 + 链横向 × 半宽，
+  // 使宽度拖拽的运动轨迹垂直于发尖子骨骼自身法线（不再被主骨骼法线限制）。
+  const chainFrame = tipChainFrameAt(lock, tip, tip, t);
+  const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
+  const multiplier = tipWidthMultiplierAt(lock, t, edgeU, bone, segmentIndex, splits);
+  const point = authoredCenter.clone()
+    .addScaledVector(chainFrame.x, (edgeU - centerU) * fullWidth * multiplier * 0.5);
+  // Drag axis: the tip chain's lateral oriented toward this side's edge, so the handle
+  // tracks the cursor along the tip's own width line.
+  let lateral = chainFrame.x.clone();
+  if ((edgeU - centerU) < 0) lateral.negate();
   return { point, center: authoredCenter.clone(), lateral, t };
 }
 
@@ -25291,6 +25326,7 @@ function createCurveObjects(lock) {
   const panelTipLines = [];
   const tipWidthHandles = [];
   const tipWidthLines = [];
+  const tipNormalArrows = [];
   if (isPanelGeometry(lock)) {
     lock.panelSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     lock.panelSplits.forEach((split, index) => {
@@ -25328,6 +25364,14 @@ function createCurveObjects(lock) {
         handle.userData.panelTipPoint = point;
         group.add(handle);
         panelTipHandles.push(handle);
+        // 旋转模式下选中发尖子骨骼时，每个暴露链点显示一个法线箭头（子骨骼自身法线）。
+        const tipNormalArrow = createCurveNormalIndicator();
+        tipNormalArrow.visible = false;
+        tipNormalArrow.userData.lockId = lock.id;
+        tipNormalArrow.userData.panelTipIndex = segment;
+        tipNormalArrow.userData.panelTipPoint = point;
+        group.add(tipNormalArrow);
+        tipNormalArrows.push(tipNormalArrow);
       }
       // Guide line connecting the sub-bone chain points (like a strand guide).
       const line = new THREE.Line(
@@ -25418,6 +25462,7 @@ function createCurveObjects(lock) {
     panelSegmentHandles,
     panelTipHandles,
     panelTipLines,
+    tipNormalArrows,
     tipWidthHandles,
     tipWidthLines,
     strandSplitHandle,
@@ -25872,19 +25917,37 @@ function updateCurveObjects(lock, options = {}) {
   const tipForkTs = tipSplits.length
     ? Array.from({ length: tipSplits.length + 1 }, (_, segment) => splitForkT(lock, segment, tipSplits))
     : [];
-  lock.curveObjects.panelTipHandles?.forEach((handle) => {
+  lock.curveObjects.panelTipHandles?.forEach((handle, handleIndex) => {
     const segment = handle.userData.panelTipIndex;
     const point = handle.userData.panelTipPoint;
+    const arrow = lock.curveObjects.tipNormalArrows?.[handleIndex];
+    // 旋转模式下选中发尖子骨骼时，给每个暴露链点显示自身法线箭头。
+    const syncTipNormalArrow = () => {
+      if (!arrow) return;
+      const tipSelected = sculptState.state.panelTipSelection?.lockId === lock.id
+        && sculptState.state.panelTipSelection.segmentIndex === segment;
+      arrow.visible = handle.visible && tipSelected && sel.state.activeTool === "rotate";
+      if (!arrow.visible) return;
+      const tip = tipChains[segment];
+      const chainT = point / Math.max(1, tip.points.length - 1);
+      arrow.position.copy(tip.points[point]);
+      arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tipChainFrameAt(lock, tip, tip, chainT).z);
+      arrow.scale.setScalar(0.14);
+    };
     const visible = (!sculptBrushHelpersSuppressed || tipUiActive)
       && !brushDebugVisible
       && isPanelGeometry(lock)
       && lock.panelSplitEnabled !== false
       && tipSplits.length > 0;
     handle.visible = visible;
-    if (!visible) return;
+    if (!visible) {
+      syncTipNormalArrow();
+      return;
+    }
     const tip = tipChains[segment];
     if (!tip || point >= tip.points.length) {
       handle.visible = false;
+      syncTipNormalArrow();
       return;
     }
     const forkT = tipForkTs[segment] ?? 1;
@@ -25892,6 +25955,7 @@ function updateCurveObjects(lock, options = {}) {
     // Only expose sub-bone points below the segment's fork (zipper); above stays current.
     if (t <= forkT) {
       handle.visible = false;
+      syncTipNormalArrow();
       return;
     }
     handle.position.copy(tip.points[point]);
@@ -25902,6 +25966,7 @@ function updateCurveObjects(lock, options = {}) {
       && sculptState.state.panelSplitDrag.splitIndex === segment
       && sculptState.state.panelSplitDrag.tipPoint === point;
     handle.material.opacity = isDragged ? 0.95 : (isSelected ? 0.95 : 0.4);
+    syncTipNormalArrow();
   });
   // Guide lines connecting each sub-bone's exposed (below-fork) chain portion.
   lock.curveObjects.panelTipLines?.forEach((line, segment) => {
@@ -31944,6 +32009,26 @@ document.querySelector("#resetTaperCurve").addEventListener("click", () => {
     ? (braidCreationCurve ? DEFAULT_BRAID_DEPTH_CURVE : DEFAULT_DEPTH_CURVE)
     : (braidCreationCurve ? DEFAULT_BRAID_WIDTH_CURVE : (panelWidthCurve ? STRAIGHT_CUT_PANEL_CURVE : DEFAULT_TAPER_CURVE));
   curve.splice(0, curve.length, ...defaultCurve.map((point) => ({ ...point })));
+  if (segmentWidthReset) {
+    // Reset 同时重置另一侧曲线：两侧都恢复为整段全 1。
+    const bone = activeTaperTarget();
+    const otherSide = sculptState.state.taperCurveEdit.side === "secondary" ? 1 : -1;
+    const otherKey = sculptState.state.taperCurveEdit.side === "secondary" ? "taperCurve" : "taperCurveSecondary";
+    if (bone) {
+      if (!bone[otherKey]) bone[otherKey] = [];
+      bone[otherKey].splice(
+        0,
+        bone[otherKey].length,
+        ...tipWidthResetCurve(
+          editedLock,
+          sculptState.state.taperCurveEdit.segmentIndex,
+          clonePanelSplits(editedLock.panelSplits, editedLock.panelSplitHeight),
+          otherSide
+        )
+      );
+      bone[otherKey] = normalizeTaperCurve(bone[otherKey]);
+    }
+  }
   sculptState.state.taperCurveEdit.selectedIndex = 0;
   applyTaperCurveEdit();
 });
@@ -34598,6 +34683,12 @@ function disposeCurveObjects(lock) {
     line.geometry.dispose();
     line.material.dispose();
   });
+  lock.curveObjects.tipNormalArrows?.forEach((arrow) => {
+    arrow.children.forEach((part) => {
+      part.geometry?.dispose();
+      part.material?.dispose();
+    });
+  });
   lock.curveObjects.tipWidthHandles?.forEach((seg) => {
     [...seg.left, ...seg.right].forEach((handle) => {
       handle.geometry.dispose();
@@ -34644,6 +34735,68 @@ function disposeCurveObjects(lock) {
   });
 }
 
+function beginTipSubBoneRotate(handle) {
+  const lock = locks.find((item) => item.id === handle?.userData?.lockId);
+  const segment = handle?.userData?.panelTipIndex;
+  const point = handle?.userData?.panelTipPoint;
+  if (!lock || segment == null || point == null) return;
+  const splits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+  const bones = materializeSplitBones(lock);
+  const bone = bones[segment];
+  if (!bone) return;
+  const tip = splitTipForSegment(lock, segment, splits, bone);
+  if (!tip || point >= tip.points.length) return;
+  // 确保有 authored tip 状态（与视平面拖拽相同：points/restPoints 快照）。
+  if (!bone.tip || !Array.isArray(bone.tip.points) || bone.tip.points.length !== tip.points.length) {
+    bone.tip = {
+      points: tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+      restPoints: tip.restPoints.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+      active: true
+    };
+  }
+  sculptState.state.tipSubBoneRotateDrag = {
+    lockId: lock.id,
+    segmentIndex: segment,
+    tipPoint: point,
+    startQuaternion: handle.quaternion.clone(),
+    startPoints: bone.tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z }))
+  };
+}
+
+// 把 gizmo 的旋转增量应用到 tip 子骨骼链：从被选中链点到链尾绕该点旋转
+// （dq = startQuaternion⁻¹ × handle.quaternion，每次用总增量避免累积）。
+function applyTipSubBoneTransform(lock, handle) {
+  const mode = transformControls.mode;
+  if (mode === "scale") {
+    // scale 暂不应用：把手缩放恢复创建时的基准值，避免 gizmo 视觉累积。
+    handle.scale.setScalar(0.42);
+    return;
+  }
+  if (mode !== "rotate") return;
+  const drag = sculptState.state.tipSubBoneRotateDrag;
+  if (!drag || drag.lockId !== lock.id) return;
+  const segment = handle.userData.panelTipIndex;
+  const point = handle.userData.panelTipPoint;
+  if (drag.segmentIndex !== segment || drag.tipPoint !== point) return;
+  const dq = drag.startQuaternion.clone().invert().multiply(handle.quaternion);
+  const splits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+  const bones = materializeSplitBones(lock);
+  const bone = bones[segment];
+  if (!bone || !bone.tip || !Array.isArray(bone.tip.points) || bone.tip.points.length < 2) return;
+  const pivot = drag.startPoints[point];
+  if (!pivot) return;
+  const pivotVec = new THREE.Vector3(pivot.x, pivot.y, pivot.z);
+  for (let i = point; i < bone.tip.points.length; i += 1) {
+    const src = drag.startPoints[i] || { x: 0, y: 0, z: 0 };
+    const rotated = new THREE.Vector3(src.x, src.y, src.z).sub(pivotVec).applyQuaternion(dq).add(pivotVec);
+    bone.tip.points[i] = { x: rotated.x, y: rotated.y, z: rotated.z };
+  }
+  bone.tip.active = true;
+  updateLockGeometry(lock, { immediate: true });
+  updateCurveObjects(lock, { visible: true });
+  syncActiveMirror(lock, { deferGeometry: false });
+}
+
 function beginPanelSplitHandleDrag(event) {
   if (event.button !== 0 || event.shiftKey || event.altKey || event.metaKey) return false;
   const lock = getSelectedLock();
@@ -34671,6 +34824,22 @@ function beginPanelSplitHandleDrag(event) {
   if (!hit) return false;
   // Ctrl+drag is the tip width asymmetric edit; it must not grab zipper/segment/tip handles.
   if (event.ctrlKey && hit.object.userData.tipWidthIndex == null) return false;
+  const gizmoTipIndex = hit.object.userData.panelTipIndex != null ? hit.object.userData.panelTipIndex : null;
+  if (gizmoTipIndex != null && ["rotate", "scale"].includes(sel.state.activeTool)) {
+    // 旋转/缩放工具：tip 手柄挂到 transform gizmo（与 strand 控制点一致），不做视平面
+    // 拖拽；旋转增量在 objectChange 的 applyTipSubBoneTransform 里应用。
+    sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: gizmoTipIndex };
+    sculptState.state.panelSegmentIndex = gizmoTipIndex;
+    syncPanelSegmentControls(lock);
+    transformControls.detach();
+    configureTransformControls(sel.state.activeTool);
+    transformControls.attach(hit.object);
+    hit.object.userData.tipSubBoneHandle = true;
+    updateCurveObjects(lock, { visible: true });
+    updateInteractionLocks();
+    event.preventDefault();
+    return true;
+  }
   pushUndoState();
   transformControls.detach();
   const tipIndex = hit.object.userData.panelTipIndex != null ? hit.object.userData.panelTipIndex : null;
@@ -34877,22 +35046,13 @@ function updatePanelSplitHandleDrag(event) {
     // can thin the tip but not collapse it into a needle (repeated drags thin further).
     const floorMult = Math.max(0.08, (drag.tipWidthStartMult ?? 1) * 0.3);
     const newWidthMult = THREE.MathUtils.clamp(rawMult, floorMult, 2);
-    const fullW = Math.max(0.01, Number(lock.width ?? 0.62));
     if (event.ctrlKey) {
       // 按住 Ctrl = 非对称：只调被拖的一侧。
       setTipWidthCurveValue(lock, segment, splitsForWidth, bone, side, t, newWidthMult);
     } else {
-      // 默认 = 等比对称：另一侧按相同比例镜像（otherNew = otherStart * new/draggedStart）。
-      const otherSide = -side;
-      const otherStart = tipPanelWidthAt(lock, t, otherSide, bone, segment, splitsForWidth) / fullW;
-      const draggedStart = Math.max(0.0001, drag.tipWidthStartMult ?? 1);
-      const otherNew = THREE.MathUtils.clamp(
-        otherStart * (newWidthMult / draggedStart),
-        Math.max(0.08, otherStart * 0.3),
-        2
-      );
+      // 默认 = 对称：两侧同一 t 设为同一个 multiplier（真正对称，不按起始比例）。
       setTipWidthCurveValue(lock, segment, splitsForWidth, bone, side, t, newWidthMult);
-      setTipWidthCurveValue(lock, segment, splitsForWidth, bone, otherSide, t, otherNew);
+      setTipWidthCurveValue(lock, segment, splitsForWidth, bone, -side, t, newWidthMult);
     }
     updateLockGeometry(lock, { immediate: true });
     updateCurveObjects(lock, { visible: true });
@@ -34904,6 +35064,10 @@ function updatePanelSplitHandleDrag(event) {
       && sculptState.state.taperCurveEdit.id === lock.id
       && sculptState.state.taperCurveEdit.segmentIndex === segment) {
       renderTaperCurveEditor();
+    }
+    // 右侧属性面板预览同步：该 lock 是当前选中/面板尖端选中时热更新。
+    if (sculptState.state.panelTipSelection?.lockId === lock.id || getSelectedLock()?.id === lock.id) {
+      syncPanelSegmentControls(lock);
     }
     event.preventDefault();
     return;
@@ -37614,6 +37778,7 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     tipWidthControlPlacement,
     tipWidthEdgePosition,
     tipPanelFrameAt,
+    tipChainFrameAt,
     tipPanelWidthAt,
     tipWidthMultiplierAt,
     tipMainSectionPoint,
@@ -37621,6 +37786,7 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     buildTipWidthCurve,
     tipWidthResetCurve,
     renderTaperCurveEditor,
+    syncPanelSegmentControls,
     sampleTaperCurve,
     sampleAsymmetricTaperCurve,
     strandFrameAt,

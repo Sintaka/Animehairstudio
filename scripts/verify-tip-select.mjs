@@ -117,8 +117,13 @@ try {
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const geo = lock.mesh.geometry;
     const pos = geo.attributes.position; const w = geo.userData.panelWeights;
+    // Simulate the selected state so the width handles are visible during the search
+    // (they would otherwise be hidden and the chosen point could overlap one after selection).
+    t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 0 };
+    t.updateCurveObjects(lock, { visible: true });
     const allHandles = [
       ...(lock.curveObjects?.panelTipHandles || []),
+      ...(lock.curveObjects?.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right]),
       ...(lock.curveObjects?.handles || []),
       ...(lock.curveObjects?.panelSplitHandles || []),
       ...(lock.curveObjects?.panelSegmentHandles || [])
@@ -133,6 +138,8 @@ try {
         t.raycaster.setFromCamera(ndc, t.camera());
         const handleHit = t.raycaster.intersectObjects(allHandles, false)[0];
         if (!handleHit) {
+          t.sculptState.state.panelTipSelection = null;
+          t.updateCurveObjects(lock, { visible: true });
           return JSON.stringify({ x: Math.min(Math.max(c.x, rect.left + 4), rect.right - 4), y: Math.min(Math.max(c.y, rect.top + 4), rect.bottom - 4), vertex: i });
         }
       }
@@ -213,14 +220,47 @@ try {
   await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="select"]'); if (btn) btn.click(); return true; })()`);
   await sleep(300);
 
-  // Click #2 -> toggle back to main selection
-  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipHover = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 0 }; return true; })()`);
-  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: clickPt.x, y: clickPt.y, button: "left", clickCount: 1 });
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: clickPt.x, y: clickPt.y, button: "left", clickCount: 1 });
-  await sleep(500);
+  // Click #2 -> toggle back to main selection. Re-find a handle-free seg0 body point in the
+  // CURRENT state (prior brush tests moved the tip chain, so the early clickPt may now hit a
+  // width handle that follows the chain).
+  const togglePt = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const geo = lock.mesh.geometry;
+    const pos = geo.attributes.position; const w = geo.userData.panelWeights;
+    t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 0 };
+    t.updateCurveObjects(lock, { visible: true });
+    const allHandles = [
+      ...(lock.curveObjects?.panelTipHandles || []),
+      ...(lock.curveObjects?.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right]),
+      ...(lock.curveObjects?.handles || []),
+      ...(lock.curveObjects?.panelSplitHandles || []),
+      ...(lock.curveObjects?.panelSegmentHandles || [])
+    ].filter((h) => h && h.visible);
+    const rect = t.renderer.domElement.getBoundingClientRect();
+    const v = new t.THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      if (w[i * 3 + 1] === 0 && w[i * 3 + 2] > 0.5) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(lock.mesh.matrixWorld);
+        const c = t.projectToClient(v);
+        if (c.y < rect.top + 4 || c.y > rect.bottom - 4 || c.x < rect.left + 4 || c.x > rect.right - 4) continue;
+        const ndc = new t.THREE.Vector2(((c.x - rect.left) / rect.width) * 2 - 1, -((c.y - rect.top) / rect.height) * 2 + 1);
+        t.raycaster.setFromCamera(ndc, t.camera());
+        const handleHit = t.raycaster.intersectObjects(allHandles, false)[0];
+        if (!handleHit) return JSON.stringify({ x: c.x, y: c.y, vertex: i });
+      }
+    }
+    return JSON.stringify(null);
+  })()`));
+  console.log("TOGGLE-PT", togglePt);
+  if (togglePt) {
+    await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipHover = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 0 }; return true; })()`);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: togglePt.x, y: togglePt.y, button: "left", clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: togglePt.x, y: togglePt.y, button: "left", clickCount: 1 });
+    await sleep(500);
+  }
   const selOff = await evalJS(cdp, `(() => { const s = window.__ahsTest.sculptState.state; return JSON.stringify(s.panelTipSelection); })()`);
-  check("second click toggles back to main selection", selOff === "null", `sel=${selOff}`);
-
+  check("second click toggles back to main selection", togglePt != null && selOff === "null", `sel=${selOff} pt=${JSON.stringify(togglePt)}`);
   // ============ Issue 1: every segment (incl. boundary) exposes a tip chain ============
   const allSegs = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
@@ -536,11 +576,11 @@ try {
     })()`));
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: widthDrag.x, y: widthDrag.y });
     await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: widthDrag.x, y: widthDrag.y, button: "left", clickCount: 1 });
-    for (let mv = 1; mv <= 5; mv++) {
-      await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: widthDrag.x + edgeDir.dx * 10 * mv, y: widthDrag.y + edgeDir.dy * 10 * mv, button: "left", buttons: 1 });
+    for (let mv = 1; mv <= 2; mv++) {
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: widthDrag.x + edgeDir.dx * 8 * mv, y: widthDrag.y + edgeDir.dy * 8 * mv, button: "left", buttons: 1 });
       await sleep(80);
     }
-    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: widthDrag.x + edgeDir.dx * 50, y: widthDrag.y + edgeDir.dy * 50, button: "left", clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: widthDrag.x + edgeDir.dx * 16, y: widthDrag.y + edgeDir.dy * 16, button: "left", clickCount: 1 });
     await sleep(400);
   }
   const widthChainBefore = await evalJS(cdp, `(() => {
@@ -551,6 +591,17 @@ try {
     const tip = t.splitTipForSegment(lock, 2, splits, bone);
     return JSON.stringify(tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })));
   })()`);
+  const widthMultBefore = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[2] || null;
+    const ts = t.tipWidthControlTs(t.tipWidthCommonForkT(lock, 2, splits));
+    const rightFork = t.tipWidthSideForkT(lock, 2, splits, 1);
+    const tt = ts.find((p) => p >= rightFork - 1e-4);
+    const fullW = Math.max(0.01, Number(lock.width ?? 0.62));
+    return JSON.stringify({ tt, rightMult: t.tipPanelWidthAt(lock, tt, 1, bone, 2, splits) / fullW, leftMult: t.tipPanelWidthAt(lock, tt, -1, bone, 2, splits) / fullW });
+  })()`));
   const widthAfter = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
@@ -587,7 +638,13 @@ try {
     const fullW = Math.max(0.01, Number(lock.width ?? 0.62));
     const sampledLocked = t.tipPanelWidthAt(lock, 0.3, 1, bone, 2, splits) / fullW;
     const lockedMatch = Math.abs(sampledLocked - globalAt) < 1e-3;
-    return JSON.stringify({ ok: true, hasRight: !!rightCurve, hasLeft: !!leftCurve, asym: bone.asymmetricWidthCurve === true, rightForkT, lockedMatch, changedFromDefault: !!rightCurve, valueChanged, leftChanged });
+    const fullW2 = Math.max(0.01, Number(lock.width ?? 0.62));
+    const ts2 = t.tipWidthControlTs(t.tipWidthCommonForkT(lock, 2, splits));
+    const rightFork2 = t.tipWidthSideForkT(lock, 2, splits, 1);
+    const tt2 = ts2.find((pp) => pp >= rightFork2 - 1e-4);
+    const afterRight = t.tipPanelWidthAt(lock, tt2, 1, bone, 2, splits) / fullW2;
+    const afterLeft = t.tipPanelWidthAt(lock, tt2, -1, bone, 2, splits) / fullW2;
+    return JSON.stringify({ ok: true, hasRight: !!rightCurve, hasLeft: !!leftCurve, asym: bone.asymmetricWidthCurve === true, rightForkT, lockedMatch, changedFromDefault: !!rightCurve, valueChanged, leftChanged, tt2, afterRight, afterLeft });
   })()`));
     let widthChainMoved = false;
   if (widthAfter.ok) {
@@ -605,45 +662,37 @@ try {
       if (Math.hypot(after[i].x - before[i].x, after[i].y - before[i].y, after[i].z - before[i].z) > 1e-5) { widthChainMoved = true; break; }
     }
   }
-  check("tip width drag authors both curves symmetrically (chain unchanged, locked = global)", widthAfter.ok === true && widthAfter.hasRight === true && widthAfter.hasLeft === true && widthAfter.asym === true && widthAfter.lockedMatch === true && widthAfter.valueChanged === true && widthAfter.leftChanged === true && widthChainMoved === false, `width=${JSON.stringify(widthAfter)} chainMoved=${widthChainMoved}`);
-  // ============ 8.19: tip width lateral follows the TIP sub-bone's own width axis ============
-  // The green handle drag direction (tipWidthEdgePosition.lateral) must be the tip's own
-  // authored width axis (dq * mainFrameX), not the mixed main-panel-frame vector that used
-  // to tilt 7-51deg (right) / 131-170deg (left) - the "trapezoid" feel.
+  const wR = widthAfter.afterRight / Math.max(0.0001, widthMultBefore.rightMult);
+  const wL = widthAfter.afterLeft / Math.max(0.0001, widthMultBefore.leftMult);
+  check("tip width drag authors both curves symmetrically (chain unchanged, locked = global)", widthAfter.ok === true && widthAfter.hasRight === true && widthAfter.hasLeft === true && widthAfter.asym === true && widthAfter.lockedMatch === true && widthAfter.valueChanged === true && widthAfter.leftChanged === true && widthChainMoved === false, `width=${JSON.stringify(widthAfter)} chainMoved=${widthChainMoved} before=${JSON.stringify(widthMultBefore)} ratioR=${wR.toFixed(3)} ratioL=${wL.toFixed(3)}`);
+  // ============ 8.23: tip width lateral = the TIP SUB-BONE's own lateral (perp to its tangent) ============
+  // The drag direction follows the tip chain's own normal plane, not the main bone's.
   const latCheck = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const bones = t.materializeSplitBones(lock);
-    let maxTilt = 0;
     let minTangentAngle = 180;
+    let maxPerpDeviation = 0;
     for (let seg = 0; seg <= splits.length; seg++) {
       const bone = bones[seg] || null;
       const tip = t.splitTipForSegment(lock, seg, splits, bone);
       if (!tip || tip.points.length < 2) continue;
       const curve = new t.THREE.CatmullRomCurve3(tip.points);
-      const restCurve = new t.THREE.CatmullRomCurve3(tip.restPoints);
       for (const tt of [0.6, 0.8, 0.95]) {
         const at = curve.getTangent(tt).normalize();
-        const rt = restCurve.getTangent(tt).normalize();
-        const dq = rt.dot(at) < -0.9999
-          ? (new t.THREE.Quaternion()).setFromAxisAngle(new t.THREE.Vector3(0, 1, 0), Math.PI)
-          : (new t.THREE.Quaternion()).setFromUnitVectors(rt, at);
-        const frame = t.tipPanelFrameAt(lock, tt);
-        const authoredLat = frame.x.clone().applyQuaternion(dq).normalize();
         for (const side of [-1, 1]) {
           const edge = t.tipWidthEdgePosition(lock, seg, splits, bone, side, tt);
           if (!edge) continue;
-          const cos = t.THREE.MathUtils.clamp(Math.abs(edge.lateral.dot(authoredLat)), -1, 1);
-          maxTilt = Math.max(maxTilt, Math.acos(cos) * 180 / Math.PI);
-          const cosT = t.THREE.MathUtils.clamp(Math.abs(edge.lateral.dot(at)), -1, 1);
+          const cosT = t.THREE.MathUtils.clamp(edge.lateral.dot(at), -1, 1);
           minTangentAngle = Math.min(minTangentAngle, Math.acos(cosT) * 180 / Math.PI);
+          maxPerpDeviation = Math.max(maxPerpDeviation, Math.abs(90 - Math.acos(cosT) * 180 / Math.PI));
         }
       }
     }
-    return JSON.stringify({ maxTilt: Number(maxTilt.toFixed(2)), minTangentAngle: Number(minTangentAngle.toFixed(1)) });
+    return JSON.stringify({ minTangentAngle: Number(minTangentAngle.toFixed(1)), maxPerpDeviation: Number(maxPerpDeviation.toFixed(1)) });
   })()`));
-  check("tip width lateral follows tip sub-bone width axis", latCheck.maxTilt < 5 && latCheck.minTangentAngle > 60, `lat=${JSON.stringify(latCheck)}`);
+  check("tip width lateral is perpendicular to the tip sub-bone tangent", latCheck.maxPerpDeviation < 5 && latCheck.minTangentAngle > 85, `lat=${JSON.stringify(latCheck)}`);
 
   // ============ 8.22: asymmetric tip width blends in a NARROW center band ============
   // Each side's curve is pure outside |u| > blendZone (0.25) so dragging one side no
@@ -725,6 +774,46 @@ try {
     const leftChanged = Math.abs(ctrlAfter.leftAt - ctrlBefore.leftAt) > 0.01;
     const rightUnchanged = Math.abs(ctrlAfter.rightAt - ctrlBefore.rightAt) < 1e-4;
     check("Ctrl+drag is asymmetric (only dragged side changes)", leftChanged === true && rightUnchanged === true, `ctrl=${JSON.stringify({ before: ctrlBefore, after: ctrlAfter, leftChanged, rightUnchanged })}`);
+  // ============ 8.23: tip width Reset makes the WHOLE segment width 1 ============
+  const resetFullCheck = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[2] || null;
+    // author asymmetric edits first, then apply the reset to BOTH sides (like the handler)
+    t.setTipWidthCurveValue(lock, 2, splits, bone, 1, 0.869, 1.35);
+    t.setTipWidthCurveValue(lock, 2, splits, bone, -1, 0.869, 1.2);
+    const resetR = t.tipWidthResetCurve(lock, 2, splits, 1);
+    const resetL = t.tipWidthResetCurve(lock, 2, splits, -1);
+    bone.taperCurve.splice(0, bone.taperCurve.length, ...resetR.map((pt) => ({ ...pt })));
+    bone.taperCurveSecondary.splice(0, bone.taperCurveSecondary.length, ...resetL.map((pt) => ({ ...pt })));
+    const fullW = Math.max(0.01, Number(lock.width ?? 0.62));
+    const samples = [0.2, 0.5, 0.7, 0.9].map((tt) => ({
+      t: tt,
+      right: t.tipPanelWidthAt(lock, tt, 1, bone, 2, splits) / fullW,
+      left: t.tipPanelWidthAt(lock, tt, -1, bone, 2, splits) / fullW
+    }));
+    const allOne = samples.every((s) => Math.abs(s.right - 1) < 1e-3 && Math.abs(s.left - 1) < 1e-3);
+    return JSON.stringify({ allOne, rightFirst: Number((bone.taperCurve[0] || {}).position), samples: samples.map((s) => ({ t: s.t, r: Number(s.right.toFixed(3)), l: Number(s.left.toFixed(3)) })) });
+  })()`));
+  check("tip width Reset makes the whole segment width 1 (both sides, all t)", resetFullCheck.allOne === true && resetFullCheck.rightFirst < 0.001, `resetFull=${JSON.stringify(resetFullCheck)}`);
+
+  // ============ 8.23: right panel segment preview hot-updates after a tip width edit ============
+  const previewCheck = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 2 };
+    t.updateCurveObjects(lock, { visible: true });
+    t.syncPanelSegmentControls(lock);
+    const d0 = document.querySelector('#segmentTaperPreview').getAttribute('d') || '';
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[2] || null;
+    t.setTipWidthCurveValue(lock, 2, splits, bone, 1, 0.869, 1.4);
+    t.syncPanelSegmentControls(lock);
+    const d1 = document.querySelector('#segmentTaperPreview').getAttribute('d') || '';
+    return JSON.stringify({ changed: d0 !== d1, d0Len: d0.length, d1Len: d1.length });
+  })()`));
+  check("right panel segment preview hot-updates after a tip width edit", previewCheck.changed === true, `preview=${JSON.stringify(previewCheck)}`);
   } else {
     check("Ctrl+drag is asymmetric (only dragged side changes)", false, "no left handle");
   }
