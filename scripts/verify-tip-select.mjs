@@ -913,7 +913,7 @@ try {
   })()`));
   check("tip width has a control point at the tip end (t=1)", tipEndCheck.count === 6 && tipEndCheck.lastT === 1 && tipEndCheck.tipPlacement === true, `tipEnd=${JSON.stringify(tipEndCheck)}`);
 
-  // ============ 8.21: Segment Spread 0-1 + handles follow the spread (no scaling) ============
+  // ============ 8.21: Segment Spread 0-0.99 + handles follow the spread (no degenerate collapse) ============
   const spreadCheck = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
@@ -922,14 +922,18 @@ try {
     const origSpread = bone.spread;
     bone.spread = 0;
     const p0 = t.tipWidthEdgePosition(lock, 2, splits, bone, 1, 1).point.clone();
-    bone.spread = 1;
+    bone.spread = 1; // above max: the defensive clamp must keep it equal to 0.99 (no degenerate collapse)
     const p1 = t.tipWidthEdgePosition(lock, 2, splits, bone, 1, 1).point.clone();
+    const gapOne = t.tipWidthSpreadGap(lock, 2, splits, bone, 1, 1);
+    bone.spread = 0.99;
+    const gapMax = t.tipWidthSpreadGap(lock, 2, splits, bone, 1, 1);
     bone.spread = origSpread;
     const gapAtTip = t.tipWidthSpreadGap(lock, 2, splits, bone, 1, 1);
     const sliderMax = document.querySelector('#panelSegmentSpread') ? document.querySelector('#panelSegmentSpread').max : null;
-    return JSON.stringify({ moved: Number(p0.distanceTo(p1).toFixed(4)), gapAtTip: Number(gapAtTip.toFixed(4)), sliderMax });
+    return JSON.stringify({ moved: Number(p0.distanceTo(p1).toFixed(4)), gapOne: Number(gapOne.toFixed(6)), gapMax: Number(gapMax.toFixed(6)), clampOk: Math.abs(gapOne - gapMax) < 1e-9, gapAtTip: Number(gapAtTip.toFixed(4)), sliderMax });
   })()`));
-  check("spread moves tip width handles with the geometry (range 0-1, no scaling)", spreadCheck.moved > 0.01 && spreadCheck.sliderMax === "1", `spread=${JSON.stringify(spreadCheck)}`);
+  check("spread range 0-0.99 (no degenerate collapse)", spreadCheck.moved > 0.01 && spreadCheck.sliderMax === "0.99" && spreadCheck.clampOk, `spread=${JSON.stringify(spreadCheck)}`);
+
   // ============ 8.25: edge segment spread mirrors gap to the no-zipper side ============
   const edgeSpreadCheck = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
@@ -966,6 +970,197 @@ try {
       && edgeSpreadCheck.moved > 1e-6,
     `edgeSpread=${JSON.stringify(edgeSpreadCheck)}`
   );
+
+  // ============ 8.26-A: spread clamps to 0.99 everywhere (no degenerate collapse) ============
+  const spreadClampCheck = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[2] || null;
+    const origSpread = bone.spread;
+    bone.spread = 1; // authored above max
+    const gapOne = t.tipWidthSpreadGap(lock, 2, splits, bone, 1, 1);
+    const reRead = t.materializeSplitBones(lock)[2]?.spread; // SPREAD_MAX clamps 1 -> 0.99 on re-read
+    const live = t.materializeSplitBones(lock)[2] || null;
+    live.spread = 0.99;
+    const gapMax = t.tipWidthSpreadGap(lock, 2, splits, live, 1, 1);
+    live.spread = origSpread;
+    t.materializeSplitBones(lock); // restore normalized lock state
+    return JSON.stringify({ gapOne: Number(gapOne.toFixed(6)), gapMax: Number(gapMax.toFixed(6)), clampOk: Math.abs(gapOne - gapMax) < 1e-9, reRead });
+  })()`));
+  check(
+    "spread clamps to 0.99 (materialize + gap both bounded, no degenerate collapse)",
+    spreadClampCheck.clampOk && spreadClampCheck.gapMax > 0 && spreadClampCheck.reRead === 0.99,
+    `spreadClamp=${JSON.stringify(spreadClampCheck)}`
+  );
+
+  // ============ 8.26-A: tip sub-bone weight forks per-side (slanted) ============
+  const weightForkCheck = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    if (splits.length < 2) return JSON.stringify({ notEnoughSplits: true, count: splits.length });
+    // Deterministic unequal zippers: segment 1 -> leftFork=0.4 (high zipper 0.6),
+    // rightFork=0.65 (low zipper 0.35), so the weight boundary is a slanted line.
+    splits[0].height = 0.6;
+    splits[1].height = 0.35;
+    const seg = 1;
+    const leftFork = 1 - splits[0].height;
+    const rightFork = 1 - splits[1].height;
+    const b0 = splits[0].position;
+    const b1 = splits[1].position;
+    const tMid = 0.525;
+    const uAt = (localU) => b0 + (b1 - b0) * localU;
+    const localUs = [0, 0.25, 0.5, 0.75, 1];
+    const weights = localUs.map((localU) => t.tipSegmentWeightAt(lock, seg, splits, tMid, uAt(localU), 10));
+    const monotonic = weights.every((w, i) => i === 0 || weights[i - 1] + 1e-12 >= w);
+    const between = weights.every((w) => w >= weights[weights.length - 1] - 1e-12 && w <= weights[0] + 1e-12);
+    const zeroAtFork = localUs.every((localU) => t.tipSegmentWeightAt(lock, seg, splits, leftFork, uAt(localU), 10) === 0);
+    return JSON.stringify({
+      notEnoughSplits: false,
+      leftFork: Number(leftFork.toFixed(6)),
+      rightFork: Number(rightFork.toFixed(6)),
+      tMid,
+      weights: weights.map((w) => Number(w.toFixed(6))),
+      leftW: Number(weights[0].toFixed(6)),
+      rightW: Number(weights[weights.length - 1].toFixed(6)),
+      monotonic,
+      between,
+      zeroAtFork
+    });
+  })()`));
+  check(
+    "tip sub-bone weight forks per-side (slanted, low-zipper side stays 0)",
+    !weightForkCheck.notEnoughSplits
+      && Math.abs(weightForkCheck.leftFork - 0.4) < 1e-9
+      && Math.abs(weightForkCheck.rightFork - 0.65) < 1e-9
+      && weightForkCheck.leftW > 0
+      && weightForkCheck.rightW === 0
+      && weightForkCheck.monotonic
+      && weightForkCheck.between
+      && weightForkCheck.zeroAtFork,
+    `weightFork=${JSON.stringify(weightForkCheck)}`
+  );
+  // ============ 8.26-B: rotate gizmo starts on tip chain own frame (no snap to main bone) ============
+  await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="rotate"]'); if (btn) btn.click(); return true; })()`);
+  await sleep(400);
+  const rotTool = await evalJS(cdp, `(() => window.__ahsTest.sel.state.activeTool)()`);
+  check("rotate tool active (E)", rotTool === "rotate", `tool=${rotTool}`);
+  const rotPick = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    if (!lock || !Array.isArray(lock.curveObjects?.panelTipHandles)) return JSON.stringify({ noHandle: true });
+    t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 0 };
+    t.updateCurveObjects(lock, { visible: true });
+    t.scene.updateMatrixWorld(true);
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bones = t.materializeSplitBones(lock);
+    const allHandles = [
+      ...(lock.curveObjects?.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right]),
+      ...(lock.curveObjects?.panelSplitHandles || []),
+      ...(lock.curveObjects?.panelSegmentHandles || []),
+      ...(lock.curveObjects?.panelTipHandles || []),
+      ...(lock.curveObjects?.strandSplitHandle && lock.curveObjects.strandSplitHandle.visible ? [lock.curveObjects.strandSplitHandle] : [])
+    ].filter((h) => h && h.visible);
+    const rect = t.renderer.domElement.getBoundingClientRect();
+    const ndc = new t.THREE.Vector2();
+    const world = new t.THREE.Vector3();
+    const identityQ = new t.THREE.Quaternion();
+    const gizmoPicker = t.transformControls?._gizmo?.picker?.[t.transformControls.mode] || null;
+    for (const h of lock.curveObjects.panelTipHandles) {
+      if (!h.visible) continue;
+      const seg = h.userData.panelTipIndex;
+      const point = h.userData.panelTipPoint;
+      const tip = t.splitTipForSegment(lock, seg, splits, bones[seg] || null);
+      if (!tip || !Array.isArray(tip.points) || point >= tip.points.length) continue;
+      const chainT = point / Math.max(1, tip.points.length - 1);
+      const frame = t.tipChainFrameAt(lock, tip, tip, chainT, seg, splits);
+      const frameQ = new t.THREE.Quaternion().setFromRotationMatrix(new t.THREE.Matrix4().makeBasis(frame.x, frame.y, frame.z));
+      // only handles whose real chain frame is NOT identity make the no-snap assertion meaningful
+      if (frameQ.angleTo(identityQ) <= (5 * Math.PI / 180)) continue;
+      h.getWorldPosition(world);
+      const c = t.projectToClient(world);
+      const cx = Math.min(Math.max(c.x, rect.left + 4), rect.right - 4);
+      const cy = Math.min(Math.max(c.y, rect.top + 4), rect.bottom - 4);
+      ndc.set(((cx - rect.left) / rect.width) * 2 - 1, -((cy - rect.top) / rect.height) * 2 + 1);
+      t.raycaster.setFromCamera(ndc, t.camera());
+      if (gizmoPicker && t.raycaster.intersectObject(gizmoPicker, true).length > 0) continue;
+      const hit = t.raycaster.intersectObjects(allHandles, false)[0];
+      if (!hit || hit.object !== h) continue;
+      return JSON.stringify({
+        seg, point,
+        chainT: Number(chainT.toFixed(4)),
+        frameY: { x: Number(frame.y.x.toFixed(4)), y: Number(frame.y.y.toFixed(4)), z: Number(frame.y.z.toFixed(4)) },
+        frameQ: { x: Number(frameQ.x.toFixed(4)), y: Number(frameQ.y.toFixed(4)), z: Number(frameQ.z.toFixed(4)), w: Number(frameQ.w.toFixed(4)) },
+        client: { x: Number(cx.toFixed(2)), y: Number(cy.toFixed(2)) }
+      });
+    }
+    return JSON.stringify({ noPick: true });
+  })()`));
+  check("8.26-B found real visible tip handle (non-identity frame, self-hit)", rotPick.seg != null && rotPick.noPick == null && rotPick.noHandle == null, `pick=${JSON.stringify(rotPick)}`);
+  if (rotPick.seg != null) {
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: rotPick.client.x, y: rotPick.client.y });
+    await sleep(150);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: rotPick.client.x, y: rotPick.client.y, button: "left", clickCount: 1 });
+    await sleep(500);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: rotPick.client.x, y: rotPick.client.y, button: "left", clickCount: 1 });
+    await sleep(250);
+    const rotAssert = JSON.parse(await evalJS(cdp, `(() => {
+      const t = window.__ahsTest;
+      const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+      const h = lock.curveObjects.panelTipHandles.find((x) => x.userData.panelTipIndex === ${rotPick.seg} && x.userData.panelTipPoint === ${rotPick.point});
+      if (!h) return JSON.stringify({ noHandle: true });
+      const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+      const bones = t.materializeSplitBones(lock);
+      const tip = t.splitTipForSegment(lock, ${rotPick.seg}, splits, bones[${rotPick.seg}] || null);
+      const chainT = ${rotPick.point} / Math.max(1, tip.points.length - 1);
+      const frame = t.tipChainFrameAt(lock, tip, tip, chainT, ${rotPick.seg}, splits);
+      const frameQ = new t.THREE.Quaternion().setFromRotationMatrix(new t.THREE.Matrix4().makeBasis(frame.x, frame.y, frame.z));
+      const yAngle = new t.THREE.Vector3(0, 1, 0).applyQuaternion(h.quaternion).angleTo(frame.y) * 180 / Math.PI;
+      const qAngle = h.quaternion.angleTo(frameQ) * 180 / Math.PI;
+      const idAngle = h.quaternion.angleTo(new t.THREE.Quaternion()) * 180 / Math.PI;
+      t.beginTipSubBoneRotate(h);
+      const drag = t.sculptState.state.tipSubBoneRotateDrag || null;
+      const startAngle = drag ? drag.startQuaternion.angleTo(frameQ) * 180 / Math.PI : null;
+      return JSON.stringify({
+        attached: t.transformControls.object === h,
+        mode: t.transformControls.mode,
+        yAngle: Number(yAngle.toFixed(2)),
+        qAngle: Number(qAngle.toFixed(2)),
+        idAngle: Number(idAngle.toFixed(2)),
+        startAngle: startAngle == null ? null : Number(startAngle.toFixed(2)),
+        dragLock: drag ? drag.lockId : null,
+        dragSeg: drag ? drag.segmentIndex : null,
+        dragPoint: drag ? drag.tipPoint : null
+      });
+    })()`));
+    check(
+      "rotate gizmo starts on tip chain own frame (no snap to main bone)",
+      rotAssert.attached === true
+        && rotAssert.mode === "rotate"
+        && rotAssert.yAngle < 5
+        && rotAssert.qAngle < 5
+        && rotAssert.idAngle > 5
+        && rotAssert.startAngle != null
+        && rotAssert.startAngle < 5
+        && rotAssert.dragLock === lockId
+        && rotAssert.dragSeg === rotPick.seg
+        && rotAssert.dragPoint === rotPick.point,
+      `rot=${JSON.stringify(rotAssert)}`
+    );
+  } else {
+    check("rotate gizmo starts on tip chain own frame (no snap to main bone)", false, `pick=${JSON.stringify(rotPick)}`);
+  }
+  // cleanup: clear drag state, detach gizmo, back to select tool
+  await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    t.sculptState.state.tipSubBoneRotateDrag = null;
+    try { t.transformControls.detach(); } catch {}
+    const btn = document.querySelector('.tool-button[data-tool="select"]');
+    if (btn) btn.click();
+    return true;
+  })()`);
+  await sleep(300);
 
   // ============ 8.21: curve lean + common-fork distribution (hidden points recorded) ============
   const leanCheck = JSON.parse(await evalJS(cdp, `(() => {
@@ -1116,3 +1311,5 @@ try {
 } finally {
   chrome.kill();
 }
+
+

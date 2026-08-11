@@ -1,4 +1,4 @@
-﻿// bone-model.js — KineFX-style unified bone view + split sub-bone data model (0.2.59).
+// bone-model.js — KineFX-style unified bone view + split sub-bone data model (0.2.59).
 // Bones are ordinary named points: { name, parent, parentParam, p, orient }. No matrices:
 // only P (position) + rotation (quaternion). Hybrid persistence: only split sub-bones
 // (lock.splitBones) are persisted; the main chain (lock.points) and child chains
@@ -6,7 +6,7 @@
 import * as THREE from "three";
 
 const MAX_SPLIT_SEGMENTS = 24;
-const SPREAD_MAX = 1;
+const SPREAD_MAX = 0.99;
 
 export function defaultSplitSpread(lock) {
   // Relative per-segment tip gap fraction; derived from the legacy absolute gap so old

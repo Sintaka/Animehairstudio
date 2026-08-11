@@ -13489,6 +13489,28 @@ function tipWidthSideForkT(lock, segmentIndex, splits, side) {
   if (side < 0) return leftZipper != null ? 1 - leftZipper : segmentForkT;
   return rightZipper != null ? 1 - rightZipper : segmentForkT;
 }
+
+// 发尖子骨骼蒙皮权重：每侧以自己 zipper 顶（1-height）为 0 边界，段内按 u 线性
+// 插值成斜线，斜线上方（靠根）权重 0（主骨骼 100%），下方线性爬到 1。边缘段
+// 只一侧有 zipper 时另一侧镜像同一 fork。
+function tipSegmentWeightAt(lock, segmentIndex, splits, t, u, lengthLoops) {
+  const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
+  if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return 0;
+  const leftSplit = splits[segmentIndex - 1] || null;
+  const rightSplit = splits[segmentIndex] || null;
+  const fallback = leftSplit || rightSplit;
+  if (!fallback) return 0;
+  const leftFork = leftSplit ? 1 - Number(leftSplit.height ?? 0) : 1 - Number(fallback.height ?? 0);
+  const rightFork = rightSplit ? 1 - Number(rightSplit.height ?? 0) : 1 - Number(fallback.height ?? 0);
+  const b0 = boundaries[segmentIndex];
+  const b1 = boundaries[segmentIndex + 1];
+  const localU = THREE.MathUtils.clamp((u - b0) / Math.max(0.0001, b1 - b0), 0, 1);
+  const forkT = THREE.MathUtils.lerp(leftFork, rightFork, localU);
+  const start = forkT + Math.max(1 / Math.max(1, lengthLoops || 10), 0.02);
+  if (forkT >= 1 || t <= start) return 0;
+  return THREE.MathUtils.clamp((t - start) / Math.max(0.0001, 1 - start), 0, 1);
+}
+
 // All tip width control positions for one side: the 5 midpoints plus the tip end (t=1).
 function tipWidthControlTs(forkT) {
   const positions = [];
@@ -13537,7 +13559,7 @@ function tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side) {
   if (t <= start) return 0;
   const ramp = (t - start) / Math.max(0.0001, 1 - start);
   const span = boundaries[segmentIndex + 1] - boundaries[segmentIndex];
-  return 0.5 * (bone?.spread ?? 0) * span * ramp;
+  return 0.5 * THREE.MathUtils.clamp(bone?.spread ?? 0, 0, 0.99) * span * ramp;
 }
 
 // Shared tip width sampler: above the segment's fork (locked) or without a segment the
@@ -13998,30 +14020,17 @@ function createPanelStrandGeometry(lock) {
   // authored; each bone carries per-segment width/depth curves + a relative tip gap
   // (spread) that replaces the old absolute panelSplitGap displacement.
   const splitBones = splits.length ? cloneSplitBones(lock.splitBones, splits, lock) : [];
+  const boundaries = [-1, ...splits.map((split) => split.position), 1];
   // Procedural per-vertex weight framework (S1): each vertex carries
   // [mainJointIndex, segmentIndex, weight]. The zipper boundaries decide the control
   // region (segment assignment = hard by u); weight ramps smoothly from 0 at the
   // segment's fork (deeper bounding zipper) to 1 at the tip. One tip = one sub-bone.
+  // 发尖子骨骼蒙皮权重：每侧以自己 zipper 顶（1-height）为 0 边界，段内按 u 线性
+  // 插值成斜线，斜线上方（靠根）权重 0（主骨骼 100%），下方线性爬到 1。边缘段
+  // 只一侧有 zipper 时另一侧镜像同一 fork。
   const panelWeights = [];
   const mainPointCount = latticeControlled ? 0 : lock.points.length;
-  const forkBand = Math.max(2 / lengthLoops, 0.02);
-  const segmentForkT = splits.length
-    ? Array.from({ length: splits.length + 1 }, (_, segment) => {
-      const leftSplit = splits[segment - 1] || null;
-      const rightSplit = splits[segment] || null;
-      const heights = [leftSplit?.height, rightSplit?.height].filter((height) => height != null);
-      return heights.length ? 1 - Math.max(...heights) : 1;
-    })
-    : [1];
-  // Rows near the zipper root keep weight 0 (dead zone) so brushes cannot pull apart
-  // the still-connected hair there; the control weight then ramps linearly to 1.
-  const weightDeadZone = Math.max(1 / lengthLoops, 0.02);
-  const segmentWeightAt = (segment, t) => {
-    const forkT = segmentForkT[segment] ?? 1;
-    const start = forkT + weightDeadZone;
-    if (forkT >= 1 || t <= start) return 0;
-    return THREE.MathUtils.clamp((t - start) / Math.max(0.0001, 1 - start), 0, 1);
-  };
+  const segmentWeightAt = (segment, t, u) => tipSegmentWeightAt(lock, segment, splits, t, u, lengthLoops);
   const frames = [];
   let previousFrame = null;
   if (!latticeControlled) {
@@ -14147,8 +14156,8 @@ function createPanelStrandGeometry(lock) {
   // Length and direction come from editing the chain's points.
   const addPatch = (rowStart, rowEnd, uStart, uEnd, columns, options = {}, bone = null, segment = -1) => {
     const rows = rowEnd - rowStart;
-    const forkT = segmentForkT[segment] ?? 1;
-    const tip = (!latticeControlled && segment >= 0 && forkT < 1)
+    const hasZipper = Boolean(splits[segment - 1] || splits[segment]);
+    const tip = (!latticeControlled && segment >= 0 && hasZipper)
       ? splitTipForSegment(lock, segment, splits, bone)
       : null;
     const tipCurve = tip && tip.points.length >= 2 ? new THREE.CatmullRomCurve3(tip.points) : null;
@@ -14161,7 +14170,6 @@ function createPanelStrandGeometry(lock) {
       const row = rowStart + localRow;
       const t = row / lengthLoops;
       const color = strandInfluenceColor(lock, t);
-      const weight = segmentWeightAt(segment, t);
       const mainJoint = mainPointCount ? Math.round(t * (mainPointCount - 1)) : -1;
       const segmentIndex = latticeControlled ? -1 : segment;
       // Sub-bone frame follow: below the fork, the section is translated to the
@@ -14169,7 +14177,7 @@ function createPanelStrandGeometry(lock) {
       // authored), so orient edits rotate the tip cross-section instead of only
       // sweeping it. Computed once per row; at rest authored==rest => identity.
       let tipTransform = null;
-      if (tipCurve && weight > 0) {
+      if (tipCurve) {
         const authoredCenter = tipCurve.getPoint(t);
         const authoredTangent = tipCurve.getTangent(t).normalize();
         const restCenter = tipRestCurve.getPoint(t);
@@ -14186,7 +14194,7 @@ function createPanelStrandGeometry(lock) {
         const dqRoll = Math.abs(twist) > 1e-6
           ? (new THREE.Quaternion()).setFromAxisAngle(authoredTangent, twist).multiply(dq)
           : dq;
-        tipTransform = { authoredCenter, restCenter, dq: dqRoll, weight };
+        tipTransform = { authoredCenter, restCenter, dq: dqRoll };
       }
       // Section reference for the tip transform: the segment-center point (tip sub-bone)
       // in the same tip-relative frame as the section itself. At rest the transform is
@@ -14201,14 +14209,15 @@ function createPanelStrandGeometry(lock) {
       const backRow = [];
       for (let column = 0; column <= columns; column += 1) {
         const u = THREE.MathUtils.lerp(uStart(row), uEnd(row), column / columns);
+        const weight = segmentWeightAt(segment, t, u);
         const frontPoint = panelPoint(row, u, 1, bone, segment);
         const backPoint = panelPoint(row, u, -1, bone, segment);
-        if (tipTransform) {
+        if (tipTransform && weight > 0) {
           const reference = sectionCenter || tipTransform.restCenter;
           const transformedFront = frontPoint.clone().sub(reference).applyQuaternion(tipTransform.dq).add(tipTransform.authoredCenter);
-          frontPoint.lerp(transformedFront, tipTransform.weight);
+          frontPoint.lerp(transformedFront, weight);
           const transformedBack = backPoint.clone().sub(reference).applyQuaternion(tipTransform.dq).add(tipTransform.authoredCenter);
-          backPoint.lerp(transformedBack, tipTransform.weight);
+          backPoint.lerp(transformedBack, weight);
         }
         frontRow.push(positions.length / 3);
         positions.push(frontPoint.x, frontPoint.y, frontPoint.z);
@@ -14250,7 +14259,6 @@ function createPanelStrandGeometry(lock) {
     }
   };
 
-  const boundaries = [-1, ...splits.map((split) => split.position), 1];
   const segmentSpans = boundaries.slice(0, -1).map((boundary, index) => boundaries[index + 1] - boundary);
   const segmentColumns = segmentSpans.map(() => 1);
   const remainingColumns = Math.max(0, widthLoops - segmentColumns.length);
@@ -25964,7 +25972,7 @@ function updateCurveObjects(lock, options = {}) {
     const bone = segmentSplitBones[segment] || null;
     const span = Math.max(0.0001, segmentBoundaries[segment + 1] - segmentBoundaries[segment]);
     const spread = bone?.spread ?? 0;
-    const handleU = segmentBoundaries[segment] + (spread / 0.9) * span;
+    const handleU = segmentBoundaries[segment] + (spread / 0.99) * span;
     handle.position.copy(panelSplitControlPoint(lock, { position: handleU, height: 0 }, null, null, segment));
     handle.material.opacity = sculptState.state.panelSplitDrag?.lockId === lock.id
       && sculptState.state.panelSplitDrag.kind === "segment"
@@ -26024,6 +26032,21 @@ function updateCurveObjects(lock, options = {}) {
       return;
     }
     handle.position.copy(tip.points[point]);
+    // 旋转/缩放模式下把 tip 手柄 quaternion 对齐到发尖链自身 frame（y=切线），使
+    // gizmo 起始朝向=发尖真实朝向，避免 startQuaternion=identity 导致一拖就跳到
+    // 主骨骼朝向；拖拽中保留 gizmo 已施加的旋转（否则每次重建把手会清零增量）。
+    // t 与 syncTipNormalArrow 里的 chainT 相同（point / max(1, length-1)），直接复用。
+    const preserveDragRotation = Boolean(
+      sculptState.state.tipSubBoneRotateDrag
+      && sculptState.state.tipSubBoneRotateDrag.lockId === lock.id
+      && sculptState.state.tipSubBoneRotateDrag.segmentIndex === segment
+      && sculptState.state.tipSubBoneRotateDrag.tipPoint === point
+      && transformControls.object === handle
+    );
+    if (!preserveDragRotation && ["rotate", "scale"].includes(sel.state.activeTool)) {
+      const chainFrame = tipChainFrameAt(lock, tip, tip, t, segment, tipSplits);
+      handle.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(chainFrame.x, chainFrame.y, chainFrame.z));
+    }
     const isSelected = sculptState.state.panelTipSelection?.lockId === lock.id
       && sculptState.state.panelTipSelection.segmentIndex === segment;
     const isDragged = sculptState.state.panelSplitDrag?.lockId === lock.id
@@ -32981,7 +33004,7 @@ if (panelSegmentSpread) {
     if (!target) return;
     const bones = materializeSplitBones(target);
     const { index } = selectedPanelSegment(target);
-    const value = THREE.MathUtils.clamp(Number(panelSegmentSpread.value || 0), 0, 1);
+    const value = THREE.MathUtils.clamp(Number(panelSegmentSpread.value || 0), 0, 0.99);
     if (bones[index]) bones[index].spread = value;
     if (panelSegmentSpreadValue) panelSegmentSpreadValue.textContent = value.toFixed(2);
     if (isPanelGeometry(selected)) {
@@ -35162,7 +35185,7 @@ function updatePanelSplitHandleDrag(event) {
     const bones = materializeSplitBones(lock);
     const bone = bones[segment];
     if (bone) {
-      bone.spread = THREE.MathUtils.clamp(((segmentBest.u - segBoundaries[segment]) / span) * 0.9, 0, 0.9);
+      bone.spread = THREE.MathUtils.clamp(((segmentBest.u - segBoundaries[segment]) / span) * 0.99, 0, 0.99);
     }
     updateLockGeometry(lock, { immediate: true });
     updateCurveObjects(lock, { visible: true });
@@ -37848,12 +37871,15 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     hairState,
     undoHistory,
     updateCurveObjects,
+    transformControls,
+    beginTipSubBoneRotate,
     updateTipHighlight,
     updateStrandBrushHover,
     syncStrandHoverOutline,
     splitTipForSegment,
     applySubBoneBrushSample,
     tipWidthSideForkT,
+    tipSegmentWeightAt,
     tipWidthCommonForkT,
     tipWidthControlTs,
     tipWidthSpreadGap,
@@ -37885,3 +37911,4 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     }
   };
 }
+

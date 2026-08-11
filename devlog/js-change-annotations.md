@@ -33,6 +33,7 @@
 > - 8.23（0.2.59 进行中）：5 项深入修复——① Reset 整段全 1（同时重置两侧、`tipWidthResetCurve` 覆盖 [0,1]、`tipWidthMultiplierAt` 曲线从 0 开始时不回退全局、`buildTipWidthCurve` 保留 0 点）；② 对称拖拽两侧直接写同一值（不再按起始比例，消除 2x/延迟）；③ 视口拖拽后右侧 `segmentTaperPreview`（syncPanelSegmentControls）+ 浮动面板都热更新；④ 宽度移动方向改为与发尖子骨骼自身法线垂直（新增 `tipChainFrameAt`，lateral/把手位置用链横向），旋转模式加法线向上箭头；⑤ rotate/scale 工具下 tip 子骨骼手柄挂到 transform gizmo（`beginTipSubBoneRotate`/`applyTipSubBoneTransform`），select/move 保持拖拽。详见 §8.23。
 > - 8.24（0.2.59 进行中）：① 鼠标在浮动面板上不再触发头发/发尖高亮（`pointerOverTaperEditor` 守卫）；② 回退 coversWhole——Reset 后未暴露控制区（Zipper 上半部分）始终跟随主骨骼全局宽度，不再开裂；③ 发尖子骨骼 orient 跟随主发片表面曲率（新增 `tipSurfaceFrameAt`，rest 链改用表面帧；tip 点是 rest+delta，rest 生成修正后旧 .ahs 数据自动用新基准）；④ 浮动面板 segment 曲线点可拖动（`activeTaperTarget` 复用 live lock.splitBones）且只允许拖动暴露点（`data-tip-hidden` 拦截）。详见 §8.24。
 > - 8.25（0.2.59 进行中）：最边缘段 Segment Spread 自动镜像——`tipWidthSpreadGap` 对无 zipper 的外侧取对侧 zipper（同一 bone.spread/ramp 起点），几何 `uStart/uEnd` 守卫改 `(leftSplit || rightSplit)`，两侧一致收窄、无 UI 展示。详见 §8.25。
+> - 8.26（0.2.59 进行中）：① Segment Spread 上限 0-0.99（`SPREAD_MAX`、slider、clamp、`tipWidthSpreadGap` 兜底，防退化面）；② 发尖蒙皮权重改为每侧 zipper 顶为 0 边界、段内 u 线性插值成斜线（新增 `tipSegmentWeightAt`，scale 笔刷不再裂一边）；③ 旋转 gizmo 起始朝向对齐发尖链自身 frame（`updateCurveObjects` 设 tip 手柄 quaternion，拖拽中保留），不再一拖跳回主骨骼朝向。详见 §8.26。
 
 ## 最近更新（0.2.54–0.2.56）
 

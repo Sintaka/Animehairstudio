@@ -372,6 +372,16 @@ splitBone.tip = {
 
 **回归测试（scripts/verify-tip-select.mjs，41/41）**：新增「edge segment spread mirrors gap to the no-zipper side」——segment 0 外侧/zipper 侧 gap 在 spread=0 时均为 0，spread=0.7 时相等且 >0（差 <1e-6），外侧手柄位置随 spread 内收（moved>0）；原 40 项全过。三档 smoke（0041/0042/0044）11/11 通过。
 
+### 8.26 三段修复：spread 上限 / 权重斜线 / gizmo 朝向（0.2.59）
+
+**1. Segment Spread 上限 0-0.99（防退化面）**：spread=1 时每侧尖端内收 0.5*span，合计 = span → 尖端宽度 0、产生退化面。修复：`bone-model.js` 的 `SPREAD_MAX` 1→0.99（覆盖 default/normalize/fromData 所有 clamp 点）；`index.html` slider `max=0.99`；app.js slider/segment 拖拽 clamp 0.99、绿色手柄满行程 `(spread/0.99)*span`；`tipWidthSpreadGap` 消费点防御性 `clamp(spread, 0, 0.99)`——即使旧文件有 spread=1 也绝不退化。
+
+**2. 发尖段两侧 zipper 不等高 → 权重斜线分界**：原 `segmentWeightAt` 用 `1-max(左右 height)` 做统一水平 fork，低 zipper 侧在其 zipper 上方权重已爬升 → scale 笔刷一拉一边裂。修复：新增顶层 `tipSegmentWeightAt(lock, segmentIndex, splits, t, u, lengthLoops)`——每侧以自己 zipper 顶 `1-height` 为权重 0 边界、段内按 u 线性插值成斜线，斜线上方（靠根）权重 0（主骨骼 100%），下方线性爬到 1；边缘段单侧 zipper 时另一侧镜像同一 fork（与 8.25 spread 镜像一致）。`createPanelStrandGeometry`：`boundaries` 上移、删 `segmentForkT`，`segmentWeightAt` 改为 (segment, t, u)；tipTransform 每行无条件组装、列循环按每列 weight 混合（panelWeights 与几何变形同源）。
+
+**3. 旋转 gizmo 一拖跳到主骨骼朝向**：tip 手柄 quaternion 从未设置（恒 identity），gizmo 起始=identity，`beginTipSubBoneRotate` 的 startQuaternion=identity，`dq=identity⁻¹×handle.quaternion` 变成从主骨骼朝向起的全量旋转 → 轻转即跳。修复（根源）：`updateCurveObjects` 在 rotate/scale 工具下把 tip 手柄 quaternion 对齐到发尖链自身 frame（`tipChainFrameAt` 的 x/y/z，`makeBasis` 构造），拖拽中（`tipSubBoneRotateDrag` 活动）保留 gizmo 已施加旋转不清零 → dq 变为相对真实朝向的增量，无跳变；不触碰 WidthCurve 数学（只用位置）。
+
+**回归测试（scripts/verify-tip-select.mjs，46/46）**：新增 spread clamp（gap(spread=1)==gap(0.99)、materialize 读回 0.99）、权重斜线（构造不等高 zipper：左 fork 0.4 / 右 0.65，tMid 处高侧权重>0、低侧=0、中间单调且在两者间）、gizmo 朝向（真实指针选中 tip 手柄后 handle.quaternion 与链 frame 夹角 0°、非 identity、startQuaternion==frame）；原 43 项全过。三档 smoke（0041/0042/0044）11/11 通过。
+
 ## 踩坑记录：发尖 WidthCurve 专项（8.10–8.20 复盘）
 
 > 这一轮发尖 WidthCurve 前后改了 11 个版本（8.10–8.20）才真正修对，把踩过的坑记下来，避免重蹈。
