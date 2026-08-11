@@ -34680,7 +34680,11 @@ function updatePanelSplitHandleDrag(event) {
       + (event.clientY - drag.tipWidthStartClientY) * sdy;
     const latOffset = startLatOffset
       + dragAlong * (startLatOffset / (drag.tipWidthStartEdgeScreenDist || 1));
-    const newWidthMult = (drag.tipWidthStartMult ?? 1) * (latOffset / startLatOffset);
+    const rawMult = (drag.tipWidthStartMult ?? 1) * (latOffset / startLatOffset);
+    // Floor at 30% of the drag's start width (absolute min 0.08): a single inward drag
+    // can thin the tip but not collapse it into a needle (repeated drags thin further).
+    const floorMult = Math.max(0.08, (drag.tipWidthStartMult ?? 1) * 0.3);
+    const newWidthMult = THREE.MathUtils.clamp(rawMult, floorMult, 2);
     setTipWidthCurveValue(lock, segment, splitsForWidth, bone, side, t, newWidthMult);
     updateLockGeometry(lock, { immediate: true });
     updateCurveObjects(lock, { visible: true });

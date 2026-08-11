@@ -106,7 +106,7 @@ console.log(`static server on http://127.0.0.1:${port}`);
 
 fs.rmSync(profileDir, { recursive: true, force: true });
 const chrome = spawn(CHROME, [
-  "--headless=new", `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profileDir}`,
+  "--headless=new", "--no-sandbox", "--disable-gpu", `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profileDir}`,
   "--no-first-run", "--disable-gpu", "--window-size=1400,900", "about:blank",
 ], { stdio: "ignore" });
 

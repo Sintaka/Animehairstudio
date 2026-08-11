@@ -236,6 +236,13 @@ splitBone.tip = {
 **4. alt+点击后相机漂移（真实产品 bug）✅**：`finishBrushAltClick` 调 `stopImmediatePropagation()` 阻止了紧接注册的 `endAltOrbit` 在 pointerup 清除 `altOrbitDrag` → 下一次鼠标移动触发 orbit 把相机转走。修复：不再 stopImmediatePropagation，让 endAltOrbit 正常收尾。
 
 **回归测试（scripts/verify-tip-select.mjs，27/27 更新）**：width 拖拽沿边缘屏幕方向多次移动 → 曲线生成、asymmetric、锁定区=全局、编辑值改变、链不变；orient 滚动截面；push 移动发尖；select 模式悬停/alt+点击（相机保持默认位，验证 orbit 泄漏已修）。三档 smoke 11/11、12/12 通过。
+### 8.16 width 拖拽防塌缩下限 + 测试环境 Chrome --no-sandbox（0.2.59 已落地）
+
+**1. 绿色 width 控制点仍会塌缩 ✅**：拖拽映射 `newMult = startMult × latOffset/startLatOffset` 在把边缘拖向中心时（latOffset→0）会把宽度压到绝对下限 0.08 → 发尖缩成细针、手柄叠到链上不可再拖。修复：单次拖拽加**下限** `newMult ≥ max(0.08, startMult×0.3)`（上限 2）——一次向内拖最多收窄到起始宽度的 30%，不会瞬间塌缩；要更细可多次拖拽或走 taper 曲线编辑器。验证：沿边缘方向多次向外/向内拖，宽度剖面（0.8/0.9/0.906/1.0）按比例增/减、不塌缩、链不动。
+
+**2. 测试环境：Chrome 151 更新后沙箱崩溃（环境问题，非产品代码）**：`chrome.exe` 全模式启动即退出（exit 0x80000003 STATUS_BREAKPOINT），CDP 不可达导致测试挂起。修复：`verify-smoke.mjs` / `verify-tip-select.mjs` 的 Chrome 启动参数加 `--no-sandbox`（本机安全沙箱在当前容器/系统策略下与 Chrome 151 冲突）。三档 smoke 与 27/27 回归恢复。
+
+**回归测试（scripts/verify-tip-select.mjs，27/27）**：width 拖拽（编辑值改变、链不变、不塌缩）；orient 滚动截面；push 移动发尖；select 模式悬停/alt+点击；0 异常。
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

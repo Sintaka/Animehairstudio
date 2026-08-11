@@ -69,7 +69,7 @@ function check(name, ok, detail = "") { results.push({ name, ok, detail }); cons
 await new Promise((r) => server.listen(port, "127.0.0.1", r));
 console.log(`static server on http://127.0.0.1:${port}`);
 fs.rmSync(profileDir, { recursive: true, force: true });
-const chrome = spawn(CHROME, ["--headless=new", `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profileDir}`, "--no-first-run", "--disable-gpu", "--window-size=1400,900", "about:blank"], { stdio: "ignore" });
+const chrome = spawn(CHROME, ["--headless=new", "--no-sandbox", "--disable-gpu", `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profileDir}`, "--no-first-run", "--disable-gpu", "--window-size=1400,900", "about:blank"], { stdio: "ignore" });
 try {
   await waitFor(async () => { try { const l = await fetch(`http://127.0.0.1:${cdpPort}/json/version`); return l.ok; } catch { return false; } }, 20000, 300);
   const cdp = await connectCDP();
