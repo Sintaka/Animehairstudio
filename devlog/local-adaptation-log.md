@@ -1,4 +1,4 @@
-﻿# 本地适配进度
+# 本地适配进度
 
 <!-- 本文件由 devlog 拆分而来；入口见 README.md 索引 -->
 
@@ -152,6 +152,7 @@
   - Ctrl+Z 真正根因：restoreState L18028 裸 `mirrorXEditing`（store 化漏改，undo/redo 恢复崩溃→空场景）→ 改 sculptState.state.mirrorXEditing；undo/redo restore 包 try/catch（失败提示不静默空场景）；applyPresetSelection 同样加固（删 push + 加载后清栈）；verify 加「加载后 undo 栈空」回归（14/14）
   - File 菜单 vs 大纲拖拽没生效根因：**styles.css 缓存号从未 bump**（浏览器用旧 CSS）→ bump styles.css?v=20260810-102 + server.js 加 Cache-Control: no-cache + .panel-resize-handle z-index 30→15（菜单天然压住）+ 防御 cursor/highlight
   - Region 面板 cursor：角点 cursor 被迁移误伤成 `nwse-deps.resize`（无效）→ 修回 nwse-resize/nesw-resize；边点 move→按方向 ns-resize/ew-resize；中键平移/滚轮缩放代码已支持（capture nav + passive:false，缓存修复后生效）
+- [x] 重构：scalp 系统迁出（0.2.59，3d 批次 4）：120 个 scalp 业务函数（createAuthoredScalpGeometry/paintScalpAt/createScalpLattice 等）→ modules/scalp/scalp-builder.js，createScalpBuilderApi(deps) 依赖注入 + 渐进填充（引导期就地填充 + Object.assign 批填）；踩坑与修复：deps 改写漏网（SCALP_SEGMENTS/scalpState/scalpBuilderPlanePositions/scalpBuilderGroup/guideState/sel 等裸引用，verify-smoke 启动 ReferenceError → 静态裸引用扫描清零）、spread 展开裸引用（...scalpLatticeHandles，扫描需区分 ...name 与 obj.name）、引导期 deps 时序（scalpSurfaceGroup/scalpArtistShape 需在 createScalpLattice 前就地填充）、项目加载恢复路径 DEFAULT_LAYER_OFFSETS 未 import（restoreAuthoredScalpForStateRestore ReferenceError → 补 app-config import）；app.js 37,914→35,050 行；中文逐字节一致/无 BOM/CRLF；verify-smoke 10/11 与基线一致（.ahs 加载 88 locks、selection PASS）；引用图 devlog/in-progress/scalp-refactor-map.md
 - [x] Bug 修复批次（0.2.57，5 个，子智能体并行调研 + 主进程修复）：
   - Ctrl+Z：加载前 pushUndoState 压入空场景且加载后不清栈（撤销会回到加载前）→ 删除加载前 push + restore 后清 undo/redo；恢复路径清 branchRegionEdit + branchRegionMeshPointsGroup（选区标记不再残留）
   - 画子发片不触发桥接：branch-hierarchy/branch-root-bone 迁移残留 `xxx.deps.*` 跨模块裸引用（ReferenceError）→ 统一改 deps.*；remapEnvelopeCurveRange import from curve-math；子发片默认 Topology-Along Curve 26→6（attachDrawnLocksAsBranches 设 lock.lengthSegments=6）

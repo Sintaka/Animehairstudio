@@ -1,3 +1,4 @@
+import { createScalpBuilderApi } from "./modules/scalp/scalp-builder.js?v=20260811-1";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260809-19";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260809-18";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260809-17";
@@ -830,9 +831,9 @@ transformControls.addEventListener("dragging-changed", (event) => {
   if (transformControls.object?.userData.scalpBuilderLatticeIndex !== undefined) {
     if (event.value) {
       pushUndoState();
-      beginScalpBuilderCurveLatticeEdit(transformControls.object);
+      scalpBuilder.beginScalpBuilderCurveLatticeEdit(transformControls.object);
     } else {
-      commitScalpBuilderCurveLatticeEdit();
+      scalpBuilder.commitScalpBuilderCurveLatticeEdit();
     }
     return;
   }
@@ -887,18 +888,18 @@ transformControls.addEventListener("objectChange", () => {
     return;
   }
   if (handle.userData.scalpBuilderLatticeIndex !== undefined) {
-    updateScalpBuilderCurveLatticeFromHandle(handle);
+    scalpBuilder.updateScalpBuilderCurveLatticeFromHandle(handle);
     return;
   }
   if (handle.userData.scalpBuilderPlane) {
     const step = SCALP_BUILDER_STEPS[scalpState.state.scalpBuilderStep];
     scalpBuilderPlanePositions[scalpState.state.scalpBuilderStep] = handle.position[step.axis];
-    rebuildScalpBuilderIntersection(handle, step);
-    updateScalpBuilderPositionReadout();
+    scalpBuilder.rebuildScalpBuilderIntersection(handle, step);
+    scalpBuilder.updateScalpBuilderPositionReadout();
     return;
   }
   if (handle.userData.scalpLatticeIndex !== undefined) {
-    updateScalpLatticeFromHandle(handle);
+    scalpBuilder.updateScalpLatticeFromHandle(handle);
     return;
   }
   if (handle.userData.capsuleGuideLoopHandle) {
@@ -1409,62 +1410,19 @@ function createQuadSphereGeometry(segments = 18) {
   return { geometry, quadEdges: [...edgeMap.values()], quads };
 }
 
-async function createAuthoredScalpGeometry() {
-  const materialRegions = {
-    lambert2SG: "bangs",
-    lambert3SG: "side-bangs-right",
-    lambert4SG: "side-right",
-    lambert5SG: "back",
-    lambert6SG: "side-bangs-left",
-    lambert7SG: "side-left"
-  };
-  const response = await fetch("./assets/scalpcurvelatticeguide.obj?v=20260720-1");
-  if (!response.ok) throw new Error(`Could not load the built-in scalp guide (${response.status})`);
-  const sourceVertices = [];
-  const sourceFaces = [];
-  let material = "";
-  (await response.text()).split(/\r?\n/).forEach((line) => {
-    const parts = line.trim().split(/\s+/);
-    if (parts[0] === "v" && parts.length >= 4) {
-      sourceVertices.push(new THREE.Vector3(Number(parts[1]), Number(parts[2]), Number(parts[3])));
-    } else if (parts[0] === "usemtl") {
-      material = parts.slice(1).join(" ");
-    } else if (parts[0] === "f" && parts.length === 5) {
-      sourceFaces.push({
-        vertices: parts.slice(1).map((token) => Number(token.split("/")[0]) - 1),
-        region: materialRegions[material] || "unassigned"
-      });
-    }
-  });
-  if (!sourceVertices.length || !sourceFaces.length) throw new Error("The built-in scalp guide contains no usable quad mesh");
-  const bounds = new THREE.Box3().setFromPoints(sourceVertices);
-  const center = bounds.getCenter(new THREE.Vector3());
-  const size = bounds.getSize(new THREE.Vector3());
-  const scale = 2 / Math.max(0.0001, size.x, size.y, size.z);
-  const normalizedVertices = sourceVertices.map((vertex) => vertex.clone().sub(center).multiplyScalar(scale));
-  const edgeMap = new Map();
-  const indices = [];
-  const quads = sourceFaces.map((face, id) => {
-    const [a, b, c, d] = face.vertices;
-    indices.push(a, b, c, a, c, d);
-    [[a, b], [b, c], [c, d], [d, a]].forEach(([start, end]) => {
-      const key = start < end ? `${start}:${end}` : `${end}:${start}`;
-      if (!edgeMap.has(key)) edgeMap.set(key, [start, end]);
-    });
-    return { id, face: "authored", row: 0, column: 0, region: face.region, vertices: [a, b, c, d] };
-  });
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(normalizedVertices.flatMap((vertex) => vertex.toArray()), 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
-  return { geometry, quadEdges: [...edgeMap.values()], quads };
-}
 
 const scalpState = createScalpStore();
+const scalpBuilderDeps = {
+  // Early deps available before the first module-eval scalp call (L1467):
+  CONTROL_POINT_SELECTED_COLOR, SCALP_SEGMENTS, camera, curveGroup, guideSurfaceGroup, hairGroup,
+  renderer, scalpState: scalpState.state, sculptState: sculptState.state, strandGroupDefaults,
+  transformControls
+};
+// Remaining deps are filled in-place before the early module-eval calls and in one batch
+// after the last dep is defined (advancedLatticeButton); see devlog/in-progress/scalp-refactor-map.md.
+const scalpBuilder = createScalpBuilderApi(scalpBuilderDeps);
 try {
-  scalpState.state.defaultScalpGeometryData = await createAuthoredScalpGeometry();
+  scalpState.state.defaultScalpGeometryData = await scalpBuilder.createAuthoredScalpGeometry();
 } catch (error) {
   console.error("Could not initialize the authored scalp guide; using the legacy guide", error);
   scalpState.state.defaultScalpGeometryData = createQuadSphereGeometry(SCALP_SEGMENTS);
@@ -1479,104 +1437,17 @@ const {
 scalpState.state.scalpQuadEdges = initialScalpQuadEdges;
 scalpState.state.scalpActiveVertexIndices = [...Array(scalpSurfaceGeometry.getAttribute("position").count).keys()];
 
-function buildDefaultScalpRegionAssignments(sideBangRows = 5) {
-  const rows = THREE.MathUtils.clamp(Math.round(sideBangRows), 0, SCALP_SEGMENTS);
-  return scalpQuads.map((quad) => {
-    let region = quad.region || "unassigned";
-    if (quad.face === "front") region = "bangs";
-    else if (quad.face === "back") region = "back";
-    else if (quad.face === "left") region = "side-left";
-    else if (quad.face === "right") region = "side-right";
-    else if (quad.face === "top") region = quad.column < SCALP_SEGMENTS / 2 ? "side-left" : "side-right";
 
-    const isRightSideBang = quad.face === "right" && quad.column < rows;
-    const isLeftSideBang = quad.face === "left" && quad.column >= SCALP_SEGMENTS - rows;
-    const isTopSideBang = quad.face === "top" && quad.row < rows;
-    if (isRightSideBang || isLeftSideBang || isTopSideBang) {
-      region = isLeftSideBang || (isTopSideBang && quad.column < SCALP_SEGMENTS / 2)
-        ? "side-bangs-left"
-        : "side-bangs-right";
-    }
-    return region;
-  });
-}
-
-scalpState.state.scalpRegionAssignments = buildDefaultScalpRegionAssignments(5);
+scalpBuilderDeps.scalpQuads = scalpQuads;
+scalpBuilderDeps.scalpSurfaceGeometry = scalpSurfaceGeometry;
+scalpState.state.scalpRegionAssignments = scalpBuilder.buildDefaultScalpRegionAssignments(5);
 scalpState.state.scalpVisibleQuads = [...scalpQuads];
 const scalpRenderGeometry = new THREE.BufferGeometry();
 
-function updateScalpRenderGeometry() {
-  const sourcePosition = scalpSurfaceGeometry.getAttribute("position");
-  const sourceNormal = scalpSurfaceGeometry.getAttribute("normal");
-  const positions = new Float32Array(scalpState.state.scalpVisibleQuads.length * 12);
-  const normals = new Float32Array(scalpState.state.scalpVisibleQuads.length * 12);
-  const colors = new Float32Array(scalpState.state.scalpVisibleQuads.length * 12);
-  const indices = new Uint16Array(scalpState.state.scalpVisibleQuads.length * 6);
-  const triangleQuadIds = [];
-  const color = new THREE.Color();
 
-  scalpState.state.scalpVisibleQuads.forEach((quad, quadIndex) => {
-    color.set(SCALP_REGIONS[scalpState.state.scalpRegionAssignments[quad.id]].color);
-    quad.vertices.forEach((sourceIndex, corner) => {
-      const renderIndex = quadIndex * 4 + corner;
-      const offset = renderIndex * 3;
-      positions[offset] = sourcePosition.getX(sourceIndex);
-      positions[offset + 1] = sourcePosition.getY(sourceIndex);
-      positions[offset + 2] = sourcePosition.getZ(sourceIndex);
-      normals[offset] = sourceNormal.getX(sourceIndex);
-      normals[offset + 1] = sourceNormal.getY(sourceIndex);
-      normals[offset + 2] = sourceNormal.getZ(sourceIndex);
-      colors[offset] = color.r;
-      colors[offset + 1] = color.g;
-      colors[offset + 2] = color.b;
-    });
-    const vertex = quadIndex * 4;
-    indices.set([vertex, vertex + 1, vertex + 2, vertex, vertex + 2, vertex + 3], quadIndex * 6);
-    triangleQuadIds.push(quad.id, quad.id);
-  });
 
-  [["position", positions], ["normal", normals], ["color", colors]].forEach(([name, array]) => {
-    const attribute = scalpRenderGeometry.getAttribute(name);
-    if (attribute?.array.length === array.length) {
-      attribute.array.set(array);
-      attribute.needsUpdate = true;
-    } else {
-      scalpRenderGeometry.setAttribute(name, new THREE.BufferAttribute(array, 3));
-    }
-  });
-  const indexAttribute = scalpRenderGeometry.getIndex();
-  if (indexAttribute?.array.length === indices.length) {
-    indexAttribute.array.set(indices);
-    indexAttribute.needsUpdate = true;
-  } else {
-    scalpRenderGeometry.setIndex(new THREE.BufferAttribute(indices, 1));
-  }
-  scalpRenderGeometry.userData.triangleQuadIds = triangleQuadIds;
-  scalpRenderGeometry.computeBoundingBox();
-  scalpRenderGeometry.computeBoundingSphere();
-}
-
-function writeScalpRegionColors() {
-  const colorAttribute = scalpRenderGeometry.getAttribute("color");
-  if (!colorAttribute) return;
-  const color = new THREE.Color();
-  scalpState.state.scalpVisibleQuads.forEach((quad, quadIndex) => {
-    color.set(SCALP_REGIONS[scalpState.state.scalpRegionAssignments[quad.id]].color);
-    for (let corner = 0; corner < 4; corner += 1) {
-      colorAttribute.setXYZ(quadIndex * 4 + corner, color.r, color.g, color.b);
-    }
-  });
-  colorAttribute.needsUpdate = true;
-}
-
-function applyDefaultScalpRegionAssignments(sideBangRows, { preserveManual = true } = {}) {
-  const defaults = buildDefaultScalpRegionAssignments(sideBangRows);
-  defaults.forEach((region, index) => {
-    if (!preserveManual || !scalpState.state.scalpManualRegionQuads.has(index)) scalpState.state.scalpRegionAssignments[index] = region;
-  });
-  writeScalpRegionColors();
-}
-updateScalpRenderGeometry();
+scalpBuilderDeps.scalpRenderGeometry = scalpRenderGeometry;
+scalpBuilder.updateScalpRenderGeometry();
 const scalpSurfaceMesh = new THREE.Mesh(
   scalpRenderGeometry,
   new THREE.MeshStandardMaterial({
@@ -1599,236 +1470,22 @@ const scalpSurfaceWire = new THREE.LineSegments(
     depthWrite: false
   })
 );
-function createScalpSelectionOutline(geometry) {
-  const outline = new THREE.Mesh(
-    geometry,
-    new THREE.ShaderMaterial({
-      uniforms: {
-        outlineColor: { value: new THREE.Color(0xffd45c) },
-        outlineOpacity: { value: 0.96 }
-      },
-      vertexShader: `
-        varying vec3 vViewNormal;
-        varying vec3 vViewDirection;
-        void main() {
-          vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
-          vViewNormal = normalize(normalMatrix * normal);
-          vViewDirection = normalize(-viewPosition.xyz);
-          gl_Position = projectionMatrix * viewPosition;
-        }
-      `,
-      fragmentShader: `
-        uniform vec3 outlineColor;
-        uniform float outlineOpacity;
-        varying vec3 vViewNormal;
-        varying vec3 vViewDirection;
-        void main() {
-          float facing = abs(dot(normalize(vViewNormal), normalize(vViewDirection)));
-          float silhouette = 1.0 - smoothstep(0.035, 0.16, facing);
-          if (silhouette < 0.02) discard;
-          gl_FragColor = vec4(outlineColor, silhouette * outlineOpacity);
-        }
-      `,
-      side: THREE.DoubleSide,
-      transparent: true,
-      depthTest: false,
-      depthWrite: false
-    })
-  );
-  outline.renderOrder = 20;
-  outline.visible = false;
-  return outline;
-}
-const scalpSelectionOutline = createScalpSelectionOutline(scalpRenderGeometry);
+const scalpSelectionOutline = scalpBuilder.createScalpSelectionOutline(scalpRenderGeometry);
 
-function activeScalpSurfaceMesh() {
-  if (scalpState.state.scalpGuideSource === "custom" && scalpState.state.customScalpSurfaceMesh) return scalpState.state.customScalpSurfaceMesh;
-  return scalpState.state.editedScalpSurfaceMesh || scalpSurfaceMesh;
-}
 
-function activeScalpSurfaceWire() {
-  if (scalpState.state.scalpGuideSource === "custom" && scalpState.state.customScalpSurfaceWire) return scalpState.state.customScalpSurfaceWire;
-  return scalpState.state.editedScalpSurfaceWire || scalpSurfaceWire;
-}
 
-function activeScalpSelectionOutline() {
-  if (scalpState.state.scalpGuideSource === "custom" && scalpState.state.customScalpSelectionOutline) return scalpState.state.customScalpSelectionOutline;
-  return scalpState.state.editedScalpSelectionOutline || scalpSelectionOutline;
-}
 
-function inferredCustomScalpRegion(center) {
-  const side = center.x < 0 ? "side-left" : "side-right";
-  if (center.z > Math.abs(center.x) * 0.72) return "bangs";
-  if (center.z < -Math.abs(center.x) * 0.72) return "back";
-  return side;
-}
 
-function writeCustomScalpRegionColors() {
-  if (!scalpState.state.customScalpSurfaceMesh) return;
-  const geometry = scalpState.state.customScalpSurfaceMesh.geometry;
-  const position = geometry.getAttribute("position");
-  let colorAttribute = geometry.getAttribute("color");
-  if (!colorAttribute || colorAttribute.count !== position.count) {
-    colorAttribute = new THREE.BufferAttribute(new Float32Array(position.count * 3), 3);
-    geometry.setAttribute("color", colorAttribute);
-  }
-  const color = new THREE.Color();
-  scalpState.state.customScalpRegions.forEach((region, triangleIndex) => {
-    color.set(SCALP_REGIONS[region]?.color || SCALP_REGIONS.unassigned.color);
-    for (let corner = 0; corner < 3; corner += 1) {
-      colorAttribute.setXYZ(triangleIndex * 3 + corner, color.r, color.g, color.b);
-    }
-  });
-  colorAttribute.needsUpdate = true;
-}
 
-function customScalpGeometryFromObject(model, { normalize = true } = {}) {
-  model.updateMatrixWorld(true);
-  const geometries = [];
-  model.traverse((child) => {
-    if (!child.isMesh || !child.geometry?.getAttribute("position")) return;
-    let geometry = child.geometry.clone();
-    geometry.applyMatrix4(child.matrixWorld);
-    geometry = geometry.index ? geometry.toNonIndexed() : geometry;
-    Object.keys(geometry.attributes).forEach((name) => {
-      if (name !== "position") geometry.deleteAttribute(name);
-    });
-    geometry.clearGroups();
-    geometries.push(geometry);
-  });
-  if (!geometries.length) throw new Error("Custom scalp OBJ contains no polygon geometry");
-  const geometry = mergeGeometries(geometries, false);
-  geometries.forEach((item) => item.dispose());
-  if (!geometry) throw new Error("Custom scalp OBJ geometry could not be combined");
-  geometry.computeBoundingBox();
-  if (normalize) {
-    const center = geometry.boundingBox.getCenter(new THREE.Vector3());
-    const size = geometry.boundingBox.getSize(new THREE.Vector3());
-    const scale = 2 / Math.max(0.0001, size.x, size.y, size.z);
-    geometry.translate(-center.x, -center.y, -center.z);
-    geometry.scale(scale, scale, scale);
-  }
-  geometry.computeVertexNormals();
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
-  return geometry;
-}
 
-function customScalpWireGeometry(geometry) {
-  const quadWirePositions = geometry.userData.quadWirePositions;
-  if (!Array.isArray(quadWirePositions) || !quadWirePositions.length) {
-    return new THREE.WireframeGeometry(geometry);
-  }
-  const wireGeometry = new THREE.BufferGeometry();
-  wireGeometry.setAttribute("position", new THREE.Float32BufferAttribute(quadWirePositions, 3));
-  wireGeometry.computeBoundingSphere();
-  return wireGeometry;
-}
 
-function installCustomScalpGeometry(geometry, regions, { name = "custom-scalp.obj", content = null } = {}) {
-  scalpState.state.customScalpSurfaceMesh?.geometry.dispose();
-  scalpState.state.customScalpSurfaceWire?.geometry.dispose();
-  if (!scalpState.state.customScalpSurfaceMesh) {
-    scalpState.state.customScalpSurfaceMesh = new THREE.Mesh(geometry, scalpSurfaceMesh.material.clone());
-    scalpState.state.customScalpSurfaceMesh.renderOrder = scalpSurfaceMesh.renderOrder;
-    scalpState.state.customScalpSurfaceWire = new THREE.LineSegments(
-      customScalpWireGeometry(geometry),
-      scalpSurfaceWire.material.clone()
-    );
-    scalpState.state.customScalpSurfaceWire.renderOrder = scalpSurfaceWire.renderOrder;
-    scalpState.state.customScalpSelectionOutline = createScalpSelectionOutline(geometry);
-    scalpSurfaceGroup.add(scalpState.state.customScalpSurfaceMesh, scalpState.state.customScalpSurfaceWire, scalpState.state.customScalpSelectionOutline);
-  } else {
-    scalpState.state.customScalpSurfaceMesh.geometry = geometry;
-    scalpState.state.customScalpSurfaceWire.geometry = customScalpWireGeometry(geometry);
-    scalpState.state.customScalpSelectionOutline.geometry = geometry;
-  }
-  scalpState.state.customScalpRegions = [...regions];
-  writeCustomScalpRegionColors();
-  scalpState.state.importedScalpGuideAsset = content === null ? importedScalpGuideAsset : { format: "obj", name, content };
-  setScalpGuideSource("custom");
-}
 
-function installCustomScalpGuide(model, { name = "custom-scalp.obj", content = null, preserveCoordinates = false, quadWirePositions = null } = {}) {
-  const geometry = customScalpGeometryFromObject(model, { normalize: !preserveCoordinates });
-  if (Array.isArray(quadWirePositions)) geometry.userData.quadWirePositions = [...quadWirePositions];
-  const position = geometry.getAttribute("position");
-  const center = new THREE.Vector3();
-  const regions = Array.from({ length: position.count / 3 }, (_, triangleIndex) => {
-    center.set(0, 0, 0);
-    for (let corner = 0; corner < 3; corner += 1) {
-      center.x += position.getX(triangleIndex * 3 + corner);
-      center.y += position.getY(triangleIndex * 3 + corner);
-      center.z += position.getZ(triangleIndex * 3 + corner);
-    }
-    return inferredCustomScalpRegion(center.multiplyScalar(1 / 3));
-  });
-  installCustomScalpGeometry(geometry, regions, { name, content });
-  if (preserveCoordinates && scalpState.state.importedScalpGuideAsset) scalpState.state.importedScalpGuideAsset.preserveCoordinates = true;
-}
 
-function setScalpGuideSource(source) {
-  scalpState.state.scalpGuideSource = source === "custom" && scalpState.state.customScalpSurfaceMesh ? "custom" : "default";
-  scalpGuideSourceInput.value = scalpState.state.scalpGuideSource;
-  const customOption = scalpGuideSourceInput.querySelector('option[value="custom"]');
-  customOption.textContent = scalpState.state.importedScalpGuideAsset
-    ? `Custom: ${scalpState.state.importedScalpGuideAsset.name}`
-    : "Import Custom Mesh...";
-  const customActive = scalpState.state.scalpGuideSource === "custom";
-  Object.entries(scalpArtistInputs).forEach(([key, input]) => {
-    input.disabled = customActive && key !== "rootScalpOffset";
-  });
-  advancedLatticeButton.disabled = customActive;
-  if (customActive && scalpState.state.scalpLatticeEditing) setScalpLatticeEditing(false);
-  updateScalpEditingVisibility();
-}
 
-function updateScalpQuadWire() {
-  const surfacePosition = scalpSurfaceGeometry.getAttribute("position");
-  const wirePositions = new Float32Array(scalpState.state.scalpQuadEdges.length * 6);
-  scalpState.state.scalpQuadEdges.forEach(([a, b], edgeIndex) => {
-    const offset = edgeIndex * 6;
-    wirePositions[offset] = surfacePosition.getX(a);
-    wirePositions[offset + 1] = surfacePosition.getY(a);
-    wirePositions[offset + 2] = surfacePosition.getZ(a);
-    wirePositions[offset + 3] = surfacePosition.getX(b);
-    wirePositions[offset + 4] = surfacePosition.getY(b);
-    wirePositions[offset + 5] = surfacePosition.getZ(b);
-  });
-  scalpSurfaceWire.geometry.setAttribute("position", new THREE.BufferAttribute(wirePositions, 3));
-  scalpSurfaceWire.geometry.computeBoundingSphere();
-}
 
-function updateScalpTopology() {
-  const removedRows = Math.round(scalpArtistShape.hairlineRows);
-  const visibleQuads = scalpQuads.filter((quad) => quad.face !== "front" || quad.row >= removedRows);
-  const indices = [];
-  const edges = new Map();
-  const activeVertices = new Set();
-  visibleQuads.forEach((quad) => {
-    const [a, b, c, d] = quad.vertices;
-    indices.push(a, b, c, a, c, d);
-    activeVertices.add(a);
-    activeVertices.add(b);
-    activeVertices.add(c);
-    activeVertices.add(d);
-    [[a, b], [b, c], [c, d], [d, a]].forEach(([start, end]) => {
-      const key = start < end ? `${start}:${end}` : `${end}:${start}`;
-      if (!edges.has(key)) edges.set(key, [start, end]);
-    });
-  });
-  scalpSurfaceGeometry.setIndex(indices);
-  scalpState.state.scalpQuadEdges = [...edges.values()];
-  scalpState.state.scalpVisibleQuads = visibleQuads;
-  scalpState.state.scalpActiveVertexIndices = [...activeVertices];
-  scalpSurfaceGeometry.computeVertexNormals();
-  scalpSurfaceGeometry.computeBoundingBox();
-  scalpSurfaceGeometry.computeBoundingSphere();
-  updateScalpRenderGeometry();
-  updateScalpQuadWire();
-}
 
-updateScalpQuadWire();
+scalpBuilderDeps.scalpSurfaceWire = scalpSurfaceWire;
+scalpBuilder.updateScalpQuadWire();
 scalpSurfaceMesh.renderOrder = 1;
 scalpSurfaceWire.renderOrder = 2;
 scalpSurfaceGroup.add(scalpSurfaceMesh, scalpSurfaceWire, scalpSelectionOutline);
@@ -3047,7 +2704,15 @@ const scalpArtistShape = {
   bottomDepth: 1.02
 };
 const advancedLatticeButton = document.querySelector("#toggleAdvancedLattice");
-createScalpLattice();
+scalpBuilderDeps.scalpLatticeGroup = scalpLatticeGroup;
+scalpBuilderDeps.scalpLatticeLine = scalpLatticeLine;
+scalpBuilderDeps.scalpBasePositions = scalpBasePositions;
+scalpBuilderDeps.scalpLatticePoints = scalpLatticePoints;
+scalpBuilderDeps.scalpLatticeHandles = scalpLatticeHandles;
+scalpBuilderDeps.scalpLatticeConnections = scalpLatticeConnections;
+scalpBuilderDeps.scalpSurfaceGroup = scalpSurfaceGroup;
+scalpBuilderDeps.scalpArtistShape = scalpArtistShape;
+scalpBuilder.createScalpLattice();
 const modeToolButtons = toolButtons.filter((button) => button.dataset.tool);
 const proceduralDrawToolButton = document.querySelector('[data-tool="procedural-draw"]');
 const RETIRED_CURVE_LATTICE_SURFACE_TOOLS = new Set(["surface", "surface-loft"]);
@@ -3107,19 +2772,6 @@ function guideHeadBounds(model) {
   return box.isEmpty() ? new THREE.Box3().setFromObject(model) : box;
 }
 
-function fullBodyScalpFocusBounds() {
-  scalpSurfaceGroup.updateMatrixWorld(true);
-  const bounds = new THREE.Box3().setFromObject(activeScalpSurfaceMesh());
-  if (bounds.isEmpty()) return null;
-  const size = bounds.getSize(new THREE.Vector3());
-  bounds.min.y -= FULL_BODY_FRAME_BOTTOM_MARGIN;
-  bounds.max.y += size.y * 0.08;
-  bounds.min.x -= size.x * 0.08;
-  bounds.max.x += size.x * 0.08;
-  bounds.min.z -= size.z * 0.08;
-  bounds.max.z += size.z * 0.08;
-  return bounds;
-}
 
 function disposeGuideModel(model) {
   if (!model) return;
@@ -3157,28 +2809,7 @@ function applyHeadTransform() {
   guideState.state.guideModel.updateMatrixWorld(true);
 }
 
-function syncScalpRoughScaleInputs() {
-  scalpRoughScaleInputs.forEach((input) => {
-    input.value = String(scalpRoughScale[input.dataset.scalpRoughScaleAxis]);
-  });
-  scalpRoughScaleValues.forEach((output) => {
-    output.textContent = Number(scalpRoughScale[output.dataset.scalpRoughScaleValue]).toFixed(2);
-  });
-}
 
-function applyScalpRoughScale() {
-  const { x, y, z } = scalpRoughScale;
-  scalpBuilderGroup.scale.set(x, y, z);
-  scalpBuilderGroup.position.set(
-    scalpRoughScalePivot.x * (1 - x),
-    scalpRoughScalePivot.y * (1 - y),
-    scalpRoughScalePivot.z * (1 - z)
-  );
-  scalpBuilderGroup.updateMatrixWorld(true);
-  if (scalpState.state.scalpBuilderCurveLattice?.lastSubdivided) {
-    syncEditedScalpSurface(scalpState.state.scalpBuilderCurveLattice.lastSubdivided);
-  }
-}
 
 function resetHeadTransform() {
   Object.assign(headTransform, {
@@ -3194,21 +2825,6 @@ function resetHeadTransform() {
   applyHeadTransform();
 }
 
-function realignFullBodyGuideToScalpTop() {
-  if (!guideState.state.guideModel?.userData?.fullBodyReference) return;
-  const sourceHeight = Number(guideState.state.guideModel.userData.sourceHeight);
-  const baseScale = Number(guideState.state.guideModel.userData.baseScale);
-  if (!Number.isFinite(sourceHeight) || !Number.isFinite(baseScale)) return;
-  scalpSurfaceGroup.updateMatrixWorld(true);
-  const scalpBounds = new THREE.Box3().setFromObject(activeScalpSurfaceMesh());
-  const scalpCenter = scalpBounds.getCenter(new THREE.Vector3());
-  guideState.state.guideModel.userData.fittedCenter.set(
-    scalpCenter.x,
-    scalpBounds.max.y - (sourceHeight * baseScale * 0.5),
-    scalpCenter.z
-  );
-  applyHeadTransform();
-}
 
 function installGuideModel(obj, options = {}) {
   const { normalize = false, frame = true, fullBody = false } = options;
@@ -3223,7 +2839,7 @@ function installGuideModel(obj, options = {}) {
   const fittedCenter = new THREE.Vector3(0, 0.05, 0);
   if (fullBody) {
     scalpSurfaceGroup.updateMatrixWorld(true);
-    const scalpBounds = new THREE.Box3().setFromObject(activeScalpSurfaceMesh());
+    const scalpBounds = new THREE.Box3().setFromObject(scalpBuilder.activeScalpSurfaceMesh());
     const scalpCenter = scalpBounds.getCenter(new THREE.Vector3());
     fittedCenter.set(
       scalpCenter.x,
@@ -3294,7 +2910,7 @@ function loadDefaultGuideModel(options = {}) {
         obj.updateMatrixWorld(true);
         scalpState.state.authoredScalpGuideMatrix = obj.matrixWorld.clone();
         head.state.importedHeadAsset = null;
-        ensureEditedScalpSurface().catch((error) => {
+        scalpBuilder.ensureEditedScalpSurface().catch((error) => {
           console.error("Could not initialize the live authored scalp surface", error);
         });
         resolve(obj);
@@ -3536,7 +3152,7 @@ function frameGuideModel({
   fullBody = Boolean(guideState.state.guideModel?.userData?.fullBodyReference)
 } = {}) {
   if (fullBody) {
-    frameViewportBounds(fullBodyScalpFocusBounds());
+    frameViewportBounds(scalpBuilder.fullBodyScalpFocusBounds());
     return;
   }
   ui.state.shiftSnappedViewActive = false;
@@ -3555,40 +3171,9 @@ function frameGuideModel({
   camera.updateProjectionMatrix();
 }
 
-function syncScalpInputs() {
-  Object.entries(scalpInputs).forEach(([key, input]) => {
-    input.value = scalpSurface[key];
-  });
-}
 
-function syncScalpArtistInputs() {
-  scalpArtistInputs.mirrorX.checked = scalpArtistShape.mirrorX;
-  ["sideFlatten", "topHeight", "bottomHeight", "hairlineRows", "sideBangRows", "rootScalpOffset", "topWidth", "topDepth", "middleWidth", "middleDepth", "bottomWidth", "bottomDepth"].forEach((key) => {
-    scalpArtistInputs[key].value = scalpArtistShape[key];
-  });
-  document.querySelector("#scalpRootOffsetValue").textContent = Number(scalpArtistShape.rootScalpOffset).toFixed(2);
-}
 
-function rootScalpOffsetDistance(localOffset = 0) {
-  const combinedOffset = Number(scalpArtistShape.rootScalpOffset) + Number(localOffset || 0);
-  return THREE.MathUtils.clamp(combinedOffset, -1, 1) * ROOT_SCALP_OFFSET_DISTANCE;
-}
 
-function applyLockRootScalpOffset(lock) {
-  if (!lock?.rootSurfacePoint || !lock?.rootSurfaceNormal || !lock.points?.length) return;
-  const previousRoot = lock.points[0].clone();
-  lock.points[0].copy(lock.rootSurfacePoint).addScaledVector(
-    lock.rootSurfaceNormal,
-    rootScalpOffsetDistance(lock.rootScalpOffset) + layerOffsetForLock(lock) * layerRootOffsetFactor(lock.hairLayer)
-  );
-  const rootDelta = lock.points[0].clone().sub(previousRoot);
-  if (rootDelta.lengthSq() > 0.0000001) {
-    lock.clumpRestPoints?.[0]?.add(rootDelta);
-    lock.clumpGuideRestPoints?.[0]?.add(rootDelta);
-  }
-  lock.placementFrame?.root.copy(lock.points[0]);
-  syncLockFromCurve(lock);
-}
 
 function normalizeHairLayer(layerId) {
   return HAIR_LAYERS.some((layer) => layer.id === layerId) ? layerId : DEFAULT_HAIR_LAYER;
@@ -3668,7 +3253,7 @@ function setLockHairLayer(lock, layerId) {
   targets.forEach((item) => {
     item.hairLayer = normalizeHairLayer(layerId);
     applyLayerOffset(item);
-    applyLockRootScalpOffset(item);
+    scalpBuilder.applyLockRootScalpOffset(item);
     updateLockGeometry(item);
   });
   miscState.state.clumpUpdateInProgress = false;
@@ -3682,379 +3267,38 @@ function setGroupLayerOffset(region, layerId, offset) {
   locks.forEach((lock) => {
     if ((lock.scalpRegion || "unassigned") !== region || normalizeHairLayer(lock.hairLayer) !== layerId) return;
     applyLayerOffset(lock, defaults.layerOffsets[layerId]);
-    applyLockRootScalpOffset(lock);
+    scalpBuilder.applyLockRootScalpOffset(lock);
     updateLockGeometry(lock);
   });
   renderLockList();
 }
 
-function scalpArtistWeight(y) {
-  return THREE.MathUtils.smoothstep(Math.min(1, Math.abs(y)), 0, 1);
-}
 
-function scalpArtistScalesAt(y) {
-  const weight = scalpArtistWeight(y);
-  const widthTarget = y >= 0 ? scalpArtistShape.topWidth : scalpArtistShape.bottomWidth;
-  const depthTarget = y >= 0 ? scalpArtistShape.topDepth : scalpArtistShape.bottomDepth;
-  return {
-    width: THREE.MathUtils.lerp(scalpArtistShape.middleWidth, widthTarget, weight),
-    depth: THREE.MathUtils.lerp(scalpArtistShape.middleDepth, depthTarget, weight)
-  };
-}
 
-function applyScalpArtistShape(point) {
-  const sideFace = Math.abs(point.x) >= Math.abs(point.y) && Math.abs(point.x) >= Math.abs(point.z);
-  const weight = scalpArtistWeight(point.y);
-  const height = point.y >= 0 ? scalpArtistShape.topHeight : scalpArtistShape.bottomHeight;
-  const regionScale = scalpArtistScalesAt(point.y);
-  point.y *= THREE.MathUtils.lerp(1, height, weight);
-  point.x *= regionScale.width;
-  point.z *= regionScale.depth;
 
-  const sign = Math.sign(point.x);
-  if (sideFace && sign && scalpArtistShape.sideFlatten > 0) {
-    const sidePlane = regionScale.width / Math.sqrt(2);
-    const inwardTarget = sign * Math.min(Math.abs(point.x), sidePlane);
-    point.x = THREE.MathUtils.lerp(point.x, inwardTarget, scalpArtistShape.sideFlatten);
-  }
-  return point;
-}
 
-function inverseScalpArtistShape(point) {
-  const ySign = Math.sign(point.y) || 1;
-  const targetY = Math.abs(point.y);
-  let lowY = 0;
-  let highY = 2.5;
-  for (let step = 0; step < 14; step += 1) {
-    const candidate = (lowY + highY) * 0.5;
-    const transformedY = Math.abs(applyScalpArtistShape(new THREE.Vector3(0, candidate * ySign, 0)).y);
-    if (transformedY < targetY) lowY = candidate;
-    else highY = candidate;
-  }
-  const baseY = (lowY + highY) * 0.5 * ySign;
-  const regionScale = scalpArtistScalesAt(baseY);
-  const xSign = Math.sign(point.x) || 1;
-  const targetX = Math.abs(point.x);
-  let lowX = 0;
-  let highX = 2.5;
-  for (let step = 0; step < 14; step += 1) {
-    const candidate = (lowX + highX) * 0.5;
-    const transformedX = Math.abs(applyScalpArtistShape(new THREE.Vector3(candidate * xSign, baseY, 0)).x);
-    if (transformedX < targetX) lowX = candidate;
-    else highX = candidate;
-  }
-  point.set((lowX + highX) * 0.5 * xSign, baseY, point.z / Math.max(0.001, regionScale.depth));
-  return point;
-}
 
-function updateScalpSurface() {
-  scalpSurfaceGroup.position.set(scalpSurface.x, scalpSurface.y, scalpSurface.z);
-  scalpSurfaceGroup.scale.set(
-    scalpSurface.radius * scalpSurface.scaleX,
-    scalpSurface.radius * scalpSurface.scaleY,
-    scalpSurface.radius * scalpSurface.scaleZ
-  );
-  updateScalpLatticeObjects();
-}
 
-function setActiveScalpRegion(region) {
-  if (!SCALP_REGIONS[region]) return;
-  scalpState.state.activeScalpRegion = region;
-  scalpRegionButtons.forEach((button) => {
-    const active = button.dataset.scalpRegion === region;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-pressed", String(active));
-  });
-  scalpBrushCursor.material.color.set(SCALP_REGIONS[region].color);
-  updatePlacementStatus();
-}
 
-function clearScalpRegions({ saveUndo = true } = {}) {
-  if (saveUndo) pushUndoState();
-  if (scalpState.state.editedScalpSurfaceMesh && scalpState.state.scalpGuideSource !== "custom") {
-    scalpState.state.editedScalpRegions.fill("unassigned");
-    writeEditedScalpRegionColors();
-    return;
-  }
-  if (scalpState.state.scalpGuideSource === "custom" && scalpState.state.customScalpSurfaceMesh) {
-    scalpState.state.customScalpRegions.fill("unassigned");
-    writeCustomScalpRegionColors();
-    return;
-  }
-  scalpState.state.scalpRegionAssignments.fill("unassigned");
-  scalpState.state.scalpManualRegionQuads = new Set(scalpState.state.scalpRegionAssignments.keys());
-  writeScalpRegionColors();
-}
 
-function scalpHitFromEvent(event) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  return raycaster.intersectObject(activeScalpSurfaceMesh(), false)[0];
-}
 
-function updateScalpBrushCursor(hit) {
-  if (!scalpState.state.scalpPaintEditing || !hit) {
-    scalpBrushCursor.visible = false;
-    return;
-  }
-  const normalMatrix = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
-  const normal = hit.face.normal.clone().applyMatrix3(normalMatrix).normalize();
-  const size = Number(scalpBrushSizeInput.value);
-  const averageScale = (scalpSurfaceGroup.scale.x + scalpSurfaceGroup.scale.y + scalpSurfaceGroup.scale.z) / 3;
-  scalpBrushCursor.position.copy(hit.point).addScaledVector(normal, 0.012);
-  scalpBrushCursor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
-  scalpBrushCursor.scale.setScalar(size * averageScale);
-  scalpBrushCursor.visible = true;
-}
 
-function paintScalpAt(hit) {
-  if (!hit) return;
-  const center = scalpSurfaceGroup.worldToLocal(hit.point.clone());
-  const radius = Number(scalpBrushSizeInput.value);
-  if (hit.object === scalpState.state.customScalpSurfaceMesh || hit.object === scalpState.state.editedScalpSurfaceMesh) {
-    const editingAuthoredScalp = hit.object === scalpState.state.editedScalpSurfaceMesh;
-    const targetMesh = editingAuthoredScalp ? editedScalpSurfaceMesh : scalpState.state.customScalpSurfaceMesh;
-    const targetRegions = editingAuthoredScalp ? editedScalpRegions : scalpState.state.customScalpRegions;
-    const position = targetMesh.geometry.getAttribute("position");
-    const triangleCenter = new THREE.Vector3();
-    let nearestTriangle = hit.faceIndex ?? 0;
-    let nearestDistance = Infinity;
-    let painted = false;
-    for (let triangleIndex = 0; triangleIndex < position.count / 3; triangleIndex += 1) {
-      triangleCenter.set(0, 0, 0);
-      for (let corner = 0; corner < 3; corner += 1) {
-        const index = triangleIndex * 3 + corner;
-        triangleCenter.x += position.getX(index);
-        triangleCenter.y += position.getY(index);
-        triangleCenter.z += position.getZ(index);
-      }
-      triangleCenter.multiplyScalar(1 / 3);
-      const distance = triangleCenter.distanceTo(center);
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        nearestTriangle = triangleIndex;
-      }
-      if (distance > radius) continue;
-      targetRegions[triangleIndex] = scalpState.state.activeScalpRegion;
-      painted = true;
-    }
-    if (!painted) targetRegions[nearestTriangle] = scalpState.state.activeScalpRegion;
-    if (editingAuthoredScalp) writeEditedScalpRegionColors();
-    else writeCustomScalpRegionColors();
-    return;
-  }
-  const position = scalpSurfaceGeometry.getAttribute("position");
-  const quadCenter = new THREE.Vector3();
-  const vertex = new THREE.Vector3();
-  const hitQuadId = scalpRenderGeometry.userData.triangleQuadIds?.[hit.faceIndex];
-  let nearestQuadId = hitQuadId ?? scalpState.state.scalpVisibleQuads[0]?.id ?? 0;
-  let nearestDistance = Infinity;
-  let painted = false;
-  for (const quad of scalpState.state.scalpVisibleQuads) {
-    quadCenter.set(0, 0, 0);
-    quad.vertices.forEach((index) => {
-      vertex.fromBufferAttribute(position, index);
-      quadCenter.add(vertex);
-    });
-    quadCenter.multiplyScalar(0.25);
-    const distance = quadCenter.distanceTo(center);
-    if (distance < nearestDistance) {
-      nearestDistance = distance;
-      nearestQuadId = quad.id;
-    }
-    if (distance > radius) continue;
-    scalpState.state.scalpRegionAssignments[quad.id] = scalpState.state.activeScalpRegion;
-    scalpState.state.scalpManualRegionQuads.add(quad.id);
-    painted = true;
-  }
-  if (!painted) {
-    scalpState.state.scalpRegionAssignments[nearestQuadId] = scalpState.state.activeScalpRegion;
-    scalpState.state.scalpManualRegionQuads.add(nearestQuadId);
-  }
-  writeScalpRegionColors();
-}
 
-function beginScalpPaint(event, hit) {
-  pushUndoState();
-  scalpState.state.scalpPaintDrag = { pointerId: event.pointerId };
-  renderer.domElement.setPointerCapture?.(event.pointerId);
-  paintScalpAt(hit);
-  updateScalpBrushCursor(hit);
-  updateInteractionLocks();
-}
 
-function updateScalpPaint(event) {
-  if (!scalpState.state.scalpPaintEditing) return;
-  const hit = scalpHitFromEvent(event);
-  updateScalpBrushCursor(hit);
-  if (!scalpState.state.scalpPaintDrag || scalpState.state.scalpPaintDrag.pointerId !== event.pointerId || !hit) return;
-  paintScalpAt(hit);
-  event.preventDefault();
-}
 
-function endScalpPaint(event) {
-  if (!scalpState.state.scalpPaintDrag || (event?.pointerId !== undefined && scalpState.state.scalpPaintDrag.pointerId !== event.pointerId)) return;
-  if (event && renderer.domElement.hasPointerCapture?.(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
-  scalpState.state.scalpPaintDrag = null;
-  updateInteractionLocks();
-}
 
-function createScalpLattice() {
-  const values = [-1, 0, 1];
-  for (let z = 0; z < 3; z += 1) {
-    for (let y = 0; y < 3; y += 1) {
-      for (let x = 0; x < 3; x += 1) {
-        const index = x + y * 3 + z * 9;
-        const point = new THREE.Vector3(values[x], values[y], values[z]);
-        const handle = new THREE.Mesh(
-          new THREE.SphereGeometry(0.045, 14, 10),
-          new THREE.MeshBasicMaterial({ color: 0x58f6ff, transparent: true, opacity: 0.82, depthTest: false })
-        );
-        handle.userData.scalpLatticeIndex = index;
-        handle.renderOrder = 8;
-        scalpLatticePoints.push(point);
-        scalpLatticeHandles.push(handle);
-        scalpLatticeGroup.add(handle);
-        if (x < 2) scalpLatticeConnections.push([index, index + 1]);
-        if (y < 2) scalpLatticeConnections.push([index, index + 3]);
-        if (z < 2) scalpLatticeConnections.push([index, index + 9]);
-      }
-    }
-  }
-  updateScalpLatticeObjects();
-}
 
-function resetScalpLattice() {
-  const values = [-1, 0, 1];
-  scalpLatticePoints.forEach((point, index) => {
-    const x = index % 3;
-    const y = Math.floor(index / 3) % 3;
-    const z = Math.floor(index / 9);
-    point.set(values[x], values[y], values[z]);
-  });
-  applyScalpLatticeDeformation();
-  updateScalpLatticeObjects();
-}
-
-function updateScalpLatticeObjects() {
-  scalpSurfaceGroup.updateMatrixWorld(true);
-  scalpLatticeHandles.forEach((handle, index) => {
-    const shapedPoint = applyScalpArtistShape(scalpLatticePoints[index].clone());
-    handle.position.copy(scalpSurfaceGroup.localToWorld(shapedPoint));
-  });
-  const positions = [];
-  scalpLatticeConnections.forEach(([a, b]) => {
-    positions.push(...scalpLatticeHandles[a].position.toArray(), ...scalpLatticeHandles[b].position.toArray());
-  });
-  scalpLatticeLine.geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  scalpLatticeLine.geometry.computeBoundingSphere();
-}
 
 function quadraticWeights(t) {
   const inverse = 1 - t;
   return [inverse * inverse, 2 * inverse * t, t * t];
 }
 
-function applyScalpLatticeDeformation() {
-  const position = scalpSurfaceGeometry.getAttribute("position");
-  const deformed = new THREE.Vector3();
-  for (let vertex = 0; vertex < position.count; vertex += 1) {
-    const offset = vertex * 3;
-    const wx = quadraticWeights(THREE.MathUtils.clamp((scalpBasePositions[offset] + 1) * 0.5, 0, 1));
-    const wy = quadraticWeights(THREE.MathUtils.clamp((scalpBasePositions[offset + 1] + 1) * 0.5, 0, 1));
-    const wz = quadraticWeights(THREE.MathUtils.clamp((scalpBasePositions[offset + 2] + 1) * 0.5, 0, 1));
-    deformed.set(0, 0, 0);
-    for (let z = 0; z < 3; z += 1) {
-      for (let y = 0; y < 3; y += 1) {
-        for (let x = 0; x < 3; x += 1) {
-          deformed.addScaledVector(scalpLatticePoints[x + y * 3 + z * 9], wx[x] * wy[y] * wz[z]);
-        }
-      }
-    }
-    applyScalpArtistShape(deformed);
-    position.setXYZ(vertex, deformed.x, deformed.y, deformed.z);
-  }
-  position.needsUpdate = true;
-  scalpSurfaceGeometry.computeVertexNormals();
-  scalpSurfaceGeometry.computeBoundingBox();
-  scalpSurfaceGeometry.computeBoundingSphere();
-  updateScalpRenderGeometry();
-  updateScalpQuadWire();
-}
 
-function updateScalpLatticeFromHandle(handle) {
-  const index = handle.userData.scalpLatticeIndex;
-  const localPoint = inverseScalpArtistShape(scalpSurfaceGroup.worldToLocal(handle.position.clone()));
-  const xIndex = index % 3;
-  if (scalpArtistShape.mirrorX && xIndex === 1) localPoint.x = 0;
-  scalpLatticePoints[index].copy(localPoint);
-  if (scalpArtistShape.mirrorX && xIndex !== 1) {
-    const mirrorIndex = (2 - xIndex) + Math.floor(index / 3) % 3 * 3 + Math.floor(index / 9) * 9;
-    scalpLatticePoints[mirrorIndex].copy(localPoint);
-    scalpLatticePoints[mirrorIndex].x *= -1;
-  }
-  applyScalpLatticeDeformation();
-  updateScalpLatticeObjects();
-}
 
-function selectScalpLatticePoint(index) {
-  scalpState.state.selectedScalpLatticeIndex = index;
-  scalpLatticeHandles.forEach((handle, handleIndex) => {
-    handle.material.color.set(handleIndex === index ? CONTROL_POINT_SELECTED_COLOR : 0x58f6ff);
-    handle.material.opacity = handleIndex === index ? 1 : 0.64;
-  });
-  transformControls.detach();
-  transformControls.setMode("translate");
-  transformControls.setSpace("world");
-  transformControls.showX = true;
-  transformControls.showY = true;
-  transformControls.showZ = true;
-  transformControls.attach(scalpLatticeHandles[index]);
-}
 
-function beginScalpLatticeDrag(handle, event) {
-  const plane = new THREE.Plane();
-  const cameraDirection = camera.getWorldDirection(new THREE.Vector3());
-  plane.setFromNormalAndCoplanarPoint(cameraDirection, handle.position);
-  const intersection = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
-  if (!intersection) return;
-  scalpState.state.scalpLatticeDrag = {
-    handle,
-    plane,
-    startIntersection: intersection,
-    startPosition: handle.position.clone(),
-    startX: event.clientX,
-    startY: event.clientY,
-    undoCaptured: false
-  };
-  updateInteractionLocks();
-}
 
-function updateScalpLatticeDrag(event) {
-  if (!scalpState.state.scalpLatticeDrag) return;
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  const intersection = raycaster.ray.intersectPlane(scalpState.state.scalpLatticeDrag.plane, new THREE.Vector3());
-  if (!intersection) return;
-  const moved = Math.hypot(event.clientX - scalpState.state.scalpLatticeDrag.startX, event.clientY - scalpState.state.scalpLatticeDrag.startY);
-  if (moved > 2 && !scalpState.state.scalpLatticeDrag.undoCaptured) {
-    pushUndoState();
-    scalpState.state.scalpLatticeDrag.undoCaptured = true;
-  }
-  scalpState.state.scalpLatticeDrag.handle.position.copy(scalpState.state.scalpLatticeDrag.startPosition).add(intersection.sub(scalpState.state.scalpLatticeDrag.startIntersection));
-  updateScalpLatticeFromHandle(scalpState.state.scalpLatticeDrag.handle);
-  event.preventDefault();
-}
 
-function endScalpLatticeDrag() {
-  if (!scalpState.state.scalpLatticeDrag) return;
-  scalpState.state.scalpLatticeDrag = null;
-  updateInteractionLocks();
-}
 
 function setHeadReferenceTransparency(enabled, opacity = 0.76) {
   guideState.state.guideModel?.traverse((child) => {
@@ -4066,31 +3310,7 @@ function setHeadReferenceTransparency(enabled, opacity = 0.76) {
   });
 }
 
-function disposeScalpBuilderVisuals() {
-  scalpState.state.scalpBuilderCurveLatticeLoadToken += 1;
-  if (
-    transformControls.object?.userData.scalpBuilderPlane
-    || transformControls.object?.userData.scalpBuilderLatticeIndex !== undefined
-  ) transformControls.detach();
-  while (scalpBuilderGroup.children.length) {
-    const child = scalpBuilderGroup.children.pop();
-    child.traverse((item) => {
-      item.geometry?.dispose();
-      if (Array.isArray(item.material)) item.material.forEach((material) => material.dispose());
-      else item.material?.dispose();
-    });
-  }
-  scalpState.state.scalpBuilderPlane = null;
-  scalpState.state.scalpBuilderCurveLattice = null;
-}
 
-function updateScalpBuilderPositionReadout() {
-  const step = SCALP_BUILDER_STEPS[scalpState.state.scalpBuilderStep];
-  const position = step
-    ? scalpState.state.scalpBuilderPlane?.position[step.axis] ?? scalpBuilderPlanePositions[scalpState.state.scalpBuilderStep] ?? 0
-    : 0;
-  scalpBuilderPositionOutput.textContent = Number(position).toFixed(2);
-}
 
 function trianglePlaneIntersections(a, b, c, axis, planePosition) {
   const points = [];
@@ -4116,7 +3336,7 @@ function trianglePlaneIntersections(a, b, c, axis, planePosition) {
 function headPlaneIntersectionSegments(axis, planePosition) {
   const segments = [];
   const triangle = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
-  const intersectionMeshes = scalpBuilderHeadMeshes();
+  const intersectionMeshes = scalpBuilder.scalpBuilderHeadMeshes();
   intersectionMeshes.forEach((mesh) => {
     const geometry = mesh.geometry;
     const position = geometry?.getAttribute("position");
@@ -4139,120 +3359,11 @@ function headPlaneIntersectionSegments(axis, planePosition) {
   return segments;
 }
 
-function scalpBuilderHeadMeshes() {
-  const availableMeshes = headMeshes().filter((mesh) => !GUIDE_BOUNDS_EXCLUDED_GROUPS.has(mesh.name));
-  const namedHeadMeshes = availableMeshes.filter((mesh) => /face_retopo_geo/i.test(mesh.name));
-  return namedHeadMeshes.length
-    ? namedHeadMeshes
-    : availableMeshes.slice().sort((a, b) => (
-      (b.geometry?.getAttribute("position")?.count || 0) - (a.geometry?.getAttribute("position")?.count || 0)
-    )).slice(0, 1);
-}
 
-function scalpBuilderIntersectionPositions(group, step) {
-  const positions = [];
-  group.updateMatrixWorld(true);
-  headPlaneIntersectionSegments(step.axis, group.position[step.axis]).forEach((segment) => {
-    segment.forEach((point) => {
-      const local = group.worldToLocal(point.clone());
-      positions.push(local.x, local.y, local.z);
-    });
-  });
-  return positions;
-}
 
-function rebuildScalpBuilderIntersection(group, step) {
-  const oldLine = group.children.find((child) => child.userData.scalpBuilderIntersection);
-  oldLine?.geometry.dispose();
-  oldLine?.material.dispose();
-  oldLine?.removeFromParent();
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(
-    scalpBuilderIntersectionPositions(group, step), 3
-  ));
-  const line = new THREE.LineSegments(
-    geometry,
-    new THREE.LineBasicMaterial({
-      color: step.color,
-      transparent: true,
-      opacity: group.userData.scalpBuilderPlane ? 0.95 : 0.2,
-      depthTest: true,
-      depthWrite: false
-    })
-  );
-  line.userData.scalpBuilderIntersection = true;
-  line.renderOrder = 20;
-  group.add(line);
-}
 
-function createScalpBuilderPlaneVisual(position, stepIndex, active = false) {
-  const step = SCALP_BUILDER_STEPS[stepIndex];
-  const bounds = guideHeadBounds(guideState.state.guideModel);
-  const center = bounds.getCenter(new THREE.Vector3());
-  const group = new THREE.Group();
-  group.userData.scalpBuilderCalibrationPlane = true;
-  group.userData.scalpBuilderPlane = active;
-  group.userData.scalpBuilderAxis = step.axis;
-  group.position.copy(center);
-  group.position[step.axis] = position;
-  scalpBuilderGroup.add(group);
-  rebuildScalpBuilderIntersection(group, step);
-  return group;
-}
 
-function createScalpBuilderPlanes() {
-  disposeScalpBuilderVisuals();
-  if (!guideState.state.guideModel) return;
-  const bounds = guideHeadBounds(guideState.state.guideModel);
-  const size = bounds.getSize(new THREE.Vector3());
-  for (let index = 0; index < Math.min(scalpState.state.scalpBuilderStep, SCALP_BUILDER_STEPS.length); index += 1) {
-    if (Number.isFinite(scalpBuilderPlanePositions[index])) {
-      createScalpBuilderPlaneVisual(scalpBuilderPlanePositions[index], index, false);
-    }
-  }
-  if (scalpState.state.scalpBuilderStep < SCALP_BUILDER_STEPS.length) {
-    const step = SCALP_BUILDER_STEPS[scalpState.state.scalpBuilderStep];
-    if (!Number.isFinite(scalpBuilderPlanePositions[scalpState.state.scalpBuilderStep])) {
-      const minimum = bounds.min[step.axis];
-      scalpBuilderPlanePositions[scalpState.state.scalpBuilderStep] = minimum + size[step.axis] * step.ratio;
-    }
-    scalpState.state.scalpBuilderPlane = createScalpBuilderPlaneVisual(
-      scalpBuilderPlanePositions[scalpState.state.scalpBuilderStep],
-      scalpState.state.scalpBuilderStep,
-      true
-    );
-    transformControls.attach(scalpState.state.scalpBuilderPlane);
-    transformControls.setMode("translate");
-    transformControls.setSpace("world");
-    transformControls.showX = false;
-    transformControls.showY = step.axis === "y";
-    transformControls.showZ = step.axis === "z";
-  }
-  updateScalpBuilderStepUi();
-  updateScalpBuilderPositionReadout();
-}
 
-function updateScalpBuilderStepUi() {
-  const complete = scalpState.state.scalpBuilderStep >= SCALP_BUILDER_STEPS.length;
-  generateScalpBuilderButton.classList.toggle("hidden", !complete);
-  if (complete) {
-    generateScalpBuilderButton.textContent = "Generate Surface Preview";
-    scalpBuilderStepLabel.textContent = "Placement Planes";
-    scalpBuilderStepName.textContent = "Calibration Complete";
-    scalpBuilderAxisLabel.textContent = "Position";
-    scalpBuilderInstruction.textContent = "All placement boundaries have been recorded. Generate the curve-based surface preview and inspect it from every angle.";
-    confirmScalpBuilderButton.disabled = true;
-    confirmScalpBuilderButton.textContent = "All Planes Confirmed";
-    return;
-  }
-  const step = SCALP_BUILDER_STEPS[scalpState.state.scalpBuilderStep];
-  scalpBuilderStepLabel.textContent = `${step.phase} Plane ${step.phaseIndex} of ${step.phaseCount}`;
-  scalpBuilderStepName.textContent = step.name;
-  scalpBuilderInstruction.textContent = step.instruction;
-  scalpBuilderAxisLabel.textContent = step.axis === "y" ? "Height" : "Depth";
-  confirmScalpBuilderButton.disabled = false;
-  confirmScalpBuilderButton.textContent = "Confirm Plane";
-}
 
 const SCALP_TEMPLATE_MATERIAL_REGIONS = {
   lambert2SG: "bangs",
@@ -4269,771 +3380,167 @@ const SCALP_TEMPLATE_MATERIAL_REGIONS = {
   "side-right": "side-right",
   back: "back"
 };
+// Fill the remaining scalpBuilder deps (all late consts/lets + app.js helper functions).
+// Store state proxies use the .state accessor; plain values are passed by reference.
+Object.assign(scalpBuilderDeps, {
+  FULL_BODY_FRAME_BOTTOM_MARGIN,
+  GUIDE_BOUNDS_EXCLUDED_GROUPS,
+  SCALP_BUILDER_STEPS,
+  SCALP_REGION_CURVE_VISUALIZATION_ENABLED,
+  SCALP_TEMPLATE_MATERIAL_REGIONS,
+  activeStrokeSurfaceValue,
+  addCapsuleGuide,
+  advancedLatticeButton,
+  applyHeadTransform,
+  braidAutoShowScalpInput,
+  braidScalpOffsetInput,
+  braidStrokeActive,
+  capsuleGuideMode,
+  configureTransformControls,
+  confirmScalpBuilderButton,
+  createOutlinerVisibilityToggle,
+  createRootAttachment,
+  curveNetworkSection,
+  dataToVector,
+  defaultCurveLatticePoints,
+  deselectStrands,
+  deselectStrandsForGuideEditor,
+  drawAutoShowScalpInput,
+  drawCapsuleGuideMode,
+  drawStrandScalpOffsetInput,
+  exitSetupEditor,
+  exitSetupEditorLabel,
+  generateScalpBuilderButton,
+  guideHeadBounds,
+  guideState: guideState.state,
+  head,
+  headMeshes,
+  headPanel,
+  headPlaneIntersectionSegments,
+  headSetupMode,
+  headTransform,
+  hierarchyToggle,
+  layerOffsetForLock,
+  layerRootOffsetFactor,
+  liveSurfaceGuide,
+  liveSurfaceStrand,
+  locks,
+  mirrorXToggle,
+  modeToolButtons,
+  panelAutoShowScalpInput,
+  panelScalpOffsetInput,
+  panelStrokeActive,
+  pinActiveToolSettingsPanel,
+  placeAutoShowScalpInput,
+  pointAlongSection,
+  pointer,
+  proportionalFalloffInput,
+  proportionalRadiusInput,
+  proportionalToggle,
+  pushUndoState,
+  quadraticWeights,
+  rayFromViewportEvent,
+  raycaster,
+  renderGuideOutliner,
+  renderLockList,
+  scalpArtistInputs,
+  scalpArtistShape,
+  scalpBasePositions,
+  scalpBrushCursor,
+  scalpBrushSizeInput,
+  scalpBuilderAxisLabel,
+  scalpBuilderContours,
+  scalpBuilderGroup,
+  scalpBuilderInstruction,
+  scalpBuilderMode,
+  scalpBuilderPanel,
+  scalpBuilderPlanePositions,
+  scalpBuilderPositionOutput,
+  scalpBuilderShowTemplateInput,
+  scalpBuilderStepLabel,
+  scalpBuilderStepName,
+  scalpBuilderTemplateOverlay,
+  scalpBuilderTransparentHeadInput,
+  scalpGuideMeshFileInput,
+  scalpGuideSourceInput,
+  scalpInputs,
+  scalpLatticeConnections,
+  scalpLatticeGroup,
+  scalpLatticeHandles,
+  scalpLatticeLine,
+  scalpLatticePoints,
+  scalpPaintPanel,
+  scalpPaintToggle,
+  scalpPanel,
+  scalpQuads,
+  scalpRegionButtons,
+  scalpRenderGeometry,
+  scalpRoughScale,
+  scalpRoughScaleInputs,
+  scalpRoughScalePivot,
+  scalpRoughScaleValues,
+  scalpSelectionOutline,
+  scalpSetupMenu,
+  scalpSetupToggle,
+  scalpSurface,
+  scalpSurfaceGeometry,
+  scalpSurfaceGroup,
+  scalpSurfaceMesh,
+  scalpSurfaceWire,
+  sel: sel.state,
+  setActiveTool,
+  setAppMenuOpen,
+  setHeadReferenceTransparency,
+  setMirrorXEditing,
+  setViewportEditMode,
+  showOutlinerContextMenu,
+  spaceToggle,
+  surfaceGuideDefaults,
+  syncDisplayVisibilityInputs,
+  syncGuideInputs,
+  syncHeadTransformInputs,
+  syncLockFromCurve,
+  syncRootAttachmentMetadata,
+  syncViewportDrawSettings,
+  templatePlaneIntersectionSegments,
+  trianglePlaneIntersections,
+  updateAttributeEditorMode,
+  updateCount,
+  updateCurveObjects,
+  updateGuideViewToggle,
+  updateInteractionLocks,
+  updateLockGeometry,
+  updatePlacementStatus,
+  updateViewportToolVisibility,
+  upperContourCurve,
+});
 
-function parseScalpTopologyTemplate(content) {
-  const vertices = [];
-  const faces = [];
-  let material = "";
-  content.split(/\r?\n/).forEach((line) => {
-    const parts = line.trim().split(/\s+/);
-    if (parts[0] === "v" && parts.length >= 4) {
-      vertices.push(new THREE.Vector3(Number(parts[1]), Number(parts[2]), Number(parts[3])));
-    } else if (parts[0] === "usemtl") {
-      material = parts.slice(1).join(" ");
-    } else if (parts[0] === "f" && parts.length === 5) {
-      const indices = parts.slice(1).map((token) => Number(token.split("/")[0]) - 1);
-      const normalizedMaterial = material.trim().toLowerCase().replace(/[\s_]+/g, "-");
-      const region = SCALP_TEMPLATE_MATERIAL_REGIONS[material]
-        || SCALP_TEMPLATE_MATERIAL_REGIONS[normalizedMaterial]
-        || "unassigned";
-      faces.push({ indices, region });
-    }
-  });
-  if (!vertices.length || !faces.length) throw new Error("Scalp topology template contains no usable quad mesh");
-  return { vertices, faces };
-}
 
-function loadScalpTopologyTemplate() {
-  if (!scalpState.state.scalpTopologyTemplatePromise) {
-    scalpState.state.scalpTopologyTemplatePromise = fetch("./assets/scalp-topology-template.obj?v=20260720-1")
-      .then((response) => {
-        if (!response.ok) throw new Error(`Could not load scalp topology template (${response.status})`);
-        return response.text();
-      })
-      .then(parseScalpTopologyTemplate);
-  }
-  return scalpState.state.scalpTopologyTemplatePromise;
-}
 
-function loadScalpBuilderCurveLatticeTemplate() {
-  if (!scalpState.state.scalpBuilderCurveLatticePromise) {
-    scalpState.state.scalpBuilderCurveLatticePromise = fetch("./assets/scalpcurvelatticeguide.obj?v=20260720-1")
-      .then((response) => {
-        if (!response.ok) throw new Error(`Could not load scalp curve lattice (${response.status})`);
-        return response.text();
-      })
-      .then(parseScalpTopologyTemplate);
-  }
-  return scalpState.state.scalpBuilderCurveLatticePromise;
-}
 
-function scalpBuilderCurveLatticeWorldPoints(template) {
-  const authoredMatrix = scalpState.state.authoredScalpGuideMatrix || guideState.state.guideModel.matrixWorld;
-  return template.vertices.map((vertex) => vertex.clone().applyMatrix4(authoredMatrix));
-}
 
-function scalpBuilderCurveLatticeEdges(faces) {
-  const edges = new Map();
-  faces.forEach((face) => {
-    face.indices.forEach((start, corner) => {
-      const end = face.indices[(corner + 1) % face.indices.length];
-      const key = start < end ? `${start}:${end}` : `${end}:${start}`;
-      if (!edges.has(key)) edges.set(key, { start, end, region: face.region });
-    });
-  });
-  return [...edges.values()];
-}
 
-function subdivideScalpBuilderCage(sourcePoints, sourceFaces, iterations = 2, trackedSourceEdges = null) {
-  let points = sourcePoints.map((point) => point.clone());
-  let faces = sourceFaces.map((face) => ({ indices: [...face.indices], region: face.region }));
-  let trackedEdges = trackedSourceEdges ? new Set(trackedSourceEdges) : null;
-  for (let iteration = 0; iteration < iterations; iteration += 1) {
-    const facePoints = faces.map((face) => {
-      const point = new THREE.Vector3();
-      face.indices.forEach((index) => point.add(points[index]));
-      return point.multiplyScalar(1 / face.indices.length);
-    });
-    const incidentFaces = Array.from({ length: points.length }, () => []);
-    const incidentEdges = Array.from({ length: points.length }, () => []);
-    const edgeMap = new Map();
-    faces.forEach((face, faceIndex) => {
-      face.indices.forEach((start, corner) => {
-        const end = face.indices[(corner + 1) % face.indices.length];
-        const key = start < end ? `${start}:${end}` : `${end}:${start}`;
-        if (!edgeMap.has(key)) edgeMap.set(key, { start: Math.min(start, end), end: Math.max(start, end), faces: [] });
-        edgeMap.get(key).faces.push(faceIndex);
-        incidentFaces[start].push(faceIndex);
-      });
-    });
-    const edges = [...edgeMap.values()];
-    edges.forEach((edge, edgeIndex) => {
-      incidentEdges[edge.start].push(edgeIndex);
-      incidentEdges[edge.end].push(edgeIndex);
-    });
-    const vertexPoints = points.map((point, index) => {
-      const boundaryNeighbors = [];
-      incidentEdges[index].forEach((edgeIndex) => {
-        const edge = edges[edgeIndex];
-        if (edge.faces.length === 1) boundaryNeighbors.push(edge.start === index ? edge.end : edge.start);
-      });
-      if (boundaryNeighbors.length >= 2) {
-        return point.clone().multiplyScalar(6)
-          .add(points[boundaryNeighbors[0]])
-          .add(points[boundaryNeighbors[boundaryNeighbors.length - 1]])
-          .multiplyScalar(1 / 8);
-      }
-      const faceSet = [...new Set(incidentFaces[index])];
-      const n = faceSet.length;
-      if (!n) return point.clone();
-      const faceAverage = new THREE.Vector3();
-      faceSet.forEach((faceIndex) => faceAverage.add(facePoints[faceIndex]));
-      faceAverage.multiplyScalar(1 / n);
-      const edgeAverage = new THREE.Vector3();
-      incidentEdges[index].forEach((edgeIndex) => {
-        const edge = edges[edgeIndex];
-        edgeAverage.add(points[edge.start]).add(points[edge.end]);
-      });
-      edgeAverage.multiplyScalar(1 / Math.max(1, incidentEdges[index].length * 2));
-      return point.clone().multiplyScalar(n - 3)
-        .addScaledVector(edgeAverage, 2)
-        .add(faceAverage)
-        .multiplyScalar(1 / n);
-    });
-    const nextPoints = [...vertexPoints];
-    const edgePointIndices = new Map();
-    edges.forEach((edge) => {
-      const edgePoint = points[edge.start].clone().add(points[edge.end]);
-      if (edge.faces.length === 2) {
-        edgePoint.add(facePoints[edge.faces[0]]).add(facePoints[edge.faces[1]]).multiplyScalar(0.25);
-      } else {
-        edgePoint.multiplyScalar(0.5);
-      }
-      const key = `${edge.start}:${edge.end}`;
-      edgePointIndices.set(key, nextPoints.length);
-      nextPoints.push(edgePoint);
-    });
-    if (trackedEdges) {
-      const nextTrackedEdges = new Set();
-      trackedEdges.forEach((key) => {
-        const edge = edgeMap.get(key);
-        const edgePointIndex = edgePointIndices.get(key);
-        if (!edge || edgePointIndex === undefined) return;
-        const firstKey = edge.start < edgePointIndex
-          ? `${edge.start}:${edgePointIndex}`
-          : `${edgePointIndex}:${edge.start}`;
-        const secondKey = edge.end < edgePointIndex
-          ? `${edge.end}:${edgePointIndex}`
-          : `${edgePointIndex}:${edge.end}`;
-        nextTrackedEdges.add(firstKey);
-        nextTrackedEdges.add(secondKey);
-      });
-      trackedEdges = nextTrackedEdges;
-    }
-    const facePointIndices = facePoints.map((point) => {
-      const index = nextPoints.length;
-      nextPoints.push(point);
-      return index;
-    });
-    const nextFaces = [];
-    faces.forEach((face, faceIndex) => {
-      face.indices.forEach((vertexIndex, corner) => {
-        const nextIndex = face.indices[(corner + 1) % face.indices.length];
-        const previousIndex = face.indices[(corner + face.indices.length - 1) % face.indices.length];
-        const nextKey = vertexIndex < nextIndex ? `${vertexIndex}:${nextIndex}` : `${nextIndex}:${vertexIndex}`;
-        const previousKey = previousIndex < vertexIndex ? `${previousIndex}:${vertexIndex}` : `${vertexIndex}:${previousIndex}`;
-        nextFaces.push({
-          indices: [vertexIndex, edgePointIndices.get(nextKey), facePointIndices[faceIndex], edgePointIndices.get(previousKey)],
-          region: face.region
-        });
-      });
-    });
-    points = nextPoints;
-    faces = nextFaces;
-  }
-  return { points, faces, trackedEdges: trackedEdges ? [...trackedEdges] : null };
-}
 
-function scalpBuilderSurfaceGeometry(points, faces, materialIndices) {
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(points.flatMap((point) => [point.x, point.y, point.z]), 3));
-  const indices = [];
-  const facesByRegion = new Map();
-  faces.forEach((face) => {
-    const region = materialIndices.has(face.region) ? face.region : "unassigned";
-    if (!facesByRegion.has(region)) facesByRegion.set(region, []);
-    facesByRegion.get(region).push(face);
-  });
-  materialIndices.forEach((materialIndex, region) => {
-    const regionFaces = facesByRegion.get(region) || [];
-    if (!regionFaces.length) return;
-    const indexOffset = indices.length;
-    regionFaces.forEach((face) => {
-      indices.push(face.indices[0], face.indices[1], face.indices[2], face.indices[0], face.indices[2], face.indices[3]);
-    });
-    geometry.addGroup(indexOffset, regionFaces.length * 6, materialIndex);
-  });
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  return geometry;
-}
 
-function writeEditedScalpRegionColors() {
-  if (!scalpState.state.editedScalpSurfaceMesh) return;
-  const colorAttribute = scalpState.state.editedScalpSurfaceMesh.geometry.getAttribute("color");
-  if (!colorAttribute) return;
-  const color = new THREE.Color();
-  scalpState.state.editedScalpRegions.forEach((region, triangleIndex) => {
-    color.set(SCALP_REGIONS[region]?.color || SCALP_REGIONS.unassigned.color);
-    for (let corner = 0; corner < 3; corner += 1) {
-      colorAttribute.setXYZ(triangleIndex * 3 + corner, color.r, color.g, color.b);
-    }
-  });
-  colorAttribute.needsUpdate = true;
-  scalpState.state.editedScalpSurfaceMesh.geometry.userData.triangleRegions = scalpState.state.editedScalpRegions;
-}
 
-function syncEditedScalpSurface(subdivided) {
-  if (!subdivided?.points?.length || !subdivided?.faces?.length) return;
-  scalpBuilderGroup.updateMatrixWorld(true);
-  scalpSurfaceGroup.updateMatrixWorld(true);
-  const inverseScalpMatrix = scalpSurfaceGroup.matrixWorld.clone().invert();
-  const points = subdivided.points.map((point) => point.clone()
-    .applyMatrix4(scalpBuilderGroup.matrixWorld)
-    .applyMatrix4(inverseScalpMatrix));
-  const sourceGeometry = new THREE.BufferGeometry();
-  sourceGeometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(points.flatMap((point) => [point.x, point.y, point.z]), 3)
-  );
-  sourceGeometry.setIndex(subdivided.faces.flatMap((face) => [
-    face.indices[0], face.indices[1], face.indices[2],
-    face.indices[0], face.indices[2], face.indices[3]
-  ]));
-  sourceGeometry.computeVertexNormals();
-  const geometry = sourceGeometry.toNonIndexed();
-  sourceGeometry.dispose();
-  const defaultRegions = subdivided.faces.flatMap((face) => [face.region, face.region]);
-  if (scalpState.state.editedScalpRegions.length !== defaultRegions.length) scalpState.state.editedScalpRegions = defaultRegions;
-  geometry.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(geometry.getAttribute("position").count * 3), 3));
-  geometry.userData.triangleRegions = scalpState.state.editedScalpRegions;
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
 
-  if (!scalpState.state.editedScalpSurfaceMesh) {
-    scalpState.state.editedScalpSurfaceMesh = new THREE.Mesh(
-      geometry,
-      new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        emissive: 0x111116,
-        roughness: 0.72,
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.08,
-        depthWrite: false,
-        side: THREE.FrontSide
-      })
-    );
-    scalpState.state.editedScalpSurfaceMesh.renderOrder = 1;
-    scalpState.state.editedScalpSurfaceWire = new THREE.LineSegments(
-      new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color: 0x62f3ff, transparent: true, opacity: 0.14, depthWrite: false })
-    );
-    scalpState.state.editedScalpSurfaceWire.renderOrder = 2;
-    scalpState.state.editedScalpSelectionOutline = createScalpSelectionOutline(geometry);
-    scalpSurfaceGroup.add(scalpState.state.editedScalpSurfaceMesh, scalpState.state.editedScalpSurfaceWire, scalpState.state.editedScalpSelectionOutline);
-  } else {
-    const previousGeometry = scalpState.state.editedScalpSurfaceMesh.geometry;
-    scalpState.state.editedScalpSurfaceMesh.geometry = geometry;
-    scalpState.state.editedScalpSelectionOutline.geometry = geometry;
-    previousGeometry.dispose();
-  }
 
-  const wirePositions = [];
-  scalpBuilderCurveLatticeEdges(subdivided.faces).forEach((edge) => {
-    const start = points[edge.start];
-    const end = points[edge.end];
-    wirePositions.push(start.x, start.y, start.z, end.x, end.y, end.z);
-  });
-  const previousWireGeometry = scalpState.state.editedScalpSurfaceWire.geometry;
-  scalpState.state.editedScalpSurfaceWire.geometry = new THREE.BufferGeometry();
-  scalpState.state.editedScalpSurfaceWire.geometry.setAttribute("position", new THREE.Float32BufferAttribute(wirePositions, 3));
-  scalpState.state.editedScalpSurfaceWire.geometry.computeBoundingSphere();
-  previousWireGeometry.dispose();
-  writeEditedScalpRegionColors();
-  updateScalpEditingVisibility();
-}
 
-async function ensureEditedScalpSurface() {
-  if (!guideState.state.guideModel) return;
-  const template = await loadScalpBuilderCurveLatticeTemplate();
-  const defaultPoints = scalpBuilderCurveLatticeWorldPoints(template);
-  const points = scalpState.state.scalpBuilderEditedPoints?.length === defaultPoints.length
-    ? scalpState.state.scalpBuilderEditedPoints.map((point) => point.clone())
-    : defaultPoints;
-  // Keep the resolved cage as project state even when Edit Scalp has not been opened.
-  // Saved root attachments and the visible scalp must always refer to the same surface.
-  scalpState.state.scalpBuilderEditedPoints = points.map((point) => point.clone());
-  const bounds = new THREE.Box3().setFromPoints(points);
-  bounds.getCenter(scalpRoughScalePivot);
-  const size = bounds.getSize(new THREE.Vector3());
-  const displayCenter = bounds.getCenter(new THREE.Vector3());
-  const displayOffset = Math.max(size.x, size.y, size.z) * 0.008;
-  const subdivided = subdivideScalpBuilderCage(points, template.faces, 2);
-  subdivided.points.forEach((point) => {
-    const direction = point.clone().sub(displayCenter);
-    if (direction.lengthSq() > 0.000001) point.addScaledVector(direction.normalize(), displayOffset);
-  });
-  const { x, y, z } = scalpRoughScale;
-  scalpBuilderGroup.scale.set(x, y, z);
-  scalpBuilderGroup.position.set(
-    scalpRoughScalePivot.x * (1 - x),
-    scalpRoughScalePivot.y * (1 - y),
-    scalpRoughScalePivot.z * (1 - z)
-  );
-  syncEditedScalpSurface(subdivided);
-}
 
-function updateScalpBuilderCurveLatticeGeometry() {
-  if (!scalpState.state.scalpBuilderCurveLattice) return;
-  const subdivided = subdivideScalpBuilderCage(
-    scalpState.state.scalpBuilderCurveLattice.points,
-    scalpState.state.scalpBuilderCurveLattice.template.faces,
-    2
-  );
-  subdivided.points.forEach((point) => {
-    const direction = point.clone().sub(scalpState.state.scalpBuilderCurveLattice.displayCenter);
-    if (direction.lengthSq() > 0.000001) point.addScaledVector(direction.normalize(), scalpState.state.scalpBuilderCurveLattice.displayOffset);
-  });
-  scalpState.state.scalpBuilderCurveLattice.lastSubdivided = subdivided;
-  syncEditedScalpSurface(subdivided);
-  const smoothEdges = scalpBuilderCurveLatticeEdges(subdivided.faces);
-  const positions = [];
-  const colors = [];
-  const color = new THREE.Color();
-  smoothEdges.forEach((edge) => {
-    const start = subdivided.points[edge.start];
-    const end = subdivided.points[edge.end];
-    color.set(SCALP_REGIONS[edge.region]?.color || SCALP_REGIONS.unassigned.color);
-    positions.push(start.x, start.y, start.z, end.x, end.y, end.z);
-    colors.push(color.r, color.g, color.b, color.r, color.g, color.b);
-  });
-  const geometry = scalpState.state.scalpBuilderCurveLattice.line.geometry;
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-  geometry.computeBoundingSphere();
-  const surface = scalpState.state.scalpBuilderCurveLattice.surface;
-  const previousSurfaceGeometry = surface.geometry;
-  surface.geometry = scalpBuilderSurfaceGeometry(
-    subdivided.points,
-    subdivided.faces,
-    scalpState.state.scalpBuilderCurveLattice.materialIndices
-  );
-  scalpState.state.scalpBuilderCurveLattice.outline.geometry = surface.geometry;
-  const symmetryPositions = [];
-  const symmetryX = scalpState.state.scalpBuilderCurveLattice.displayCenter.x;
-  subdivided.faces.forEach((face) => {
-    for (let corner = 1; corner < face.indices.length - 1; corner += 1) {
-      const intersections = trianglePlaneIntersections(
-        subdivided.points[face.indices[0]],
-        subdivided.points[face.indices[corner]],
-        subdivided.points[face.indices[corner + 1]],
-        "x",
-        symmetryX
-      );
-      if (intersections.length === 2) {
-        symmetryPositions.push(
-          intersections[0].x, intersections[0].y, intersections[0].z,
-          intersections[1].x, intersections[1].y, intersections[1].z
-        );
-      }
-    }
-  });
-  scalpState.state.scalpBuilderCurveLattice.symmetryLine.geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(symmetryPositions, 3)
-  );
-  scalpState.state.scalpBuilderCurveLattice.symmetryLine.geometry.computeBoundingSphere();
-  scalpState.state.scalpBuilderCurveLattice.symmetryLine.visible = (
-    SCALP_REGION_CURVE_VISUALIZATION_ENABLED && scalpState.state.scalpBuilderEditing && sculptState.state.mirrorXEditing
-  );
-  scalpBuilderGroup.updateMatrixWorld(true);
-  const symmetryWorldX = scalpBuilderGroup.localToWorld(
-    new THREE.Vector3(symmetryX, scalpState.state.scalpBuilderCurveLattice.displayCenter.y, scalpState.state.scalpBuilderCurveLattice.displayCenter.z)
-  ).x;
-  const headSymmetryPositions = [];
-  headPlaneIntersectionSegments("x", symmetryWorldX).forEach((segment) => {
-    segment.forEach((point) => {
-      const local = scalpBuilderGroup.worldToLocal(point.clone());
-      headSymmetryPositions.push(local.x, local.y, local.z);
-    });
-  });
-  scalpState.state.scalpBuilderCurveLattice.headSymmetryLine.geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(headSymmetryPositions, 3)
-  );
-  scalpState.state.scalpBuilderCurveLattice.headSymmetryLine.geometry.computeBoundingSphere();
-  scalpState.state.scalpBuilderCurveLattice.headSymmetryLine.visible = (
-    SCALP_REGION_CURVE_VISUALIZATION_ENABLED && scalpState.state.scalpBuilderEditing && sculptState.state.mirrorXEditing
-  );
-  previousSurfaceGeometry.dispose();
-}
 
-function scalpBuilderLatticeNeighbors() {
-  if (!scalpState.state.scalpBuilderCurveLattice) return [];
-  const neighbors = Array.from({ length: scalpState.state.scalpBuilderCurveLattice.points.length }, () => new Set());
-  scalpState.state.scalpBuilderCurveLattice.template.faces.forEach((face) => {
-    face.indices.forEach((index, corner) => {
-      const next = face.indices[(corner + 1) % face.indices.length];
-      neighbors[index].add(next);
-      neighbors[next].add(index);
-    });
-  });
-  return neighbors;
-}
 
-function scalpBuilderLatticeDistances(originIndex) {
-  const neighbors = scalpBuilderLatticeNeighbors();
-  const distances = new Array(neighbors.length).fill(Infinity);
-  distances[originIndex] = 0;
-  const queue = [originIndex];
-  for (let cursor = 0; cursor < queue.length; cursor += 1) {
-    const index = queue[cursor];
-    neighbors[index].forEach((neighbor) => {
-      if (distances[neighbor] !== Infinity) return;
-      distances[neighbor] = distances[index] + 1;
-      queue.push(neighbor);
-    });
-  }
-  return distances;
-}
 
-function scalpBuilderProportionalWeight(distance) {
-  const radius = Number(proportionalRadiusInput?.value || 2.5);
-  if (!sculptState.state.proportionalEditing) return distance === 0 ? 1 : 0;
-  if (distance > radius) return 0;
-  if (distance === 0) return 1;
-  const linear = THREE.MathUtils.clamp(1 - distance / Math.max(0.001, radius), 0, 1);
-  const smooth = linear * linear * (3 - 2 * linear);
-  return THREE.MathUtils.lerp(1, smooth, Number(proportionalFalloffInput?.value || 0.65));
-}
 
-function scalpBuilderMirrorMap(points) {
-  const bounds = new THREE.Box3().setFromPoints(points);
-  const centerX = bounds.getCenter(new THREE.Vector3()).x;
-  return points.map((point, index) => {
-    const target = new THREE.Vector3(2 * centerX - point.x, point.y, point.z);
-    let closestIndex = index;
-    let closestDistance = Infinity;
-    points.forEach((candidate, candidateIndex) => {
-      const distance = candidate.distanceToSquared(target);
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestIndex = candidateIndex;
-      }
-    });
-    return closestIndex;
-  });
-}
 
-function beginScalpBuilderCurveLatticeEdit(handle) {
-  if (!scalpState.state.scalpBuilderCurveLattice) return;
-  const selectedIndex = handle.userData.scalpBuilderLatticeIndex;
-  const startPoints = scalpState.state.scalpBuilderCurveLattice.points.map((point) => point.clone());
-  scalpState.state.activeScalpBuilderCurveLatticeEdit = {
-    selectedIndex,
-    startPoints,
-    distances: scalpBuilderLatticeDistances(selectedIndex),
-    mirrorMap: scalpBuilderMirrorMap(startPoints),
-    centerX: new THREE.Box3().setFromPoints(startPoints).getCenter(new THREE.Vector3()).x
-  };
-}
 
-function commitScalpBuilderCurveLatticeEdit() {
-  if (scalpState.state.scalpBuilderCurveLattice) {
-    scalpState.state.scalpBuilderEditedPoints = scalpState.state.scalpBuilderCurveLattice.points.map((point) => point.clone());
-  }
-  scalpState.state.activeScalpBuilderCurveLatticeEdit = null;
-}
 
-function updateScalpBuilderHandleColors() {
-  if (!scalpState.state.scalpBuilderCurveLattice) return;
-  const selectedIndex = scalpState.state.scalpBuilderCurveLattice.selectedIndex;
-  const distances = selectedIndex == null ? [] : scalpBuilderLatticeDistances(selectedIndex);
-  const mirrorMap = selectedIndex == null ? [] : scalpBuilderMirrorMap(scalpState.state.scalpBuilderCurveLattice.points);
-  const mirroredIndex = selectedIndex == null ? null : mirrorMap[selectedIndex];
-  scalpState.state.scalpBuilderCurveLattice.handles.forEach((handle, index) => {
-    if (index === selectedIndex) {
-      handle.material.color.set(CONTROL_POINT_SELECTED_COLOR);
-      handle.material.opacity = 1;
-      return;
-    }
-    const weight = selectedIndex == null ? 0 : scalpBuilderProportionalWeight(distances[index]);
-    const mirrored = sculptState.state.mirrorXEditing && index === mirroredIndex;
-    handle.material.color.set(mirrored || weight > 0 ? 0xffd65a : 0x58f6ff);
-    handle.material.opacity = mirrored ? 0.9 : weight > 0 ? THREE.MathUtils.lerp(0.42, 0.82, weight) : 0.42;
-  });
-}
 
-function selectScalpBuilderCurveLatticePoint(index) {
-  if (!scalpState.state.scalpBuilderCurveLattice) return;
-  scalpState.state.scalpBuilderCurveLattice.selectedIndex = index;
-  updateScalpBuilderHandleColors();
-  const handle = scalpState.state.scalpBuilderCurveLattice.handles[index];
-  if (!handle) return;
-  transformControls.attach(handle);
-  transformControls.setMode("translate");
-  transformControls.setSpace("world");
-  transformControls.showX = true;
-  transformControls.showY = true;
-  transformControls.showZ = true;
-}
 
-function updateScalpBuilderCurveLatticeFromHandle(handle) {
-  if (!scalpState.state.scalpBuilderCurveLattice) return;
-  const index = handle.userData.scalpBuilderLatticeIndex;
-  if (!scalpState.state.scalpBuilderCurveLattice.points[index]) return;
-  if (!scalpState.state.activeScalpBuilderCurveLatticeEdit || scalpState.state.activeScalpBuilderCurveLatticeEdit.selectedIndex !== index) {
-    scalpState.state.scalpBuilderCurveLattice.points[index].copy(handle.position);
-    scalpState.state.scalpBuilderEditedPoints = scalpState.state.scalpBuilderCurveLattice.points.map((point) => point.clone());
-    updateScalpBuilderCurveLatticeGeometry();
-    return;
-  }
-  const edit = scalpState.state.activeScalpBuilderCurveLatticeEdit;
-  const delta = handle.position.clone().sub(edit.startPoints[index]);
-  const selectedSide = Math.sign(edit.startPoints[index].x - edit.centerX);
-  edit.startPoints.forEach((startPoint, pointIndex) => {
-    const pointSide = Math.sign(startPoint.x - edit.centerX);
-    if (sculptState.state.mirrorXEditing && selectedSide !== 0 && pointSide !== selectedSide) return;
-    const weight = scalpBuilderProportionalWeight(edit.distances[pointIndex]);
-    scalpState.state.scalpBuilderCurveLattice.points[pointIndex].copy(startPoint).addScaledVector(delta, weight);
-  });
-  if (sculptState.state.mirrorXEditing) {
-    edit.startPoints.forEach((startPoint, pointIndex) => {
-      const pointSide = Math.sign(startPoint.x - edit.centerX);
-      if (selectedSide !== 0 && pointSide !== selectedSide) return;
-      const mirrorIndex = edit.mirrorMap[pointIndex];
-      if (mirrorIndex === pointIndex) {
-        scalpState.state.scalpBuilderCurveLattice.points[pointIndex].x = edit.centerX;
-        return;
-      }
-      const sourceDelta = scalpState.state.scalpBuilderCurveLattice.points[pointIndex].clone().sub(startPoint);
-      scalpState.state.scalpBuilderCurveLattice.points[mirrorIndex].copy(edit.startPoints[mirrorIndex]);
-      scalpState.state.scalpBuilderCurveLattice.points[mirrorIndex].add(new THREE.Vector3(-sourceDelta.x, sourceDelta.y, sourceDelta.z));
-    });
-  }
-  scalpState.state.scalpBuilderCurveLattice.points.forEach((point, pointIndex) => {
-    scalpState.state.scalpBuilderCurveLattice.handles[pointIndex].position.copy(point);
-  });
-  scalpState.state.scalpBuilderEditedPoints = scalpState.state.scalpBuilderCurveLattice.points.map((point) => point.clone());
-  updateScalpBuilderHandleColors();
-  updateScalpBuilderCurveLatticeGeometry();
-}
 
-function scalpBuilderCurveLatticePointHit() {
-  if (!scalpState.state.scalpBuilderEditing || !scalpState.state.scalpBuilderCurveLattice) return null;
-  const selectThroughHead = scalpState.state.scalpBuilderEditing && scalpBuilderTransparentHeadInput.checked;
-  const headHit = !selectThroughHead && guideState.state.guideModel ? raycaster.intersectObject(guideState.state.guideModel, true)[0] : null;
-  return raycaster.intersectObjects(scalpState.state.scalpBuilderCurveLattice.handles, false)
-    .find((candidate) => !headHit || candidate.distance <= headHit.distance
-      + scalpState.state.scalpBuilderCurveLattice.handleRadius * 0.75) || null;
-}
 
-function beginScalpBuilderCurveLatticeSelection() {
-  if (!scalpState.state.scalpBuilderCurveLattice) return false;
-  const hit = scalpBuilderCurveLatticePointHit();
-  if (!hit) {
-    if (transformControls.object?.userData.scalpBuilderLatticeIndex !== undefined) transformControls.detach();
-    scalpState.state.scalpBuilderCurveLattice.selectedIndex = null;
-    updateScalpBuilderHandleColors();
-    return false;
-  }
-  selectScalpBuilderCurveLatticePoint(hit.object.userData.scalpBuilderLatticeIndex);
-  return true;
-}
 
-function prioritizeScalpBuilderPointSelection(event) {
-  if (
-    !scalpState.state.scalpBuilderEditing
-    || event.button !== 0
-    || event.shiftKey
-    || event.ctrlKey
-    || event.altKey
-    || event.metaKey
-    || sculptState.state.proportionalSizeEdit
-    || sculptState.state.proportionalHotkeyPress
-  ) return;
-  rayFromViewportEvent(event);
-  const hit = scalpBuilderCurveLatticePointHit();
-  if (!hit) return;
-  const pointIndex = hit.object.userData.scalpBuilderLatticeIndex;
-  if (pointIndex === scalpState.state.scalpBuilderCurveLattice.selectedIndex) return;
-  selectScalpBuilderCurveLatticePoint(pointIndex);
-  event.preventDefault();
-  event.stopImmediatePropagation();
-}
 
-async function createScalpBuilderCurveLattice() {
-  disposeScalpBuilderVisuals();
-  if (!guideState.state.guideModel || !(scalpState.state.scalpBuilderEditing || sculptState.state.headSetupEditing)) return;
-  const loadToken = scalpState.state.scalpBuilderCurveLatticeLoadToken;
-  scalpBuilderStepLabel.textContent = "Curve Lattice";
-  scalpBuilderStepName.textContent = "Loading Scalp Guide";
-  scalpBuilderAxisLabel.textContent = "Move";
-  scalpBuilderInstruction.textContent = "Loading the authored scalp curve lattice...";
-  confirmScalpBuilderButton.classList.add("hidden");
-  generateScalpBuilderButton.classList.add("hidden");
-  try {
-    const template = await loadScalpBuilderCurveLatticeTemplate();
-    if (!(scalpState.state.scalpBuilderEditing || sculptState.state.headSetupEditing) || loadToken !== scalpState.state.scalpBuilderCurveLatticeLoadToken) return;
-    const defaultPoints = scalpBuilderCurveLatticeWorldPoints(template);
-    const points = scalpState.state.scalpBuilderEditedPoints?.length === defaultPoints.length
-      ? scalpState.state.scalpBuilderEditedPoints.map((point) => point.clone())
-      : defaultPoints;
-    const edges = scalpBuilderCurveLatticeEdges(template.faces);
-    const line = new THREE.LineSegments(
-      new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.82,
-        depthTest: true,
-        depthWrite: false
-      })
-    );
-    line.renderOrder = 15;
-    line.visible = SCALP_REGION_CURVE_VISUALIZATION_ENABLED;
-    const materialRegions = ["bangs", "side-bangs-left", "side-bangs-right", "side-left", "side-right", "back", "unassigned"];
-    const materialIndices = new Map(materialRegions.map((region, index) => [region, index]));
-    const surfaceMaterials = materialRegions.map((region) => new THREE.MeshStandardMaterial({
-      color: SCALP_REGIONS[region]?.color || SCALP_REGIONS.unassigned.color,
-      transparent: true,
-      opacity: 0.28,
-      roughness: 0.88,
-      metalness: 0,
-      side: THREE.DoubleSide,
-      depthTest: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1
-    }));
-    const surface = new THREE.Mesh(new THREE.BufferGeometry(), surfaceMaterials);
-    surface.renderOrder = 14;
-    surface.visible = SCALP_REGION_CURVE_VISUALIZATION_ENABLED;
-    const latticeBounds = new THREE.Box3().setFromPoints(points);
-    latticeBounds.getCenter(scalpRoughScalePivot);
-    const latticeSize = latticeBounds.getSize(new THREE.Vector3());
-    const latticeSpan = Math.max(latticeSize.x, latticeSize.y, latticeSize.z);
-    const handleRadius = latticeSpan * 0.008;
-    const handleGeometry = new THREE.SphereGeometry(handleRadius, 10, 8);
-    const handles = points.map((point, index) => {
-      const handle = new THREE.Mesh(
-        handleGeometry,
-        new THREE.MeshBasicMaterial({
-          color: 0x58f6ff,
-          transparent: true,
-          opacity: 0.42,
-          depthTest: true,
-          depthWrite: false
-        })
-      );
-      handle.position.copy(point);
-      handle.renderOrder = 16;
-      handle.userData.scalpBuilderLatticeIndex = index;
-      handle.visible = scalpState.state.scalpBuilderEditing;
-      scalpBuilderGroup.add(handle);
-      return handle;
-    });
-    const outline = createScalpSelectionOutline(new THREE.BufferGeometry());
-    outline.visible = SCALP_REGION_CURVE_VISUALIZATION_ENABLED && sculptState.state.headSetupEditing;
-    const symmetryLine = new THREE.LineSegments(
-      new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({
-        color: 0xff4fd8,
-        transparent: true,
-        opacity: 0.9,
-        depthTest: true,
-        depthWrite: false
-      })
-    );
-    symmetryLine.renderOrder = 20;
-    symmetryLine.visible = (
-      SCALP_REGION_CURVE_VISUALIZATION_ENABLED && scalpState.state.scalpBuilderEditing && sculptState.state.mirrorXEditing
-    );
-    const headSymmetryLine = new THREE.LineSegments(
-      new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({
-        color: 0xff4fd8,
-        transparent: true,
-        opacity: 0.9,
-        depthTest: true,
-        depthWrite: false
-      })
-    );
-    headSymmetryLine.renderOrder = 21;
-    headSymmetryLine.visible = (
-      SCALP_REGION_CURVE_VISUALIZATION_ENABLED && scalpState.state.scalpBuilderEditing && sculptState.state.mirrorXEditing
-    );
-    scalpState.state.scalpBuilderCurveLattice = {
-      template,
-      points,
-      edges,
-      line,
-      surface,
-      outline,
-      symmetryLine,
-      headSymmetryLine,
-      materialIndices,
-      handles,
-      selectedIndex: null,
-      handleRadius,
-      displayCenter: latticeBounds.getCenter(new THREE.Vector3()),
-      displayOffset: latticeSpan * 0.008
-    };
-    scalpBuilderGroup.add(surface);
-    scalpBuilderGroup.add(line);
-    scalpBuilderGroup.add(outline);
-    scalpBuilderGroup.add(symmetryLine);
-    scalpBuilderGroup.add(headSymmetryLine);
-    applyScalpRoughScale();
-    updateScalpBuilderCurveLatticeGeometry();
-    scalpBuilderStepLabel.textContent = "Curve Lattice";
-    scalpBuilderStepName.textContent = "Scalp Curve Guide";
-    scalpBuilderAxisLabel.textContent = "Move";
-    scalpBuilderInstruction.textContent = "Select a cyan control point and use the gizmo to fine tune the scalp guide. Hold Alt and drag to orbit.";
-    updatePlacementStatus();
-  } catch (error) {
-    console.error("Could not create scalp builder curve lattice", error);
-    scalpBuilderStepName.textContent = "Curve Lattice Unavailable";
-    scalpBuilderInstruction.textContent = "The authored scalp curve guide could not be loaded.";
-  }
-}
 
-function clearScalpBuilderTemplateOverlay() {
-  while (scalpBuilderTemplateOverlay.children.length) {
-    const child = scalpBuilderTemplateOverlay.children.pop();
-    child.geometry?.dispose();
-    child.material?.dispose();
-  }
-}
-
-function scalpTemplateNeighbors(vertexCount, faces) {
-  const neighbors = Array.from({ length: vertexCount }, () => new Set());
-  faces.forEach((face) => {
-    face.indices.forEach((index, corner) => {
-      const next = face.indices[(corner + 1) % face.indices.length];
-      neighbors[index].add(next);
-      neighbors[next].add(index);
-    });
-  });
-  return neighbors;
-}
-
-function smoothScalpVectorField(values, neighbors, iterations = 2, strength = 0.42) {
-  let current = values.map((value) => value.clone());
-  for (let iteration = 0; iteration < iterations; iteration += 1) {
-    current = current.map((value, index) => {
-      if (!neighbors[index].size) return value.clone();
-      const average = new THREE.Vector3();
-      neighbors[index].forEach((neighbor) => average.add(current[neighbor]));
-      average.multiplyScalar(1 / neighbors[index].size);
-      return value.clone().lerp(average, strength);
-    });
-  }
-  return current;
-}
 
 function templatePlaneIntersectionSegments(template, axis, planePosition) {
   const segments = [];
@@ -5208,862 +3715,22 @@ function constructionCurveFromSegments(segments, step, planePosition) {
   return curve.getSpacedPoints(95).slice(0, -1);
 }
 
-function displayScalpBuilderConstructionCurves() {
-  if (!SCALP_REGION_CURVE_VISUALIZATION_ENABLED) {
-    disposeScalpBuilderVisuals();
-    scalpBuilderGroup.visible = false;
-    scalpBuilderTemplateOverlay.visible = false;
-    return;
-  }
-  if (!guideState.state.guideModel || scalpBuilderPlanePositions.some((value) => !Number.isFinite(value))) return;
-  const bounds = guideHeadBounds(guideState.state.guideModel);
-  const center = bounds.getCenter(new THREE.Vector3());
-  const size = bounds.getSize(new THREE.Vector3());
-  const clearance = Math.max(size.x, size.y, size.z) * 0.015;
-  const orderedRange = (a, b) => [Math.min(a, b), Math.max(a, b)];
-  const curveRanges = [
-    { axis: "z", min: scalpBuilderPlanePositions[5], max: bounds.max.z },
-    { axis: "z", ...(() => {
-      const [min, max] = orderedRange(scalpBuilderPlanePositions[8], scalpBuilderPlanePositions[6]);
-      return { min, max };
-    })() },
-    { axis: "z", ...(() => {
-      const [min, max] = orderedRange(scalpBuilderPlanePositions[9], scalpBuilderPlanePositions[7]);
-      return { min, max };
-    })() },
-    { axis: "z", ...(() => {
-      const [min, max] = orderedRange(scalpBuilderPlanePositions[9], scalpBuilderPlanePositions[7]);
-      return { min, max };
-    })() },
-    { axis: "z", min: bounds.min.z, max: scalpBuilderPlanePositions[10] },
-    { axis: "y", min: scalpBuilderPlanePositions[0], max: bounds.max.y },
-    { axis: "y", min: scalpBuilderPlanePositions[1], max: bounds.max.y },
-    { axis: "y", min: scalpBuilderPlanePositions[1], max: bounds.max.y },
-    { axis: "y", min: scalpBuilderPlanePositions[1], max: bounds.max.y },
-    { axis: "y", min: scalpBuilderPlanePositions[3], max: bounds.max.y },
-    { axis: "y", min: scalpBuilderPlanePositions[4], max: bounds.max.y }
-  ];
-  const clipSegment = (segment, range) => {
-    const start = segment[0];
-    const end = segment[1];
-    const delta = end[range.axis] - start[range.axis];
-    let startT = 0;
-    let endT = 1;
-    if (Math.abs(delta) < 0.000001) {
-      return start[range.axis] >= range.min && start[range.axis] <= range.max ? segment : null;
-    }
-    const minT = (range.min - start[range.axis]) / delta;
-    const maxT = (range.max - start[range.axis]) / delta;
-    startT = Math.max(startT, Math.min(minT, maxT));
-    endT = Math.min(endT, Math.max(minT, maxT));
-    if (startT > endT) return null;
-    return [start.clone().lerp(end, startT), start.clone().lerp(end, endT)];
-  };
-  const clippedCurves = SCALP_BUILDER_STEPS.map((step, index) => {
-    const sourceSegments = scalpBuilderContours[index]
-      || headPlaneIntersectionSegments(step.axis, scalpBuilderPlanePositions[index]);
-    return sourceSegments
-      .map((segment) => clipSegment(segment, curveRanges[index]))
-      .filter(Boolean);
-  });
-  const liftedPoint = (point, normal = null) => {
-    const direction = normal?.clone() || point.clone().sub(center);
-    if (direction.lengthSq() < 0.000001) return point.clone();
-    return point.clone().addScaledVector(direction.normalize(), clearance);
-  };
-  const boundaryCorner = (segments, axis, boundary, sideSign) => {
-    const candidates = segments.flat().filter((point) => (
-      (sideSign < 0 ? point.x <= center.x : point.x >= center.x)
-    ));
-    return candidates.sort((a, b) => (
-      Math.abs(a[axis] - boundary) - Math.abs(b[axis] - boundary)
-      || Math.abs(b.x - center.x) - Math.abs(a.x - center.x)
-    ))[0]?.clone() || null;
-  };
-  const surfaceCurveBetween = (start, end) => {
-    const meshes = scalpBuilderHeadMeshes();
-    const surfaceRaycaster = new THREE.Raycaster();
-    const points = [];
-    const sampleCount = 28;
-    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
-      const t = sampleIndex / (sampleCount - 1);
-      const target = start.clone().lerp(end, t);
-      const direction = target.clone().sub(center);
-      if (direction.lengthSq() < 0.000001) continue;
-      direction.normalize();
-      surfaceRaycaster.set(center, direction);
-      const hit = surfaceRaycaster.intersectObjects(meshes, false)[0];
-      if (!hit) {
-        points.push(liftedPoint(target));
-        continue;
-      }
-      const normal = hit.face?.normal?.clone();
-      if (normal && hit.object) normal.transformDirection(hit.object.matrixWorld);
-      points.push(liftedPoint(hit.point, normal));
-    }
-    return points;
-  };
-  const addSurfaceConnector = (start, end, color) => {
-    if (!start || !end) return;
-    const points = surfaceCurveBetween(start, end);
-    if (points.length < 2) return;
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.98,
-      depthTest: true,
-      depthWrite: false
-    }));
-    line.userData.scalpBuilderConstructionCurve = true;
-    line.renderOrder = 23;
-    scalpBuilderGroup.add(line);
-  };
-  disposeScalpBuilderVisuals();
-  scalpBuilderTemplateOverlay.visible = false;
-  SCALP_BUILDER_STEPS.forEach((step, index) => {
-    const segments = clippedCurves[index];
-    const positions = [];
-    segments.forEach((segment) => segment.forEach((point) => {
-      const lifted = liftedPoint(point);
-      positions.push(lifted.x, lifted.y, lifted.z);
-    }));
-    if (positions.length < 6) return;
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    const line = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({
-      color: step.color,
-      transparent: true,
-      opacity: 0.95,
-      depthTest: true,
-      depthWrite: false
-    }));
-    line.userData.scalpBuilderConstructionCurve = true;
-    line.renderOrder = 22;
-    scalpBuilderGroup.add(line);
-  });
-  [-1, 1].forEach((sideSign) => {
-    const foreheadCorner = boundaryCorner(
-      clippedCurves[0],
-      "z",
-      scalpBuilderPlanePositions[5],
-      sideSign
-    );
-    const sideburnCorner = boundaryCorner(
-      clippedCurves[1],
-      "z",
-      scalpBuilderPlanePositions[6],
-      sideSign
-    );
-    addSurfaceConnector(foreheadCorner, sideburnCorner, SCALP_REGIONS["side-bangs-right"].color);
 
-    const sideHairTopCorner = boundaryCorner(
-      clippedCurves[2],
-      "z",
-      scalpBuilderPlanePositions[7],
-      sideSign
-    );
-    const sideHairBottomCorner = boundaryCorner(
-      clippedCurves[3],
-      "z",
-      scalpBuilderPlanePositions[7],
-      sideSign
-    );
-    addSurfaceConnector(sideHairTopCorner, sideHairBottomCorner, SCALP_REGIONS["side-right"].color);
-  });
-  const sideContourAtDepth = (depth, bottom, sideSign, sampleCount = 18) => {
-    const segments = headPlaneIntersectionSegments("z", depth);
-    const endpoints = segments.flat();
-    if (!endpoints.length) return [];
-    const top = Math.max(...endpoints.map((point) => point.y));
-    const floor = Math.min(top - 0.0001, bottom);
-    const span = Math.max(0.0001, top - floor);
-    const points = [];
-    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
-      const amount = sampleIndex / (sampleCount - 1);
-      const y = THREE.MathUtils.lerp(top, floor, amount);
-      const candidates = [];
-      segments.forEach(([start, end]) => {
-        const minimum = Math.min(start.y, end.y) - span * 0.0001;
-        const maximum = Math.max(start.y, end.y) + span * 0.0001;
-        if (y < minimum || y > maximum) return;
-        const delta = end.y - start.y;
-        if (Math.abs(delta) < 0.00001) {
-          candidates.push(start.x, end.x);
-          return;
-        }
-        const segmentAmount = THREE.MathUtils.clamp((y - start.y) / delta, 0, 1);
-        candidates.push(THREE.MathUtils.lerp(start.x, end.x, segmentAmount));
-      });
-      const sideCandidates = candidates.filter((x) => sideSign < 0 ? x <= center.x : x >= center.x);
-      const x = sampleIndex === 0
-        ? center.x - sideSign * size.x * 0.025
-        : sideCandidates.length
-          ? (sideSign < 0 ? Math.min(...sideCandidates) : Math.max(...sideCandidates))
-          : center.x;
-      points.push(liftedPoint(new THREE.Vector3(x, y, depth)));
-    }
-    return points;
-  };
-  const addSurfacePatch = ({ startDepth, endDepth, startBottom, endBottom, region, sideSign }) => {
-    const depthSamples = 14;
-    const sideSamples = 18;
-    const points = [];
-    for (let depthIndex = 0; depthIndex < depthSamples; depthIndex += 1) {
-      const amount = depthIndex / (depthSamples - 1);
-      const depth = THREE.MathUtils.lerp(startDepth, endDepth, amount);
-      const bottom = THREE.MathUtils.lerp(startBottom, endBottom, amount);
-      const contour = sideContourAtDepth(depth, bottom, sideSign, sideSamples);
-      if (contour.length !== sideSamples) return;
-      points.push(...contour);
-    }
-    const positions = points.flatMap((point) => [point.x, point.y, point.z]);
-    const indices = [];
-    const wirePositions = [];
-    for (let depthIndex = 0; depthIndex < depthSamples - 1; depthIndex += 1) {
-      for (let sideIndex = 0; sideIndex < sideSamples - 1; sideIndex += 1) {
-        const a = depthIndex * sideSamples + sideIndex;
-        const b = a + 1;
-        const c = (depthIndex + 1) * sideSamples + sideIndex + 1;
-        const d = c - 1;
-        indices.push(a, b, c, a, c, d);
-      }
-    }
-    for (let depthIndex = 0; depthIndex < depthSamples; depthIndex += 1) {
-      for (let sideIndex = 0; sideIndex < sideSamples - 1; sideIndex += 1) {
-        const start = points[depthIndex * sideSamples + sideIndex];
-        const end = points[depthIndex * sideSamples + sideIndex + 1];
-        wirePositions.push(start.x, start.y, start.z, end.x, end.y, end.z);
-      }
-    }
-    for (let sideIndex = 0; sideIndex < sideSamples; sideIndex += 1) {
-      for (let depthIndex = 0; depthIndex < depthSamples - 1; depthIndex += 1) {
-        const start = points[depthIndex * sideSamples + sideIndex];
-        const end = points[(depthIndex + 1) * sideSamples + sideIndex];
-        wirePositions.push(start.x, start.y, start.z, end.x, end.y, end.z);
-      }
-    }
-    const color = SCALP_REGIONS[region]?.color || SCALP_REGIONS.unassigned.color;
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals();
-    const surface = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.16,
-      depthTest: true,
-      depthWrite: false,
-      side: THREE.DoubleSide
-    }));
-    surface.userData.scalpBuilderConstructionSurface = true;
-    surface.renderOrder = 18;
-    const wireGeometry = new THREE.BufferGeometry();
-    wireGeometry.setAttribute("position", new THREE.Float32BufferAttribute(wirePositions, 3));
-    const wire = new THREE.LineSegments(wireGeometry, new THREE.LineBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.24,
-      depthTest: true,
-      depthWrite: false
-    }));
-    wire.userData.scalpBuilderConstructionSurface = true;
-    wire.renderOrder = 19;
-    scalpBuilderGroup.add(surface, wire);
-  };
-  const depthInset = size.z * 0.002;
-  const frontHairlinePoints = clippedCurves[0].flat();
-  const backHairlinePoints = clippedCurves[4].flat();
-  const frontDepth = Math.max(...frontHairlinePoints.map((point) => point.z)) - depthInset;
-  const backDepth = Math.min(...backHairlinePoints.map((point) => point.z)) + depthInset;
-  const surfaceBands = [
-    { startDepth: frontDepth, endDepth: scalpBuilderPlanePositions[5], startBottom: scalpBuilderPlanePositions[0], endBottom: scalpBuilderPlanePositions[0], region: "bangs" },
-    { startDepth: scalpBuilderPlanePositions[5], endDepth: scalpBuilderPlanePositions[6], startBottom: scalpBuilderPlanePositions[0], endBottom: scalpBuilderPlanePositions[1], region: "side-bangs" },
-    { startDepth: scalpBuilderPlanePositions[6], endDepth: scalpBuilderPlanePositions[7], startBottom: scalpBuilderPlanePositions[1], endBottom: scalpBuilderPlanePositions[1], region: "side-bangs" },
-    { startDepth: scalpBuilderPlanePositions[7], endDepth: scalpBuilderPlanePositions[8], startBottom: scalpBuilderPlanePositions[1], endBottom: scalpBuilderPlanePositions[1], region: "side-bangs" },
-    { startDepth: scalpBuilderPlanePositions[8], endDepth: scalpBuilderPlanePositions[9], startBottom: scalpBuilderPlanePositions[3], endBottom: scalpBuilderPlanePositions[3], region: "side" },
-    { startDepth: scalpBuilderPlanePositions[9], endDepth: scalpBuilderPlanePositions[10], startBottom: scalpBuilderPlanePositions[3], endBottom: scalpBuilderPlanePositions[4], region: "side" },
-    { startDepth: scalpBuilderPlanePositions[10], endDepth: backDepth, startBottom: scalpBuilderPlanePositions[4], endBottom: scalpBuilderPlanePositions[4], region: "back" }
-  ];
-  const addCenterBridgePatch = (band) => {
-    const depthSamples = 14;
-    const widthSamples = 5;
-    const bridgeContourIndex = 10;
-    const bridgeMeshes = scalpBuilderHeadMeshes();
-    const bridgeRaycaster = new THREE.Raycaster();
-    const bridgeRayDistance = Math.max(size.x, size.y, size.z) * 1.8;
-    const bridgeRows = [];
-    for (let depthIndex = 0; depthIndex < depthSamples; depthIndex += 1) {
-      const amount = depthIndex / (depthSamples - 1);
-      const depth = THREE.MathUtils.lerp(band.startDepth, band.endDepth, amount);
-      const bottom = THREE.MathUtils.lerp(band.startBottom, band.endBottom, amount);
-      const left = sideContourAtDepth(depth, bottom, -1, 18);
-      const right = sideContourAtDepth(depth, bottom, 1, 18);
-      if (left.length <= bridgeContourIndex || right.length <= bridgeContourIndex) continue;
-      const row = [];
-      for (let widthIndex = 0; widthIndex < widthSamples; widthIndex += 1) {
-        const target = left[bridgeContourIndex].clone().lerp(
-          right[bridgeContourIndex],
-          widthIndex / (widthSamples - 1)
-        );
-        const direction = target.clone().sub(center);
-        if (direction.lengthSq() < 0.000001) {
-          row.push(target);
-          continue;
-        }
-        direction.normalize();
-        bridgeRaycaster.set(
-          center.clone().addScaledVector(direction, bridgeRayDistance),
-          direction.clone().negate()
-        );
-        const hit = bridgeRaycaster.intersectObjects(bridgeMeshes, false)[0];
-        if (!hit) {
-          row.push(target);
-          continue;
-        }
-        const normal = hit.face?.normal?.clone();
-        if (normal && hit.object) normal.transformDirection(hit.object.matrixWorld);
-        row.push(liftedPoint(hit.point, normal));
-      }
-      bridgeRows.push(row);
-    }
-    if (bridgeRows.length < 2) return;
-    const points = bridgeRows.flat();
-    const rowCount = bridgeRows.length;
-    const indices = [];
-    const wirePositions = [];
-    for (let depthIndex = 0; depthIndex < rowCount - 1; depthIndex += 1) {
-      for (let widthIndex = 0; widthIndex < widthSamples - 1; widthIndex += 1) {
-        const a = depthIndex * widthSamples + widthIndex;
-        const b = a + 1;
-        const c = (depthIndex + 1) * widthSamples + widthIndex + 1;
-        const d = c - 1;
-        indices.push(a, b, c, a, c, d);
-        const horizontalStart = points[a];
-        const horizontalEnd = points[b];
-        const verticalEnd = points[d];
-        wirePositions.push(
-          horizontalStart.x, horizontalStart.y, horizontalStart.z,
-          horizontalEnd.x, horizontalEnd.y, horizontalEnd.z,
-          horizontalStart.x, horizontalStart.y, horizontalStart.z,
-          verticalEnd.x, verticalEnd.y, verticalEnd.z
-        );
-      }
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(points.flatMap((point) => [point.x, point.y, point.z]), 3));
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals();
-    const color = SCALP_REGIONS.bangs.color;
-    const surface = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.16,
-      depthTest: false,
-      depthWrite: false,
-      side: THREE.DoubleSide
-    }));
-    const wireGeometry = new THREE.BufferGeometry();
-    wireGeometry.setAttribute("position", new THREE.Float32BufferAttribute(wirePositions, 3));
-    const wire = new THREE.LineSegments(wireGeometry, new THREE.LineBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.24,
-      depthTest: false,
-      depthWrite: false
-    }));
-    surface.userData.scalpBuilderConstructionSurface = true;
-    wire.userData.scalpBuilderConstructionSurface = true;
-    surface.renderOrder = 18;
-    wire.renderOrder = 19;
-    scalpBuilderGroup.add(surface, wire);
-  };
-  surfaceBands.forEach((band) => [-1, 1].forEach((sideSign) => {
-    let region = band.region;
-    if (region === "side-bangs") region = sideSign < 0 ? "side-bangs-left" : "side-bangs-right";
-    if (region === "side") region = sideSign < 0 ? "side-left" : "side-right";
-    addSurfacePatch({ ...band, region, sideSign });
-  }));
-  addCenterBridgePatch(surfaceBands[0]);
-  scalpBuilderGroup.visible = true;
-  scalpBuilderInstruction.textContent = "Construction surfaces generated from the curve network. Orbit around the head and inspect the patch flow before building final topology.";
-  scalpBuilderStepLabel.textContent = "Curve Preview";
-  scalpBuilderStepName.textContent = "Curve Surface Preview";
-  generateScalpBuilderButton.textContent = "Regenerate Preview";
-  updatePlacementStatus();
-}
 
-function keepScalpShellOutsideHead(points, faces, shellCenter, headSize, clearance) {
-  const meshes = headMeshes().filter((mesh) => !GUIDE_BOUNDS_EXCLUDED_GROUPS.has(mesh.name));
-  if (!meshes.length) return points.map((point) => point.clone());
-  const raycaster = new THREE.Raycaster();
-  const rayDistance = Math.max(headSize.x, headSize.y, headSize.z) * 1.8;
-  const directions = [];
-  const requiredOffsets = points.map((point) => {
-    const direction = point.clone().sub(shellCenter);
-    if (direction.lengthSq() < 0.000001) direction.set(0, 1, 0);
-    direction.normalize();
-    directions.push(direction);
-    raycaster.set(
-      shellCenter.clone().addScaledVector(direction, rayDistance),
-      direction.clone().negate()
-    );
-    const hit = raycaster.intersectObjects(meshes, false)[0];
-    if (!hit) return 0;
-    const surfaceDistance = hit.point.distanceTo(shellCenter);
-    const pointDistance = point.distanceTo(shellCenter);
-    return Math.max(0, surfaceDistance + clearance - pointDistance);
-  });
-  const neighbors = scalpTemplateNeighbors(points.length, faces);
-  let smoothedOffsets = requiredOffsets.slice();
-  for (let iteration = 0; iteration < 4; iteration += 1) {
-    smoothedOffsets = smoothedOffsets.map((offset, index) => {
-      if (!neighbors[index].size) return offset;
-      let average = 0;
-      neighbors[index].forEach((neighbor) => { average += smoothedOffsets[neighbor]; });
-      average /= neighbors[index].size;
-      return Math.max(requiredOffsets[index], THREE.MathUtils.lerp(offset, average, 0.48));
-    });
-  }
-  return points.map((point, index) => point.clone().addScaledVector(directions[index], smoothedOffsets[index]));
-}
 
-async function rebuildScalpBuilderTemplateOverlay() {
-  clearScalpBuilderTemplateOverlay();
-  if (
-    !SCALP_REGION_CURVE_VISUALIZATION_ENABLED
-    || !guideState.state.guideModel
-    || !scalpState.state.scalpBuilderEditing
-    || !scalpBuilderShowTemplateInput.checked
-  ) {
-    scalpBuilderTemplateOverlay.visible = false;
-    return;
-  }
-  try {
-    const template = await loadScalpTopologyTemplate();
-    if (!scalpState.state.scalpBuilderEditing || !scalpBuilderShowTemplateInput.checked) return;
-    guideState.state.guideModel.updateMatrixWorld(true);
-    const templateBounds = new THREE.Box3().setFromPoints(template.vertices);
-    const templateCenter = templateBounds.getCenter(new THREE.Vector3());
-    const templateSize = templateBounds.getSize(new THREE.Vector3());
-    const headBounds = guideHeadBounds(guideState.state.guideModel);
-    const headCenter = headBounds.getCenter(new THREE.Vector3());
-    const headSize = headBounds.getSize(new THREE.Vector3());
-    const useAuthoredCoordinates = !head.state.importedHeadAsset;
-    const mappedPoints = template.vertices.map((vertex) => {
-      if (useAuthoredCoordinates) return vertex.clone().applyMatrix4(guideState.state.guideModel.matrixWorld);
-      return new THREE.Vector3(
-        headCenter.x + ((vertex.x - templateCenter.x) / Math.max(0.0001, templateSize.x * 0.5)) * headSize.x * 0.51,
-        THREE.MathUtils.lerp(
-          headBounds.min.y + headSize.y * 0.38,
-          headBounds.max.y,
-          (vertex.y - templateBounds.min.y) / Math.max(0.0001, templateSize.y)
-        ),
-        headCenter.z + ((vertex.z - templateCenter.z) / Math.max(0.0001, templateSize.z * 0.5)) * headSize.z * 0.51
-      );
-    });
-    const shellClearance = Math.max(headSize.x, headSize.y, headSize.z) * 0.003;
-    const worldPoints = keepScalpShellOutsideHead(
-      mappedPoints,
-      template.faces,
-      headCenter,
-      headSize,
-      shellClearance
-    );
-    const positions = [];
-    const colors = [];
-    const wirePositions = [];
-    const color = new THREE.Color();
-    template.faces.forEach((face) => {
-      color.set(SCALP_REGIONS[face.region]?.color || SCALP_REGIONS.unassigned.color);
-      [[0, 1, 2], [0, 2, 3]].forEach((corners) => corners.forEach((corner) => {
-        const point = worldPoints[face.indices[corner]];
-        positions.push(point.x, point.y, point.z);
-        colors.push(color.r, color.g, color.b);
-      }));
-      for (let edge = 0; edge < 4; edge += 1) {
-        const start = worldPoints[face.indices[edge]];
-        const end = worldPoints[face.indices[(edge + 1) % 4]];
-        wirePositions.push(start.x, start.y, start.z, end.x, end.y, end.z);
-      }
-    });
-    const surfaceGeometry = new THREE.BufferGeometry();
-    surfaceGeometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    surfaceGeometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-    surfaceGeometry.computeVertexNormals();
-    const surface = new THREE.Mesh(surfaceGeometry, new THREE.MeshBasicMaterial({
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.24,
-      depthTest: true,
-      depthWrite: false,
-      side: THREE.DoubleSide
-    }));
-    surface.renderOrder = 12;
-    const wireGeometry = new THREE.BufferGeometry();
-    wireGeometry.setAttribute("position", new THREE.Float32BufferAttribute(wirePositions, 3));
-    const wire = new THREE.LineSegments(wireGeometry, new THREE.LineBasicMaterial({
-      color: 0x78f3f7,
-      transparent: true,
-      opacity: 0.58,
-      depthTest: true,
-      depthWrite: false
-    }));
-    wire.renderOrder = 13;
-    scalpBuilderTemplateOverlay.add(surface, wire);
-    scalpBuilderTemplateOverlay.visible = true;
-  } catch (error) {
-    console.error("Could not display scalp topology reference", error);
-    scalpBuilderTemplateOverlay.visible = false;
-  }
-}
 
-function generatedScalpObjContent(points, faces) {
-  const lines = ["# Anime Hair Studio generated scalp guide"];
-  points.forEach((point) => lines.push(`v ${point.x} ${point.y} ${point.z}`));
-  let activeRegion = "";
-  faces.forEach((face) => {
-    if (face.region !== activeRegion) {
-      activeRegion = face.region;
-      lines.push(`usemtl ${activeRegion}`);
-    }
-    lines.push(`f ${face.indices.map((index) => index + 1).join(" ")}`);
-  });
-  return `${lines.join("\n")}\n`;
-}
 
-async function generateScalpFromBuilder() {
-  if (!guideState.state.guideModel || scalpBuilderPlanePositions.some((value) => !Number.isFinite(value))) return;
-  generateScalpBuilderButton.disabled = true;
-  generateScalpBuilderButton.textContent = "Generating...";
-  try {
-    const template = await loadScalpTopologyTemplate();
-    pushUndoState();
-    const bounds = guideHeadBounds(guideState.state.guideModel);
-    const center = bounds.getCenter(new THREE.Vector3());
-    const size = bounds.getSize(new THREE.Vector3());
-    const templateBounds = new THREE.Box3().setFromPoints(template.vertices);
-    const templateCenter = templateBounds.getCenter(new THREE.Vector3());
-    const templateSize = templateBounds.getSize(new THREE.Vector3());
-    const bottomByRegion = {
-      bangs: scalpBuilderPlanePositions[0],
-      "side-bangs-left": scalpBuilderPlanePositions[1],
-      "side-bangs-right": scalpBuilderPlanePositions[1],
-      "side-left": scalpBuilderPlanePositions[3],
-      "side-right": scalpBuilderPlanePositions[3],
-      back: scalpBuilderPlanePositions[4],
-      unassigned: Math.min(...scalpBuilderPlanePositions.slice(0, 5))
-    };
-    const incidentRegions = Array.from({ length: template.vertices.length }, () => new Set());
-    const sourceBottomByRegion = {};
-    const sourceDepthByRegion = {};
-    template.faces.forEach((face) => face.indices.forEach((index) => {
-      incidentRegions[index].add(face.region);
-      sourceBottomByRegion[face.region] = Math.min(
-        sourceBottomByRegion[face.region] ?? Infinity,
-        template.vertices[index].y
-      );
-      const depth = sourceDepthByRegion[face.region] || { min: Infinity, max: -Infinity };
-      depth.min = Math.min(depth.min, template.vertices[index].z);
-      depth.max = Math.max(depth.max, template.vertices[index].z);
-      sourceDepthByRegion[face.region] = depth;
-    }));
-    const orderedDepthRange = (a, b) => ({ min: Math.min(a, b), max: Math.max(a, b) });
-    const targetDepthByRegion = {
-      bangs: orderedDepthRange(scalpBuilderPlanePositions[5], bounds.max.z),
-      "side-bangs-left": orderedDepthRange(scalpBuilderPlanePositions[8], scalpBuilderPlanePositions[6]),
-      "side-bangs-right": orderedDepthRange(scalpBuilderPlanePositions[8], scalpBuilderPlanePositions[6]),
-      "side-left": orderedDepthRange(scalpBuilderPlanePositions[9], scalpBuilderPlanePositions[7]),
-      "side-right": orderedDepthRange(scalpBuilderPlanePositions[9], scalpBuilderPlanePositions[7]),
-      back: orderedDepthRange(bounds.min.z, scalpBuilderPlanePositions[10]),
-      unassigned: orderedDepthRange(bounds.min.z, bounds.max.z)
-    };
-    const shellClearance = Math.max(size.x, size.y, size.z) * 0.003;
-    guideState.state.guideModel.updateMatrixWorld(true);
-    scalpSurfaceGroup.updateMatrixWorld(true);
-    const inset = size.z * 0.018;
-    const targetStations = [
-      { position: bounds.min.z + inset, segments: headPlaneIntersectionSegments("z", bounds.min.z + inset) },
-      ...scalpBuilderPlanePositions.slice(5).map((position, index) => ({
-        position,
-        segments: scalpBuilderContours[index + 5] || headPlaneIntersectionSegments("z", position)
-      })),
-      { position: bounds.max.z - inset, segments: headPlaneIntersectionSegments("z", bounds.max.z - inset) }
-    ].sort((a, b) => a.position - b.position)
-      .filter((station, index, stations) => index === 0 || Math.abs(station.position - stations[index - 1].position) > 0.0001);
-    const targetCurves = targetStations
-      .map((station) => upperContourCurve(station.segments, "z", station.position))
-      .filter(Boolean);
-    if (targetCurves.length < 3) throw new Error("Not enough valid intersection curves to loft the scalp.");
-    const sourceCurves = targetCurves.map((curve) => {
-      const normalizedDepth = THREE.MathUtils.clamp(
-        (curve.position - bounds.min.z) / Math.max(0.0001, size.z),
-        0,
-        1
-      );
-      const sourcePosition = THREE.MathUtils.lerp(templateBounds.min.z, templateBounds.max.z, normalizedDepth);
-      return upperContourCurve(
-        templatePlaneIntersectionSegments(template, "z", sourcePosition),
-        "z",
-        sourcePosition
-      );
-    }).filter(Boolean);
-    if (sourceCurves.length !== targetCurves.length) {
-      throw new Error("The scalp topology template could not be matched to the intersection curves.");
-    }
-    const curveFittedWorld = template.vertices.map((vertex, index) => {
-      const regions = [...incidentRegions[index]];
-      const fittedZ = regions.reduce((sum, region) => {
-        const sourceDepth = sourceDepthByRegion[region] || { min: templateBounds.min.z, max: templateBounds.max.z };
-        const targetDepth = targetDepthByRegion[region] || targetDepthByRegion.unassigned;
-        const amount = THREE.MathUtils.clamp(
-          (vertex.z - sourceDepth.min) / Math.max(0.0001, sourceDepth.max - sourceDepth.min),
-          0,
-          1
-        );
-        return sum + THREE.MathUtils.lerp(targetDepth.min, targetDepth.max, amount);
-      }, 0) / Math.max(1, regions.length);
-      const sourceSection = curveNetworkSection(sourceCurves, vertex.z);
-      const sourceAmount = THREE.MathUtils.clamp(
-        (vertex.x - sourceSection[0].x) / Math.max(0.0001, sourceSection.at(-1).x - sourceSection[0].x),
-        0,
-        1
-      );
-      const sourceSurfacePoint = pointAlongSection(sourceSection, sourceAmount);
-      const targetSection = curveNetworkSection(targetCurves, fittedZ);
-      const targetSurfacePoint = pointAlongSection(targetSection, sourceAmount);
-      let surfaceWeight = 0;
-      const fittedY = regions.reduce((sum, region) => {
-        const sourceBottom = sourceBottomByRegion[region] ?? templateBounds.min.y;
-        const amount = THREE.MathUtils.clamp(
-          (vertex.y - sourceBottom) / Math.max(0.0001, sourceSurfacePoint.y - sourceBottom),
-          0,
-          1
-        );
-        surfaceWeight += amount;
-        return sum + THREE.MathUtils.lerp(
-          bottomByRegion[region] ?? bottomByRegion.unassigned,
-          targetSurfacePoint.y,
-          amount
-        );
-      }, 0) / Math.max(1, regions.length);
-      surfaceWeight /= Math.max(1, regions.length);
-      const point = new THREE.Vector3(targetSurfacePoint.x, fittedY, fittedZ);
-      const outward = targetSurfacePoint.clone().sub(center);
-      if (outward.lengthSq() > 0.000001) {
-        point.addScaledVector(outward.normalize(), shellClearance * surfaceWeight);
-      }
-      return point;
-    });
-    const projectedWorld = curveFittedWorld;
-    const projectedLocal = projectedWorld.map((point) => scalpSurfaceGroup.worldToLocal(point.clone()));
-    const positions = [];
-    const regions = [];
-    const quadWirePositions = [];
-    template.faces.forEach((face) => {
-      [[0, 1, 2], [0, 2, 3]].forEach((corners) => {
-        corners.forEach((corner) => {
-          const point = projectedLocal[face.indices[corner]];
-          positions.push(point.x, point.y, point.z);
-        });
-        regions.push(face.region);
-      });
-      for (let edge = 0; edge < 4; edge += 1) {
-        const start = projectedLocal[face.indices[edge]];
-        const end = projectedLocal[face.indices[(edge + 1) % 4]];
-        quadWirePositions.push(start.x, start.y, start.z, end.x, end.y, end.z);
-      }
-    });
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    geometry.userData.quadWirePositions = quadWirePositions;
-    geometry.computeVertexNormals();
-    geometry.computeBoundingBox();
-    geometry.computeBoundingSphere();
-    const content = generatedScalpObjContent(projectedLocal, template.faces);
-    installCustomScalpGeometry(geometry, regions, { name: "generated-scalp.obj", content });
-    scalpState.state.importedScalpGuideAsset.preserveCoordinates = true;
-    scalpState.state.importedScalpGuideAsset.quadWirePositions = [...quadWirePositions];
-    setScalpBuilderEditing(false);
-    setScalpShapeEditing(true);
-    setScalpGuideVisibility(true);
-    updatePlacementStatus();
-  } catch (error) {
-    console.error("Could not generate scalp guide", error);
-    window.alert("The fitted scalp guide could not be generated. Please check the scalp topology template.");
-  } finally {
-    generateScalpBuilderButton.disabled = false;
-    generateScalpBuilderButton.textContent = "Generate Scalp Guide";
-  }
-}
 
-function resetScalpBuilder() {
-  if (scalpState.state.scalpBuilderEditing && (scalpState.state.scalpBuilderCurveLattice || scalpState.state.scalpBuilderEditedPoints)) pushUndoState();
-  scalpState.state.scalpBuilderEditedPoints = null;
-  scalpState.state.activeScalpBuilderCurveLatticeEdit = null;
-  scalpState.state.scalpBuilderStep = 0;
-  scalpState.state.scalpBuilderStroke = null;
-  scalpBuilderPlanePositions.fill(null);
-  scalpBuilderContours.fill(null);
-  generateScalpBuilderButton.textContent = "Generate Surface Preview";
-  if (scalpState.state.scalpBuilderEditing) createScalpBuilderCurveLattice();
-  else updateScalpBuilderStepUi();
-  updatePlacementStatus();
-  updateInteractionLocks();
-}
 
-function confirmScalpBuilderPlane() {
-  if (!scalpState.state.scalpBuilderEditing || !scalpState.state.scalpBuilderPlane) return;
-  const step = SCALP_BUILDER_STEPS[scalpState.state.scalpBuilderStep];
-  scalpBuilderPlanePositions[scalpState.state.scalpBuilderStep] = scalpState.state.scalpBuilderPlane.position[step.axis];
-  scalpBuilderContours[scalpState.state.scalpBuilderStep] = headPlaneIntersectionSegments(
-    step.axis,
-    scalpState.state.scalpBuilderPlane.position[step.axis]
-  );
-  transformControls.detach();
-  scalpState.state.scalpBuilderStep += 1;
-  createScalpBuilderPlanes();
-  updatePlacementStatus();
-}
 
-function beginScalpBuilderInput() { return beginScalpBuilderCurveLatticeSelection(); }
-function updateScalpBuilderStroke() {}
-function finishScalpBuilderStroke() {}
 
-function setScalpBuilderEditing(enabled) {
-  if (enabled && sculptState.state.viewportEditMode !== "guide") setViewportEditMode("guide");
-  if (enabled) deselectStrandsForGuideEditor();
-  if (enabled && scalpState.state.scalpShapeEditing) setScalpShapeEditing(false);
-  if (enabled && scalpState.state.scalpPaintEditing) setScalpPaintEditing(false);
-  if (enabled && sculptState.state.headSetupEditing) sculptState.state.headSetupEditing = false;
-  scalpState.state.scalpBuilderEditing = Boolean(enabled);
-  scalpBuilderGroup.visible = scalpState.state.scalpBuilderEditing;
-  if (enabled) {
-    if (["rotate", "scale"].includes(sel.state.activeTool)) setActiveTool("select");
-    setMirrorXEditing(true);
-    setScalpGuideVisibility(true);
-    createScalpBuilderCurveLattice();
-    scalpBuilderTemplateOverlay.visible = false;
-  } else {
-    if (
-      transformControls.object?.userData.scalpBuilderPlane
-      || transformControls.object?.userData.scalpBuilderLatticeIndex !== undefined
-    ) transformControls.detach();
-    disposeScalpBuilderVisuals();
-    scalpBuilderGroup.visible = false;
-    scalpBuilderTemplateOverlay.visible = false;
-    configureTransformControls(sel.state.activeTool);
-  }
-  setHeadReferenceTransparency(
-    scalpState.state.scalpBuilderEditing && scalpBuilderTransparentHeadInput.checked,
-    0.18
-  );
-  updateScalpEditingVisibility();
-  updateAttributeEditorMode();
-  updatePlacementStatus();
-  if (sel.state.activeOutlinerTab === "guides") renderGuideOutliner();
-}
-
-function updateScalpEditingVisibility() {
-  const isolateHeadAndScalpEditors = scalpState.state.scalpBuilderEditing || sculptState.state.headSetupEditing;
-  hairGroup.visible = !isolateHeadAndScalpEditors;
-  curveGroup.visible = !isolateHeadAndScalpEditors;
-  guideSurfaceGroup.visible = !isolateHeadAndScalpEditors;
-  scalpSurfaceGroup.visible = scalpState.state.scalpGuideVisible;
-  const usingCustomGuide = scalpState.state.scalpGuideSource === "custom" && Boolean(scalpState.state.customScalpSurfaceMesh);
-  const usingEditedGuide = !usingCustomGuide && Boolean(scalpState.state.editedScalpSurfaceMesh);
-  scalpSurfaceMesh.visible = !usingCustomGuide && !usingEditedGuide;
-  scalpSurfaceWire.visible = !usingCustomGuide && !usingEditedGuide;
-  scalpSelectionOutline.visible = !usingCustomGuide && !usingEditedGuide && sculptState.state.headSetupEditing;
-  if (scalpState.state.editedScalpSurfaceMesh) scalpState.state.editedScalpSurfaceMesh.visible = usingEditedGuide;
-  if (scalpState.state.editedScalpSurfaceWire) scalpState.state.editedScalpSurfaceWire.visible = usingEditedGuide;
-  if (scalpState.state.editedScalpSelectionOutline) scalpState.state.editedScalpSelectionOutline.visible = usingEditedGuide && sculptState.state.headSetupEditing;
-  if (scalpState.state.customScalpSurfaceMesh) scalpState.state.customScalpSurfaceMesh.visible = usingCustomGuide;
-  if (scalpState.state.customScalpSurfaceWire) scalpState.state.customScalpSurfaceWire.visible = usingCustomGuide;
-  if (scalpState.state.customScalpSelectionOutline) scalpState.state.customScalpSelectionOutline.visible = usingCustomGuide && sculptState.state.headSetupEditing;
-  scalpPanel.classList.toggle("hidden", !scalpState.state.scalpShapeEditing || scalpState.state.scalpPaintEditing);
-  scalpPaintPanel.classList.toggle("hidden", !scalpState.state.scalpPaintEditing);
-  headPanel.classList.toggle("hidden", !sculptState.state.headSetupEditing);
-  scalpBuilderPanel.classList.toggle("hidden", !scalpState.state.scalpBuilderEditing);
-  const setupActive = scalpState.state.scalpShapeEditing || scalpState.state.scalpPaintEditing || sculptState.state.headSetupEditing || scalpState.state.scalpBuilderEditing || sculptState.state.capsuleGuideEditing;
-  const setupEditorName = scalpState.state.scalpPaintEditing
-    ? "Scalp Painting"
-    : sculptState.state.headSetupEditing
-      ? "Edit Head"
-      : scalpState.state.scalpBuilderEditing
-        ? "Edit Scalp"
-        : sculptState.state.capsuleGuideEditing
-          ? "Capsule Guide"
-        : scalpState.state.scalpShapeEditing
-          ? "Scalp Guide"
-          : "Editor";
-  exitSetupEditor.classList.toggle("hidden", !setupActive);
-  exitSetupEditorLabel.textContent = `Exit ${setupEditorName}`;
-  modeToolButtons.forEach((button) => {
-    const tool = button.dataset.tool;
-    const usefulInScalpEditor = scalpState.state.scalpBuilderEditing
-      ? ["select", "move"].includes(tool)
-      : sculptState.state.capsuleGuideEditing && ["select", "move", "rotate", "scale"].includes(tool);
-    button.classList.toggle("setup-tool-hidden", setupActive && !usefulInScalpEditor);
-  });
-  updateViewportToolVisibility();
-  const scalpTransformEditing = scalpState.state.scalpBuilderEditing || sculptState.state.capsuleGuideEditing;
-  mirrorXToggle.classList.toggle("setup-mode-hidden", setupActive && !scalpState.state.scalpBuilderEditing);
-  proportionalToggle.classList.toggle("setup-mode-hidden", setupActive && !scalpTransformEditing);
-  spaceToggle.classList.toggle("setup-mode-hidden", setupActive);
-  hierarchyToggle.classList.toggle("setup-mode-hidden", setupActive);
-  scalpSetupToggle.classList.toggle("active", setupActive);
-  scalpPaintToggle.classList.toggle("active", scalpState.state.scalpPaintEditing);
-  headSetupMode.classList.toggle("active", sculptState.state.headSetupEditing);
-  scalpBuilderMode.classList.toggle("active", scalpState.state.scalpBuilderEditing);
-  drawCapsuleGuideMode.classList.toggle("active", sculptState.state.viewportEditMode === "guide" && sel.state.activeTool === "draw-capsule-guide");
-  capsuleGuideMode.classList.toggle("active", sculptState.state.capsuleGuideEditing);
-  scalpBuilderGroup.visible = scalpState.state.scalpBuilderEditing;
-  if (scalpState.state.scalpBuilderCurveLattice) {
-    scalpState.state.scalpBuilderCurveLattice.surface.visible = SCALP_REGION_CURVE_VISUALIZATION_ENABLED;
-    scalpState.state.scalpBuilderCurveLattice.line.visible = SCALP_REGION_CURVE_VISUALIZATION_ENABLED;
-    scalpState.state.scalpBuilderCurveLattice.outline.visible = (
-      SCALP_REGION_CURVE_VISUALIZATION_ENABLED && sculptState.state.headSetupEditing
-    );
-    scalpState.state.scalpBuilderCurveLattice.symmetryLine.visible = (
-      SCALP_REGION_CURVE_VISUALIZATION_ENABLED && scalpState.state.scalpBuilderEditing && sculptState.state.mirrorXEditing
-    );
-    scalpState.state.scalpBuilderCurveLattice.headSymmetryLine.visible = (
-      SCALP_REGION_CURVE_VISUALIZATION_ENABLED && scalpState.state.scalpBuilderEditing && sculptState.state.mirrorXEditing
-    );
-    scalpState.state.scalpBuilderCurveLattice.handles.forEach((handle) => {
-      handle.visible = scalpState.state.scalpBuilderEditing;
-    });
-  }
-  scalpLatticeGroup.visible = scalpState.state.scalpShapeEditing && scalpState.state.scalpLatticeEditing;
-  const surfaceOpacity = scalpState.state.scalpPaintEditing
-      ? 0.46
-      : ["place", "draw", "procedural-draw", "braid", "panel"].includes(sel.state.activeTool)
-        ? 0.28
-        : 0.12;
-  const activeMesh = activeScalpSurfaceMesh();
-  const activeWire = activeScalpSurfaceWire();
-  const activeOutline = activeScalpSelectionOutline();
-  const showScalp = scalpState.state.scalpGuideVisible || sculptState.state.headSetupEditing;
-  activeMesh.material.opacity = showScalp ? surfaceOpacity : 0;
-  activeWire.material.opacity = showScalp ? (scalpState.state.scalpPaintEditing ? 0.12 : 0.14) : 0;
-  activeOutline.material.uniforms.outlineOpacity.value = sculptState.state.headSetupEditing ? 0.96 : 0;
-  activeMesh.material.depthTest = true;
-  activeWire.material.depthTest = true;
-  activeMesh.renderOrder = sculptState.state.headSetupEditing ? 19 : scalpSurfaceMesh.renderOrder;
-  activeMesh.material.needsUpdate = true;
-  activeWire.material.needsUpdate = true;
-  activeOutline.material.needsUpdate = true;
-  syncViewportDrawSettings();
-  pinActiveToolSettingsPanel();
-}
 
 function exitSetupEditors() {
-  setScalpSetupMenuOpen(false);
-  if (scalpState.state.scalpBuilderEditing) setScalpBuilderEditing(false);
-  if (scalpState.state.scalpPaintEditing) setScalpPaintEditing(false);
+  scalpBuilder.setScalpSetupMenuOpen(false);
+  if (scalpState.state.scalpBuilderEditing) scalpBuilder.setScalpBuilderEditing(false);
+  if (scalpState.state.scalpPaintEditing) scalpBuilder.setScalpPaintEditing(false);
   if (sculptState.state.headSetupEditing) setHeadSetupEditing(false);
-  if (scalpState.state.scalpShapeEditing) setScalpShapeEditing(false);
+  if (scalpState.state.scalpShapeEditing) scalpBuilder.setScalpShapeEditing(false);
   if (sculptState.state.capsuleGuideEditing) setCapsuleGuideEditing(false);
 }
 
@@ -6089,7 +3756,7 @@ function setCapsuleGuideEditing(enabled) {
     if (guide.handlesGroup) guide.handlesGroup.visible = visible;
     if (guide.loopLinesGroup) guide.loopLinesGroup.visible = visible;
   });
-  updateScalpEditingVisibility();
+  scalpBuilder.updateScalpEditingVisibility();
   updateAttributeEditorMode();
   updatePlacementStatus();
   applyCapsuleGuideDisplayVisibility();
@@ -6128,9 +3795,6 @@ function setTurntableActive(enabled) {
   if (viewportState.state.turntableActive) setAttributeEditorTab("main");
 }
 
-function setScalpSetupMenuOpen(open) {
-  setAppMenuOpen(scalpSetupToggle, scalpSetupMenu, open);
-}
 
 function selectedReferenceImage() {
   return referenceImages.find((reference) => reference.id === sel.state.selectedReferenceImageId) || null;
@@ -6901,44 +4565,10 @@ function handleOutlinerRenameClick(event, options) {
   options.onSelect?.(event);
 }
 
-function createScalpGuideOutlinerRow() {
-  const row = document.createElement("div");
-  row.className = "guide-outliner-row";
-  const visibility = createOutlinerVisibilityToggle({
-    visible: scalpState.state.scalpGuideVisible,
-    label: "Scalp Guide",
-    onToggle: () => setScalpGuideVisibility(!scalpState.state.scalpGuideVisible)
-  });
-  const item = document.createElement("button");
-  item.className = `guide-outliner-item${scalpState.state.scalpBuilderEditing ? " active" : ""}`;
-  item.type = "button";
-  item.title = "Scalp Guide";
-  item.setAttribute("aria-pressed", String(scalpState.state.scalpBuilderEditing));
-  const icon = document.createElement("span");
-  icon.className = "guide-outliner-icon scalp-guide";
-  const name = document.createElement("span");
-  name.className = "guide-outliner-name";
-  name.textContent = "Scalp Guide";
-  const kind = document.createElement("span");
-  kind.className = "guide-outliner-kind";
-  kind.textContent = "Surface";
-  item.append(icon, name, kind);
-  item.addEventListener("click", () => {
-    setViewportEditMode("guide");
-    deselectStrands();
-    setScalpGuideVisibility(true);
-    updateAttributeEditorMode();
-  });
-  item.addEventListener("contextmenu", (event) => showOutlinerContextMenu(event, {
-    type: "scalp-guide"
-  }));
-  row.append(visibility, item);
-  return row;
-}
 
 function renderGuideOutliner() {
   guideOutliner.replaceChildren();
-  guideOutliner.appendChild(createScalpGuideOutlinerRow());
+  guideOutliner.appendChild(scalpBuilder.createScalpGuideOutlinerRow());
   const visibleGuides = outlinerGuides();
   visibleGuides.forEach((guide, index) => {
     const label = guideOutlinerLabel(guide, index);
@@ -7260,7 +4890,7 @@ function referencePlaneHitFromPointer({ ignoreOcclusion = false } = {}) {
     ...locks.filter(strandVisibleForDisplay).map((lock) => lock.mesh),
     ...guides.flatMap((guide) => [guide.mesh, guide.rootMesh]),
     ...headMeshes(),
-    scalpSurfaceGroup.visible ? activeScalpSurfaceMesh() : null
+    scalpSurfaceGroup.visible ? scalpBuilder.activeScalpSurfaceMesh() : null
   ].filter((object) => object?.visible !== false);
   const occluderHit = raycaster.intersectObjects(occluders, false)[0] || null;
   return occluderHit && occluderHit.distance < planeHit.distance ? null : planeHit;
@@ -7602,52 +5232,23 @@ function finishReferenceCrop(event, { cancel = false } = {}) {
 
 function setHeadSetupEditing(enabled) {
   if (enabled) deselectStrandsForGuideEditor();
-  if (enabled && scalpState.state.scalpBuilderEditing) setScalpBuilderEditing(false);
-  if (enabled && scalpState.state.scalpShapeEditing) setScalpShapeEditing(false);
-  if (enabled && scalpState.state.scalpPaintEditing) setScalpPaintEditing(false);
+  if (enabled && scalpState.state.scalpBuilderEditing) scalpBuilder.setScalpBuilderEditing(false);
+  if (enabled && scalpState.state.scalpShapeEditing) scalpBuilder.setScalpShapeEditing(false);
+  if (enabled && scalpState.state.scalpPaintEditing) scalpBuilder.setScalpPaintEditing(false);
   sculptState.state.headSetupEditing = Boolean(enabled);
   setHeadReferenceTransparency(false);
   if (sculptState.state.headSetupEditing) {
-    setScalpGuideVisibility(true);
-    createScalpBuilderCurveLattice();
+    scalpBuilder.setScalpGuideVisibility(true);
+    scalpBuilder.createScalpBuilderCurveLattice();
   }
-  else if (!scalpState.state.scalpBuilderEditing) disposeScalpBuilderVisuals();
-  updateScalpEditingVisibility();
+  else if (!scalpState.state.scalpBuilderEditing) scalpBuilder.disposeScalpBuilderVisuals();
+  scalpBuilder.updateScalpEditingVisibility();
   updatePlacementStatus();
 }
 
-function activeToolUsesScalpGuide(tool = sel.state.activeTool) {
-  if (tool === "place") return true;
-  if (tool === "draw-capsule-guide") return activeStrokeSurfaceValue() !== "contextual-plane";
-  if (tool === "curve-surface") return activeStrokeSurfaceValue() !== "contextual-plane";
-  if (["draw", "procedural-draw", "braid", "panel", "surface-loft"].includes(tool)) return activeStrokeSurfaceValue() !== "contextual-plane";
-  if (tool === "poly") return activeStrokeSurfaceValue() !== "contextual-plane";
-  return scalpState.state.scalpShapeEditing || scalpState.state.scalpPaintEditing;
-}
 
-function toolAutoShowsScalpGuide(tool = sel.state.activeTool) {
-  if (tool === "place") return placeAutoShowScalpInput.checked;
-  if (tool === "draw-capsule-guide") return drawAutoShowScalpInput.checked;
-  if (["draw", "procedural-draw", "poly", "curve-surface"].includes(tool)) return drawAutoShowScalpInput.checked;
-  if (tool === "braid") return braidAutoShowScalpInput.checked;
-  if (tool === "panel") return panelAutoShowScalpInput.checked;
-  if (["surface-loft", "curve-surface"].includes(tool)) return drawAutoShowScalpInput.checked;
-  return scalpState.state.scalpShapeEditing || scalpState.state.scalpPaintEditing;
-}
 
-function autoShowScalpGuideForActiveTool() {
-  if (activeToolUsesScalpGuide() && toolAutoShowsScalpGuide()) {
-    setScalpGuideVisibility(true);
-  }
-}
 
-function setScalpGuideVisibility(visible) {
-  scalpState.state.scalpGuideVisible = Boolean(visible);
-  updateGuideViewToggle();
-  syncDisplayVisibilityInputs();
-  updateScalpEditingVisibility();
-  if (sel.state.activeOutlinerTab === "guides") renderGuideOutliner();
-}
 
 function currentGuideViewMode() {
   return GUIDE_VIEW_MODES.find((mode) => (
@@ -7677,7 +5278,7 @@ function setGuideViewMode(modeId) {
   const mode = GUIDE_VIEW_MODES.find((item) => item.id === modeId) || GUIDE_VIEW_MODES[0];
   guideState.state.capsuleGuidesVisible = mode.capsules;
   guideState.state.curveLatticeGuidesVisible = mode.lattices;
-  setScalpGuideVisibility(mode.scalp);
+  scalpBuilder.setScalpGuideVisibility(mode.scalp);
   applyCapsuleGuideDisplayVisibility();
   applyCurveLatticeGuideDisplayVisibility();
   syncDisplayVisibilityInputs();
@@ -7890,62 +5491,8 @@ function applyDisplayVisibilityFilters() {
   renderGuideOutliner();
 }
 
-function setScalpLatticeEditing(enabled) {
-  if (enabled && !scalpState.state.scalpShapeEditing) setScalpShapeEditing(true);
-  scalpState.state.scalpLatticeEditing = enabled && scalpState.state.scalpShapeEditing;
-  advancedLatticeButton.classList.toggle("active", scalpState.state.scalpLatticeEditing);
-  advancedLatticeButton.setAttribute("aria-pressed", String(scalpState.state.scalpLatticeEditing));
-  advancedLatticeButton.textContent = scalpState.state.scalpLatticeEditing ? "Close advanced lattice" : "Advanced lattice";
-  if (!enabled && transformControls.object?.userData.scalpLatticeIndex !== undefined) {
-    transformControls.detach();
-    scalpState.state.selectedScalpLatticeIndex = null;
-  }
-  if (!enabled) endScalpLatticeDrag();
-  updateScalpEditingVisibility();
-  updatePlacementStatus();
-}
 
-function setScalpShapeEditing(enabled) {
-  if (enabled) deselectStrandsForGuideEditor();
-  if (enabled && scalpState.state.scalpBuilderEditing) setScalpBuilderEditing(false);
-  if (enabled && scalpState.state.scalpPaintEditing) setScalpPaintEditing(false);
-  if (enabled && sculptState.state.headSetupEditing) sculptState.state.headSetupEditing = false;
-  if (enabled && sel.state.selectedStrandGroup) {
-    sel.state.selectedStrandGroup = null;
-    updateAttributeEditorMode();
-    renderLockList();
-  }
-  scalpState.state.scalpShapeEditing = enabled;
-  if (enabled) setScalpGuideVisibility(true);
-  if (!enabled) setScalpLatticeEditing(false);
-  setHeadReferenceTransparency(enabled);
-  updateScalpEditingVisibility();
-  updatePlacementStatus();
-}
 
-function setScalpPaintEditing(enabled) {
-  if (enabled) deselectStrandsForGuideEditor();
-  if (enabled && scalpState.state.scalpBuilderEditing) setScalpBuilderEditing(false);
-  if (enabled && scalpState.state.scalpShapeEditing) setScalpShapeEditing(false);
-  if (enabled && sculptState.state.headSetupEditing) sculptState.state.headSetupEditing = false;
-  if (enabled && sel.state.selectedStrandGroup) {
-    sel.state.selectedStrandGroup = null;
-    updateAttributeEditorMode();
-    renderLockList();
-  }
-  scalpState.state.scalpPaintEditing = enabled;
-  if (enabled) setScalpGuideVisibility(true);
-  scalpPaintToggle.classList.toggle("active", enabled);
-  scalpPaintToggle.setAttribute("aria-pressed", String(enabled));
-  scalpPaintToggle.title = enabled ? "Close scalp region paint" : "Paint scalp regions";
-  if (!enabled) {
-    endScalpPaint();
-    scalpBrushCursor.visible = false;
-  }
-  setHeadReferenceTransparency(scalpState.state.scalpShapeEditing);
-  updateScalpEditingVisibility();
-  updatePlacementStatus();
-}
 
 function defaultCurveLatticePoints(columns = 3, rows = 3) {
   const points = [];
@@ -7958,7 +5505,7 @@ function defaultCurveLatticePoints(columns = 3, rows = 3) {
       const u = column / Math.max(1, columns - 1);
       const x = THREE.MathUtils.lerp(-0.78, 0.78, u);
       probe.set(new THREE.Vector3(x, y, 4), new THREE.Vector3(0, 0, -1));
-      const hit = probe.intersectObject(activeScalpSurfaceMesh(), false)[0];
+      const hit = probe.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0];
       if (hit) {
         const normalMatrix = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
         const normal = hit.face.normal.clone().applyMatrix3(normalMatrix).normalize();
@@ -7982,78 +5529,7 @@ function flatCurveLatticePoints(
   );
 }
 
-function scalpRegionSurfaceSamples(region) {
-  scalpSurfaceGroup.updateMatrixWorld(true);
-  const position = scalpSurfaceGeometry.getAttribute("position");
-  const normal = scalpSurfaceGeometry.getAttribute("normal");
-  const normalMatrix = new THREE.Matrix3().getNormalMatrix(scalpSurfaceGroup.matrixWorld);
-  return scalpState.state.scalpVisibleQuads
-    .filter((quad) => scalpState.state.scalpRegionAssignments[quad.id] === region)
-    .map((quad) => {
-      const point = new THREE.Vector3();
-      const surfaceNormal = new THREE.Vector3();
-      quad.vertices.forEach((vertexIndex) => {
-        point.x += position.getX(vertexIndex);
-        point.y += position.getY(vertexIndex);
-        point.z += position.getZ(vertexIndex);
-        surfaceNormal.x += normal.getX(vertexIndex);
-        surfaceNormal.y += normal.getY(vertexIndex);
-        surfaceNormal.z += normal.getZ(vertexIndex);
-      });
-      point.multiplyScalar(0.25).applyMatrix4(scalpSurfaceGroup.matrixWorld);
-      surfaceNormal.multiplyScalar(0.25).applyMatrix3(normalMatrix).normalize();
-      return { point, normal: surfaceNormal, face: quad.face };
-    });
-}
 
-function curveLatticePointsForScalpRegion(region, columns = 3, rows = 3) {
-  const samples = scalpRegionSurfaceSamples(region);
-  if (!samples.length) return defaultCurveLatticePoints(columns, rows);
-  const sideRegion = region.includes("side-");
-  const topFaceSamples = sideRegion ? samples.filter((sample) => sample.face === "top") : [];
-  const horizontalValue = (sample) => sideRegion ? sample.point.z : sample.point.x;
-  const horizontalValues = samples.map(horizontalValue);
-  const verticalValues = samples.map((sample) => sample.point.y);
-  const horizontalMin = Math.min(...horizontalValues);
-  const horizontalMax = Math.max(...horizontalValues);
-  const verticalMin = Math.min(...verticalValues);
-  const verticalMax = Math.max(...verticalValues);
-  const horizontalRange = Math.max(0.001, horizontalMax - horizontalMin);
-  const verticalRange = Math.max(0.001, verticalMax - verticalMin);
-  const points = [];
-
-  const blendedSample = (candidates, targetHorizontal, targetY) => {
-    const nearest = candidates.map((sample) => {
-      const du = (horizontalValue(sample) - targetHorizontal) / horizontalRange;
-      const dv = (sample.point.y - targetY) / verticalRange;
-      return { sample, distance: du * du + dv * dv };
-    }).sort((a, b) => a.distance - b.distance).slice(0, Math.min(6, candidates.length));
-    const point = new THREE.Vector3();
-    const normal = new THREE.Vector3();
-    let totalWeight = 0;
-    nearest.forEach(({ sample, distance }) => {
-      const weight = 1 / Math.pow(distance + 0.025, 2);
-      point.addScaledVector(sample.point, weight);
-      normal.addScaledVector(sample.normal, weight);
-      totalWeight += weight;
-    });
-    point.divideScalar(Math.max(1e-6, totalWeight));
-    normal.normalize();
-    return point.addScaledVector(normal, 0.075);
-  };
-
-  for (let row = 0; row < rows; row += 1) {
-    const v = rows === 1 ? 0.5 : row / (rows - 1);
-    const targetY = THREE.MathUtils.lerp(verticalMax, verticalMin, v);
-    for (let column = 0; column < columns; column += 1) {
-      const u = columns === 1 ? 0.5 : THREE.MathUtils.lerp(0.04, 0.96, column / (columns - 1));
-      const targetHorizontal = THREE.MathUtils.lerp(horizontalMin, horizontalMax, u);
-      const candidates = row === 0 && topFaceSamples.length ? topFaceSamples : samples;
-      points.push(blendedSample(candidates, targetHorizontal, targetY));
-    }
-  }
-  return points;
-}
 
 function createCurveLatticeGuideSet() {
   const regions = STRAND_GROUPS.map((group) => group.id).filter((region) => region !== "unassigned");
@@ -8065,7 +5541,7 @@ function createCurveLatticeGuideSet() {
       rows,
       scalpRegion: region,
       color: SCALP_REGIONS[region].color,
-      points: curveLatticePointsForScalpRegion(region, columns, rows)
+      points: scalpBuilder.curveLatticePointsForScalpRegion(region, columns, rows)
     }, { deferUi: true });
   });
 }
@@ -8343,10 +5819,10 @@ function defaultCurveLatticeRootPoints(guide) {
   return Array.from({ length: guide.columns }, (_, column) => {
     const boundary = curveLatticeControlPoint(guide, column, 0);
     probe.set(new THREE.Vector3(0, 4, boundary.z), new THREE.Vector3(0, -1, 0));
-    let hit = probe.intersectObject(activeScalpSurfaceMesh(), false)[0];
+    let hit = probe.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0];
     if (!hit) {
       probe.set(new THREE.Vector3(0, boundary.y, 4), new THREE.Vector3(0, 0, -1));
-      hit = probe.intersectObject(activeScalpSurfaceMesh(), false)[0];
+      hit = probe.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0];
     }
     if (!hit) return boundary.clone().setX(0);
     const point = hit.point.clone();
@@ -8382,7 +5858,7 @@ function curveLatticeRestPoint(guide, pointIndex) {
 function editingCurveLatticeDeformation(guide) {
   if ((!CURVE_LATTICE_FEATURE_ENABLED && !GROUP_CURVE_FEATURE_ENABLED) || !sel.state.selectedStrandGroup || !guide) return false;
   return guide.scalpRegion === sel.state.selectedStrandGroup
-    || (sculptState.state.mirrorXEditing && guide.scalpRegion === mirroredScalpRegion(sel.state.selectedStrandGroup));
+    || (sculptState.state.mirrorXEditing && guide.scalpRegion === scalpBuilder.mirroredScalpRegion(sel.state.selectedStrandGroup));
 }
 
 function curveLatticeRootColumns(guide) {
@@ -8702,7 +6178,7 @@ function mirroredCurveLatticePointIndex(guide, pointIndex) {
 }
 
 function mirroredCurveLatticeTarget(guide, pointIndex) {
-  const mirroredRegion = mirroredScalpRegion(guide.scalpRegion);
+  const mirroredRegion = scalpBuilder.mirroredScalpRegion(guide.scalpRegion);
   const section = curveLatticePointSection(guide, pointIndex);
   if (mirroredRegion === guide.scalpRegion) {
     if (section.type === "root") {
@@ -9115,7 +6591,7 @@ function createStrandsFromCurveLattice(guide) {
       length: new THREE.CatmullRomCurve3(points).getLength(),
       curve: points.at(-1).x - root.x,
       width: Number(drawStrandBrushSizeInput.value),
-      scalpRegion: scalpRegionNearestWorldPoint(root),
+      scalpRegion: scalpBuilder.scalpRegionNearestWorldPoint(root),
       color: DEFAULT_HAIR_COLOR,
       points,
       curveLatticeBinding: { guideId: guide.id, column }
@@ -9766,7 +7242,7 @@ function updateCapsuleGuideHandleColors(guide, selectedIndex = -1) {
   guide.handlesGroup?.children.forEach((handle, pointIndex) => {
     const selected = pointIndex === selectedIndex;
     const mirrored = pointIndex === mirroredIndex && mirroredIndex !== selectedIndex;
-    const influenced = distances && scalpBuilderProportionalWeight(distances[pointIndex]) > 0;
+    const influenced = distances && scalpBuilder.scalpBuilderProportionalWeight(distances[pointIndex]) > 0;
     if (selected) handle.material.color.set(CONTROL_POINT_SELECTED_COLOR);
     else if (mirrored || influenced) handle.material.color.set(0xf2b35f);
     else handle.material.color.copy(capsuleGuideAccentColor(guide, 0.18));
@@ -9793,7 +7269,7 @@ function updateCapsuleGuideFromHandle(handle) {
         point.copy(edit.startPoints[index]);
         return;
       }
-      const weight = scalpBuilderProportionalWeight(edit.distances[index]);
+      const weight = scalpBuilder.scalpBuilderProportionalWeight(edit.distances[index]);
       point.copy(edit.startPoints[index]).addScaledVector(delta, weight);
     });
     mirrorCapsuleGuidePointEdits(guide.controlPoints, edit.startPoints, edit.mirrorMap, sourceSide);
@@ -9922,7 +7398,7 @@ function updateCapsuleGuideLoopTransform() {
     const distance = Math.abs(loopIndex - edit.loopIndex);
     const weight = loopIndex === edit.loopIndex
       ? 1
-      : sculptState.state.proportionalEditing ? scalpBuilderProportionalWeight(distance) : 0;
+      : sculptState.state.proportionalEditing ? scalpBuilder.scalpBuilderProportionalWeight(distance) : 0;
     if (weight <= 0) return;
     const centerWorld = edit.loopCenters[loopIndex].clone().applyMatrix4(edit.worldMatrix);
     const weightedRotation = identity.clone().slerp(rotationDelta, weight);
@@ -9979,7 +7455,7 @@ function refreshCapsuleGuideFillInfluence(guide, active) {
       });
     }
     const loopDistance = nearestLoop >= 0 ? Math.abs(nearestLoop - active.loopIndex) : Infinity;
-    const weight = nearestLoop >= 0 ? scalpBuilderProportionalWeight(loopDistance) : 0;
+    const weight = nearestLoop >= 0 ? scalpBuilder.scalpBuilderProportionalWeight(loopDistance) : 0;
     const next = base.clone();
     if (nearestLoop === active?.loopIndex) next.lerp(selectedColor, 0.98);
     else if (weight > 0) next.lerp(influencedColor, 0.92 * Math.sqrt(weight));
@@ -9994,7 +7470,7 @@ function refreshCapsuleGuideLoopInfluence() {
     const loopIndex = line.userData.capsuleGuideLoopIndex;
     const matchesGuide = active && guide.id === active.guideId;
     const distance = matchesGuide ? Math.abs(loopIndex - active.loopIndex) : Infinity;
-    const weight = matchesGuide ? scalpBuilderProportionalWeight(distance) : 0;
+    const weight = matchesGuide ? scalpBuilder.scalpBuilderProportionalWeight(distance) : 0;
     const selected = matchesGuide && distance === 0;
     line.material.color.setHex(selected ? 0xff5bd1 : 0xf2b35f);
     line.material.opacity = selected ? 0.96 : weight > 0 ? 0.12 + weight * 0.68 : 0;
@@ -10059,7 +7535,7 @@ function updateCapsuleGuideLoopDrag(event) {
     const distance = Math.abs(loopIndex - drag.loopIndex);
     const weight = loopIndex === drag.loopIndex
       ? 1
-      : sculptState.state.proportionalEditing ? scalpBuilderProportionalWeight(distance) : 0;
+      : sculptState.state.proportionalEditing ? scalpBuilder.scalpBuilderProportionalWeight(distance) : 0;
     if (weight <= 0) return;
     const scale = 1 + (targetScale - 1) * weight;
     const center = drag.loopCenters[loopIndex];
@@ -10105,7 +7581,7 @@ function createSubdividedQuadGeometry(controlGeometry, iterations = 2) {
       controlEdgeKeys.add(start < end ? `${start}:${end}` : `${end}:${start}`);
     });
   });
-  const subdivided = subdivideScalpBuilderCage(controlPoints, controlFaces, iterations, controlEdgeKeys);
+  const subdivided = scalpBuilder.subdivideScalpBuilderCage(controlPoints, controlFaces, iterations, controlEdgeKeys);
   const positions = subdivided.points.flatMap((point) => [point.x, point.y, point.z]);
   const quads = subdivided.faces.map((face) => face.indices);
   const indices = quads.flatMap((face) => {
@@ -10168,36 +7644,7 @@ function createQuadCageGeometry(geometry) {
   return cage;
 }
 
-function scalpFittedCapsuleSpec() {
-  const scalp = activeScalpSurfaceMesh();
-  scalp.updateWorldMatrix(true, false);
-  const bounds = new THREE.Box3().setFromObject(scalp);
-  if (bounds.isEmpty()) return null;
-  const center = bounds.getCenter(new THREE.Vector3());
-  const size = bounds.getSize(new THREE.Vector3());
-  const radialClearance = 1.14;
-  const lengthClearance = 1.16;
-  center.y -= size.y * 0.04;
-  const radius = Math.max(0.04, Math.max(size.x, size.z) * 0.5 * radialClearance);
-  const length = Math.max(radius * 2, size.y * lengthClearance);
-  return {
-    start: center.clone().add(new THREE.Vector3(0, length * 0.5, 0)),
-    end: center.clone().add(new THREE.Vector3(0, -length * 0.5, 0)),
-    radius,
-    length
-  };
-}
 
-function createScalpFittedCapsuleGuide() {
-  const fit = scalpFittedCapsuleSpec();
-  if (!fit) return null;
-  pushUndoState();
-  const guide = addCapsuleGuide({ ...surfaceGuideDefaults, ...fit });
-  surfaceGuideDefaults.radius = fit.radius;
-  surfaceGuideDefaults.length = fit.length;
-  syncGuideInputs(guide);
-  return guide;
-}
 
 function updateCapsuleGuideGeometry(guide, { preserveControlPoints = false, rebuildHandles = true } = {}) {
   const start = guide.start.clone();
@@ -10670,11 +8117,11 @@ function centerViewportOnSelectedItem() {
 }
 
 function fullSceneFocusBounds() {
-  if (guideState.state.guideModel?.userData?.fullBodyReference) return fullBodyScalpFocusBounds();
+  if (guideState.state.guideModel?.userData?.fullBodyReference) return scalpBuilder.fullBodyScalpFocusBounds();
   const objects = [
     ...locks.map((lock) => lock.mesh),
     ...guides.flatMap((guide) => [guide.mesh, guide.rootMesh]),
-    activeScalpSurfaceMesh(),
+    scalpBuilder.activeScalpSurfaceMesh(),
     ...headMeshes()
   ].filter(Boolean);
   if (!objects.length) return null;
@@ -10697,7 +8144,7 @@ function cycleViewportFraming() {
   if (guideState.state.guideModel?.userData?.fullBodyReference) {
     viewportState.state.viewportFrameCycleStep = 0;
     sel.state.viewportFrameSelectionKey = currentViewportFrameSelectionKey();
-    return frameViewportBounds(fullBodyScalpFocusBounds());
+    return frameViewportBounds(scalpBuilder.fullBodyScalpFocusBounds());
   }
   const selectionKey = currentViewportFrameSelectionKey();
   if (selectionKey !== sel.state.viewportFrameSelectionKey) {
@@ -10889,7 +8336,7 @@ function setActiveTool(tool) {
     finishPolyBrushStroke(null, { cancel: true });
     clearPolyFillPreview();
   }
-  if (["place", "draw", "procedural-draw", "poly", "braid", "panel", "curve-surface"].includes(tool) && scalpState.state.scalpShapeEditing) setScalpShapeEditing(false);
+  if (["place", "draw", "procedural-draw", "poly", "braid", "panel", "curve-surface"].includes(tool) && scalpState.state.scalpShapeEditing) scalpBuilder.setScalpShapeEditing(false);
   if (tool !== "move") endViewPlaneMove();
   sel.state.activeTool = tool;
   if (sculptBrushToolActive()) syncSculptBrushStrengthForActiveTool();
@@ -10910,10 +8357,10 @@ function setActiveTool(tool) {
   }
   if (enteringLoftSurface) resetLoftSurfaceDraft();
   if (enteringCurveSurface) resetCurveSurfaceDraft();
-  autoShowScalpGuideForActiveTool();
+  scalpBuilder.autoShowScalpGuideForActiveTool();
   if (tool !== "select") sculptState.state.selectPointerCapture = null;
   updateInteractionLocks();
-  updateScalpEditingVisibility();
+  scalpBuilder.updateScalpEditingVisibility();
   modeToolButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.tool === tool);
   });
@@ -11014,7 +8461,7 @@ function setProportionalEditing(enabled) {
     locks.forEach((lock) => updateLockGeometry(lock));
     locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
   }
-  updateScalpBuilderHandleColors();
+  scalpBuilder.updateScalpBuilderHandleColors();
   const capsule = getSelectedGuide();
   if (capsule?.type === "capsule") updateCapsuleGuideHandleColors(capsule, capsule.selectedPointIndex ?? -1);
   refreshCapsuleGuideLoopInfluence();
@@ -11066,7 +8513,7 @@ function refreshProportionalPreview() {
   if (sculptBrushToolActive()) return;
   locks.forEach((lock) => updateLockGeometry(lock));
   locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
-  updateScalpBuilderHandleColors();
+  scalpBuilder.updateScalpBuilderHandleColors();
   const capsule = getSelectedGuide();
   if (capsule?.type === "capsule") updateCapsuleGuideHandleColors(capsule, capsule.selectedPointIndex ?? -1);
   refreshCapsuleGuideLoopInfluence();
@@ -11083,7 +8530,7 @@ function activeBrushSizeInput() {
 
 function refreshActiveBrushSizeCursor(event) {
   if (scalpState.state.scalpPaintEditing) {
-    updateScalpBrushCursor(scalpHitFromEvent(event));
+    scalpBuilder.updateScalpBrushCursor(scalpBuilder.scalpHitFromEvent(event));
     return;
   }
   if (sculptBrushToolActive()) {
@@ -12074,7 +9521,7 @@ function applyPullMove(lock, pointIndex, handle) {
 function pullHeadCollisionContext() {
   const edit = sculptState.state.activeHandleEdit;
   if (edit?.pullHeadCollisionContext) return edit.pullHeadCollisionContext;
-  const meshes = scalpBuilderHeadMeshes();
+  const meshes = scalpBuilder.scalpBuilderHeadMeshes();
   if (!meshes.length) return null;
   const bounds = new THREE.Box3();
   meshes.forEach((mesh) => bounds.expandByObject(mesh));
@@ -15962,7 +13409,7 @@ function applyGroupDefaultsToExistingStrands(region) {
     lock.densityAggression = Number(defaults.densityAggression ?? 0.5);
     lock.twistDensity = Number(defaults.twistDensity ?? 0.5);
     lock.sweepProfile = defaults.sweepProfile.map((point) => ({ ...point }));
-    applyLockRootScalpOffset(lock);
+    scalpBuilder.applyLockRootScalpOffset(lock);
     updateLockGeometry(lock);
   });
   const selectedLock = getSelectedLock();
@@ -17213,14 +14660,6 @@ function addLock(presetName, overrides = {}, options = {}) {
   return lock;
 }
 
-function mirroredScalpRegion(region) {
-  return ({
-    "side-bangs-left": "side-bangs-right",
-    "side-bangs-right": "side-bangs-left",
-    "side-left": "side-right",
-    "side-right": "side-left"
-  })[region] || region || "unassigned";
-}
 
 function mirroredVector(vector) {
   return vector ? new THREE.Vector3(-vector.x, vector.y, vector.z) : null;
@@ -17257,7 +14696,7 @@ function createMirrorPartner(lock, options = {}) {
   if (existing) return existing;
   const mirrored = addLock("front", {
     materialId: lock.materialId || DEFAULT_HAIR_MATERIAL_ID,
-    scalpRegion: mirroredScalpRegion(lock.scalpRegion),
+    scalpRegion: scalpBuilder.mirroredScalpRegion(lock.scalpRegion),
     hairLayer: normalizeHairLayer(lock.hairLayer),
     layerOffsetApplied: Number(lock.layerOffsetApplied ?? 0),
     layerOffsetRootFactorApplied: Number(lock.layerOffsetRootFactorApplied ?? layerRootOffsetFactor(lock.hairLayer)),
@@ -17435,7 +14874,7 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
     ? null
     : THREE.MathUtils.clamp(Number(lock.proceduralBranchTipOffset), 0, 2);
   partner.materialId = lock.materialId || DEFAULT_HAIR_MATERIAL_ID;
-  partner.scalpRegion = mirroredScalpRegion(lock.scalpRegion);
+  partner.scalpRegion = scalpBuilder.mirroredScalpRegion(lock.scalpRegion);
   partner.hairLayer = normalizeHairLayer(lock.hairLayer);
   partner.layerOffsetApplied = Number(lock.layerOffsetApplied ?? 0);
   partner.layerOffsetRootFactorApplied = Number(lock.layerOffsetRootFactorApplied ?? layerRootOffsetFactor(lock.hairLayer));
@@ -17592,7 +15031,7 @@ function setMirrorXEditing(enabled) {
   guides.filter((guide) => guide.type === "capsule").forEach((guide) => {
     updateCapsuleGuideHandleColors(guide, guide.selectedPointIndex ?? -1);
   });
-  updateScalpBuilderHandleColors();
+  scalpBuilder.updateScalpBuilderHandleColors();
   if (scalpState.state.scalpBuilderCurveLattice) {
     scalpState.state.scalpBuilderCurveLattice.symmetryLine.visible = (
       SCALP_REGION_CURVE_VISUALIZATION_ENABLED && scalpState.state.scalpBuilderEditing && sculptState.state.mirrorXEditing
@@ -17862,90 +15301,7 @@ function snapshotState() {
   };
 }
 
-function scalpTriangleRegion(mesh, triangleIndex) {
-  if (mesh === scalpState.state.customScalpSurfaceMesh) {
-    return scalpState.state.customScalpRegions[triangleIndex] || "unassigned";
-  }
-  if (mesh === scalpState.state.editedScalpSurfaceMesh) {
-    return scalpState.state.editedScalpRegions[triangleIndex]
-      || mesh.geometry.userData.triangleRegions?.[triangleIndex]
-      || "unassigned";
-  }
-  const quadId = mesh.geometry.userData.triangleQuadIds?.[triangleIndex];
-  return scalpState.state.scalpRegionAssignments[quadId] || "unassigned";
-}
 
-function closestPointOnActiveScalp(worldPoint, preferredRegion = null) {
-  const mesh = activeScalpSurfaceMesh();
-  const geometry = mesh?.geometry;
-  const position = geometry?.getAttribute("position");
-  if (!mesh || !position) return null;
-
-  mesh.updateMatrixWorld(true);
-  geometry.computeBoundingBox();
-  const inverseMatrix = mesh.matrixWorld.clone().invert();
-  const localPoint = worldPoint.clone().applyMatrix4(inverseMatrix);
-  const index = geometry.getIndex();
-  const triangle = new THREE.Triangle();
-  const closest = new THREE.Vector3();
-  const bestPoint = new THREE.Vector3();
-  const bestNormal = new THREE.Vector3();
-  const bestBarycentric = new THREE.Vector3();
-  const a = new THREE.Vector3();
-  const b = new THREE.Vector3();
-  const c = new THREE.Vector3();
-  let bestDistanceSq = Infinity;
-  let bestTriangleIndex = -1;
-  let bestTriangleVertices = null;
-  const triangleCount = index ? index.count / 3 : position.count / 3;
-
-  for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex += 1) {
-    if (preferredRegion && scalpTriangleRegion(mesh, triangleIndex) !== preferredRegion) continue;
-    const offset = triangleIndex * 3;
-    const ia = index ? index.getX(offset) : offset;
-    const ib = index ? index.getX(offset + 1) : offset + 1;
-    const ic = index ? index.getX(offset + 2) : offset + 2;
-    a.fromBufferAttribute(position, ia);
-    b.fromBufferAttribute(position, ib);
-    c.fromBufferAttribute(position, ic);
-    triangle.set(a, b, c);
-    triangle.closestPointToPoint(localPoint, closest);
-    const distanceSq = closest.distanceToSquared(localPoint);
-    if (distanceSq >= bestDistanceSq) continue;
-    bestDistanceSq = distanceSq;
-    bestPoint.copy(closest);
-    triangle.getNormal(bestNormal);
-    triangle.getBarycoord(closest, bestBarycentric);
-    bestTriangleIndex = triangleIndex;
-    bestTriangleVertices = [ia, ib, ic];
-  }
-
-  if (!Number.isFinite(bestDistanceSq) && preferredRegion) {
-    return closestPointOnActiveScalp(worldPoint);
-  }
-  if (!Number.isFinite(bestDistanceSq)) return null;
-  const point = bestPoint.applyMatrix4(mesh.matrixWorld);
-  const normal = bestNormal.applyMatrix3(new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld)).normalize();
-  const center = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
-  if (normal.dot(point.clone().sub(center)) < 0) normal.negate();
-  const uv = geometry.getAttribute("uv");
-  let regionPosition = null;
-  if (uv && bestTriangleVertices) {
-    const [ia, ib, ic] = bestTriangleVertices;
-    regionPosition = {
-      u: uv.getX(ia) * bestBarycentric.x + uv.getX(ib) * bestBarycentric.y + uv.getX(ic) * bestBarycentric.z,
-      v: uv.getY(ia) * bestBarycentric.x + uv.getY(ib) * bestBarycentric.y + uv.getY(ic) * bestBarycentric.z
-    };
-  }
-  return {
-    point,
-    normal,
-    center,
-    triangleIndex: bestTriangleIndex,
-    barycentric: bestBarycentric.clone(),
-    regionPosition
-  };
-}
 
 function rootAttachmentFrame(lock, normal) {
   const tangent = lock.placementFrame?.flow?.clone()
@@ -17960,7 +15316,7 @@ function rootAttachmentFrame(lock, normal) {
 }
 
 function rootAttachmentLocalFrame(normal, tangent, bitangent) {
-  const mesh = activeScalpSurfaceMesh();
+  const mesh = scalpBuilder.activeScalpSurfaceMesh();
   if (!mesh) {
     return {
       normal: normal.clone(),
@@ -17978,7 +15334,7 @@ function rootAttachmentLocalFrame(normal, tangent, bitangent) {
 }
 
 function resolveRootAttachment(attachment) {
-  const mesh = activeScalpSurfaceMesh();
+  const mesh = scalpBuilder.activeScalpSurfaceMesh();
   const geometry = mesh?.geometry;
   const position = geometry?.getAttribute("position");
   const triangleIndex = Number(attachment?.surfaceLocation?.triangleIndex);
@@ -18059,7 +15415,7 @@ function applyRootAttachmentLocalCurves(lock) {
   if (!attachment?.localCurves?.points?.length) return false;
   const resolved = resolveRootAttachment(attachment);
   if (!resolved?.point || !resolved.normal || !resolved.tangent || !resolved.bitangent) return false;
-  const rootOffset = rootScalpOffsetDistance(attachment.localOffset)
+  const rootOffset = scalpBuilder.rootScalpOffsetDistance(attachment.localOffset)
     + layerOffsetForLock(lock) * layerRootOffsetFactor(attachment.hairLayer);
   const origin = resolved.point.clone().addScaledVector(resolved.normal, rootOffset);
   const frame = {
@@ -18083,23 +15439,12 @@ function applyRootAttachmentLocalCurves(lock) {
   return true;
 }
 
-function refreshLoadedRootAttachmentsOnAuthoredScalp() {
-  locks.forEach((lock) => {
-    if (lock.rootAttachmentEnabled === false || !lock.points?.length) return;
-    const sourcePoint = lock.rootSurfacePoint?.clone() || lock.points[0].clone();
-    lock.rootAttachment = createRootAttachment(lock, sourcePoint);
-    if (!lock.rootAttachment) return;
-    lock.rootSurfacePoint = lock.rootAttachment.surfacePoint.clone();
-    lock.rootSurfaceNormal = lock.rootAttachment.normal.clone();
-    syncRootAttachmentMetadata(lock);
-  });
-}
 
 function createRootAttachment(lock, sourceOverride = null) {
   if (lock?.rootAttachmentEnabled === false) return null;
   const sourcePoint = sourceOverride?.clone() || lock.rootSurfacePoint?.clone() || lock.points?.[0]?.clone();
   if (!sourcePoint) return null;
-  const surface = closestPointOnActiveScalp(sourcePoint, lock.scalpRegion || null);
+  const surface = scalpBuilder.closestPointOnActiveScalp(sourcePoint, lock.scalpRegion || null);
   const point = surface?.point || sourcePoint;
   const normal = surface?.normal
     || lock.rootSurfaceNormal?.clone()?.normalize()
@@ -18219,67 +15564,8 @@ function rootAttachmentFromData(data, lock, { resolveSurface = true } = {}) {
   return attachment;
 }
 
-function remapLegacyPresetToActiveScalp() {
-  if (!locks.length) return;
-  const scalpCenter = new THREE.Box3().setFromObject(activeScalpSurfaceMesh()).getCenter(new THREE.Vector3());
-
-  locks.forEach((lock) => {
-    if (lock.rootAttachmentEnabled === false) return;
-    const oldSurfacePoint = lock.rootSurfacePoint?.clone() || lock.points?.[0]?.clone();
-    if (!oldSurfacePoint || !lock.points?.length) return;
-    const attachment = closestPointOnActiveScalp(oldSurfacePoint, lock.scalpRegion || null);
-    if (!attachment) return;
-
-    const oldNormal = lock.rootSurfaceNormal?.clone()?.normalize()
-      || oldSurfacePoint.clone().sub(scalpCenter).normalize();
-    if (oldNormal.dot(oldSurfacePoint.clone().sub(scalpCenter)) < 0) oldNormal.negate();
-    const rotation = new THREE.Quaternion().setFromUnitVectors(oldNormal, attachment.normal);
-    const remapPoint = (point) => point.sub(oldSurfacePoint).applyQuaternion(rotation).add(attachment.point);
-    const remapVector = (vector) => vector.applyQuaternion(rotation).normalize();
-
-    lock.points.forEach(remapPoint);
-    lock.clumpRestPoints?.forEach(remapPoint);
-    lock.clumpGuideRestPoints?.forEach(remapPoint);
-    lock.groupLatticeBasePoints?.forEach(remapPoint);
-    lock.pointSurfaceNormals?.forEach((normal) => {
-      if (normal) remapVector(normal);
-    });
-    if (lock.placementFrame) {
-      if (lock.placementFrame.root) remapPoint(lock.placementFrame.root);
-      if (lock.placementFrame.normal) remapVector(lock.placementFrame.normal);
-      if (lock.placementFrame.flow) remapVector(lock.placementFrame.flow);
-      if (lock.placementFrame.side) remapVector(lock.placementFrame.side);
-    }
-    lock.rootSurfacePoint = attachment.point.clone();
-    lock.rootSurfaceNormal = attachment.normal.clone();
-    lock.rootAttachment = createRootAttachment(lock);
-    lock.x = lock.points[0].x;
-    lock.y = lock.points[0].y;
-    lock.z = lock.points[0].z;
-    updateLockGeometry(lock);
-    updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
-  });
-  renderLockList();
-  updateCount();
-}
 
 
-async function importScalpGuideMeshFile(file) {
-  try {
-    const content = await file.text();
-    const model = new OBJLoader().parse(content);
-    installCustomScalpGuide(model, {
-      name: file.name || "custom-scalp.obj",
-      content
-    });
-  } catch (error) {
-    console.error("Could not import scalp guide OBJ", error);
-    window.alert("That OBJ could not be imported as a scalp guide. Please check that it contains valid polygon geometry.");
-    setScalpGuideSource("default");
-  } finally {
-    scalpGuideMeshFileInput.value = "";
-  }
-}
 
 async function importHeadMeshFile(file) {
   const importButton = document.querySelector("#importHeadMesh");
@@ -18518,7 +15804,7 @@ async function openHairProjectFile(file, { handle = null } = {}) {
     }
     if (project.scalpGuideAsset?.format === "obj" && typeof project.scalpGuideAsset.content === "string") {
       const scalpModel = new OBJLoader().parse(project.scalpGuideAsset.content);
-      installCustomScalpGuide(scalpModel, {
+      scalpBuilder.installCustomScalpGuide(scalpModel, {
         name: project.scalpGuideAsset.name || "custom-scalp.obj",
         content: project.scalpGuideAsset.content,
         preserveCoordinates: Boolean(project.scalpGuideAsset.preserveCoordinates),
@@ -18526,12 +15812,12 @@ async function openHairProjectFile(file, { handle = null } = {}) {
       });
     } else if (Object.prototype.hasOwnProperty.call(project, "scalpGuideAsset")) {
       scalpState.state.importedScalpGuideAsset = null;
-      setScalpGuideSource("default");
+      scalpBuilder.setScalpGuideSource("default");
     }
     restoreState(project.state);
-    realignFullBodyGuideToScalpTop();
+    scalpBuilder.realignFullBodyGuideToScalpTop();
     if (guideState.state.guideModel?.userData?.fullBodyReference) {
-      frameViewportBounds(fullBodyScalpFocusBounds());
+      frameViewportBounds(scalpBuilder.fullBodyScalpFocusBounds());
     }
     if (project.metadata?.name) projectState.state.currentProjectName = project.metadata.name;
     projectState.state.quickSaveFileHandle = handle || null;
@@ -18754,82 +16040,6 @@ function restoreSharedStateForStateRestore(state, restorePlan, { preserveMirrorM
   setMirrorXEditing(preserveMirrorMode ? sculptState.state.mirrorXEditing : Boolean(state.mirrorXEditing));
 }
 
-function restoreAuthoredScalpForStateRestore(state, { preservePlacement = false } = {}) {
-  if (!preservePlacement) {
-    scalpState.state.scalpBuilderEditedPoints = state.scalpBuilderEditedPoints?.map(dataToVector) || null;
-    if (scalpState.state.scalpBuilderCurveLattice && scalpState.state.scalpBuilderEditedPoints?.length === scalpState.state.scalpBuilderCurveLattice.points.length) {
-      scalpState.state.scalpBuilderEditedPoints.forEach((point, index) => {
-        scalpState.state.scalpBuilderCurveLattice.points[index].copy(point);
-        scalpState.state.scalpBuilderCurveLattice.handles[index].position.copy(point);
-      });
-      updateScalpBuilderCurveLatticeGeometry();
-      updateScalpBuilderHandleColors();
-    }
-  }
-  if (!preservePlacement) {
-    Object.assign(headTransform, {
-      positionX: 0,
-      positionY: 0,
-      positionZ: 0,
-      uniformScale: 1,
-      scaleX: 1,
-      scaleY: 1,
-      scaleZ: 1
-    }, state.headTransform || {});
-    syncHeadTransformInputs();
-    applyHeadTransform();
-    Object.assign(scalpRoughScale, { x: 1, y: 1, z: 1 }, state.scalpRoughScale || {});
-    syncScalpRoughScaleInputs();
-    applyScalpRoughScale();
-    ensureEditedScalpSurface().then(() => {
-      if (state.editedScalpRegions?.length === scalpState.state.editedScalpRegions.length) {
-        scalpState.state.editedScalpRegions = [...state.editedScalpRegions];
-        writeEditedScalpRegionColors();
-      }
-      // Project points are already authored world-space data. Refresh attachment
-      // metadata on the rebuilt scalp without reconstructing or moving the curves.
-      refreshLoadedRootAttachmentsOnAuthoredScalp();
-    }).catch((error) => console.error("Could not restore the authored scalp surface", error));
-    if (state.scalpSurface) Object.assign(scalpSurface, state.scalpSurface);
-    if (state.scalpArtistShape) Object.assign(scalpArtistShape, state.scalpArtistShape);
-  }
-  if (state.strandGroupDefaults) {
-    Object.entries(state.strandGroupDefaults).forEach(([region, defaults]) => {
-      if (!strandGroupDefaults[region]) return;
-      Object.assign(strandGroupDefaults[region], defaults, {
-        layerOffsets: { ...DEFAULT_LAYER_OFFSETS, ...defaults.layerOffsets },
-        taperCurve: normalizeTaperCurve(defaults.taperCurve, defaults),
-        depthCurve: normalizeTaperCurve(defaults.depthCurve, defaults),
-        taperCurveSecondary: normalizeTaperCurve(defaults.taperCurveSecondary || defaults.taperCurve, defaults),
-        depthCurveSecondary: normalizeTaperCurve(defaults.depthCurveSecondary || defaults.depthCurve, defaults),
-        asymmetricWidthCurve: Boolean(defaults.asymmetricWidthCurve),
-        asymmetricDepthCurve: Boolean(defaults.asymmetricDepthCurve),
-        centerAsymmetricProfile: Boolean(defaults.centerAsymmetricProfile),
-        sweepProfile: (defaults.sweepProfile || DEFAULT_SWEEP_PROFILE).map((point) => ({ ...point }))
-      });
-    });
-  }
-  if (!preservePlacement) {
-    if (state.scalpLatticePoints?.length === scalpLatticePoints.length) {
-      state.scalpLatticePoints.forEach((point, index) => scalpLatticePoints[index].copy(dataToVector(point)));
-    }
-    if (state.scalpRegionAssignments?.length === scalpState.state.scalpRegionAssignments.length) {
-      scalpState.state.scalpRegionAssignments = [...state.scalpRegionAssignments];
-      scalpState.state.scalpManualRegionQuads = new Set(state.scalpManualRegionQuads || []);
-    }
-    syncScalpInputs();
-    syncScalpArtistInputs();
-    updateScalpTopology();
-    if (state.customScalpRegions?.length === scalpState.state.customScalpRegions.length) {
-      scalpState.state.customScalpRegions = [...state.customScalpRegions];
-      writeCustomScalpRegionColors();
-    }
-    setScalpGuideSource(state.scalpGuideSource || "default");
-    updateScalpSurface();
-    applyScalpLatticeDeformation();
-    updateScalpLatticeObjects();
-  }
-}
 
 function restoreSceneCollectionsForStateRestore(restorePlan, {
   deferRootAttachments = false,
@@ -18951,7 +16161,7 @@ function restoreState(state, {
     resetTransientInteractionsForStateRestore();
     resetEditableSceneForStateRestore();
     restoreSharedStateForStateRestore(state, restorePlan, { preserveMirrorMode });
-    restoreAuthoredScalpForStateRestore(state, { preservePlacement });
+    scalpBuilder.restoreAuthoredScalpForStateRestore(state, { preservePlacement });
     restoreSceneCollectionsForStateRestore(restorePlan, { deferRootAttachments, preservePlacement });
     validateSelectionAfterStateRestore();
     reapplySelectionAfterStateRestore(restorePlan);
@@ -19324,7 +16534,7 @@ async function applyPresetSelection(presetName) {
     deferRootAttachments: needsLegacyRootRemap
   });
   if (needsLegacyRootRemap) {
-    remapLegacyPresetToActiveScalp();
+    scalpBuilder.remapLegacyPresetToActiveScalp();
   }
   projectState.state.currentProjectName = catalogPreset?.title || project.metadata?.name || projectState.state.currentProjectName;
   undoHistory.clear(); redoHistory.clear(); updateHistoryButtons(); // preset load is a fresh undo base
@@ -19718,29 +16928,6 @@ function addGeneratedBangPreset() {
   }
 }
 
-function sampleScalpQuad(face, columnRatio, rowRatio) {
-  const candidates = scalpState.state.scalpVisibleQuads.filter((quad) => quad.face === face);
-  if (!candidates.length) return null;
-  const targetColumn = THREE.MathUtils.clamp(columnRatio, 0, 1) * (SCALP_SEGMENTS - 1);
-  const targetRow = THREE.MathUtils.clamp(rowRatio, 0, 1) * (SCALP_SEGMENTS - 1);
-  const quad = candidates.reduce((best, candidate) => {
-    const distance = Math.hypot(candidate.column - targetColumn, candidate.row - targetRow);
-    return !best || distance < best.distance ? { quad: candidate, distance } : best;
-  }, null).quad;
-
-  scalpSurfaceGroup.updateMatrixWorld(true);
-  const position = scalpSurfaceGeometry.getAttribute("position");
-  const corners = quad.vertices.map((index) => new THREE.Vector3().fromBufferAttribute(position, index));
-  const localPoint = corners.reduce((sum, corner) => sum.add(corner), new THREE.Vector3()).multiplyScalar(0.25);
-  const localNormal = corners[1].clone().sub(corners[0]).cross(corners[2].clone().sub(corners[0])).normalize();
-  if (localNormal.dot(localPoint) < 0) localNormal.negate();
-  const normalMatrix = new THREE.Matrix3().getNormalMatrix(scalpSurfaceGroup.matrixWorld);
-  return {
-    point: scalpSurfaceGroup.localToWorld(localPoint),
-    normal: localNormal.applyMatrix3(normalMatrix).normalize(),
-    region: scalpState.state.scalpRegionAssignments[quad.id] || "unassigned"
-  };
-}
 
 function createLongLayeredCurlPoints(sample, {
   length = 3.2,
@@ -19759,7 +16946,7 @@ function createLongLayeredCurlPoints(sample, {
   fallPower = 1,
   count = 10
 } = {}) {
-  const root = sample.point.clone().addScaledVector(sample.normal, rootScalpOffsetDistance(rootScalpOffset));
+  const root = sample.point.clone().addScaledVector(sample.normal, scalpBuilder.rootScalpOffsetDistance(rootScalpOffset));
   const surfaceCenter = scalpSurfaceGroup.getWorldPosition(new THREE.Vector3());
   const naturalOutward = root.clone().sub(surfaceCenter).setY(0);
   if (naturalOutward.lengthSq() < 0.001) naturalOutward.copy(sample.normal).setY(0);
@@ -19951,7 +17138,7 @@ function addLongLayeredCurlsPreset() {
   ];
 
   const created = definitions.map((definition, index) => {
-    const sample = sampleScalpQuad(definition.face, definition.column, definition.row);
+    const sample = scalpBuilder.sampleScalpQuad(definition.face, definition.column, definition.row);
     if (!sample) return null;
     const variation = Math.sin((index + 1) * 2.39996);
     const options = {
@@ -20022,7 +17209,7 @@ function createBraidedBobShellPoints(sample, {
   surfaceClearance = 0.1,
   count = 8
 } = {}) {
-  const root = sample.point.clone().addScaledVector(sample.normal, rootScalpOffsetDistance(rootScalpOffset));
+  const root = sample.point.clone().addScaledVector(sample.normal, scalpBuilder.rootScalpOffsetDistance(rootScalpOffset));
   const surfaceCenter = scalpSurfaceGroup.getWorldPosition(new THREE.Vector3());
   const naturalOutward = root.clone().sub(surfaceCenter).setY(0);
   if (naturalOutward.lengthSq() < 0.001) naturalOutward.copy(sample.normal).setY(0);
@@ -20126,7 +17313,7 @@ function addBraidedBobPreset() {
   ];
   const flatFringeProfile = SHAPE_PRESETS.sweepProfile.find((preset) => preset.id === "flat-ribbon").value;
   const created = shellDefinitions.map((definition, index) => {
-    const sample = sampleScalpQuad(definition.face, definition.column, definition.row);
+    const sample = scalpBuilder.sampleScalpQuad(definition.face, definition.column, definition.row);
     if (!sample) return null;
     const variation = Math.sin((index + 1) * 2.39996);
     const points = createBraidedBobShellPoints(sample, {
@@ -20320,10 +17507,10 @@ function addBraidedBobPresetV2() {
     depthCurve = evenDepthCurve
   }) => {
     const seed = scalpSeed(face, column, row);
-    const sample = (preferRegion ? closestPointOnActiveScalp(seed, region) : null)
-      || closestPointOnActiveScalp(seed);
+    const sample = (preferRegion ? scalpBuilder.closestPointOnActiveScalp(seed, region) : null)
+      || scalpBuilder.closestPointOnActiveScalp(seed);
     if (!sample) return null;
-    const root = sample.point.clone().addScaledVector(sample.normal, rootScalpOffsetDistance(offset));
+    const root = sample.point.clone().addScaledVector(sample.normal, scalpBuilder.rootScalpOffsetDistance(offset));
     const path = points(root, sample).map((point, index) => index === 0
       ? root.clone()
       : pushPointOutsideHead(point, sample.normal, 0.07 + index * 0.012));
@@ -20516,10 +17703,10 @@ function addBraidedBobPresetV2() {
   const braidDepthCurve = braidWidthCurve.map((point) => ({ ...point, value: Math.max(0.08, point.value * 0.92) }));
   [-1, 1].forEach((side) => {
     const region = side < 0 ? "side-left" : "side-right";
-    const sample = closestPointOnActiveScalp(new THREE.Vector3(1.12 * side, 0.45, -0.28), region)
-      || closestPointOnActiveScalp(new THREE.Vector3(1.12 * side, 0.45, -0.28));
+    const sample = scalpBuilder.closestPointOnActiveScalp(new THREE.Vector3(1.12 * side, 0.45, -0.28), region)
+      || scalpBuilder.closestPointOnActiveScalp(new THREE.Vector3(1.12 * side, 0.45, -0.28));
     if (!sample) return;
-    const root = sample.point.clone().addScaledVector(sample.normal, rootScalpOffsetDistance(0.12));
+    const root = sample.point.clone().addScaledVector(sample.normal, scalpBuilder.rootScalpOffsetDistance(0.12));
     const points = [
       root,
       new THREE.Vector3(0.88 * side, 0.18, -0.16),
@@ -20586,7 +17773,7 @@ function createBowlCutPoints(sample, {
   fallPower = 1.1,
   count = 6
 }) {
-  const root = sample.point.clone().addScaledVector(sample.normal, rootScalpOffsetDistance(rootScalpOffset));
+  const root = sample.point.clone().addScaledVector(sample.normal, scalpBuilder.rootScalpOffsetDistance(rootScalpOffset));
   const surfaceCenter = scalpSurfaceGroup.getWorldPosition(new THREE.Vector3());
   const outward = root.clone().sub(surfaceCenter).setY(0);
   if (outward.lengthSq() < 0.001) outward.copy(sample.normal).setY(0);
@@ -20638,7 +17825,7 @@ function addBowlCutPreset() {
   ];
 
   const created = roots.map((definition, index) => {
-    const sample = sampleScalpQuad(definition.face, definition.column, definition.row);
+    const sample = scalpBuilder.sampleScalpQuad(definition.face, definition.column, definition.row);
     if (!sample) return null;
     const variation = Math.sin((index + 1) * 2.39996);
     const tipVariation = Math.sin((index + 1) * 5.137);
@@ -20677,24 +17864,7 @@ function addBowlCutPreset() {
   }
 }
 
-function scalpRegionAtHit(hit) {
-  if (hit?.faceIndex === undefined) return "unassigned";
-  if (hit.object === scalpState.state.customScalpSurfaceMesh) {
-    return scalpState.state.customScalpRegions[hit.faceIndex] || "unassigned";
-  }
-  if (hit.object === scalpState.state.editedScalpSurfaceMesh) {
-    return scalpState.state.editedScalpRegions[hit.faceIndex] || "unassigned";
-  }
-  const quadId = hit.object.geometry.userData.triangleQuadIds?.[hit.faceIndex];
-  return scalpState.state.scalpRegionAssignments[quadId] || "unassigned";
-}
 
-function scalpRegionNearestWorldPoint(worldPoint) {
-  if (!worldPoint) return "unassigned";
-  const sample = closestPointOnActiveScalp(worldPoint);
-  if (!sample || sample.triangleIndex < 0) return "unassigned";
-  return scalpTriangleRegion(activeScalpSurfaceMesh(), sample.triangleIndex);
-}
 
 function selectedCurveLatticeGuide() {
   const guide = guides.find((item) => item.id === sel.state.activeCurveLatticeGuideId && item.type === "curve-lattice") || null;
@@ -20818,11 +17988,6 @@ function refreshLiveSurfaceOptions() {
     : "head";
 }
 
-function activeStrokeScalpOffset() {
-  if (braidStrokeActive()) return Number(braidScalpOffsetInput.value);
-  if (panelStrokeActive()) return Number(panelScalpOffsetInput.value);
-  return Number(drawStrandScalpOffsetInput.value);
-}
 
 function activeStrokeBrushSize() {
   if (braidStrokeActive()) return Number(braidCreationDefaults.braidWidth) * Number(braidToolSizeInput.value);
@@ -20877,7 +18042,7 @@ function drawSurfaceHitFromEvent(event, { root = false, excludeLockId = null } =
     return point ? { point, contextualPlaneNormal: contextualPlane.normal } : null;
   }
   if (root) {
-    return raycaster.intersectObject(activeScalpSurfaceMesh(), false)[0]
+    return raycaster.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0]
       || raycaster.intersectObjects(headMeshes(), false)[0]
       || null;
   }
@@ -21461,34 +18626,12 @@ function finishPolyBrushStroke(event, { cancel = false } = {}) {
   event?.preventDefault();
 }
 
-function drawScalpRegionAtEvent(event, surfaceHit) {
-  if (activeStrokeSurfaceValue() === "contextual-plane") return "unassigned";
-  const strandSurface = liveSurfaceStrand();
-  if (strandSurface && surfaceHit?.object === strandSurface.mesh) {
-    return strandSurface.scalpRegion || "unassigned";
-  }
-  const surfaceGuide = liveSurfaceGuide();
-  if (
-    surfaceGuide
-    && [surfaceGuide.mesh, surfaceGuide.rootMesh].includes(surfaceHit?.object)
-  ) {
-    return scalpRegionNearestWorldPoint(surfaceHit.point);
-  }
-  if (surfaceHit?.object === activeScalpSurfaceMesh()) return scalpRegionAtHit(surfaceHit);
-  const curveLatticeId = surfaceHit?.object?.userData?.curveLatticeGuideId;
-  if (curveLatticeId) {
-    return scalpRegionNearestWorldPoint(surfaceHit.point);
-  }
-  rayFromViewportEvent(event);
-  const scalpHit = raycaster.intersectObject(activeScalpSurfaceMesh(), false)[0];
-  return scalpHit ? scalpRegionAtHit(scalpHit) : "unassigned";
-}
 
-function drawSampleFromHit(hit, root = false, scalpRegion = "unassigned", scalpOffset = activeStrokeScalpOffset()) {
+function drawSampleFromHit(hit, root = false, scalpRegion = "unassigned", scalpOffset = scalpBuilder.activeStrokeScalpOffset()) {
   const normal = worldNormalAtHit(hit);
   const drawOffsetDistance = scalpOffset * ROOT_SCALP_OFFSET_DISTANCE;
   const offset = root
-    ? rootScalpOffsetDistance(THREE.MathUtils.clamp(activeCreationShapeDefaults().rootScalpOffset + scalpOffset, -1, 1))
+    ? scalpBuilder.rootScalpOffsetDistance(THREE.MathUtils.clamp(activeCreationShapeDefaults().rootScalpOffset + scalpOffset, -1, 1))
     : Math.max(0.018, activeStrokeBrushSize() * 0.12) + drawOffsetDistance;
   return {
     point: hit.point.clone().addScaledVector(normal, offset),
@@ -21529,7 +18672,7 @@ function updateDrawStrandBrushCursor(event) {
   drawStrandBrushCursor.visible = true;
   drawStrandBrushCursor.position.copy(hit.point).addScaledVector(
     normal,
-    0.006 + activeStrokeScalpOffset() * ROOT_SCALP_OFFSET_DISTANCE
+    0.006 + scalpBuilder.activeStrokeScalpOffset() * ROOT_SCALP_OFFSET_DISTANCE
   );
   drawStrandBrushCursor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
   setDrawStrandBrushCursorScale(cursorScale);
@@ -22645,11 +19788,11 @@ function beginDrawStrandStroke(event, hit, extensionLock = null, branchStart = n
   if (event.button !== 0 || (!hit && !extensionLock && !branchStart) || event.ctrlKey || event.altKey || event.metaKey) return false;
   const surfaceMode = activeStrokeSurfaceValue();
   const dynamicContextual = activeStrokeDynamicEnabled(surfaceMode);
-  const scalpRegion = extensionLock?.scalpRegion || branchStart?.lock.scalpRegion || drawScalpRegionAtEvent(event, hit);
+  const scalpRegion = extensionLock?.scalpRegion || branchStart?.lock.scalpRegion || scalpBuilder.drawScalpRegionAtEvent(event, hit);
   const drawingBraid = braidStrokeActive();
   const drawingPanel = panelStrokeActive();
   const drawingProcedural = proceduralDrawActive();
-  const scalpOffset = activeStrokeScalpOffset();
+  const scalpOffset = scalpBuilder.activeStrokeScalpOffset();
   const contextualPlane = surfaceMode === "contextual-plane" ? contextualPlaneAtOrigin() : null;
   const extensionTip = extensionLock?.points.at(-1)?.clone();
   const extensionTangent = extensionLock
@@ -23918,7 +21061,7 @@ function confirmCurveSurfaceDraft() {
     curveSurfaceCenterCurve: centerCurveIndex,
     curveSurfaceStripWidth: Number(curveSurfaceStripWidthInput?.value || DEFAULT_CURVE_SURFACE_STRIP_WIDTH),
     curveSurfaceSide: confirmedSide.clone(),
-    scalpRegion: scalpRegionNearestWorldPoint(root),
+    scalpRegion: scalpBuilder.scalpRegionNearestWorldPoint(root),
     hairCard: true,
     rootAttachmentEnabled: false,
     pointSurfaceNormals: controllerNormals.flat(),
@@ -24073,7 +21216,7 @@ function finishLoftSurfaceStroke(event, options = {}) {
     const root = points[0];
     const lock = createSurfaceLockFromLattice(points, {
       namePrefix: "Loft Surface",
-      scalpRegion: scalpRegionNearestWorldPoint(root)
+      scalpRegion: scalpBuilder.scalpRegionNearestWorldPoint(root)
     });
     miscState.state.loftSurfaceDraft = null;
     hideLoftSurfacePreviews();
@@ -24160,13 +21303,13 @@ function createPlacedStrand(hit) {
   const hitCurveLattice = hit.object.userData.curveLatticeGuideId
     ? guides.find((guide) => guide.id === hit.object.userData.curveLatticeGuideId)
     : null;
-  const scalpRegion = hitCurveLattice?.scalpRegion || scalpRegionAtHit(hit);
+  const scalpRegion = hitCurveLattice?.scalpRegion || scalpBuilder.scalpRegionAtHit(hit);
   const localRootOffset = THREE.MathUtils.clamp(
     strandCreationDefaults.rootScalpOffset + Number(placeStrandScalpOffsetInput.value),
     -1,
     1
   );
-  const root = hit.point.clone().addScaledVector(normal, rootScalpOffsetDistance(localRootOffset));
+  const root = hit.point.clone().addScaledVector(normal, scalpBuilder.rootScalpOffsetDistance(localRootOffset));
   let flow = new THREE.Vector3(0, -1, 0).projectOnPlane(normal).normalize();
   if (flow.lengthSq() < 0.01) {
     flow = root.clone().sub(surfaceCenter).setY(0).normalize();
@@ -24249,12 +21392,12 @@ function pushPointOutsideHead(point, fallbackNormal, margin) {
     );
   }
   direction.normalize();
-  const activeGeometry = activeScalpSurfaceMesh().geometry;
+  const activeGeometry = scalpBuilder.activeScalpSurfaceMesh().geometry;
   const position = activeGeometry.getAttribute("position");
   const sample = new THREE.Vector3();
   let bestAlignment = -Infinity;
   let surfaceRadius = 1;
-  const activeIndices = activeScalpSurfaceMesh() === scalpSurfaceMesh
+  const activeIndices = scalpBuilder.activeScalpSurfaceMesh() === scalpSurfaceMesh
     ? scalpActiveVertexIndices
     : [...Array(position.count).keys()];
   for (const index of activeIndices) {
@@ -26435,7 +23578,7 @@ function syncLockFromCurve(lock) {
   if (lock.rootSurfacePoint && lock.rootSurfaceNormal) {
     const expectedRoot = lock.rootSurfacePoint.clone().addScaledVector(
       lock.rootSurfaceNormal,
-      rootScalpOffsetDistance(lock.rootScalpOffset) + layerOffsetForLock(lock) * layerRootOffsetFactor(lock.hairLayer)
+      scalpBuilder.rootScalpOffsetDistance(lock.rootScalpOffset) + layerOffsetForLock(lock) * layerRootOffsetFactor(lock.hairLayer)
     );
     if (first.distanceToSquared(expectedRoot) > 0.000004) {
       lock.rootAttachment = createRootAttachment(lock, first);
@@ -27597,7 +24740,7 @@ function curveLatticeForGroup(region, createIfMissing = false) {
       rows,
       scalpRegion: region,
       color: SCALP_REGIONS[region]?.color ?? SCALP_REGIONS.bangs.color,
-      points: curveLatticePointsForScalpRegion(region, columns, rows)
+      points: scalpBuilder.curveLatticePointsForScalpRegion(region, columns, rows)
     }, { deferUi: true });
     updateCount();
   }
@@ -27944,7 +25087,7 @@ function editSelectedLocks(mutator, options = {}) {
   const targetIds = new Set(targets.map((lock) => lock.id));
   targets.forEach((lock) => mutator(lock));
   targets.forEach((lock) => {
-    if (options.rootOffset) applyLockRootScalpOffset(lock);
+    if (options.rootOffset) scalpBuilder.applyLockRootScalpOffset(lock);
     updateLockGeometry(lock, {
       immediate: options.immediate,
       defer: options.defer,
@@ -29726,18 +26869,18 @@ function cancelToolRadialGesture() {
 
 function duplicatePlacementTarget(event, placement) {
   const ray = rayFromViewportEvent(event);
-  const scalpHit = raycaster.intersectObject(activeScalpSurfaceMesh(), false)[0] || null;
+  const scalpHit = raycaster.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0] || null;
   if (scalpHit) {
     const normal = worldNormalAtHit(scalpHit);
     return {
       root: scalpHit.point.clone().addScaledVector(
         normal,
-        rootScalpOffsetDistance(placement.lock.rootScalpOffset)
+        scalpBuilder.rootScalpOffsetDistance(placement.lock.rootScalpOffset)
           + layerOffsetForLock(placement.lock) * layerRootOffsetFactor(placement.lock.hairLayer)
       ),
       surfacePoint: scalpHit.point.clone(),
       surfaceNormal: normal,
-      scalpRegion: scalpTriangleRegion(scalpHit.object, scalpHit.faceIndex),
+      scalpRegion: scalpBuilder.scalpTriangleRegion(scalpHit.object, scalpHit.faceIndex),
       attached: placement.sourceAttachmentEnabled
     };
   }
@@ -29840,7 +26983,7 @@ function proceduralDuplicateCopySnapshot(sourceSnapshot, duplicateId, name) {
 }
 
 function proceduralDuplicateHeadCenter() {
-  const meshes = scalpBuilderHeadMeshes().filter((mesh) => mesh.visible !== false);
+  const meshes = scalpBuilder.scalpBuilderHeadMeshes().filter((mesh) => mesh.visible !== false);
   if (!meshes.length) return null;
   meshes.forEach((mesh) => mesh.updateMatrixWorld(true));
   const bounds = meshes.reduce(
@@ -29957,11 +27100,11 @@ function applyProceduralDuplicateBlend(lock, procedural, placedRoot, explicitBle
       const bridgePointCount = Math.min(2, lock.points.length - 2);
       const minimumSurfaceOffset = Math.max(
         0.003,
-        rootScalpOffsetDistance(lock.rootScalpOffset)
+        scalpBuilder.rootScalpOffsetDistance(lock.rootScalpOffset)
           + layerOffsetForLock(lock) * layerRootOffsetFactor(lock.hairLayer)
       );
       for (let index = 1; index <= bridgePointCount; index += 1) {
-        const surface = closestPointOnActiveScalp(lock.points[index], null);
+        const surface = scalpBuilder.closestPointOnActiveScalp(lock.points[index], null);
         if (!surface?.point || !surface?.normal) continue;
         const normal = surface.normal.clone().normalize();
         if (index === 1) secondPointSurfaceNormal = normal;
@@ -30110,13 +27253,13 @@ function buildEvenlySpacedProceduralDuplicates(sources, count, undoState) {
       sourceNormalData.z
     ).normalize();
     const sourcesAttached = first.rootAttachmentEnabled !== false && second.rootAttachmentEnabled !== false;
-    const surface = sourcesAttached ? closestPointOnActiveScalp(arcRoot, null) : null;
+    const surface = sourcesAttached ? scalpBuilder.closestPointOnActiveScalp(arcRoot, null) : null;
     const surfaceNormal = surface?.normal?.clone().normalize() || sourceNormal;
     const surfacePoint = surface?.point?.clone() || arcRoot.clone();
     const placedRoot = surface
       ? surfacePoint.clone().addScaledVector(
         surfaceNormal,
-        rootScalpOffsetDistance(duplicate.rootScalpOffset)
+        scalpBuilder.rootScalpOffsetDistance(duplicate.rootScalpOffset)
           + layerOffsetForLock(duplicate) * layerRootOffsetFactor(duplicate.hairLayer)
       )
       : arcRoot;
@@ -30244,7 +27387,7 @@ function updateDuplicatePlacement(event) {
     const surface = target.attached && entry.sourceAttachmentEnabled
       ? proceduralAnchor
         ? { point: target.surfacePoint, normal: target.surfaceNormal }
-        : closestPointOnActiveScalp(desiredRoot, lock.scalpRegion || null)
+        : scalpBuilder.closestPointOnActiveScalp(desiredRoot, lock.scalpRegion || null)
       : null;
     if (proceduralAnchor && target.scalpRegion) lock.scalpRegion = target.scalpRegion;
     const surfacePoint = surface?.point?.clone() || desiredRoot.clone();
@@ -30255,7 +27398,7 @@ function updateDuplicatePlacement(event) {
     const placedRoot = surface
       ? surfacePoint.clone().addScaledVector(
         surfaceNormal,
-        rootScalpOffsetDistance(lock.rootScalpOffset)
+        scalpBuilder.rootScalpOffsetDistance(lock.rootScalpOffset)
           + layerOffsetForLock(lock) * layerRootOffsetFactor(lock.hairLayer)
       )
       : desiredRoot;
@@ -31200,8 +28343,8 @@ Object.entries(clumpShapeInputs).forEach(([key, input]) => {
 editScalpOutlinerAction.addEventListener("click", () => {
   hideOutlinerContextMenu();
   setViewportEditMode("guide");
-  setScalpBuilderEditing(true);
-  setScalpSetupMenuOpen(false);
+  scalpBuilder.setScalpBuilderEditing(true);
+  scalpBuilder.setScalpSetupMenuOpen(false);
 });
 
 createClumpFromSelectionAction.addEventListener("click", () => {
@@ -32230,11 +29373,11 @@ fullBodyMeshFileInput.addEventListener("change", async () => {
 });
 scalpGuideSourceInput.addEventListener("change", () => {
   if (scalpGuideSourceInput.value === "default") {
-    setScalpGuideSource("default");
+    scalpBuilder.setScalpGuideSource("default");
     return;
   }
   if (scalpState.state.customScalpSurfaceMesh) {
-    setScalpGuideSource("custom");
+    scalpBuilder.setScalpGuideSource("custom");
     return;
   }
   scalpGuideSourceInput.value = scalpState.state.scalpGuideSource;
@@ -32242,7 +29385,7 @@ scalpGuideSourceInput.addEventListener("change", () => {
 });
 scalpGuideMeshFileInput.addEventListener("change", () => {
   const [file] = scalpGuideMeshFileInput.files;
-  if (file) importScalpGuideMeshFile(file);
+  if (file) scalpBuilder.importScalpGuideMeshFile(file);
 });
 document.querySelector("#saveCurrentPreset").addEventListener("click", fileApi.saveHairProjectFile);
 document.querySelector("#quickSaveProject").addEventListener("click", fileApi.saveHairProjectQuickly);
@@ -32266,7 +29409,7 @@ document.querySelector("#centerGuide").addEventListener("click", () => {
   if (guide.type === "curve-lattice") {
     guide.points = guide.standalone
       ? flatCurveLatticePoints(guide.columns, guide.rows)
-      : curveLatticePointsForScalpRegion(guide.scalpRegion, guide.columns, guide.rows);
+      : scalpBuilder.curveLatticePointsForScalpRegion(guide.scalpRegion, guide.columns, guide.rows);
     guide.rootPoints = defaultCurveLatticeRootPoints(guide);
     guide.deformRestPoints = guide.points.map((point) => point.clone());
     guide.deformRestRootPoints = guide.rootPoints.map((point) => point.clone());
@@ -32433,7 +29576,7 @@ surfaceGuideFresnelInput.addEventListener("change", () => {
   updateCapsuleGuideFresnelMaterial(guide);
 });
 surfaceGuideFitScalpButton.addEventListener("click", () => {
-  createScalpFittedCapsuleGuide();
+  scalpBuilder.createScalpFittedCapsuleGuide();
   updatePlacementStatus();
 });
 
@@ -32441,7 +29584,7 @@ Object.entries(scalpInputs).forEach(([key, input]) => {
   bindUndoCapture(input);
   input.addEventListener("input", () => {
     scalpSurface[key] = Number(input.value);
-    updateScalpSurface();
+    scalpBuilder.updateScalpSurface();
   });
 });
 
@@ -32450,21 +29593,21 @@ Object.entries(scalpInputs).forEach(([key, input]) => {
   bindUndoCapture(input);
   input.addEventListener("input", () => {
     scalpArtistShape[key] = Number(input.value);
-    applyScalpLatticeDeformation();
-    updateScalpLatticeObjects();
+    scalpBuilder.applyScalpLatticeDeformation();
+    scalpBuilder.updateScalpLatticeObjects();
   });
 });
 
 bindUndoCapture(scalpArtistInputs.hairlineRows);
 scalpArtistInputs.hairlineRows.addEventListener("input", () => {
   scalpArtistShape.hairlineRows = Number(scalpArtistInputs.hairlineRows.value);
-  updateScalpTopology();
+  scalpBuilder.updateScalpTopology();
 });
 
 bindUndoCapture(scalpArtistInputs.sideBangRows);
 scalpArtistInputs.sideBangRows.addEventListener("input", () => {
   scalpArtistShape.sideBangRows = Number(scalpArtistInputs.sideBangRows.value);
-  applyDefaultScalpRegionAssignments(scalpArtistShape.sideBangRows);
+  scalpBuilder.applyDefaultScalpRegionAssignments(scalpArtistShape.sideBangRows);
 });
 
 bindUndoCapture(scalpArtistInputs.rootScalpOffset);
@@ -32733,8 +29876,8 @@ function handleLiveSurfaceChange() {
   if (sel.state.activeTool === "surface-loft") resetLoftSurfaceDraft();
   drawStrandBrushCursor.visible = false;
   drawSurfaceDynamicButton.disabled = activeStrokeSurfaceValue() === "contextual-plane";
-  autoShowScalpGuideForActiveTool();
-  updateScalpEditingVisibility();
+  scalpBuilder.autoShowScalpGuideForActiveTool();
+  scalpBuilder.updateScalpEditingVisibility();
   updatePlacementStatus();
 }
 
@@ -34070,28 +31213,28 @@ proceduralDuplicateDialog.addEventListener("cancel", (event) => {
   closeProceduralDuplicateDialog();
 });
 scalpPaintToggle.addEventListener("click", () => {
-  setScalpPaintEditing(!scalpState.state.scalpPaintEditing);
-  setScalpSetupMenuOpen(false);
+  scalpBuilder.setScalpPaintEditing(!scalpState.state.scalpPaintEditing);
+  scalpBuilder.setScalpSetupMenuOpen(false);
 });
 scalpBuilderMode.addEventListener("click", () => {
-  setScalpBuilderEditing(!scalpState.state.scalpBuilderEditing);
-  setScalpSetupMenuOpen(false);
+  scalpBuilder.setScalpBuilderEditing(!scalpState.state.scalpBuilderEditing);
+  scalpBuilder.setScalpSetupMenuOpen(false);
 });
 headSetupMode.addEventListener("click", () => {
   setHeadSetupEditing(!sculptState.state.headSetupEditing);
-  setScalpSetupMenuOpen(false);
+  scalpBuilder.setScalpSetupMenuOpen(false);
 });
 function toggleCapsuleGuideTool() {
   if (sculptState.state.capsuleGuideEditing) setCapsuleGuideEditing(false);
   else setActiveTool("surface-guide");
-  setScalpSetupMenuOpen(false);
+  scalpBuilder.setScalpSetupMenuOpen(false);
 }
 
 function activateCapsuleGuideDrawTool() {
   exitSetupEditors();
   setViewportEditMode("guide", { activateSelect: false });
   setActiveTool("draw-capsule-guide");
-  setScalpSetupMenuOpen(false);
+  scalpBuilder.setScalpSetupMenuOpen(false);
 }
 
 function createCurveLatticeGuideFromUi() {
@@ -34099,7 +31242,7 @@ function createCurveLatticeGuideFromUi() {
   exitSetupEditors();
   setViewportEditMode("guide");
   createStandaloneCurveLatticeGuide();
-  setScalpSetupMenuOpen(false);
+  scalpBuilder.setScalpSetupMenuOpen(false);
   updatePlacementStatus();
 }
 
@@ -34110,12 +31253,12 @@ curveLatticeGuideMode.addEventListener("click", createCurveLatticeGuideFromUi);
 viewportCurveLatticeGuideTool.addEventListener("click", createCurveLatticeGuideFromUi);
 document.querySelector("#fineTuneScalpGuide").addEventListener("click", () => {
   setHeadSetupEditing(false);
-  setScalpBuilderEditing(true);
+  scalpBuilder.setScalpBuilderEditing(true);
 });
-resetScalpBuilderButton.addEventListener("click", resetScalpBuilder);
-confirmScalpBuilderButton.addEventListener("click", confirmScalpBuilderPlane);
-generateScalpBuilderButton.addEventListener("click", displayScalpBuilderConstructionCurves);
-scalpBuilderShowTemplateInput.addEventListener("change", rebuildScalpBuilderTemplateOverlay);
+resetScalpBuilderButton.addEventListener("click", scalpBuilder.resetScalpBuilder);
+confirmScalpBuilderButton.addEventListener("click", scalpBuilder.confirmScalpBuilderPlane);
+generateScalpBuilderButton.addEventListener("click", scalpBuilder.displayScalpBuilderConstructionCurves);
+scalpBuilderShowTemplateInput.addEventListener("change", scalpBuilder.rebuildScalpBuilderTemplateOverlay);
 scalpBuilderTransparentHeadInput.addEventListener("change", () => {
   if (!scalpState.state.scalpBuilderEditing) return;
   setHeadReferenceTransparency(scalpBuilderTransparentHeadInput.checked, 0.18);
@@ -34172,13 +31315,13 @@ allGuidesVisibilityInput.addEventListener("change", () => {
   const visible = allGuidesVisibilityInput.checked;
   guideState.state.capsuleGuidesVisible = visible;
   guideState.state.curveLatticeGuidesVisible = visible;
-  setScalpGuideVisibility(visible);
+  scalpBuilder.setScalpGuideVisibility(visible);
   applyCapsuleGuideDisplayVisibility();
   applyCurveLatticeGuideDisplayVisibility();
   syncDisplayVisibilityInputs();
 });
 scalpDisplayVisibilityInput.addEventListener("change", () => {
-  setScalpGuideVisibility(scalpDisplayVisibilityInput.checked);
+  scalpBuilder.setScalpGuideVisibility(scalpDisplayVisibilityInput.checked);
 });
 capsuleDisplayVisibilityInput.addEventListener("change", () => {
   guideState.state.capsuleGuidesVisible = capsuleDisplayVisibilityInput.checked;
@@ -34202,7 +31345,7 @@ bodyMeshDisplayVisibilityInput.addEventListener("change", () => {
 });
 [placeAutoShowScalpInput, drawAutoShowScalpInput, braidAutoShowScalpInput, panelAutoShowScalpInput].forEach((input) => {
   input.addEventListener("change", () => {
-    if (input.checked) autoShowScalpGuideForActiveTool();
+    if (input.checked) scalpBuilder.autoShowScalpGuideForActiveTool();
   });
 });
 groupColorToggle.addEventListener("click", () => setGroupColorView(!hairState.state.showGroupColors));
@@ -34265,8 +31408,8 @@ scalpRoughScaleInputs.forEach((input) => {
   bindUndoCapture(input);
   input.addEventListener("input", () => {
     scalpRoughScale[input.dataset.scalpRoughScaleAxis] = Number(input.value);
-    syncScalpRoughScaleInputs();
-    applyScalpRoughScale();
+    scalpBuilder.syncScalpRoughScaleInputs();
+    scalpBuilder.applyScalpRoughScale();
   });
 });
 scalpRoughScaleResetButtons.forEach((button) => {
@@ -34277,18 +31420,18 @@ scalpRoughScaleResetButtons.forEach((button) => {
     if (scalpRoughScale[axis] === 1) return;
     pushUndoState();
     scalpRoughScale[axis] = 1;
-    syncScalpRoughScaleInputs();
-    applyScalpRoughScale();
+    scalpBuilder.syncScalpRoughScaleInputs();
+    scalpBuilder.applyScalpRoughScale();
   });
 });
-advancedLatticeButton.addEventListener("click", () => setScalpLatticeEditing(!scalpState.state.scalpLatticeEditing));
+advancedLatticeButton.addEventListener("click", () => scalpBuilder.setScalpLatticeEditing(!scalpState.state.scalpLatticeEditing));
 undoButton.addEventListener("click", undoLastAction);
 redoButton.addEventListener("click", redoLastAction);
 
 scalpRegionButtons.forEach((button) => {
-  button.addEventListener("click", () => setActiveScalpRegion(button.dataset.scalpRegion));
+  button.addEventListener("click", () => scalpBuilder.setActiveScalpRegion(button.dataset.scalpRegion));
 });
-document.querySelector("#clearScalpRegions").addEventListener("click", () => clearScalpRegions());
+document.querySelector("#clearScalpRegions").addEventListener("click", () => scalpBuilder.clearScalpRegions());
 scalpBrushSizeInput.addEventListener("input", () => updatePlacementStatus());
 
 [proportionalRadiusInput, proportionalFalloffInput].forEach((input) => {
@@ -37163,9 +34306,9 @@ setObjectSpaceEditing(sculptState.state.objectSpaceEditing);
 setViewPlaneMove(false);
 setHierarchyEditing(false);
 setProportionalEditing(false);
-setScalpShapeEditing(false);
-setScalpPaintEditing(false);
-setScalpBuilderEditing(false);
+scalpBuilder.setScalpShapeEditing(false);
+scalpBuilder.setScalpPaintEditing(false);
+scalpBuilder.setScalpBuilderEditing(false);
 setCapsuleGuideEditing(false);
 updateCapsuleGuideProfilePreview();
 syncSculptBrushControls();
@@ -37197,9 +34340,9 @@ window.addEventListener("pointermove", updatePolyBrushStroke, true);
 window.addEventListener("pointermove", updateLoftSurfaceStroke);
 window.addEventListener("pointermove", updateSelectionMarquee);
 window.addEventListener("pointermove", handleViewportPointerMove);
-window.addEventListener("pointermove", updateScalpLatticeDrag);
-window.addEventListener("pointermove", updateScalpPaint);
-window.addEventListener("pointermove", updateScalpBuilderStroke);
+window.addEventListener("pointermove", scalpBuilder.updateScalpLatticeDrag);
+window.addEventListener("pointermove", scalpBuilder.updateScalpPaint);
+window.addEventListener("pointermove", scalpBuilder.updateScalpBuilderStroke);
 window.addEventListener("pointermove", updatePanelSplitHandleDrag);
 window.addEventListener("pointermove", updateCapsuleGuideLoopHover);
 window.addEventListener("pointermove", updateCapsuleGuideLoopDrag);
@@ -37222,9 +34365,9 @@ window.addEventListener("pointerup", finishCurveSurfaceStroke);
 // Finish Curve Surface strokes before other viewport pointer-up handlers can
 // consume a captured canvas release.
 renderer.domElement.addEventListener("pointerup", finishCurveSurfaceStroke, true);
-window.addEventListener("pointerup", endScalpLatticeDrag);
-window.addEventListener("pointerup", endScalpPaint);
-window.addEventListener("pointerup", finishScalpBuilderStroke);
+window.addEventListener("pointerup", scalpBuilder.endScalpLatticeDrag);
+window.addEventListener("pointerup", scalpBuilder.endScalpPaint);
+window.addEventListener("pointerup", scalpBuilder.finishScalpBuilderStroke);
 window.addEventListener("pointerup", endPanelSplitHandleDrag);
 window.addEventListener("pointerup", endCapsuleGuideLoopDrag);
 window.addEventListener("pointerup", finishSelectionMarquee);
@@ -37256,9 +34399,9 @@ window.addEventListener("pointercancel", (event) => finishCapsuleGuideDrawStroke
 window.addEventListener("pointercancel", (event) => finishLoftSurfaceStroke(event, { cancel: true }));
 window.addEventListener("pointercancel", (event) => finishCurveSurfaceStroke(event, { cancel: true }));
 renderer.domElement.addEventListener("pointercancel", (event) => finishCurveSurfaceStroke(event, { cancel: true }), true);
-window.addEventListener("pointercancel", endScalpLatticeDrag);
-window.addEventListener("pointercancel", endScalpPaint);
-window.addEventListener("pointercancel", (event) => finishScalpBuilderStroke(event, { cancel: true }));
+window.addEventListener("pointercancel", scalpBuilder.endScalpLatticeDrag);
+window.addEventListener("pointercancel", scalpBuilder.endScalpPaint);
+window.addEventListener("pointercancel", (event) => scalpBuilder.finishScalpBuilderStroke(event, { cancel: true }));
 window.addEventListener("pointercancel", endPanelSplitHandleDrag);
 window.addEventListener("pointercancel", endCapsuleGuideLoopDrag);
 window.addEventListener("pointercancel", () => {
@@ -37300,7 +34443,7 @@ renderer.domElement.addEventListener("pointerdown", prepareSelectPointerCapture,
 renderer.domElement.addEventListener("pointerdown", beginHoudiniZoomDrag, true);
 renderer.domElement.addEventListener("pointerdown", prepareCurvePointSelection, true);
 renderer.domElement.addEventListener("pointerdown", beginAltOrbit, true);
-renderer.domElement.addEventListener("pointerdown", prioritizeScalpBuilderPointSelection, true);
+renderer.domElement.addEventListener("pointerdown", scalpBuilder.prioritizeScalpBuilderPointSelection, true);
 renderer.domElement.addEventListener("pointermove", updateControlPointHover);
 renderer.domElement.addEventListener("pointermove", updateCurveLatticeLoopHover);
 renderer.domElement.addEventListener("pointermove", updateReferenceOverlayCursor);
@@ -37378,14 +34521,14 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   }
   if (scalpState.state.scalpBuilderEditing) {
     if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
-    if (beginScalpBuilderInput(event)) event.preventDefault();
+    if (scalpBuilder.beginScalpBuilderInput(event)) event.preventDefault();
     return;
   }
   if (scalpState.state.scalpPaintEditing) {
     if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
-    const scalpHit = raycaster.intersectObject(activeScalpSurfaceMesh(), false)[0];
+    const scalpHit = raycaster.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0];
     if (scalpHit) {
-      beginScalpPaint(event, scalpHit);
+      scalpBuilder.beginScalpPaint(event, scalpHit);
       event.preventDefault();
     }
     return;
@@ -37394,8 +34537,8 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || transformControls.axis) return;
     const latticeHit = raycaster.intersectObjects(scalpLatticeHandles, false)[0];
     if (latticeHit) {
-      selectScalpLatticePoint(latticeHit.object.userData.scalpLatticeIndex);
-      beginScalpLatticeDrag(latticeHit.object, event);
+      scalpBuilder.selectScalpLatticePoint(latticeHit.object.userData.scalpLatticeIndex);
+      scalpBuilder.beginScalpLatticeDrag(latticeHit.object, event);
       event.preventDefault();
     } else if (transformControls.object?.userData.scalpLatticeIndex !== undefined) {
       transformControls.detach();
@@ -37544,7 +34687,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     const curveLattice = selectedCurveLatticeGuide();
     const surfaceHit = curveLattice
       ? raycaster.intersectObjects([curveLattice.mesh, curveLattice.rootMesh].filter((object) => object && object.visible !== false), false)[0]
-      : raycaster.intersectObject(activeScalpSurfaceMesh(), false)[0];
+      : raycaster.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0];
     beginPlacementPointer(event, surfaceHit);
     return;
   }

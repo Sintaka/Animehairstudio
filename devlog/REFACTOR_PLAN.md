@@ -1,4 +1,4 @@
-﻿# 重构计划 / Refactor Plan
+# 重构计划 / Refactor Plan
 
 > 目的：把项目从「小项目一次性塞给 agent」推向「内容过多、一次读不完」阶段时，建立面向 agent 的文档检索流程、可拆分的项目结构、可并行的开发方式。
 > 维护：每个阶段完成后更新下方「执行状态」并打勾；详细设计见 AGENT_QUICKSTART.md 与各专题文件。
@@ -44,7 +44,8 @@
 - [x] **阶段 3d-3c**：root-bone 迁出（modules/geometry/branch-root-bone.js，13 函数）
 - [x] **阶段 3d-3d-a**：hierarchy 迁出（modules/geometry/branch-hierarchy.js，6 函数：attachDrawnLocksAsBranches/updateBranchRigidTransform…）
 - [x] **阶段 3d-3d-b**：sweep-profile 迁出（modules/geometry/branch-sweep.js，20 函数）
-- [ ] **阶段 3d（剩余）**：scalp 系统函数、curve/guide 系统函数迁出；app.js 最终瘦身为编排层
+- [x] **阶段 3d（剩余·scalp，批次 4）**：scalp 系统函数迁出（modules/scalp/scalp-builder.js，120 函数，createScalpBuilderApi(deps) 渐进填充；app.js 37,914→35,050 行；verify-smoke 10/11 与基线一致，.ahs 加载 88 locks 无异常；0.2.59）
+- [ ] **阶段 3d（剩余·curve/guide，批次 5）**：curve/guide 系统函数迁出（~151 函数/约 2,950 行，引用图见 devlog/in-progress/curve-guide-refactor-map.md）；app.js 最终瘦身为编排层
 
 > 批量替换验证清单（3b/3c 教训，替换后必须逐项扫）：(1) 双重替换 `.store.state.`（对象属性名被误替换，曾致项目加载静默失败）；(2) 函数参数/绑定位置（`function f(store.state.x)`）；(3) 对象简写残留（含**跨行** `{ x,\n store.state.y,`，单行正则会漏，曾致 SyntaxError）；(4) 对象属性访问 `obj.name`（用 `(?<!\.)` 排除）；(5) `name:` key 位置（用 `(?!\s*:)` 排除）；(6) 字符串/选择器字面量（`document.querySelector("#name")` 曾把 `"#viewPlaneMoveSnappedOnly"` 误改成 `"#ui.state.viewPlaneMoveSnappedOnly"`，需用精确字符串字面量扫描）；(7) getter/setter 方法名（`get importedHeadAsset()` 曾被误改成 `get head.state.importedHeadAsset()`，对象字面量 get/set 方法名位置要排除）；(8) 无逗号简写（对象最后一项 `X,`→修复成 `X: v` 时若函数参数最后一项也会误伤——需按括号上下文判断：`(` 内回退为 `v`、`{` 内保留 `X: v`，含带逗号与不带逗号两种；三目/表达式分支也可能漏替换，替换后必须全文件扫裸引用）。每步替换后先跑这 5 项扫描再 node --check + verify-smoke 全量。
 - [ ] **阶段 3d：app.js 瘦身为编排层**（业务逻辑迁入模块，模块显式依赖 store；IO 的 createProjectSaveApi(deps) 从 25 个散装依赖收敛为单个 store）
@@ -66,8 +67,8 @@
 3a. region-panel（Branch Root Region 面板/选区 31 函数 → modules/geometry/branch-region-panel.js）✅ 3d-3a
 3b. root-bone（13 函数 → modules/geometry/branch-root-bone.js）✅ 3d-3c
 3c. hierarchy（attachDrawnLocksAsBranches/updateBranchRigidTransform 等 6 函数 → modules/geometry/branch-hierarchy.js）✅ 3d-3d-a
-3d. sweep-profile（20 函数 → modules/geometry/branch-sweep.js）✅ 3d-3d-b
-4. scalp 系统函数
+4. scalp 系统函数 ✅ 批次 4（0.2.59）
+4. scalp 系统函数 ✅ 批次 4（0.2.59）
 5. curve/guide 系统函数
 每批独立 commit + verify-smoke 13/13 回归；依赖注入 deps 随迁移逐步收敛为「store + 少量核心函数」。
 
