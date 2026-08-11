@@ -39,7 +39,7 @@ Animehairstudio/
 ├─ app.js              # 主逻辑（约 1.6MB / 3.6 万行，单体但按函数分区）
 ├─ styles.css          # 全部样式（约 130KB）
 ├─ start-dev-server.cmd# 一键起本地服务器（python -m http.server 8080）
-├─ README.md / LICENSE / PATCH_NOTES_0.1.4.txt
+├─ README.md / README_EN.md / LICENSE / PATCH_NOTES_0.1.4.txt
 ├─ assets/             # 头模/全身 OBJ、scalp 模板、笔刷图标、示例项目（.ahs / .animehair.json）
 ├─ modules/            # 拆出的 ES Module（约 40 个，纯函数/数据结构为主）
 └─ devlog/README.md    # 开发规范、JS 改动标注、Bug 修复、持续修改功能清单
