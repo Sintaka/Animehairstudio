@@ -293,6 +293,24 @@ splitBone.tip = {
 
 **回归测试（scripts/verify-tip-select.mjs，29/29）**：新增 2 项——`tip width lateral follows tip sub-bone width axis`（maxTilt<5°、lateral 与发尖切线夹角>60°）；`asymmetric tip width blends linearly at center`（u=0=均值、±0.5 线性、中心步长<0.1、左右不等）。原 27 项全过（宽度拖拽编辑值改变/链不变/锁定区=全局/asymmetric；orient/push/undo/悬停/alt+点击 0 异常）。三档 smoke（0041/0042/0044）11/11 通过。
 
+### 8.20 发尖 WidthCurve 拖拽方向真正根因：复用主骨骼宽度采样导致坐标系混乱（0.2.59 已修复）
+
+**用户反馈**：8.19 之后「情况没有好转」——绿色控制点仍沿「指向主骨骼的位置」那条连线运动，而不是沿发尖子骨骼方向。用户怀疑代码复用了原版 width curve 的「中心关联逻辑」（中心 = 主面板中心 u=0），并希望把中心对象调整为发尖子骨骼。
+
+**深度调研（浏览器实测 0044 Front Bangs 1 各段/两侧）**：
+- 旧 tipWidthEdgePosition 的边位置 = `authoredCenter + dq*(tipMainSectionPoint(edgeU) - restCenter)`：`tipMainSectionPoint(edgeU)` 用**绝对 u**（u×半宽 + camber(u)），`restCenter` 是段中心。宽度变化时 Δ = dq*(frame.x×(edgeU×Δhw) + frame.z×(Δcamber(edgeU)))——**依赖绝对 u**：对「右侧边缘落在主面板左半段」（edgeU<0，如 seg0/seg1 右缘 -0.807/-0.44）会**反向移动**；对窄段 camber 项占主导，手柄沿主面板法线/径向走。实测手柄运动方向相对真正宽度轴倾斜：右 7°~51°、左 131°~170°（≈指向主骨骼）。
+- 更深一层：`splitTipForSegment` 的 rest 链用 `panelSplitControlPoint`（采样**骨宽曲线**）→ 宽度一编辑，rest 链/发尖链本身跟着漂移，额外放大位移。
+- 结论：确实如用户所说——复用了主面板的宽度采样（绝对 u、以主中心 u=0 为左右分界），**没区分发尖子骨骼中心（段中心 centerU）与主骨骼中心（u=0）**；且宽度曲线同时缩放横向与 camber，运动方向被绝对 u 和 camber 主导。
+
+**修复（app.js，直接改造为 tip-relative）**：
+1. **段宽度改为以段中心为参考**（几何 rawPanelPoint 与 UI tipMainSectionPoint 同式）：横向 `lateralU = (u - centerU)` + 中心对齐常量 `centerU×全局半宽(centerU)`（保证段中心落在主面板原位置、zipper 墙对齐）；**camber 固定用全局曲线**——宽度编辑只改变横向，不再改变面板鼓包。实测全部段/两侧手柄运动方向 `dAngleVsLateral = 0°`（严格沿发尖子骨骼宽度轴）。
+2. **rest 链稳定化**：`splitTipForSegment` 的 restPoints 改用全局曲线（传 `{}` bone override）——rest 链是稳定基准，宽度编辑不再移动发尖链。
+3. **曲线精简**：`buildTipWidthCurve` 不再烘焙锁定区 0.1 网格（11 点）——采样器对 `t < forkT` 回退全局曲线；曲线只含暴露区（fork 边界 + 5 控制点 + 尖端）。实测每侧 7 个点、**全部在 viewport 内可见**（原 11~16 点、其中约 9 个在锁定区不可见）。
+4. **拖拽轴** = `dq×主帧x`（从发尖链指向本侧边缘的方向），定向到边缘——手柄精确跟随光标。
+- 保留：非对称曲线（左右独立、u=0 中线线性插值）、zipper 上端权重线性降 0、水密拓扑。
+
+**回归测试（scripts/verify-tip-select.mjs，31/31）**：新增 `tip width drag moves handle along tip sub-bone width axis`（全部段/侧 maxAngle=0°）与 `tip width curve is lean and fully visible`（≤8 点、全可见、编辑生效）；原 29 项全过（宽度拖拽编辑值改变/链不变/锁定区=全局/asymmetric；orient/push/undo/悬停/alt+点击 0 异常）。三档 smoke（0041/0042/0044）11/11 通过，网格 0 NaN。
+
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

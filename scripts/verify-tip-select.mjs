@@ -569,10 +569,15 @@ try {
         if (Math.abs(Number(pt.value) - def) > 0.01) { valueChanged = true; break; }
       }
     }
-    // locked region sample comparison: value at 0.3 (must be < forkT for seg2 right = 0.8125)
-    const globalAt = t.sampleTaperCurve ? t.sampleTaperCurve(lock.taperCurve, 0.3) : null;
-    const bakedAt = rightCurve ? rightCurve.find((pt) => Math.abs(pt.position - 0.3) < 1e-3)?.value : null;
-    return JSON.stringify({ ok: true, hasRight: !!rightCurve, hasLeft: !!leftCurve, asym: bone.asymmetricWidthCurve === true, rightForkT, lockedMatch: globalAt != null && bakedAt != null && Math.abs(globalAt - bakedAt) < 1e-3, changedFromDefault: !!rightCurve, valueChanged });
+    // Locked (above-zipper) region is NOT baked into the curve anymore: the sampler falls
+    // back to the global curve below the fork, so value at 0.3 (must be < forkT for seg2
+    // right = 0.8125) equals the global, and no curve point sits below the fork.
+    const globalAt = t.sampleTaperCurve(lock.taperCurve, 0.3);
+    const fullW = Math.max(0.01, Number(lock.width ?? 0.62));
+    const sampledLocked = t.tipPanelWidthAt(lock, 0.3, 1, bone, 2, splits) / fullW;
+    const noBakedLocked = rightCurve.every((pt) => pt.position >= forkT - 1e-4);
+    const lockedMatch = Math.abs(sampledLocked - globalAt) < 1e-3 && noBakedLocked;
+    return JSON.stringify({ ok: true, hasRight: !!rightCurve, hasLeft: !!leftCurve, asym: bone.asymmetricWidthCurve === true, rightForkT, lockedMatch, changedFromDefault: !!rightCurve, valueChanged });
   })()`));
     let widthChainMoved = false;
   if (widthAfter.ok) {
@@ -661,6 +666,59 @@ try {
     });
   })()`));
   check("asymmetric tip width blends linearly at center (no hard split)", blendCheck.ok === true && blendCheck.midIsAvg === true && blendCheck.linear === true && blendCheck.stepAtCenter < 0.1 && blendCheck.left !== blendCheck.right, `blend=${JSON.stringify(blendCheck)}`);
+  // ============ 8.19: tip width handle moves along the TIP sub-bone's width axis ============
+  // Simulate a width edit at each control and assert the handle moves along the drag axis
+  // (lateral = dq*mainFrameX) - it used to move along the main-bone line (7-170deg off).
+  const moveCheck = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    let maxAngle = 0;
+    for (let seg = 0; seg <= splits.length; seg++) {
+      for (const side of [1, -1]) {
+        const bone = t.materializeSplitBones(lock)[seg] || null;
+        const placement = t.tipWidthControlPlacement(lock, seg, splits, bone, side, 2);
+        if (!placement) continue;
+        const tt = placement.t;
+        const P0 = placement.point.clone();
+        const L = placement.lateral.clone();
+        const curMult = t.tipPanelWidthAt(lock, tt, side, bone, seg, splits) / Math.max(0.01, Number(lock.width ?? 0.62));
+        t.setTipWidthCurveValue(lock, seg, splits, bone, side, tt, curMult * 1.5);
+        const edge1 = t.tipWidthEdgePosition(lock, seg, splits, bone, side, tt);
+        const D = edge1 ? edge1.point.clone().sub(P0) : null;
+        if (D && D.length() > 1e-9) {
+          const cos = t.THREE.MathUtils.clamp(D.clone().normalize().dot(L), -1, 1);
+          maxAngle = Math.max(maxAngle, Math.acos(cos) * 180 / Math.PI);
+        }
+      }
+    }
+    return JSON.stringify({ maxAngle: Number(maxAngle.toFixed(1)) });
+  })()`));
+  check("tip width drag moves handle along tip sub-bone width axis", moveCheck.maxAngle < 10, `move=${JSON.stringify(moveCheck)}`);
+
+  // ============ 8.19: tip width curve stays lean and all points visible ============
+  // The old curve baked an 11-point 0.1 grid into the locked (invisible) region; the new
+  // curve owns only the exposed region (fork boundary + control positions + tip end).
+  const leanCheck = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[2] || null;
+    t.setTipWidthCurveValue(lock, 2, splits, bone, 1, 0.90625, 1.4);
+    t.setTipWidthCurveValue(lock, 2, splits, bone, -1, 0.78125, 1.2);
+    const rightFork = t.tipWidthSideForkT(lock, 2, splits, 1);
+    const leftFork = t.tipWidthSideForkT(lock, 2, splits, -1);
+    return JSON.stringify({
+      ok: !!bone,
+      rightCount: bone.taperCurve.length,
+      leftCount: bone.taperCurveSecondary.length,
+      rightAllVisible: bone.taperCurve.every((p) => p.position >= rightFork - 1e-4),
+      leftAllVisible: bone.taperCurveSecondary.every((p) => p.position >= leftFork - 1e-4),
+      rightChanged: bone.taperCurve.some((p) => Math.abs(p.value - t.sampleTaperCurve(lock.taperCurve, p.position)) > 0.01),
+      leftChanged: bone.taperCurveSecondary.some((p) => Math.abs(p.value - t.sampleTaperCurve(lock.taperCurve, p.position)) > 0.01)
+    });
+  })()`));
+  check("tip width curve is lean and fully visible", leanCheck.ok && leanCheck.rightCount <= 8 && leanCheck.leftCount <= 8 && leanCheck.rightAllVisible === true && leanCheck.leftAllVisible === true && leanCheck.rightChanged === true && leanCheck.leftChanged === true, `lean=${JSON.stringify(leanCheck)}`);
 
   // ============ Issue 1: hover + alt+click in select mode (non-create tools) ============
   await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="select"]'); if (btn) btn.click(); return true; })()`);

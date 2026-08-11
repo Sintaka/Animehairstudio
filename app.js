@@ -13474,17 +13474,49 @@ function tipWidthSideForkT(lock, segmentIndex, splits, side) {
   return rightZipper != null ? 1 - rightZipper : segmentForkT;
 }
 
-// Replicates the panel geometry's width sampling so viewport width handles can read
-// and write the same multiplier the geometry consumes (bone.taperCurve/secondary).
-function tipPanelWidthAt(lock, t, side, bone) {
-  const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
-  const multiplier = sampleAsymmetricTaperCurve(
+// Shared tip width sampler: above the segment's fork (locked) or without a segment the
+// global panel curve applies with the main-panel split (u sign); below the fork the tip's
+// OWN WidthCurve applies, split/blended across the segment (centerU +/- half span) so the
+// tip width belongs to the tip sub-bone, not the main bone.
+function tipWidthMultiplierAt(lock, t, u, bone, segmentIndex = -1, splits = null) {
+  const segSplits = splits || clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+  const boundaries = [-1, ...(Array.isArray(segSplits) ? segSplits : []).map((split) => split.position), 1];
+  if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) {
+    return sampleAsymmetricTaperCurve(
+      lock.taperCurve,
+      lock.taperCurveSecondary,
+      lock.asymmetricWidthCurve,
+      u,
+      t
+    );
+  }
+  const side = u < 0 ? -1 : 1;
+  const forkT = tipWidthSideForkT(lock, segmentIndex, segSplits, side);
+  if (forkT >= 1 || t < forkT - 1e-4) {
+    return sampleAsymmetricTaperCurve(
+      lock.taperCurve,
+      lock.taperCurveSecondary,
+      lock.asymmetricWidthCurve,
+      u,
+      t
+    );
+  }
+  const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
+  const halfSpan = Math.max(0.0001, (boundaries[segmentIndex + 1] - boundaries[segmentIndex]) * 0.5);
+  return sampleAsymmetricTaperCurve(
     bone?.taperCurve || lock.taperCurve,
     bone?.taperCurveSecondary || lock.taperCurveSecondary,
     bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve,
-    side,
+    (u - centerU) / halfSpan,
     t
   );
+}
+
+// Replicates the panel geometry's width sampling so viewport width handles can read
+// and write the same multiplier the geometry consumes (bone.taperCurve/secondary).
+function tipPanelWidthAt(lock, t, side, bone, segmentIndex = -1, splits = null) {
+  const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
+  const multiplier = tipWidthMultiplierAt(lock, t, side, bone, segmentIndex, splits);
   return Math.max(0.0001, fullWidth * multiplier);
 }
 
@@ -13498,28 +13530,28 @@ function buildTipWidthCurve(lock, segmentIndex, splits, bone, side) {
     : lock.taperCurve;
   const current = side < 0 ? bone.taperCurveSecondary : bone.taperCurve;
   const points = [];
-  for (let i = 0; i <= 10; i += 1) {
-    const ti = i / 10;
-    const value = ti < forkT - 1e-4
-      ? sampleTaperCurve(globalCurve, ti)
-      : (current && current.length ? sampleTaperCurve(current, ti) : sampleTaperCurve(globalCurve, ti));
-    points.push({ position: ti, value: THREE.MathUtils.clamp(value, 0.08, 2), interpolation: "linear" });
+  const addPoint = (position, value) => {
+    const clampedPosition = THREE.MathUtils.clamp(Number(position) || 0, 0, 1);
+    if (points.some((point) => Math.abs(point.position - clampedPosition) < 1e-4)) return;
+    points.push({
+      position: clampedPosition,
+      value: THREE.MathUtils.clamp(Number(value) ?? 0.5, 0.08, 2),
+      interpolation: "linear"
+    });
+  };
+  // The locked (above-zipper) region is no longer baked into the curve: sampling falls
+  // back to the global curve below the fork. The tip curve only owns the exposed region,
+  // so it stays small (fork boundary + the fixed control positions + the tip end) and
+  // every point is visible in the viewport (like the original width curve's few points).
+  addPoint(forkT, sampleTaperCurve(globalCurve, forkT));
+  for (let i = 0; i < TIP_WIDTH_CONTROL_POINTS; i += 1) {
+    const position = THREE.MathUtils.lerp(forkT, 1, (i + 0.5) / TIP_WIDTH_CONTROL_POINTS);
+    const edited = current && current.find((point) => Math.abs(point.position - position) < 1e-3);
+    addPoint(position, edited ? edited.value : sampleTaperCurve(globalCurve, position));
   }
-  // Preserve the current curve's own points in the exposed region (width handles edit
-  // at arbitrary parameters, e.g. 0.90625, which the fixed 0.1 grid would drop).
-  if (current && current.length) {
-    for (const point of current) {
-      const position = THREE.MathUtils.clamp(Number(point.position) || 0, 0, 1);
-      if (position < forkT - 1e-4) continue;
-      if (points.some((existing) => Math.abs(existing.position - position) < 1e-4)) continue;
-      points.push({
-        position,
-        value: THREE.MathUtils.clamp(Number(point.value) ?? 0.5, 0.08, 2),
-        interpolation: "linear"
-      });
-    }
-    points.sort((a, b) => a.position - b.position);
-  }
+  const tipEdited = current && current.find((point) => Math.abs(point.position - 1) < 1e-3);
+  addPoint(1, tipEdited ? tipEdited.value : sampleTaperCurve(globalCurve, 1));
+  points.sort((a, b) => a.position - b.position);
   return points;
 }
 
@@ -13532,8 +13564,8 @@ function setTipWidthCurveValue(lock, segmentIndex, splits, bone, side, t, value)
   bone.asymmetricWidthCurve = true;
   const curve = side < 0 ? bone.taperCurveSecondary : bone.taperCurve;
   const clamped = THREE.MathUtils.clamp(Number(value) || 0.5, 0.08, 2);
-  // Insert/update a curve point at the handle's exact parameter t (the fixed 0.1-step
-  // positions rarely land on a handle, so matching would silently drop the edit).
+  // Update the curve point at the handle's parameter t in place (the fixed control
+  // positions are always present in the lean curve, so no points accumulate).
   const existing = curve.find((point) => Math.abs(point.position - t) < 1e-3);
   if (existing) existing.value = clamped;
   else curve.push({ position: THREE.MathUtils.clamp(t, 0, 1), value: clamped, interpolation: "linear" });
@@ -13579,10 +13611,10 @@ function tipPanelFrameAt(lock, t) {
 // Replicates the panel geometry's section point (rawPanelPoint) on the main panel
 // frame, so width controls land on the geometry's real edges (width + depth curves,
 // camber and asymmetric centers included).
-function tipMainSectionPoint(lock, t, u, shell, bone) {
+function tipMainSectionPoint(lock, t, u, shell, bone, segmentIndex = -1, splits = null) {
   const frame = tipPanelFrameAt(lock, t);
   const origin = frame.point.clone();
-  const width = tipPanelWidthAt(lock, t, u, bone);
+  const width = tipPanelWidthAt(lock, t, u, bone, segmentIndex, splits);
   const halfWidth = width * 0.5;
   const thickness = Math.max(0.0001, Number(lock.panelThickness ?? 0.08) * sampleAsymmetricTaperCurve(
     bone?.depthCurve || lock.depthCurve,
@@ -13591,15 +13623,32 @@ function tipMainSectionPoint(lock, t, u, shell, bone) {
     shell,
     t
   ));
-  const camber = Number(lock.panelCurvature ?? 0.18) * halfWidth * (1 - u * u);
+  let camber = Number(lock.panelCurvature ?? 0.18) * halfWidth * (1 - u * u);
+  // A segment's width is measured from ITS OWN center (the tip sub-bone): the lateral
+  // extent is (u - centerU) plus a constant alignment so the segment center sits where
+  // the main panel puts it (zipper walls stay flush). The camber stays on the GLOBAL
+  // profile, so the tip WidthCurve only changes the width (lateral), and dragging the
+  // control moves it along the tip sub-bone's width axis - not the main bone's line.
+  let lateralU = u;
+  let lateralCenter = 0;
+  if (segmentIndex >= 0 && splits && splits.length) {
+    const boundaries = [-1, ...splits.map((split) => split.position), 1];
+    if (segmentIndex < boundaries.length - 1) {
+      const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
+      const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
+      lateralU = u - centerU;
+      lateralCenter = centerU * fullWidth * tipWidthMultiplierAt(lock, t, centerU, null, -1, splits) * 0.5;
+      camber = Number(lock.panelCurvature ?? 0.18) * fullWidth * tipWidthMultiplierAt(lock, t, u, null, -1, splits) * 0.5 * (1 - u * u);
+    }
+  }
   const centerX = lock.centerAsymmetricProfile && (bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve)
-    ? (tipPanelWidthAt(lock, t, 1, bone) - tipPanelWidthAt(lock, t, -1, bone)) * 0.25
+    ? (tipPanelWidthAt(lock, t, 1, bone, segmentIndex, splits) - tipPanelWidthAt(lock, t, -1, bone, segmentIndex, splits)) * 0.25
     : 0;
   const centerZ = lock.centerAsymmetricProfile && (bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve)
-    ? (tipPanelWidthAt(lock, t, 1, bone) - tipPanelWidthAt(lock, t, -1, bone)) * 0.25
+    ? (tipPanelWidthAt(lock, t, 1, bone, segmentIndex, splits) - tipPanelWidthAt(lock, t, -1, bone, segmentIndex, splits)) * 0.25
     : 0;
   return origin.clone()
-    .addScaledVector(frame.x, u * halfWidth + centerX * profileTopologyCenterWeight(u, -1, 1))
+    .addScaledVector(frame.x, lateralU * halfWidth + lateralCenter + centerX * profileTopologyCenterWeight(u, -1, 1))
     .addScaledVector(
       frame.z,
       camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1)
@@ -13607,9 +13656,9 @@ function tipMainSectionPoint(lock, t, u, shell, bone) {
 }
 
 // Edge position of a tip side at chain parameter t, matching the geometry's own tip
-// deformation: authoredCenter + dq*(baseEdge - restCenter). The dq rotation (rest ->
-// authored tangent) makes the width control follow the TIP sub-bone's orientation
-// (bend/roll), not just the main bone, so edge tips of curved bangs stay correct.
+// transform (rest identity preserved). The width is measured from the TIP sub-bone
+// chain (the segment center), so the handle sits on the mesh edge AND moves along the
+// tip's own lateral when the width changes - not along the main-bone line.
 function tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t) {
   const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
   if (!tip || tip.points.length < 2 || !tip.restPoints || tip.restPoints.length < 2) return null;
@@ -13628,14 +13677,22 @@ function tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t) {
   const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
   if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return null;
   const edgeU = boundaries[side < 0 ? segmentIndex : segmentIndex + 1];
-  const baseEdge = tipMainSectionPoint(lock, t, edgeU, 1, bone);
-  const rel = baseEdge.clone().sub(restCenter).applyQuaternion(dq);
-  // 用当前发尖自己的 authored 宽度轴（frame.x 经 dq 旋转）并定向到本侧边缘，
-  // 修复绿色控制点/曲线拖拽方向偏离真实宽度轴（此前 rel 相对宽度轴倾斜 7°~170°）。
-  const frame = tipPanelFrameAt(lock, t);
-  const lateral = frame.x.clone().applyQuaternion(dq).normalize();
-  if (lateral.dot(rel) < 0) lateral.negate();
+  const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
+  // The section reference is the segment-center point (tip sub-bone) in the SAME frame;
+  // both points use the tip-relative width formula, so at rest the handle is exactly the
+  // mesh edge and the edge moves along the tip's own lateral when the width changes.
+  const baseEdge = tipMainSectionPoint(lock, t, edgeU, 1, bone, segmentIndex, splits);
+  const segCenter = tipMainSectionPoint(lock, t, centerU, 1, bone, segmentIndex, splits);
+  const rel = baseEdge.sub(segCenter).applyQuaternion(dq);
   const point = authoredCenter.clone().add(rel);
+  // Drag axis: the direction from the TIP sub-bone chain to this side's edge (the
+  // main panel lateral rotated by the tip's bend), oriented toward the edge - so the
+  // handle tracks the cursor along the tip's own width line, not the main bone's line.
+  const frame = tipPanelFrameAt(lock, t);
+  let lateral = frame.x.clone().applyQuaternion(dq);
+  if (lateral.lengthSq() < 1e-8) lateral.copy(rel);
+  lateral.normalize();
+  if (lateral.dot(rel) < 0) lateral.negate();
   return { point, center: authoredCenter.clone(), lateral, t };
 }
 
@@ -13760,7 +13817,9 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
   const restPoints = [];
   for (let index = 0; index < mainCount; index += 1) {
     const t = index / Math.max(1, mainCount - 1);
-    restPoints.push(panelSplitControlPoint(lock, { position: centerU, height: 1 - t }, t, curve, segmentIndex, splitBone));
+    // {} forces the GLOBAL width curves: the rest chain is the stable base-panel
+    // centerline, so width edits move the edge but never the tip sub-bone chain.
+    restPoints.push(panelSplitControlPoint(lock, { position: centerU, height: 1 - t }, t, curve, segmentIndex, {}));
   }
   const authored = splitBone?.tip;
   const twists = (authored && Array.isArray(authored.twists))
@@ -13881,14 +13940,10 @@ function createPanelStrandGeometry(lock) {
       triangleEdgeMasks.push([1, 0, 1], [1, 1, 0]);
     }
   };
-  const panelWidthAt = (t, side, bone) => {
-    return Math.max(0.0001, fullWidth * sampleAsymmetricTaperCurve(
-      bone?.taperCurve || lock.taperCurve,
-      bone?.taperCurveSecondary || lock.taperCurveSecondary,
-      bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve,
-      side,
-      t
-    ));
+  const panelWidthAt = (t, side, bone, segment = -1) => {
+    // Tip width is sampled from the TIP sub-bone frame (segment center) below the fork;
+    // above the fork the global panel curve applies. Shared with the viewport handles.
+    return Math.max(0.0001, fullWidth * tipWidthMultiplierAt(lock, t, side, bone, segment, splits));
   };
   const panelThicknessAt = (t, side, bone) => {
     return Math.max(0.0001, baseThickness * sampleAsymmetricTaperCurve(
@@ -13917,29 +13972,43 @@ function createPanelStrandGeometry(lock) {
     z = new THREE.Vector3().crossVectors(x, y).normalize();
     return { point, x, y, z };
   };
-  const rawPanelPoint = (sampleT, u, shell, bone = null) => {
+  const rawPanelPoint = (sampleT, u, shell, bone = null, segment = -1) => {
     if (latticeControlled) return surfacePanelPoint(lock, sampleT, u, shell);
     const frame = panelFrameAt(sampleT);
-    const width = panelWidthAt(sampleT, u, bone);
+    const width = panelWidthAt(sampleT, u, bone, segment);
     const thickness = panelThicknessAt(sampleT, shell, bone);
     const halfWidth = width * 0.5;
-    const camber = curvature * halfWidth * (1 - u * u);
+    let camber = curvature * halfWidth * (1 - u * u);
+    // A segment's width is measured from ITS OWN center (the tip sub-bone): the lateral
+    // extent is (u - centerU) plus a constant alignment, and the camber stays on the
+    // GLOBAL profile, so width edits move the mesh edge along the tip's own width axis
+    // (not the main bone's line) without kinking at the zipper walls.
+    let lateralU = u;
+    let lateralCenter = 0;
+    if (segment >= 0 && segment < boundaries.length - 1) {
+      const centerU = (boundaries[segment] + boundaries[segment + 1]) * 0.5;
+      lateralU = u - centerU;
+      lateralCenter = centerU * fullWidth * tipWidthMultiplierAt(lock, sampleT, centerU, null, -1, splits) * 0.5;
+      // The camber stays on the GLOBAL profile: width edits change only the lateral
+      // extent (tip sub-bone), so the edge moves along the tip's width axis.
+      camber = curvature * fullWidth * tipWidthMultiplierAt(lock, sampleT, u, null, -1, splits) * 0.5 * (1 - u * u);
+    }
     const centerX = lock.centerAsymmetricProfile && (bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve)
-      ? (panelWidthAt(sampleT, 1, bone) - panelWidthAt(sampleT, -1, bone)) * 0.25
+      ? (panelWidthAt(sampleT, 1, bone, segment) - panelWidthAt(sampleT, -1, bone, segment)) * 0.25
       : 0;
     const centerZ = lock.centerAsymmetricProfile && (bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve)
       ? (panelThicknessAt(sampleT, 1, bone) - panelThicknessAt(sampleT, -1, bone)) * 0.25
       : 0;
     return frame.point.clone()
-      .addScaledVector(frame.x, u * halfWidth + centerX * profileTopologyCenterWeight(u, -1, 1))
+      .addScaledVector(frame.x, lateralU * halfWidth + lateralCenter + centerX * profileTopologyCenterWeight(u, -1, 1))
       .addScaledVector(
         frame.z,
         camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1)
       );
   };
-  const panelPoint = (row, u, shell, bone = null) => {
+  const panelPoint = (row, u, shell, bone = null, segment = -1) => {
     const t = row / lengthLoops;
-    return rawPanelPoint(t, u, shell, bone);
+    return rawPanelPoint(t, u, shell, bone, segment);
   };
   // Tip sub-bone deformation: the segment follows its guide chain CENTER. At each row t
   // below the fork, the below-zipper region translates by (authored chain point - rest
@@ -13988,16 +14057,26 @@ function createPanelStrandGeometry(lock) {
           : dq;
         tipTransform = { authoredCenter, restCenter, dq: dqRoll, weight };
       }
+      // Section reference for the tip transform: the segment-center point (tip sub-bone)
+      // in the same tip-relative frame as the section itself. At rest the transform is
+      // identity, and once the tip WidthCurve is edited the section scales relative to
+      // the TIP sub-bone (segment center), not to the absolute panel center.
+      let sectionCenter = null;
+      if (tipTransform && segment >= 0) {
+        const centerU = (boundaries[segment] + boundaries[segment + 1]) * 0.5;
+        sectionCenter = panelPoint(row, centerU, 1, bone, segment);
+      }
       const frontRow = [];
       const backRow = [];
       for (let column = 0; column <= columns; column += 1) {
         const u = THREE.MathUtils.lerp(uStart(row), uEnd(row), column / columns);
-        const frontPoint = panelPoint(row, u, 1, bone);
-        const backPoint = panelPoint(row, u, -1, bone);
+        const frontPoint = panelPoint(row, u, 1, bone, segment);
+        const backPoint = panelPoint(row, u, -1, bone, segment);
         if (tipTransform) {
-          const transformedFront = frontPoint.clone().sub(tipTransform.restCenter).applyQuaternion(tipTransform.dq).add(tipTransform.authoredCenter);
+          const reference = sectionCenter || tipTransform.restCenter;
+          const transformedFront = frontPoint.clone().sub(reference).applyQuaternion(tipTransform.dq).add(tipTransform.authoredCenter);
           frontPoint.lerp(transformedFront, tipTransform.weight);
-          const transformedBack = backPoint.clone().sub(tipTransform.restCenter).applyQuaternion(tipTransform.dq).add(tipTransform.authoredCenter);
+          const transformedBack = backPoint.clone().sub(reference).applyQuaternion(tipTransform.dq).add(tipTransform.authoredCenter);
           backPoint.lerp(transformedBack, tipTransform.weight);
         }
         frontRow.push(positions.length / 3);
@@ -34567,7 +34646,7 @@ function beginPanelSplitHandleDrag(event) {
       const boundaries = [-1, ...tipSplits.map((split) => split.position), 1];
       const edgeU = boundaries[tipWidthSide < 0 ? tipWidthSegment : tipWidthSegment + 1];
       const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
-      tipWidthStartMult = tipPanelWidthAt(lock, placement.t, edgeU, tipBone) / fullWidth;
+      tipWidthStartMult = tipPanelWidthAt(lock, placement.t, edgeU, tipBone, tipWidthSegment, tipSplits) / fullWidth;
       tipWidthStartClientX = event.clientX;
       tipWidthStartClientY = event.clientY;
       const rect = renderer.domElement.getBoundingClientRect();
@@ -37437,8 +37516,11 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     splitTipForSegment,
     applySubBoneBrushSample,
     tipWidthSideForkT,
+    tipWidthControlPlacement,
     tipWidthEdgePosition,
     tipPanelFrameAt,
+    tipPanelWidthAt,
+    tipWidthMultiplierAt,
     tipMainSectionPoint,
     setTipWidthCurveValue,
     buildTipWidthCurve,
