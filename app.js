@@ -13537,12 +13537,46 @@ function setTipWidthCurveValue(lock, segmentIndex, splits, bone, side, t, value)
   bone.taperCurveSecondary = buildTipWidthCurve(lock, segmentIndex, splits, bone, -1);
 }
 
+// Replicates the panel geometry's frame (panelFrameAt: parallel-transported frames
+// interpolated per row). Using strandFrameAt here left the width UI floating off the
+// mesh surface (like a different hair layer) because the two frames differ.
+function tipPanelFrameAt(lock, t) {
+  const lengthLoops = THREE.MathUtils.clamp(Math.round(lock.panelLengthLoops ?? 10), 3, 32);
+  const curve = strandGeometryCurve(lock);
+  let frames = lock._tipWidthFrames;
+  if (!Array.isArray(frames) || frames.length !== lengthLoops + 1) {
+    frames = [];
+    let previousFrame = null;
+    for (let row = 0; row <= lengthLoops; row += 1) {
+      previousFrame = strandGeometryFrameAt(lock, curve, row / lengthLoops, previousFrame);
+      frames.push(previousFrame);
+    }
+    lock._tipWidthFrames = frames;
+  }
+  const scaled = THREE.MathUtils.clamp(t, 0, 1) * lengthLoops;
+  const lowerIndex = Math.min(lengthLoops, Math.floor(scaled));
+  const upperIndex = Math.min(lengthLoops, lowerIndex + 1);
+  const lower = frames[lowerIndex];
+  const upper = frames[upperIndex];
+  const alpha = scaled - lowerIndex;
+  const point = curve.getPoint(t);
+  const y = curve.getTangent(t).normalize();
+  const upperZ = upper.z.clone();
+  if (lower.z.dot(upperZ) < 0) upperZ.negate();
+  let z = lower.z.clone().lerp(upperZ, alpha).projectOnPlane(y);
+  if (z.lengthSq() < 0.0001) z.copy(outwardNormalAtPoint(point, y));
+  z.normalize();
+  const x = new THREE.Vector3().crossVectors(y, z).normalize();
+  z = new THREE.Vector3().crossVectors(x, y).normalize();
+  return { point, x, y, z };
+}
+
 // Replicates the panel geometry's section point (rawPanelPoint) on the main panel
 // frame, so width controls land on the geometry's real edges (width + depth curves,
 // camber and asymmetric centers included).
 function tipMainSectionPoint(lock, t, u, shell, bone) {
-  const frame = strandFrameAt(lock, t);
-  const origin = strandGeometryCurve(lock).getPoint(t);
+  const frame = tipPanelFrameAt(lock, t);
+  const origin = frame.point.clone();
   const width = tipPanelWidthAt(lock, t, u, bone);
   const halfWidth = width * 0.5;
   const thickness = Math.max(0.0001, Number(lock.panelThickness ?? 0.08) * sampleAsymmetricTaperCurve(
@@ -13744,6 +13778,7 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
 }
 
 function createPanelStrandGeometry(lock) {
+  lock._tipWidthFrames = null; // the width-UI frame cache depends on the rebuilt points
   const latticeControlled = lock.geometryType === "surface";
   const curve = latticeControlled ? null : strandGeometryCurve(lock);
   const lengthLoops = THREE.MathUtils.clamp(Math.round(lock.panelLengthLoops ?? 10), 3, 32);
@@ -34660,27 +34695,17 @@ function updatePanelSplitHandleDrag(event) {
     const ndcX = (2 * targetX) / rect.width - 1;
     const ndcY = -((2 * targetY) / rect.height - 1);
     const cursorWorld = new THREE.Vector3(ndcX, ndcY, startProj.z).unproject(camera);
-    // Responsive + stable: project the screen drag onto the edge's screen direction
-    // (like the main width-edge drag), scaled by the start edge screen distance, so
-    // any drag with a lateral component changes width and there is no feedback loop
-    // that collapses the tip.
-    const cProj = center.clone().project(camera);
-    const eProj = edge.point.clone().project(camera);
-    const cpx = (cProj.x * 0.5 + 0.5) * rect.width;
-    const cpy = (-cProj.y * 0.5 + 0.5) * rect.height;
-    const epx = (eProj.x * 0.5 + 0.5) * rect.width;
-    const epy = (-eProj.y * 0.5 + 0.5) * rect.height;
-    let sdx = epx - cpx;
-    let sdy = epy - cpy;
-    const slen = Math.hypot(sdx, sdy) || 1;
-    sdx /= slen;
-    sdy /= slen;
-    const startLatOffset = drag.tipWidthStartLatOffset || 0.0001;
-    const dragAlong = (event.clientX - drag.tipWidthStartClientX) * sdx
-      + (event.clientY - drag.tipWidthStartClientY) * sdy;
-    const latOffset = startLatOffset
-      + dragAlong * (startLatOffset / (drag.tipWidthStartEdgeScreenDist || 1));
-    const rawMult = (drag.tipWidthStartMult ?? 1) * (latOffset / startLatOffset);
+    // World-space relative mapping (no screen foreshortening amplification): the width
+    // multiplier follows the cursor's WORLD lateral distance from the chain center,
+    // scaled by the start edge distance. At drag start latOffset == startLatOffset so
+    // nothing jumps; the response is proportional to the real lateral movement, not the
+    // on-screen edge size (which made tiny drags jump a whole "layer" when foreshortened).
+    const latOffset = cursorWorld.clone().sub(center).dot(lateral);
+    const startLatOffset = Math.max(0.0001, drag.tipWidthStartLatOffset || 0.0001);
+    // Half sensitivity: a full edge-length drag changes the width by ~50% instead of
+    // 100%, so tiny drags don't jump the whole side (the "dent" on drag start).
+    const ratio = latOffset / startLatOffset;
+    const rawMult = (drag.tipWidthStartMult ?? 1) * (1 + (ratio - 1) * 0.5);
     // Floor at 30% of the drag's start width (absolute min 0.08): a single inward drag
     // can thin the tip but not collapse it into a needle (repeated drags thin further).
     const floorMult = Math.max(0.08, (drag.tipWidthStartMult ?? 1) * 0.3);

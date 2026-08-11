@@ -243,6 +243,19 @@ splitBone.tip = {
 **2. 测试环境：Chrome 151 更新后沙箱崩溃（环境问题，非产品代码）**：`chrome.exe` 全模式启动即退出（exit 0x80000003 STATUS_BREAKPOINT），CDP 不可达导致测试挂起。修复：`verify-smoke.mjs` / `verify-tip-select.mjs` 的 Chrome 启动参数加 `--no-sandbox`（本机安全沙箱在当前容器/系统策略下与 Chrome 151 冲突）。三档 smoke 与 27/27 回归恢复。
 
 **回归测试（scripts/verify-tip-select.mjs，27/27）**：width 拖拽（编辑值改变、链不变、不塌缩）；orient 滚动截面；push 移动发尖；select 模式悬停/alt+点击；0 异常。
+### 8.17 width 拖拽起始「凹进/跳层」根因：帧不一致 + 拖拽过敏感（0.2.59 已落地）
+
+**症状**：能拖绿色宽度控制点了，但拖动起始瞬间这半边控制点+曲线往头皮凹进去一截，观感像发丝从 mid 层跳到 bottom 层。
+
+**调查**（浏览器实测 Front Bangs 1 seg2）：
+1. **UI 与 mesh 帧不一致**：宽度控制点/曲线用 `strandFrameAt`（逐点 guidedNormalAt+twist 帧）定位，而 mesh 几何用 `panelFrameAt`（沿曲线平行运输帧插值）——两套帧在弯曲刘海上有几 cm 级差异，UI 悬在 mesh 外像「另一层」。
+2. **拖拽过敏感**：屏幕投影映射在边缘屏幕尺寸小（24px）时放大——5px 拖拽宽度跳 22%、手柄跳 ~4cm，等于拖动起始瞬间整侧跳变（这就是「凹进去一截」）。
+
+**修复（根因，非特殊化）**：
+- 新增 `tipPanelFrameAt`：复刻几何 `panelFrameAt`（平行运输帧数组插值，缓存于 `lock._tipWidthFrames`，几何重建时失效），`tipMainSectionPoint` 改用它 → 宽度 UI 精确落在 mesh 表面。
+- 拖拽映射改**世界空间相对比例**（`startMult × (1 + (latOffset/startLatOffset − 1) × 0.5)`）：消除屏幕透视放大；敏感度减半（拖满边缘≈+50% 而非 +100%），5px 拖拽变化从 22% 降到 ~11%、手柄位移从 ~4cm 降到 ~2.6cm，不再「瞬间跳变」。
+
+**回归测试（scripts/verify-tip-select.mjs，27/27）**：width 拖拽（编辑值改变、链不变、锁定区=全局）；orient 滚动截面；push 移动发尖；select 悬停/alt+点击；0 异常。三档 smoke 11/11、12/12 通过。
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。
