@@ -44,9 +44,28 @@ Each split segment gets its own tip sub-bone. Selecting one in the viewport show
 
 Shortcuts:
 
-- **Alt + Left-click** — quick-switch selection to the hovered tip sub-bone segment (or hovered strand).
+- **Alt + Left-click** — quick-switch selection to the hovered tip sub-bone segment (or hovered strand). — same Alt+click pick / quick-switch habit as Zbrush
 - **Ctrl + Left-drag on a green tip WidthCurve handle** — asymmetric width edit (only the dragged side); without Ctrl it mirrors both sides.
-- **Ctrl + Left-drag elsewhere** — reverse / special: sculpt brushes act in reverse; selection Ctrl+click removes from selection.
+- **Ctrl + Left-drag elsewhere** — reverse / special: sculpt brushes act in reverse (Scale brush: default grows (root-anchored uniform), Ctrl shrinks; Cut·Extend default extends, Ctrl cuts); selection Ctrl+click removes from selection.
+
+## Coordinate system & gizmo axes
+
+The app uses Three.js's right-handed coordinate system; the curve / tip sub-bone gizmo uses a **local frame** that follows the chain direction.
+
+![Tip sub-bone gizmo local frame](devlog/assets/tip-gizmo-frame.png)
+
+Three important axes (colors match the screenshot): **Green = Tangent (Y)** — along the tip chain / curve direction; **Red = Bitangent (X)** — lateral / width direction; **Blue = Normal (Z)** — perpendicular to the panel / curve surface. Width drag, rotation axes, and normal arrows all use this local frame.
+
+## Sculpt brushes
+
+Four custom sculpt brushes:
+
+- **Slide** — moves control points along the curve trajectory (tangent direction), restricted to the tangent/normal plane, without changing the curve's length proportion.
+- **Push** — pushes along the local up direction (normal / away from the surface), restricted to normal-direction movement.
+- **Orient** — rolls the section around the tangent, turning the section's normal (up direction) toward the viewport-orthogonal direction (changes tangent roll).
+- **Scale** — two modes: **Scale** — root-anchored uniform radial scaling of the whole hair sheet (no movement); **Cut·Extend** — uniform parameter scaling of the whole sheet preserving point spacing (factor < 1 cuts, factor > 1 extends along the end tangent).
+
+Ctrl = reverse on all brushes: Scale defaults to growing, Ctrl shrinks; Cut·Extend defaults to extending, Ctrl cuts.
 
 ## Known limitations
 

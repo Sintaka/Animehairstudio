@@ -21,7 +21,7 @@
 - **简体中文 UI**（Settings → Language，3D 术语保留英文）
 - **Panel Split 子骨骼 + 发尖子骨骼（tip sub-bone）**：每 split 段一个完整变换骨骼（P/orient/spread + 每段 Width/Depth 曲线）、视口 tip 链手柄/高亮/法线箭头、rotate/scale 挂 gizmo、发尖 WidthCurve（绿色控制点，左右独立、zipper 截断、Segment Spread 0–0.99、Reset 全 1）、每顶点蒙皮权重 [mainJoint, segment, weight] + USDA SkelBindingAPI 蒙皮
 - **子发片**（低模水密桥接 + 父发片挖洞 + Region 选区 + 根骨骼 gizmo/twist/H 模式 + Bridge Smooth）
-- **4 个自定义雕刻笔刷**（Slide / Scale·Cut-Extend / Push / Orient）+ Smooth twist；Ctrl=反向
+- **4 个自定义雕刻笔刷**（Slide / Scale·Cut-Extend / Push / Orient）+ Smooth twist；Ctrl=反向，例如 Scale 笔刷：默认放大，按住 Ctrl=缩小；Cut·Extend 模式默认延伸、Ctrl=裁剪
 - **快速保存/导出优化**：Ctrl+S 快速保存（记住最近项目文件句柄）、Ctrl+Shift+S 另存为、Ctrl+Alt+S 快速导出复刻上次导出（优先 File System Access API 直接写盘，避免下载 (1) 后缀）
 - File 菜单**移除**了 3 个 Local dev 选项（Local Save / Local Export to OBJ / Local Export to USDA，原走 server.js 本地服务），保存/导出统一为新增的三个快捷键（见下）。File 菜单**新增**三个保存/导出快捷键：Ctrl+S Quick Save、Ctrl+Shift+S Save as、Ctrl+Alt+S Quick Export；保存/导出优先用 File System Access API 直写盘（记住文件句柄、覆盖写同一文件、不再产生下载 (1) 后缀），浏览器不支持时回退下载/对话框。快捷键帮助有独立「Sintaka Fork」分区。
 - **Houdini 导航（默认）**：Alt+左键旋转 / Alt+中键平移 / Alt+右键缩放 / 滚轮缩放
@@ -36,11 +36,30 @@
 
 快捷键提示：
 
-- **Alt + 左键**：快速切换选中到悬停的发尖子骨骼段（或悬停的发丝），不用先取消当前选中。
+- **Alt + 左键**：快速切换选中到悬停的发尖子骨骼段（或悬停的发丝），不用先取消当前选中。——操作习惯与 Zbrush 相同（Alt+点击拾取/快速切换悬停目标）
 - **Ctrl + 左键拖动**（发尖绿色 WidthCurve 控制点）：非对称编辑——只调被拖的一侧；不加 Ctrl 默认等比镜像两侧。
-- **Ctrl + 左键拖动**（其它地方）：特殊/反转功能——雕刻笔刷反向（Ctrl=反向）、选择工具 Ctrl+左键从选中移除。
+- **Ctrl + 左键拖动**（其它地方）：特殊/反转功能——雕刻笔刷反向（Ctrl=反向，例如 Scale 笔刷：默认放大，按住 Ctrl=缩小；Cut·Extend 模式默认延伸、Ctrl=裁剪）、选择工具 Ctrl+左键从选中移除。
 - **快速保存优化**：Ctrl+S 快速保存到最近一次的项目文件（记住文件句柄，覆盖写同一文件）；Ctrl+Shift+S 另存为；Ctrl+Alt+S 快速导出复刻上次导出。
 - **其它自定义快捷键**：S+左键拖动调笔刷大小、Houdini 导航（Alt+左/中/右键）、Delete 删多余材质、H 层级编辑（根骨骼工作流）、Ctrl+Z 撤销（含非文本输入控件）。
+
+## 坐标系与 gizmo 向量
+
+应用使用 Three.js 右手坐标系；曲线/发尖子骨骼 gizmo 使用随链方向变化的**局部坐标系**。
+
+![发尖子骨骼 gizmo 局部坐标系](devlog/assets/tip-gizmo-frame.png)
+
+三个重要向量（颜色对应截图）：**绿色 = 切线（Tangent，Y）**——沿发尖链/曲线方向；**红色 = 副切线（Bitangent，X）**——横向/宽度方向；**蓝色 = 法线（Normal，Z）**——垂直面板/曲线表面。宽度拖拽、旋转轴向、法线箭头都基于这套局部坐标系。
+
+## 雕刻笔刷
+
+四个自定义雕刻笔刷说明：
+
+- **Slide（滑动）**：沿曲线轨迹（切线方向）移动控制点，限制在切线/法线平面内滑动，不改变曲线长度比例。
+- **Push（推）**：沿局部上方向（法线/垂直表面）推离表面，限制为法线方向移动。
+- **Orient（定向）**：绕切线旋转截面，把截面的法线（上方向）转向视口正交方向（改变切线旋转）。
+- **Scale（缩放）**：两种模式——**Scale**：以根部为锚点整发片等比缩放（径向、非移动）；**Cut·Extend（裁剪/延伸）**：整发片均匀参数缩放，保持点间距（factor<1 裁剪、factor>1 沿末端切线延伸）。
+
+Ctrl=反向说明：所有笔刷按住 Ctrl 为反向——Scale 笔刷默认放大、Ctrl 缩小；Cut·Extend 默认延伸、Ctrl 裁剪。
 
 ## 子发片（低模水密桥接）
 
