@@ -1,4 +1,4 @@
-﻿# Panel split 尖端子骨骼分析：每 split 段一个「类普通发丝尖端」的子骨骼（0.2.59 规划）
+# Panel split 尖端子骨骼分析：每 split 段一个「类普通发丝尖端」的子骨骼（0.2.59 规划）
 
 > **✅ 已实现（0.2.59 落地）+ 本轮进行中**：本文档由「规划」转为「实施 + 修复记录」——尖端子骨骼 S1–S6（程序化权重 / 数据模型 / 几何跟随 / 视口手柄 / 关联系统 / USDA 蒙皮）见 §8.5；点击 toggle 选中 + 主发丝保持 + overlay z-fighting 见 §8.6；双段高亮 + 笔刷保留 tip UI 见 §8.7；边界段 / 笔刷统一变换 / undo 持久化 / bones-only / alt+点击见 §8.8；本轮 5 项改动（0.2.59 进行中）见 §8.9。§1–§7 与「§8 待确认（实施前）」为规划期内容，已被实施取代，保留作历史。
 > 目标：让用户能控制 panel 每个尖端的长短和走向；在尖端建立与普通发丝一样的子骨骼部分，以兼容现有工具。
@@ -360,6 +360,17 @@ splitBone.tip = {
 **4. 浮动面板无法拖动 + 只能拖暴露点**：定位 segment 曲线点拖动失效原因并修复；`renderTaperCurveEditor` 给 t<本侧 fork 的隐藏点打标记，`taperCurveCanvas` pointerdown 跳过 → 只能拖动暴露的控制点。
 
 **回归测试（scripts/verify-tip-select.mjs，40/40）**：新增面板悬停不穿透（pointerOverTaperEditor）、Reset 后未暴露区跟随全局（不裂）、发尖表面法线与主法线在弯曲段有夹角且与链切线正交、浮动面板隐藏点打 data-tip-hidden 不可拖；原 38 项全过。三档 smoke（0041/0042/0044）11/11 通过。
+
+### 8.25 边缘段 Segment Spread 镜像补全（0.2.59）
+
+**问题**：最边缘段（segment 0 / 最后一段）外侧没有 zipper，`tipWidthSpreadGap` 对无 zipper 侧直接返回 0，几何 `uStart/uEnd` 也强制 -1/1 → Segment Spread 在最边缘刘海只能控制有 zipper 的内侧，尖端收窄不对称。
+
+**修复（自动补全，不展示 UI）**：
+1. `tipWidthSpreadGap`：本侧 zipper 缺失（边缘段外侧）时镜像取对侧 zipper（同一 `bone.spread`、同一 ramp 起点），两侧 gap 完全一致；仅当两侧都无 zipper（完全没有 splits）才不内收。
+2. `createPanelStrandGeometry` 的 `uStart/uEnd`：守卫从 `leftSplit`/`rightSplit` 改为 `(leftSplit || rightSplit)`，边缘段一侧有 zipper 即应用镜像 gap；两侧都无 zipper 才保持 -1/1。
+3. `tipWidthEdgePosition` 直接复用 `tipWidthSpreadGap`，无需改动即自动跟随。
+
+**回归测试（scripts/verify-tip-select.mjs，41/41）**：新增「edge segment spread mirrors gap to the no-zipper side」——segment 0 外侧/zipper 侧 gap 在 spread=0 时均为 0，spread=0.7 时相等且 >0（差 <1e-6），外侧手柄位置随 spread 内收（moved>0）；原 40 项全过。三档 smoke（0041/0042/0044）11/11 通过。
 
 ## 踩坑记录：发尖 WidthCurve 专项（8.10–8.20 复盘）
 

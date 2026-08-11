@@ -13522,12 +13522,16 @@ function tipWidthResetCurve(lock, segmentIndex, splits, side) {
 }
 
 // The segment's tip-narrowing gap at chain parameter t on one side: 0 at the side's
-// zipper (fork), ramping linearly to 0.5*spread*span at the tip (aggregation). Boundary
-// sides without a zipper never gap, matching the geometry's uStart/uEnd.
+// zipper (fork), ramping linearly to 0.5*spread*span at the tip (aggregation). Edge
+// segment outer sides without a zipper mirror the opposite side's zipper (same
+// bone.spread, same ramp start): 边缘段外侧镜像对侧 zipper 参数，两侧一致收窄（自动
+// 补全，不展示 UI）。Only when a side has no zipper on either side (no splits at all)
+// does it never gap.
 function tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side) {
   const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
   if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return 0;
-  const zipper = side < 0 ? splits[segmentIndex - 1] : splits[segmentIndex];
+  let zipper = side < 0 ? splits[segmentIndex - 1] : splits[segmentIndex];
+  if (!zipper) zipper = side < 0 ? splits[segmentIndex] : splits[segmentIndex - 1];
   if (!zipper) return 0;
   const start = 1 - Number(zipper.height ?? 0);
   if (t <= start) return 0;
@@ -14269,11 +14273,14 @@ function createPanelStrandGeometry(lock) {
     // Relative per-segment tip gap: each side opens by at most half the segment's own
     // span times the bone spread (0..1), ramping linearly from the side's zipper to
     // 0.5*spread*span at the tip (shared with the viewport width controls so the
-    // green handles sit exactly on the geometry edge).
-    const uStart = (row) => leftSplit
+    // green handles sit exactly on the geometry edge). Edge segment outer sides without
+    // a zipper mirror the opposite side's zipper so both sides narrow consistently
+    // (auto-completion, no UI); only when a segment has no zipper on either side does it
+    // stay at the full -1/1 boundary.
+    const uStart = (row) => (leftSplit || rightSplit)
       ? boundaries[segment] + tipWidthSpreadGap(lock, segment, splits, bone, row / lengthLoops, -1)
       : -1;
-    const uEnd = (row) => rightSplit
+    const uEnd = (row) => (leftSplit || rightSplit)
       ? boundaries[segment + 1] - tipWidthSpreadGap(lock, segment, splits, bone, row / lengthLoops, 1)
       : 1;
     addPatch(0, lengthLoops, uStart, uEnd, columns, {

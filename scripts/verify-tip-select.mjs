@@ -930,6 +930,42 @@ try {
     return JSON.stringify({ moved: Number(p0.distanceTo(p1).toFixed(4)), gapAtTip: Number(gapAtTip.toFixed(4)), sliderMax });
   })()`));
   check("spread moves tip width handles with the geometry (range 0-1, no scaling)", spreadCheck.moved > 0.01 && spreadCheck.sliderMax === "1", `spread=${JSON.stringify(spreadCheck)}`);
+  // ============ 8.25: edge segment spread mirrors gap to the no-zipper side ============
+  const edgeSpreadCheck = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[0] || null;
+    if (!bone) return JSON.stringify({ missingBone: true });
+    const origSpread = bone.spread;
+    bone.spread = 0;
+    const gap0Outer = t.tipWidthSpreadGap(lock, 0, splits, bone, 1, -1);
+    const gap0Zipper = t.tipWidthSpreadGap(lock, 0, splits, bone, 1, 1);
+    const e0 = t.tipWidthEdgePosition(lock, 0, splits, bone, -1, 1);
+    bone.spread = 0.7;
+    const gap7Outer = t.tipWidthSpreadGap(lock, 0, splits, bone, 1, -1);
+    const gap7Zipper = t.tipWidthSpreadGap(lock, 0, splits, bone, 1, 1);
+    const e7 = t.tipWidthEdgePosition(lock, 0, splits, bone, -1, 1);
+    bone.spread = origSpread;
+    return JSON.stringify({
+      gap0Outer: Number(gap0Outer.toFixed(6)),
+      gap0Zipper: Number(gap0Zipper.toFixed(6)),
+      gap7Outer: Number(gap7Outer.toFixed(6)),
+      gap7Zipper: Number(gap7Zipper.toFixed(6)),
+      moved: e0 && e7 ? Number(e0.point.distanceTo(e7.point).toFixed(6)) : -1
+    });
+  })()`));
+  check(
+    "edge segment spread mirrors gap to the no-zipper side",
+    !edgeSpreadCheck.missingBone
+      && edgeSpreadCheck.gap0Outer === 0
+      && edgeSpreadCheck.gap0Zipper === 0
+      && Math.abs(edgeSpreadCheck.gap7Outer - edgeSpreadCheck.gap7Zipper) < 1e-6
+      && edgeSpreadCheck.gap7Outer > 0
+      && edgeSpreadCheck.gap7Zipper > 0
+      && edgeSpreadCheck.moved > 1e-6,
+    `edgeSpread=${JSON.stringify(edgeSpreadCheck)}`
+  );
 
   // ============ 8.21: curve lean + common-fork distribution (hidden points recorded) ============
   const leanCheck = JSON.parse(await evalJS(cdp, `(() => {
