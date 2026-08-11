@@ -23,7 +23,7 @@ import { createDrawStore } from "./modules/edit/draw-store.js?v=20260809-4";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260809-3";
 import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
 import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260809-4";
-﻿import * as THREE from "three";
+import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
@@ -13491,6 +13491,19 @@ function tipWidthCommonForkT(lock, segmentIndex, splits) {
   return 1 - Math.max(leftZipper ?? 0, rightZipper ?? 0);
 }
 
+// Reset curve for a tip (segment) width curve: full width (value 1) across the exposed
+// region - the side's own fork boundary plus the common-fork control positions.
+function tipWidthResetCurve(lock, segmentIndex, splits, side) {
+  const sideForkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
+  const commonForkT = tipWidthCommonForkT(lock, segmentIndex, splits);
+  const points = [{ position: sideForkT, value: 1, interpolation: "linear" }];
+  for (const position of tipWidthControlTs(commonForkT)) {
+    points.push({ position, value: 1, interpolation: "linear" });
+  }
+  points.sort((a, b) => a.position - b.position);
+  return points;
+}
+
 // The segment's tip-narrowing gap at chain parameter t on one side: 0 at the side's
 // zipper (fork), ramping linearly to 0.5*spread*span at the tip (aggregation). Boundary
 // sides without a zipper never gap, matching the geometry's uStart/uEnd.
@@ -13540,7 +13553,8 @@ function tipWidthMultiplierAt(lock, t, u, bone, segmentIndex = -1, splits = null
     bone?.taperCurveSecondary || lock.taperCurveSecondary,
     bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve,
     (u - centerU) / halfSpan,
-    t
+    t,
+    0.25
   );
 }
 
@@ -14320,7 +14334,7 @@ function orientedQuadFace(vertices, a, b, c, d, outward) {
   return normal.dot(outward) < 0 ? [a, d, c, b] : [a, b, c, d];
 }
 
-﻿function createSplitStrandGeometry(lock, curve, profilePoints) {
+function createSplitStrandGeometry(lock, curve, profilePoints) {
   const radialSegments = THREE.MathUtils.clamp(Math.round(lock.radialSegments || 10), 6, 32);
   const profileCurve = branchSweep.createSmoothSweepProfileCurve(profilePoints);
   const sampleParameters = [
@@ -16455,10 +16469,13 @@ function renderTaperCurveEditor() {
   const editingProceduralBranch = branchSweep.proceduralBranchCurveEditing();
   const asymmetric = !editingTwist && !editingProceduralBranch && Boolean(target?.[shapePresets.taperAsymmetryKey()]);
   taperCurveOptions.classList.toggle("hidden", editingProceduralBranch);
-  taperAsymmetryToggleRow.classList.toggle("hidden", editingTwist || editingProceduralBranch);
+  const segmentEditing = sculptState.state.taperCurveEdit.type === "segment";
+  taperAsymmetryToggleRow.classList.toggle("hidden", editingTwist || editingProceduralBranch || segmentEditing);
   taperAsymmetryToggle.checked = asymmetric;
-  centerAsymmetricProfileRow.classList.toggle("hidden", !asymmetric);
+  centerAsymmetricProfileRow.classList.toggle("hidden", !asymmetric || segmentEditing);
   centerAsymmetricProfileToggle.checked = Boolean(target?.centerAsymmetricProfile);
+  const ctrlHint = document.querySelector("#taperCurveCtrlHint");
+  if (ctrlHint) ctrlHint.classList.toggle("hidden", !segmentEditing);
   taperCurveBaseAxis.classList.toggle("hidden", asymmetric || editingTwist);
   taperCurveCenterLine.classList.toggle("hidden", !asymmetric && !editingTwist);
   taperCurveSecondaryPath.classList.toggle("hidden", !asymmetric);
@@ -31901,12 +31918,23 @@ document.querySelector("#resetTaperCurve").addEventListener("click", () => {
   if (!curve || !sculptState.state.taperCurveEdit) return;
   pushUndoState();
   const braidCreationCurve = sculptState.state.taperCurveEdit.type === "creation" && sel.state.activeTool === "braid";
-  const editedLock = sculptState.state.taperCurveEdit.type === "strand"
+  const editedLock = (sculptState.state.taperCurveEdit.type === "strand" || sculptState.state.taperCurveEdit.type === "segment")
     ? locks.find((lock) => lock.id === sculptState.state.taperCurveEdit.id)
     : null;
   const panelWidthCurve = sculptState.state.taperCurveEdit.curveKey === "taperCurve"
     && ((sculptState.state.taperCurveEdit.type === "creation" && sel.state.activeTool === "panel") || isPanelGeometry(editedLock));
-  const defaultCurve = sculptState.state.taperCurveEdit.curveKey === "twistCurve"
+  const segmentWidthReset = sculptState.state.taperCurveEdit.type === "segment"
+    && (sculptState.state.taperCurveEdit.curveKey === "taperCurve"
+      || sculptState.state.taperCurveEdit.curveKey === "taperCurveSecondary")
+    && editedLock;
+  const defaultCurve = segmentWidthReset
+    ? tipWidthResetCurve(
+        editedLock,
+        sculptState.state.taperCurveEdit.segmentIndex,
+        clonePanelSplits(editedLock.panelSplits, editedLock.panelSplitHeight),
+        sculptState.state.taperCurveEdit.side === "secondary" ? -1 : 1
+      )
+    : sculptState.state.taperCurveEdit.curveKey === "twistCurve"
     ? DEFAULT_TWIST_CURVE
     : sculptState.state.taperCurveEdit.curveKey === "proceduralBranchShapeCurve"
     ? DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE
@@ -34617,7 +34645,7 @@ function disposeCurveObjects(lock) {
 }
 
 function beginPanelSplitHandleDrag(event) {
-  if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return false;
+  if (event.button !== 0 || event.shiftKey || event.altKey || event.metaKey) return false;
   const lock = getSelectedLock();
   const panelHandles = isPanelGeometry(lock) && lock.curveObjects?.group.visible
     ? lock.curveObjects.panelSplitHandles || []
@@ -34641,6 +34669,8 @@ function beginPanelSplitHandleDrag(event) {
   if (!handles.length) return false;
   const hit = raycaster.intersectObjects(handles.filter((handle) => handle.visible), false)[0];
   if (!hit) return false;
+  // Ctrl+drag is the tip width asymmetric edit; it must not grab zipper/segment/tip handles.
+  if (event.ctrlKey && hit.object.userData.tipWidthIndex == null) return false;
   pushUndoState();
   transformControls.detach();
   const tipIndex = hit.object.userData.panelTipIndex != null ? hit.object.userData.panelTipIndex : null;
@@ -34847,11 +34877,34 @@ function updatePanelSplitHandleDrag(event) {
     // can thin the tip but not collapse it into a needle (repeated drags thin further).
     const floorMult = Math.max(0.08, (drag.tipWidthStartMult ?? 1) * 0.3);
     const newWidthMult = THREE.MathUtils.clamp(rawMult, floorMult, 2);
-    setTipWidthCurveValue(lock, segment, splitsForWidth, bone, side, t, newWidthMult);
+    const fullW = Math.max(0.01, Number(lock.width ?? 0.62));
+    if (event.ctrlKey) {
+      // 按住 Ctrl = 非对称：只调被拖的一侧。
+      setTipWidthCurveValue(lock, segment, splitsForWidth, bone, side, t, newWidthMult);
+    } else {
+      // 默认 = 等比对称：另一侧按相同比例镜像（otherNew = otherStart * new/draggedStart）。
+      const otherSide = -side;
+      const otherStart = tipPanelWidthAt(lock, t, otherSide, bone, segment, splitsForWidth) / fullW;
+      const draggedStart = Math.max(0.0001, drag.tipWidthStartMult ?? 1);
+      const otherNew = THREE.MathUtils.clamp(
+        otherStart * (newWidthMult / draggedStart),
+        Math.max(0.08, otherStart * 0.3),
+        2
+      );
+      setTipWidthCurveValue(lock, segment, splitsForWidth, bone, side, t, newWidthMult);
+      setTipWidthCurveValue(lock, segment, splitsForWidth, bone, otherSide, t, otherNew);
+    }
     updateLockGeometry(lock, { immediate: true });
     updateCurveObjects(lock, { visible: true });
     syncActiveMirror(lock, { deferGeometry: false });
     updateTopologyStats();
+    // 视口拖拽改的是同一段骨宽曲线：浮动面板开着且目标一致时同步重绘。
+    if (taperCurveEditor.open
+      && sculptState.state.taperCurveEdit?.type === "segment"
+      && sculptState.state.taperCurveEdit.id === lock.id
+      && sculptState.state.taperCurveEdit.segmentIndex === segment) {
+      renderTaperCurveEditor();
+    }
     event.preventDefault();
     return;
   }
@@ -37566,6 +37619,8 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     tipMainSectionPoint,
     setTipWidthCurveValue,
     buildTipWidthCurve,
+    tipWidthResetCurve,
+    renderTaperCurveEditor,
     sampleTaperCurve,
     sampleAsymmetricTaperCurve,
     strandFrameAt,

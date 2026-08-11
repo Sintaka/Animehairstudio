@@ -569,6 +569,16 @@ try {
         if (Math.abs(Number(pt.value) - def) > 0.01) { valueChanged = true; break; }
       }
     }
+    // Default (no Ctrl) drag mirrors the same operation onto the other side (8.22 symmetric).
+    const leftForkT = t.tipWidthSideForkT(lock, 2, splits, -1);
+    let leftChanged = false;
+    if (leftCurve) {
+      for (const pt of leftCurve) {
+        if (pt.position < leftForkT - 1e-3) continue;
+        const def = t.sampleTaperCurve(lock.taperCurve, pt.position);
+        if (Math.abs(Number(pt.value) - def) > 0.01) { leftChanged = true; break; }
+      }
+    }
     // Locked (above-zipper) region is NOT baked into the curve anymore: the sampler falls
     // back to the global curve below the fork, so value at 0.3 (must be < forkT for seg2
     // right = 0.8125) equals the global. Curve points below the fork are hidden-but-recorded
@@ -577,7 +587,7 @@ try {
     const fullW = Math.max(0.01, Number(lock.width ?? 0.62));
     const sampledLocked = t.tipPanelWidthAt(lock, 0.3, 1, bone, 2, splits) / fullW;
     const lockedMatch = Math.abs(sampledLocked - globalAt) < 1e-3;
-    return JSON.stringify({ ok: true, hasRight: !!rightCurve, hasLeft: !!leftCurve, asym: bone.asymmetricWidthCurve === true, rightForkT, lockedMatch, changedFromDefault: !!rightCurve, valueChanged });
+    return JSON.stringify({ ok: true, hasRight: !!rightCurve, hasLeft: !!leftCurve, asym: bone.asymmetricWidthCurve === true, rightForkT, lockedMatch, changedFromDefault: !!rightCurve, valueChanged, leftChanged });
   })()`));
     let widthChainMoved = false;
   if (widthAfter.ok) {
@@ -595,7 +605,7 @@ try {
       if (Math.hypot(after[i].x - before[i].x, after[i].y - before[i].y, after[i].z - before[i].z) > 1e-5) { widthChainMoved = true; break; }
     }
   }
-  check("tip width drag authors right curve (chain unchanged, asymmetric, locked = global)", widthAfter.ok === true && widthAfter.hasRight === true && widthAfter.hasLeft === true && widthAfter.asym === true && widthAfter.lockedMatch === true && widthAfter.valueChanged === true && widthChainMoved === false, `width=${JSON.stringify(widthAfter)} chainMoved=${widthChainMoved}`);
+  check("tip width drag authors both curves symmetrically (chain unchanged, locked = global)", widthAfter.ok === true && widthAfter.hasRight === true && widthAfter.hasLeft === true && widthAfter.asym === true && widthAfter.lockedMatch === true && widthAfter.valueChanged === true && widthAfter.leftChanged === true && widthChainMoved === false, `width=${JSON.stringify(widthAfter)} chainMoved=${widthChainMoved}`);
   // ============ 8.19: tip width lateral follows the TIP sub-bone's own width axis ============
   // The green handle drag direction (tipWidthEdgePosition.lateral) must be the tip's own
   // authored width axis (dq * mainFrameX), not the mixed main-panel-frame vector that used
@@ -635,37 +645,90 @@ try {
   })()`));
   check("tip width lateral follows tip sub-bone width axis", latCheck.maxTilt < 5 && latCheck.minTangentAngle > 60, `lat=${JSON.stringify(latCheck)}`);
 
-  // ============ 8.19: asymmetric tip width blends linearly at the center (no hard split) ============
-  // Left/right curves used to hard-switch at u=0 (left half = left curve, right half = right
-  // curve). After a right-side edit, u=0 must be the linear midpoint and the profile must be
-  // continuous (center step ~10x smaller than the old hard step).
+  // ============ 8.22: asymmetric tip width blends in a NARROW center band ============
+  // Each side's curve is pure outside |u| > blendZone (0.25) so dragging one side no
+  // longer pulls the other side's far region; the middle still interpolates (no hard split).
   const blendCheck = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    const bones = t.materializeSplitBones(lock);
-    const bone = bones[2] || null;
+    const bone = t.materializeSplitBones(lock)[2] || null;
     if (!bone) return JSON.stringify({ ok: false });
-    t.setTipWidthCurveValue(lock, 2, splits, bone, 1, 0.9, 1.45);
-    const w = (u) => t.sampleAsymmetricTaperCurve(bone.taperCurve, bone.taperCurveSecondary, bone.asymmetricWidthCurve, u, 0.9);
+    const tt = 0.869; // a common-fork control position (both sides exposed)
+    t.setTipWidthCurveValue(lock, 2, splits, bone, 1, tt, 1.4);
+    t.setTipWidthCurveValue(lock, 2, splits, bone, -1, tt, 1.2);
+    const w = (u) => t.sampleAsymmetricTaperCurve(bone.taperCurve, bone.taperCurveSecondary, bone.asymmetricWidthCurve, u, tt, 0.25);
     const left = w(-1);
     const right = w(1);
     const mid = w(0);
+    const pureOutside = Math.abs(w(-0.5) - left) < 1e-3 && Math.abs(w(0.5) - right) < 1e-3;
     const stepAtCenter = Math.abs(w(-0.1) - w(0.1));
-    const linear = Math.abs(mid - (left + right) * 0.5) < 1e-3
-      && Math.abs(w(-0.5) - (left * 0.75 + right * 0.25)) < 1e-3
-      && Math.abs(w(0.5) - (left * 0.25 + right * 0.75)) < 1e-3;
     return JSON.stringify({
       ok: true,
       left: Number(left.toFixed(4)),
       right: Number(right.toFixed(4)),
       mid: Number(mid.toFixed(4)),
       midIsAvg: Math.abs(mid - (left + right) * 0.5) < 1e-3,
-      stepAtCenter: Number(stepAtCenter.toFixed(4)),
-      linear
+      pureOutside,
+      stepAtCenter: Number(stepAtCenter.toFixed(4))
     });
   })()`));
-  check("asymmetric tip width blends linearly at center (no hard split)", blendCheck.ok === true && blendCheck.midIsAvg === true && blendCheck.linear === true && blendCheck.stepAtCenter < 0.1 && blendCheck.left !== blendCheck.right, `blend=${JSON.stringify(blendCheck)}`);
+  check("asymmetric tip width blends in a narrow center band (sides independent)", blendCheck.ok === true && blendCheck.midIsAvg === true && blendCheck.pureOutside === true && blendCheck.left !== blendCheck.right && blendCheck.stepAtCenter < 0.15, `blend=${JSON.stringify(blendCheck)}`);
+  // ============ 8.22: tip width Reset = all 1 (full width) ============
+  const resetCheck = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const curve = t.tipWidthResetCurve(lock, 2, splits, 1);
+    const allOnes = curve.every((pt) => Math.abs(pt.value - 1) < 1e-6);
+    const hasTip = curve.some((pt) => Math.abs(pt.position - 1) < 1e-3);
+    return JSON.stringify({ count: curve.length, allOnes, hasTip });
+  })()`));
+  check("tip width Reset produces an all-1 curve (full width)", resetCheck.allOnes === true && resetCheck.hasTip === true && resetCheck.count <= 8, `reset=${JSON.stringify(resetCheck)}`);
+
+  // ============ 8.22: Ctrl+drag = asymmetric (only the dragged side changes) ============
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 2 }; t.updateCurveObjects(t.locks.find((l) => l.id === ${JSON.stringify(lockId)}), { visible: true }); return true; })()`);
+  const ctrlDrag = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const h = lock.curveObjects.tipWidthHandles[2].left.find((hh) => hh.visible);
+    if (!h) return JSON.stringify({ ok: false });
+    const c = t.projectToClient(h.getWorldPosition(new t.THREE.Vector3()));
+    return JSON.stringify({ ok: true, x: c.x, y: c.y });
+  })()`));
+  if (ctrlDrag.ok) {
+    const ctrlBefore = JSON.parse(await evalJS(cdp, `(() => {
+      const t = window.__ahsTest;
+      const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+      const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+      const bone = t.materializeSplitBones(lock)[2] || null;
+      const ts = t.tipWidthControlTs(t.tipWidthCommonForkT(lock, 2, splits));
+      const leftFork = t.tipWidthSideForkT(lock, 2, splits, -1);
+      const first = ts.find((pp) => pp >= leftFork - 1e-4);
+      return JSON.stringify({ t: first, leftAt: t.tipPanelWidthAt(lock, first, -1, bone, 2, splits), rightAt: t.tipPanelWidthAt(lock, first, 1, bone, 2, splits) });
+    })()`));
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: ctrlDrag.x, y: ctrlDrag.y });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: ctrlDrag.x, y: ctrlDrag.y, button: "left", modifiers: 2, clickCount: 1 });
+    await sleep(150);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: ctrlDrag.x + 35, y: ctrlDrag.y + 5, button: "left", modifiers: 2, buttons: 1 });
+    await sleep(200);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: ctrlDrag.x + 35, y: ctrlDrag.y + 5, button: "left", modifiers: 2, clickCount: 1 });
+    await sleep(400);
+    const ctrlAfter = JSON.parse(await evalJS(cdp, `(() => {
+      const t = window.__ahsTest;
+      const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+      const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+      const bone = t.materializeSplitBones(lock)[2] || null;
+      const tt = ${ctrlBefore.t};
+      return JSON.stringify({ leftAt: t.tipPanelWidthAt(lock, tt, -1, bone, 2, splits), rightAt: t.tipPanelWidthAt(lock, tt, 1, bone, 2, splits) });
+    })()`));
+    const leftChanged = Math.abs(ctrlAfter.leftAt - ctrlBefore.leftAt) > 0.01;
+    const rightUnchanged = Math.abs(ctrlAfter.rightAt - ctrlBefore.rightAt) < 1e-4;
+    check("Ctrl+drag is asymmetric (only dragged side changes)", leftChanged === true && rightUnchanged === true, `ctrl=${JSON.stringify({ before: ctrlBefore, after: ctrlAfter, leftChanged, rightUnchanged })}`);
+  } else {
+    check("Ctrl+drag is asymmetric (only dragged side changes)", false, "no left handle");
+  }
+
   // ============ 8.19: tip width handle moves along the TIP sub-bone's width axis ============
   // Simulate a width edit at each control and assert the handle moves along the drag axis
   // (lateral = dq*mainFrameX) - it used to move along the main-bone line (7-170deg off).
@@ -775,7 +838,7 @@ try {
       const c = t.projectToClient(new t.THREE.Vector3(last.x, last.y, last.z));
       return JSON.stringify({ x: c.x, y: c.y });
     })()`));
-    await evalJS(cdp, `(() => { const t = window.__ahsTest; t.updateStrandBrushHover({ clientX: ${selPt.x}, clientY: ${selPt.y} }); return true; })()`);
+    await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipHover = { lockId: null, segmentIndex: null }; t.updateStrandBrushHover({ clientX: ${selPt.x}, clientY: ${selPt.y} }); return true; })()`);
     await sleep(200);
     const selHover = JSON.parse(await evalJS(cdp, `(() => {
       const t = window.__ahsTest;
@@ -838,6 +901,33 @@ try {
     check("move brush hover highlights another strand", false, "no other strand found");
   }
 
+  // ============ 8.22: floating panel refreshes after a tip width edit ============
+  // The drag handler calls renderTaperCurveEditor() for the edited segment (item 1); here
+  // we verify the editor re-renders from the LIVE bone curve after a width edit.
+  await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const ed = document.querySelector('#taperCurveEditor');
+    t.sculptState.state.taperCurveEdit = { type: "segment", id: lock.id, segmentIndex: 2, curveKey: "taperCurve", side: "primary", selectedIndex: 0 };
+    if (ed && !ed.open) ed.show();
+    t.renderTaperCurveEditor();
+    return true;
+  })()`);
+  const refreshPath0 = await evalJS(cdp, `(() => { return document.querySelector('#taperCurvePath').getAttribute('d') || ''; })()`);
+  const refreshEdit = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[2] || null;
+    const tt = 0.869; // a control position
+    t.setTipWidthCurveValue(lock, 2, splits, bone, 1, tt, 1.35);
+    t.renderTaperCurveEditor();
+    const d = document.querySelector('#taperCurvePath').getAttribute('d') || '';
+    return JSON.stringify({ d, editedAt: t.tipPanelWidthAt(lock, tt, 1, bone, 2, splits) });
+  })()`));
+  // clean up the editor state so later hover/alt+click tests are unaffected
+  await evalJS(cdp, `(() => { const ed = document.querySelector('#taperCurveEditor'); if (ed && ed.open) ed.close(); window.__ahsTest.sculptState.state.taperCurveEdit = null; return true; })()`);
+  check("floating panel curve refreshes after a tip width edit", refreshPath0.length > 0 && refreshEdit.d.length > 0 && refreshPath0 !== refreshEdit.d && refreshEdit.editedAt > 1.2, `refresh=${JSON.stringify({ path0Len: refreshPath0.length, afterLen: refreshEdit.d.length, editedAt: refreshEdit.editedAt })}`);
   const errAfter = cdp.events.filter((e) => e.method === "Runtime.exceptionThrown").length;
   check("0 exceptions during interaction", errAfter === bootErr, `total=${errAfter} (start=${bootErr})`);
 

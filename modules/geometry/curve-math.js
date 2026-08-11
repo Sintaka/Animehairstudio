@@ -230,15 +230,18 @@ export function sampleAsymmetricTaperCurve(
   secondaryCurve,
   asymmetric,
   signedCoordinate,
-  t
+  t,
+  blendZone = 1
 ) {
-  // 非对称时： signedCoordinate = -1 完全用副曲线（左）， +1 完全用主曲线（右），中间线性过渡
+  // 非对称时： signedCoordinate 超过 ±blendZone 完全用对应侧曲线，中间线性过渡；
+  // blendZone=1 为整段混合（默认），更小的带宽让每侧曲线在外部独立（发尖非对称拖动不带动另一侧）。
   if (asymmetric && secondaryCurve?.length >= 2) {
     const primaryValue = sampleTaperCurve(primaryCurve, t);
     const secondaryValue = sampleTaperCurve(secondaryCurve, t);
     const coordinate = Number(signedCoordinate);
     if (!Number.isFinite(coordinate)) return primaryValue;
-    const alpha = clamp((coordinate + 1) * 0.5, 0, 1);
+    const zone = Math.max(0.0001, Number(blendZone) || 1);
+    const alpha = clamp((coordinate + zone) / (2 * zone), 0, 1);
     return lerp(secondaryValue, primaryValue, alpha);
   }
   return sampleTaperCurve(primaryCurve, t);

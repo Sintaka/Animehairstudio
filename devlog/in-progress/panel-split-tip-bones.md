@@ -323,6 +323,18 @@ splitBone.tip = {
 
 **回归测试（scripts/verify-tip-select.mjs，33/33）**：新增 tip 端控制点、spread 跟随（范围 0–1）、common-fork 分布（短侧截断但记录）；原 29 项全过（拖拽方向 maxAngle=0、宽度拖拽链不变、锁定区=全局等）。三档 smoke（0041/0042/0044）11/11 通过。
 
+### 8.22 发尖 WidthCurve 浮动面板 4 项修复（0.2.59）
+
+**1. 浮动面板不随 viewport 拖拽刷新**：打开发尖 WidthCurve 浮动面板后在 viewport 拖绿色控制点，面板曲线不更新。修复：`updatePanelSplitHandleDrag` tipWidth 分支在编辑后，若 `taperCurveEditor.open` 且目标为该段的宽度曲线，调用 `renderTaperCurveEditor()` 重绘。
+
+**2. Reset 预设错误**：Segment 宽度曲线的 Reset 走的是 `STRAIGHT_CUT_PANEL_CURVE`（不是全 1）。修复：Segment（发尖骨宽）宽度曲线 Reset 生成「全 1」曲线——本侧 fork 边界 + `tipWidthControlTs(commonForkT)` 全部 value=1（满宽、无收窄）。深度/其它曲线保持原默认。
+
+**3. Asymmetric 模式一侧曲线影响另一侧**：实测在暴露区（t≥两侧 fork，如 0.869）拖左侧曲线 +50%，右侧靠近段中心的区域跟着动最多 ~0.16（约 30%）——根源是 u 方向全段线性混合（`sampleAsymmetricTaperCurve` 的 alpha=(signed+1)/2 覆盖整段）。修复：给 `sampleAsymmetricTaperCurve` 增加可选 `blendZone`（默认全段=1），发尖在 `tipWidthMultiplierAt` 暴露分支传 `0.25`——只有段中心 ±25% 半跨内线性混合，外侧纯本侧曲线 → 拖一侧不再带动另一侧（中心小带仍在，属「中间线性插值」本意）。
+
+**4. 非对称改为 Ctrl 触发**：默认拖绿色控制点 = **等比对称**（另一侧按相同比例镜像，`otherNew = otherStart×(new/draggedStart)`）；按住 Ctrl 拖动 = 非对称（只调一侧）。同时：发尖浮动面板隐藏「Asymmetric curve」和「Center asymmetric profile」开关（仅 segment 编辑器），并在下方加小字提示「Ctrl+拖拽 = 非对称（只调一侧）」。
+
+**回归测试（scripts/verify-tip-select.mjs，36/36）**：新增浮动面板刷新（编辑后 render 读取到新值）、Reset 全 1、非对称混合窄带（拖一侧另一侧远端 delta≈0）、Ctrl/默认对称（默认写两侧等比、Ctrl 只写一侧）；原 33 项全过（含拖拽方向 maxAngle=0、宽度拖拽链不变、锁定区=全局等）。三档 smoke（0041/0042/0044）11/11 通过。
+
 ## 踩坑记录：发尖 WidthCurve 专项（8.10–8.20 复盘）
 
 > 这一轮发尖 WidthCurve 前后改了 11 个版本（8.10–8.20）才真正修对，把踩过的坑记下来，避免重蹈。
