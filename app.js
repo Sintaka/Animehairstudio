@@ -13473,6 +13473,38 @@ function tipWidthSideForkT(lock, segmentIndex, splits, side) {
   if (side < 0) return leftZipper != null ? 1 - leftZipper : segmentForkT;
   return rightZipper != null ? 1 - rightZipper : segmentForkT;
 }
+// All tip width control positions for one side: the 5 midpoints plus the tip end (t=1).
+function tipWidthControlTs(forkT) {
+  const positions = [];
+  for (let i = 0; i < TIP_WIDTH_CONTROL_POINTS; i += 1) {
+    positions.push(THREE.MathUtils.lerp(forkT, 1, (i + 0.5) / TIP_WIDTH_CONTROL_POINTS));
+  }
+  positions.push(1);
+  return positions;
+}
+
+// The COMMON control fork for a segment: based on the DEEPEST of the two zippers, so
+// both sides distribute their width controls at the same chain parameters.
+function tipWidthCommonForkT(lock, segmentIndex, splits) {
+  const leftZipper = splits[segmentIndex - 1]?.height;
+  const rightZipper = splits[segmentIndex]?.height;
+  return 1 - Math.max(leftZipper ?? 0, rightZipper ?? 0);
+}
+
+// The segment's tip-narrowing gap at chain parameter t on one side: 0 at the side's
+// zipper (fork), ramping linearly to 0.5*spread*span at the tip (aggregation). Boundary
+// sides without a zipper never gap, matching the geometry's uStart/uEnd.
+function tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side) {
+  const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
+  if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return 0;
+  const zipper = side < 0 ? splits[segmentIndex - 1] : splits[segmentIndex];
+  if (!zipper) return 0;
+  const start = 1 - Number(zipper.height ?? 0);
+  if (t <= start) return 0;
+  const ramp = (t - start) / Math.max(0.0001, 1 - start);
+  const span = boundaries[segmentIndex + 1] - boundaries[segmentIndex];
+  return 0.5 * (bone?.spread ?? 0) * span * ramp;
+}
 
 // Shared tip width sampler: above the segment's fork (locked) or without a segment the
 // global panel curve applies with the main-panel split (u sign); below the fork the tip's
@@ -13521,7 +13553,6 @@ function tipPanelWidthAt(lock, t, side, bone, segmentIndex = -1, splits = null) 
 }
 
 function buildTipWidthCurve(lock, segmentIndex, splits, bone, side) {
-  const forkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
   // The curve this side was EFFECTIVELY using before any tip-width edit. Using the
   // panel secondary unconditionally here made the un-dragged LEFT side jump from the
   // primary to the secondary the moment a right drag turned on asymmetric width.
@@ -13529,6 +13560,7 @@ function buildTipWidthCurve(lock, segmentIndex, splits, bone, side) {
     ? ((lock.asymmetricWidthCurve && lock.taperCurveSecondary) ? lock.taperCurveSecondary : lock.taperCurve)
     : lock.taperCurve;
   const current = side < 0 ? bone.taperCurveSecondary : bone.taperCurve;
+  const sideForkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
   const points = [];
   const addPoint = (position, value) => {
     const clampedPosition = THREE.MathUtils.clamp(Number(position) || 0, 0, 1);
@@ -13540,17 +13572,17 @@ function buildTipWidthCurve(lock, segmentIndex, splits, bone, side) {
     });
   };
   // The locked (above-zipper) region is no longer baked into the curve: sampling falls
-  // back to the global curve below the fork. The tip curve only owns the exposed region,
-  // so it stays small (fork boundary + the fixed control positions + the tip end) and
-  // every point is visible in the viewport (like the original width curve's few points).
-  addPoint(forkT, sampleTaperCurve(globalCurve, forkT));
-  for (let i = 0; i < TIP_WIDTH_CONTROL_POINTS; i += 1) {
-    const position = THREE.MathUtils.lerp(forkT, 1, (i + 0.5) / TIP_WIDTH_CONTROL_POINTS);
+  // back to the global curve below the fork. The boundary is THIS side's own fork so
+  // the curve stays continuous at the zipper; the control positions use the COMMON
+  // fork (deepest zipper) so both sides share chain parameters, and the tip end (t=1)
+  // is part of the control array (addPoint dedupes). Points below this side's fork
+  // stay in the curve data but the sampler ignores them.
+  addPoint(sideForkT, sampleTaperCurve(globalCurve, sideForkT));
+  const controlTs = tipWidthControlTs(tipWidthCommonForkT(lock, segmentIndex, splits));
+  for (const position of controlTs) {
     const edited = current && current.find((point) => Math.abs(point.position - position) < 1e-3);
     addPoint(position, edited ? edited.value : sampleTaperCurve(globalCurve, position));
   }
-  const tipEdited = current && current.find((point) => Math.abs(point.position - 1) < 1e-3);
-  addPoint(1, tipEdited ? tipEdited.value : sampleTaperCurve(globalCurve, 1));
   points.sort((a, b) => a.position - b.position);
   return points;
 }
@@ -13676,7 +13708,13 @@ function tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t) {
     : (new THREE.Quaternion()).setFromUnitVectors(restTangent, authoredTangent);
   const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
   if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return null;
-  const edgeU = boundaries[side < 0 ? segmentIndex : segmentIndex + 1];
+  // The segment's tip-narrowing gap moves the edge inward as spread grows; the handle
+  // and its width sample follow the same u the geometry's uStart/uEnd use (centerU
+  // stays symmetric because the gap is equal on both sides).
+  const spreadGap = tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side);
+  const edgeU = side < 0
+    ? boundaries[segmentIndex] + spreadGap
+    : boundaries[segmentIndex + 1] - spreadGap;
   const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
   // The section reference is the segment-center point (tip sub-bone) in the SAME frame;
   // both points use the tip-relative width formula, so at rest the handle is exactly the
@@ -13714,11 +13752,16 @@ function tipWidthEdgePoints(lock, segmentIndex, splits, bone, side) {
 // Viewport placement of a tip width control point: on the exposed chain edge at t,
 // following the tip sub-bone's frame (midpoints so the fork point clears the zipper).
 function tipWidthControlPlacement(lock, segmentIndex, splits, bone, side, pointIndex) {
-  const forkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
-  if (forkT >= 1) return null;
-  const t = TIP_WIDTH_CONTROL_POINTS > 1
-    ? THREE.MathUtils.lerp(forkT, 1, (pointIndex + 0.5) / TIP_WIDTH_CONTROL_POINTS)
-    : forkT;
+  const commonForkT = tipWidthCommonForkT(lock, segmentIndex, splits);
+  const sideForkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
+  if (commonForkT >= 1 || sideForkT >= 1) return null;
+  // Both sides share the same control positions (common fork, deepest zipper). A point
+  // below THIS side's own fork is hidden (but stays in the curve data), so only the
+  // exposed region shows handles while both sides keep matching chain parameters.
+  const positions = tipWidthControlTs(commonForkT);
+  if (pointIndex < 0 || pointIndex >= positions.length) return null;
+  const t = positions[pointIndex];
+  if (t < sideForkT - 1e-4) return null;
   const edge = tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t);
   if (!edge) return null;
   return { point: edge.point, t: edge.t, center: edge.center, lateral: edge.lateral };
@@ -14119,11 +14162,6 @@ function createPanelStrandGeometry(lock) {
     }
   };
 
-  const segmentRamp = (start, row) => {
-    const t = row / lengthLoops;
-    if (t <= start) return 0;
-    return THREE.MathUtils.smoothstep((t - start) / Math.max(0.0001, 1 - start), 0, 1);
-  };
   const boundaries = [-1, ...splits.map((split) => split.position), 1];
   const segmentSpans = boundaries.slice(0, -1).map((boundary, index) => boundaries[index + 1] - boundary);
   const segmentColumns = segmentSpans.map(() => 1);
@@ -14145,14 +14183,14 @@ function createPanelStrandGeometry(lock) {
     const bone = splitBones[segment] || null;
     const span = segmentSpans[segment];
     // Relative per-segment tip gap: each side opens by at most half the segment's own
-    // span times the bone spread (< 1), so the u-range never inverts and the tips
-    // narrow proportionally instead of crossing over (old absolute splitOpening).
-    const halfGap = (start, row) => 0.5 * (bone?.spread ?? 0) * span * segmentRamp(start, row);
+    // span times the bone spread (0..1), ramping linearly from the side's zipper to
+    // 0.5*spread*span at the tip (shared with the viewport width controls so the
+    // green handles sit exactly on the geometry edge).
     const uStart = (row) => leftSplit
-      ? boundaries[segment] + halfGap(1 - leftSplit.height, row)
+      ? boundaries[segment] + tipWidthSpreadGap(lock, segment, splits, bone, row / lengthLoops, -1)
       : -1;
     const uEnd = (row) => rightSplit
-      ? boundaries[segment + 1] - halfGap(1 - rightSplit.height, row)
+      ? boundaries[segment + 1] - tipWidthSpreadGap(lock, segment, splits, bone, row / lengthLoops, 1)
       : 1;
     addPatch(0, lengthLoops, uStart, uEnd, columns, {
       capStart: true,
@@ -25289,7 +25327,8 @@ function createCurveObjects(lock) {
       const sideHandles = { left: [], right: [] };
       const sideLines = { left: null, right: null };
       for (const side of [-1, 1]) {
-        for (let point = 0; point < TIP_WIDTH_CONTROL_POINTS; point += 1) {
+        // 5 midpoints (common fork) + the tip end (t=1) = tipWidthControlTs positions.
+        for (let point = 0; point < TIP_WIDTH_CONTROL_POINTS + 1; point += 1) {
           const handle = createSplitControlHandle();
           handle.scale.setScalar(0.26);
           handle.material = new THREE.MeshBasicMaterial({
@@ -32762,7 +32801,7 @@ if (panelSegmentSpread) {
     if (!target) return;
     const bones = materializeSplitBones(target);
     const { index } = selectedPanelSegment(target);
-    const value = THREE.MathUtils.clamp(Number(panelSegmentSpread.value || 0), 0, 0.9);
+    const value = THREE.MathUtils.clamp(Number(panelSegmentSpread.value || 0), 0, 1);
     if (bones[index]) bones[index].spread = value;
     if (panelSegmentSpreadValue) panelSegmentSpreadValue.textContent = value.toFixed(2);
     if (isPanelGeometry(selected)) {
@@ -37516,6 +37555,9 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     splitTipForSegment,
     applySubBoneBrushSample,
     tipWidthSideForkT,
+    tipWidthCommonForkT,
+    tipWidthControlTs,
+    tipWidthSpreadGap,
     tipWidthControlPlacement,
     tipWidthEdgePosition,
     tipPanelFrameAt,

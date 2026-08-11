@@ -571,12 +571,12 @@ try {
     }
     // Locked (above-zipper) region is NOT baked into the curve anymore: the sampler falls
     // back to the global curve below the fork, so value at 0.3 (must be < forkT for seg2
-    // right = 0.8125) equals the global, and no curve point sits below the fork.
+    // right = 0.8125) equals the global. Curve points below the fork are hidden-but-recorded
+    // (common-fork distribution, 8.21) and intentionally not applied by the sampler.
     const globalAt = t.sampleTaperCurve(lock.taperCurve, 0.3);
     const fullW = Math.max(0.01, Number(lock.width ?? 0.62));
     const sampledLocked = t.tipPanelWidthAt(lock, 0.3, 1, bone, 2, splits) / fullW;
-    const noBakedLocked = rightCurve.every((pt) => pt.position >= forkT - 1e-4);
-    const lockedMatch = Math.abs(sampledLocked - globalAt) < 1e-3 && noBakedLocked;
+    const lockedMatch = Math.abs(sampledLocked - globalAt) < 1e-3;
     return JSON.stringify({ ok: true, hasRight: !!rightCurve, hasLeft: !!leftCurve, asym: bone.asymmetricWidthCurve === true, rightForkT, lockedMatch, changedFromDefault: !!rightCurve, valueChanged });
   })()`));
     let widthChainMoved = false;
@@ -696,29 +696,68 @@ try {
   })()`));
   check("tip width drag moves handle along tip sub-bone width axis", moveCheck.maxAngle < 10, `move=${JSON.stringify(moveCheck)}`);
 
-  // ============ 8.19: tip width curve stays lean and all points visible ============
-  // The old curve baked an 11-point 0.1 grid into the locked (invisible) region; the new
-  // curve owns only the exposed region (fork boundary + control positions + tip end).
+  // ============ 8.21: tip end control point (t=1) is exposed ============
+  const tipEndCheck = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[2] || null;
+    const ts = t.tipWidthControlTs(0);
+    const last = t.tipWidthControlPlacement(lock, 2, splits, bone, 1, ts.length - 1);
+    return JSON.stringify({ count: ts.length, lastT: Number(ts[ts.length - 1].toFixed(3)), tipPlacement: !!last && Math.abs(last.t - 1) < 1e-3 });
+  })()`));
+  check("tip width has a control point at the tip end (t=1)", tipEndCheck.count === 6 && tipEndCheck.lastT === 1 && tipEndCheck.tipPlacement === true, `tipEnd=${JSON.stringify(tipEndCheck)}`);
+
+  // ============ 8.21: Segment Spread 0-1 + handles follow the spread (no scaling) ============
+  const spreadCheck = JSON.parse(await evalJS(cdp, `(() => {
+    const t = window.__ahsTest;
+    const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
+    const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bone = t.materializeSplitBones(lock)[2] || null;
+    const origSpread = bone.spread;
+    bone.spread = 0;
+    const p0 = t.tipWidthEdgePosition(lock, 2, splits, bone, 1, 1).point.clone();
+    bone.spread = 1;
+    const p1 = t.tipWidthEdgePosition(lock, 2, splits, bone, 1, 1).point.clone();
+    bone.spread = origSpread;
+    const gapAtTip = t.tipWidthSpreadGap(lock, 2, splits, bone, 1, 1);
+    const sliderMax = document.querySelector('#panelSegmentSpread') ? document.querySelector('#panelSegmentSpread').max : null;
+    return JSON.stringify({ moved: Number(p0.distanceTo(p1).toFixed(4)), gapAtTip: Number(gapAtTip.toFixed(4)), sliderMax });
+  })()`));
+  check("spread moves tip width handles with the geometry (range 0-1, no scaling)", spreadCheck.moved > 0.01 && spreadCheck.sliderMax === "1", `spread=${JSON.stringify(spreadCheck)}`);
+
+  // ============ 8.21: curve lean + common-fork distribution (hidden points recorded) ============
   const leanCheck = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const bone = t.materializeSplitBones(lock)[2] || null;
-    t.setTipWidthCurveValue(lock, 2, splits, bone, 1, 0.90625, 1.4);
-    t.setTipWidthCurveValue(lock, 2, splits, bone, -1, 0.78125, 1.2);
+    const commonFork = t.tipWidthCommonForkT(lock, 2, splits);
     const rightFork = t.tipWidthSideForkT(lock, 2, splits, 1);
     const leftFork = t.tipWidthSideForkT(lock, 2, splits, -1);
+    // both sides share the same control chain parameters (common fork = deepest zipper)
+    const ts = t.tipWidthControlTs(commonFork);
+    const rightVisible = ts.filter((p) => p >= rightFork - 1e-4).length;
+    const leftVisible = ts.filter((p) => p >= leftFork - 1e-4).length;
+    const rightEditT = ts.find((p) => p >= rightFork - 1e-4) || 0.9;
+    const leftEditT = ts.find((p) => p >= leftFork - 1e-4) || 0.78;
+    t.setTipWidthCurveValue(lock, 2, splits, bone, 1, rightEditT, 1.4);
+    t.setTipWidthCurveValue(lock, 2, splits, bone, -1, leftEditT, 1.2);
+    const rightCurve = bone.taperCurve || [];
+    const leftCurve = bone.taperCurveSecondary || [];
     return JSON.stringify({
       ok: !!bone,
-      rightCount: bone.taperCurve.length,
-      leftCount: bone.taperCurveSecondary.length,
-      rightAllVisible: bone.taperCurve.every((p) => p.position >= rightFork - 1e-4),
-      leftAllVisible: bone.taperCurveSecondary.every((p) => p.position >= leftFork - 1e-4),
-      rightChanged: bone.taperCurve.some((p) => Math.abs(p.value - t.sampleTaperCurve(lock.taperCurve, p.position)) > 0.01),
-      leftChanged: bone.taperCurveSecondary.some((p) => Math.abs(p.value - t.sampleTaperCurve(lock.taperCurve, p.position)) > 0.01)
+      commonFork: Number(commonFork.toFixed(3)),
+      rightCount: rightCurve.length,
+      leftCount: leftCurve.length,
+      rightVisible,
+      leftVisible,
+      rightChanged: rightCurve.some((p) => Math.abs(p.value - t.sampleTaperCurve(lock.taperCurve, p.position)) > 0.01),
+      leftChanged: leftCurve.some((p) => Math.abs(p.value - t.sampleTaperCurve(lock.taperCurve, p.position)) > 0.01)
     });
   })()`));
-  check("tip width curve is lean and fully visible", leanCheck.ok && leanCheck.rightCount <= 8 && leanCheck.leftCount <= 8 && leanCheck.rightAllVisible === true && leanCheck.leftAllVisible === true && leanCheck.rightChanged === true && leanCheck.leftChanged === true, `lean=${JSON.stringify(leanCheck)}`);
+  check("tip width curve lean, common-fork distributed, short side truncates but records", leanCheck.ok && leanCheck.rightCount <= 9 && leanCheck.leftCount <= 9 && leanCheck.leftVisible === 6 && leanCheck.rightVisible > 0 && leanCheck.rightVisible < leanCheck.leftVisible && leanCheck.rightChanged === true && leanCheck.leftChanged === true, `lean=${JSON.stringify(leanCheck)}`);
+
 
   // ============ Issue 1: hover + alt+click in select mode (non-create tools) ============
   await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="select"]'); if (btn) btn.click(); return true; })()`);

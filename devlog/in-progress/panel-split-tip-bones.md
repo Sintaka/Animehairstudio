@@ -311,6 +311,39 @@ splitBone.tip = {
 
 **回归测试（scripts/verify-tip-select.mjs，31/31）**：新增 `tip width drag moves handle along tip sub-bone width axis`（全部段/侧 maxAngle=0°）与 `tip width curve is lean and fully visible`（≤8 点、全可见、编辑生效）；原 29 项全过（宽度拖拽编辑值改变/链不变/锁定区=全局/asymmetric；orient/push/undo/悬停/alt+点击 0 异常）。三档 smoke（0041/0042/0044）11/11 通过，网格 0 NaN。
 
+### 8.21 发尖 WidthCurve 体验优化 4 项（0.2.59）
+
+**1. tip 端（t=1）绿色控制点暴露**：之前每侧 5 个控制点是 `lerp(fork,1,(i+0.5)/5)`（0.1~0.9），没有尖端。新增 `tipWidthControlTs(fork)`（5 中点 + tip 端 t=1，共 6 个），`tipWidthControlPlacement`/`buildTipWidthCurve`/视口手柄数量（TIP_WIDTH_CONTROL_POINTS+1）全部对齐。
+
+**2. Segment Spread 范围 0–1 + 线性聚合**：`SPREAD_MAX` 0.9→1（bone-model.js）、滑杆 `max="0.9"→"1"`（index.html）、app.js clamp 0.9→1；几何 `segmentRamp` 由 smoothstep 改为**线性**（从本侧 zipper 高度线性 ramp 到尖端），「尖端聚合多、越往上越少」。
+
+**3. 调 Spread 时绿点/绿色曲线跟随**：新增共享 `tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side)`（0.5×spread×span×线性 ramp，本侧 zipper 起、尖端最大；无 zipper 的边界侧为 0），几何 `uStart/uEnd` 与 `tipWidthEdgePosition` 的 edgeU 都用它——绿色控制点/曲线精确落在几何边缘上，调 spread 一起移动（不应用缩放）。实测 spread 0→1 时 tip 端手柄位移 0.144。
+
+**4. 两侧等距分布（基于最深 zipper）、短侧截断、数据保留**：新增 `tipWidthCommonForkT`（`1−max(两侧 zipper 高度)`）。两侧控制点共用同一组链参数（`tipWidthControlTs(commonForkT)`）；某侧**低于本侧自己 fork** 的控制点隐藏（`tipWidthControlPlacement` 返回 null），但其曲线数据**保留**（采样器在 t<本侧 fork 回退全局，隐藏点不生效）；想把上面的点调回来 → 把 zipper 往上拉（fork 下降）即重新暴露。实测 seg2：leftFork=commonFork=0.563（左 6 点全显）、rightFork=0.813（右仅 0.869/0.956/1.0 三个可见，其余记录）。
+
+**回归测试（scripts/verify-tip-select.mjs，33/33）**：新增 tip 端控制点、spread 跟随（范围 0–1）、common-fork 分布（短侧截断但记录）；原 29 项全过（拖拽方向 maxAngle=0、宽度拖拽链不变、锁定区=全局等）。三档 smoke（0041/0042/0044）11/11 通过。
+
+## 踩坑记录：发尖 WidthCurve 专项（8.10–8.20 复盘）
+
+> 这一轮发尖 WidthCurve 前后改了 11 个版本（8.10–8.20）才真正修对，把踩过的坑记下来，避免重蹈。
+
+### 几何/坐标类
+1. **复用主骨骼宽度采样 = 最大的坑**：原版 panel/strand 宽度以**主面板中心线 u=0** 为左右分界、用**绝对 u**（`u×半宽`、`camber(u)`）求边。发尖直接复用后，宽度变化时边缘沿 `frame.x×edgeU + frame.z×camber(edgeU)` 移动——对「右缘落在主面板左半段」的段（edgeU<0）**反向移动**，窄段 camber 占主导沿法线走 → 手柄沿主骨骼线运动（实测偏 7°~170°）。**教训：发尖宽度必须相对发尖子骨骼（段中心 centerU），不能相对主中心。**
+2. **rest 链不能采样骨宽曲线**：`splitTipForSegment` 的 restPoints 曾用 `panelSplitControlPoint`（带 bone 曲线），宽度一编辑 rest 链/发尖链跟着漂移 → 位移被二次放大。**教训：rest 链是稳定基准，必须用全局曲线（传 `{}` override）。**
+3. **宽度曲线不能同时缩放 camber**：camber = curvature×半宽×(1-u²) 与宽度联动，导致宽度编辑改变鼓包、控制点沿法线走。**教训：tip 宽度只改横向，camber 固定用全局曲线**（对齐常量 `centerU×全局半宽` 保证段中心仍在主面板原位置、zipper 墙不裂）。
+4. **每侧单独 fork 分布会让两侧控制点错位**：后续改为基于**最深 zipper** 的等距分布，短侧动态截断、数据保留（§8.21）。
+5. **spread 是段内相对收窄（相对缩放），不是绝对位移**：旧 `splitOpening` 绝对位移导致 u 反转 crossover（0.2.58 调研），重铸为 `0.5×spread×span×ramp` 相对开口。
+
+### 数据/交互类
+6. **曲线烘焙锁定区 0.1 网格（11 点）**：点太多且约 9 个在锁定区不可见。**教训：采样器对 `t<forkT` 回退全局曲线，曲线只存暴露区（fork 边界 + 控制点 + 尖端），保持精简。**
+7. **拖拽重复写入**：pointermove 每帧深克隆全部骨骼 + 双写 + 重建两条曲线。**教训：begin 只 materialize 一次并复用；`setTipWidthCurveValue` 只重建被编辑侧。**
+8. **一次性跳变**：8.17 帧不一致（UI 用 strandFrameAt、mesh 用 panelFrameAt）→ 新增 `tipPanelFrameAt` 复刻几何帧；8.18 烘焙未拖侧误切副曲线 → 取「编辑前有效曲线」。
+
+### 工具链类
+9. **PowerShell 写中文/CRLF 会破坏文件**：`Set-Content -Encoding UTF8` 会加 BOM/改行尾；`| node -` 管道会乱中文。**教训：一律用 Node 读写（UTF-8 无 BOM + CRLF），或用临时 .cjs 文件执行。**
+10. **模板字符串内嵌反引号会破坏 .cjs 脚本**：devlog 内容含 markdown 反引号时，写进模板字符串会提前闭合。**教训：把长内容写进临时 .txt，脚本读取再插入。**
+
+
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

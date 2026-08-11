@@ -6,7 +6,7 @@
 import * as THREE from "three";
 
 const MAX_SPLIT_SEGMENTS = 24;
-const SPREAD_MAX = 0.9;
+const SPREAD_MAX = 1;
 
 export function defaultSplitSpread(lock) {
   // Relative per-segment tip gap fraction; derived from the legacy absolute gap so old
@@ -256,7 +256,7 @@ export function normalizeBone(value, fallback = null, lock = null) {
         active: src.tip.active !== false
       }
       : (fb.tip && Array.isArray(fb.tip.points) ? { ...fb.tip } : null),
-    spread: THREE.MathUtils.clamp(Number(pick("spread") ?? defaultSplitSpread(lock)), 0, 0.9),
+    spread: THREE.MathUtils.clamp(Number(pick("spread") ?? defaultSplitSpread(lock)), 0, SPREAD_MAX),
     taperCurve: curve("taperCurve"),
     taperCurveSecondary: curve("taperCurveSecondary"),
     depthCurve: curve("depthCurve"),
