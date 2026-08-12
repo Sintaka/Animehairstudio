@@ -20,6 +20,7 @@ import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";
 import { createPresetLibraryApi } from "./modules/io/preset-library.js?v=20260812-1";
 import { createDrawFlowApi } from "./modules/geometry/draw-flow.js?v=20260812-1";
+import { createRadialMenuApi } from "./modules/geometry/radial-menu.js?v=20260812-1";
 import { createPlacementApi } from "./modules/geometry/placement.js?v=20260812-1";
 import { createReferenceHeadApi } from "./modules/scene/reference-head.js?v=20260812-2";
 import { createMiscStore } from "./modules/core/misc-store.js?v=20260809-12";
@@ -1504,6 +1505,12 @@ const drawFlowApi = createDrawFlowApi(drawFlowDeps);
 const placementDeps = {};
 const placementApi = createPlacementApi(placementDeps);
 
+// Radial menu api (refactor batch A2): deps filled in one batch after the
+// referenceHeadApi block (all const/let deps defined); no boot-time calls before
+// the batch, see devlog/in-progress/radial-menu-refactor-map.md.
+const radialMenuDeps = {};
+const radialMenuApi = createRadialMenuApi(radialMenuDeps);
+
 // Poly topology editing api (refactor 3d batch G7): deps filled in one batch after the last dep is
 // defined; no boot-time calls before the batch, see devlog/in-progress/g7-poly-refactor-map.md.
 const polyToolsDeps = {};
@@ -2916,6 +2923,79 @@ const head = createHeadStore();
 // devlog/in-progress/reference-head-refactor-map.md.
 const referenceHeadDeps = {};
 const referenceHeadApi = createReferenceHeadApi(referenceHeadDeps);
+
+// Radial menu api deps batch (refactor batch A2): all deps are defined by this point
+// (last const/let deps: referenceHeadApi / drawSurfaceDynamicButton); the batch takes
+// effect here, before the bootstrap init (setRadialMenusEnabled) and before all radial
+// pointer/UI listener registrations.
+Object.assign(radialMenuDeps, {
+  hairState: hairState.state,
+  miscState: miscState.state,
+  sculptState: sculptState.state,
+  sel: sel.state,
+  ui: ui.state,
+  strandRadialMenu,
+  strandRadialActionList,
+  strandRadialLine,
+  strandRadialCenter,
+  toolRadialMenu,
+  toolRadialActionList,
+  toolRadialLine,
+  toolRadialCenter,
+  radialMenusPreferenceInput,
+  radialShortcutRows,
+  drawSurfaceDynamicButton,
+  locks,
+  selectionSets,
+  lastPointer,
+  drawFlowApi,
+  presetLibraryApi,
+  guideApi,
+  referenceHeadApi,
+  hideOutlinerContextMenu,
+  updateInteractionLocks,
+  setViewportEditMode,
+  setViewportSelectionMode,
+  setActiveTool,
+  selectionSetCanEditFromSelection,
+  selectedLocksInOrder,
+  mirrorPartnerFor,
+  hiddenStrandsExist,
+  mirroredClumpPartners,
+  lockedStrandsExist,
+  clumpGuideForLock,
+  getSelectedLock,
+  strandIsolationActive,
+  selectionCanBecomeClump,
+  selectedProceduralDuplicateSources,
+  createClumpFromSelection,
+  lockSelectedStrands,
+  unlockAllStrands,
+  hideSelectedStrands,
+  unhideHiddenStrands,
+  createSelectionSetFromSelection,
+  editSelectionSetFromSelection,
+  openProceduralDuplicateDialog,
+  toggleSelectedStrandIsolation,
+  deleteSelectedStrands,
+  pushUndoState,
+  createMirrorPartner,
+  updateCount,
+  selectLock,
+  decoupleMirrorPartner,
+  renderLockList,
+  createMirroredClump,
+  decoupleMirroredClump,
+  dissolveClump,
+  outlinerClumpLocks,
+  deleteLocks,
+  beginDuplicatePlacement,
+  setObjectSpaceEditing,
+  setViewPlaneMove,
+  setPullMoveEnabled,
+  saveBooleanPreference,
+  RADIAL_MENUS_PREFERENCE_KEY
+});
 
 
 const GUIDE_HEAD_REFERENCE_SIZE = 26.760177;
@@ -9312,7 +9392,7 @@ async function loadPreferencesAndPresets(file) {
   if (preferences.viewportBackgroundColor != null) {
     setViewportBackgroundColor(preferences.viewportBackgroundColor);
   }
-  setRadialMenusEnabled(importedBooleanPreference(preferences.radialMenus, ui.state.radialMenusEnabled));
+  radialMenuApi.setRadialMenusEnabled(importedBooleanPreference(preferences.radialMenus, ui.state.radialMenusEnabled));
   setProceduralDrawExperimentalEnabled(importedBooleanPreference(
     preferences.proceduralDrawExperimental,
     draw.state.proceduralDrawExperimentalEnabled
@@ -9608,8 +9688,8 @@ function resetTransientInteractionsForStateRestore() {
   sculptState.state.duplicatePlacement = null;
   sculptState.state.proceduralDuplicateModeActive = false;
   hideProceduralDuplicateArcPreview();
-  hideStrandRadialMenu();
-  hideToolRadialMenu();
+  radialMenuApi.hideStrandRadialMenu();
+  radialMenuApi.hideToolRadialMenu();
   sculptState.state.placeEdit = null;
   sculptState.state.branchRegionEdit = null;
   branchRegionMeshPointsGroup.clear();
@@ -14089,806 +14169,12 @@ function showOutlinerContextMenu(event, target) {
   clumpContextMenu.querySelector("button:not(.hidden)")?.focus();
 }
 
-function hideStrandRadialMenu() {
-  hairState.state.strandRadialTargetId = null;
-  hairState.state.strandRadialGesture = null;
-  strandRadialMenu.classList.add("hidden");
-  hairState.state.strandRadialActions.forEach((button) => button.classList.remove("selected"));
-  strandRadialActionList.replaceChildren();
-  strandRadialActionList.classList.add("hidden");
-  strandRadialLine.style.width = "0px";
-  strandRadialLine.style.opacity = "0";
-}
-
-function ensureRadialButtonCapacity(menu, buttons, count, attributeName, insertBefore) {
-  while (buttons.length < count) {
-    const button = document.createElement("button");
-    button.className = "hidden";
-    button.type = "button";
-    button.setAttribute("role", "menuitem");
-    button.dataset[attributeName] = "";
-    menu.insertBefore(button, insertBefore);
-    buttons.push(button);
-  }
-  return buttons;
-}
-
-function radialButtonDimensions(kind, option = null) {
-  if (option?.action === "back-to-main") return { width: 54, height: 54 };
-  const usesWideButtons = ["selection", "clump"].includes(kind);
-  return {
-    width: usesWideButtons ? 138 : 104,
-    height: kind === "selection" ? 42 : 40
-  };
-}
-
-function radialMenuDimensionsForKind(kind, optionCount) {
-  const buttonDimensions = radialButtonDimensions(kind);
-  return radialMenuDimensions(optionCount, {
-    buttonWidth: buttonDimensions.width,
-    buttonHeight: buttonDimensions.height,
-    gap: ["selection", "clump"].includes(kind) ? 8 : 18
-  });
-}
-
-const MAX_RADIAL_OPTIONS = 8;
-const MAX_RADIAL_SUBMENU_OPTIONS = 5;
-const STANDARD_RADIAL_FRAME_DIMENSIONS = radialMenuDimensions(MAX_RADIAL_OPTIONS, {
-  buttonWidth: 138,
-  buttonHeight: 42,
-  gap: 8
-});
-
-function applyRadialMenuDimensions(menu, optionCount, fixedDimensions = null) {
-  const dimensions = radialMenuDimensionsForKind(menu.dataset.radialKind, optionCount);
-  menu.style.setProperty("--radial-size", `${fixedDimensions?.size || dimensions.size}px`);
-  menu.style.setProperty("--radial-radius", `${fixedDimensions?.radius || dimensions.radius}px`);
-}
-
-function strandRadialSubmenuEntryDistance(option) {
-  const radius = Number.parseFloat(
-    strandRadialMenu.style.getPropertyValue("--radial-radius")
-  ) || 82;
-  const buttonDimensions = radialButtonDimensions(strandRadialMenu.dataset.radialKind, option);
-  return radialButtonEntryDistance(option.angle, {
-    radius,
-    radiusOffset: option.radiusOffset || 0,
-    buttonWidth: buttonDimensions.width,
-    buttonHeight: buttonDimensions.height
-  });
-}
-
-function configureRadialSubmenuIndicator(button, option, kind) {
-  const hasSubmenu = Boolean(option?.submenu);
-  button.classList.toggle("has-submenu", hasSubmenu);
-  if (!hasSubmenu) {
-    button.removeAttribute("aria-haspopup");
-    button.style.setProperty("--submenu-arrow-x", "0px");
-    button.style.setProperty("--submenu-arrow-y", "0px");
-    button.style.setProperty("--submenu-arrow-angle", "0rad");
-    return;
-  }
-  const buttonDimensions = radialButtonDimensions(kind, option);
-  const arrowDistance = radialButtonRayExtent(option.angle, {
-    buttonWidth: buttonDimensions.width,
-    buttonHeight: buttonDimensions.height
-  }) + 10;
-  button.setAttribute("aria-haspopup", "menu");
-  button.style.setProperty("--submenu-arrow-x", `${Math.cos(option.angle) * arrowDistance}px`);
-  button.style.setProperty("--submenu-arrow-y", `${Math.sin(option.angle) * arrowDistance}px`);
-  button.style.setProperty("--submenu-arrow-angle", `${option.angle}rad`);
-}
-
-function selectionSetMembershipRadialOptions() {
-  return [
-    {
-      action: "open-add-selection-set-submenu",
-      label: "Add to Selection Set",
-      submenu: "selection-set-add-submenu",
-      enabled: selectionSets.some((selectionSet) => selectionSetCanEditFromSelection(selectionSet, "add"))
-    },
-    {
-      action: "open-remove-selection-set-submenu",
-      label: "Remove from Selection Set",
-      submenu: "selection-set-remove-submenu",
-      enabled: selectionSets.some((selectionSet) => selectionSetCanEditFromSelection(selectionSet, "remove"))
-    }
-  ];
-}
-
-function selectionSetRadialMenuOption() {
-  return {
-    action: "open-selection-sets-submenu",
-    label: "Selection Sets",
-    submenu: "selection-set-actions-submenu",
-    enabled: selectedLocksInOrder().length >= 2 || selectionSets.length > 0
-  };
-}
-
-function selectedMirrorRadialOptions() {
-  const selectedLocks = selectedLocksInOrder();
-  const { mirrorable, decouple } = mirrorSelectionTargets(selectedLocks, mirrorPartnerFor);
-  const options = [];
-  if (mirrorable.length) {
-    options.push({
-      action: "mirror-selected-strands",
-      label: selectedLocks.length === 1 ? "Mirror Strand" : "Mirror Strands"
-    });
-  }
-  if (decouple.length) {
-    options.push({
-      action: "decouple-selected-mirrors",
-      label: decouple.length === 1
-        ? "Decouple Mirror Instance"
-        : `Decouple ${decouple.length} Mirror Instances`,
-      list: true
-    });
-  }
-  return options;
-}
-
-function strandVisibilityRadialOptions({
-  includeHideSelected = true,
-  unhideAsList = true
-} = {}) {
-  const options = [];
-  if (includeHideSelected && selectedLocksInOrder().some((lock) => lock.outlinerVisible !== false)) {
-    options.push({ action: "hide-selected-strands", label: "Hide Selected" });
-  }
-  if (hiddenStrandsExist()) {
-    options.push({
-      action: "unhide-hidden-strands",
-      label: "Unhide Hidden",
-      ...(unhideAsList ? { list: true } : {})
-    });
-  }
-  return options;
-}
-
-function clumpMirrorRadialOptions(guide) {
-  if (!guide?.clumpGuide) return [];
-  return mirroredClumpPartners(guide).length
-    ? [{ action: "decouple-mirrored-clump", label: "Decouple Mirrored Clump", list: true }]
-    : [{ action: "mirror-clump", label: "Mirror Clump" }];
-}
-
-function contextualRadialOptions(kind) {
-  if (kind === "root") {
-    const options = [
-      { action: "open-workspace-submenu", label: "Workspace", submenu: "workspace-submenu" },
-      { action: "open-live-surface-submenu", label: "Live Surface", submenu: "live-surface-submenu" },
-      { action: "open-edit-mode-submenu", label: "Edit Mode", submenu: "edit-mode-submenu" }
-    ];
-    if (lockedStrandsExist()) options.push({ action: "unlock-all-strands", label: "Unlock All Strands", list: true });
-    options.push(...strandVisibilityRadialOptions({
-      includeHideSelected: false,
-      unhideAsList: false
-    }));
-    return options;
-  }
-  if (kind === "workspace-submenu") {
-    return [
-      { action: "back-to-main", label: "Back", submenu: "root" },
-      { action: "workspace-strand", label: "Strands" },
-      { action: "workspace-guide", label: "Guides" },
-      { action: "workspace-reference", label: "References" }
-    ];
-  }
-  if (kind === "live-surface-submenu") {
-    drawFlowApi.refreshLiveSurfaceOptions();
-    return [
-      { action: "back-to-main", label: "Back", submenu: "root" },
-      ...[...drawFlowApi.activeStrokeSurfaceInput().options]
-        .filter((option) => !option.disabled)
-        .map((option) => ({
-          action: `select-live-surface:${option.value}`,
-          label: option.textContent.trim(),
-          list: option.dataset.userCreatedLiveSurface === "true"
-        })),
-      {
-        action: "toggle-dynamic-surface",
-        label: drawFlowApi.drawSurfaceDynamicEnabled() ? "Disable Dynamic" : "Enable Dynamic"
-      }
-    ];
-  }
-  if (kind === "edit-mode-submenu") {
-    return [
-      { action: "back-to-main", label: "Back", submenu: "root" },
-      {
-        action: "edit-mode-component",
-        label: "Component",
-        enabled: sculptState.state.viewportEditMode !== "reference"
-      },
-      { action: "edit-mode-object", label: "Object" }
-    ];
-  }
-  if (kind === "selection-set-add-submenu" || kind === "selection-set-remove-submenu") {
-    const mode = kind === "selection-set-remove-submenu" ? "remove" : "add";
-    return [
-      { action: "back-to-main", label: "Back", submenu: "selection" },
-      ...selectionSets.map((selectionSet) => ({
-        action: `${mode}-selection-to-set:${selectionSet.id}`,
-        label: selectionSet.name,
-        enabled: selectionSetCanEditFromSelection(selectionSet, mode)
-      }))
-    ];
-  }
-  if (kind === "selection-set-actions-submenu") {
-    return [
-      { action: "back-to-main", label: "Back", submenu: "selection" },
-      {
-        action: "create-selection-set",
-        label: "Create Selection Set",
-        enabled: selectedLocksInOrder().length >= 2
-      },
-      ...selectionSetMembershipRadialOptions()
-    ];
-  }
-  if (kind === "locking-submenu") {
-    return [
-      { action: "back-to-main", label: "Back", submenu: "selection" },
-      {
-        action: "lock-selected-strands",
-        label: "Lock Selected Strands",
-        enabled: selectedLocksInOrder().some((lock) => !lock.locked)
-      },
-      {
-        action: "unlock-all-strands",
-        label: "Unlock All Strands",
-        enabled: lockedStrandsExist()
-      }
-    ];
-  }
-  if (kind === "clump") {
-    const guide = sel.state.clumpViewportSelection ? clumpGuideForLock(getSelectedLock()) : null;
-    return [
-      ...clumpMirrorRadialOptions(guide),
-      { action: "create-clump-preset", label: "Create Brush Preset", list: true },
-      selectionSetRadialMenuOption(),
-      { action: "open-locking-submenu", label: "Locking", submenu: "locking-submenu" },
-      { action: "toggle-isolate-selection", label: strandIsolationActive() ? "Exit Isolate" : "Isolate Selected" },
-      ...strandVisibilityRadialOptions(),
-      { action: "dissolve-clump", label: "Dissolve clump", list: true },
-      { action: "delete-clump", label: "Delete clump", list: true }
-    ];
-  }
-  if (kind === "selection") {
-    return [
-      ...selectedMirrorRadialOptions(),
-      {
-        action: "create-clump",
-        label: "Create Clump from Selection",
-        enabled: selectionCanBecomeClump()
-      },
-      selectionSetRadialMenuOption(),
-      { action: "open-locking-submenu", label: "Locking", submenu: "locking-submenu" },
-      ...(selectedLocksInOrder().length === 2 && selectedProceduralDuplicateSources().length === 2
-        ? [{ action: "duplicate-procedural", label: "Duplicate Procedural" }]
-        : []),
-      { action: "toggle-isolate-selection", label: strandIsolationActive() ? "Exit Isolate" : "Isolate Selected" },
-      ...strandVisibilityRadialOptions(),
-      { action: "delete-selection", label: "Delete Strands", enabled: true }
-    ];
-  }
-  return [
-    ...selectedMirrorRadialOptions(),
-    { action: "duplicate", label: "Duplicate strand" },
-    selectionSetRadialMenuOption(),
-    { action: "open-locking-submenu", label: "Locking", submenu: "locking-submenu" },
-    { action: "toggle-isolate-selection", label: strandIsolationActive() ? "Exit Isolate" : "Isolate Selected" },
-    ...strandVisibilityRadialOptions(),
-    { action: "delete", label: "Delete strand" }
-  ];
-}
-
-function sharedRadialFrameDimensions() {
-  return { ...STANDARD_RADIAL_FRAME_DIMENSIONS };
-}
-
-function layoutContextualRadialOptions(kind, {
-  options = contextualRadialOptions(kind),
-  backAngle = Math.PI * 0.5,
-  backRadiusOffset = null
-} = {}) {
-  const partitioned = partitionRadialOptions(
-    options,
-    MAX_RADIAL_OPTIONS,
-    MAX_RADIAL_SUBMENU_OPTIONS
-  );
-  const laidOutOptions = layoutRadialOptions(partitioned.radialOptions, {
-    ...(kind.endsWith("-submenu") ? {
-      anchorAction: "back-to-main",
-      anchorAngle: backAngle
-    } : {}),
-    reserveBottomForList: true
-  });
-  if (Number.isFinite(backRadiusOffset)) {
-    const backOption = laidOutOptions.find(({ action }) => action === "back-to-main");
-    if (backOption) backOption.radiusOffset = backRadiusOffset;
-  }
-  return { radialOptions: laidOutOptions, listOptions: partitioned.listOptions };
-}
-
-function renderRadialActionList(container, options = []) {
-  container.replaceChildren();
-  container.classList.toggle("hidden", options.length === 0);
-  options.forEach((option) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.setAttribute("role", "menuitem");
-    button.dataset.radialListAction = option.action;
-    button.textContent = option.label;
-    button.disabled = option.enabled === false;
-    button.classList.toggle(
-      "danger",
-      option.action === "delete" || option.action === "delete-selection" || option.action === "delete-clump"
-    );
-    container.appendChild(button);
-  });
-}
-
-function radialListOptionAtPointer(container, options, event) {
-  const containerBounds = container.getBoundingClientRect();
-  if (
-    event.clientX < containerBounds.left
-    || event.clientX > containerBounds.right
-    || event.clientY < containerBounds.top
-    || event.clientY > containerBounds.bottom
-  ) return null;
-  const buttons = [...container.querySelectorAll("[data-radial-list-action]")];
-  const button = buttons.find((candidate) => {
-    if (candidate.disabled) return false;
-    const bounds = candidate.getBoundingClientRect();
-    return event.clientX >= bounds.left
-      && event.clientX <= bounds.right
-      && event.clientY >= bounds.top
-      && event.clientY <= bounds.bottom;
-  });
-  return button
-    ? options.find((option) => option.action === button.dataset.radialListAction) || null
-    : null;
-}
-
-function syncRadialListHighlight(container, action) {
-  container.querySelectorAll("[data-radial-list-action]").forEach((button) => {
-    button.classList.toggle("selected", button.dataset.radialListAction === action);
-  });
-}
-
-function configureContextualRadialMenu(kind, options, listOptions = []) {
-  const menuLabel = kind === "root"
-    ? "Main radial menu"
-    : kind === "workspace-submenu" ? "Workspace"
-    : kind === "live-surface-submenu" ? "Live Surface"
-    : kind === "edit-mode-submenu" ? "Edit Mode"
-    : kind === "selection-set-actions-submenu" ? "Selection Sets"
-    : kind === "selection-set-add-submenu" ? "Add to Selection Set"
-    : kind === "selection-set-remove-submenu" ? "Remove from Selection Set"
-    : kind === "locking-submenu" ? "Strand Locking"
-    : kind === "clump" ? "Clump actions"
-    : kind === "selection" ? "Selection actions"
-    : "Strand actions";
-  strandRadialMenu.dataset.radialKind = kind;
-  strandRadialMenu.setAttribute("aria-label", menuLabel);
-  strandRadialCenter.textContent = kind === "root"
-    ? "Menu"
-    : kind === "workspace-submenu" ? "Workspace"
-    : kind === "live-surface-submenu" ? "Live Surface"
-    : kind === "edit-mode-submenu" ? "Edit Mode"
-    : kind === "selection-set-actions-submenu" ? "Sets"
-    : kind === "selection-set-add-submenu" ? "Add to Set"
-    : kind === "selection-set-remove-submenu" ? "Remove from Set"
-    : kind === "locking-submenu" ? "Locking"
-    : kind === "clump" ? "Clump"
-    : kind === "selection" ? "Selection"
-    : "Strand";
-  hairState.state.strandRadialActions = ensureRadialButtonCapacity(
-    strandRadialMenu,
-    hairState.state.strandRadialActions,
-    options.length,
-    "strandRadialAction",
-    strandRadialLine
-  );
-  renderRadialActionList(strandRadialActionList, listOptions);
-  applyRadialMenuDimensions(strandRadialMenu, options.length, hairState.state.strandRadialGesture?.frameDimensions);
-  hairState.state.strandRadialActions.forEach((button, index) => {
-    const option = options[index];
-    button.classList.toggle("hidden", !option);
-    button.disabled = !option || option.enabled === false;
-    button.classList.toggle("radial-back", option?.action === "back-to-main");
-    if (!option) {
-      button.dataset.strandRadialAction = "";
-      button.textContent = "";
-      configureRadialSubmenuIndicator(button, null, kind);
-      return;
-    }
-    button.dataset.strandRadialAction = option.action;
-    button.textContent = option.label;
-    button.style.setProperty("--radial-angle", `${option.angle}rad`);
-    button.style.setProperty("--radial-counter-angle", `${-option.angle}rad`);
-    button.style.setProperty("--radial-radius-offset", `${option.radiusOffset || 0}px`);
-    configureRadialSubmenuIndicator(button, option, kind);
-    button.classList.toggle(
-      "danger",
-      option.action === "delete" || option.action === "delete-selection" || option.action === "delete-clump"
-    );
-  });
-}
-
-function beginStrandRadialGesture() {
-  if (!ui.state.radialMenusEnabled || hairState.state.strandRadialGesture || sculptState.state.duplicatePlacement) return false;
-  const lock = getSelectedLock();
-  const hasOtherSelection = Boolean(sel.state.selectedStrandGroup || guideApi.getSelectedGuide() || referenceHeadApi.selectedReferenceImage());
-  if (!lock && hasOtherSelection) return false;
-  const selectedClumpGuide = sel.state.clumpViewportSelection ? clumpGuideForLock(lock) : null;
-  const kind = selectedClumpGuide
-    ? "clump"
-    : selectedLocksInOrder().length > 1 ? "selection"
-    : lock ? "strand"
-    : "root";
-  const { radialOptions: options, listOptions } = layoutContextualRadialOptions(kind);
-  hideOutlinerContextMenu();
-  hairState.state.strandRadialTargetId = lock?.id || null;
-  hairState.state.strandRadialGesture = {
-    centerX: lastPointer.x,
-    centerY: lastPointer.y,
-    action: null,
-    kind,
-    options,
-    listOptions,
-    frameDimensions: sharedRadialFrameDimensions()
-  };
-  configureContextualRadialMenu(kind, options, listOptions);
-  strandRadialMenu.classList.remove("hidden");
-  strandRadialMenu.style.left = `${lastPointer.x}px`;
-  strandRadialMenu.style.top = `${lastPointer.y}px`;
-  hairState.state.strandRadialActions.forEach((button) => button.classList.remove("selected"));
-  strandRadialLine.style.width = "0px";
-  strandRadialLine.style.opacity = "0";
-  updateInteractionLocks();
-  return true;
-}
-
-function enterStrandRadialSubmenu(option, pointer) {
-  const gesture = hairState.state.strandRadialGesture;
-  if (!gesture || !option?.submenu) return false;
-  const returningToParent = option.action === "back-to-main";
-  let nextMenuOptions;
-  if (returningToParent) {
-    gesture.centerX = Number.isFinite(pointer?.x) ? pointer.x : gesture.centerX;
-    gesture.centerY = Number.isFinite(pointer?.y) ? pointer.y : gesture.centerY;
-    nextMenuOptions = layoutContextualRadialOptions(option.submenu);
-  } else {
-    const previousCenterX = gesture.centerX;
-    const previousCenterY = gesture.centerY;
-    const currentRadius = Number.parseFloat(
-      strandRadialMenu.style.getPropertyValue("--radial-radius")
-    ) || 82;
-    const optionRadius = currentRadius + (option.radiusOffset || 0);
-    gesture.centerX += Math.cos(option.angle) * optionRadius;
-    gesture.centerY += Math.sin(option.angle) * optionRadius;
-    const backDeltaX = previousCenterX - gesture.centerX;
-    const backDeltaY = previousCenterY - gesture.centerY;
-    const backDistance = Math.hypot(backDeltaX, backDeltaY);
-    const parentKind = gesture.kind;
-    const rawOptions = contextualRadialOptions(option.submenu);
-    const backOption = rawOptions.find(({ action }) => action === "back-to-main");
-    if (backOption) backOption.submenu = parentKind;
-    const submenuRadius = gesture.frameDimensions?.radius
-      || radialMenuDimensionsForKind(option.submenu, rawOptions.length).radius;
-    nextMenuOptions = layoutContextualRadialOptions(option.submenu, {
-      options: rawOptions,
-      backAngle: Math.atan2(backDeltaY, backDeltaX),
-      backRadiusOffset: backDistance - submenuRadius
-    });
-  }
-  gesture.kind = option.submenu;
-  gesture.options = nextMenuOptions.radialOptions;
-  gesture.listOptions = nextMenuOptions.listOptions;
-  gesture.action = null;
-  configureContextualRadialMenu(option.submenu, gesture.options, gesture.listOptions);
-  strandRadialMenu.style.left = `${gesture.centerX}px`;
-  strandRadialMenu.style.top = `${gesture.centerY}px`;
-  hairState.state.strandRadialActions.forEach((button) => button.classList.remove("selected"));
-  strandRadialLine.style.width = "0px";
-  strandRadialLine.style.opacity = "0";
-  return true;
-}
-
-function updateStrandRadialGesture(event) {
-  const gesture = hairState.state.strandRadialGesture;
-  if (!gesture) return;
-  const dx = event.clientX - gesture.centerX;
-  const dy = event.clientY - gesture.centerY;
-  const distance = Math.hypot(dx, dy);
-  const angle = Math.atan2(dy, dx);
-  const listOption = radialListOptionAtPointer(strandRadialActionList, gesture.listOptions, event);
-  const listCorridorReserved = !listOption
-    && gesture.listOptions.length > 0
-    && radialListCorridorContains(dx, dy);
-  const closestOption = listOption || distance <= 34 || listCorridorReserved
-    ? null
-    : gesture.options.filter((option) => option.enabled !== false).reduce((closest, option) => {
-      const difference = Math.abs(Math.atan2(
-        Math.sin(angle - option.angle),
-        Math.cos(angle - option.angle)
-      ));
-      return !closest || difference < closest.difference
-        ? { ...option, difference }
-        : closest;
-    }, null);
-  gesture.action = listOption?.action || closestOption?.action || null;
-  hairState.state.strandRadialActions.forEach((button) => {
-    button.classList.toggle("selected", button.dataset.strandRadialAction === gesture.action);
-  });
-  syncRadialListHighlight(strandRadialActionList, gesture.action);
-  strandRadialLine.style.width = `${Math.min(distance, 96)}px`;
-  strandRadialLine.style.transform = `translateY(-50%) rotate(${angle}rad)`;
-  strandRadialLine.style.opacity = !listOption && !listCorridorReserved && distance > 4 ? "1" : "0";
-  if (
-    closestOption?.submenu
-    && distance >= strandRadialSubmenuEntryDistance(closestOption)
-  ) {
-    enterStrandRadialSubmenu(closestOption, { x: event.clientX, y: event.clientY });
-  }
-  event.preventDefault();
-}
-
-function performStrandRadialAction(action, lockId) {
-  if (action === "toggle-dynamic-surface") {
-    drawFlowApi.setDrawSurfaceDynamicEnabled(!drawFlowApi.drawSurfaceDynamicEnabled());
-    drawSurfaceDynamicButton.dispatchEvent(new Event("change", { bubbles: true }));
-    return true;
-  }
-  if (action?.startsWith("select-live-surface:")) {
-    return drawFlowApi.setActiveStrokeSurfaceValue(action.slice("select-live-surface:".length));
-  }
-  if (action?.startsWith("workspace-")) {
-    setViewportEditMode(action.slice("workspace-".length));
-    return true;
-  }
-  if (action?.startsWith("edit-mode-")) {
-    setViewportSelectionMode(action.slice("edit-mode-".length));
-    return true;
-  }
-  if (action === "create-clump") return Boolean(createClumpFromSelection());
-  if (action === "lock-selected-strands") return lockSelectedStrands();
-  if (action === "unlock-all-strands") return unlockAllStrands();
-  if (action === "hide-selected-strands") return hideSelectedStrands();
-  if (action === "unhide-hidden-strands") return unhideHiddenStrands();
-  if (action === "create-selection-set") return Boolean(createSelectionSetFromSelection());
-  if (action?.startsWith("add-selection-to-set:")) {
-    return editSelectionSetFromSelection(action.slice("add-selection-to-set:".length), "add");
-  }
-  if (action?.startsWith("remove-selection-to-set:")) {
-    return editSelectionSetFromSelection(action.slice("remove-selection-to-set:".length), "remove");
-  }
-  if (action === "duplicate-procedural") return openProceduralDuplicateDialog();
-  if (action === "toggle-isolate-selection") return toggleSelectedStrandIsolation();
-  if (action === "delete-selection") return deleteSelectedStrands();
-  if (action === "mirror-selected-strands") {
-    const originalIds = [...sel.state.selectedStrandIds];
-    const { mirrorable } = mirrorSelectionTargets(selectedLocksInOrder(), mirrorPartnerFor);
-    if (!mirrorable.length) return false;
-    pushUndoState();
-    const mirrored = mirrorable
-      .map((lock) => createMirrorPartner(lock, { deferUi: true }))
-      .filter(Boolean);
-    if (!mirrored.length) return false;
-    updateCount();
-    selectLock(mirrored[0].id, {
-      individualClumpMember: true,
-      selectedIds: [...originalIds, ...mirrored.map((lock) => lock.id)]
-    });
-    return true;
-  }
-  if (action === "decouple-selected-mirrors") {
-    const { decouple } = mirrorSelectionTargets(selectedLocksInOrder(), mirrorPartnerFor);
-    if (!decouple.length) return false;
-    pushUndoState();
-    decouple.forEach(decoupleMirrorPartner);
-    renderLockList();
-    return true;
-  }
-  const lock = locks.find((item) => item.id === lockId);
-  if (!lock || !action) return false;
-  const clumpGuide = clumpGuideForLock(lock);
-  if (action === "mirror-clump") {
-    if (!clumpGuide?.clumpGuide || mirroredClumpPartners(clumpGuide).length) return false;
-    pushUndoState();
-    const mirroredGuide = createMirroredClump(clumpGuide);
-    if (!mirroredGuide) return false;
-    selectLock(mirroredGuide.id);
-    return true;
-  }
-  if (action === "decouple-mirrored-clump") {
-    if (!clumpGuide?.clumpGuide || !mirroredClumpPartners(clumpGuide).length) return false;
-    pushUndoState();
-    return decoupleMirroredClump(clumpGuide);
-  }
-  if (action === "create-clump-preset") {
-    if (!clumpGuide) return false;
-    presetLibraryApi.createCustomClumpPreset(clumpGuide);
-    return true;
-  }
-  if (action === "dissolve-clump") {
-    if (!clumpGuide?.clumpId) return false;
-    pushUndoState();
-    dissolveClump(clumpGuide.clumpId);
-    sel.state.clumpViewportSelection = false;
-    selectLock(clumpGuide.id);
-    return true;
-  }
-  if (action === "delete-clump") {
-    const targets = outlinerClumpLocks(clumpGuide);
-    if (!targets.length) return false;
-    pushUndoState();
-    deleteLocks(targets);
-    return true;
-  }
-  if (action === "duplicate") {
-    return Boolean(beginDuplicatePlacement(lock));
-  }
-  if (action === "delete") {
-    pushUndoState();
-    deleteLocks([lock]);
-    return true;
-  }
-  return false;
-}
-
-function finishStrandRadialGesture() {
-  if (!hairState.state.strandRadialGesture) return false;
-  const action = hairState.state.strandRadialGesture.action;
-  const lockId = hairState.state.strandRadialTargetId;
-  hideStrandRadialMenu();
-  updateInteractionLocks();
-  if (action) performStrandRadialAction(action, lockId);
-  return true;
-}
-
-function cancelStrandRadialGesture() {
-  if (!hairState.state.strandRadialGesture) return false;
-  hideStrandRadialMenu();
-  updateInteractionLocks();
-  return true;
-}
-
-function blockPointerDuringStrandRadialGesture(event) {
-  if (!hairState.state.strandRadialGesture && !miscState.state.toolRadialGesture) return;
-  event.preventDefault();
-  event.stopImmediatePropagation();
-}
-
 function setPullMoveEnabled(enabled) {
   sculptState.state.pullMoveEnabled = Boolean(enabled);
   pullMoveInput.checked = sculptState.state.pullMoveEnabled;
   sculptState.state.activeHandleEdit = null;
   transformControls.detach();
   setActiveTool("move");
-}
-
-function toolRadialOptions(tool = sel.state.activeTool) {
-  if (tool === "select") {
-    return [
-      { action: "select-strand", label: "Strand Select" },
-      { action: "select-guide", label: "Guide Select" },
-      { action: "select-reference", label: "Reference Select" }
-    ];
-  }
-  if (tool === "move") {
-    return [
-      { action: "world-space", label: "World Space" },
-      { action: "object-space", label: "Object Space" },
-      { action: "contextual-2d", label: sculptState.state.viewPlaneMoveEnabled ? "Disable 2D Translation" : "2D Translation" },
-      { action: "pull-strand", label: sculptState.state.pullMoveEnabled ? "Disable Pull Strand" : "Pull Strand" }
-    ];
-  }
-  if (["rotate", "scale"].includes(tool)) {
-    return [
-      { action: "world-space", label: "World Space" },
-      { action: "object-space", label: "Object Space" }
-    ];
-  }
-  return [];
-}
-
-function hideToolRadialMenu() {
-  miscState.state.toolRadialGesture = null;
-  toolRadialMenu.classList.add("hidden");
-  miscState.state.toolRadialActions.forEach((button) => {
-    button.classList.remove("selected");
-    button.classList.add("hidden");
-  });
-  toolRadialActionList.replaceChildren();
-  toolRadialActionList.classList.add("hidden");
-  toolRadialLine.style.width = "0px";
-  toolRadialLine.style.opacity = "0";
-}
-
-function beginToolRadialGesture() {
-  if (!ui.state.radialMenusEnabled || miscState.state.toolRadialGesture || hairState.state.strandRadialGesture || sculptState.state.duplicatePlacement) return false;
-  const partitioned = partitionRadialOptions(toolRadialOptions(), MAX_RADIAL_OPTIONS);
-  const options = layoutRadialOptions(partitioned.radialOptions);
-  const listOptions = partitioned.listOptions;
-  if (!options.length) return false;
-  miscState.state.toolRadialActions = ensureRadialButtonCapacity(
-    toolRadialMenu,
-    miscState.state.toolRadialActions,
-    options.length,
-    "toolRadialIndex",
-    toolRadialLine
-  );
-  applyRadialMenuDimensions(toolRadialMenu, options.length, sharedRadialFrameDimensions());
-  renderRadialActionList(toolRadialActionList, listOptions);
-  options.forEach((option, index) => {
-    const button = miscState.state.toolRadialActions[index];
-    button.textContent = option.label;
-    button.dataset.toolRadialAction = option.action;
-    button.style.setProperty("--radial-angle", `${option.angle}rad`);
-    button.style.setProperty("--radial-counter-angle", `${-option.angle}rad`);
-    button.style.setProperty("--radial-radius-offset", `${option.radiusOffset || 0}px`);
-    button.classList.remove("hidden", "selected");
-  });
-  miscState.state.toolRadialActions.slice(options.length).forEach((button) => button.classList.add("hidden"));
-  miscState.state.toolRadialGesture = {
-    centerX: lastPointer.x,
-    centerY: lastPointer.y,
-    action: null,
-    options,
-    listOptions
-  };
-  toolRadialCenter.textContent = sel.state.activeTool[0].toUpperCase() + sel.state.activeTool.slice(1);
-  toolRadialMenu.style.left = `${lastPointer.x}px`;
-  toolRadialMenu.style.top = `${lastPointer.y}px`;
-  toolRadialMenu.classList.remove("hidden");
-  updateInteractionLocks();
-  return true;
-}
-
-function beginToolShortcutPress(key, tool) {
-  if (miscState.state.toolShortcutPress || miscState.state.toolRadialGesture || hairState.state.strandRadialGesture || sculptState.state.duplicatePlacement) return;
-  setActiveTool(tool);
-  if (!ui.state.radialMenusEnabled) return;
-  miscState.state.toolShortcutPress = {
-    key,
-    tool,
-    opened: false,
-    holdTimer: window.setTimeout(() => {
-      if (!miscState.state.toolShortcutPress || miscState.state.toolShortcutPress.key !== key) return;
-      miscState.state.toolShortcutPress.opened = beginToolRadialGesture();
-    }, 180)
-  };
-}
-
-function finishToolShortcutPress(key) {
-  if (!miscState.state.toolShortcutPress || miscState.state.toolShortcutPress.key !== key) return false;
-  const press = miscState.state.toolShortcutPress;
-  miscState.state.toolShortcutPress = null;
-  window.clearTimeout(press.holdTimer);
-  if (press.opened) finishToolRadialGesture();
-  return true;
-}
-
-function cancelToolShortcutPress() {
-  if (!miscState.state.toolShortcutPress) return false;
-  window.clearTimeout(miscState.state.toolShortcutPress.holdTimer);
-  miscState.state.toolShortcutPress = null;
-  cancelToolRadialGesture();
-  return true;
-}
-
-function setRadialMenusEnabled(enabled, { persist = true } = {}) {
-  ui.state.radialMenusEnabled = Boolean(enabled);
-  radialMenusPreferenceInput.checked = ui.state.radialMenusEnabled;
-  radialShortcutRows.forEach((row) => row.classList.toggle("hidden", !ui.state.radialMenusEnabled));
-  if (!ui.state.radialMenusEnabled) {
-    cancelToolShortcutPress();
-    cancelToolRadialGesture();
-    cancelStrandRadialGesture();
-  }
-  if (persist) saveBooleanPreference(RADIAL_MENUS_PREFERENCE_KEY, ui.state.radialMenusEnabled);
-  updateInteractionLocks();
 }
 
 function setProceduralDrawExperimentalEnabled(enabled, { persist = true } = {}) {
@@ -15234,7 +14520,7 @@ function savePreferencesDialog() {
 
 function cancelPreferencesDialog() {
   if (ui.state.preferencesOpenSnapshot) {
-    setRadialMenusEnabled(ui.state.preferencesOpenSnapshot.radialMenusEnabled, { persist: false });
+    radialMenuApi.setRadialMenusEnabled(ui.state.preferencesOpenSnapshot.radialMenusEnabled, { persist: false });
     setProceduralDrawExperimentalEnabled(
       ui.state.preferencesOpenSnapshot.proceduralDrawExperimentalEnabled,
       { persist: false }
@@ -15259,61 +14545,6 @@ function cancelPreferencesDialog() {
   }
   ui.state.preferencesOpenSnapshot = null;
   preferencesDialog.close();
-}
-
-function updateToolRadialGesture(event) {
-  const gesture = miscState.state.toolRadialGesture;
-  if (!gesture) return;
-  const dx = event.clientX - gesture.centerX;
-  const dy = event.clientY - gesture.centerY;
-  const distance = Math.hypot(dx, dy);
-  const angle = Math.atan2(dy, dx);
-  const listOption = radialListOptionAtPointer(toolRadialActionList, gesture.listOptions, event);
-  gesture.action = listOption?.action || (distance <= 34
-    ? null
-    : gesture.options.reduce((closest, option) => {
-      const difference = Math.abs(Math.atan2(
-        Math.sin(angle - option.angle),
-        Math.cos(angle - option.angle)
-      ));
-      return !closest || difference < closest.difference
-        ? { ...option, difference }
-        : closest;
-    }, null)?.action || null);
-  miscState.state.toolRadialActions.forEach((button) => {
-    button.classList.toggle("selected", button.dataset.toolRadialAction === gesture.action);
-  });
-  syncRadialListHighlight(toolRadialActionList, gesture.action);
-  toolRadialLine.style.width = `${Math.min(distance, 96)}px`;
-  toolRadialLine.style.transform = `translateY(-50%) rotate(${angle}rad)`;
-  toolRadialLine.style.opacity = !listOption && distance > 4 ? "1" : "0";
-  event.preventDefault();
-}
-
-function performToolRadialAction(action) {
-  if (action === "select-strand") setViewportEditMode("strand");
-  else if (action === "select-guide") setViewportEditMode("guide");
-  else if (action === "select-reference") setViewportEditMode("reference");
-  else if (action === "world-space") setObjectSpaceEditing(false);
-  else if (action === "object-space") setObjectSpaceEditing(true);
-  else if (action === "contextual-2d") setViewPlaneMove(!sculptState.state.viewPlaneMoveEnabled);
-  else if (action === "pull-strand") setPullMoveEnabled(!sculptState.state.pullMoveEnabled);
-}
-
-function finishToolRadialGesture() {
-  if (!miscState.state.toolRadialGesture) return false;
-  const action = miscState.state.toolRadialGesture.action;
-  hideToolRadialMenu();
-  updateInteractionLocks();
-  if (action) performToolRadialAction(action);
-  return true;
-}
-
-function cancelToolRadialGesture() {
-  if (!miscState.state.toolRadialGesture) return false;
-  hideToolRadialMenu();
-  updateInteractionLocks();
-  return true;
 }
 
 function duplicatePlacementTarget(event, placement) {
@@ -16930,10 +16161,10 @@ document.addEventListener("pointerdown", (event) => {
     guideApi.hideGuideViewContextMenu();
   }
   if (!strandRadialMenu.classList.contains("hidden") && !strandRadialMenu.contains(event.target)) {
-    cancelStrandRadialGesture();
+    radialMenuApi.cancelStrandRadialGesture();
   }
   if (!toolRadialMenu.classList.contains("hidden") && !toolRadialMenu.contains(event.target)) {
-    cancelToolRadialGesture();
+    radialMenuApi.cancelToolRadialGesture();
   }
 });
 
@@ -18510,7 +17741,7 @@ turntableSpeedInput.addEventListener("input", () => {
   turntableSpeedValue.textContent = `${viewportState.state.turntableSpeed.toFixed(1)}x`;
 });
 setTurntableActive(false);
-setRadialMenusEnabled(ui.state.radialMenusEnabled, { persist: false });
+radialMenuApi.setRadialMenusEnabled(ui.state.radialMenusEnabled, { persist: false });
 setProceduralDrawExperimentalEnabled(draw.state.proceduralDrawExperimentalEnabled, { persist: false });
 setNavigationTipsEnabled(viewportState.state.navigationTipsEnabled, { persist: false });
 setNavigationStyle(viewportState.state.navigationStyle, { persist: false });
@@ -18729,7 +17960,7 @@ preferencesDialog.addEventListener("cancel", (event) => {
   cancelPreferencesDialog();
 });
 radialMenusPreferenceInput.addEventListener("change", () => {
-  setRadialMenusEnabled(radialMenusPreferenceInput.checked, { persist: false });
+  radialMenuApi.setRadialMenusEnabled(radialMenusPreferenceInput.checked, { persist: false });
 });
 proceduralDrawExperimentalPreferenceInput.addEventListener("change", () => {
   setProceduralDrawExperimentalEnabled(proceduralDrawExperimentalPreferenceInput.checked, { persist: false });
@@ -19309,11 +18540,11 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     return;
   }
-  if (event.key === "Escape" && cancelStrandRadialGesture()) {
+  if (event.key === "Escape" && radialMenuApi.cancelStrandRadialGesture()) {
     event.preventDefault();
     return;
   }
-  if (event.key === "Escape" && cancelToolShortcutPress()) {
+  if (event.key === "Escape" && radialMenuApi.cancelToolShortcutPress()) {
     event.preventDefault();
     return;
   }
@@ -19350,9 +18581,9 @@ window.addEventListener("keydown", (event) => {
     ? shortcutToolForKey(event.key)
     : null;
   if (requestedShortcutTool && !event.repeat) {
-    cancelStrandRadialGesture();
-    cancelToolShortcutPress();
-    cancelToolRadialGesture();
+    radialMenuApi.cancelStrandRadialGesture();
+    radialMenuApi.cancelToolShortcutPress();
+    radialMenuApi.cancelToolRadialGesture();
   }
   if (sculptState.state.duplicatePlacement) {
     event.preventDefault();
@@ -19501,7 +18732,7 @@ window.addEventListener("keydown", (event) => {
   }
   if (event.code === "Space") {
     event.preventDefault();
-    if (!event.repeat) beginStrandRadialGesture();
+    if (!event.repeat) radialMenuApi.beginStrandRadialGesture();
     return;
   }
   if (event.key.toLowerCase() === "s") {
@@ -19549,7 +18780,7 @@ window.addEventListener("keydown", (event) => {
   event.preventDefault();
   if (event.repeat) return;
   if (["select", "move", "rotate", "scale"].includes(tool)) {
-    beginToolShortcutPress(event.key.toLowerCase(), tool);
+    radialMenuApi.beginToolShortcutPress(event.key.toLowerCase(), tool);
   } else {
     setActiveTool(tool);
   }
@@ -19574,12 +18805,12 @@ window.addEventListener("keyup", (event) => {
   if (event.key === "Alt" && viewportState.state.navigationStyle === "blender") {
     endViewSnap();
   }
-  if (finishToolShortcutPress(event.key.toLowerCase())) {
+  if (radialMenuApi.finishToolShortcutPress(event.key.toLowerCase())) {
     event.preventDefault();
   }
   if (event.code === "Space") {
     event.preventDefault();
-    finishStrandRadialGesture();
+    radialMenuApi.finishStrandRadialGesture();
   }
   if (event.key.toLowerCase() === "s") {
     sculptState.state.brushSizeHotkeyHeld = false;
@@ -19604,8 +18835,8 @@ window.addEventListener("blur", () => {
   draw.state.polyShiftPreviewHeld = false;
   polyToolsApi.clearPolyFillPreview();
   referenceHeadApi.finishReferenceOverlayDrag(null, { cancel: true });
-  cancelStrandRadialGesture();
-  cancelToolShortcutPress();
+  radialMenuApi.cancelStrandRadialGesture();
+  radialMenuApi.cancelToolShortcutPress();
   cancelDuplicatePlacement();
   sculptState.state.brushSizeHotkeyHeld = false;
   setSculptBrushShiftSmoothHeld(false);
@@ -20661,8 +19892,8 @@ updateInteractionLocks();
 window.addEventListener("pointermove", taperEditor.updateTaperMeshPointDrag, true);
 window.addEventListener("pointermove", updateTransformScalePointer, true);
 window.addEventListener("pointermove", trackViewportPointerMove);
-window.addEventListener("pointermove", updateStrandRadialGesture, true);
-window.addEventListener("pointermove", updateToolRadialGesture, true);
+window.addEventListener("pointermove", radialMenuApi.updateStrandRadialGesture, true);
+window.addEventListener("pointermove", radialMenuApi.updateToolRadialGesture, true);
 window.addEventListener("pointermove", updateDuplicatePlacement, true);
 window.addEventListener("pointermove", referenceHeadApi.updateReferenceCrop, true);
 window.addEventListener("pointermove", referenceHeadApi.updateReferenceOverlayDrag, true);
@@ -20772,7 +20003,7 @@ renderer.domElement.addEventListener("pointercancel", branchRegion.endBranchSwee
   renderer.domElement.addEventListener(eventName, blockProportionalSizingEvent, true);
 });
 renderer.domElement.addEventListener("pointerdown", taperEditor.beginTaperMeshPointDrag, true);
-renderer.domElement.addEventListener("pointerdown", blockPointerDuringStrandRadialGesture, true);
+renderer.domElement.addEventListener("pointerdown", radialMenuApi.blockPointerDuringStrandRadialGesture, true);
 renderer.domElement.addEventListener("pointerdown", confirmDuplicatePlacement, true);
 renderer.domElement.addEventListener("pointerdown", referenceHeadApi.beginReferenceCrop, true);
 referenceCropHandles.addEventListener("pointerdown", referenceHeadApi.beginReferenceCrop, true);
