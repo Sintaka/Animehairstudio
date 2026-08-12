@@ -10,6 +10,7 @@ import {
 import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260727-5";
 import { cloneSplitBones } from "../bones/bone-model.js?v=20260813-1";
 import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260813-1";
+import { leafWeightAt, leafWeightsValid } from "./leaf-weights.js?v=20260813-1";
 
 // Shared tip width control point count: 5 midpoints (common fork) + the tip end (t=1).
 // app.js createCurveObjects reuses this constant for the viewport tip width handles.
@@ -598,8 +599,8 @@ function updateTipHighlight(lock) {
   }
   const geometry = lock.mesh?.geometry;
   const position = geometry?.getAttribute?.("position");
-  const panelWeights = geometry?.userData?.panelWeights;
-  if (!position || !geometry?.index || !panelWeights || panelWeights.length !== position.count * 3) {
+  const leafWeights = geometry?.userData?.leafWeights || geometry?.userData?.panelWeights;
+  if (!position || !geometry?.index || !leafWeightsValid(leafWeights, position.count)) {
     if (lock.curveObjects?.tipHighlightMesh) lock.curveObjects.tipHighlightMesh.visible = false;
     return;
   }
@@ -624,8 +625,9 @@ function updateTipHighlight(lock) {
   const colors = new Float32Array(position.count * 3);
   const fades = new Float32Array(position.count);
   for (let vertex = 0; vertex < position.count; vertex += 1) {
-    const segment = panelWeights[vertex * 3 + 1];
-    const weight = panelWeights[vertex * 3 + 2];
+    const w = leafWeightAt(leafWeights, vertex);
+    const segment = w.leafIndex;
+    const weight = w.weight;
     if (selectedSeg != null && segment === selectedSeg && weight > 0.001) {
       colors[vertex * 3] = 1.0;
       colors[vertex * 3 + 1] = 0.55;
@@ -984,6 +986,7 @@ function createPanelStrandGeometry(lock) {
   geometry.userData.quadFaces = welded.quadFaces;
   geometry.userData.triangleEdgeMasks = triangleEdgeMasks;
   geometry.userData.panelWeights = welded.weights;
+  geometry.userData.leafWeights = welded.weights;
   geometry.computeVertexNormals();
   smoothCoincidentPanelNormals(geometry);
   geometry.computeBoundingSphere();

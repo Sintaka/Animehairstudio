@@ -2,6 +2,7 @@
 // Extracted from app.js; coupling injected via createXxxApi(deps).
 import * as THREE from "three";
 import { splitBonesFor, materializeSplitBones } from "./bone-model.js?v=20260813-1";
+import { leafIndexAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { smoothSculptPointDeltas } from "../sculpt/sculpt-brush.js?v=20260806-1";
 
 // deps: store .state proxies (sculptState/sel/guideState/scalpState) + module instances
@@ -597,9 +598,9 @@ function updatePanelTipHover(event) {
     );
     deps.raycaster.setFromCamera(pointerNDC, deps.camera);
     const hit = deps.raycaster.intersectObject(lock.mesh, false)[0];
-    const panelWeights = lock.mesh.geometry?.userData?.panelWeights;
-    if (hit && hit.face && panelWeights) {
-      const segment = panelWeights[hit.face.a * 3 + 1];
+    const leafWeights = lock.mesh.geometry?.userData?.leafWeights || lock.mesh.geometry?.userData?.panelWeights;
+    if (hit && hit.face && leafWeightsValid(leafWeights, lock.mesh.geometry?.getAttribute?.("position")?.count || 0)) {
+      const segment = leafIndexAt(leafWeights, hit.face.a);
       if (segment >= 0) hover = { lockId: lock.id, segmentIndex: segment };
     }
   }

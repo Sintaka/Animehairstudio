@@ -5,6 +5,7 @@
 //   state (read-only): importedHeadAsset, importedScalpGuideAsset, referenceImages, locks, STRAND_GROUPS
 //   functions: snapshotState, strandCurveParameters, curveSurfaceControllerCurves, safelyRememberRecentProject
 import * as THREE from "three";
+import { leafWeightAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActionFormat } from "./file-actions.js?v=20260728-1";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260726-1";
 import { exportAnimeHairUsda } from "./usda-export.js?v=20260806-4";
@@ -188,14 +189,15 @@ export function createProjectSaveApi(deps) {
             if (bones.length >= 2) {
               const joints = bones.map((bone) => bone.name);
               const mainCount = joints.filter((name) => name.startsWith("main.")).length;
-              const panelWeights = geometry.userData?.panelWeights;
-              if (panelWeights && panelWeights.length === position.count * 3) {
+              const leafWeights = geometry.userData?.leafWeights || geometry.userData?.panelWeights;
+              if (leafWeightsValid(leafWeights, position.count)) {
                 const skelIndices = [];
                 const skelWeights = [];
                 for (let vertex = 0; vertex < position.count; vertex += 1) {
-                  const main = Math.round(panelWeights[vertex * 3]);
-                  const segment = Math.round(panelWeights[vertex * 3 + 1]);
-                  const weight = Number(panelWeights[vertex * 3 + 2]) || 0;
+                  const w = leafWeightAt(leafWeights, vertex);
+                  const main = Math.round(w.mainJoint);
+                  const segment = Math.round(w.leafIndex);
+                  const weight = Number(w.weight) || 0;
                   if (segment >= 0 && weight > 0.0001) {
                     skelIndices.push([main, mainCount + segment]);
                     skelWeights.push([1 - weight, weight]);

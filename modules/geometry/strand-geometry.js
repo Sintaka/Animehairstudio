@@ -116,6 +116,9 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   const splitBones = strandSplitBonesFor(lock);
   const defaultSplitSpread = THREE.MathUtils.clamp(Number(lock.strandSplitGap ?? 0.12), 0, 0.99);
   const strandSplitWeights = splitBones ? [] : null;
+  // Per-vertex leaf weights use the unified [mainJoint, leafIndex, weight] format;
+  // mainJoint indexes the main strand bone point nearest to the vertex row (leaf = tube).
+  const mainPointCount = Math.max(0, Array.isArray(lock.points) ? lock.points.length : 0);
   let sideTriangleCount = 0;
 
   // Per-section vertex/face bases so the child-strand bridge can address each tube.
@@ -166,7 +169,8 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
         tangents.push(frame.y.x, frame.y.y, frame.y.z, 1);
         uvs.push(column / ringSize, t);
         colors.push(color.r, color.g, color.b);
-        if (strandSplitWeights) strandSplitWeights.push(sectionIndex, 0, tipWeightAt(t, splitStart));
+        const mainJoint = mainPointCount ? Math.round(t * (mainPointCount - 1)) : -1;
+        if (strandSplitWeights) strandSplitWeights.push(mainJoint, sectionIndex, tipWeightAt(t, splitStart));
       });
     });
 
@@ -331,7 +335,10 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices);
   if (strandSplitWeights) {
-    geometry.userData.strandSplitWeights = new Float32Array(strandSplitWeights);
+    // Unified per-vertex leaf weight format [mainJoint, leafIndex, weight] (stride 3);
+    // strandSplitWeights stays as a backward-compatible alias of the same array.
+    geometry.userData.leafWeights = new Float32Array(strandSplitWeights);
+    geometry.userData.strandSplitWeights = geometry.userData.leafWeights;
   }
   geometry.userData.sideTriangleCount = sideTriangleCount;
   geometry.userData.triangleEdgeMasks = triangleEdgeMasks;

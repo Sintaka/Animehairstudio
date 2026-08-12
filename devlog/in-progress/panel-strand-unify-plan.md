@@ -146,7 +146,7 @@
 
 ### 6.3 推荐路线（达成「仅预设不同」）
 - Phase A（已完成）：tip 原语 + `bonesFor` + strand 单尖/两管 tip。
-- Phase B：抽象通用 `leafWeights`，统一 panel/strand 每顶点权重形状。
+- Phase B（已完成 2026-08-13）：抽象通用 `leafWeights`，统一 panel/strand 每顶点权重形状。
 - Phase C：泛化 `sweepSide` 支持 open profile + 0..N splits；panel 改走该内核，保留 zipper wall/cap 生成作为 open-profile 特例。
 - Phase D：数据字段迁移 `panelSplits/splitBones` → 通用 `splits/tipBones`（旧档兼容），UI 改为 leaf 驱动；`createHairGeometry` 单入口。
 
@@ -154,3 +154,11 @@
 - child-strand bridge 依赖 `createSplitStrandGeometry` 的 `sectionBases/splitFusedGrid/quadFaces/triangleEdgeMasks` userData 契约，内核泛化必须保持。
 - panel 水密性、线框 mask、折叠 quad 清理、镜像段序、旧 .ahs 派生默认不能破坏。
 - 建议按 Phase 提交，每 Phase `node --check` + `verify-smoke`（10/11 基线）+ seam/契约 CDP。
+
+### 6.5 Phase B 实施记录（2026-08-13）
+
+- 新增 `modules/geometry/leaf-weights.js`：统一每顶点 leaf 权重 `[mainJoint, leafIndex, weight]`（stride 3）及 `leafWeightAt/leafIndexAt/leafWeightValueAt/leafWeightsValid` 纯函数。
+- `createSplitStrandGeometry`：`strandSplitWeights` 由 `[tube,0,weight]` 改为 `[mainJoint,tube,weight]`，并输出 `geometry.userData.leafWeights`；`strandSplitWeights` 保留为别名。
+- `createPanelStrandGeometry`：输出 `geometry.userData.leafWeights`（与 `panelWeights` 同数组）。
+- 消费方迁移：`updateTipHighlight`、`updatePanelTipHover`、USDA 权重读取统一走 `leafWeights`（回退 `panelWeights`），行为不变。
+- 验证：`node --check` 全绿；`verify-smoke` 10/11 基线。
