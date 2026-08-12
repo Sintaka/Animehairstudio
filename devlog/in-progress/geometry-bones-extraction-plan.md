@@ -26,8 +26,8 @@ app.js 脊柱 (addLock/snapshot/restore/mirror/stroke 各 2 行接线) ──▶
 | G7 ✅ | poly 拓扑 | 28 | ~612 | 低中 | 已迁出 modules/geometry/poly-tools.js（verify-smoke 10/11=基线） |
 | G5 ✅ | taper 编辑器（含 activeTaperTarget） | 32+1 | ~782 | 中 | 已迁出 modules/geometry/taper-editor.js（seam 重导出 renderTaperCurveEditor；verify-smoke 10/11=基线） |
 | G1 ✅ | 面板/tip strand 几何（含 tip sub-bone 消费） | 26+1常量+10嵌套 | ~959 | 中 | 已迁出 modules/geometry/panel-tip-strand.js（19 个 seam 重导出；verify-smoke 10/11=基线） |
-| G2 | split strand 几何 | 1 | ~120 | 中 | 单函数但拓扑复杂 |
-| G3 | base strand/card/compound 几何 | 9 | ~550 | 中 | createBaseHairGeometry/createHairGeometry 入口 |
+| G2 ✅ | split strand 几何 | 4+嵌套 | ~242 | 中 | 已迁入 modules/geometry/strand-geometry.js（G2+G3 合并批；triangulatePolygon3D 死代码删除） |
+| G3 ✅ | base strand/card/compound 几何 | 7+嵌套 | ~603 | 中 | 已迁入 modules/geometry/strand-geometry.js（createHairGeometry 5 处接线；verify-smoke 10/11=基线） |
 | G6 | sculpt 几何 | ~32 | ~860 | 中 | 与 sculpt 笔刷域相邻，注意边界 |
 
 > 几何合计净减 ~5.4k 行。依赖：curve-math、bone-model（数据读，不写）。
