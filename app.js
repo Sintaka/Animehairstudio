@@ -5,6 +5,7 @@ import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260812-1";
 import { createPanelTipStrandApi, TIP_WIDTH_CONTROL_POINTS } from "./modules/geometry/panel-tip-strand.js?v=20260812-1";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260812-1";
+import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260812-1";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260809-19";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260809-18";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260809-17";
@@ -1539,6 +1540,11 @@ const panelTipStrand = createPanelTipStrandApi(panelTipStrandDeps);
 // (createHairGeometry) below can reference strandGeometryApi without a TDZ issue.
 const strandGeometryDeps = {};
 const strandGeometryApi = createStrandGeometryApi(strandGeometryDeps);
+// Sculpt brush geometry api (refactor 3d batch G6): deps filled in one batch after the G4
+// curveSurfaceCreateDeps batch (all deps defined); created early so boot-time wiring
+// (restoreRefreshes/guideDeps) can reference sculptGeom without a TDZ issue.
+const sculptGeomDeps = {};
+const sculptGeom = createSculptGeometryApi(sculptGeomDeps);
 const scalpBuilderTemplateOverlay = new THREE.Group();
 scalpBuilderTemplateOverlay.visible = false;
 scene.add(scalpBuilderTemplateOverlay);
@@ -1817,8 +1823,6 @@ function clearStrandSelectionState() {
 const ref = createReferenceStore();
 
 const pendingLockGeometryUpdates = new Set();
-const sculptBrushGeometryUpdates = new Set();
-const SCULPT_BRUSH_GEOMETRY_FRAME_BUDGET_MS = 6;
 sculptState.state.objectSpaceEditing = readStoredBooleanPreference(window, TRANSFORM_SPACE_PREFERENCE_KEY, true);
 const SCALP_REGION_CURVE_VISUALIZATION_ENABLED = false;
 const SCALP_BUILDER_STEPS = [
@@ -1987,7 +1991,7 @@ const restoreRefreshes = new RestoreRefreshRegistry()
   .register("counts", updateCount)
   .register("placement-status", updatePlacementStatus)
   .register("display-visibility", applyDisplayVisibilityFilters)
-  .register("sculpt-brush-debug", refreshSculptBrushDebugAfterStateRestore)
+  .register("sculpt-brush-debug", sculptGeom.refreshSculptBrushDebugAfterStateRestore)
   .register("curve-editors", taperEditor.refreshTaperCurveEditorAfterStateRestore);
 const strandGroupOpen = new Map(STRAND_GROUPS.map((group) => [group.id, true]));
 const strandLayerOpen = new Map();
@@ -2484,6 +2488,59 @@ Object.assign(curveSurfaceCreateDeps, {
   vectorToData,
   viewPlaneNormal,
   worldNormalAtHit
+});
+// Sculpt brush geometry api deps batch (refactor 3d batch G6): all deps are defined by this
+// point (last dep: proportionalFalloffInput); the batch takes effect here, before the first
+// sculpt-brush DOM listener/boot calls (sculptBrushStrengthInput input listener etc.).
+Object.assign(sculptGeomDeps, {
+  applySubBoneBrushSample,
+  average,
+  camera,
+  commitClumpMemberRestState,
+  curveFrameAt,
+  effectiveSculptBrushTool,
+  flushPendingLockGeometryUpdates,
+  getSelectedLock,
+  guidedNormalAt,
+  isPanelGeometry,
+  locks,
+  mirrorPartnerFor,
+  mirroredVector,
+  proportionalFalloffInput,
+  proportionalRadiusInput,
+  pushUndoState,
+  rebuildLockGeometry,
+  renderer,
+  sculptBrushCursor,
+  sculptBrushFalloffInput,
+  sculptBrushFalloffRing,
+  sculptBrushFalloffValue,
+  sculptBrushPlanePositionInput,
+  sculptBrushPlanePositionValue,
+  sculptBrushPreserveTipsByTool,
+  sculptBrushRadiusInput,
+  sculptBrushRadiusValue,
+  sculptBrushSelectionAllows,
+  sculptBrushShowClippingPlaneInput,
+  sculptBrushShowCurvesInput,
+  sculptBrushStrengthByTool,
+  sculptBrushStrengthInput,
+  sculptBrushStrengthValue,
+  sculptBrushToolActive,
+  sculptBrushViabilityPlane,
+  sculptPreserveTipsInput,
+  sculptState: sculptState.state,
+  sel: sel.state,
+  setPointScale,
+  signedAngleAroundAxis,
+  strandVisibleForDisplay,
+  syncInputs,
+  syncLockFromCurve,
+  undoHistory,
+  updateCurveObjects,
+  updateHistoryButtons,
+  updateInteractionLocks,
+  updateTopologyStats
 });
 const drawBrushPresetInput = document.querySelector("#drawBrushPreset");
 const saveStrandToolPresetButton = document.querySelector("#saveStrandToolPreset");
@@ -5520,7 +5577,7 @@ Object.assign(guideDeps, {
   setActiveTool,
   setOutlinerTab,
   setScalpGuideVisibility: scalpBuilder.setScalpGuideVisibility,
-  setSculptBrushCursorVisible,
+  setSculptBrushCursorVisible: sculptGeom.setSculptBrushCursorVisible,
   setStrandSelectionVisual,
   setViewportEditMode,
   showOutlinerContextMenu,
@@ -5880,7 +5937,7 @@ function setSculptBrushShiftSmoothHeld(held) {
   if (sculptState.state.sculptBrushShiftSmoothHeld === nextHeld) return;
   sculptState.state.sculptBrushShiftSmoothHeld = nextHeld;
   syncSculptBrushToolButtons();
-  syncSculptBrushStrengthForActiveTool();
+  sculptGeom.syncSculptBrushStrengthForActiveTool();
   updatePlacementStatus();
 }
 
@@ -5889,8 +5946,8 @@ function setActiveTool(tool) {
   undo.state.historyShortcutHeld = false;
   const previousTool = sel.state.activeTool;
   if (sculptBrushToolActive(previousTool) && tool !== previousTool) {
-    finishSculptMoveStroke(null, { cancel: true });
-    setSculptBrushCursorVisible(false);
+    sculptGeom.finishSculptMoveStroke(null, { cancel: true });
+    sculptGeom.setSculptBrushCursorVisible(false);
   }
   if (sculptState.state.referenceCropDrag) finishReferenceCrop(null, { cancel: true });
   if (RETIRED_CURVE_LATTICE_SURFACE_TOOLS.has(tool)) tool = "select";
@@ -5947,7 +6004,7 @@ function setActiveTool(tool) {
   if (["place", "draw", "procedural-draw", "poly", "braid", "panel", "curve-surface"].includes(tool) && scalpState.state.scalpShapeEditing) scalpBuilder.setScalpShapeEditing(false);
   if (tool !== "move") endViewPlaneMove();
   sel.state.activeTool = tool;
-  if (sculptBrushToolActive()) syncSculptBrushStrengthForActiveTool();
+  if (sculptBrushToolActive()) sculptGeom.syncSculptBrushStrengthForActiveTool();
   updateStrandSelectionHighlight();
   updateReferenceSelectionVisuals();
   updateReferenceCropHandles();
@@ -6142,7 +6199,7 @@ function refreshActiveBrushSizeCursor(event) {
     return;
   }
   if (sculptBrushToolActive()) {
-    updateSculptBrushCursor(event);
+    sculptGeom.updateSculptBrushCursor(event);
     return;
   }
   updateDrawStrandBrushCursor(event);
@@ -6159,7 +6216,7 @@ function refreshActiveBrushSizeScale() {
     return;
   }
   if (sculptBrushToolActive()) {
-    syncSculptBrushControls();
+    sculptGeom.syncSculptBrushControls();
     return;
   }
   const cursorScale = activeStrokeBrushSize() * (braidStrokeActive() ? 1 / 3 : 1);
@@ -6225,7 +6282,7 @@ function finishBrushSizeDrag(event) {
   renderer.domElement.style.cursor = "";
   updateInteractionLocks();
   if (input === sculptBrushRadiusInput && event?.clientX !== undefined) {
-    updateSculptBrushCursor(event);
+    sculptGeom.updateSculptBrushCursor(event);
   }
   event?.preventDefault();
   event?.stopImmediatePropagation();
@@ -16234,52 +16291,6 @@ function strandWidthEdgePoints(lock, side) {
 }
 
 const sculptBrushDebugRaycast = () => {};
-const sculptBrushCurveClippingPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
-const sculptBrushCurveClippingPlanes = [sculptBrushCurveClippingPlane];
-
-function setSculptBrushMaterialClipping(material, enabled) {
-  const active = material.clippingPlanes === sculptBrushCurveClippingPlanes;
-  if (active === enabled) return;
-  material.clippingPlanes = enabled ? sculptBrushCurveClippingPlanes : null;
-  material.needsUpdate = true;
-}
-
-function sculptBrushDebugCurveVisible(lock) {
-  return Boolean(
-    sculptBrushToolActive()
-    && sculptBrushShowCurvesInput.checked
-    && sculptState.state.viewportEditMode === "strand"
-    && !lock.locked
-    && sculptBrushEditableLock(lock)
-    && strandVisibleForDisplay(lock)
-    && sculptBrushLockViable(lock)
-  );
-}
-
-function refreshSculptBrushDebugView() {
-  if (!sculptBrushToolActive()) return;
-  locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
-}
-
-function refreshSculptBrushDebugAfterStateRestore() {
-  if (!sculptBrushToolActive()) return;
-  updateSculptBrushViabilityPlane();
-  refreshSculptBrushDebugView();
-}
-
-function updateSculptBrushDebugCurve(lock) {
-  if (!sculptBrushDebugCurveVisible(lock) || !lock.curveObjects) return;
-  const { group, line, handles } = lock.curveObjects;
-  line.geometry.dispose();
-  line.geometry = new THREE.BufferGeometry().setFromPoints(
-    new THREE.CatmullRomCurve3(lock.points).getPoints(40)
-  );
-  handles.forEach((handle, index) => {
-    handle.visible = Boolean(lock.points[index]);
-    if (lock.points[index]) handle.position.copy(lock.points[index]);
-  });
-  group.visible = true;
-}
 
 function updateCurveObjects(lock, options = {}) {
   if (!lock.curveObjects) return;
@@ -16288,7 +16299,7 @@ function updateCurveObjects(lock, options = {}) {
     if (lock.wireOverlay) syncLockedStrandWireVisual(lock);
     return;
   }
-  const brushDebugVisible = sculptBrushDebugCurveVisible(lock);
+  const brushDebugVisible = sculptGeom.sculptBrushDebugCurveVisible(lock);
   const sculptBrushHelpersSuppressed = sculptBrushToolActive()
     && sculptState.state.viewportEditMode === "strand";
   // Keep the tip sub-bone UI (highlight + handles + guide lines) visible while a brush
@@ -16312,7 +16323,7 @@ function updateCurveObjects(lock, options = {}) {
   lock.curveObjects.line.material.stencilFail = THREE.KeepStencilOp;
   lock.curveObjects.line.material.stencilZFail = THREE.KeepStencilOp;
   lock.curveObjects.line.material.stencilZPass = THREE.KeepStencilOp;
-  setSculptBrushMaterialClipping(lock.curveObjects.line.material, brushDebugVisible);
+  sculptGeom.setSculptBrushMaterialClipping(lock.curveObjects.line.material, brushDebugVisible);
   lock.curveObjects.line.renderOrder = brushDebugVisible ? 50 : 3;
   if (brushDebugVisible) lock.curveObjects.line.raycast = sculptBrushDebugRaycast;
   else if (lock.curveObjects.line.raycast === sculptBrushDebugRaycast) delete lock.curveObjects.line.raycast;
@@ -16415,7 +16426,7 @@ function updateCurveObjects(lock, options = {}) {
     handle.material.stencilFail = THREE.KeepStencilOp;
     handle.material.stencilZFail = THREE.KeepStencilOp;
     handle.material.stencilZPass = THREE.KeepStencilOp;
-    setSculptBrushMaterialClipping(handle.material, brushDebugVisible);
+    sculptGeom.setSculptBrushMaterialClipping(handle.material, brushDebugVisible);
     handle.renderOrder = brushDebugVisible ? 51 : 4;
     handle.raycast = brushDebugVisible
       ? sculptBrushDebugRaycast
@@ -17047,41 +17058,6 @@ function rebuildLockGeometry(lock, options = {}) {
   invalidateUvInspector();
 }
 
-function scheduleSculptBrushGeometryUpdates() {
-  if (sculptState.state.sculptBrushGeometryFrame !== null || !sculptBrushGeometryUpdates.size) return;
-  sculptState.state.sculptBrushGeometryFrame = requestAnimationFrame(() => {
-    sculptState.state.sculptBrushGeometryFrame = null;
-    flushSculptBrushGeometryUpdates();
-  });
-}
-
-function queueSculptBrushGeometryUpdate(lock) {
-  if (!lock?.mesh) return;
-  sculptBrushGeometryUpdates.add(lock);
-  scheduleSculptBrushGeometryUpdates();
-}
-
-function flushSculptBrushGeometryUpdates({ all = false } = {}) {
-  if (sculptState.state.sculptBrushGeometryFrame !== null) {
-    cancelAnimationFrame(sculptState.state.sculptBrushGeometryFrame);
-    sculptState.state.sculptBrushGeometryFrame = null;
-  }
-  const startedAt = performance.now();
-  let rebuiltCount = 0;
-  for (const lock of sculptBrushGeometryUpdates) {
-    sculptBrushGeometryUpdates.delete(lock);
-    if (lock?.mesh && locks.includes(lock)) {
-      rebuildLockGeometry(lock);
-      rebuiltCount += 1;
-    }
-    if (
-      !all
-      && rebuiltCount > 0
-      && performance.now() - startedAt >= SCULPT_BRUSH_GEOMETRY_FRAME_BUDGET_MS
-    ) break;
-  }
-  if (sculptBrushGeometryUpdates.size) scheduleSculptBrushGeometryUpdates();
-}
 
 function flushPendingLockGeometryUpdates() {
   if (hairState.state.pendingLockGeometryFrame !== null) {
@@ -18613,7 +18589,7 @@ function syncMultiStrandInputs(primary = getSelectedLock()) {
     setMixedControl(
       drawStrandBrushSizeInput,
       drawStrandBrushSizeValue,
-      values((lock) => editableStrandWidth(lock)),
+      values((lock) => sculptGeom.editableStrandWidth(lock)),
       (value) => Number(value).toFixed(2)
     );
     setMixedControl(hairCardInput, null, values((lock) => Boolean(lock.hairCard)));
@@ -22861,18 +22837,18 @@ modeToolButtons.forEach((button) => {
     else setActiveTool(button.dataset.tool);
   });
 });
-sculptBrushStrengthInput.addEventListener("input", updateActiveSculptBrushStrength);
-sculptBrushRadiusInput.addEventListener("input", syncSculptBrushControls);
-sculptPreserveTipsInput.addEventListener("change", updateActiveSculptBrushPreserveTips);
-sculptBrushFalloffInput.addEventListener("input", syncSculptBrushControls);
-sculptBrushShowClippingPlaneInput.addEventListener("change", updateSculptBrushViabilityPlane);
+sculptBrushStrengthInput.addEventListener("input", sculptGeom.updateActiveSculptBrushStrength);
+sculptBrushRadiusInput.addEventListener("input", sculptGeom.syncSculptBrushControls);
+sculptPreserveTipsInput.addEventListener("change", sculptGeom.updateActiveSculptBrushPreserveTips);
+sculptBrushFalloffInput.addEventListener("input", sculptGeom.syncSculptBrushControls);
+sculptBrushShowClippingPlaneInput.addEventListener("change", sculptGeom.updateSculptBrushViabilityPlane);
 sculptBrushShowCurvesInput.addEventListener("change", () => {
   sculptState.state.sculptBrushViableLockIds = new Set();
-  refreshSculptBrushDebugView();
+  sculptGeom.refreshSculptBrushDebugView();
 });
 sculptBrushPlanePositionInput.addEventListener("input", () => {
-  syncSculptBrushControls();
-  updateSculptBrushViabilityPlane();
+  sculptGeom.syncSculptBrushControls();
+  sculptGeom.updateSculptBrushViabilityPlane();
 });
 resetLoftSurfaceDraftButton.addEventListener("click", curveSurfaceCreate.resetLoftSurfaceDraft);
 confirmCurveSurfaceDraftButton.addEventListener("click", (event) => {
@@ -22937,15 +22913,15 @@ drawStrandBrushSizeInput.addEventListener("input", () => {
   }
   const selectedLock = getSelectedLock();
   if (selectedLock?.geometryType === "strand") {
-    const primaryWidth = editableStrandWidth(selectedLock);
+    const primaryWidth = sculptGeom.editableStrandWidth(selectedLock);
     const targets = compatibleSelectedLocks(selectedLock)
       .filter((lock) => lock.geometryType === "strand");
     editSelectedLocks((lock) => {
-      const width = relativeEditValue(editableStrandWidth(lock), primaryWidth, nextWidth, {
+      const width = relativeEditValue(sculptGeom.editableStrandWidth(lock), primaryWidth, nextWidth, {
         min: Number(drawStrandBrushSizeInput.min),
         max: Number(drawStrandBrushSizeInput.max)
       });
-      applyEditableStrandWidth(lock, width, null);
+      sculptGeom.applyEditableStrandWidth(lock, width, null);
     }, { immediate: true, targets });
     syncMultiStrandInputs(selectedLock);
   } else if (!selectedLock) {
@@ -25293,7 +25269,7 @@ function beginPanelSplitHandleDrag(event) {
       tipWidthStartClientX = event.clientX;
       tipWidthStartClientY = event.clientY;
       const rect = renderer.domElement.getBoundingClientRect();
-      tipWidthStartEdgeScreenDist = Math.max(0.0001, viewportPixelPoint(placement.center, rect).distanceTo(viewportPixelPoint(placement.point, rect)));
+      tipWidthStartEdgeScreenDist = Math.max(0.0001, sculptGeom.viewportPixelPoint(placement.center, rect).distanceTo(sculptGeom.viewportPixelPoint(placement.point, rect)));
     }
   }
   sculptState.state.panelSplitDrag = {
@@ -26234,424 +26210,6 @@ function finishPointRemoval(event) {
   }
 }
 
-function editableStrandWidth(lock) {
-  if (!lock) return 0;
-  if (isPanelGeometry(lock)) return Math.max(0.08, Number(lock.width ?? 0.62));
-  if (lock.geometryType === "braid") {
-    return Math.max(0.05, Number(lock.braidWidth ?? 0.34) * Number(lock.widthScale ?? 1));
-  }
-  return Math.max(
-    0.01,
-    Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1)
-  );
-}
-
-function editableStrandWidthBounds(lock) {
-  if (isPanelGeometry(lock)) return { minimum: 0.08, maximum: 2.5 };
-  if (lock?.geometryType === "braid") return { minimum: 0.05, maximum: 2.5 };
-  return { minimum: 0.01, maximum: 3 };
-}
-
-function applyEditableStrandWidth(lock, width, drag = sculptState.state.strandWidthEdgeDrag) {
-  if (!lock) return;
-  const bounds = editableStrandWidthBounds(lock);
-  const nextWidth = THREE.MathUtils.clamp(Number(width), bounds.minimum, bounds.maximum);
-  if (lock.geometryType === "surface" && drag?.startPoints?.length === lock.points.length) {
-    const ratio = nextWidth / Math.max(0.0001, drag.startWidth);
-    const columns = normalizeSurfaceLatticeCount(lock.surfaceColumns, DEFAULT_SURFACE_LATTICE_COLUMNS);
-    const rows = normalizeSurfaceLatticeCount(lock.surfaceRows, DEFAULT_SURFACE_LATTICE_ROWS);
-    const centerColumn = Math.floor(columns / 2);
-    for (let row = 0; row < rows; row += 1) {
-      const centerIndex = surfaceLatticePointIndex(row, centerColumn, columns, rows);
-      const center = drag.startPoints[centerIndex];
-      for (let column = 0; column < columns; column += 1) {
-        const pointIndex = surfaceLatticePointIndex(row, column, columns, rows);
-        lock.points[pointIndex].copy(center).add(
-          drag.startPoints[pointIndex].clone().sub(center).multiplyScalar(ratio)
-        );
-      }
-    }
-    lock.width = nextWidth;
-    lock.baseWidth = nextWidth;
-  } else if (isPanelGeometry(lock)) {
-    lock.width = nextWidth;
-    lock.baseWidth = nextWidth;
-  } else if (lock.geometryType === "braid") {
-    lock.braidWidth = nextWidth;
-    lock.width = nextWidth;
-    lock.baseWidth = nextWidth;
-    lock.widthScale = 1;
-  } else {
-    lock.width = nextWidth;
-    lock.baseWidth = nextWidth;
-    lock.widthScale = 1;
-  }
-}
-
-function viewportPixelPoint(worldPoint, rect) {
-  const projected = worldPoint.clone().project(camera);
-  return new THREE.Vector2(
-    (projected.x * 0.5 + 0.5) * rect.width,
-    (-projected.y * 0.5 + 0.5) * rect.height
-  );
-}
-
-function syncSculptBrushControls() {
-  const strength = Number(sculptBrushStrengthInput.value);
-  const radius = Number(sculptBrushRadiusInput.value);
-  const falloff = Number(sculptBrushFalloffInput.value);
-  sculptBrushStrengthValue.textContent = strength.toFixed(2);
-  sculptBrushRadiusValue.textContent = `${Math.round(radius)} px`;
-  sculptBrushFalloffValue.textContent = falloff.toFixed(2);
-  sculptBrushCursor.style.width = `${radius * 2}px`;
-  sculptBrushCursor.style.height = `${radius * 2}px`;
-  const innerDiameter = Math.max(2, radius * 2 * (1 - falloff));
-  sculptBrushFalloffRing.style.width = `${innerDiameter}px`;
-  sculptBrushFalloffRing.style.height = `${innerDiameter}px`;
-  sculptBrushPlanePositionValue.textContent = Number(sculptBrushPlanePositionInput.value).toFixed(2);
-}
-
-function syncSculptBrushStrengthForActiveTool() {
-  const tool = effectiveSculptBrushTool();
-  if (sculptBrushStrengthByTool[tool] !== undefined) {
-    sculptBrushStrengthInput.value = String(sculptBrushStrengthByTool[tool]);
-  }
-  syncSculptBrushControls();
-}
-
-function updateActiveSculptBrushStrength() {
-  const tool = effectiveSculptBrushTool();
-  if (sculptBrushStrengthByTool[tool] !== undefined) {
-    sculptBrushStrengthByTool[tool] = Number(sculptBrushStrengthInput.value);
-  }
-  syncSculptBrushControls();
-}
-
-function updateActiveSculptBrushPreserveTips() {
-  if (sculptBrushPreserveTipsByTool[sel.state.activeTool] !== undefined) {
-    sculptBrushPreserveTipsByTool[sel.state.activeTool] = sculptPreserveTipsInput.checked;
-  }
-}
-
-function sculptBrushPlaneOffset() {
-  return (Number(sculptBrushPlanePositionInput.value) - 0.5) * 4;
-}
-
-function setSculptBrushCursorVisible(visible) {
-  const wasVisible = !sculptBrushCursor.classList.contains("hidden");
-  sculptBrushCursor.classList.toggle("hidden", !visible);
-  if (visible) renderer.domElement.style.cursor = "none";
-  else if (wasVisible && renderer.domElement.style.cursor === "none") renderer.domElement.style.cursor = "";
-}
-
-function updateSculptBrushCursor(event) {
-  if (!sculptBrushToolActive() || sculptState.state.viewportEditMode !== "strand" || sculptState.state.altOrbitDrag) {
-    setSculptBrushCursorVisible(false);
-    return;
-  }
-  const rect = renderer.domElement.getBoundingClientRect();
-  const anchoredResize = sculptState.state.brushSizeDrag?.input === sculptBrushRadiusInput;
-  const clientX = anchoredResize ? sculptState.state.brushSizeDrag.startX : event.clientX;
-  const clientY = anchoredResize ? sculptState.state.brushSizeDrag.startY : event.clientY;
-  const inside = clientX >= rect.left
-    && clientX <= rect.right
-    && clientY >= rect.top
-    && clientY <= rect.bottom;
-  if (!inside) {
-    setSculptBrushCursorVisible(false);
-    return;
-  }
-  sculptBrushCursor.style.left = `${clientX - rect.left}px`;
-  sculptBrushCursor.style.top = `${clientY - rect.top}px`;
-  setSculptBrushCursorVisible(true);
-}
-
-function sculptBrushMirrorUpdateLock(lock) {
-  return Boolean(
-    lock?.points?.length > 1
-    && !["poly", "surface", "curve-surface"].includes(lock.geometryType)
-  );
-}
-
-function sculptBrushEditableLock(lock) {
-  return Boolean(
-    sculptBrushMirrorUpdateLock(lock)
-    && !lock.locked
-    && sculptBrushSelectionAllows(lock)
-  );
-}
-
-const sculptBrushCameraFacingNormal = new THREE.Vector3();
-
-function sculptBrushWorkingPlaneNormal() {
-  camera.getWorldDirection(sculptBrushCameraFacingNormal);
-  sculptBrushCameraFacingNormal.negate();
-  return cameraFacingPlaneNormal(sculptBrushCameraFacingNormal);
-}
-
-function sculptBrushLockViable(
-  lock,
-  planeNormal = sculptBrushWorkingPlaneNormal(),
-  planeOffset = sculptBrushPlaneOffset()
-) {
-  return Boolean(
-    lock?.points?.length
-    && lock.points.some((point) => pointInCameraFacingHalfSpace(point, planeNormal, planeOffset))
-  );
-}
-
-function sculptBrushUnits() {
-  const units = [];
-  const visited = new Set();
-  const planeNormal = sculptBrushWorkingPlaneNormal();
-  const planeOffset = sculptBrushPlaneOffset();
-  locks.forEach((lock) => {
-    if (!sculptBrushEditableLock(lock)) return;
-    const partner = sculptBrushMirrorUpdateLock(mirrorPartnerFor(lock))
-      ? mirrorPartnerFor(lock)
-      : null;
-    const source = partner && String(partner.id).localeCompare(String(lock.id)) < 0
-      ? partner
-      : lock;
-    if (visited.has(source.id)) return;
-    const sourcePartner = mirrorPartnerFor(source);
-    const sourceVisible = sculptBrushEditableLock(source)
-      && strandVisibleForDisplay(source)
-      && sculptBrushLockViable(source, planeNormal, planeOffset);
-    const partnerVisible = sculptBrushEditableLock(sourcePartner)
-      && strandVisibleForDisplay(sourcePartner)
-      && sculptBrushLockViable(sourcePartner, planeNormal, planeOffset);
-    if (!sourceVisible && !partnerVisible) return;
-    visited.add(source.id);
-    units.push({
-      source,
-      partner: sculptBrushMirrorUpdateLock(sourcePartner) ? sourcePartner : null,
-      sourceVisible,
-      partnerVisible
-    });
-  });
-  return units;
-}
-
-const sculptBrushPlaneNormal = new THREE.Vector3();
-const sculptBrushPlaneRight = new THREE.Vector3();
-const sculptBrushPlaneDepth = new THREE.Vector3();
-const sculptBrushPlaneBasis = new THREE.Matrix4();
-
-function updateSculptBrushViabilityPlane() {
-  const visible = sculptBrushToolActive() && sculptState.state.viewportEditMode === "strand";
-  sculptBrushViabilityPlane.visible = visible && sculptBrushShowClippingPlaneInput.checked;
-  if (!visible) {
-    sculptState.state.sculptBrushViableLockIds = new Set();
-    return;
-  }
-  const normal = sculptBrushWorkingPlaneNormal();
-  const planeOffset = sculptBrushPlaneOffset();
-  sculptBrushPlaneNormal.set(normal.x, normal.y, normal.z);
-  sculptBrushCurveClippingPlane.normal.copy(sculptBrushPlaneNormal);
-  sculptBrushCurveClippingPlane.constant = -planeOffset;
-  sculptBrushPlaneRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
-  sculptBrushPlaneRight.addScaledVector(
-    sculptBrushPlaneNormal,
-    -sculptBrushPlaneRight.dot(sculptBrushPlaneNormal)
-  ).normalize();
-  sculptBrushPlaneDepth.crossVectors(
-    sculptBrushPlaneRight,
-    sculptBrushPlaneNormal
-  ).normalize();
-  sculptBrushPlaneBasis.makeBasis(
-    sculptBrushPlaneRight,
-    sculptBrushPlaneNormal,
-    sculptBrushPlaneDepth
-  );
-  sculptBrushViabilityPlane.position.copy(sculptBrushPlaneNormal).multiplyScalar(planeOffset);
-  sculptBrushViabilityPlane.quaternion.setFromRotationMatrix(sculptBrushPlaneBasis);
-  const nextViableLockIds = new Set(locks
-    .filter((lock) => (
-      sculptBrushEditableLock(lock)
-      && strandVisibleForDisplay(lock)
-      && sculptBrushLockViable(lock, normal, planeOffset)
-    ))
-    .map((lock) => lock.id)
-  );
-  const changedLockIds = new Set([
-    ...[...nextViableLockIds].filter((id) => !sculptState.state.sculptBrushViableLockIds.has(id)),
-    ...[...sculptState.state.sculptBrushViableLockIds].filter((id) => !nextViableLockIds.has(id))
-  ]);
-  sculptState.state.sculptBrushViableLockIds = nextViableLockIds;
-  if (!sculptBrushShowCurvesInput.checked) return;
-  if (!changedLockIds.size) return;
-  locks.forEach((lock) => {
-    if (changedLockIds.has(lock.id)) {
-      updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
-    }
-  });
-}
-
-function sculptBrushPointWeight(point, cursor, rect, radius, falloff) {
-  const projected = point.clone().project(camera);
-  if (projected.z < -1 || projected.z > 1) return 0;
-  const pixel = new THREE.Vector2(
-    (projected.x * 0.5 + 0.5) * rect.width,
-    (-projected.y * 0.5 + 0.5) * rect.height
-  );
-  return sculptBrushWeight(pixel.distanceTo(cursor), radius, falloff);
-}
-
-function sculptBrushWorldDelta(point, deltaX, deltaY, rect) {
-  const projected = point.clone().project(camera);
-  return new THREE.Vector3(
-    projected.x + deltaX * 2 / Math.max(1, rect.width),
-    projected.y - deltaY * 2 / Math.max(1, rect.height),
-    projected.z
-  ).unproject(camera).sub(point);
-}
-
-function syncSculptBrushMirrorPoints(source, partner) {
-  if (!partner) return;
-  if (partner.points.length !== source.points.length) {
-    partner.points = source.points.map(mirroredVector);
-  } else {
-    source.points.forEach((point, index) => {
-      partner.points[index].set(-point.x, point.y, point.z);
-    });
-  }
-  if (source.groupLatticeBasePoints) {
-    if (partner.groupLatticeBasePoints?.length !== source.groupLatticeBasePoints.length) {
-      partner.groupLatticeBasePoints = source.groupLatticeBasePoints.map(mirroredVector);
-    } else {
-      source.groupLatticeBasePoints.forEach((point, index) => {
-        partner.groupLatticeBasePoints[index].set(-point.x, point.y, point.z);
-      });
-    }
-  } else {
-    partner.groupLatticeBasePoints = null;
-  }
-  partner.pointScales = source.pointScales.map((scale) => ({ ...scale }));
-  partner.pointWidths = [...source.pointWidths];
-  partner.width = source.width;
-  syncLockFromCurve(partner);
-}
-
-function captureSculptMoveStrokeInfluence(
-  units,
-  clientX,
-  clientY,
-  planeNormal,
-  planeOffset
-) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  const cursor = new THREE.Vector2(clientX - rect.left, clientY - rect.top);
-  const radius = Number(sculptBrushRadiusInput.value);
-  const falloff = Number(sculptBrushFalloffInput.value);
-  const proportionalRadius = Number(proportionalRadiusInput.value);
-  const proportionalFalloff = Number(proportionalFalloffInput.value);
-  const influenceBySourceId = new Map();
-  units.forEach(({ source, partner, sourceVisible, partnerVisible }) => {
-    const sourceWeights = new Array(source.points.length).fill(0);
-    const partnerWeights = new Array(source.points.length).fill(0);
-    for (let pointIndex = 1; pointIndex < source.points.length; pointIndex += 1) {
-      const sourcePoint = source.points[pointIndex];
-      const partnerPoint = partner?.points?.[pointIndex];
-      if (
-        sourceVisible
-        && pointInCameraFacingHalfSpace(sourcePoint, planeNormal, planeOffset)
-      ) {
-        sourceWeights[pointIndex] = sculptBrushPointWeight(
-          sourcePoint,
-          cursor,
-          rect,
-          radius,
-          falloff
-        );
-      }
-      if (
-        partnerVisible
-        && partnerPoint
-        && pointInCameraFacingHalfSpace(partnerPoint, planeNormal, planeOffset)
-      ) {
-        partnerWeights[pointIndex] = sculptBrushPointWeight(
-          partnerPoint,
-          cursor,
-          rect,
-          radius,
-          falloff
-        );
-      }
-    }
-    influenceBySourceId.set(source.id, {
-      sourceWeights: sculptState.state.proportionalEditing
-        ? proportionalSculptWeights(sourceWeights, proportionalRadius, proportionalFalloff)
-        : sourceWeights,
-      partnerWeights: sculptState.state.proportionalEditing
-        ? proportionalSculptWeights(partnerWeights, proportionalRadius, proportionalFalloff)
-        : partnerWeights
-    });
-  });
-  return influenceBySourceId;
-}
-
-function beginSculptMoveStroke(event) {
-  const reverseTool = ["sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient"].includes(sel.state.activeTool);
-  if (
-    !sculptBrushToolActive()
-    || sculptState.state.brushSizeHotkeyHeld
-    || sculptState.state.viewportEditMode !== "strand"
-    || event.button !== 0
-    || (!reverseTool && event.ctrlKey)
-    || event.altKey
-    || event.metaKey
-  ) return;
-  const planeNormal = sculptBrushWorkingPlaneNormal();
-  const planeOffset = sculptBrushPlaneOffset();
-  const units = sculptBrushUnits();
-  const snapshotLocks = [...new Map(units.flatMap(({ source, partner }) => (
-    [source, partner].filter(Boolean).map((lock) => [lock.id, lock])
-  ))).values()];
-  sculptState.state.sculptMoveStroke = {
-    pointerId: event.pointerId,
-    lastX: event.clientX,
-    lastY: event.clientY,
-    pendingX: null,
-    pendingY: null,
-    frameRequest: null,
-    changed: false,
-    undoCaptured: false,
-    planeNormal,
-    planeOffset,
-    units,
-    moveInfluence: sel.state.activeTool === "sculpt-move"
-      ? captureSculptMoveStrokeInfluence(
-          units,
-          event.clientX,
-          event.clientY,
-          planeNormal,
-          planeOffset
-        )
-      : new Map(),
-    reverse: Boolean(event.ctrlKey),
-    scaleMode: sel.state.activeTool === "sculpt-scale" ? (document.querySelector("#sculptScaleMode")?.value || "scale") : null,
-    cutExtendOffset: 0,
-    editedLockIds: new Set(),
-    snapshots: snapshotLocks.map((lock) => ({
-      lockId: lock.id,
-      points: lock.points.map((point) => point.clone()),
-      groupLatticeBasePoints: lock.groupLatticeBasePoints?.map((point) => point.clone()) || null,
-      pointScales: lock.pointScales.map((scale) => ({ ...scale })),
-      pointWidths: [...lock.pointWidths],
-      width: lock.width
-    })),
-    originalCurves: new Map(
-      locks.filter(sculptBrushEditableLock)
-        .filter((lock) => lock.points.length >= 2)
-        .map((lock) => [lock.id, new THREE.CatmullRomCurve3(lock.points.map((point) => point.clone()))])
-    )
-  };
-  renderer.domElement.setPointerCapture?.(event.pointerId);
-  updateInteractionLocks();
-  event.preventDefault();
-  event.stopImmediatePropagation();
-}
 
 function isHairCreateTool(tool = sel.state.activeTool) {
   return ["draw", "procedural-draw", "braid", "panel", "curve-surface", "surface-loft", "place", "draw-capsule-guide"].includes(tool);
@@ -26769,7 +26327,7 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   const scaleCenter = current[firstBelow] || current[0];
   const weights = new Array(current.length).fill(0);
   for (let index = firstBelow; index < current.length; index += 1) {
-    weights[index] = sculptBrushPointWeight(current[index], cursor, rect, radius, falloff);
+    weights[index] = sculptGeom.sculptBrushPointWeight(current[index], cursor, rect, radius, falloff);
   }
   let changed = false;
   if (tool === "sculpt-scale") {
@@ -26788,7 +26346,7 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
       if (weights[index] <= 0) continue;
       const t = index / Math.max(1, current.length - 1);
       const tangent = curve.getTangent(t).normalize();
-      const dragWorld = sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
+      const dragWorld = sculptGeom.sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
       const amount = (reverse ? -1 : 1) * weights[index] * strength * dragWorld.dot(tangent);
       points[index].addScaledVector(tangent, amount);
       changed = true;
@@ -26806,7 +26364,7 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
       const up = guidedNormalAt(lock, point, tangent, t)
         .applyAxisAngle(tangent, twist)
         .normalize();
-      const dragWorld = sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
+      const dragWorld = sculptGeom.sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
       const amount = (reverse ? -1 : 1) * weights[index] * strength * dragWorld.dot(up);
       points[index].addScaledVector(up, amount);
       changed = true;
@@ -26855,7 +26413,7 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
     // move (and any fallback): masked view-plane translation
     for (let index = firstBelow; index < current.length; index += 1) {
       if (weights[index] <= 0) continue;
-      const dragWorld = sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
+      const dragWorld = sculptGeom.sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
       points[index].addScaledVector(dragWorld, (reverse ? -1 : 1) * weights[index] * strength);
       changed = true;
     }
@@ -26873,316 +26431,6 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   return true;
 }
 
-function applySculptMoveStrokeSample(stroke, clientX, clientY) {
-  const deltaX = clientX - stroke.lastX;
-  const deltaY = clientY - stroke.lastY;
-  stroke.lastX = clientX;
-  stroke.lastY = clientY;
-  if (Math.abs(deltaX) + Math.abs(deltaY) < 0.01) return;
-
-  // Selected sub-bone brush (masked to that sub-bone; scale centers on its exposed root).
-  if (applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY)) return;
-
-  const rect = renderer.domElement.getBoundingClientRect();
-  const cursor = new THREE.Vector2(clientX - rect.left, clientY - rect.top);
-  const strength = Number(
-    sculptBrushStrengthByTool[effectiveSculptBrushTool()]
-    ?? sculptBrushStrengthInput.value
-  );
-  const radius = Number(sculptBrushRadiusInput.value);
-  const falloff = Number(sculptBrushFalloffInput.value);
-  const smoothBrushActive = effectiveSculptBrushTool() === "sculpt-smooth";
-  const inflateBrushActive = effectiveSculptBrushTool() === "sculpt-inflate";
-  const slideBrushActive = effectiveSculptBrushTool() === "sculpt-slide";
-  const scaleBrushActive = effectiveSculptBrushTool() === "sculpt-scale";
-  const pushBrushActive = effectiveSculptBrushTool() === "sculpt-push";
-  const orientBrushActive = effectiveSculptBrushTool() === "sculpt-orient";
-  const reverse = Boolean(stroke.reverse);
-  const preserveTips = Boolean(sculptBrushPreserveTipsByTool[sel.state.activeTool]);
-  const fixedMoveBrushInfluence = !smoothBrushActive && !inflateBrushActive && !slideBrushActive && !scaleBrushActive && !pushBrushActive && !orientBrushActive;
-  const strokeDistance = Math.hypot(deltaX, deltaY);
-  const changedSources = [];
-
-  stroke.units.forEach(({ source, partner, sourceVisible, partnerVisible }) => {
-    let sourceChanged = false;
-    const pointWeights = new Array(source.points.length).fill(0);
-    const initialMoveInfluence = stroke.moveInfluence.get(source.id);
-    const firstPointIndex = inflateBrushActive ? 0 : 1;
-    for (let pointIndex = firstPointIndex; pointIndex < source.points.length; pointIndex += 1) {
-      const sourcePoint = source.points[pointIndex];
-      const partnerPoint = partner?.points?.[pointIndex];
-      const sourceWeight = fixedMoveBrushInfluence
-        ? Number(initialMoveInfluence?.sourceWeights?.[pointIndex]) || 0
-        : sourceVisible
-          && pointInCameraFacingHalfSpace(sourcePoint, stroke.planeNormal, stroke.planeOffset)
-          ? sculptBrushPointWeight(sourcePoint, cursor, rect, radius, falloff)
-          : 0;
-      const partnerWeight = fixedMoveBrushInfluence
-        ? Number(initialMoveInfluence?.partnerWeights?.[pointIndex]) || 0
-        : partnerVisible
-          && partnerPoint
-          && pointInCameraFacingHalfSpace(partnerPoint, stroke.planeNormal, stroke.planeOffset)
-          ? sculptBrushPointWeight(partnerPoint, cursor, rect, radius, falloff)
-          : 0;
-      const weight = Math.max(sourceWeight, partnerWeight);
-      if (weight <= 0) continue;
-      pointWeights[pointIndex] = weight;
-      if (slideBrushActive) {
-        if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
-        const curve = stroke.originalCurves?.get(source.id);
-        if (curve) {
-          const t = pointIndex / Math.max(1, source.points.length - 1);
-          const tangent = curve.getTangent(t).normalize();
-          const dragWorld = sculptBrushWorldDelta(sourcePoint, deltaX, deltaY, rect);
-          const amount = (reverse ? -1 : 1) * weight * strength * dragWorld.dot(tangent);
-          sourcePoint.addScaledVector(tangent, amount);
-          const basePoint = source.groupLatticeBasePoints?.[pointIndex];
-          if (basePoint) basePoint.addScaledVector(tangent, amount);
-          sourceChanged = true;
-        }
-        continue;
-      }
-      if (pushBrushActive) {
-        if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
-        const curve = stroke.originalCurves?.get(source.id);
-        if (curve) {
-          const t = pointIndex / Math.max(1, source.points.length - 1);
-          const point = curve.getPoint(t);
-          const tangent = curve.getTangent(t).normalize();
-          const up = guidedNormalAt(source, point, tangent, t)
-            .applyAxisAngle(tangent, sampleArray(source.pointTwists || [], t))
-            .normalize();
-          const dragWorld = sculptBrushWorldDelta(sourcePoint, deltaX, deltaY, rect);
-          const amount = (reverse ? -1 : 1) * weight * strength * dragWorld.dot(up);
-          sourcePoint.addScaledVector(up, amount);
-          const basePoint = source.groupLatticeBasePoints?.[pointIndex];
-          if (basePoint) basePoint.addScaledVector(up, amount);
-          sourceChanged = true;
-        }
-        continue;
-      }
-      if (orientBrushActive) {
-        if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
-        if (!source.pointTwists) source.pointTwists = source.points.map(() => 0);
-        const curve = stroke.originalCurves?.get(source.id);
-        if (curve) {
-          const t = pointIndex / Math.max(1, source.points.length - 1);
-          const tangent = curve.getTangent(t).normalize();
-          const point = curve.getPoint(t);
-          let targetUp = camera.position.clone().sub(point).projectOnPlane(tangent);
-          if (targetUp.lengthSq() < 0.0001) targetUp.set(0, 1, 0).projectOnPlane(tangent);
-          targetUp.normalize();
-          const currentUp = curveFrameAt(source, t).z;
-          const angle = signedAngleAroundAxis(currentUp, targetUp, tangent);
-          source.pointTwists[pointIndex] += angle * weight * strength * 0.08;
-          sourceChanged = true;
-        }
-        continue;
-      }
-            if (smoothBrushActive) continue;
-      if (preserveTips && !inflateBrushActive && pointIndex === source.points.length - 1) continue;
-      if (scaleBrushActive) continue;
-      if (!stroke.undoCaptured) {
-        pushUndoState();
-        stroke.undoCaptured = true;
-      }
-      if (inflateBrushActive) {
-        const nextScale = inflateSculptPointScale(
-          source.pointScales[pointIndex],
-          weight,
-          strength,
-          strokeDistance,
-          radius
-        );
-        setPointScale(source, pointIndex, nextScale.x, nextScale.z);
-        sourceChanged = true;
-        continue;
-      }
-      const movingPartner = partnerWeight > sourceWeight;
-      const affectedPoint = movingPartner ? partnerPoint : sourcePoint;
-      const dragWorldDelta = sculptBrushWorldDelta(affectedPoint, deltaX, deltaY, rect);
-      const worldDelta = dragWorldDelta.multiplyScalar(weight * strength);
-      if (movingPartner) worldDelta.x *= -1;
-      sourcePoint.add(worldDelta);
-      if (source.groupLatticeBasePoints?.[pointIndex]) {
-        source.groupLatticeBasePoints[pointIndex].add(worldDelta);
-      }
-      sourceChanged = true;
-
-    }
-    if (scaleBrushActive) {
-      const unitAffected = pointWeights.some((pointWeightValue) => pointWeightValue > 0);
-      if (unitAffected) {
-        if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
-        if (stroke.scaleMode === "cut-extend") {
-          // Whole-strand Cut/Extend: uniform parameter scaling preserves current spacing.
-          const curve = stroke.originalCurves?.get(source.id);
-          if (curve) {
-            stroke.cutExtendOffset += (reverse ? -1 : 1) * strength * strokeDistance * 0.01;
-            const factor = Math.max(0.02, 1 + stroke.cutExtendOffset);
-            for (let index = 1; index < source.points.length; index += 1) {
-              const t0 = index / Math.max(1, source.points.length - 1);
-              const t1 = t0 * factor;
-              let position;
-              if (t1 <= 1) {
-                position = curve.getPoint(Math.max(0, t1));
-              } else {
-                position = curve.getPoint(1).clone()
-                  .addScaledVector(curve.getTangent(1).normalize(), (t1 - 1) * curve.getLength());
-              }
-              source.points[index].copy(position);
-            }
-            sourceChanged = true;
-          }
-        } else {
-          // Scale mode: root-anchored uniform scaling, point order preserved (no scalp collision).
-          const anchor = source.points[0];
-          for (let index = 1; index < source.points.length; index += 1) {
-            const direction = source.points[index].clone().sub(anchor);
-            const factor = Math.max(0.02, 1 + (reverse ? -1 : 1) * strength * strokeDistance * 0.01);
-            source.points[index].copy(anchor).addScaledVector(direction, factor);
-          }
-          sourceChanged = true;
-        }
-      }
-    }
-
-    if (smoothBrushActive) {
-      const smoothingWeights = sculptState.state.proportionalEditing
-        ? proportionalSculptWeights(
-            pointWeights,
-            Number(proportionalRadiusInput.value),
-            Number(proportionalFalloffInput.value)
-          )
-        : pointWeights;
-      const smoothDeltas = smoothSculptPointDeltas(
-        source.points,
-        smoothingWeights,
-        strength,
-        0.04,
-        { preserveTip: preserveTips }
-      );
-      const smoothTwistDeltas = smoothSculptTwistDeltas(source.pointTwists || [], smoothingWeights, strength);
-      smoothTwistDeltas.forEach((delta, pointIndex) => {
-        if (delta === 0) return;
-        if (!stroke.undoCaptured) {
-          pushUndoState();
-          stroke.undoCaptured = true;
-        }
-        if (!source.pointTwists) source.pointTwists = source.points.map(() => 0);
-        source.pointTwists[pointIndex] += delta;
-        sourceChanged = true;
-      });
-      smoothDeltas.forEach((delta, pointIndex) => {
-        if (pointIndex === 0 || (delta.x === 0 && delta.y === 0 && delta.z === 0)) return;
-        if (!stroke.undoCaptured) {
-          pushUndoState();
-          stroke.undoCaptured = true;
-        }
-        source.points[pointIndex].x += delta.x;
-        source.points[pointIndex].y += delta.y;
-        source.points[pointIndex].z += delta.z;
-        const basePoint = source.groupLatticeBasePoints?.[pointIndex];
-        if (basePoint) {
-          basePoint.x += delta.x;
-          basePoint.y += delta.y;
-          basePoint.z += delta.z;
-        }
-        sourceChanged = true;
-      });
-    }
-    if (!sourceChanged) return;
-    if (inflateBrushActive) {
-      source.width = Math.max(0.04, source.baseWidth * average(source.pointWidths));
-    }
-    stroke.changed = true;
-    stroke.editedLockIds.add(source.id);
-    if (partner) stroke.editedLockIds.add(partner.id);
-    changedSources.push({ source, partner });
-  });
-
-  changedSources.forEach(({ source, partner }) => {
-    syncLockFromCurve(source);
-    syncSculptBrushMirrorPoints(source, partner);
-    updateSculptBrushDebugCurve(source);
-    if (partner) updateSculptBrushDebugCurve(partner);
-    queueSculptBrushGeometryUpdate(source);
-    if (partner) queueSculptBrushGeometryUpdate(partner);
-  });
-}
-
-function flushSculptMoveStrokeSample(stroke = sculptState.state.sculptMoveStroke) {
-  if (!stroke || stroke.pendingX === null || stroke.pendingY === null) return;
-  const clientX = stroke.pendingX;
-  const clientY = stroke.pendingY;
-  stroke.pendingX = null;
-  stroke.pendingY = null;
-  applySculptMoveStrokeSample(stroke, clientX, clientY);
-}
-
-function updateSculptMoveStroke(event) {
-  updateSculptBrushCursor(event);
-  const stroke = sculptState.state.sculptMoveStroke;
-  if (!stroke || event.pointerId !== stroke.pointerId) return;
-  stroke.pendingX = event.clientX;
-  stroke.pendingY = event.clientY;
-  if (stroke.frameRequest === null) {
-    stroke.frameRequest = requestAnimationFrame(() => {
-      stroke.frameRequest = null;
-      flushSculptMoveStrokeSample(stroke);
-    });
-  }
-  event.preventDefault();
-  event.stopImmediatePropagation();
-}
-
-function finishSculptMoveStroke(event, { cancel = false } = {}) {
-  const stroke = sculptState.state.sculptMoveStroke;
-  if (!stroke || (event?.pointerId !== undefined && event.pointerId !== stroke.pointerId)) return;
-  if (stroke.frameRequest !== null) {
-    cancelAnimationFrame(stroke.frameRequest);
-    stroke.frameRequest = null;
-  }
-  if (!cancel) flushSculptMoveStrokeSample(stroke);
-  stroke.pendingX = null;
-  stroke.pendingY = null;
-  sculptState.state.sculptMoveStroke = null;
-  if (renderer.domElement.hasPointerCapture?.(stroke.pointerId)) {
-    renderer.domElement.releasePointerCapture(stroke.pointerId);
-  }
-  if (cancel && stroke.changed) {
-    stroke.snapshots.forEach((snapshot) => {
-      const lock = locks.find((item) => item.id === snapshot.lockId);
-      if (!lock || lock.points.length !== snapshot.points.length) return;
-      snapshot.points.forEach((point, index) => lock.points[index].copy(point));
-      if (snapshot.groupLatticeBasePoints) {
-        lock.groupLatticeBasePoints = snapshot.groupLatticeBasePoints.map((point) => point.clone());
-      }
-      lock.pointScales = snapshot.pointScales.map((scale) => ({ ...scale }));
-      lock.pointWidths = [...snapshot.pointWidths];
-      lock.width = snapshot.width;
-      syncLockFromCurve(lock);
-    });
-    if (stroke.undoCaptured) {
-      undoHistory.pop();
-      updateHistoryButtons();
-    }
-  }
-  flushPendingLockGeometryUpdates();
-  flushSculptBrushGeometryUpdates({ all: true });
-  stroke.editedLockIds.forEach((lockId) => {
-    const lock = locks.find((item) => item.id === lockId);
-    if (!lock) return;
-    if (!cancel) commitClumpMemberRestState(lock);
-    syncLockFromCurve(lock);
-  });
-  const selectedLock = getSelectedLock();
-  if (selectedLock) syncInputs(selectedLock);
-  updateTopologyStats();
-  updateInteractionLocks();
-  event?.preventDefault();
-  event?.stopImmediatePropagation();
-}
 
 function strandControlPointHit(event, lock = getSelectedLock()) {
   return strandControlPointHitFromEvent(event, lock);
@@ -27217,11 +26465,11 @@ function beginStrandWidthEdgeDrag(event) {
   if (halfExtent < 0.0001) return;
   sideAxis.normalize();
   const rect = renderer.domElement.getBoundingClientRect();
-  const centerPixel = viewportPixelPoint(sample.center, rect);
-  const axisPixel = viewportPixelPoint(sample.center.clone().add(sideAxis), rect).sub(centerPixel);
+  const centerPixel = sculptGeom.viewportPixelPoint(sample.center, rect);
+  const axisPixel = sculptGeom.viewportPixelPoint(sample.center.clone().add(sideAxis), rect).sub(centerPixel);
   const pixelsPerWorld = axisPixel.length();
   if (pixelsPerWorld < 0.001) return;
-  const startWidth = editableStrandWidth(lock);
+  const startWidth = sculptGeom.editableStrandWidth(lock);
   const widthTargets = selectedLocksInOrder().filter((item) => item.geometryType !== "poly");
   if (!widthTargets.includes(lock)) widthTargets.unshift(lock);
   pushUndoState();
@@ -27243,7 +26491,7 @@ function beginStrandWidthEdgeDrag(event) {
       : null,
     targetSnapshots: widthTargets.map((item) => ({
       lockId: item.id,
-      startWidth: editableStrandWidth(item),
+      startWidth: sculptGeom.editableStrandWidth(item),
       startWidthState: {
         width: item.width,
         baseWidth: item.baseWidth,
@@ -27287,7 +26535,7 @@ function updateStrandWidthEdgeDrag(event) {
   targetSnapshots.forEach((snapshot) => {
     const target = locks.find((item) => item.id === snapshot.lockId);
     if (!target) return;
-    applyEditableStrandWidth(target, snapshot.startWidth + widthDelta, snapshot);
+    sculptGeom.applyEditableStrandWidth(target, snapshot.startWidth + widthDelta, snapshot);
     syncLockFromCurve(target);
     updateLockGeometry(target, { immediate: true });
     updateCurveObjects(target, { visible: target.id === sel.state.selectedId });
@@ -27483,7 +26731,7 @@ scalpBuilder.setScalpPaintEditing(false);
 scalpBuilder.setScalpBuilderEditing(false);
 guideApi.setCapsuleGuideEditing(false);
 guideApi.updateCapsuleGuideProfilePreview();
-syncSculptBrushControls();
+sculptGeom.syncSculptBrushControls();
 updateLightAngleFromInputs();
 applyDisplayVisibilityFilters();
 updateInteractionLocks();
@@ -27495,7 +26743,7 @@ window.addEventListener("pointermove", updateToolRadialGesture, true);
 window.addEventListener("pointermove", updateDuplicatePlacement, true);
 window.addEventListener("pointermove", updateReferenceCrop, true);
 window.addEventListener("pointermove", updateReferenceOverlayDrag, true);
-window.addEventListener("pointermove", updateSculptMoveStroke, true);
+window.addEventListener("pointermove", sculptGeom.updateSculptMoveStroke, true);
 window.addEventListener("pointermove", updatePanelTipHover);
 window.addEventListener("pointermove", updateStrandBrushHover);
 window.addEventListener("pointermove", updateBrushSizeDrag, true);
@@ -27523,7 +26771,7 @@ window.addEventListener("pointerup", endViewSnap);
 window.addEventListener("pointerup", taperEditor.finishTaperMeshPointDrag, true);
 window.addEventListener("pointerup", finishReferenceCrop, true);
 window.addEventListener("pointerup", finishReferenceOverlayDrag, true);
-window.addEventListener("pointerup", finishSculptMoveStroke, true);
+window.addEventListener("pointerup", sculptGeom.finishSculptMoveStroke, true);
 window.addEventListener("pointerup", finishBrushSizeDrag, true);
 window.addEventListener("pointerup", finishStrandWidthEdgeDrag, true);
 window.addEventListener("pointerup", endViewPlaneMove);
@@ -27555,7 +26803,7 @@ window.addEventListener("pointercancel", endViewSnap);
 window.addEventListener("pointercancel", (event) => taperEditor.finishTaperMeshPointDrag(event, { cancel: true }), true);
 window.addEventListener("pointercancel", (event) => finishReferenceCrop(event, { cancel: true }), true);
 window.addEventListener("pointercancel", (event) => finishReferenceOverlayDrag(event, { cancel: true }), true);
-window.addEventListener("pointercancel", (event) => finishSculptMoveStroke(event, { cancel: true }), true);
+window.addEventListener("pointercancel", (event) => sculptGeom.finishSculptMoveStroke(event, { cancel: true }), true);
 window.addEventListener("pointercancel", finishBrushSizeDrag, true);
 window.addEventListener("pointercancel", (event) => finishStrandWidthEdgeDrag(event, { cancel: true }), true);
 window.addEventListener("pointercancel", polyToolsApi.finishPolyBrushStroke, true);
@@ -27606,7 +26854,7 @@ renderer.domElement.addEventListener("pointerdown", confirmDuplicatePlacement, t
 renderer.domElement.addEventListener("pointerdown", beginReferenceCrop, true);
 referenceCropHandles.addEventListener("pointerdown", beginReferenceCrop, true);
 renderer.domElement.addEventListener("pointerdown", beginBrushSizeDrag, true);
-renderer.domElement.addEventListener("pointerdown", beginSculptMoveStroke, true);
+renderer.domElement.addEventListener("pointerdown", sculptGeom.beginSculptMoveStroke, true);
 renderer.domElement.addEventListener("pointerdown", beginStrandWidthEdgeDrag, true);
 renderer.domElement.addEventListener("pointerdown", polyToolsApi.beginPolyBrushPointer, true);
 renderer.domElement.addEventListener("pointerdown", beginBlenderNavigation, true);
@@ -27623,7 +26871,7 @@ referenceCropHandles.addEventListener("pointerover", () => setReferenceOverlaySc
 renderer.domElement.addEventListener("pointermove", updateStrandWidthEdgeHover);
 renderer.domElement.addEventListener("pointermove", updateCurvePointTopologyCursor);
 renderer.domElement.addEventListener("pointerleave", () => {
-  if (!sculptState.state.sculptMoveStroke) setSculptBrushCursorVisible(false);
+  if (!sculptState.state.sculptMoveStroke) sculptGeom.setSculptBrushCursorVisible(false);
   polyToolsApi.clearPolyFillPreview();
   clearCurvePointTopologyCursor();
   setHoveredControlPoint(null);
@@ -28076,7 +27324,7 @@ function animate(timestamp = performance.now()) {
     camera.lookAt(controls.target);
   }
   controls.update();
-  updateSculptBrushViabilityPlane();
+  sculptGeom.updateSculptBrushViabilityPlane();
   updateReferencePlaneVisibility();
   updateReferenceCropHandles();
   updateViewPlaneGrid();

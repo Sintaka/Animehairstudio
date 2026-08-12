@@ -28,7 +28,7 @@ app.js 脊柱 (addLock/snapshot/restore/mirror/stroke 各 2 行接线) ──▶
 | G1 ✅ | 面板/tip strand 几何（含 tip sub-bone 消费） | 26+1常量+10嵌套 | ~959 | 中 | 已迁出 modules/geometry/panel-tip-strand.js（19 个 seam 重导出；verify-smoke 10/11=基线） |
 | G2 ✅ | split strand 几何 | 4+嵌套 | ~242 | 中 | 已迁入 modules/geometry/strand-geometry.js（G2+G3 合并批；triangulatePolygon3D 死代码删除） |
 | G3 ✅ | base strand/card/compound 几何 | 7+嵌套 | ~603 | 中 | 已迁入 modules/geometry/strand-geometry.js（createHairGeometry 5 处接线；verify-smoke 10/11=基线） |
-| G6 | sculpt 几何 | ~32 | ~860 | 中 | 与 sculpt 笔刷域相邻，注意边界 |
+| G6 ✅ | sculpt 几何 | 34+9常量 | ~752 | 中 | 已迁出 modules/geometry/sculpt-geometry.js（G6↔B2 双向边经 deps；几何域 G1-G7 全部完成；verify-smoke 10/11=基线） |
 
 > 几何合计净减 ~5.4k 行。依赖：curve-math、bone-model（数据读，不写）。
 
