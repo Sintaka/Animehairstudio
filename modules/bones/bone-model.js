@@ -102,6 +102,7 @@ export function bonesFor(lock, options = {}) {
   const bones = [];
   const points = Array.isArray(lock?.points) ? lock.points : [];
   const mainCount = points.length;
+  const strandTip = strandTipFor(lock);
   const locks = Array.isArray(options.locks) ? options.locks : [];
   const children = locks.filter((child) => child?.branchParentId === lock?.id && Array.isArray(child.points));
   // "架空" semantics: when the strand has sub-bones (split segments or branch
@@ -112,7 +113,8 @@ export function bonesFor(lock, options = {}) {
       && lock.panelSplitEnabled !== false
       && Array.isArray(lock.panelSplits)
       && lock.panelSplits.length > 0)
-    || (Array.isArray(lock?.bones) && lock.bones.length > 0);
+    || (Array.isArray(lock?.bones) && lock.bones.length > 0)
+    || !!strandTip;
   const mainRole = hasSubBones ? "root" : "geometry";
   for (let i = 0; i < mainCount; i += 1) {
     const p = points[i];
@@ -145,6 +147,21 @@ export function bonesFor(lock, options = {}) {
           });
         });
       }
+    });
+  }
+  if (strandTip && mainCount > 0 && !["panel", "surface"].includes(lock?.geometryType)) {
+    const tipName = `main.${mainCount - 1}.tip`;
+    strandTip.points.forEach((p, i) => {
+      bones.push({
+        name: `${tipName}.${i}`,
+        parent: `main.${mainCount - 1}`,
+        parentParam: strandTip.points.length > 1 ? i / (strandTip.points.length - 1) : 0,
+        p: p ? { x: Number(p.x), y: Number(p.y), z: Number(p.z) } : null,
+        orient: null,
+        scale: null,
+        kind: "tip",
+        role: "leaf"
+      });
     });
   }
   if (Array.isArray(lock?.bones)) {
@@ -218,6 +235,52 @@ export function mirrorSplitBones(bones) {
     }
   });
   return mirrored;
+}
+
+// ---- strand tip sub-bone data model (Route 1: regular-strand single tip) ----
+// lock.strandTip is optional; old files without it derive defaults in the geometry
+// layer (rest chain from the strand's own curve), never written back here.
+
+export function normalizeStrandTip(value) {
+  if (!value || !Array.isArray(value.points) || value.points.length < 2) return null;
+  const numPoint = (p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) });
+  return {
+    points: value.points.map(numPoint),
+    restPoints: Array.isArray(value.restPoints) ? value.restPoints.map(numPoint) : null,
+    twists: Array.isArray(value.twists) ? value.twists.map((v) => Number(v) || 0) : null,
+    active: value.active !== false
+  };
+}
+
+export function strandTipFor(lock) {
+  return Array.isArray(lock?.strandTip?.points) ? normalizeStrandTip(lock.strandTip) : null;
+}
+
+export function strandTipToData(tip) {
+  const normalized = normalizeStrandTip(tip);
+  if (!normalized) return null;
+  const numPoint = (p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) });
+  return {
+    points: normalized.points.map(numPoint),
+    restPoints: Array.isArray(normalized.restPoints) ? normalized.restPoints.map(numPoint) : null,
+    twists: Array.isArray(normalized.twists) ? normalized.twists.map(Number) : null,
+    active: normalized.active !== false
+  };
+}
+
+export function strandTipFromData(data, lock = null) {
+  return normalizeStrandTip(data);
+}
+
+export function mirrorStrandTip(tip) {
+  const normalized = normalizeStrandTip(tip);
+  if (!normalized) return null;
+  return {
+    ...normalized,
+    points: normalized.points.map((p) => ({ ...p, x: -p.x })),
+    restPoints: normalized.restPoints ? normalized.restPoints.map((p) => ({ ...p, x: -p.x })) : null,
+    twists: normalized.twists ? normalized.twists.map((v) => -Number(v)) : null
+  };
 }
 
 // ---- unified authored-bone registry (lock.bones) ----

@@ -31,3 +31,51 @@
 ## 4. 与死代码清理的关系
 
 - 本轮已删除 server.js 的原作本地保存死代码（原生 SaveFileDialog `/api/save-project`），Quick Save（File System Access API）继续作为唯一保存路径。
+
+
+---
+
+## 5. 本轮执行细化（2026-08-13，supervisor 落地）
+
+> 状态：进行中。把 §3「待接手 agent 补齐」落成可执行的字段/API/文件边界与分派顺序。编码铁律见 `devlog/APPJS_SPLIT_GUIDE.md` §7：改中文文件一律 UTF-8 无 BOM + CRLF，禁止 PowerShell 管道喂中文给 node stdin。
+
+### 5.1 分派顺序（文件不相交）
+
+1. **子智能体 A（基础层）**：新增 `modules/geometry/tip-sub-bone.js`（发丝无关的 tip 链/帧/权重纯函数）+ 改 `modules/bones/bone-model.js`（strand tip 数据模型 + bonesFor 输出 main.N-1.tip.i）。
+2. **子智能体 B（几何层）**：改 `modules/geometry/strand-geometry.js`（Route 1：普通发丝单尖端子骨骼）+ 改 `modules/geometry/panel-tip-strand.js`（内部改用 tip-sub-bone 原语，行为不变）。
+3. **子智能体 C（UI/编辑器层）**：改 `modules/geometry/taper-editor.js`、`modules/bones/bone-view-handles.js`、`modules/bones/segment-control.js`（普通发丝 tip 长度/曲线/手柄复用）。
+4. **主进程（supervisor）**：app.js import/decs 装配 + snapshot/restore/mirror 串行化接线 + modules/io 保存/导出接线 + 合并审查 + node --check + verify-smoke + 版本号 + 本 devlog。
+
+> B/C 只读依赖 A 的 `tip-sub-bone.js` 导出；B 与 C 文件集不相交，可并行。
+
+### 5.2 Route 1 数据模型（普通发丝单尖端子骨骼）
+
+- 新字段 `lock.strandTip`（可空；旧档 null → 内存派生默认，编辑后落盘）：
+  - `points`：authored tip 链点（世界坐标）。
+  - `restPoints`：rest 链点（派生）。
+  - `twists`：每点 twist roll。
+  - `active`：是否启用（默认 true 仅当 authored/显式开启）。
+- 新字段 `lock.strandTipStart`：t 权重起点，默认 `0.75`，clamp `[0.2, 0.95]`。
+- 权重 `tipWeightAt(t, tipStart) = clamp((t - tipStart) / max(1e-4, 1 - tipStart), 0, 1)`（t-only，无需 u）。
+- 链点数采用 `lock.points.length`（与 panel tip 同构，方便复用 `CatmullRomCurve3` 与既有序列化），restPointAt = `curve.getPoint(t)`（普通发丝中心线即自身曲线）。
+- 镜像：x 翻负 + twists 取反；快照/恢复走 app.js `snapshotState`/`restoreLock`，保存走 `registryForSave` 之外的 `strandTip` 顶层字段（本轮不并入统一 registry，骨骼系统延后）。
+
+### 5.3 Route 2 数据模型（split 发丝两管子骨骼，后续执行）
+
+- 每个管一个 tip 子骨骼：`lock.strandSplitBones` = 长度 2 的数组（kind="split"），每个含 `tip`、`spread`、`taperCurve/depthCurve`。
+- `strandSplitGap` 绝对开口改为相对 `spread` + 每管 Width/Depth 曲线；几何用 `sectionBases` 给每顶点 `[tube, weight]`。
+- `bonesFor`/`splitBonesFor` 泛化接受 strand split 描述，接同一套曲线 UI/手柄；`createSplitStrandGeometry` 两管分别跟随各自 tip 链。
+
+### 5.4 tip-sub-bone.js 拟定导出（纯函数）
+
+- `materializeTipChain(authored, restPointAt, count)` → `{ restPoints, points, twists, active }`
+- `tipChainFrameAt(restTip, tip, t, referenceFrame)` → `{ x, y, z }`
+- `tipWeightAt(t, tipStart)` → number
+- `sampleTipPosition(tip, t)` → `{x,y,z}`
+- `cloneTip(tip)` / `mirrorTip(tip)`
+
+### 5.5 验证
+
+- `node --check` 全绿；`node scripts/verify-smoke.mjs assets/presets/layered-side-bun.ahs` 基线 10/11（branch-bridge 内容相关失败与 HEAD 一致）。
+- 普通发丝开启/编辑 tip 不破坏默认扫掠（无 tip 时行为不变）；旧 .ahs 无 `strandTip` 正常加载并派生默认。
+- USDA 骨骼导出本轮仅保证不回归（骨骼/weights 正式导出延后到骨骼系统轮）。
