@@ -7676,6 +7676,7 @@ Object.assign(boneInteractionDeps, {
   strandGeometryCurve,
   strandSplitProfileData,
   strandSplitControlPoint,
+  currentStrandSplitTipChains,
   panelSplitControlPoint
 });
 // Draw / creation flow api deps batch (refactor batch B2-1): all deps are defined by this point

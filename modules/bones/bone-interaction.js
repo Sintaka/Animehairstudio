@@ -2,6 +2,7 @@
 // Extracted from app.js; coupling injected via createXxxApi(deps).
 import * as THREE from "three";
 import { splitBonesFor, materializeSplitBones } from "./bone-model.js?v=20260813-1";
+import { materializeStrandSplitBones } from "./bone-model.js?v=20260813-1";
 import { leafIndexAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { smoothSculptPointDeltas } from "../sculpt/sculpt-brush.js?v=20260806-1";
 
@@ -99,7 +100,10 @@ function beginPanelSplitHandleDrag(event) {
     && lock.curveObjects.strandSplitHandle?.visible
     ? [lock.curveObjects.strandSplitHandle]
     : [];
-  const handles = [...tipWidthHandles, ...panelHandles, ...segmentHandles, ...tipHandles, ...strandHandle];
+  const strandSplitTipHandles = lock?.geometryType === "strand" && lock.strandSplitEnabled && lock.curveObjects?.group.visible
+    ? (lock.curveObjects.strandSplitTipHandles || [])
+    : [];
+  const handles = [...tipWidthHandles, ...panelHandles, ...segmentHandles, ...tipHandles, ...strandHandle, ...strandSplitTipHandles];
   if (!handles.length) return false;
   const hit = deps.raycaster.intersectObjects(handles.filter((handle) => handle.visible), false)[0];
   if (!hit) return false;
@@ -137,6 +141,9 @@ function beginPanelSplitHandleDrag(event) {
   let tipWidthStartClientY = null;
   let tipWidthStartEdgeScreenDist = null;
   let tipWidthBones = null;
+  let splitTipTube = null;
+  let splitTipStartWorld = null;
+  let splitTipPoint = null;
   if (tipIndex != null && tipPoint != null) {
     // Selecting a tip sub-bone: remember it and point the segment controls at it.
     deps.sculptState.panelTipSelection = { lockId: lock.id, segmentIndex: tipIndex };
@@ -172,19 +179,36 @@ function beginPanelSplitHandleDrag(event) {
       tipWidthStartEdgeScreenDist = Math.max(0.0001, deps.sculptGeom.viewportPixelPoint(placement.center, rect).distanceTo(deps.sculptGeom.viewportPixelPoint(placement.point, rect)));
     }
   }
+  if (hit.object.userData.strandSplitTipTube != null) {
+    // Split-strand per-tube tip handle: anchor the drag on the tube tip chain's last
+    // point (view-plane move, same mapping as the panel tip branch).
+    const tube = hit.object.userData.strandSplitTipTube;
+    const chains = deps.currentStrandSplitTipChains(lock);
+    const chain = chains?.[tube];
+    if (chain && chain.points.length > 0) {
+      splitTipTube = tube;
+      const last = chain.points[chain.points.length - 1];
+      splitTipStartWorld = new THREE.Vector3(last.x, last.y, last.z);
+      splitTipPoint = chain.points.length - 1;
+    }
+  }
   deps.sculptState.panelSplitDrag = {
     pointerId: event.pointerId,
     lockId: lock.id,
-    kind: tipWidthIndex != null ? "tipWidth" : tipIndex != null ? "tip" : hit.object.userData.strandSplitHandle
-      ? "strand"
+    kind: tipWidthIndex != null ? "tipWidth" : tipIndex != null ? "tip" : splitTipTube != null
+      ? "strandTip"
+      : hit.object.userData.strandSplitHandle
+        ? "strand"
+        : hit.object.userData.panelSegmentIndex != null
+          ? "segment"
+          : "panel",
+    splitIndex: tipWidthSegment != null ? tipWidthSegment : tipIndex != null ? tipIndex : splitTipTube != null
+      ? splitTipTube
       : hit.object.userData.panelSegmentIndex != null
-        ? "segment"
-        : "panel",
-    splitIndex: tipWidthSegment != null ? tipWidthSegment : tipIndex != null ? tipIndex : hit.object.userData.panelSegmentIndex != null
-      ? hit.object.userData.panelSegmentIndex
-      : hit.object.userData.panelSplitIndex,
-    tipPoint,
-    tipStartWorld,
+        ? hit.object.userData.panelSegmentIndex
+        : hit.object.userData.panelSplitIndex,
+    tipPoint: splitTipPoint != null ? splitTipPoint : tipPoint,
+    tipStartWorld: splitTipStartWorld != null ? splitTipStartWorld : tipStartWorld,
     tipWidthSide,
     tipWidthIndex,
     tipWidthT,
@@ -278,6 +302,48 @@ function updatePanelSplitHandleDrag(event) {
       z: rest[point].z + delta.z
     };
     authored.restPoints = rest.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+    authored.active = true;
+    bone.tip = authored;
+    deps.updateLockGeometry(lock, { immediate: true });
+    deps.updateCurveObjects(lock, { visible: true });
+    deps.syncActiveMirror(lock, { deferGeometry: false });
+    deps.updateTopologyStats();
+    event.preventDefault();
+    return;
+  }
+  if (deps.sculptState.panelSplitDrag.kind === "strandTip") {
+    // Split-strand per-tube tip handle: view-plane move of the tube tip chain's last
+    // point (same NDC-at-depth mapping as the panel tip branch), written to
+    // bone.tip authored points.
+    const startWorld = deps.sculptState.panelSplitDrag.tipStartWorld;
+    if (!startWorld) return;
+    const startProj = startWorld.clone().project(deps.camera);
+    const ndcX = (2 * targetX) / rect.width - 1;
+    const ndcY = -((2 * targetY) / rect.height - 1);
+    const newWorld = new THREE.Vector3(ndcX, ndcY, startProj.z).unproject(deps.camera);
+    const tube = deps.sculptState.panelSplitDrag.splitIndex;
+    const point = deps.sculptState.panelSplitDrag.tipPoint;
+    const bones = materializeStrandSplitBones(lock);
+    const bone = bones?.[tube];
+    if (!bone) return;
+    const chains = deps.currentStrandSplitTipChains(lock);
+    const tip = chains?.[tube];
+    if (!tip || !tip.restPoints || point == null || point >= tip.restPoints.length) return;
+    const rest = tip.restPoints;
+    const authored = (Array.isArray(bone.tip?.points) && bone.tip.points.length === rest.length)
+      ? bone.tip
+      : {
+        points: rest.map((p) => ({ ...p })),
+        restPoints: rest.map((p) => ({ ...p })),
+        active: true
+      };
+    const delta = newWorld.clone().sub(new THREE.Vector3(rest[point].x, rest[point].y, rest[point].z));
+    authored.points[point] = {
+      x: rest[point].x + delta.x,
+      y: rest[point].y + delta.y,
+      z: rest[point].z + delta.z
+    };
+    authored.restPoints = rest.map((p) => ({ ...p }));
     authored.active = true;
     bone.tip = authored;
     deps.updateLockGeometry(lock, { immediate: true });

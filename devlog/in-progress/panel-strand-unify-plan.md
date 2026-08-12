@@ -162,3 +162,8 @@
 - `createPanelStrandGeometry`：输出 `geometry.userData.leafWeights`（与 `panelWeights` 同数组）。
 - 消费方迁移：`updateTipHighlight`、`updatePanelTipHover`、USDA 权重读取统一走 `leafWeights`（回退 `panelWeights`），行为不变。
 - 验证：`node --check` 全绿；`verify-smoke` 10/11 基线。
+
+### 6.6 split 发丝 tip 拖拽（2026-08-13）
+
+- `bone-interaction.js` 新增 `kind="strandTip"` 分支：两根管的 tip 手柄可像 panel zipper tip 一样在视平面拖动，写回 `strandSplitBones[tube].tip` 的链尾点；`app.js` 注入 `currentStrandSplitTipChains` 到 `boneInteractionDeps`。
+- 仍延后：每管独立 Width/Depth 曲线、spread 手柄、USDA skel:joints/weights。
