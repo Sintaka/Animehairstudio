@@ -19,6 +19,7 @@ import { createStrandSweepApi } from "./modules/geometry/strand-sweep.js?v=20260
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-14";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";
 import { createPresetLibraryApi } from "./modules/io/preset-library.js?v=20260812-1";
+import { createDrawFlowApi } from "./modules/geometry/draw-flow.js?v=20260812-1";
 import { createMiscStore } from "./modules/core/misc-store.js?v=20260809-12";
 import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260809-11";
 import { createScalpStore } from "./modules/scalp/scalp-store.js?v=20260809-10";
@@ -1123,41 +1124,6 @@ const DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE = Object.freeze([
   Object.freeze({ position: 1, value: 1, interpolation: "linear" })
 ]);
 
-function activeDrawClumpTemplate(stroke = null) {
-  if (sel.state.activeTool === "procedural-draw") return proceduralDrawClumpTemplate(stroke);
-  return draw.state.activeCustomDrawClumpTemplate || DRAW_CLUMP_TEMPLATES[hairState.state.drawStrandMode] || null;
-}
-
-function proceduralDrawClumpTemplate(stroke = null) {
-  const template = proceduralAccessoryTemplateData({
-    count: stroke?.proceduralAccessoryCount ?? PROCEDURAL_DRAW_DEFAULTS.accessoryCount,
-    radius: stroke?.proceduralAccessoryRadius ?? PROCEDURAL_DRAW_DEFAULTS.accessoryRadius,
-    parentWidth: 1,
-    accessoryWidth: 0.32
-  });
-  template.strands.forEach((strand) => {
-    strand.settings = {
-      sweepProfile: ROUND_SWEEP_PROFILE.map((point) => ({ ...point })),
-      radialSegments: Math.max(8, Number(strandCreationDefaults.radialSegments) || 10),
-      hairCard: false
-    };
-  });
-  const parentShape = stroke?.proceduralParentShape || strandCreationDefaults;
-  template.parentShape = {
-    taperCurve: shapePresets.cloneShapePresetValue(parentShape.taperCurve),
-    depthCurve: shapePresets.cloneShapePresetValue(parentShape.depthCurve),
-    taperCurveSecondary: shapePresets.cloneShapePresetValue(parentShape.taperCurveSecondary || parentShape.taperCurve),
-    depthCurveSecondary: shapePresets.cloneShapePresetValue(parentShape.depthCurveSecondary || parentShape.depthCurve),
-    asymmetricWidthCurve: Boolean(parentShape.asymmetricWidthCurve),
-    asymmetricDepthCurve: Boolean(parentShape.asymmetricDepthCurve),
-    pointScales: parentShape.pointScales?.map((scale) => ({ x: scale.x, z: scale.z })) || [{ x: 1, z: 1 }]
-  };
-  return template;
-}
-
-function drawModeCreatesClump() {
-  return Boolean(activeDrawClumpTemplate());
-}
 const STRAIGHT_CUT_PANEL_CURVE = [
   { position: 0, value: 0.3, interpolation: "smooth" },
   { position: 0.11, value: 0.6, interpolation: "smooth" },
@@ -1523,6 +1489,13 @@ const guideApi = createGuideSystemApi(guideDeps);
 // calls and in one batch after the last dep is defined; see devlog/in-progress/g4-refactor-map.md.
 const curveSurfaceCreateDeps = {};
 const curveSurfaceCreate = createCurveSurfaceCreateApi(curveSurfaceCreateDeps);
+
+// Draw / creation flow api (refactor batch B2-1): deps filled in one batch after the
+// boneInteractionDeps block (all const/let deps defined) and before the preset-library boot;
+// no boot-time draw-flow calls before the batch, see
+// devlog/in-progress/draw-creation-refactor-map.md.
+const drawFlowDeps = {};
+const drawFlowApi = createDrawFlowApi(drawFlowDeps);
 
 // Poly topology editing api (refactor 3d batch G7): deps filled in one batch after the last dep is
 // defined; no boot-time calls before the batch, see devlog/in-progress/g7-poly-refactor-map.md.
@@ -2455,20 +2428,20 @@ const resetLoftSurfaceDraftButton = document.querySelector("#resetLoftSurfaceDra
 // Curve Surface create api deps batch (refactor 3d batch G4): all deps are defined by this point (last dep:
 // resetLoftSurfaceDraftButton); the batch takes effect here, before the first boot-time draft/outliner calls.
 Object.assign(curveSurfaceCreateDeps, {
-  activeStrokeDynamicEnabled,
-  activeStrokeSurfaceValue,
+  activeStrokeDynamicEnabled: drawFlowApi.activeStrokeDynamicEnabled,
+  activeStrokeSurfaceValue: drawFlowApi.activeStrokeSurfaceValue,
   addLock,
   confirmCurveSurfaceDraftButton,
-  contextualPlaneAtOrigin,
+  contextualPlaneAtOrigin: drawFlowApi.contextualPlaneAtOrigin,
   createHairGeometry: strandGeometryApi.createHairGeometry,
   curveSurfaceDraftGroup,
   curveSurfaceDraftMesh,
   curveSurfaceDraftStatus,
   curveSurfaceStripWidthInput,
-  drawClumpSampleNormal,
-  drawSurfaceHitFromEvent,
+  drawClumpSampleNormal: drawFlowApi.drawClumpSampleNormal,
+  drawSurfaceHitFromEvent: drawFlowApi.drawSurfaceHitFromEvent,
   exitSetupEditors,
-  finishDrawStrandStroke,
+  finishDrawStrandStroke: drawFlowApi.finishDrawStrandStroke,
   finishPlacementFlow,
   getSelectedLock,
   loftHorizontalPreview,
@@ -2479,7 +2452,7 @@ Object.assign(curveSurfaceCreateDeps, {
   miscState: miscState.state,
   outwardNormalAtPoint,
   panelCreationDefaults,
-  processedDrawStroke,
+  processedDrawStroke: drawFlowApi.processedDrawStroke,
   pushUndoState,
   raycaster,
   rayFromViewportEvent,
@@ -2496,9 +2469,9 @@ Object.assign(curveSurfaceCreateDeps, {
   setViewportEditMode,
   STRAIGHT_CUT_PANEL_CURVE,
   strandGeometryFrameAt,
-  strokeLength,
-  strokeSurfaceIsContextual,
-  strokeSurfaceNormals,
+  strokeLength: drawFlowApi.strokeLength,
+  strokeSurfaceIsContextual: drawFlowApi.strokeSurfaceIsContextual,
+  strokeSurfaceNormals: drawFlowApi.strokeSurfaceNormals,
   syncActiveMirror,
   updateAttributeEditorMode,
   updateCount,
@@ -2509,7 +2482,7 @@ Object.assign(curveSurfaceCreateDeps, {
   updateTopologyStats,
   vectorToData,
   viewPlaneNormal,
-  worldNormalAtHit
+  worldNormalAtHit: drawFlowApi.worldNormalAtHit
 });
 // Sculpt brush geometry api deps batch (refactor 3d batch G6): all deps are defined by this
 // point (last dep: proportionalFalloffInput); the batch takes effect here, before the first
@@ -3333,13 +3306,13 @@ Object.assign(scalpBuilderDeps, {
   SCALP_BUILDER_STEPS,
   SCALP_REGION_CURVE_VISUALIZATION_ENABLED,
   SCALP_TEMPLATE_MATERIAL_REGIONS,
-  activeStrokeSurfaceValue,
+  activeStrokeSurfaceValue: drawFlowApi.activeStrokeSurfaceValue,
   addCapsuleGuide: guideApi.addCapsuleGuide,
   advancedLatticeButton,
   applyHeadTransform,
   braidAutoShowScalpInput,
   braidScalpOffsetInput,
-  braidStrokeActive,
+  braidStrokeActive: drawFlowApi.braidStrokeActive,
   capsuleGuideMode,
   configureTransformControls,
   confirmScalpBuilderButton,
@@ -3367,14 +3340,14 @@ Object.assign(scalpBuilderDeps, {
   hierarchyToggle,
   layerOffsetForLock,
   layerRootOffsetFactor,
-  liveSurfaceGuide,
-  liveSurfaceStrand,
+  liveSurfaceGuide: drawFlowApi.liveSurfaceGuide,
+  liveSurfaceStrand: drawFlowApi.liveSurfaceStrand,
   locks,
   mirrorXToggle,
   modeToolButtons,
   panelAutoShowScalpInput,
   panelScalpOffsetInput,
-  panelStrokeActive,
+  panelStrokeActive: drawFlowApi.panelStrokeActive,
   pinActiveToolSettingsPanel,
   placeAutoShowScalpInput,
   pointAlongSection,
@@ -5314,8 +5287,8 @@ Object.assign(guideDeps, {
   GUIDE_VIEW_MODES,
   REGION_CURVE_VISUALIZATION_ENABLED,
   activeScalpSurfaceMesh: scalpBuilder.activeScalpSurfaceMesh,
-  activeStrokeDynamicEnabled,
-  activeStrokeSurfaceValue,
+  activeStrokeDynamicEnabled: drawFlowApi.activeStrokeDynamicEnabled,
+  activeStrokeSurfaceValue: drawFlowApi.activeStrokeSurfaceValue,
   applyDisplayVisibilityFilters,
   attachGuideObjectTransform,
   camera,
@@ -5326,7 +5299,7 @@ Object.assign(guideDeps, {
   clearStrandSelectionState,
   componentEditModeActive,
   configureTransformControls,
-  contextualPlaneAtOrigin,
+  contextualPlaneAtOrigin: drawFlowApi.contextualPlaneAtOrigin,
   createOutlinerVisibilityToggle,
   createScalpGuideOutlinerRow: scalpBuilder.createScalpGuideOutlinerRow,
   curveLatticeControls,
@@ -5339,7 +5312,7 @@ Object.assign(guideDeps, {
   curveLatticeVerticalLoopsValue,
   dataToVector,
   deselectStrandsForGuideEditor,
-  drawSurfaceHitFromEvent,
+  drawSurfaceHitFromEvent: drawFlowApi.drawSurfaceHitFromEvent,
   filterCurveLatticesToGroup,
   getSelectedLock,
   guideControls,
@@ -5363,7 +5336,7 @@ Object.assign(guideDeps, {
   pushUndoState,
   rayFromViewportEvent,
   raycaster,
-  refreshLiveSurfaceOptions,
+  refreshLiveSurfaceOptions: drawFlowApi.refreshLiveSurfaceOptions,
   refreshRebuildCurveDialog,
   renderLockList,
   renderer,
@@ -5374,7 +5347,7 @@ Object.assign(guideDeps, {
   sculptBrushDock,
   sculptState: sculptState.state,
   sel: sel.state,
-  selectedCurveLatticeGuide,
+  selectedCurveLatticeGuide: drawFlowApi.selectedCurveLatticeGuide,
   setActiveTool,
   setOutlinerTab,
   setScalpGuideVisibility: scalpBuilder.setScalpGuideVisibility,
@@ -5383,7 +5356,7 @@ Object.assign(guideDeps, {
   setViewportEditMode,
   showOutlinerContextMenu,
   strandRegionDisplayLabel,
-  strokeSurfaceIsContextual,
+  strokeSurfaceIsContextual: drawFlowApi.strokeSurfaceIsContextual,
   subdivideScalpBuilderCage: scalpBuilder.subdivideScalpBuilderCage,
   surfaceGuideColorInput,
   surfaceGuideDefaults,
@@ -5412,20 +5385,20 @@ Object.assign(guideDeps, {
 // Poly topology api deps batch (refactor 3d batch G7): all deps defined by this point (last dep:
 // guideApi); the batch takes effect here, before the first runtime poly tool calls.
 Object.assign(polyToolsDeps, {
-  activeStrokeSurfaceValue,
+  activeStrokeSurfaceValue: drawFlowApi.activeStrokeSurfaceValue,
   addLock,
-  contextualPlaneAtOrigin,
+  contextualPlaneAtOrigin: drawFlowApi.contextualPlaneAtOrigin,
   curveGroup,
   draw: draw.state,
-  drawSurfaceHitFromEvent,
+  drawSurfaceHitFromEvent: drawFlowApi.drawSurfaceHitFromEvent,
   fitPointAttributes,
   getSelectedLock,
   guideApi,
   hairState: hairState.state,
   headMeshes,
   lastPointer,
-  liveSurfaceGuide,
-  liveSurfaceStrand,
+  liveSurfaceGuide: drawFlowApi.liveSurfaceGuide,
+  liveSurfaceStrand: drawFlowApi.liveSurfaceStrand,
   locks,
   normalizeHairLayer,
   polyBrushSpacingInput,
@@ -5438,7 +5411,7 @@ Object.assign(polyToolsDeps, {
   renderer,
   renderLockList,
   selectLock,
-  selectedCurveLatticeGuide,
+  selectedCurveLatticeGuide: drawFlowApi.selectedCurveLatticeGuide,
   sel: sel.state,
   sculptState: sculptState.state,
   strandVisibleForDisplay,
@@ -5451,7 +5424,7 @@ Object.assign(polyToolsDeps, {
   updatePlacementStatus,
   updateTopologyStats,
   viewportDrawLayerInput,
-  worldNormalAtHit,
+  worldNormalAtHit: drawFlowApi.worldNormalAtHit,
 });
 
 
@@ -5796,7 +5769,7 @@ function setActiveTool(tool) {
     exitSetupEditors();
   }
   if (tool !== "place") finishPlacementFlow();
-  if (!["draw", "procedural-draw", "braid", "panel"].includes(tool)) finishDrawStrandStroke(null, { cancel: true });
+  if (!["draw", "procedural-draw", "braid", "panel"].includes(tool)) drawFlowApi.finishDrawStrandStroke(null, { cancel: true });
   if (!["draw", "procedural-draw", "braid", "panel"].includes(tool)) drawStrandBrushCursor.visible = false;
   if (previousTool === "poly" && tool !== "poly") {
     polyToolsApi.finishPolyBrushStroke(null, { cancel: true });
@@ -5882,7 +5855,7 @@ function setActiveTool(tool) {
 
 function setDrawStrandMode(mode) {
   if (!["standard", "clump", "ponytail-clump", "coil"].includes(mode)) return;
-  finishDrawStrandStroke(null, { cancel: true });
+  drawFlowApi.finishDrawStrandStroke(null, { cancel: true });
   hairState.state.drawStrandMode = mode;
   draw.state.activeCustomDrawClumpTemplate = null;
   drawBrushPresetInput.value = mode;
@@ -6003,7 +5976,7 @@ function refreshActiveBrushSizeCursor(event) {
     sculptGeom.updateSculptBrushCursor(event);
     return;
   }
-  updateDrawStrandBrushCursor(event);
+  drawFlowApi.updateDrawStrandBrushCursor(event);
 }
 
 function refreshActiveBrushSizeScale() {
@@ -6020,7 +5993,7 @@ function refreshActiveBrushSizeScale() {
     sculptGeom.syncSculptBrushControls();
     return;
   }
-  const cursorScale = activeStrokeBrushSize() * (braidStrokeActive() ? 1 / 3 : 1);
+  const cursorScale = drawFlowApi.activeStrokeBrushSize() * (drawFlowApi.braidStrokeActive() ? 1 / 3 : 1);
   setDrawStrandBrushCursorScale(cursorScale);
 }
 
@@ -6339,7 +6312,7 @@ function finishGuideObjectTransform() {
   guideState.state.activeGuideObjectTransform = null;
   if (!snapshot?.guide) return;
   guideApi.syncGuideInputs(snapshot.guide);
-  refreshLiveSurfaceOptions();
+  drawFlowApi.refreshLiveSurfaceOptions();
   attachGuideObjectTransform();
 }
 
@@ -7076,7 +7049,7 @@ function updateViewPlaneGrid() {
       ? sculptState.state.curveSurfaceDraft?.activeStroke?.freePlane
       : sculptState.state.drawStrandStroke?.freePlane;
   const freeDrawActive = strokeToolActive && Boolean(activeFreePlane);
-  const originPlaneActive = strokeToolActive && activeStrokeSurfaceValue() === "contextual-plane";
+  const originPlaneActive = strokeToolActive && drawFlowApi.activeStrokeSurfaceValue() === "contextual-plane";
   const strandPointActive = Boolean(point) && lock.id === sel.state.selectedId;
   const latticePointActive = Boolean(latticePoint) && latticeGuide.id === sel.state.activeCurveLatticeGuideId;
   const expectedMoveHandle = strandPointActive && pullMoveActive() ? pullTarget : selectedMoveHandle;
@@ -8267,7 +8240,7 @@ const branchSweep = createBranchSweepApi({
   closeTaperCurveEditor: taperEditor.closeTaperCurveEditor, compatibleSelectedLocks, creationToolActive, editSelectedLocks,
   getSelectedLock, profileToCanvas, renderHairCardCoveragePath, renderProfilePreview,
   strandRegionDisplayLabel, syncShapePresetSelects: presetLibraryApi.syncShapePresetSelects, taperMeshPointExtentPerValue: taperEditor.taperMeshPointExtentPerValue,
-  taperMeshPointFrame: taperEditor.taperMeshPointFrame, taperSamples: taperEditor.taperSamples, updateDrawStrandPreview, updateViewportStatsVisibility, locks,
+  taperMeshPointFrame: taperEditor.taperMeshPointFrame, taperSamples: taperEditor.taperSamples, updateDrawStrandPreview: drawFlowApi.updateDrawStrandPreview, updateViewportStatsVisibility, locks,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT, TWIST_CURVE_VALUE_MAX, STRAND_GROUPS,
   sculptState: sculptState.state, projectState: projectState.state, selState: sel.state, miscState: miscState.state
 });
@@ -8507,7 +8480,7 @@ function refreshMaterialUsers(materialId) {
     if ((lock.materialId || DEFAULT_HAIR_MATERIAL_ID) === materialId) applyMaterialDefinitionToLock(lock);
   });
   updateStrandSelectionHighlight();
-  if (sculptState.state.drawStrandStroke) updateDrawStrandPreview();
+  if (sculptState.state.drawStrandStroke) drawFlowApi.updateDrawStrandPreview();
   renderLockList();
 }
 
@@ -8989,7 +8962,7 @@ Object.assign(taperEditorDeps, {
   updateLockGeometry,
   rebuildLockGeometry,
   updateCurveObjects,
-  updateDrawStrandPreview,
+  updateDrawStrandPreview: drawFlowApi.updateDrawStrandPreview,
   syncActiveMirror,
   mirrorPartnerFor,
   updateInteractionLocks,
@@ -9043,7 +9016,7 @@ Object.assign(segmentControlDeps, {
   getSelectedLock,
   isPanelGeometry,
   pushUndoState,
-  updateDrawStrandPreview,
+  updateDrawStrandPreview: drawFlowApi.updateDrawStrandPreview,
   updateLockGeometry,
   rebuildCurveObjects,
   syncActiveMirror,
@@ -9102,6 +9075,98 @@ Object.assign(boneInteractionDeps, {
   strandSplitProfileData,
   strandSplitControlPoint,
   panelSplitControlPoint
+});
+// Draw / creation flow api deps batch (refactor batch B2-1): all deps are defined by this point
+// (last const/let deps: shapePresets / branchHierarchy / draw DOM inputs); the batch takes effect
+// here, before the preset-library boot (loadBraidMeshPreset -> updatePlacementStatus ->
+// drawFlowApi.selectedCurveLatticeGuide) and before all draw-flow pointer/UI listener registrations.
+Object.assign(drawFlowDeps, {
+  sel: sel.state,
+  sculptState: sculptState.state,
+  hairState: hairState.state,
+  draw: draw.state,
+  camera,
+  renderer,
+  raycaster,
+  locks,
+  guides,
+  viewPlaneFill,
+  viewPlaneGrid,
+  DRAW_CLUMP_TEMPLATE,
+  DRAW_CLUMP_TEMPLATES,
+  PROCEDURAL_DRAW_DEFAULTS,
+  DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE,
+  DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE,
+  braidMeshPresets,
+  braidCreationDefaults,
+  strandCreationDefaults,
+  panelCreationDefaults,
+  drawStrandSurfaceInput,
+  drawSurfaceDynamicButton,
+  drawStrandSmoothingInput,
+  drawStrandCurveStepInput,
+  braidSmoothingInput,
+  braidCurveStepInput,
+  panelSmoothingInput,
+  panelCurveStepInput,
+  drawToolSizeInput,
+  braidToolSizeInput,
+  panelToolSizeInput,
+  drawContinueFromTipInput,
+  braidContinueFromTipInput,
+  drawSurfaceNormalInfluenceInput,
+  panelSurfaceNormalInfluenceInput,
+  drawStrandPreview,
+  drawStrandMirrorPreview,
+  drawStrandVolumePreview,
+  drawStrandMirrorVolumePreview,
+  drawStrandClumpVolumePreviews,
+  drawStrandClumpMirrorPreviews,
+  drawStrandBrushCursor,
+  scalpBuilder,
+  branchHierarchy,
+  strandGeometryApi,
+  shapePresets,
+  addLock,
+  updateLockGeometry,
+  rebuildCurveObjects,
+  updateCurveObjects,
+  selectLock,
+  getSelectedLock,
+  renderLockList,
+  updateCount,
+  pushUndoState,
+  updateInteractionLocks,
+  updateAttributeEditorMode,
+  createMirrorPartnerForNewLock,
+  mirrorPartnerFor,
+  syncMirrorPartnerFromLock,
+  syncActiveMirror,
+  syncLockFromCurve,
+  setDrawStrandBrushCursorScale,
+  ensureDrawClumpPreviewCount,
+  groupDefaultsFor,
+  pointsWithLayerOffset,
+  normalizeHairLayer,
+  strandDisplayColor,
+  strandUsesDoubleSidedMaterial,
+  createHairMaterial,
+  materialForLock,
+  setAnimeHairBaseColor,
+  clonePanelSplits,
+  mirroredVector,
+  viewPlaneNormal,
+  updateViewPlaneGrid,
+  rayFromViewportEvent,
+  headMeshes,
+  outwardNormalAtPoint,
+  activeCreationShapeDefaults,
+  updatePlacementStatus,
+  applyPlacedStrandScaleProfile,
+  nextClumpName,
+  createClumpFromLocks,
+  updateClumpMembers,
+  applyProceduralBranchSettings
 });
 
 
@@ -9751,7 +9816,7 @@ function setMirrorXEditing(enabled) {
   mirrorXToggle.title = sculptState.state.mirrorXEditing
     ? "X axis mirror is active. New strands create linked mirror instances"
     : "Enable X axis mirror. New strands will create linked mirror instances";
-  if (sculptState.state.drawStrandStroke) updateDrawStrandPreview();
+  if (sculptState.state.drawStrandStroke) drawFlowApi.updateDrawStrandPreview();
   if (sel.state.activeTool === "curve-surface") curveSurfaceCreate.updateCurveSurfacePreview();
   guides.filter((guide) => guide.type === "curve-lattice").forEach(guideApi.updateCurveLatticeHandleColors);
   guides.filter((guide) => guide.type === "capsule").forEach((guide) => {
@@ -10390,9 +10455,9 @@ Object.assign(presetLibraryDeps, {
   undoHistory, redoHistory, locks,
   shapePresets, scalpBuilder, taperEditor,
   updateLockGeometry, getSelectedLock, updatePlacementStatus, restoreState, snapshotState,
-  updateHistoryButtons, pushUndoState, updateDrawStrandPreview, syncCreationShapeInputs,
-  setDrawStrandMode, setDrawStrandBrushCursorScale, activeStrokeBrushSize,
-  normalizedLiveSurfaceSelection, drawSurfaceDynamicEnabled, setDrawSurfaceDynamicEnabled,
+  updateHistoryButtons, pushUndoState, updateDrawStrandPreview: drawFlowApi.updateDrawStrandPreview, syncCreationShapeInputs,
+  setDrawStrandMode, setDrawStrandBrushCursorScale, activeStrokeBrushSize: drawFlowApi.activeStrokeBrushSize,
+  normalizedLiveSurfaceSelection: drawFlowApi.normalizedLiveSurfaceSelection, drawSurfaceDynamicEnabled: drawFlowApi.drawSurfaceDynamicEnabled, setDrawSurfaceDynamicEnabled: drawFlowApi.setDrawSurfaceDynamicEnabled,
   pushPointOutsideHead, updateViewportStatsVisibility,
   presetLibrary, presetLibraryToggle, presetLibraryGrid, presetLibraryStatus, presetFilterButtons,
   shapePresetSelects, shapePresetButtons,
@@ -10413,8 +10478,8 @@ presetLibraryApi.loadBraidMeshPreset("chain-links", "./assets/chainlinks.obj?v=2
 presetLibraryApi.setupShapePresetUi();
 const creationPresets = createCreationPresetsApi({
   normalizeHairLayer, normalizeClumpBrushTemplate,
-  normalizeToolPresetLibrary, emptyToolPresetLibrary, activeStrokeSurfaceValue,
-  drawSurfaceDynamicEnabled, createClumpBrushTemplate, normalizeBraidDimensions: presetLibraryApi.normalizeBraidDimensions,
+  normalizeToolPresetLibrary, emptyToolPresetLibrary, activeStrokeSurfaceValue: drawFlowApi.activeStrokeSurfaceValue,
+  drawSurfaceDynamicEnabled: drawFlowApi.drawSurfaceDynamicEnabled, createClumpBrushTemplate, normalizeBraidDimensions: presetLibraryApi.normalizeBraidDimensions,
   getSelectedLock, syncCreationShapeInputs, updatePlacementStatus, applyCreationToolSettings: presetLibraryApi.applyCreationToolSettings,
   braidCreationDefaults, strandCreationDefaults, DEFAULT_BRAID_MESH_PRESET,
   CREATION_PRESET_STORAGE_KEY, LEGACY_CLUMP_PRESET_STORAGE_KEY,
@@ -11323,444 +11388,6 @@ function createCurvePoints(lock) {
   ];
 }
 
-function selectedCurveLatticeGuide() {
-  const guide = guides.find((item) => item.id === sel.state.activeCurveLatticeGuideId && item.type === "curve-lattice") || null;
-  if (guide?.standalone) return guide;
-  if (!CURVE_LATTICE_FEATURE_ENABLED && !(GROUP_CURVE_FEATURE_ENABLED && sel.state.selectedStrandGroup)) return null;
-  return guide;
-}
-
-function braidStrokeActive() {
-  return sel.state.activeTool === "braid";
-}
-
-function proceduralDrawActive() {
-  return sel.state.activeTool === "procedural-draw";
-}
-
-function panelStrokeActive() {
-  return sel.state.activeTool === "panel";
-}
-
-function activeStrokeSurfaceInput() {
-  return drawStrandSurfaceInput;
-}
-
-function activeStrokeSurfaceValue() {
-  return activeStrokeSurfaceInput().value;
-}
-
-function normalizedLiveSurfaceSelection(value) {
-  if (value === "head-contextual") return { surface: "head", dynamic: true };
-  if (value === "head-conform") return { surface: "head", dynamic: false };
-  return { surface: String(value || "head"), dynamic: null };
-}
-
-function activeStrokeDynamicEnabled(surfaceMode = activeStrokeSurfaceValue()) {
-  return surfaceMode !== "contextual-plane" && drawSurfaceDynamicEnabled();
-}
-
-function drawSurfaceDynamicEnabled() {
-  return drawSurfaceDynamicButton.getAttribute("aria-pressed") === "true";
-}
-
-function setDrawSurfaceDynamicEnabled(enabled) {
-  drawSurfaceDynamicButton.setAttribute("aria-pressed", String(Boolean(enabled)));
-}
-
-function setActiveStrokeSurfaceValue(value) {
-  const input = activeStrokeSurfaceInput();
-  const normalized = normalizedLiveSurfaceSelection(value);
-  if (![...input.options].some((option) => option.value === normalized.surface)) return false;
-  input.value = normalized.surface;
-  if (normalized.dynamic !== null) setDrawSurfaceDynamicEnabled(normalized.dynamic);
-  input.dispatchEvent(new Event("change", { bubbles: true }));
-  return true;
-}
-
-function liveSurfaceStrandId(surfaceMode = activeStrokeSurfaceValue()) {
-  return surfaceMode.startsWith("strand:") ? surfaceMode.slice("strand:".length) : null;
-}
-
-function liveSurfaceStrand(surfaceMode = activeStrokeSurfaceValue()) {
-  const strandId = liveSurfaceStrandId(surfaceMode);
-  return strandId ? locks.find((lock) => lock.id === strandId) || null : null;
-}
-
-function liveSurfaceGuideId(surfaceMode = activeStrokeSurfaceValue()) {
-  return surfaceMode.startsWith("guide:") ? surfaceMode.slice("guide:".length) : null;
-}
-
-function guideSupportsLiveSurface(guide) {
-  return Boolean(
-    guide?.type === "capsule"
-    || (guide?.type === "curve-lattice" && guide.standalone)
-  );
-}
-
-function liveSurfaceGuide(surfaceMode = activeStrokeSurfaceValue()) {
-  const guideId = liveSurfaceGuideId(surfaceMode);
-  return guideId
-    ? guides.find((guide) => guide.id === guideId && guideSupportsLiveSurface(guide)) || null
-    : null;
-}
-
-function refreshLiveSurfaceOptions() {
-  const normalized = normalizedLiveSurfaceSelection(activeStrokeSurfaceValue());
-  const previousValue = normalized.surface;
-  if (normalized.dynamic !== null) setDrawSurfaceDynamicEnabled(normalized.dynamic);
-  const select = drawStrandSurfaceInput;
-  select.querySelector('optgroup[data-live-surface-guides]')?.remove();
-  select.querySelector('optgroup[data-live-surface-strands]')?.remove();
-  const surfaceGuides = guides.filter(guideSupportsLiveSurface);
-  if (surfaceGuides.length) {
-    const group = document.createElement("optgroup");
-    group.label = "Guides";
-    group.dataset.liveSurfaceGuides = "true";
-    surfaceGuides.forEach((guide) => {
-      const option = document.createElement("option");
-      option.value = `guide:${guide.id}`;
-      option.textContent = guide.name;
-      option.dataset.userCreatedLiveSurface = "true";
-      group.appendChild(option);
-    });
-    select.appendChild(group);
-  }
-  const strandGuides = locks.filter((lock) => lock.liveSurfaceGuide);
-  if (strandGuides.length) {
-    const group = document.createElement("optgroup");
-    group.label = "Strand Guides";
-    group.dataset.liveSurfaceStrands = "true";
-    strandGuides.forEach((lock) => {
-      const option = document.createElement("option");
-      option.value = `strand:${lock.id}`;
-      option.textContent = lock.name;
-      option.dataset.userCreatedLiveSurface = "true";
-      group.appendChild(option);
-    });
-    select.appendChild(group);
-  }
-  drawStrandSurfaceInput.value = [...drawStrandSurfaceInput.options].some((option) => option.value === previousValue)
-    ? previousValue
-    : "head";
-}
-
-
-function activeStrokeBrushSize() {
-  if (braidStrokeActive()) return Number(braidCreationDefaults.braidWidth) * Number(braidToolSizeInput.value);
-  if (panelStrokeActive()) return Number(panelCreationDefaults.width) * Number(panelToolSizeInput.value);
-  return Number(strandCreationDefaults.width) * Number(drawToolSizeInput.value);
-}
-
-function activeStrokeBrushDepth() {
-  if (braidStrokeActive()) return Number(braidCreationDefaults.braidDepth) * Number(braidToolSizeInput.value);
-  if (panelStrokeActive()) return Number(panelCreationDefaults.panelThickness) * Number(panelToolSizeInput.value);
-  return Number(strandCreationDefaults.depth) * Number(drawToolSizeInput.value);
-}
-
-function strokeSurfaceIsContextual(
-  surfaceMode = activeStrokeSurfaceValue(),
-  dynamic = activeStrokeDynamicEnabled(surfaceMode)
-) {
-  if (typeof surfaceMode !== "string") return false;
-  return surfaceMode === "contextual-plane" || Boolean(dynamic);
-}
-
-function contextualPlaneAtOrigin() {
-  const normal = viewPlaneNormal();
-  const origin = new THREE.Vector3(0, 0, 0);
-  return {
-    origin,
-    normal,
-    plane: new THREE.Plane().setFromNormalAndCoplanarPoint(normal, origin)
-  };
-}
-
-function drawSurfaceHitFromEvent(event, { root = false, excludeLockId = null } = {}) {
-  rayFromViewportEvent(event);
-  const surfaceMode = activeStrokeSurfaceValue();
-  const strandSurface = liveSurfaceStrand(surfaceMode);
-  const guideSurface = liveSurfaceGuide(surfaceMode);
-  if (liveSurfaceGuideId(surfaceMode)) {
-    if (!guideSurface || guideSurface.mesh.visible === false) return null;
-    return raycaster.intersectObjects(
-      [guideSurface.mesh, guideSurface.rootMesh]
-        .filter((object) => object && object.visible !== false),
-      false
-    )[0] || null;
-  }
-  if (liveSurfaceStrandId(surfaceMode)) {
-    if (!strandSurface || strandSurface.id === excludeLockId || strandSurface.mesh.visible === false) return null;
-    return raycaster.intersectObject(strandSurface.mesh, false)[0] || null;
-  }
-  if (surfaceMode === "contextual-plane") {
-    const contextualPlane = contextualPlaneAtOrigin();
-    const point = raycaster.ray.intersectPlane(contextualPlane.plane, new THREE.Vector3());
-    return point ? { point, contextualPlaneNormal: contextualPlane.normal } : null;
-  }
-  if (root) {
-    return raycaster.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0]
-      || raycaster.intersectObjects(headMeshes(), false)[0]
-      || null;
-  }
-  if (surfaceMode === "head") {
-    return raycaster.intersectObjects(headMeshes(), false)[0] || null;
-  }
-  if (surfaceMode === "lattice") {
-    const lattice = selectedCurveLatticeGuide();
-    return lattice
-      ? raycaster.intersectObjects([lattice.mesh, lattice.rootMesh].filter((object) => object && object.visible !== false), false)[0] || null
-      : null;
-  }
-  return raycaster.intersectObjects(headMeshes(), false)[0] || null;
-}
-
-function worldNormalAtHit(hit) {
-  if (hit.contextualPlaneNormal) return hit.contextualPlaneNormal.clone();
-  const normalMatrix = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
-  const normal = hit.face.normal.clone().applyMatrix3(normalMatrix).normalize();
-  if (normal.dot(raycaster.ray.direction) > 0) normal.negate();
-  return normal;
-}
-
-
-function drawSampleFromHit(hit, root = false, scalpRegion = "unassigned", scalpOffset = scalpBuilder.activeStrokeScalpOffset()) {
-  const normal = worldNormalAtHit(hit);
-  const drawOffsetDistance = scalpOffset * ROOT_SCALP_OFFSET_DISTANCE;
-  const offset = root
-    ? scalpBuilder.rootScalpOffsetDistance(THREE.MathUtils.clamp(activeCreationShapeDefaults().rootScalpOffset + scalpOffset, -1, 1))
-    : Math.max(0.018, activeStrokeBrushSize() * 0.12) + drawOffsetDistance;
-  return {
-    point: hit.point.clone().addScaledVector(normal, offset),
-    surfacePoint: hit.point.clone(),
-    normal,
-    onSurface: true
-  };
-}
-
-function updateDrawStrandBrushCursor(event) {
-  if (!["draw", "procedural-draw", "braid", "panel"].includes(sel.state.activeTool) || sculptState.state.drawStrandStroke?.freePlane) {
-    drawStrandBrushCursor.visible = false;
-    return;
-  }
-  const extensionLock = selectedTipContinuationLock(event);
-  const cursorScale = activeStrokeBrushSize() * (braidStrokeActive() ? 1 / 3 : 1);
-  if (extensionLock) {
-    drawStrandBrushCursor.visible = true;
-    drawStrandBrushCursor.position.copy(extensionLock.points.at(-1));
-    drawStrandBrushCursor.quaternion.copy(camera.quaternion);
-    setDrawStrandBrushCursorScale(cursorScale);
-    return;
-  }
-  const branchStart = branchHierarchy.selectedDrawBranchPoint(event);
-  if (branchStart) {
-    drawStrandBrushCursor.visible = true;
-    drawStrandBrushCursor.position.copy(branchStart.point);
-    drawStrandBrushCursor.quaternion.copy(camera.quaternion);
-    setDrawStrandBrushCursorScale(cursorScale);
-    return;
-  }
-  const hit = drawSurfaceHitFromEvent(event, { root: true });
-  if (!hit) {
-    drawStrandBrushCursor.visible = false;
-    return;
-  }
-  const normal = worldNormalAtHit(hit);
-  drawStrandBrushCursor.visible = true;
-  drawStrandBrushCursor.position.copy(hit.point).addScaledVector(
-    normal,
-    0.006 + scalpBuilder.activeStrokeScalpOffset() * ROOT_SCALP_OFFSET_DISTANCE
-  );
-  drawStrandBrushCursor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
-  setDrawStrandBrushCursorScale(cursorScale);
-}
-
-function strokeLength(samples) {
-  let length = 0;
-  for (let i = 1; i < samples.length; i += 1) length += samples[i - 1].point.distanceTo(samples[i].point);
-  return length;
-}
-
-function resampleDrawStroke(samples, count) {
-  if (samples.length < 2) return samples.map((sample) => ({ ...sample, point: sample.point.clone() }));
-  const distances = [0];
-  for (let i = 1; i < samples.length; i += 1) {
-    distances.push(distances[i - 1] + samples[i - 1].point.distanceTo(samples[i].point));
-  }
-  const total = distances.at(-1);
-  if (total < 0.0001) return samples.slice(0, 1).map((sample) => ({ ...sample, point: sample.point.clone() }));
-  const result = [];
-  let segment = 1;
-  for (let i = 0; i < count; i += 1) {
-    const target = total * (i / Math.max(1, count - 1));
-    while (segment < distances.length - 1 && distances[segment] < target) segment += 1;
-    const before = samples[segment - 1];
-    const after = samples[segment];
-    const span = Math.max(0.0001, distances[segment] - distances[segment - 1]);
-    const alpha = THREE.MathUtils.clamp((target - distances[segment - 1]) / span, 0, 1);
-    const normal = before.normal && after.normal
-      ? before.normal.clone().lerp(after.normal, alpha).normalize()
-      : before.normal?.clone() || after.normal?.clone() || null;
-    result.push({
-      point: before.point.clone().lerp(after.point, alpha),
-      surfacePoint: before.surfacePoint && after.surfacePoint
-        ? before.surfacePoint.clone().lerp(after.surfacePoint, alpha)
-        : null,
-      normal,
-      onSurface: before.onSurface && after.onSurface
-    });
-  }
-  return result;
-}
-
-function processedDrawStroke(
-  samples,
-  smoothing = Number(drawStrandSmoothingInput.value),
-  curveStep = Number(drawStrandCurveStepInput.value)
-) {
-  const length = strokeLength(samples);
-  const spacing = THREE.MathUtils.clamp(Number(curveStep), 0.12, 0.6);
-  const count = THREE.MathUtils.clamp(Math.round(length / spacing) + 1, 3, 18);
-  const result = resampleDrawStroke(samples, count);
-  if (result.length < 3 && result.length === 2) {
-    result.splice(1, 0, {
-      ...result[0],
-      point: result[0].point.clone().lerp(result[1].point, 0.5)
-    });
-  }
-  const passes = Math.round(smoothing * 4);
-  const strength = THREE.MathUtils.lerp(0.18, 0.62, smoothing);
-  for (let pass = 0; pass < passes; pass += 1) {
-    const previous = result.map((sample) => sample.point.clone());
-    for (let i = 1; i < result.length - 1; i += 1) {
-      const target = previous[i - 1].clone().add(previous[i + 1]).multiplyScalar(0.5);
-      const delta = target.sub(previous[i]).multiplyScalar(strength);
-      if (result[i].onSurface && result[i].normal) delta.projectOnPlane(result[i].normal);
-      result[i].point.copy(previous[i]).add(delta);
-    }
-  }
-  return result;
-}
-
-function strokeSurfaceNormals(samples, fallback = null) {
-  const firstKnown = samples.find((sample) => sample.normal)?.normal || fallback;
-  let previous = firstKnown?.clone()?.normalize() || null;
-  return samples.map((sample) => {
-    const normal = sample.normal?.clone()?.normalize() || previous?.clone() || null;
-    if (normal && previous && normal.dot(previous) < 0) normal.negate();
-    if (normal) previous = normal.clone();
-    return normal;
-  });
-}
-
-function drawClumpFrame(curve, t, normal = null) {
-  const point = curve.getPoint(t);
-  const y = curve.getTangent(t).normalize();
-  const z = (normal?.clone() || outwardNormalAtPoint(point, y)).projectOnPlane(y).normalize();
-  if (z.lengthSq() < 0.0001) z.copy(outwardNormalAtPoint(point, y));
-  const x = new THREE.Vector3().crossVectors(y, z).normalize();
-  return { point, x, y, z };
-}
-
-function nearestCurveParameter(curve, point, divisions = 96) {
-  let nearestT = 0;
-  let nearestDistance = Infinity;
-  for (let index = 0; index <= divisions; index += 1) {
-    const t = index / divisions;
-    const distance = curve.getPoint(t).distanceToSquared(point);
-    if (distance < nearestDistance) {
-      nearestDistance = distance;
-      nearestT = t;
-    }
-  }
-  return nearestT;
-}
-
-function drawClumpSampleNormal(normals, t) {
-  if (!normals.length) return null;
-  const scaled = THREE.MathUtils.clamp(t, 0, 1) * Math.max(0, normals.length - 1);
-  const before = normals[Math.floor(scaled)];
-  const after = normals[Math.min(normals.length - 1, Math.ceil(scaled))];
-  if (before && after) return before.clone().lerp(after, scaled - Math.floor(scaled)).normalize();
-  return before?.clone() || after?.clone() || null;
-}
-
-function drawClumpTemplateVector(point) {
-  return Array.isArray(point)
-    ? new THREE.Vector3(Number(point[0]), Number(point[1]), Number(point[2]))
-    : new THREE.Vector3(Number(point.x), Number(point.y), Number(point.z));
-}
-
-function applyDrawClumpTemplateSettings(target, template) {
-  const settings = template?.settings || {};
-  [
-    "strandRotation", "twist", "widthScale", "depthScale", "profileTrimLeft", "profileTrimRight", "profileTrimRoundness",
-    "hairCard", "strandSplitEnabled", "strandSplitPosition", "strandSplitHeight", "strandSplitGap",
-    "profileOffset", "radialSegments", "lengthSegments", "dynamicDensity", "densityAggression", "twistDensity",
-    "asymmetricWidthCurve", "asymmetricDepthCurve", "centerAsymmetricProfile"
-  ].forEach((key) => {
-    if (settings[key] !== undefined) target[key] = settings[key];
-  });
-  ["taperCurve", "depthCurve", "taperCurveSecondary", "depthCurveSecondary", "twistCurve", "sweepProfile"].forEach((key) => {
-    if (settings[key]) target[key] = shapePresets.cloneShapePresetValue(settings[key]);
-  });
-  return target;
-}
-
-function drawClumpStrandMaps(samples, brushSize, template = activeDrawClumpTemplate() || DRAW_CLUMP_TEMPLATE) {
-  const centerPoints = samples.map((sample) => sample.point.clone());
-  if (centerPoints.length < 2) return [{ points: centerPoints, pointSurfaceNormals: [] }];
-  const coherentNormals = strokeSurfaceNormals(samples);
-
-  const sourceCurves = template.strands.map((strand) => (
-    new THREE.CatmullRomCurve3(strand.points.map(drawClumpTemplateVector), false, "centripetal", 0.5)
-  ));
-  const sourceCenter = sourceCurves[0];
-  const targetCurve = new THREE.CatmullRomCurve3(centerPoints, false, "centripetal", 0.5);
-  const lateralScale = brushSize / template.baseWidth;
-  const lengthScale = targetCurve.getLength() / Math.max(0.001, sourceCenter.getLength());
-
-  return [
-    {
-      points: centerPoints,
-      pointSurfaceNormals: coherentNormals
-    },
-    ...template.strands.slice(1).map((strand) => {
-      if (Array.isArray(strand.radialOffset)) {
-        const offsetX = Number(strand.radialOffset[0] || 0) * lateralScale;
-        const offsetZ = Number(strand.radialOffset[1] || 0) * lateralScale;
-        const parameters = centerPoints.map((_, index) => index / Math.max(1, centerPoints.length - 1));
-        return {
-          points: parameters.map((t) => {
-            const targetNormal = drawClumpSampleNormal(coherentNormals, t);
-            const targetFrame = drawClumpFrame(targetCurve, t, targetNormal);
-            const taperScale = proceduralAccessoryTaperScale(template.parentShape, t, offsetX, offsetZ);
-            return targetFrame.point.clone()
-              .addScaledVector(targetFrame.x, offsetX * taperScale.x)
-              .addScaledVector(targetFrame.z, offsetZ * taperScale.z);
-          }),
-          pointSurfaceNormals: parameters.map((t) => drawClumpSampleNormal(coherentNormals, t))
-        };
-      }
-      const sourcePoints = strand.points.map(drawClumpTemplateVector);
-      const parameters = sourcePoints.map((point) => nearestCurveParameter(sourceCenter, point));
-      return {
-        points: sourcePoints.map((sourcePoint, index) => {
-          const t = parameters[index];
-          const sourceFrame = drawClumpFrame(sourceCenter, t, new THREE.Vector3(0, 0, 1));
-          const targetNormal = drawClumpSampleNormal(coherentNormals, t);
-          const targetFrame = drawClumpFrame(targetCurve, t, targetNormal);
-          const delta = sourcePoint.clone().sub(sourceFrame.point);
-          return targetFrame.point.clone()
-        .addScaledVector(targetFrame.x, delta.dot(sourceFrame.x) * lateralScale)
-        .addScaledVector(targetFrame.y, delta.dot(sourceFrame.y) * lengthScale)
-        .addScaledVector(targetFrame.z, delta.dot(sourceFrame.z) * lateralScale);
-        }),
-        pointSurfaceNormals: parameters.map((t) => drawClumpSampleNormal(coherentNormals, t))
-      };
-    })
-  ];
-}
 
 function nextClumpName() {
   const used = new Set(locks.map((lock) => lock.clumpName).filter(Boolean));
@@ -12017,14 +11644,14 @@ function proceduralAccessoryMapsForGuide(guide, count, radius) {
     point: point.clone(),
     normal: guide.pointSurfaceNormals?.[index]?.clone?.() || null
   }));
-  const template = proceduralDrawClumpTemplate({
+  const template = drawFlowApi.proceduralDrawClumpTemplate({
     proceduralAccessoryCount: count,
     proceduralAccessoryRadius: radius,
     proceduralParentShape: guide
   });
   return {
     template,
-    maps: drawClumpStrandMaps(samples, Number(guide.baseWidth ?? guide.width), template).slice(1)
+    maps: drawFlowApi.drawClumpStrandMaps(samples, Number(guide.baseWidth ?? guide.width), template).slice(1)
   };
 }
 
@@ -12079,7 +11706,7 @@ function createProceduralAccessoryLock(guide, source, strandMap, shapeTemplate, 
     proceduralDraw: true,
     proceduralParentVisible: !guide.proceduralParentHidden
   };
-  const lock = createDrawnLock(
+  const lock = drawFlowApi.createDrawnLock(
     stroke,
     strandMap.points,
     strandMap.pointSurfaceNormals,
@@ -12403,873 +12030,9 @@ function detachLockFromClump(lock) {
   if (guide && remaining.length < 1) dissolveClump(guide.clumpId);
 }
 
-function updateDrawVolumePreview(mesh, previewLock, color) {
-  const previousGeometry = mesh.geometry;
-  mesh.geometry = strandGeometryApi.createHairGeometry(previewLock);
-  previousGeometry.dispose();
-  const definition = materialForLock(previewLock);
-  if (mesh.material.userData.hairShader !== definition.shader) {
-    const previousMaterial = mesh.material;
-    mesh.material = createHairMaterial(previewLock);
-    mesh.material.transparent = true;
-    mesh.material.opacity = 0.82;
-    if (mesh.material.uniforms?.uOpacity) mesh.material.uniforms.uOpacity.value = 0.82;
-    mesh.material.depthWrite = false;
-    previousMaterial.dispose();
-  }
-  setAnimeHairBaseColor(mesh.material, color);
-  if (mesh.material.userData.hairShader === STANDARD_ANISOTROPIC_SHADER) {
-    mesh.material.roughness = definition.roughness;
-  }
-  mesh.material.side = strandUsesDoubleSidedMaterial(previewLock)
-    ? THREE.DoubleSide
-    : THREE.FrontSide;
-  mesh.visible = true;
-}
-
-function hideDrawClumpPreviews() {
-  [...drawStrandClumpVolumePreviews, ...drawStrandClumpMirrorPreviews].forEach((mesh) => {
-    mesh.visible = false;
-  });
-}
-
-function resetDrawVolumePreview(mesh) {
-  mesh.visible = false;
-  mesh.geometry.dispose();
-  mesh.geometry = new THREE.BufferGeometry();
-}
-
-function updateDrawStrandPreview() {
-  if (!sculptState.state.drawStrandStroke?.samples.length) {
-    drawStrandPreview.visible = false;
-    drawStrandMirrorPreview.visible = false;
-    drawStrandVolumePreview.visible = false;
-    drawStrandMirrorVolumePreview.visible = false;
-    hideDrawClumpPreviews();
-    return;
-  }
-  const samples = processedDrawStroke(
-    sculptState.state.drawStrandStroke.samples,
-    sculptState.state.drawStrandStroke.smoothing,
-    sculptState.state.drawStrandStroke.curveStep
-  );
-  const groupDefaults = groupDefaultsFor(sculptState.state.drawStrandStroke.scalpRegion);
-  const defaults = sculptState.state.drawStrandStroke.outputType === "braid"
-    ? braidCreationDefaults
-    : sculptState.state.drawStrandStroke.outputType === "panel" ? panelCreationDefaults : strandCreationDefaults;
-  const extensionLock = sculptState.state.drawStrandStroke.extensionLockId
-    ? locks.find((lock) => lock.id === sculptState.state.drawStrandStroke.extensionLockId)
-    : null;
-  const showMirrorPreview = Boolean(mirrorPartnerFor(extensionLock))
-    || Boolean(!extensionLock && sculptState.state.mirrorXEditing);
-  const layerId = normalizeHairLayer(defaults.hairLayer);
-  const layerOffset = Number(groupDefaults.layerOffsets?.[layerId] ?? 0);
-  const layerDirection = sculptState.state.drawStrandStroke.rootSurfaceNormal?.clone().normalize() || new THREE.Vector3(0, 0, 1);
-  const sampledNormals = strokeSurfaceNormals(samples, sculptState.state.drawStrandStroke.rootSurfaceNormal);
-  const previewPoints = extensionLock
-    ? [...extensionLock.points.map((point) => point.clone()), ...samples.slice(1).map((sample) => sample.point.clone())]
-    : pointsWithLayerOffset(
-        samples.map((sample) => sample.point),
-        layerDirection,
-        layerOffset,
-        layerId
-      );
-  drawStrandPreview.geometry.setFromPoints(previewPoints);
-  drawStrandPreview.visible = true;
-  drawStrandMirrorPreview.geometry.setFromPoints(previewPoints.map(mirroredVector));
-  drawStrandMirrorPreview.visible = showMirrorPreview;
-  if (samples.length < 2) {
-    drawStrandVolumePreview.visible = false;
-    drawStrandMirrorVolumePreview.visible = false;
-    hideDrawClumpPreviews();
-    return;
-  }
-  const previewLock = {
-    id: "draw-strand-preview",
-    proceduralDrawGuide: Boolean(sculptState.state.drawStrandStroke.proceduralDraw),
-    proceduralBranchCount: Number(sculptState.state.drawStrandStroke.proceduralBranchCount || 0),
-    proceduralBranchLength: Number(sculptState.state.drawStrandStroke.proceduralBranchLength ?? 0.6),
-    proceduralBranchLengthCurve: shapePresets.cloneShapePresetValue(
-      sculptState.state.drawStrandStroke.proceduralBranchLengthCurve || DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE
-    ),
-    proceduralBranchShapeCurve: shapePresets.cloneShapePresetValue(
-      sculptState.state.drawStrandStroke.proceduralBranchShapeCurve || DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE
-    ),
-    proceduralBranchTipOffset: Number(sculptState.state.drawStrandStroke.proceduralBranchTipOffset ?? 0.35),
-    geometryType: extensionLock?.geometryType || sculptState.state.drawStrandStroke.outputType,
-    materialId: extensionLock?.materialId || DEFAULT_HAIR_MATERIAL_ID,
-    scalpRegion: extensionLock?.scalpRegion || sculptState.state.drawStrandStroke.scalpRegion,
-    hairLayer: extensionLock?.hairLayer || layerId,
-    points: previewPoints,
-    pointTwists: extensionLock
-      ? [...extensionLock.pointTwists, ...samples.slice(1).map(() => extensionLock.pointTwists.at(-1) || 0)]
-      : samples.map(() => 0),
-    pointScales: extensionLock
-      ? [...extensionLock.pointScales.map((scale) => ({ ...scale })), ...samples.slice(1).map(() => ({ ...(extensionLock.pointScales.at(-1) || { x: 1, z: 1 }) }))]
-      : samples.map(() => ({ x: 1, z: 1 })),
-    pointWidths: extensionLock
-      ? [...extensionLock.pointWidths, ...samples.slice(1).map(() => extensionLock.pointWidths.at(-1) ?? 1)]
-      : samples.map(() => 1),
-    surfaceNormalInfluence: sculptState.state.drawStrandStroke.outputType !== "braid"
-      ? Number(sculptState.state.drawStrandStroke.surfaceNormalInfluence ?? 0)
-      : 0,
-    pointSurfaceNormals: extensionLock
-      ? [
-          ...extensionLock.points.map((_, index) => extensionLock.pointSurfaceNormals?.[index] || null),
-          ...sampledNormals.slice(1)
-        ]
-      : sampledNormals,
-    baseWidth: extensionLock?.baseWidth || sculptState.state.drawStrandStroke.brushSize,
-    width: extensionLock?.width || sculptState.state.drawStrandStroke.brushSize,
-    depth: extensionLock?.depth ?? sculptState.state.drawStrandStroke.brushDepth,
-    braidMeshPreset: extensionLock?.braidMeshPreset || sculptState.state.drawStrandStroke.braidMeshPreset || DEFAULT_BRAID_MESH_PRESET,
-    braidWidth: extensionLock?.braidWidth || sculptState.state.drawStrandStroke.braidWidth,
-    braidDepth: extensionLock?.braidDepth || sculptState.state.drawStrandStroke.braidDepth,
-    braidSegmentLength: extensionLock?.braidSegmentLength || sculptState.state.drawStrandStroke.braidSegmentLength,
-    braidRotation: extensionLock?.braidRotation ?? sculptState.state.drawStrandStroke.braidRotation,
-    panelThickness: extensionLock?.panelThickness ?? sculptState.state.drawStrandStroke.panelThickness,
-    panelLengthLoops: extensionLock?.panelLengthLoops ?? sculptState.state.drawStrandStroke.panelLengthLoops,
-    panelWidthLoops: extensionLock?.panelWidthLoops ?? sculptState.state.drawStrandStroke.panelWidthLoops,
-    panelCurvature: extensionLock?.panelCurvature ?? sculptState.state.drawStrandStroke.panelCurvature,
-    panelLeftEdgeTrim: extensionLock?.panelLeftEdgeTrim ?? sculptState.state.drawStrandStroke.panelLeftEdgeTrim,
-    panelRightEdgeTrim: extensionLock?.panelRightEdgeTrim ?? sculptState.state.drawStrandStroke.panelRightEdgeTrim,
-    profileTrimLeft: extensionLock?.profileTrimLeft ?? sculptState.state.drawStrandStroke.profileTrimLeft,
-    profileTrimRight: extensionLock?.profileTrimRight ?? sculptState.state.drawStrandStroke.profileTrimRight,
-    profileTrimRoundness: extensionLock?.profileTrimRoundness ?? sculptState.state.drawStrandStroke.profileTrimRoundness,
-    hairCard: extensionLock?.hairCard ?? sculptState.state.drawStrandStroke.hairCard,
-    strandSplitEnabled: extensionLock?.strandSplitEnabled ?? sculptState.state.drawStrandStroke.strandSplitEnabled,
-    strandSplitPosition: extensionLock?.strandSplitPosition ?? sculptState.state.drawStrandStroke.strandSplitPosition,
-    strandSplitHeight: extensionLock?.strandSplitHeight ?? sculptState.state.drawStrandStroke.strandSplitHeight,
-    strandSplitGap: extensionLock?.strandSplitGap ?? sculptState.state.drawStrandStroke.strandSplitGap,
-    panelSplitEnabled: extensionLock?.panelSplitEnabled ?? sculptState.state.drawStrandStroke.panelSplitEnabled,
-    panelSplitSnapToLoops: extensionLock?.panelSplitSnapToLoops ?? sculptState.state.drawStrandStroke.panelSplitSnapToLoops,
-    panelSplitHeight: extensionLock?.panelSplitHeight ?? sculptState.state.drawStrandStroke.panelSplitHeight,
-    panelSplits: clonePanelSplits(
-      extensionLock?.panelSplits ?? sculptState.state.drawStrandStroke.panelSplits,
-      extensionLock?.panelSplitHeight ?? sculptState.state.drawStrandStroke.panelSplitHeight
-    ),
-    panelSplitGap: extensionLock?.panelSplitGap ?? sculptState.state.drawStrandStroke.panelSplitGap,
-    splitBones: extensionLock?.splitBones ? splitBonesToData(extensionLock.splitBones) : null,
-    bones: extensionLock?.bones ? bonesToData(extensionLock.bones) : null,
-    curlEnabled: sculptState.state.drawStrandStroke.outputType === "strand"
-      ? Boolean(sculptState.state.drawStrandStroke.curlEnabled)
-      : Boolean(extensionLock?.curlEnabled),
-    curlCount: Number(sculptState.state.drawStrandStroke.outputType === "strand"
-      ? sculptState.state.drawStrandStroke.curlCount ?? 4
-      : extensionLock?.curlCount ?? 4),
-    curlDisplacement: Number(sculptState.state.drawStrandStroke.outputType === "strand"
-      ? sculptState.state.drawStrandStroke.curlDisplacement ?? 0.18
-      : extensionLock?.curlDisplacement ?? 0.18),
-    length: strokeLength(samples),
-    strandRotation: extensionLock?.strandRotation ?? defaults.strandRotation,
-    twist: extensionLock?.twist ?? defaults.twist,
-    twistCurve: extensionLock?.twistCurve || defaults.twistCurve,
-    radialSegments: Math.min(12, Math.round(extensionLock?.radialSegments || groupDefaults.radialSegments || 10)),
-    lengthSegments: Math.min(32, Math.max(8, extensionLock?.lengthSegments || samples.length * 3)),
-    dynamicDensity: extensionLock ? Boolean(extensionLock.dynamicDensity) : Boolean(groupDefaults.dynamicDensity),
-    densityAggression: Number(extensionLock?.densityAggression ?? groupDefaults.densityAggression ?? 0.5),
-    twistDensity: Number(extensionLock?.twistDensity ?? groupDefaults.twistDensity ?? 0.5),
-    taperCurve: extensionLock?.taperCurve || defaults.taperCurve,
-    depthCurve: extensionLock?.depthCurve || defaults.depthCurve,
-    taperCurveSecondary: extensionLock?.taperCurveSecondary || defaults.taperCurveSecondary || defaults.taperCurve,
-    depthCurveSecondary: extensionLock?.depthCurveSecondary || defaults.depthCurveSecondary || defaults.depthCurve,
-    asymmetricWidthCurve: Boolean(extensionLock?.asymmetricWidthCurve ?? defaults.asymmetricWidthCurve),
-    asymmetricDepthCurve: Boolean(extensionLock?.asymmetricDepthCurve ?? defaults.asymmetricDepthCurve),
-    centerAsymmetricProfile: Boolean(extensionLock?.centerAsymmetricProfile ?? defaults.centerAsymmetricProfile),
-    widthScale: extensionLock?.widthScale ?? defaults.widthScale,
-    depthScale: extensionLock?.depthScale ?? defaults.depthScale,
-    sweepProfile: extensionLock?.sweepProfile || defaults.sweepProfile,
-    profileOffset: Number(extensionLock?.profileOffset ?? defaults.profileOffset ?? 0)
-  };
-  const clumpTemplate = sculptState.state.drawStrandStroke.outputType === "strand" ? activeDrawClumpTemplate(sculptState.state.drawStrandStroke) : null;
-  if (!extensionLock && sculptState.state.drawStrandStroke.outputType !== "braid" && clumpTemplate) {
-    const parentTemplate = clumpTemplate.strands[0];
-    applyDrawClumpTemplateSettings(previewLock, parentTemplate);
-    previewLock.depth = sculptState.state.drawStrandStroke.brushSize * ((parentTemplate.depth ?? parentTemplate.width) / clumpTemplate.baseWidth);
-    previewLock.pointTwists = previewLock.points.map((_, index) => (
-      sampleArray(parentTemplate.pointTwists || [0], index / Math.max(1, previewLock.points.length - 1))
-    ));
-  }
-  const previewColor = strandDisplayColor(previewLock);
-  updateDrawVolumePreview(drawStrandVolumePreview, previewLock, previewColor);
-  if (sculptState.state.drawStrandStroke.proceduralDraw && !sculptState.state.drawStrandStroke.proceduralParentVisible) {
-    drawStrandVolumePreview.visible = false;
-  }
-  if (showMirrorPreview) {
-    const mirroredPreviewLock = {
-      ...previewLock,
-      points: previewLock.points.map(mirroredVector),
-      pointSurfaceNormals: previewLock.pointSurfaceNormals?.map(mirroredVector) || [],
-      pointTwists: previewLock.pointTwists.map((twist) => -twist),
-      strandRotation: -Number(previewLock.strandRotation ?? 0),
-      twistCurve: previewLock.twistCurve.map((point) => ({ ...point, value: -Number(point.value || 0) })),
-      twist: -previewLock.twist
-    };
-    updateDrawVolumePreview(drawStrandMirrorVolumePreview, mirroredPreviewLock, previewColor);
-    if (sculptState.state.drawStrandStroke.proceduralDraw && !sculptState.state.drawStrandStroke.proceduralParentVisible) {
-      drawStrandMirrorVolumePreview.visible = false;
-    }
-  } else {
-    drawStrandMirrorVolumePreview.visible = false;
-  }
-
-  if (!extensionLock && sculptState.state.drawStrandStroke.outputType !== "braid" && clumpTemplate) {
-    hideDrawClumpPreviews();
-    const accessoryCount = clumpTemplate.strands.length - 1;
-    ensureDrawClumpPreviewCount(accessoryCount);
-    const strandMaps = drawClumpStrandMaps(samples, sculptState.state.drawStrandStroke.brushSize, clumpTemplate);
-    clumpTemplate.strands.slice(1).forEach((template, index) => {
-      const strandMap = strandMaps[index + 1];
-      const points = pointsWithLayerOffset(strandMap.points, layerDirection, layerOffset, layerId);
-      const width = sculptState.state.drawStrandStroke.brushSize * (template.width / clumpTemplate.baseWidth);
-      const clumpPreviewLock = applyDrawClumpTemplateSettings({
-        ...previewLock,
-        id: `draw-clump-preview-${index}`,
-        proceduralDrawGuide: false,
-        proceduralBranchCount: 0,
-        points,
-        pointSurfaceNormals: strandMap.pointSurfaceNormals,
-        pointScales: points.map(() => ({ x: 1, z: 1 })),
-        baseWidth: width,
-        width,
-        depth: sculptState.state.drawStrandStroke.brushSize * ((template.depth ?? template.width) / clumpTemplate.baseWidth),
-        pointTwists: points.map((_, pointIndex) => sampleArray(template.pointTwists || [0], pointIndex / Math.max(1, points.length - 1)))
-      }, template);
-      updateDrawVolumePreview(drawStrandClumpVolumePreviews[index], clumpPreviewLock, previewColor);
-      if (showMirrorPreview) {
-        const mirroredClumpPreviewLock = {
-          ...clumpPreviewLock,
-          points: clumpPreviewLock.points.map(mirroredVector),
-          pointSurfaceNormals: clumpPreviewLock.pointSurfaceNormals?.map(mirroredVector) || [],
-          pointTwists: clumpPreviewLock.pointTwists.map((twist) => -twist),
-          strandRotation: -Number(clumpPreviewLock.strandRotation ?? 0),
-          twistCurve: clumpPreviewLock.twistCurve.map((point) => ({ ...point, value: -Number(point.value || 0) })),
-          twist: -clumpPreviewLock.twist
-        };
-        updateDrawVolumePreview(
-          drawStrandClumpMirrorPreviews[index],
-          mirroredClumpPreviewLock,
-          previewColor
-        );
-      } else {
-        drawStrandClumpMirrorPreviews[index].visible = false;
-      }
-    });
-  } else {
-    hideDrawClumpPreviews();
-  }
-}
-
-function continueFromTipEnabled() {
-  if (panelStrokeActive()) return false;
-  if (proceduralDrawActive()) return false;
-  return braidStrokeActive() ? braidContinueFromTipInput.checked : drawContinueFromTipInput.checked;
-}
-
-function selectedTipContinuationLock(event) {
-  if (!continueFromTipEnabled()) return null;
-  const lock = getSelectedLock();
-  const expectedGeometry = braidStrokeActive() ? "braid" : "strand";
-  if (!lock || lock.geometryType !== expectedGeometry || lock.points.length < 2) return null;
-  const rect = renderer.domElement.getBoundingClientRect();
-  const tip = lock.points.at(-1).clone().project(camera);
-  if (tip.z < -1 || tip.z > 1) return null;
-  const tipX = rect.left + (tip.x + 1) * rect.width * 0.5;
-  const tipY = rect.top + (1 - tip.y) * rect.height * 0.5;
-  return Math.hypot(event.clientX - tipX, event.clientY - tipY) <= 20 ? lock : null;
-}
 
 
 
-function beginDrawStrandStroke(event, hit, extensionLock = null, branchStart = null) {
-  if (event.button !== 0 || (!hit && !extensionLock && !branchStart) || event.ctrlKey || event.altKey || event.metaKey) return false;
-  const surfaceMode = activeStrokeSurfaceValue();
-  const dynamicContextual = activeStrokeDynamicEnabled(surfaceMode);
-  const scalpRegion = extensionLock?.scalpRegion || branchStart?.lock.scalpRegion || scalpBuilder.drawScalpRegionAtEvent(event, hit);
-  const drawingBraid = braidStrokeActive();
-  const drawingPanel = panelStrokeActive();
-  const drawingProcedural = proceduralDrawActive();
-  const scalpOffset = scalpBuilder.activeStrokeScalpOffset();
-  const contextualPlane = surfaceMode === "contextual-plane" ? contextualPlaneAtOrigin() : null;
-  const extensionTip = extensionLock?.points.at(-1)?.clone();
-  const extensionTangent = extensionLock
-    ? extensionTip.clone().sub(extensionLock.points.at(-2)).normalize()
-    : null;
-  const extensionNormal = extensionLock?.rootSurfaceNormal?.clone()?.normalize()
-    || (extensionTangent ? viewPlaneNormal().cross(extensionTangent).cross(extensionTangent).normalize() : null);
-  const sample = extensionLock
-    ? {
-        point: extensionTip,
-        surfacePoint: null,
-        normal: extensionNormal || new THREE.Vector3(0, 0, 1),
-        onSurface: false
-      }
-    : branchStart
-    ? {
-        point: branchStart.point.clone(),
-        surfacePoint: null,
-        normal: branchStart.normal.clone(),
-        onSurface: false
-      }
-    : contextualPlane
-    ? {
-        point: hit.point.clone(),
-        surfacePoint: null,
-        normal: contextualPlane.normal.clone(),
-        onSurface: false
-      }
-    : drawSampleFromHit(hit, true, scalpRegion, scalpOffset);
-  const anchoredStart = extensionTip || branchStart?.point;
-  const initialFreePlane = anchoredStart && surfaceMode === "contextual-plane"
-    ? {
-        origin: anchoredStart.clone(),
-        normal: viewPlaneNormal(),
-        plane: new THREE.Plane().setFromNormalAndCoplanarPoint(viewPlaneNormal(), anchoredStart)
-      }
-    : contextualPlane;
-  sculptState.state.drawStrandStroke = {
-    pointerId: event.pointerId,
-    outputType: drawingBraid ? "braid" : drawingPanel ? "panel" : "strand",
-    surfaceMode,
-    dynamicContextual,
-    scalpRegion,
-    brushSize: activeStrokeBrushSize(),
-    brushDepth: activeStrokeBrushDepth(),
-    braidMeshPreset: braidCreationDefaults.braidMeshPreset,
-    braidWidth: Number(braidCreationDefaults.braidWidth) * Number(braidToolSizeInput.value),
-    braidDepth: Number(braidCreationDefaults.braidDepth) * Number(braidToolSizeInput.value),
-    braidSegmentLength: Number(braidCreationDefaults.braidSegmentLength) * Number(braidToolSizeInput.value),
-    braidRotation: Number(braidCreationDefaults.braidRotation),
-    panelThickness: activeStrokeBrushDepth(),
-    panelLengthLoops: Number(panelCreationDefaults.panelLengthLoops),
-    panelWidthLoops: Number(panelCreationDefaults.panelWidthLoops),
-    panelCurvature: Number(panelCreationDefaults.panelCurvature),
-    panelLeftEdgeTrim: Number(panelCreationDefaults.panelLeftEdgeTrim),
-    panelRightEdgeTrim: Number(panelCreationDefaults.panelRightEdgeTrim),
-    profileTrimLeft: Number(strandCreationDefaults.profileTrimLeft),
-    profileTrimRight: Number(strandCreationDefaults.profileTrimRight),
-    profileTrimRoundness: Number(strandCreationDefaults.profileTrimRoundness),
-    hairCard: extensionLock?.hairCard ?? Boolean(strandCreationDefaults.hairCard),
-    strandSplitEnabled: Boolean(strandCreationDefaults.strandSplitEnabled),
-    strandSplitPosition: Number(strandCreationDefaults.strandSplitPosition),
-    strandSplitHeight: Number(strandCreationDefaults.strandSplitHeight),
-    strandSplitGap: Number(strandCreationDefaults.strandSplitGap),
-    panelSplitEnabled: panelCreationDefaults.panelSplitEnabled !== false,
-    panelSplitSnapToLoops: panelCreationDefaults.panelSplitSnapToLoops !== false,
-    panelSplitHeight: Number(panelCreationDefaults.panelSplitHeight),
-    panelSplits: clonePanelSplits(panelCreationDefaults.panelSplits, panelCreationDefaults.panelSplitHeight),
-    panelSplitGap: Number(panelCreationDefaults.panelSplitGap),
-    splitBones: panelCreationDefaults.splitBones
-      ? splitBonesFromData(panelCreationDefaults.splitBones, panelCreationDefaults.panelSplits, panelCreationDefaults)
-      : null,
-    bones: panelCreationDefaults.bones ? bonesFromData(panelCreationDefaults.bones, panelCreationDefaults) : null,
-    curlEnabled: !drawingBraid && !drawingProcedural && hairState.state.drawStrandMode === "coil",
-    curlCount: Number(strandCreationDefaults.curlCount),
-    curlDisplacement: Number(strandCreationDefaults.curlDisplacement),
-    smoothing: Number(drawingBraid ? braidSmoothingInput.value : drawingPanel ? panelSmoothingInput.value : drawStrandSmoothingInput.value),
-    curveStep: Number(drawingBraid ? braidCurveStepInput.value : drawingPanel ? panelCurveStepInput.value : drawStrandCurveStepInput.value),
-    surfaceNormalInfluence: drawingBraid ? 0 : Number(drawingPanel ? panelSurfaceNormalInfluenceInput.value : drawSurfaceNormalInfluenceInput.value),
-    rootAttachmentEnabled: branchStart
-      ? false
-      : extensionLock
-      ? extensionLock.rootAttachmentEnabled !== false
-      : surfaceMode !== "contextual-plane" && !liveSurfaceStrandId(surfaceMode),
-    scalpOffset,
-    rootSurfacePoint: extensionLock?.rootSurfacePoint?.clone() || anchoredStart?.clone() || hit.point.clone(),
-    rootSurfaceNormal: extensionLock?.rootSurfaceNormal?.clone() || branchStart?.normal.clone() || sample.normal.clone(),
-    proceduralDraw: drawingProcedural,
-    proceduralAccessoryCount: drawingProcedural ? PROCEDURAL_DRAW_DEFAULTS.accessoryCount : 0,
-    proceduralAccessoryRadius: drawingProcedural ? PROCEDURAL_DRAW_DEFAULTS.accessoryRadius : 0,
-    proceduralParentVisible: !drawingProcedural || PROCEDURAL_DRAW_DEFAULTS.parentVisible,
-    proceduralBranchCount: drawingProcedural ? PROCEDURAL_DRAW_DEFAULTS.branchCount : 0,
-    proceduralBranchLength: PROCEDURAL_DRAW_DEFAULTS.branchLength,
-    proceduralBranchLengthCurve: shapePresets.cloneShapePresetValue(DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE),
-    proceduralBranchShapeCurve: shapePresets.cloneShapePresetValue(DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE),
-    proceduralBranchTipOffset: PROCEDURAL_DRAW_DEFAULTS.branchTipOffset,
-    extensionLockId: extensionLock?.id || null,
-    branchSourceLockId: branchStart?.lock.id || null,
-    branchSourcePointIndex: branchStart?.pointIndex ?? null,
-    samples: [sample],
-    startX: event.clientX,
-    startY: event.clientY,
-    lastX: event.clientX,
-    lastY: event.clientY,
-    cardinalConstrained: false,
-    cardinalDirectionKey: "",
-    initialFreePlane,
-    freePlane: initialFreePlane
-  };
-  renderer.domElement.setPointerCapture?.(event.pointerId);
-  renderer.domElement.style.cursor = "crosshair";
-  drawStrandBrushCursor.visible = false;
-  updateDrawStrandPreview();
-  updateInteractionLocks();
-  updatePlacementStatus();
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  return true;
-}
-
-function beginDrawFreePlane(stroke) {
-  if (stroke.freePlane) return;
-  const origin = stroke.surfaceMode === "contextual-plane"
-    ? new THREE.Vector3(0, 0, 0)
-    : stroke.samples.at(-1).point.clone();
-  const normal = viewPlaneNormal();
-  stroke.freePlane = {
-    origin,
-    normal,
-    plane: new THREE.Plane().setFromNormalAndCoplanarPoint(normal, origin)
-  };
-  updateViewPlaneGrid();
-}
-
-function drawStrokeSampleAtEvent(stroke, event) {
-  let nextSample = null;
-  if (!stroke.freePlane) {
-    const hit = drawSurfaceHitFromEvent(event, { excludeLockId: stroke.extensionLockId });
-    if (hit) {
-      const surfaceSample = drawSampleFromHit(hit, false, stroke.scalpRegion, stroke.scalpOffset);
-      if (strokeSurfaceIsContextual(stroke.surfaceMode, stroke.dynamicContextual)) {
-        const previous = stroke.samples.at(-1);
-        const movingDown = surfaceSample.point.y < previous.point.y - 0.004;
-        if (movingDown && surfaceSample.normal.y < -0.08) beginDrawFreePlane(stroke);
-        else nextSample = surfaceSample;
-      } else {
-        nextSample = surfaceSample;
-      }
-    } else if (strokeSurfaceIsContextual(stroke.surfaceMode, stroke.dynamicContextual)) {
-      beginDrawFreePlane(stroke);
-    }
-  }
-  if (stroke.freePlane && !nextSample) {
-    const point = rayFromViewportEvent(event).intersectPlane(stroke.freePlane.plane, new THREE.Vector3());
-    if (point) nextSample = { point, surfacePoint: null, normal: null, onSurface: false };
-  }
-  return nextSample;
-}
-
-function updateDrawStrandStroke(event) {
-  updateDrawStrandBrushCursor(event);
-  const stroke = sculptState.state.drawStrandStroke;
-  if (!stroke || event.pointerId !== stroke.pointerId) return;
-  if (!event.shiftKey && stroke.cardinalConstrained) {
-    stroke.samples = [stroke.samples[0]];
-    stroke.cardinalConstrained = false;
-    stroke.cardinalDirectionKey = "";
-    stroke.freePlane = stroke.initialFreePlane;
-    stroke.lastX = stroke.startX;
-    stroke.lastY = stroke.startY;
-  }
-  let sampleEvent = event;
-  if (event.shiftKey) {
-    const delta = eightWayScreenDelta(
-      event.clientX - stroke.startX,
-      event.clientY - stroke.startY
-    );
-    const directionKey = `${Math.sign(delta.x)},${Math.sign(delta.y)}`;
-    if (!stroke.cardinalConstrained || directionKey !== stroke.cardinalDirectionKey) {
-      stroke.samples = [stroke.samples[0]];
-      stroke.freePlane = stroke.initialFreePlane;
-      stroke.lastX = stroke.startX;
-      stroke.lastY = stroke.startY;
-      stroke.cardinalDirectionKey = directionKey;
-    }
-    stroke.cardinalConstrained = true;
-    sampleEvent = {
-      clientX: stroke.startX + delta.x,
-      clientY: stroke.startY + delta.y
-    };
-  }
-  const screenDistance = Math.hypot(sampleEvent.clientX - stroke.lastX, sampleEvent.clientY - stroke.lastY);
-  const sampleSpacing = THREE.MathUtils.lerp(2.5, 9, stroke.smoothing);
-  if (screenDistance < sampleSpacing) return;
-
-  const nextSample = drawStrokeSampleAtEvent(stroke, sampleEvent);
-  if (!nextSample || nextSample.point.distanceTo(stroke.samples.at(-1).point) < 0.008) return;
-  stroke.samples.push(nextSample);
-  stroke.lastX = sampleEvent.clientX;
-  stroke.lastY = sampleEvent.clientY;
-  updateDrawStrandPreview();
-  event.preventDefault();
-  event.stopImmediatePropagation();
-}
-
-function createDrawnLock(stroke, points, pointSurfaceNormals, width, isCenter, shapeTemplate = null, clumpTemplate = null) {
-  const root = points[0];
-  const length = new THREE.CatmullRomCurve3(points).getLength();
-  const templateSettings = shapeTemplate?.settings || {};
-  const setting = (key, fallback) => templateSettings[key] ?? fallback;
-  const lock = addLock("front", {
-    x: root.x,
-    y: root.y,
-    z: root.z,
-    length,
-    curve: points.at(-1).x - root.x,
-    width,
-    strandRotation: Number(setting("strandRotation", strandCreationDefaults.strandRotation)),
-    twist: Number(setting("twist", strandCreationDefaults.twist)),
-    twistCurve: shapePresets.cloneShapePresetValue(setting("twistCurve", strandCreationDefaults.twistCurve)),
-    taperCurve: shapePresets.cloneShapePresetValue(setting("taperCurve", strandCreationDefaults.taperCurve)),
-    depthCurve: shapePresets.cloneShapePresetValue(setting("depthCurve", strandCreationDefaults.depthCurve)),
-    taperCurveSecondary: shapePresets.cloneShapePresetValue(setting("taperCurveSecondary", strandCreationDefaults.taperCurveSecondary)),
-    depthCurveSecondary: shapePresets.cloneShapePresetValue(setting("depthCurveSecondary", strandCreationDefaults.depthCurveSecondary)),
-    asymmetricWidthCurve: Boolean(setting("asymmetricWidthCurve", strandCreationDefaults.asymmetricWidthCurve)),
-    asymmetricDepthCurve: Boolean(setting("asymmetricDepthCurve", strandCreationDefaults.asymmetricDepthCurve)),
-    centerAsymmetricProfile: Boolean(setting("centerAsymmetricProfile", strandCreationDefaults.centerAsymmetricProfile)),
-    widthScale: Number(setting("widthScale", strandCreationDefaults.widthScale)),
-    depthScale: Number(setting("depthScale", strandCreationDefaults.depthScale)),
-    profileTrimLeft: Number(setting("profileTrimLeft", stroke.profileTrimLeft ?? strandCreationDefaults.profileTrimLeft)),
-    profileTrimRight: Number(setting("profileTrimRight", stroke.profileTrimRight ?? strandCreationDefaults.profileTrimRight)),
-    profileTrimRoundness: Number(setting("profileTrimRoundness", stroke.profileTrimRoundness ?? strandCreationDefaults.profileTrimRoundness)),
-    hairCard: Boolean(setting("hairCard", stroke.hairCard ?? strandCreationDefaults.hairCard)),
-    strandSplitEnabled: Boolean(setting("strandSplitEnabled", stroke.strandSplitEnabled ?? strandCreationDefaults.strandSplitEnabled)),
-    strandSplitPosition: Number(setting("strandSplitPosition", stroke.strandSplitPosition ?? strandCreationDefaults.strandSplitPosition)),
-    strandSplitHeight: Number(setting("strandSplitHeight", stroke.strandSplitHeight ?? strandCreationDefaults.strandSplitHeight)),
-    strandSplitGap: Number(setting("strandSplitGap", stroke.strandSplitGap ?? strandCreationDefaults.strandSplitGap)),
-    depth: shapeTemplate && clumpTemplate
-      ? stroke.brushSize * ((shapeTemplate.depth ?? shapeTemplate.width) / clumpTemplate.baseWidth)
-      : stroke.brushDepth,
-    sweepProfile: shapePresets.cloneShapePresetValue(setting("sweepProfile", strandCreationDefaults.sweepProfile)),
-    profileOffset: Number(setting("profileOffset", strandCreationDefaults.profileOffset)),
-    radialSegments: Number(setting("radialSegments", strandCreationDefaults.radialSegments)),
-    lengthSegments: Number(setting("lengthSegments", strandCreationDefaults.lengthSegments)),
-    dynamicDensity: Boolean(setting("dynamicDensity", strandCreationDefaults.dynamicDensity)),
-    densityAggression: Number(setting("densityAggression", strandCreationDefaults.densityAggression)),
-    twistDensity: Number(setting("twistDensity", strandCreationDefaults.twistDensity)),
-    curlEnabled: Boolean(stroke.curlEnabled),
-    curlCount: Number(stroke.curlCount ?? 4),
-    curlDisplacement: Number(stroke.curlDisplacement ?? 0.18),
-    surfaceNormalInfluence: Number(stroke.surfaceNormalInfluence ?? 0),
-    pointSurfaceNormals,
-    color: DEFAULT_HAIR_COLOR,
-    scalpRegion: stroke.scalpRegion,
-    hairLayer: setting("hairLayer", strandCreationDefaults.hairLayer),
-    rootAttachmentEnabled: stroke.rootAttachmentEnabled,
-    rootScalpOffset: THREE.MathUtils.clamp(
-      Number(setting("rootScalpOffset", strandCreationDefaults.rootScalpOffset)) + stroke.scalpOffset,
-      -1,
-      1
-    ),
-    rootSurfacePoint: isCenter ? stroke.rootSurfacePoint : null,
-    rootSurfaceNormal: isCenter ? stroke.rootSurfaceNormal : null,
-    proceduralParentHidden: Boolean(stroke.proceduralDraw && isCenter && !stroke.proceduralParentVisible),
-    points
-  }, { deferUi: true });
-  applyPlacedStrandScaleProfile(lock);
-  if (shapeTemplate?.pointTwists?.length) {
-    lock.pointTwists = lock.points.map((_, index) => (
-      sampleArray(shapeTemplate.pointTwists, index / Math.max(1, lock.points.length - 1))
-    ));
-  }
-  updateLockGeometry(lock);
-  lock.curveObjects.group.visible = false;
-  return lock;
-}
-
-function finalizeDrawnLockSelection(lock) {
-  if (!lock) return null;
-  selectLock(lock.id, { individualClumpMember: true });
-  rebuildCurveObjects(lock);
-  updateCurveObjects(lock, { visible: true });
-  return lock;
-}
-
-function createDrawnBraid(stroke) {
-  if (!braidMeshPresets.has(stroke.braidMeshPreset || DEFAULT_BRAID_MESH_PRESET)
-    && !braidMeshPresets.has(DEFAULT_BRAID_MESH_PRESET)) return null;
-  const processed = processedDrawStroke(stroke.samples, stroke.smoothing, stroke.curveStep);
-  if (processed.length < 3 || strokeLength(processed) < 0.12) return null;
-  const points = processed.map((sample) => sample.point.clone());
-  const root = points[0];
-  const length = new THREE.CatmullRomCurve3(points).getLength();
-  const defaults = braidCreationDefaults;
-  const lock = addLock("front", {
-    geometryType: "braid",
-    braidMeshPreset: stroke.braidMeshPreset || DEFAULT_BRAID_MESH_PRESET,
-    x: root.x,
-    y: root.y,
-    z: root.z,
-    length,
-    curve: points.at(-1).x - root.x,
-    width: stroke.braidWidth,
-    braidWidth: stroke.braidWidth,
-    braidDepth: stroke.braidDepth,
-    braidSegmentLength: stroke.braidSegmentLength,
-    braidRotation: stroke.braidRotation,
-    strandRotation: defaults.strandRotation,
-    twist: defaults.twist,
-    twistCurve: shapePresets.cloneShapePresetValue(defaults.twistCurve),
-    taperCurve: shapePresets.cloneShapePresetValue(defaults.taperCurve),
-    depthCurve: shapePresets.cloneShapePresetValue(defaults.depthCurve),
-    taperCurveSecondary: shapePresets.cloneShapePresetValue(defaults.taperCurveSecondary),
-    depthCurveSecondary: shapePresets.cloneShapePresetValue(defaults.depthCurveSecondary),
-    asymmetricWidthCurve: Boolean(defaults.asymmetricWidthCurve),
-    asymmetricDepthCurve: Boolean(defaults.asymmetricDepthCurve),
-    centerAsymmetricProfile: Boolean(defaults.centerAsymmetricProfile),
-    sweepProfile: shapePresets.cloneShapePresetValue(defaults.sweepProfile),
-    profileOffset: defaults.profileOffset,
-    widthScale: defaults.widthScale,
-    depthScale: defaults.depthScale,
-    hairLayer: defaults.hairLayer,
-    color: DEFAULT_HAIR_COLOR,
-    scalpRegion: stroke.scalpRegion,
-    rootAttachmentEnabled: stroke.rootAttachmentEnabled,
-    rootScalpOffset: THREE.MathUtils.clamp(
-      defaults.rootScalpOffset + stroke.scalpOffset,
-      -1,
-      1
-    ),
-    rootSurfacePoint: stroke.rootSurfacePoint,
-    rootSurfaceNormal: stroke.rootSurfaceNormal,
-    points
-  }, { deferUi: true });
-  updateLockGeometry(lock);
-  lock.curveObjects.group.visible = false;
-  createMirrorPartnerForNewLock(lock);
-  renderLockList();
-  updateCount();
-  return finalizeDrawnLockSelection(lock);
-}
-
-function createDrawnStrand(stroke) {
-  if (stroke.outputType === "braid") return createDrawnBraid(stroke);
-  if (stroke.outputType === "panel") return createDrawnPanel(stroke);
-  const processed = processedDrawStroke(stroke.samples, stroke.smoothing, stroke.curveStep);
-  if (processed.length < 3 || strokeLength(processed) < 0.12) return null;
-  const pointSurfaceNormals = strokeSurfaceNormals(processed, stroke.rootSurfaceNormal);
-  const clumpTemplate = activeDrawClumpTemplate(stroke);
-  const strandMaps = clumpTemplate
-    ? drawClumpStrandMaps(processed, stroke.brushSize, clumpTemplate)
-    : [{
-      points: processed.map((sample) => sample.point.clone()),
-      pointSurfaceNormals
-    }];
-  const templates = clumpTemplate
-    ? clumpTemplate.strands
-    : [{ width: DRAW_CLUMP_TEMPLATE.baseWidth }];
-  const created = strandMaps.map((strandMap, index) => createDrawnLock(
-    stroke,
-    strandMap.points,
-    strandMap.pointSurfaceNormals,
-    stroke.brushSize * (templates[index].width / (clumpTemplate?.baseWidth || DRAW_CLUMP_TEMPLATE.baseWidth)),
-    index === 0,
-    templates[index],
-    clumpTemplate
-  ));
-  let proceduralGuide = null;
-  if (clumpTemplate && !stroke.branchSourceLockId) {
-    const clumpName = nextClumpName();
-    const guide = createClumpFromLocks(created, {
-      name: clumpName,
-      allowSingle: Boolean(stroke.proceduralDraw)
-    });
-    if (guide && stroke.proceduralDraw) {
-      proceduralGuide = guide;
-      guide.proceduralDrawGuide = true;
-      guide.proceduralAccessoryCount = Math.max(0, created.length - 1);
-      guide.proceduralAccessoryRadius = THREE.MathUtils.clamp(Number(stroke.proceduralAccessoryRadius ?? 0.7), 0, 2);
-      guide.proceduralBranchCount = THREE.MathUtils.clamp(Math.round(Number(stroke.proceduralBranchCount ?? 0)), 0, 64);
-      guide.proceduralBranchLength = THREE.MathUtils.clamp(Number(stroke.proceduralBranchLength ?? 0.6), 0.1, 3);
-      guide.proceduralBranchLengthCurve = normalizeTaperCurve(
-        stroke.proceduralBranchLengthCurve || DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE
-      );
-      guide.proceduralBranchShapeCurve = normalizeTaperCurve(
-        stroke.proceduralBranchShapeCurve || DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE
-      );
-      guide.proceduralBranchTipOffset = THREE.MathUtils.clamp(Number(stroke.proceduralBranchTipOffset ?? 0.35), 0, 2);
-      created.slice(1).forEach((lock, index) => {
-        lock.proceduralAccessory = true;
-        lock.proceduralAccessoryIndex = index;
-      });
-    }
-    if (guide && clumpTemplate.clumpSettings) {
-      Object.entries(clumpTemplate.clumpSettings).forEach(([key, value]) => {
-        if (Number.isFinite(Number(value))) guide[key] = Number(value);
-      });
-      updateClumpMembers(guide);
-    }
-  }
-  const mirroredCreated = created.map(createMirrorPartnerForNewLock).filter(Boolean);
-  let mirroredProceduralGuide = null;
-  if (!stroke.branchSourceLockId && mirroredCreated.length === created.length && mirroredCreated.length > 1) {
-    const mirroredGuide = createClumpFromLocks(mirroredCreated, {
-      name: created[0].clumpName || nextClumpName()
-    });
-    if (mirroredGuide && stroke.proceduralDraw) {
-      mirroredProceduralGuide = mirroredGuide;
-      mirroredGuide.proceduralDrawGuide = true;
-      mirroredGuide.proceduralAccessoryCount = Math.max(0, mirroredCreated.length - 1);
-      mirroredGuide.proceduralAccessoryRadius = THREE.MathUtils.clamp(Number(stroke.proceduralAccessoryRadius ?? 0.7), 0, 2);
-      mirroredGuide.proceduralBranchCount = THREE.MathUtils.clamp(Math.round(Number(stroke.proceduralBranchCount ?? 0)), 0, 64);
-      mirroredGuide.proceduralBranchLength = THREE.MathUtils.clamp(Number(stroke.proceduralBranchLength ?? 0.6), 0.1, 3);
-      mirroredGuide.proceduralBranchLengthCurve = normalizeTaperCurve(
-        stroke.proceduralBranchLengthCurve || DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE
-      );
-      mirroredGuide.proceduralBranchShapeCurve = normalizeTaperCurve(
-        stroke.proceduralBranchShapeCurve || DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE
-      );
-      mirroredGuide.proceduralBranchTipOffset = THREE.MathUtils.clamp(Number(stroke.proceduralBranchTipOffset ?? 0.35), 0, 2);
-      mirroredCreated.slice(1).forEach((lock, index) => {
-        lock.proceduralAccessory = true;
-        lock.proceduralAccessoryIndex = index;
-      });
-    }
-  } else if (!stroke.branchSourceLockId && mirroredCreated.length === 1 && stroke.proceduralDraw) {
-    mirroredProceduralGuide = createClumpFromLocks(mirroredCreated, {
-      name: created[0].clumpName || nextClumpName(),
-      allowSingle: true
-    });
-    if (mirroredProceduralGuide) {
-      mirroredProceduralGuide.proceduralDrawGuide = true;
-      mirroredProceduralGuide.proceduralAccessoryCount = 0;
-      mirroredProceduralGuide.proceduralAccessoryRadius = THREE.MathUtils.clamp(Number(stroke.proceduralAccessoryRadius ?? 0.7), 0, 2);
-      mirroredProceduralGuide.proceduralBranchCount = THREE.MathUtils.clamp(Math.round(Number(stroke.proceduralBranchCount ?? 0)), 0, 64);
-      mirroredProceduralGuide.proceduralBranchLength = THREE.MathUtils.clamp(Number(stroke.proceduralBranchLength ?? 0.6), 0.1, 3);
-      mirroredProceduralGuide.proceduralBranchLengthCurve = normalizeTaperCurve(
-        stroke.proceduralBranchLengthCurve || DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE
-      );
-      mirroredProceduralGuide.proceduralBranchShapeCurve = normalizeTaperCurve(
-        stroke.proceduralBranchShapeCurve || DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE
-      );
-      mirroredProceduralGuide.proceduralBranchTipOffset = THREE.MathUtils.clamp(Number(stroke.proceduralBranchTipOffset ?? 0.35), 0, 2);
-    }
-  }
-  if (proceduralGuide) {
-    applyProceduralBranchSettings(proceduralGuide, {
-      count: stroke.proceduralBranchCount,
-      length: stroke.proceduralBranchLength,
-      tipOffset: stroke.proceduralBranchTipOffset
-    });
-    if (mirroredProceduralGuide) syncMirrorPartnerFromLock(proceduralGuide, mirroredProceduralGuide);
-  }
-  if (stroke.branchSourceLockId) {
-    const source = locks.find((lock) => lock.id === stroke.branchSourceLockId);
-    branchHierarchy.attachDrawnLocksAsBranches(stroke, created);
-    const mirroredSource = mirrorPartnerFor(source);
-    if (mirroredSource && mirroredCreated.length === created.length) {
-      branchHierarchy.attachDrawnLocksAsBranches({
-        ...stroke,
-        branchSourceLockId: mirroredSource.id
-      }, mirroredCreated);
-    }
-  }
-  renderLockList();
-  updateCount();
-  return finalizeDrawnLockSelection(created[0]);
-}
-
-function createDrawnPanel(stroke) {
-  const processed = processedDrawStroke(stroke.samples, stroke.smoothing, stroke.curveStep);
-  if (processed.length < 3 || strokeLength(processed) < 0.12) return null;
-  const points = processed.map((sample) => sample.point.clone());
-  const root = points[0];
-  const lock = addLock("front", {
-    geometryType: "panel",
-    x: root.x,
-    y: root.y,
-    z: root.z,
-    length: new THREE.CatmullRomCurve3(points).getLength(),
-    curve: points.at(-1).x - root.x,
-    width: stroke.brushSize,
-    panelThickness: stroke.panelThickness,
-    panelLengthLoops: stroke.panelLengthLoops,
-    panelWidthLoops: stroke.panelWidthLoops,
-    panelCurvature: stroke.panelCurvature,
-    panelLeftEdgeTrim: stroke.panelLeftEdgeTrim,
-    panelRightEdgeTrim: stroke.panelRightEdgeTrim,
-    panelSplitEnabled: stroke.panelSplitEnabled,
-    panelSplitSnapToLoops: stroke.panelSplitSnapToLoops !== false,
-    panelSplitHeight: stroke.panelSplitHeight,
-    panelSplits: clonePanelSplits(stroke.panelSplits, stroke.panelSplitHeight),
-    panelSplitGap: stroke.panelSplitGap,
-    splitBones: stroke.splitBones ? splitBonesFromData(stroke.splitBones, stroke.panelSplits, stroke) : null,
-    bones: stroke.bones ? bonesFromData(stroke.bones, stroke) : null,
-    taperCurve: panelCreationDefaults.taperCurve.map((point) => ({ ...point })),
-    depthCurve: panelCreationDefaults.depthCurve.map((point) => ({ ...point })),
-    taperCurveSecondary: panelCreationDefaults.taperCurveSecondary.map((point) => ({ ...point })),
-    depthCurveSecondary: panelCreationDefaults.depthCurveSecondary.map((point) => ({ ...point })),
-    asymmetricWidthCurve: Boolean(panelCreationDefaults.asymmetricWidthCurve),
-    asymmetricDepthCurve: Boolean(panelCreationDefaults.asymmetricDepthCurve),
-    centerAsymmetricProfile: Boolean(panelCreationDefaults.centerAsymmetricProfile),
-    surfaceNormalInfluence: Number(stroke.surfaceNormalInfluence ?? 1),
-    pointSurfaceNormals: strokeSurfaceNormals(processed, stroke.rootSurfaceNormal),
-    color: DEFAULT_HAIR_COLOR,
-    scalpRegion: stroke.scalpRegion,
-    hairLayer: panelCreationDefaults.hairLayer,
-    rootAttachmentEnabled: stroke.rootAttachmentEnabled,
-    rootScalpOffset: THREE.MathUtils.clamp(panelCreationDefaults.rootScalpOffset + stroke.scalpOffset, -1, 1),
-    rootSurfacePoint: stroke.rootSurfacePoint,
-    rootSurfaceNormal: stroke.rootSurfaceNormal,
-    points
-  }, { deferUi: true });
-  updateLockGeometry(lock);
-  lock.curveObjects.group.visible = false;
-  createMirrorPartnerForNewLock(lock);
-  renderLockList();
-  updateCount();
-  return finalizeDrawnLockSelection(lock);
-}
-
-function extendDrawnStrand(stroke) {
-  const lock = locks.find((item) => item.id === stroke.extensionLockId);
-  if (!lock) return null;
-  const processed = processedDrawStroke(stroke.samples, stroke.smoothing, stroke.curveStep);
-  if (processed.length < 2 || strokeLength(processed) < 0.04) return null;
-  const addedPoints = processed.slice(1).map((sample) => sample.point.clone());
-  const addedSurfaceNormals = strokeSurfaceNormals(processed, lock.pointSurfaceNormals?.at(-1) || stroke.rootSurfaceNormal).slice(1);
-  if (!addedPoints.length) return null;
-  const existingSurfaceNormals = lock.points.map((_, index) => lock.pointSurfaceNormals?.[index] || null);
-  const lastScale = lock.pointScales.at(-1) || { x: 1, z: 1 };
-  const lastWidth = lock.pointWidths.at(-1) ?? 1;
-  const lastTwist = lock.pointTwists.at(-1) ?? 0;
-  lock.points.push(...addedPoints);
-  lock.pointScales.push(...addedPoints.map(() => ({ ...lastScale })));
-  lock.pointWidths.push(...addedPoints.map(() => lastWidth));
-  lock.pointTwists.push(...addedPoints.map(() => lastTwist));
-  lock.pointSurfaceNormals = [...existingSurfaceNormals, ...addedSurfaceNormals];
-  if (lock.geometryType !== "braid") lock.surfaceNormalInfluence = Number(stroke.surfaceNormalInfluence ?? lock.surfaceNormalInfluence ?? 0);
-  if (lock.geometryType !== "braid" && stroke.curlEnabled) {
-    lock.curlEnabled = true;
-    lock.curlCount = Number(stroke.curlCount ?? lock.curlCount ?? 4);
-    lock.curlDisplacement = Number(stroke.curlDisplacement ?? lock.curlDisplacement ?? 0.18);
-  }
-  syncLockFromCurve(lock);
-  if (lock.curveObjects.handles.length !== lock.points.length) rebuildCurveObjects(lock);
-  updateLockGeometry(lock);
-  syncActiveMirror(lock, { refreshUi: true });
-  selectLock(lock.id, { individualClumpMember: Boolean(lock.clumpId && !lock.clumpGuide) });
-  renderLockList();
-  updateCount();
-  return lock;
-}
-
-function finishDrawStrandStroke(event, options = {}) {
-  const stroke = sculptState.state.drawStrandStroke;
-  if (!stroke || (event?.pointerId !== undefined && event.pointerId !== stroke.pointerId)) return;
-  sculptState.state.drawStrandStroke = null;
-  if (renderer.domElement.hasPointerCapture?.(stroke.pointerId)) renderer.domElement.releasePointerCapture(stroke.pointerId);
-  renderer.domElement.style.cursor = "";
-  drawStrandPreview.visible = false;
-  drawStrandPreview.geometry.setFromPoints([]);
-  drawStrandMirrorPreview.visible = false;
-  drawStrandMirrorPreview.geometry.setFromPoints([]);
-  resetDrawVolumePreview(drawStrandVolumePreview);
-  resetDrawVolumePreview(drawStrandMirrorVolumePreview);
-  [...drawStrandClumpVolumePreviews, ...drawStrandClumpMirrorPreviews].forEach(resetDrawVolumePreview);
-  viewPlaneFill.visible = false;
-  viewPlaneGrid.visible = false;
-  const minimumStrokeLength = stroke.extensionLockId ? 0.04 : 0.12;
-  if (!options.cancel && stroke.samples.length >= 2 && strokeLength(stroke.samples) >= minimumStrokeLength) {
-    pushUndoState();
-    if (stroke.extensionLockId) extendDrawnStrand(stroke);
-    else createDrawnStrand(stroke);
-  }
-  updateInteractionLocks();
-  updateAttributeEditorMode();
-  updatePlacementStatus();
-  event?.preventDefault();
-}
 
 function createPlacedStrand(hit) {
   const normalMatrix = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
@@ -13608,7 +12371,7 @@ function updatePlacementStatus() {
     } else if (sculptState.state.placeEdit?.step === "length") {
       message = "Step 2 of 2: move the mouse to set length, click to finish. Hold and drag to orbit.";
     } else {
-      message = selectedCurveLatticeGuide()
+      message = drawFlowApi.selectedCurveLatticeGuide()
         ? "Place strand: click the selected curve lattice to set the root. Hold and drag to orbit."
         : "Place strand: click the scalp guide to set the root. Hold and drag to orbit.";
     }
@@ -13619,8 +12382,8 @@ function updatePlacementStatus() {
       ? "Draw 3 strand clump"
       : hairState.state.drawStrandMode === "ponytail-clump" ? "Draw ponytail clump"
       : hairState.state.drawStrandMode === "coil" ? "Draw coil" : "Draw strand";
-    const surfaceMode = activeStrokeSurfaceValue();
-    const dynamicSurface = activeStrokeDynamicEnabled(surfaceMode);
+    const surfaceMode = drawFlowApi.activeStrokeSurfaceValue();
+    const dynamicSurface = drawFlowApi.activeStrokeDynamicEnabled(surfaceMode);
     if (surfaceMode === "contextual-plane") {
       message = `${drawLabel}: draw on the contextual 2D plane at the project origin. The closest view axis chooses its orientation.`;
     } else if (!dynamicSurface) {
@@ -13639,8 +12402,8 @@ function updatePlacementStatus() {
         : "Poly Brush: drag to extend a strip of authored quads."
       : "Poly Brush: Ctrl-click vertices to add them to the selection, Alt-click selected vertices to remove them, Shift-drag the mesh to relax, Shift-click a gap to fill or bridge, and Alt-click unselected components to delete.";
   } else if (sel.state.activeTool === "braid") {
-    const surfaceMode = activeStrokeSurfaceValue();
-    const dynamicSurface = activeStrokeDynamicEnabled(surfaceMode);
+    const surfaceMode = drawFlowApi.activeStrokeSurfaceValue();
+    const dynamicSurface = drawFlowApi.activeStrokeDynamicEnabled(surfaceMode);
     if (!braidMeshPresets.has(braidMeshPresetInput.value)) {
       message = "Braid: loading the selected mesh preset...";
     } else if (surfaceMode === "contextual-plane") {
@@ -13653,8 +12416,8 @@ function updatePlacementStatus() {
         : "Draw braid: drag a continuous path from the chosen live surface. Hold Shift for a surface-conformed eight-direction stroke; hold Ctrl or Alt for viewport navigation.";
     }
   } else if (sel.state.activeTool === "panel") {
-    const surfaceMode = activeStrokeSurfaceValue();
-    const dynamicSurface = activeStrokeDynamicEnabled(surfaceMode);
+    const surfaceMode = drawFlowApi.activeStrokeSurfaceValue();
+    const dynamicSurface = drawFlowApi.activeStrokeDynamicEnabled(surfaceMode);
     if (surfaceMode === "contextual-plane") {
       message = "Split Panel: draw its center path on the contextual 2D plane.";
     } else if (!dynamicSurface) {
@@ -13686,7 +12449,7 @@ function updatePlacementStatus() {
     }
   } else if (sculptState.state.capsuleGuideEditing) {
     message = "Capsule guide: select a horizontal loop, then use Move, Rotate, or Scale to edit the entire loop.";
-  } else if (["select", "move", "rotate", "scale"].includes(sel.state.activeTool) && selectedCurveLatticeGuide()) {
+  } else if (["select", "move", "rotate", "scale"].includes(sel.state.activeTool) && drawFlowApi.selectedCurveLatticeGuide()) {
     message = sel.state.selectedStrandGroup
       ? "Group curve: move a cyan control point to reshape every strand in the selected group."
       : "Curve lattice guide: click a control point, or click an edge to select its full horizontal or vertical loop.";
@@ -13968,7 +12731,7 @@ function selectPointsInMarquee(drag) {
   };
   const viewportRect = renderer.domElement.getBoundingClientRect();
   const matches = [];
-  const lattice = selectedCurveLatticeGuide();
+  const lattice = drawFlowApi.selectedCurveLatticeGuide();
   if (lattice?.handlesGroup.visible) {
     lattice.handlesGroup.children.forEach((handle, pointIndex) => {
       if (handle.visible && pointInsideSelectionMarquee(handle.getWorldPosition(new THREE.Vector3()), bounds, viewportRect)) {
@@ -15844,7 +14607,7 @@ function syncViewportDrawSettings() {
   viewportEditModeControl.setAttribute("aria-hidden", "false");
   viewportDrawSettings.classList.toggle("hidden", !drawSettingsVisible);
   viewportDrawSettings.setAttribute("aria-hidden", String(!drawSettingsVisible));
-  drawSurfaceDynamicButton.disabled = activeStrokeSurfaceValue() === "contextual-plane";
+  drawSurfaceDynamicButton.disabled = drawFlowApi.activeStrokeSurfaceValue() === "contextual-plane";
   viewportDrawLayerInput.value = normalizeHairLayer(strandCreationDefaults.hairLayer);
 }
 
@@ -16156,7 +14919,7 @@ function createStandaloneCurveLatticeGuide() {
     rows,
     points: guideApi.flatCurveLatticePoints(columns, rows)
   });
-  refreshLiveSurfaceOptions();
+  drawFlowApi.refreshLiveSurfaceOptions();
   return guide;
 }
 
@@ -16831,7 +15594,7 @@ function deleteGuide(guide) {
   removeGuideObjects(guide);
   disposeGuide(guide);
   guides.splice(guides.indexOf(guide), 1);
-  refreshLiveSurfaceOptions();
+  drawFlowApi.refreshLiveSurfaceOptions();
   guideApi.selectGuide(guides.at(-1)?.id);
   updateCount();
   return true;
@@ -17168,10 +15931,10 @@ function contextualRadialOptions(kind) {
     ];
   }
   if (kind === "live-surface-submenu") {
-    refreshLiveSurfaceOptions();
+    drawFlowApi.refreshLiveSurfaceOptions();
     return [
       { action: "back-to-main", label: "Back", submenu: "root" },
-      ...[...activeStrokeSurfaceInput().options]
+      ...[...drawFlowApi.activeStrokeSurfaceInput().options]
         .filter((option) => !option.disabled)
         .map((option) => ({
           action: `select-live-surface:${option.value}`,
@@ -17180,7 +15943,7 @@ function contextualRadialOptions(kind) {
         })),
       {
         action: "toggle-dynamic-surface",
-        label: drawSurfaceDynamicEnabled() ? "Disable Dynamic" : "Enable Dynamic"
+        label: drawFlowApi.drawSurfaceDynamicEnabled() ? "Disable Dynamic" : "Enable Dynamic"
       }
     ];
   }
@@ -17529,12 +16292,12 @@ function updateStrandRadialGesture(event) {
 
 function performStrandRadialAction(action, lockId) {
   if (action === "toggle-dynamic-surface") {
-    setDrawSurfaceDynamicEnabled(!drawSurfaceDynamicEnabled());
+    drawFlowApi.setDrawSurfaceDynamicEnabled(!drawFlowApi.drawSurfaceDynamicEnabled());
     drawSurfaceDynamicButton.dispatchEvent(new Event("change", { bubbles: true }));
     return true;
   }
   if (action?.startsWith("select-live-surface:")) {
-    return setActiveStrokeSurfaceValue(action.slice("select-live-surface:".length));
+    return drawFlowApi.setActiveStrokeSurfaceValue(action.slice("select-live-surface:".length));
   }
   if (action?.startsWith("workspace-")) {
     setViewportEditMode(action.slice("workspace-".length));
@@ -17920,7 +16683,7 @@ function setLayerColorShiftsEnabled(enabled, { persist = true } = {}) {
   sel.state.layerColorShiftsEnabled = Boolean(enabled);
   layerColorShiftsPreferenceInput.checked = sel.state.layerColorShiftsEnabled;
   locks.forEach(applyMaterialDefinitionToLock);
-  if (sculptState.state.drawStrandStroke) updateDrawStrandPreview();
+  if (sculptState.state.drawStrandStroke) drawFlowApi.updateDrawStrandPreview();
   renderLockList();
   if (persist) saveBooleanPreference(LAYER_COLOR_SHIFTS_PREFERENCE_KEY, sel.state.layerColorShiftsEnabled);
 }
@@ -18222,7 +16985,7 @@ function duplicatePlacementTarget(event, placement) {
   const ray = rayFromViewportEvent(event);
   const scalpHit = raycaster.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0] || null;
   if (scalpHit) {
-    const normal = worldNormalAtHit(scalpHit);
+    const normal = drawFlowApi.worldNormalAtHit(scalpHit);
     return {
       root: scalpHit.point.clone().addScaledVector(
         normal,
@@ -19030,7 +17793,7 @@ function createOutlinerStrandButton(lock, options = {}) {
     onCommit: (nextName) => {
       lock.name = nextName;
       if (lock.id === sel.state.selectedId) inputs.name.value = nextName;
-      refreshLiveSurfaceOptions();
+      drawFlowApi.refreshLiveSurfaceOptions();
     },
     rerender: renderLockList
   }));
@@ -19113,7 +17876,7 @@ function createOutlinerCurveSurface(lock) {
     onCommit: (nextName) => {
       lock.name = nextName;
       if (lock.id === sel.state.selectedId) inputs.name.value = nextName;
-      refreshLiveSurfaceOptions();
+      drawFlowApi.refreshLiveSurfaceOptions();
     },
     rerender: renderLockList
   }));
@@ -19474,7 +18237,7 @@ function renderLockList() {
     list.appendChild(groupElement);
   });
   list.appendChild(createSelectionSetsOutlinerFolder());
-  refreshLiveSurfaceOptions();
+  drawFlowApi.refreshLiveSurfaceOptions();
 }
 
 function updateCount() {
@@ -19637,7 +18400,7 @@ strandLayerInput.addEventListener("change", () => {
   if (!lock && creationToolActive()) {
     activeCreationShapeDefaults().hairLayer = layerId;
     syncViewportDrawSettings();
-    if (sculptState.state.drawStrandStroke) updateDrawStrandPreview();
+    if (sculptState.state.drawStrandStroke) drawFlowApi.updateDrawStrandPreview();
     return;
   }
   if (!lock) return;
@@ -19650,7 +18413,7 @@ viewportDrawLayerInput.addEventListener("change", () => {
   const layerId = normalizeHairLayer(viewportDrawLayerInput.value);
   strandCreationDefaults.hairLayer = layerId;
   if (sel.state.activeTool === "draw" && !getSelectedLock()) strandLayerInput.value = layerId;
-  if (sculptState.state.drawStrandStroke?.outputType === "strand") updateDrawStrandPreview();
+  if (sculptState.state.drawStrandStroke?.outputType === "strand") drawFlowApi.updateDrawStrandPreview();
   updatePlacementStatus();
 });
 
@@ -19741,7 +18504,7 @@ promoteLiveSurfaceGuideAction.addEventListener("click", () => {
   const promoted = lock.liveSurfaceGuide;
   hideOutlinerContextMenu();
   renderLockList();
-  if (promoted) setActiveStrokeSurfaceValue(`strand:${lock.id}`);
+  if (promoted) drawFlowApi.setActiveStrokeSurfaceValue(`strand:${lock.id}`);
   updatePlacementStatus();
 });
 
@@ -20601,7 +19364,7 @@ curveLatticeToggle.addEventListener("click", (event) => {
     updateViewPlaneGrid();
     return;
   }
-  const existing = selectedCurveLatticeGuide() || guides.find((guide) => guide.type === "curve-lattice");
+  const existing = drawFlowApi.selectedCurveLatticeGuide() || guides.find((guide) => guide.type === "curve-lattice");
   if (existing && !event.shiftKey) {
     guideApi.selectGuide(existing.id);
     return;
@@ -20699,7 +19462,7 @@ Object.entries(surfaceGuideInputs).forEach(([key, input]) => {
       guide[key] = value;
       guideApi.updateCapsuleGuideGeometry(guide, { preserveControlPoints: true });
     }
-    refreshLiveSurfaceOptions();
+    drawFlowApi.refreshLiveSurfaceOptions();
   });
 });
 bindUndoCapture(surfaceGuideNameInput);
@@ -20709,7 +19472,7 @@ surfaceGuideNameInput.addEventListener("change", () => {
   guide.name = guideApi.normalizeCapsuleGuideName(surfaceGuideNameInput.value, guide.name);
   surfaceGuideNameInput.value = guide.name;
   guideApi.renderGuideOutliner();
-  refreshLiveSurfaceOptions();
+  drawFlowApi.refreshLiveSurfaceOptions();
   updatePlacementStatus();
 });
 bindUndoCapture(surfaceGuideColorInput);
@@ -20855,10 +19618,10 @@ if (drawStrandBrushSizeNumberInput) bindUndoCapture(drawStrandBrushSizeNumberInp
 drawStrandBrushSizeInput.addEventListener("input", () => {
   const nextWidth = Number(drawStrandBrushSizeInput.value);
   drawStrandBrushSizeValue.textContent = nextWidth.toFixed(2);
-  setDrawStrandBrushCursorScale(activeStrokeBrushSize());
+  setDrawStrandBrushCursorScale(drawFlowApi.activeStrokeBrushSize());
   if (sculptState.state.drawStrandStroke?.outputType === "strand") {
-    sculptState.state.drawStrandStroke.brushSize = activeStrokeBrushSize();
-    updateDrawStrandPreview();
+    sculptState.state.drawStrandStroke.brushSize = drawFlowApi.activeStrokeBrushSize();
+    drawFlowApi.updateDrawStrandPreview();
     return;
   }
   const selectedLock = getSelectedLock();
@@ -20894,14 +19657,14 @@ polyBrushSpacingInput.addEventListener("input", () => {
 });
 drawToolSizeInput.addEventListener("input", () => {
   drawToolSizeValue.textContent = Number(drawToolSizeInput.value).toFixed(2);
-  setDrawStrandBrushCursorScale(activeStrokeBrushSize());
+  setDrawStrandBrushCursorScale(drawFlowApi.activeStrokeBrushSize());
   if (sculptState.state.drawStrandStroke && sculptState.state.drawStrandStroke.outputType !== "braid") {
-    sculptState.state.drawStrandStroke.brushSize = activeStrokeBrushSize();
-    sculptState.state.drawStrandStroke.brushDepth = activeStrokeBrushDepth();
+    sculptState.state.drawStrandStroke.brushSize = drawFlowApi.activeStrokeBrushSize();
+    sculptState.state.drawStrandStroke.brushDepth = drawFlowApi.activeStrokeBrushDepth();
     if (sculptState.state.drawStrandStroke.outputType === "panel") {
-      sculptState.state.drawStrandStroke.panelThickness = activeStrokeBrushDepth();
+      sculptState.state.drawStrandStroke.panelThickness = drawFlowApi.activeStrokeBrushDepth();
     }
-    updateDrawStrandPreview();
+    drawFlowApi.updateDrawStrandPreview();
   }
 });
 braidToolSizeInput.addEventListener("input", () => {
@@ -20912,7 +19675,7 @@ braidToolSizeInput.addEventListener("input", () => {
     sculptState.state.drawStrandStroke.braidWidth = Number(braidCreationDefaults.braidWidth) * scale;
     sculptState.state.drawStrandStroke.braidDepth = Number(braidCreationDefaults.braidDepth) * scale;
     sculptState.state.drawStrandStroke.braidSegmentLength = Number(braidCreationDefaults.braidSegmentLength) * scale;
-    updateDrawStrandPreview();
+    drawFlowApi.updateDrawStrandPreview();
   }
 });
 drawStrandSmoothingInput.addEventListener("input", () => {
@@ -20997,7 +19760,7 @@ function syncDrawCurlControls() {
     sculptState.state.drawStrandStroke.curlEnabled = enabled;
     sculptState.state.drawStrandStroke.curlCount = curlCount;
     sculptState.state.drawStrandStroke.curlDisplacement = curlDisplacement;
-    updateDrawStrandPreview();
+    drawFlowApi.updateDrawStrandPreview();
     return;
   }
   if (enabled && selectedCoil) {
@@ -21026,15 +19789,15 @@ drawSurfaceNormalInfluenceInput.addEventListener("input", () => {
   drawSurfaceNormalInfluenceValue.textContent = influence.toFixed(2);
   if (sculptState.state.drawStrandStroke?.outputType === "strand") {
     sculptState.state.drawStrandStroke.surfaceNormalInfluence = influence;
-    updateDrawStrandPreview();
+    drawFlowApi.updateDrawStrandPreview();
   }
 });
 function handleLiveSurfaceChange() {
-  finishDrawStrandStroke(null, { cancel: true });
+  drawFlowApi.finishDrawStrandStroke(null, { cancel: true });
   if (sel.state.activeTool === "curve-surface") curveSurfaceCreate.resetCurveSurfaceDraft();
   if (sel.state.activeTool === "surface-loft") curveSurfaceCreate.resetLoftSurfaceDraft();
   drawStrandBrushCursor.visible = false;
-  drawSurfaceDynamicButton.disabled = activeStrokeSurfaceValue() === "contextual-plane";
+  drawSurfaceDynamicButton.disabled = drawFlowApi.activeStrokeSurfaceValue() === "contextual-plane";
   scalpBuilder.autoShowScalpGuideForActiveTool();
   scalpBuilder.updateScalpEditingVisibility();
   updatePlacementStatus();
@@ -21042,7 +19805,7 @@ function handleLiveSurfaceChange() {
 
 drawStrandSurfaceInput.addEventListener("change", handleLiveSurfaceChange);
 drawSurfaceDynamicButton.addEventListener("click", () => {
-  setDrawSurfaceDynamicEnabled(!drawSurfaceDynamicEnabled());
+  drawFlowApi.setDrawSurfaceDynamicEnabled(!drawFlowApi.drawSurfaceDynamicEnabled());
   drawSurfaceDynamicButton.dispatchEvent(new Event("change", { bubbles: true }));
 });
 drawSurfaceDynamicButton.addEventListener("change", handleLiveSurfaceChange);
@@ -21063,7 +19826,7 @@ drawSurfaceDynamicButton.addEventListener("change", handleLiveSurfaceChange);
     sculptState.state.drawStrandStroke.curveStep = Number(panelCurveStepInput.value);
     sculptState.state.drawStrandStroke.scalpOffset = Number(panelScalpOffsetInput.value);
     sculptState.state.drawStrandStroke.surfaceNormalInfluence = Number(panelSurfaceNormalInfluenceInput.value);
-    updateDrawStrandPreview();
+    drawFlowApi.updateDrawStrandPreview();
   });
 });
 Object.entries(strandSplitInputs).forEach(([key, input]) => {
@@ -21083,7 +19846,7 @@ Object.entries(strandSplitInputs).forEach(([key, input]) => {
     syncStrandSplitInputs(target);
     if (sculptState.state.drawStrandStroke?.outputType === "strand" && target === strandCreationDefaults) {
       sculptState.state.drawStrandStroke[key] = target[key];
-      updateDrawStrandPreview();
+      drawFlowApi.updateDrawStrandPreview();
     }
     if (selected?.geometryType === "strand") syncMultiStrandInputs(selected);
   });
@@ -21106,7 +19869,7 @@ hairCardInput.addEventListener("change", () => {
   if (selected && ["move", "rotate", "scale"].includes(sel.state.activeTool)) configureTransformControls(sel.state.activeTool);
   if (sculptState.state.drawStrandStroke?.outputType === "strand" && target === strandCreationDefaults) {
     sculptState.state.drawStrandStroke.hairCard = target.hairCard;
-    updateDrawStrandPreview();
+    drawFlowApi.updateDrawStrandPreview();
   }
   if (selected?.geometryType === "strand") syncMultiStrandInputs(selected);
 });
@@ -21172,7 +19935,7 @@ Object.entries(panelShapeInputs).forEach(([key, input]) => {
     if (sculptState.state.drawStrandStroke?.outputType === "panel" && target === panelCreationDefaults) {
       sculptState.state.drawStrandStroke.brushSize = Number(target.width) * Number(panelToolSizeInput.value);
       sculptState.state.drawStrandStroke[key] = target[key];
-      updateDrawStrandPreview();
+      drawFlowApi.updateDrawStrandPreview();
     }
     if (isPanelGeometry(selected)) syncMultiStrandInputs(selected);
   });
@@ -21217,7 +19980,7 @@ if (panelSegmentSpread) {
     }
     if (sculptState.state.drawStrandStroke?.outputType === "panel" && target === panelCreationDefaults) {
       sculptState.state.drawStrandStroke.splitBones = splitBonesToData(bones);
-      updateDrawStrandPreview();
+      drawFlowApi.updateDrawStrandPreview();
     }
   });
 }
@@ -21247,7 +20010,7 @@ editPanelSegmentDepthCurveButton?.addEventListener("click", () => segmentApi.ope
       sculptState.state.drawStrandStroke.smoothing = Number(braidSmoothingInput.value);
       sculptState.state.drawStrandStroke.curveStep = Number(braidCurveStepInput.value);
       sculptState.state.drawStrandStroke.scalpOffset = Number(braidScalpOffsetInput.value);
-      updateDrawStrandPreview();
+      drawFlowApi.updateDrawStrandPreview();
       return;
     }
     const braid = getSelectedLock();
@@ -21297,7 +20060,7 @@ braidMeshPresetInput.addEventListener("change", () => {
   const presetId = braidMeshPresetInput.value;
   if (sculptState.state.drawStrandStroke?.outputType === "braid") {
     sculptState.state.drawStrandStroke.braidMeshPreset = presetId;
-    updateDrawStrandPreview();
+    drawFlowApi.updateDrawStrandPreview();
     updatePlacementStatus();
     return;
   }
@@ -22523,7 +21286,7 @@ window.addEventListener("blur", () => {
   endProportionalSizeEdit();
   endViewSnap();
   endViewPlaneMove();
-  finishDrawStrandStroke(null, { cancel: true });
+  drawFlowApi.finishDrawStrandStroke(null, { cancel: true });
   sculptState.state.proceduralAccessoryEditPointerActive = false;
   sculptState.state.proceduralAccessoryEditHistoryOpen = false;
   polyToolsApi.finishPolyBrushStroke(null, { cancel: true });
@@ -23510,7 +22273,7 @@ function visibleControlPointHoverTargets() {
       : [];
   }
   const targets = [];
-  const lattice = sculptState.state.viewportEditMode === "guide" ? selectedCurveLatticeGuide() : null;
+  const lattice = sculptState.state.viewportEditMode === "guide" ? drawFlowApi.selectedCurveLatticeGuide() : null;
   if (lattice?.handlesGroup?.visible) targets.push(...lattice.handlesGroup.children);
   const lock = sculptState.state.viewportEditMode === "strand" ? getSelectedLock() : null;
   if (
@@ -23583,7 +22346,7 @@ window.addEventListener("pointermove", updateViewSnap, true);
 window.addEventListener("pointermove", updateViewPlaneMove);
 window.addEventListener("pointermove", updateRelaxEdit);
 window.addEventListener("pointermove", updatePlaceEdit);
-window.addEventListener("pointermove", updateDrawStrandStroke);
+window.addEventListener("pointermove", drawFlowApi.updateDrawStrandStroke);
 window.addEventListener("pointermove", guideApi.updateCapsuleGuideDrawStroke);
 window.addEventListener("pointermove", curveSurfaceCreate.updateCurveSurfaceStroke);
 window.addEventListener("pointermove", polyToolsApi.updatePolyFillPreview);
@@ -23608,7 +22371,7 @@ window.addEventListener("pointerup", finishStrandWidthEdgeDrag, true);
 window.addEventListener("pointerup", endViewPlaneMove);
 window.addEventListener("pointerup", endRelaxEdit);
 window.addEventListener("pointerup", endPlaceEdit);
-window.addEventListener("pointerup", finishDrawStrandStroke);
+window.addEventListener("pointerup", drawFlowApi.finishDrawStrandStroke);
 window.addEventListener("pointerup", guideApi.finishCapsuleGuideDrawStroke);
 window.addEventListener("pointerup", polyToolsApi.finishPolyBrushStroke, true);
 window.addEventListener("pointerup", curveSurfaceCreate.finishLoftSurfaceStroke);
@@ -23645,7 +22408,7 @@ window.addEventListener("pointercancel", endBlenderNavigation);
 window.addEventListener("pointercancel", endViewPlaneMove);
 window.addEventListener("pointercancel", endRelaxEdit);
 window.addEventListener("pointercancel", endPlaceEdit);
-window.addEventListener("pointercancel", (event) => finishDrawStrandStroke(event, { cancel: true }));
+window.addEventListener("pointercancel", (event) => drawFlowApi.finishDrawStrandStroke(event, { cancel: true }));
 window.addEventListener("pointercancel", (event) => guideApi.finishCapsuleGuideDrawStroke(event, { cancel: true }));
 window.addEventListener("pointercancel", (event) => curveSurfaceCreate.finishLoftSurfaceStroke(event, { cancel: true }));
 window.addEventListener("pointercancel", (event) => curveSurfaceCreate.finishCurveSurfaceStroke(event, { cancel: true }));
@@ -23864,7 +22627,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   }
   if (sel.state.activeTool === "draw-capsule-guide") {
     if (event.ctrlKey || event.altKey || event.metaKey) return;
-    guideApi.beginCapsuleGuideDrawStroke(event, drawSurfaceHitFromEvent(event, { root: true }));
+    guideApi.beginCapsuleGuideDrawStroke(event, drawFlowApi.drawSurfaceHitFromEvent(event, { root: true }));
     return;
   }
   if (sculptState.state.capsuleGuideEditing) {
@@ -23900,17 +22663,17 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   }
   if (["draw", "procedural-draw", "braid", "panel"].includes(sel.state.activeTool)) {
     if (event.ctrlKey || event.altKey || event.metaKey) return;
-    const extensionLock = selectedTipContinuationLock(event);
+    const extensionLock = drawFlowApi.selectedTipContinuationLock(event);
     const branchStart = extensionLock ? null : branchHierarchy.selectedDrawBranchPoint(event);
-    const surfaceHit = extensionLock || branchStart ? null : drawSurfaceHitFromEvent(event, { root: true });
-    beginDrawStrandStroke(event, surfaceHit, extensionLock, branchStart);
+    const surfaceHit = extensionLock || branchStart ? null : drawFlowApi.drawSurfaceHitFromEvent(event, { root: true });
+    drawFlowApi.beginDrawStrandStroke(event, surfaceHit, extensionLock, branchStart);
     return;
   }
   if (sel.state.activeTool === "curve-surface") {
     if (event.ctrlKey || event.altKey || event.metaKey) return;
-    const surfaceMode = activeStrokeSurfaceValue();
-    const dynamicContextual = activeStrokeDynamicEnabled(surfaceMode);
-    const hit = drawSurfaceHitFromEvent(event, { root: true })
+    const surfaceMode = drawFlowApi.activeStrokeSurfaceValue();
+    const dynamicContextual = drawFlowApi.activeStrokeDynamicEnabled(surfaceMode);
+    const hit = drawFlowApi.drawSurfaceHitFromEvent(event, { root: true })
       || (sculptState.state.curveSurfaceDraft?.curves?.length
         ? curveSurfaceCreate.curveSurfaceFallbackHit(event, surfaceMode, dynamicContextual)
         : null);
@@ -23919,7 +22682,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   }
   if (sel.state.activeTool === "surface-loft") {
     if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
-    curveSurfaceCreate.beginLoftSurfaceStroke(event, drawSurfaceHitFromEvent(event, { root: true }));
+    curveSurfaceCreate.beginLoftSurfaceStroke(event, drawFlowApi.drawSurfaceHitFromEvent(event, { root: true }));
     return;
   }
   if (sel.state.activeTool === "place") {
@@ -23935,7 +22698,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
       finishPlacementFlow({ keepSelected: true });
       return;
     }
-    const curveLattice = selectedCurveLatticeGuide();
+    const curveLattice = drawFlowApi.selectedCurveLatticeGuide();
     const surfaceHit = curveLattice
       ? raycaster.intersectObjects([curveLattice.mesh, curveLattice.rootMesh].filter((object) => object && object.visible !== false), false)[0]
       : raycaster.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0];
@@ -23987,7 +22750,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
       return;
     }
     const selectedLattice = selectingGuides && componentEditModeActive()
-      ? selectedCurveLatticeGuide()
+      ? drawFlowApi.selectedCurveLatticeGuide()
       : null;
     const latticePointHit = selectedLattice?.handlesGroup.visible
       ? raycaster.intersectObjects(selectedLattice.handlesGroup.children, false)[0]
@@ -24030,7 +22793,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   }
 
   const modelingClick = event.button === 0 && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
-  const selectedLattice = sculptState.state.viewportEditMode === "guide" ? selectedCurveLatticeGuide() : null;
+  const selectedLattice = sculptState.state.viewportEditMode === "guide" ? drawFlowApi.selectedCurveLatticeGuide() : null;
   if (modelingClick && sel.state.activeTool === "move" && selectedLattice?.handlesGroup.visible) {
     const latticePointHit = raycaster.intersectObjects(selectedLattice.handlesGroup.children, false)[0];
     if (latticePointHit) {
