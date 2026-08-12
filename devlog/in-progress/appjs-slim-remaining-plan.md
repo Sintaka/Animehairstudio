@@ -22,7 +22,7 @@
 | A1 | curve-surface / surface-lattice 创建 | ~50 | ~1,200 | ~950 | 低 | 43 | 低耦合高收益，curve-surface.js 等模块已就位 |
 | A2 | radial menu | 36 | ~830 | ~650 | 低 | 21 | 极低耦合、完全自洽 |
 | A3 | procedural duplicate | 22 | ~730 | ~580 | 低 | 17 | 极低耦合、自洽 |
-| A4 | reference + head/body | 74 | ~1,720 | ~1,400 | 低中 | ~110 | 参考图/头部互相独立，可合成或分两批 |
+| A4 ✅ | reference + head/body | 70 | ~1,288 | 低中 | 已迁出 modules/scene/reference-head.js（新建 scene 域；18 处跨模块重接含 drawFlowDeps；boot loadDefaultGuideModel 处理；verify-smoke 10/11=基线） |
 | A5 | poly tools | 28 | ~665 | ~530 | 低中 | 16 | 自洽工具集 |
 | A6 | material | 16 | ~310 | ~250 | 低 | 51 | 小但干净，material-state.js 已在 |
 | B1 | strand/panel/split/tip 几何与编辑 | ~100 | ~4,500 | ~3,400 | 中 | ~220 | 最大剩余块，建议分 2-3 批；与 bone roadmap 强相关（先拆几何，bones 改动落模块内更安全） |

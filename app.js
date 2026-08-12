@@ -21,6 +21,7 @@ import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=202
 import { createPresetLibraryApi } from "./modules/io/preset-library.js?v=20260812-1";
 import { createDrawFlowApi } from "./modules/geometry/draw-flow.js?v=20260812-1";
 import { createPlacementApi } from "./modules/geometry/placement.js?v=20260812-1";
+import { createReferenceHeadApi } from "./modules/scene/reference-head.js?v=20260812-2";
 import { createMiscStore } from "./modules/core/misc-store.js?v=20260809-12";
 import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260809-11";
 import { createScalpStore } from "./modules/scalp/scalp-store.js?v=20260809-10";
@@ -565,7 +566,7 @@ function setOrthographicView(enabled) {
     ? "Switch to perspective view"
     : "Switch to orthographic view";
   controls.update();
-  updateReferencePlaneVisibility();
+  referenceHeadApi.updateReferencePlaneVisibility();
 }
 const TRANSFORM_GIZMO_PICKER_DEFLATION = 0.5;
 const TRANSFORM_GIZMO_AXIS_PICKER_DEFLATION = 0.35;
@@ -765,9 +766,9 @@ transformControls.addEventListener("dragging-changed", (event) => {
         ? { startScale: transformControls.object.scale.clone(), axis: transformControls.axis }
         : null;
     } else {
-      syncReferenceImageFromMesh(reference);
+      referenceHeadApi.syncReferenceImageFromMesh(reference);
       sculptState.state.referenceScaleDrag = null;
-      renderReferenceImagePanel();
+      referenceHeadApi.renderReferenceImagePanel();
     }
     updateInteractionLocks();
     return;
@@ -883,8 +884,8 @@ transformControls.addEventListener("objectChange", () => {
       const factor = start[axis] ? handle.scale[axis] / start[axis] : 1;
       handle.scale.copy(start).multiplyScalar(Math.max(0.05, factor));
     }
-    syncReferenceImageFromMesh(reference);
-    renderReferenceImagePanel();
+    referenceHeadApi.syncReferenceImageFromMesh(reference);
+    referenceHeadApi.renderReferenceImagePanel();
     return;
   }
   applyUniformTransformScale(handle);
@@ -2909,6 +2910,14 @@ const presetCatalog = [
 ];
 const head = createHeadStore();
 
+// Reference + head/body api (refactor batch A4): deps filled in one batch after the
+// scalpBuilderDeps block (all const/let deps defined) and before the default-guide boot
+// callback (OBJLoader async, fires after full script evaluation) runs; see
+// devlog/in-progress/reference-head-refactor-map.md.
+const referenceHeadDeps = {};
+const referenceHeadApi = createReferenceHeadApi(referenceHeadDeps);
+
+
 const GUIDE_HEAD_REFERENCE_SIZE = 26.760177;
 const GUIDE_HEAD_TARGET_HEIGHT = 2.8;
 const FULL_BODY_HEAD_COUNT = 7;
@@ -2918,182 +2927,19 @@ const GUIDE_BOUNDS_EXCLUDED_GROUPS = new Set(["body_clean_nosupport"]);
 
 
 
-function disposeGuideModel(model) {
-  if (!model) return;
-  scene.remove(model);
-  model.traverse((child) => {
-    if (!child.isMesh) return;
-    child.geometry?.dispose();
-    if (Array.isArray(child.material)) child.material.forEach((material) => material.dispose());
-    else child.material?.dispose();
-  });
-}
-
-function syncHeadTransformInputs() {
-  Object.entries(headTransformInputs).forEach(([key, input]) => {
-    input.value = String(headTransform[key]);
-    headTransformValues[key].textContent = Number(headTransform[key]).toFixed(2);
-  });
-}
-
-function applyHeadTransform() {
-  if (!guideState.state.guideModel) return;
-  const sourceCenter = guideState.state.guideModel.userData.sourceCenter;
-  const fittedCenter = guideState.state.guideModel.userData.fittedCenter;
-  const baseScale = Number(guideState.state.guideModel.userData.baseScale);
-  if (!sourceCenter || !fittedCenter || !Number.isFinite(baseScale)) return;
-  const scaleX = baseScale * headTransform.uniformScale * headTransform.scaleX;
-  const scaleY = baseScale * headTransform.uniformScale * headTransform.scaleY;
-  const scaleZ = baseScale * headTransform.uniformScale * headTransform.scaleZ;
-  guideState.state.guideModel.scale.set(scaleX, scaleY, scaleZ);
-  guideState.state.guideModel.position.set(
-    fittedCenter.x + headTransform.positionX - sourceCenter.x * scaleX,
-    fittedCenter.y + headTransform.positionY - sourceCenter.y * scaleY,
-    fittedCenter.z + headTransform.positionZ - sourceCenter.z * scaleZ
-  );
-  guideState.state.guideModel.updateMatrixWorld(true);
-}
 
 
 
-function resetHeadTransform() {
-  Object.assign(headTransform, {
-    positionX: 0,
-    positionY: 0,
-    positionZ: 0,
-    uniformScale: 1,
-    scaleX: 1,
-    scaleY: 1,
-    scaleZ: 1
-  });
-  syncHeadTransformInputs();
-  applyHeadTransform();
-}
 
 
-function installGuideModel(obj, options = {}) {
-  const { normalize = false, frame = true, fullBody = false } = options;
-  const box = fullBody ? new THREE.Box3().setFromObject(obj) : guideApi.guideHeadBounds(obj);
-  const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
-  const sourceSize = fullBody ? size.y : Math.max(size.x, size.y, size.z);
-  if (!Number.isFinite(sourceSize) || sourceSize <= 0) throw new Error("Reference OBJ contains no usable mesh bounds");
-  const scale = fullBody
-    ? FULL_BODY_TARGET_HEIGHT / sourceSize
-    : GUIDE_HEAD_TARGET_HEIGHT / (normalize ? sourceSize : GUIDE_HEAD_REFERENCE_SIZE);
-  const fittedCenter = new THREE.Vector3(0, 0.05, 0);
-  if (fullBody) {
-    scalpSurfaceGroup.updateMatrixWorld(true);
-    const scalpBounds = new THREE.Box3().setFromObject(scalpBuilder.activeScalpSurfaceMesh());
-    const scalpCenter = scalpBounds.getCenter(new THREE.Vector3());
-    fittedCenter.set(
-      scalpCenter.x,
-      scalpBounds.max.y - (size.y * scale * 0.5),
-      scalpCenter.z
-    );
-  }
 
-  obj.scale.setScalar(scale);
-  obj.position.set(
-    fittedCenter.x - center.x * scale,
-    fittedCenter.y - center.y * scale,
-    fittedCenter.z - center.z * scale
-  );
-  obj.userData.sourceCenter = center.clone();
-  obj.userData.fittedCenter = fittedCenter;
-  obj.userData.baseScale = scale;
-  obj.userData.sourceHeight = size.y;
-  obj.userData.fullBodyReference = fullBody;
-  let meshCount = 0;
-  obj.traverse((child) => {
-    if (!child.isMesh) return;
-    meshCount += 1;
-    child.castShadow = true;
-    child.receiveShadow = true;
-    child.frustumCulled = false;
-    child.geometry = mergeVertices(child.geometry, 0.0001);
-    child.geometry.deleteAttribute("uv");
-    child.geometry.deleteAttribute("color");
-    child.geometry.computeVertexNormals();
-    child.material = new THREE.MeshStandardMaterial({
-      color: 0x3b3d42,
-      roughness: 0.9,
-      metalness: 0,
-      flatShading: false,
-      vertexColors: false,
-      transparent: false,
-      opacity: 1,
-      side: THREE.FrontSide,
-      stencilWrite: true,
-      stencilRef: 1,
-      stencilFunc: THREE.AlwaysStencilFunc,
-      stencilFail: THREE.KeepStencilOp,
-      stencilZFail: THREE.ReplaceStencilOp,
-      stencilZPass: THREE.ReplaceStencilOp
-    });
-  });
-  if (!meshCount) throw new Error("Head OBJ does not contain any mesh geometry");
-  disposeGuideModel(guideState.state.guideModel);
-  guideState.state.guideModel = obj;
-  scene.add(obj);
-  resetHeadTransform();
-  setHeadReferenceTransparency(false);
-  applyCharacterMeshDisplayVisibility();
-  syncDisplayVisibilityInputs();
-  if (frame) {
-    frameGuideModel(fullBody
-      ? { distanceScale: 1.1, targetYOffset: 0, fullBody: true }
-      : { distanceScale: 1.35, targetYOffset: -0.12 });
-  }
-}
 
-function loadDefaultGuideModel(options = {}) {
-  return new Promise((resolve, reject) => {
-    new OBJLoader().load("./assets/headplusfeatures.obj?v=20260720-1", (obj) => {
-      try {
-        installGuideModel(obj, options);
-        obj.updateMatrixWorld(true);
-        scalpState.state.authoredScalpGuideMatrix = obj.matrixWorld.clone();
-        head.state.importedHeadAsset = null;
-        scalpBuilder.ensureEditedScalpSurface().catch((error) => {
-          console.error("Could not initialize the live authored scalp surface", error);
-        });
-        resolve(obj);
-      } catch (error) {
-        reject(error);
-      }
-    }, undefined, reject);
-  });
-}
 
-loadDefaultGuideModel().catch((error) => {
+
+referenceHeadApi.loadDefaultGuideModel().catch((error) => {
   console.error("Could not load base head OBJ", error);
 });
 
-function frameGuideModel({
-  distanceScale = 1,
-  targetYOffset = 0.18,
-  fullBody = Boolean(guideState.state.guideModel?.userData?.fullBodyReference)
-} = {}) {
-  if (fullBody) {
-    frameViewportBounds(scalpBuilder.fullBodyScalpFocusBounds());
-    return;
-  }
-  ui.state.shiftSnappedViewActive = false;
-  const box = guideApi.guideHeadBounds(guideState.state.guideModel);
-  const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
-  const radius = Math.max(size.x, size.y, size.z) * 0.62;
-  camera.up.set(0, 1, 0);
-  controls.target.copy(center);
-  controls.target.y += targetYOffset;
-  camera.position.set(center.x, center.y + 0.28, center.z + Math.max(4.2, radius * 2.8) * distanceScale);
-  camera.near = 0.05;
-  camera.far = 100;
-  if (viewportState.state.orthographicView) syncOrthographicFramingFromDistance();
-  updateCameraProjectionForViewport();
-  camera.updateProjectionMatrix();
-}
 
 
 
@@ -3224,64 +3070,10 @@ function quadraticWeights(t) {
 
 
 
-function setHeadReferenceTransparency(enabled, opacity = 0.76) {
-  guideState.state.guideModel?.traverse((child) => {
-    if (!child.isMesh) return;
-    child.material.transparent = enabled;
-    child.material.opacity = enabled ? opacity : 1;
-    child.material.depthWrite = !enabled;
-    child.material.needsUpdate = true;
-  });
-}
 
 
 
-function trianglePlaneIntersections(a, b, c, axis, planePosition) {
-  const points = [];
-  const epsilon = 1e-5;
-  [[a, b], [b, c], [c, a]].forEach(([start, end]) => {
-    const startDistance = start[axis] - planePosition;
-    const endDistance = end[axis] - planePosition;
-    if (Math.abs(startDistance) <= epsilon && Math.abs(endDistance) <= epsilon) return;
-    let point = null;
-    if (Math.abs(startDistance) <= epsilon) point = start.clone();
-    else if (Math.abs(endDistance) <= epsilon) point = end.clone();
-    else if (startDistance * endDistance < 0) {
-      const amount = startDistance / (startDistance - endDistance);
-      point = start.clone().lerp(end, amount);
-    }
-    if (point && !points.some((candidate) => candidate.distanceToSquared(point) < epsilon * epsilon)) {
-      points.push(point);
-    }
-  });
-  return points.slice(0, 2);
-}
 
-function headPlaneIntersectionSegments(axis, planePosition) {
-  const segments = [];
-  const triangle = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
-  const intersectionMeshes = scalpBuilder.scalpBuilderHeadMeshes();
-  intersectionMeshes.forEach((mesh) => {
-    const geometry = mesh.geometry;
-    const position = geometry?.getAttribute("position");
-    if (!position) return;
-    mesh.updateMatrixWorld(true);
-    const index = geometry.index;
-    const triangleCount = index ? index.count / 3 : position.count / 3;
-    for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex += 1) {
-      for (let corner = 0; corner < 3; corner += 1) {
-        const vertexIndex = index ? index.getX(triangleIndex * 3 + corner) : triangleIndex * 3 + corner;
-        triangle[corner].fromBufferAttribute(position, vertexIndex).applyMatrix4(mesh.matrixWorld);
-      }
-      const intersections = trianglePlaneIntersections(
-        triangle[0], triangle[1], triangle[2], axis, planePosition
-      );
-      if (intersections.length !== 2) continue;
-      segments.push(intersections.map((point) => point.clone()));
-    }
-  });
-  return segments;
-}
 
 
 
@@ -3315,7 +3107,7 @@ Object.assign(scalpBuilderDeps, {
   activeStrokeSurfaceValue: drawFlowApi.activeStrokeSurfaceValue,
   addCapsuleGuide: guideApi.addCapsuleGuide,
   advancedLatticeButton,
-  applyHeadTransform,
+  applyHeadTransform: referenceHeadApi.applyHeadTransform,
   braidAutoShowScalpInput,
   braidScalpOffsetInput,
   braidStrokeActive: drawFlowApi.braidStrokeActive,
@@ -3338,9 +3130,9 @@ Object.assign(scalpBuilderDeps, {
   guideHeadBounds: guideApi.guideHeadBounds,
   guideState: guideState.state,
   head,
-  headMeshes,
+  headMeshes: referenceHeadApi.headMeshes,
   headPanel,
-  headPlaneIntersectionSegments,
+  headPlaneIntersectionSegments: referenceHeadApi.headPlaneIntersectionSegments,
   headSetupMode,
   headTransform,
   hierarchyToggle,
@@ -3414,7 +3206,7 @@ Object.assign(scalpBuilderDeps, {
   sel: sel.state,
   setActiveTool,
   setAppMenuOpen,
-  setHeadReferenceTransparency,
+  setHeadReferenceTransparency: referenceHeadApi.setHeadReferenceTransparency,
   setMirrorXEditing,
   setViewportEditMode,
   showOutlinerContextMenu,
@@ -3422,12 +3214,12 @@ Object.assign(scalpBuilderDeps, {
   surfaceGuideDefaults,
   syncDisplayVisibilityInputs,
   syncGuideInputs: guideApi.syncGuideInputs,
-  syncHeadTransformInputs,
+  syncHeadTransformInputs: referenceHeadApi.syncHeadTransformInputs,
   syncLockFromCurve,
   syncRootAttachmentMetadata,
   syncViewportDrawSettings,
   templatePlaneIntersectionSegments,
-  trianglePlaneIntersections,
+  trianglePlaneIntersections: referenceHeadApi.trianglePlaneIntersections,
   updateAttributeEditorMode,
   updateCount,
   updateCurveObjects,
@@ -3466,11 +3258,13 @@ Object.assign(scalpBuilderDeps, {
 
 
 
+
+
 function templatePlaneIntersectionSegments(template, axis, planePosition) {
   const segments = [];
   template.faces.forEach((face) => {
     [[0, 1, 2], [0, 2, 3]].forEach((corners) => {
-      const intersections = trianglePlaneIntersections(
+      const intersections = referenceHeadApi.trianglePlaneIntersections(
         template.vertices[face.indices[corners[0]]],
         template.vertices[face.indices[corners[1]]],
         template.vertices[face.indices[corners[2]]],
@@ -3653,7 +3447,7 @@ function exitSetupEditors() {
   scalpBuilder.setScalpSetupMenuOpen(false);
   if (scalpState.state.scalpBuilderEditing) scalpBuilder.setScalpBuilderEditing(false);
   if (scalpState.state.scalpPaintEditing) scalpBuilder.setScalpPaintEditing(false);
-  if (sculptState.state.headSetupEditing) setHeadSetupEditing(false);
+  if (sculptState.state.headSetupEditing) referenceHeadApi.setHeadSetupEditing(false);
   if (scalpState.state.scalpShapeEditing) scalpBuilder.setScalpShapeEditing(false);
   if (sculptState.state.capsuleGuideEditing) guideApi.setCapsuleGuideEditing(false);
 }
@@ -3693,544 +3487,34 @@ function setTurntableActive(enabled) {
 }
 
 
-function selectedReferenceImage() {
-  return referenceImages.find((reference) => reference.id === sel.state.selectedReferenceImageId) || null;
-}
 
-const MIN_REFERENCE_CROP_SPAN = 0.02;
 
-function normalizeReferenceCrop(crop = {}) {
-  const left = THREE.MathUtils.clamp(Number(crop.left ?? 0), 0, 1 - MIN_REFERENCE_CROP_SPAN);
-  const top = THREE.MathUtils.clamp(Number(crop.top ?? 0), 0, 1 - MIN_REFERENCE_CROP_SPAN);
-  const right = THREE.MathUtils.clamp(Number(crop.right ?? 1), left + MIN_REFERENCE_CROP_SPAN, 1);
-  const bottom = THREE.MathUtils.clamp(Number(crop.bottom ?? 1), top + MIN_REFERENCE_CROP_SPAN, 1);
-  return { left, top, right, bottom };
-}
 
-function referenceCropIsFull(reference) {
-  const crop = normalizeReferenceCrop(reference?.crop);
-  return crop.left === 0 && crop.top === 0 && crop.right === 1 && crop.bottom === 1;
-}
 
-function referencePlaneFrontAxis(view = "front") {
-  return ({
-    front: { axis: "z", sign: 1 },
-    back: { axis: "z", sign: -1 },
-    left: { axis: "x", sign: -1 },
-    right: { axis: "x", sign: 1 }
-  })[view] || { axis: "z", sign: 1 };
-}
 
-function referencePlanePlacement(view = "front", inFront = true) {
-  const placements = {
-    front: { position: [0, 0.8, 2.4], rotation: [0, 0, 0] },
-    back: { position: [0, 0.8, -2.4], rotation: [0, Math.PI, 0] },
-    left: { position: [-2.4, 0.8, 0], rotation: [0, -Math.PI / 2, 0] },
-    right: { position: [2.4, 0.8, 0], rotation: [0, Math.PI / 2, 0] }
-  };
-  const placement = placements[view] || placements.front;
-  if (inFront) return placement;
-  const position = [...placement.position];
-  const { axis } = referencePlaneFrontAxis(view);
-  position[axis === "x" ? 0 : 2] *= -1;
-  return { position, rotation: [...placement.rotation] };
-}
 
-function migratedReferencePlanePosition(snapshot, view, placement) {
-  const position = snapshot.position;
-  if (!position) return position;
-  const version = Number(snapshot.planePlacementVersion || 1);
-  if (version < 2) {
-    const legacyZ = view === "front" ? -2.4 : view === "back" ? 2.4 : null;
-    const untouchedLegacyPlacement = legacyZ != null
-      && Math.abs(Number(position.x)) < 0.0001
-      && Math.abs(Number(position.y) - 0.8) < 0.0001
-      && Math.abs(Number(position.z) - legacyZ) < 0.0001;
-    if (untouchedLegacyPlacement) {
-      return { x: placement.position[0], y: placement.position[1], z: placement.position[2] };
-    }
-  }
-  if (version < 3 && isUntouchedLegacySideReferencePlacement(snapshot, view)) {
-    return { x: placement.position[0], y: placement.position[1], z: placement.position[2] };
-  }
-  return position;
-}
 
-function isUntouchedLegacySideReferencePlacement(snapshot, view) {
-  if (view !== "left" && view !== "right") return false;
-  const oldSign = view === "left" ? 1 : -1;
-  const oldRotationY = view === "left" ? -Math.PI / 2 : Math.PI / 2;
-  const position = snapshot.position;
-  const rotation = snapshot.rotation;
-  return position
-    && Math.abs(Number(position.x) - 2.4 * oldSign) < 0.0001
-    && Math.abs(Number(position.y) - 0.8) < 0.0001
-    && Math.abs(Number(position.z)) < 0.0001
-    && (!rotation || (
-      Math.abs(Number(rotation.x)) < 0.0001
-      && Math.abs(Number(rotation.y) - oldRotationY) < 0.0001
-      && Math.abs(Number(rotation.z)) < 0.0001
-    ));
-}
 
-function migratedReferencePlaneRotation(snapshot, view, placement) {
-  if (
-    Number(snapshot.planePlacementVersion || 1) < 3
-    && isUntouchedLegacySideReferencePlacement(snapshot, view)
-  ) {
-    return { x: placement.rotation[0], y: placement.rotation[1], z: placement.rotation[2] };
-  }
-  if (
-    Number(snapshot.planePlacementVersion || 1) < 4
-    && isInwardFacingSideReferencePlacement(snapshot, view)
-  ) {
-    return { x: placement.rotation[0], y: placement.rotation[1], z: placement.rotation[2] };
-  }
-  return snapshot.rotation;
-}
 
-function isInwardFacingSideReferencePlacement(snapshot, view) {
-  if (view !== "left" && view !== "right") return false;
-  const sideSign = view === "left" ? -1 : 1;
-  const inwardRotationY = view === "left" ? Math.PI / 2 : -Math.PI / 2;
-  const position = snapshot.position;
-  const rotation = snapshot.rotation;
-  return position
-    && rotation
-    && Math.abs(Number(position.x) - 2.4 * sideSign) < 0.0001
-    && Math.abs(Number(position.y) - 0.8) < 0.0001
-    && Math.abs(Number(position.z)) < 0.0001
-    && Math.abs(Number(rotation.x)) < 0.0001
-    && Math.abs(Number(rotation.y) - inwardRotationY) < 0.0001
-    && Math.abs(Number(rotation.z)) < 0.0001;
-}
 
-const REFERENCE_VIEW_BY_CAMERA_AXIS = Object.freeze({
-  "0,0,1": "front",
-  "0,0,-1": "back",
-  "1,0,0": "right",
-  "-1,0,0": "left"
-});
 
-function snappedReferenceImageView() {
-  const snapped = isCameraInSnappedView();
-  if (!viewportState.state.orthographicView || !snapped) return null;
-  return REFERENCE_VIEW_BY_CAMERA_AXIS[cardinalAxisKey(viewPlaneNormal())] || null;
-}
 
-function updateReferencePlaneVisibility() {
-  const snappedView = snappedReferenceImageView();
-  referenceImages.forEach((reference) => {
-    if (reference.type !== "plane" || !reference.mesh) return;
-    const nextVisible = reference.visible
-      && (!reference.snappedViewOnly || reference.view === snappedView);
-    if (reference.mesh.visible === nextVisible) return;
-    reference.mesh.visible = nextVisible;
-    if (!nextVisible && transformControls.object === reference.mesh) {
-      transformControls.detach();
-    } else if (nextVisible && reference.id === sel.state.selectedReferenceImageId) {
-      attachReferenceImageTransform();
-    }
-  });
-}
 
-function applyReferenceImageRuntime(reference) {
-  const crop = normalizeReferenceCrop(reference.crop);
-  reference.crop = crop;
-  if (reference.type === "overlay" && reference.element) {
-    const viewportWidth = Math.max(1, viewport.clientWidth);
-    const viewportHeight = Math.max(1, viewport.clientHeight);
-    const aspect = Math.max(0.05, Number(reference.aspect || 1));
-    const baseWidth = Math.min(viewportWidth * 0.68, 900, viewportHeight * 0.88 * aspect);
-    reference.element.style.left = `${reference.x}%`;
-    reference.element.style.top = `${reference.y}%`;
-    reference.element.style.width = `${baseWidth * reference.scale}px`;
-    reference.element.style.aspectRatio = String(aspect);
-    if (reference.cropElement) {
-      reference.cropElement.style.clipPath = `inset(${crop.top * 100}% ${(1 - crop.right) * 100}% ${(1 - crop.bottom) * 100}% ${crop.left * 100}%)`;
-    }
-    if (reference.imageElement) {
-      reference.imageElement.style.opacity = String(reference.opacity);
-      reference.imageElement.style.transform = reference.flipX ? "scaleX(-1)" : "none";
-    }
-    const topLeftAnchored = reference.overlayAnchor === "top-left";
-    reference.element.style.transform = topLeftAnchored ? "none" : "translate(-50%, -50%)";
-    reference.element.style.transformOrigin = topLeftAnchored ? "top left" : "center";
-    reference.element.hidden = !reference.visible;
-    return;
-  }
-  if (reference.type === "plane" && reference.mesh) {
-    reference.mesh.position.set(reference.position.x, reference.position.y, reference.position.z);
-    reference.mesh.rotation.set(reference.rotation.x, reference.rotation.y, reference.rotation.z);
-    reference.mesh.scale.setScalar(reference.scale);
-    reference.mesh.material.opacity = reference.opacity;
-    const texture = reference.mesh.material.map;
-    if (texture) {
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.repeat.x = reference.flipX ? -1 : 1;
-      texture.offset.x = reference.flipX ? 1 : 0;
-      texture.repeat.y = 1;
-      texture.offset.y = 0;
-      texture.needsUpdate = true;
-    }
-    updateReferencePlaneVisibility();
-  }
-}
 
-function updateReferenceSelectionVisuals() {
-  referenceImages.forEach((reference) => {
-    const selected = reference.id === sel.state.selectedReferenceImageId;
-    reference.element?.classList.toggle("selected-reference", selected);
-    if (reference.selectionOutline) reference.selectionOutline.visible = selected;
-  });
-}
 
-function createReferenceImageRuntime(reference) {
-  if (reference.type === "overlay") {
-    const frame = document.createElement("div");
-    frame.className = "viewport-reference-frame";
-    frame.dataset.referenceImageId = reference.id;
-    const image = document.createElement("img");
-    image.className = "viewport-reference-image";
-    image.src = reference.source;
-    image.alt = "";
-    image.draggable = false;
-    image.dataset.referenceImageId = reference.id;
-    const cropElement = document.createElement("div");
-    cropElement.className = "viewport-reference-image-clip";
-    cropElement.appendChild(image);
-    frame.appendChild(cropElement);
-    ["nw", "ne", "sw", "se"].forEach((corner) => {
-      const handle = document.createElement("span");
-      handle.className = "reference-overlay-scale-handle";
-      handle.dataset.overlayCorner = corner;
-      handle.setAttribute("aria-hidden", "true");
-      frame.appendChild(handle);
-    });
-    viewportReferenceImages.appendChild(frame);
-    reference.element = frame;
-    reference.cropElement = cropElement;
-    reference.imageElement = image;
-    applyReferenceImageRuntime(reference);
-    updateReferenceSelectionVisuals();
-    return;
-  }
 
-  const aspect = Math.max(0.05, Number(reference.aspect || 1));
-  const texture = new THREE.TextureLoader().load(reference.source);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const geometry = new THREE.PlaneGeometry(3 * aspect, 3);
-  const material = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    opacity: reference.opacity,
-    side: THREE.DoubleSide,
-    depthTest: true,
-    depthWrite: false,
-    toneMapped: false
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  const selectionOutline = new THREE.LineSegments(
-    new THREE.EdgesGeometry(geometry),
-    new THREE.LineBasicMaterial({
-      color: 0x58f6ff,
-      transparent: true,
-      opacity: 0.8,
-      depthTest: false,
-      depthWrite: false,
-      toneMapped: false
-    })
-  );
-  selectionOutline.visible = false;
-  selectionOutline.renderOrder = 1000;
-  selectionOutline.raycast = () => {};
-  mesh.add(selectionOutline);
-  mesh.userData.referenceImageId = reference.id;
-  mesh.renderOrder = 0;
-  reference.mesh = mesh;
-  reference.selectionOutline = selectionOutline;
-  referenceImageGroup.add(mesh);
-  applyReferenceImageRuntime(reference);
-  updateReferenceSelectionVisuals();
-}
 
-function addReferenceImage(snapshot, { select = true } = {}) {
-  if (!/^data:image\/(?:png|jpeg|webp|gif);base64,/i.test(String(snapshot.source || ""))) return null;
-  const type = snapshot.type === "plane" ? "plane" : "overlay";
-  const planeInFront = snapshot.planeInFront !== false;
-  const placement = referencePlanePlacement(snapshot.view, planeInFront);
-  const savedPlanePosition = migratedReferencePlanePosition(snapshot, snapshot.view, placement);
-  const savedPlaneRotation = migratedReferencePlaneRotation(snapshot, snapshot.view, placement);
-  const newViewportOverlay = type === "overlay"
-    && snapshot.overlayAnchor == null
-    && snapshot.x == null
-    && snapshot.y == null;
-  const activeScale = THREE.MathUtils.clamp(Number(snapshot.scale ?? 1), 0.05, 20);
-  const reference = {
-    id: snapshot.id || `reference-${ref.state.referenceImageIndex++}`,
-    name: snapshot.name || `Reference ${ref.state.referenceImageIndex - 1}`,
-    type,
-    source: snapshot.source,
-    aspect: Math.max(0.05, Number(snapshot.aspect || 1)),
-    opacity: THREE.MathUtils.clamp(Number(snapshot.opacity ?? 0.55), 0.05, 1),
-    visible: snapshot.visible !== false,
-    flipX: Boolean(snapshot.flipX),
-    crop: normalizeReferenceCrop(snapshot.crop),
-    snappedViewOnly: type === "plane" && Boolean(snapshot.snappedViewOnly),
-    planeInFront,
-    view: ["front", "back", "left", "right"].includes(snapshot.view) ? snapshot.view : "front",
-    overlayAnchor: snapshot.overlayAnchor === "top-left" || newViewportOverlay
-      ? "top-left"
-      : "center",
-    x: THREE.MathUtils.clamp(Number(snapshot.x ?? (newViewportOverlay ? 2 : 50)), 0, 100),
-    y: THREE.MathUtils.clamp(Number(snapshot.y ?? (newViewportOverlay ? 2 : 50)), 0, 100),
-    overlayConfigured: snapshot.overlayConfigured == null
-      ? type === "overlay"
-      : Boolean(snapshot.overlayConfigured),
-    planeConfigured: snapshot.planeConfigured == null
-      ? type === "plane"
-      : Boolean(snapshot.planeConfigured),
-    overlayScale: THREE.MathUtils.clamp(Number(snapshot.overlayScale ?? (type === "overlay" ? activeScale : 1)), 0.05, 20),
-    planeScale: THREE.MathUtils.clamp(Number(snapshot.planeScale ?? (type === "plane" ? activeScale : 1)), 0.05, 20),
-    scale: activeScale,
-    planePlacementVersion: 4,
-    position: { ...(savedPlanePosition || { x: placement.position[0], y: placement.position[1], z: placement.position[2] }) },
-    rotation: { ...(savedPlaneRotation || { x: placement.rotation[0], y: placement.rotation[1], z: placement.rotation[2] }) }
-  };
-  const numericId = Number(reference.id.match(/\d+$/)?.[0]);
-  if (Number.isFinite(numericId)) ref.state.referenceImageIndex = Math.max(ref.state.referenceImageIndex, numericId + 1);
-  referenceImages.push(reference);
-  createReferenceImageRuntime(reference);
-  if (select) selectReferenceImage(reference.id);
-  else renderReferenceImagePanel();
-  return reference;
-}
 
-function disposeReferenceImageRuntime(reference) {
-  reference.element?.remove();
-  reference.element = null;
-  reference.cropElement = null;
-  reference.imageElement = null;
-  if (reference.selectionOutline) {
-    reference.selectionOutline.geometry.dispose();
-    reference.selectionOutline.material.dispose();
-    reference.selectionOutline = null;
-  }
-  if (reference.mesh) {
-    referenceImageGroup.remove(reference.mesh);
-    reference.mesh.geometry.dispose();
-    reference.mesh.material.map?.dispose();
-    reference.mesh.material.dispose();
-  }
-  reference.mesh = null;
-}
 
-function disposeReferenceImage(reference) {
-  disposeReferenceImageRuntime(reference);
-}
 
-function clearReferenceImages() {
-  referenceImages.forEach(disposeReferenceImage);
-  referenceImages.length = 0;
-  sel.state.selectedReferenceImageId = null;
-  if (referenceImagePanel) renderReferenceImagePanel();
-}
 
-function serializeReferenceImage(reference) {
-  return {
-    id: reference.id,
-    name: reference.name,
-    type: reference.type,
-    source: reference.source,
-    aspect: reference.aspect,
-    opacity: reference.opacity,
-    visible: reference.visible,
-    flipX: Boolean(reference.flipX),
-    crop: { ...normalizeReferenceCrop(reference.crop) },
-    snappedViewOnly: Boolean(reference.snappedViewOnly),
-    planeInFront: reference.planeInFront !== false,
-    view: reference.view,
-    overlayAnchor: reference.overlayAnchor,
-    overlayConfigured: Boolean(reference.overlayConfigured),
-    planeConfigured: Boolean(reference.planeConfigured),
-    overlayScale: Number(reference.overlayScale ?? reference.scale),
-    planeScale: Number(reference.planeScale ?? reference.scale),
-    planePlacementVersion: 4,
-    x: reference.x,
-    y: reference.y,
-    scale: reference.scale,
-    position: { ...reference.position },
-    rotation: { ...reference.rotation }
-  };
-}
 
-function setReferenceImageType(reference, nextType) {
-  if (!reference || !["overlay", "plane"].includes(nextType) || reference.type === nextType) return;
-  const previousScale = reference.scale;
-  if (reference.type === "overlay") reference.overlayScale = previousScale;
-  else {
-    syncReferenceImageFromMesh(reference);
-    reference.planeScale = reference.scale;
-  }
 
-  if (transformControls.object === reference.mesh) transformControls.detach();
-  disposeReferenceImageRuntime(reference);
-  if (nextType === "overlay") {
-    if (!reference.overlayConfigured) {
-      reference.x = 2;
-      reference.y = 2;
-      reference.overlayAnchor = "top-left";
-      reference.overlayScale = previousScale;
-      reference.overlayConfigured = true;
-    }
-    reference.scale = reference.overlayScale;
-  } else {
-    if (!reference.planeConfigured) {
-      const placement = referencePlanePlacement(reference.view, reference.planeInFront);
-      reference.position = {
-        x: placement.position[0],
-        y: placement.position[1],
-        z: placement.position[2]
-      };
-      reference.rotation = {
-        x: placement.rotation[0],
-        y: placement.rotation[1],
-        z: placement.rotation[2]
-      };
-      reference.planeScale = previousScale;
-      reference.planeConfigured = true;
-    }
-    reference.scale = reference.planeScale;
-  }
-  reference.type = nextType;
-  createReferenceImageRuntime(reference);
-  selectReferenceImage(reference.id);
-  if (nextType === "plane") setOrthographicView(true);
-}
 
-function attachReferenceImageTransform() {
-  const reference = selectedReferenceImage();
-  if (
-    reference?.type !== "plane"
-    || !reference.mesh?.visible
-    || !["move", "scale"].includes(sel.state.activeTool)
-  ) return;
-  configureTransformControls(sel.state.activeTool);
-  transformControls.showX = true;
-  transformControls.showY = true;
-  transformControls.showZ = sel.state.activeTool === "move";
-  transformControls.attach(reference.mesh);
-}
 
-function selectReferenceImage(id) {
-  setViewportEditMode("reference", { clearSelection: false, activateSelect: false });
-  sel.state.selectedReferenceImageId = referenceImages.some((reference) => reference.id === id) ? id : null;
-  clearStrandSelectionState();
-  sel.state.selectedCurveSurfaceController = null;
-  sel.state.selectedGuideId = undefined;
-  sel.state.selectedStrandGroup = null;
-  guideApi.clearMultiPointSelection();
-  transformControls.detach();
-  updateReferenceSelectionVisuals();
-  locks.forEach((lock) => {
-    setStrandSelectionVisual(lock);
-    updateCurveObjects(lock, { visible: false });
-  });
-  attachReferenceImageTransform();
-  setOutlinerTab("references");
-  renderLockList();
-  guideApi.updateGuideControlsVisibility();
-  updateAttributeEditorMode();
-  renderReferenceImagePanel();
-  refreshRebuildCurveDialog();
-}
 
-function placeReferencePlane(reference, view) {
-  if (reference?.type !== "plane") return;
-  const placement = referencePlanePlacement(view, reference.planeInFront);
-  reference.view = view;
-  reference.position = { x: placement.position[0], y: placement.position[1], z: placement.position[2] };
-  reference.rotation = { x: placement.rotation[0], y: placement.rotation[1], z: placement.rotation[2] };
-  reference.planeConfigured = true;
-  applyReferenceImageRuntime(reference);
-  attachReferenceImageTransform();
-}
 
-function setReferencePlaneInFront(reference, inFront) {
-  if (reference?.type !== "plane") return;
-  const { axis, sign } = referencePlaneFrontAxis(reference.view);
-  const distance = Math.abs(Number(reference.position[axis])) || 2.4;
-  reference.planeInFront = Boolean(inFront);
-  reference.position[axis] = distance * sign * (reference.planeInFront ? 1 : -1);
-  applyReferenceImageRuntime(reference);
-  attachReferenceImageTransform();
-}
 
-function syncReferenceImageFromMesh(reference) {
-  if (!reference?.mesh) return;
-  reference.position = {
-    x: reference.mesh.position.x,
-    y: reference.mesh.position.y,
-    z: reference.mesh.position.z
-  };
-  reference.rotation = {
-    x: reference.mesh.rotation.x,
-    y: reference.mesh.rotation.y,
-    z: reference.mesh.rotation.z
-  };
-  reference.scale = reference.mesh.scale.x;
-  reference.planeScale = reference.scale;
-  const { axis, sign } = referencePlaneFrontAxis(reference.view);
-  const depthCoordinate = reference.position[axis] * sign;
-  if (Math.abs(depthCoordinate) > 0.0001) reference.planeInFront = depthCoordinate > 0;
-}
-
-function renderReferenceImagePanel() {
-  renderReferenceOutliner();
-  referenceImageList.replaceChildren();
-  referenceImages.forEach((reference) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.classList.toggle("active", reference.id === sel.state.selectedReferenceImageId);
-    const name = document.createElement("span");
-    name.textContent = reference.name;
-    const kind = document.createElement("small");
-    kind.textContent = reference.type === "plane" ? `3D · ${referenceViewDisplayLabel(reference.view)}` : "Viewport";
-    button.append(name, kind);
-    button.addEventListener("click", () => selectReferenceImage(reference.id));
-    referenceImageList.appendChild(button);
-  });
-  const reference = selectedReferenceImage();
-  referenceImageEmpty.classList.toggle("hidden", referenceImages.length > 0);
-  referenceImageControls.classList.toggle("hidden", !reference);
-  if (!reference) return;
-  referenceImageType.value = reference.type;
-  referenceImageVisible.checked = reference.visible;
-  referenceImageOpacity.value = reference.opacity;
-  referenceImageOpacityValue.textContent = reference.opacity.toFixed(2);
-  referenceImageFlipX.classList.toggle("active", Boolean(reference.flipX));
-  referenceImageFlipX.setAttribute("aria-pressed", String(Boolean(reference.flipX)));
-  const plane = reference.type === "plane";
-  resetReferenceImageCrop.classList.toggle("hidden", plane);
-  resetReferenceImageCrop.disabled = plane || referenceCropIsFull(reference);
-  referenceImageViewRow.classList.toggle("hidden", !plane);
-  referencePlaneInFrontRow.classList.toggle("hidden", !plane);
-  referenceImageSnappedViewOnlyRow.classList.toggle("hidden", !plane);
-  referencePlaneHint.classList.toggle("hidden", !plane);
-  referenceImageView.value = reference.view;
-  referencePlaneInFront.checked = reference.planeInFront !== false;
-  const viewLabel = referenceViewDisplayLabel(reference.view);
-  referenceImageSnappedViewOnlyLabel.textContent = `Only in ${viewLabel} Orthogonal view`;
-  referenceImageSnappedViewOnly.checked = Boolean(reference.snappedViewOnly);
-}
-
-const REFERENCE_OUTLINER_GROUPS = Object.freeze([
-  { id: "overlay", label: "Viewport Overlays" },
-  { id: "front", label: "Front" },
-  { id: "left", label: "Left" },
-  { id: "right", label: "Right" },
-  { id: "back", label: "Back" }
-]);
 
 function setOutlinerTab(tab) {
   sel.state.activeOutlinerTab = ["strands", "guides", "references"].includes(tab) ? tab : "strands";
@@ -4247,7 +3531,7 @@ function setOutlinerTab(tab) {
   guideOutliner.classList.toggle("hidden", !guidesActive);
   referenceOutliner.classList.toggle("hidden", !referencesActive);
   if (guidesActive) guideApi.renderGuideOutliner();
-  if (referencesActive) renderReferenceOutliner();
+  if (referencesActive) referenceHeadApi.renderReferenceOutliner();
 }
 
 function effectiveViewportSelectionMode() {
@@ -4332,8 +3616,8 @@ function setViewportEditMode(mode, options = {}) {
   viewportEditModeInput.value = nextMode;
   syncViewportSelectionModeControl();
   if (nextMode !== "reference") {
-    finishReferenceOverlayDrag(null, { cancel: true });
-    finishReferenceCrop(null, { cancel: true });
+    referenceHeadApi.finishReferenceOverlayDrag(null, { cancel: true });
+    referenceHeadApi.finishReferenceCrop(null, { cancel: true });
     renderer.domElement.style.cursor = "";
   }
 
@@ -4346,13 +3630,13 @@ function setViewportEditMode(mode, options = {}) {
     if (!selectionMatchesMode) {
       deselectStrands();
       sel.state.selectedReferenceImageId = null;
-      updateReferenceSelectionVisuals();
-      renderReferenceImagePanel();
+      referenceHeadApi.updateReferenceSelectionVisuals();
+      referenceHeadApi.renderReferenceImagePanel();
     }
   }
 
   setOutlinerTab(nextMode === "strand" ? "strands" : nextMode === "guide" ? "guides" : "references");
-  setReferenceImagePanelOpen(nextMode === "reference");
+  referenceHeadApi.setReferenceImagePanelOpen(nextMode === "reference");
   if (nextMode === "guide") {
     if (switchingMode) setMirrorXEditing(true);
     setAttributeEditorTab("main");
@@ -4449,148 +3733,9 @@ function handleOutlinerRenameClick(event, options) {
 
 
 
-function referenceOutlinerGroup(reference) {
-  return reference.type === "overlay" ? "overlay" : reference.view;
-}
 
-function renderReferenceOutliner() {
-  referenceOutliner.replaceChildren();
-  REFERENCE_OUTLINER_GROUPS.forEach((group) => {
-    const groupLabel = referenceViewDisplayLabel(group.id);
-    const references = referenceImages.filter((reference) => referenceOutlinerGroup(reference) === group.id);
-    const isOpen = referenceGroupOpen.get(group.id) !== false
-      || references.some((reference) => reference.id === sel.state.selectedReferenceImageId);
-    const groupElement = document.createElement("div");
-    groupElement.className = `reference-outliner-group${isOpen ? " open" : ""}`;
-    groupElement.dataset.referenceGroup = group.id;
 
-    const header = document.createElement("div");
-    header.className = "reference-outliner-group-head";
-    header.dataset.referenceDropTarget = group.id;
-    const disclosure = document.createElement("button");
-    disclosure.className = "outliner-disclosure";
-    disclosure.type = "button";
-    disclosure.title = `${isOpen ? "Collapse" : "Expand"} ${groupLabel}`;
-    disclosure.setAttribute("aria-label", disclosure.title);
-    disclosure.setAttribute("aria-expanded", String(isOpen));
-    disclosure.textContent = ">";
-    disclosure.addEventListener("click", () => {
-      referenceGroupOpen.set(group.id, !isOpen);
-      renderReferenceOutliner();
-    });
-    const label = document.createElement("span");
-    label.className = "reference-outliner-group-label";
-    label.textContent = groupLabel;
-    const count = document.createElement("span");
-    count.className = "reference-outliner-group-count";
-    count.textContent = String(references.length);
-    const visibleCount = references.filter((reference) => reference.visible).length;
-    const groupVisibility = createOutlinerVisibilityToggle({
-      visible: references.length > 0 && visibleCount === references.length,
-      partial: visibleCount > 0 && visibleCount < references.length,
-      label: groupLabel,
-      onToggle: () => {
-        if (!references.length) return;
-        pushUndoState();
-        const nextVisible = visibleCount !== references.length;
-        references.forEach((reference) => {
-          reference.visible = nextVisible;
-          applyReferenceImageRuntime(reference);
-        });
-        renderReferenceImagePanel();
-      }
-    });
-    header.append(disclosure, groupVisibility, label, count);
 
-    const items = document.createElement("div");
-    items.className = "reference-outliner-group-items";
-    if (!references.length) {
-      const empty = document.createElement("span");
-      empty.className = "outliner-empty";
-      empty.textContent = "No references";
-      items.appendChild(empty);
-    }
-    references.forEach((reference) => {
-      const item = document.createElement("div");
-      item.className = `reference-outliner-item${reference.id === sel.state.selectedReferenceImageId ? " active" : ""}`;
-      const visibility = createOutlinerVisibilityToggle({
-        visible: reference.visible,
-        label: reference.name,
-        onToggle: () => {
-          pushUndoState();
-          reference.visible = !reference.visible;
-          applyReferenceImageRuntime(reference);
-          renderReferenceImagePanel();
-        }
-      });
-      const select = document.createElement("button");
-      select.className = "reference-outliner-select";
-      select.type = "button";
-      select.title = reference.name;
-      select.setAttribute("aria-label", reference.name);
-      const thumbnail = document.createElement("img");
-      thumbnail.className = "reference-outliner-thumbnail";
-      thumbnail.src = reference.source;
-      thumbnail.alt = "";
-      thumbnail.draggable = false;
-      thumbnail.style.transform = reference.flipX ? "scaleX(-1)" : "none";
-      const status = document.createElement("span");
-      status.className = "reference-outliner-status";
-      status.textContent = reference.type === "overlay"
-        ? "Viewport"
-        : reference.snappedViewOnly ? "Ortho Only" : "All Views";
-      const details = document.createElement("span");
-      details.className = "reference-outliner-details";
-      const name = document.createElement("span");
-      name.className = "reference-outliner-name";
-      name.textContent = reference.name;
-      details.append(name, status);
-      select.append(thumbnail, details);
-      select.addEventListener("click", (event) => handleOutlinerRenameClick(event, {
-        label: name,
-        value: reference.name,
-        onSelect: () => {
-          selectReferenceImage(reference.id);
-          setReferenceImagePanelOpen(true);
-        },
-        onCommit: (nextName) => {
-          reference.name = nextName;
-        },
-        rerender: renderReferenceImagePanel
-      }));
-      item.addEventListener("contextmenu", (event) => showOutlinerContextMenu(event, {
-        type: "reference",
-        referenceId: reference.id
-      }));
-      item.append(visibility, select);
-      items.appendChild(item);
-    });
-    groupElement.append(header, items);
-    referenceOutliner.appendChild(groupElement);
-  });
-}
-
-function setReferenceImagePanelOpen(open) {
-  referenceImagePanel.classList.toggle("hidden", !open);
-  if (open) renderReferenceImagePanel();
-}
-
-function readReferenceImageFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error || new Error("Could not read reference image"));
-    reader.onload = () => {
-      const image = new Image();
-      image.onerror = () => reject(new Error("Unsupported reference image"));
-      image.onload = () => resolve({
-        source: String(reader.result),
-        aspect: image.naturalWidth / Math.max(1, image.naturalHeight)
-      });
-      image.src = String(reader.result);
-    };
-    reader.readAsDataURL(file);
-  });
-}
 
 const SUPPORTED_REFERENCE_IMAGE_TYPES = new Set([
   "image/png",
@@ -4599,477 +3744,122 @@ const SUPPORTED_REFERENCE_IMAGE_TYPES = new Set([
   "image/gif"
 ]);
 
-function isSupportedReferenceImageFile(file) {
-  return Boolean(file) && (
-    SUPPORTED_REFERENCE_IMAGE_TYPES.has(String(file.type).toLowerCase())
-    || /\.(?:png|jpe?g|webp|gif)$/i.test(String(file.name))
-  );
-}
+// Reference + head/body api deps batch (refactor batch A4): all deps are defined by this point
+// (last const/let deps: scalpBuilder batch + reference/head DOM); the batch takes effect here,
+// before the default-guide boot callback (OBJLoader async) and all runtime calls.
+Object.assign(referenceHeadDeps, {
+  FULL_BODY_TARGET_HEIGHT,
+  GUIDE_HEAD_REFERENCE_SIZE,
+  GUIDE_HEAD_TARGET_HEIGHT,
+  SUPPORTED_REFERENCE_IMAGE_TYPES,
+  applyCharacterMeshDisplayVisibility,
+  camera,
+  cardinalAxisKey,
+  clearStrandSelectionState,
+  configureTransformControls,
+  controls,
+  createOutlinerVisibilityToggle,
+  deselectStrandsForGuideEditor,
+  frameViewportBounds,
+  fullBodyMeshFileInput,
+  guideApi,
+  guideState: guideState.state,
+  guides,
+  handleOutlinerRenameClick,
+  head: head.state,
+  headMeshFileInput,
+  headTransform,
+  headTransformInputs,
+  headTransformValues,
+  isCameraInSnappedView,
+  locks,
+  placementApi,
+  pushUndoState,
+  raycaster,
+  ref: ref.state,
+  referenceCropHandleElements,
+  referenceCropHandles,
+  referenceGroupOpen,
+  referenceImageControls,
+  referenceImageDropTarget,
+  referenceImageEmpty,
+  referenceImageFile,
+  referenceImageFlipX,
+  referenceImageGroup,
+  referenceImageList,
+  referenceImageOpacity,
+  referenceImageOpacityValue,
+  referenceImagePanel,
+  referenceImageSnappedViewOnly,
+  referenceImageSnappedViewOnlyLabel,
+  referenceImageSnappedViewOnlyRow,
+  referenceImageType,
+  referenceImageView,
+  referenceImageViewRow,
+  referenceImageVisible,
+  referenceImages,
+  referenceOutliner,
+  referenceOverlayDropMarker,
+  referencePlaneHint,
+  referencePlaneInFront,
+  referencePlaneInFrontRow,
+  refreshRebuildCurveDialog,
+  renderLockList,
+  renderer,
+  resetReferenceImageCrop,
+  scalpBuilder,
+  scalpState: scalpState.state,
+  scalpSurfaceGroup,
+  scene,
+  sculptState: sculptState.state,
+  sel: sel.state,
+  setOrthographicView,
+  setOutlinerTab,
+  setStrandSelectionVisual,
+  setViewportEditMode,
+  showOutlinerContextMenu,
+  sideNamingDisplayId,
+  strandVisibleForDisplay,
+  syncDisplayVisibilityInputs,
+  syncOrthographicFramingFromDistance,
+  transformControls,
+  ui: ui.state,
+  updateAttributeEditorMode,
+  updateCameraProjectionForViewport,
+  updateCurveObjects,
+  updateInteractionLocks,
+  viewPlaneNormal,
+  viewport,
+  viewportPanel,
+  viewportReferenceImages,
+  viewportState: viewportState.state,
+});
 
-async function addReferenceImagesFromFiles(
-  files,
-  type = "overlay",
-  { view = "front", overlayPosition = null } = {}
-) {
-  const candidates = [...files].filter(isSupportedReferenceImageFile);
-  if (!candidates.length) return [];
-  const decoded = await Promise.allSettled(candidates.map(async (file) => ({
-    file,
-    image: await readReferenceImageFile(file)
-  })));
-  const successful = decoded
-    .filter((result) => result.status === "fulfilled")
-    .map((result) => result.value);
-  decoded
-    .filter((result) => result.status === "rejected")
-    .forEach((result) => console.error("Could not add dropped reference image", result.reason));
-  if (!successful.length) throw decoded.find((result) => result.status === "rejected")?.reason
-    || new Error("No supported reference images were found");
 
-  pushUndoState();
-  const added = successful.map(({ file, image }) => {
-    const overlayPlacement = type === "overlay" && overlayPosition
-      ? {
-          overlayAnchor: "center",
-          overlayConfigured: true,
-          x: overlayPosition.x,
-          y: overlayPosition.y
-        }
-      : {};
-    return addReferenceImage({
-      ...image,
-      type,
-      view: type === "plane" ? view : undefined,
-      ...overlayPlacement,
-      name: file.name.replace(/\.[^.]+$/, "") || "Reference"
-    }, { select: false });
-  }).filter(Boolean);
-  const lastAdded = added.at(-1);
-  if (lastAdded) selectReferenceImage(lastAdded.id);
-  if (type === "plane" && added.length) setOrthographicView(true);
-  setReferenceImagePanelOpen(true);
-  return added;
-}
 
-function dragContainsReferenceImage(event) {
-  const items = [...(event.dataTransfer?.items || [])].filter((item) => item.kind === "file");
-  if (!items.length) return false;
-  return items.some((item) => {
-    const file = item.getAsFile?.();
-    if (applicationDropFileKind(file)) return false;
-    return SUPPORTED_REFERENCE_IMAGE_TYPES.has(String(item.type || "").toLowerCase())
-      || isSupportedReferenceImageFile(file);
-  });
-}
 
-function setReferenceImageDragActive(active) {
-  const nextActive = Boolean(active);
-  viewportPanel.classList.toggle("reference-image-drag-active", nextActive);
-  document.body.classList.toggle("reference-image-drag-active", nextActive);
-  referenceImageDropTarget.setAttribute("aria-hidden", String(!nextActive));
-  if (!nextActive) setReferenceDropHover();
-}
 
-function referenceDropDestination(event) {
-  const destination = event.target.closest?.("[data-reference-drop-target]")?.dataset.referenceDropTarget;
-  if (["overlay", "front", "back", "left", "right"].includes(destination)) return destination;
-  return viewportPanel.contains(event.target) ? "overlay" : null;
-}
 
-function viewportOverlayDropPosition(event) {
-  if (!viewportPanel.contains(event.target)) return null;
-  const bounds = viewport.getBoundingClientRect();
-  return {
-    x: THREE.MathUtils.clamp((event.clientX - bounds.left) / Math.max(1, bounds.width) * 100, 0, 100),
-    y: THREE.MathUtils.clamp((event.clientY - bounds.top) / Math.max(1, bounds.height) * 100, 0, 100)
-  };
-}
 
-function setReferenceDropHover(event = null) {
-  document.querySelectorAll("[data-reference-drop-target].reference-drop-hover").forEach((element) => {
-    element.classList.remove("reference-drop-hover");
-  });
-  referenceOverlayDropMarker.classList.remove("visible");
-  if (!event) return;
-  const directTarget = event.target.closest?.("[data-reference-drop-target]");
-  if (directTarget) {
-    directTarget.classList.add("reference-drop-hover");
-    return;
-  }
-  if (!viewportPanel.contains(event.target)) return;
-  const bounds = referenceImageDropTarget.getBoundingClientRect();
-  referenceOverlayDropMarker.style.left = `${event.clientX - bounds.left}px`;
-  referenceOverlayDropMarker.style.top = `${event.clientY - bounds.top}px`;
-  referenceOverlayDropMarker.classList.add("visible");
-}
 
-function referencePlaneHitFromPointer({ ignoreOcclusion = false } = {}) {
-  const planeHit = raycaster.intersectObjects(
-    referenceImages
-      .filter((reference) => reference.type === "plane" && reference.mesh?.visible)
-      .map((reference) => reference.mesh),
-    false
-  )[0] || null;
-  if (!planeHit || ignoreOcclusion) return planeHit;
-  const occluders = [
-    ...locks.filter(strandVisibleForDisplay).map((lock) => lock.mesh),
-    ...guides.flatMap((guide) => [guide.mesh, guide.rootMesh]),
-    ...headMeshes(),
-    scalpSurfaceGroup.visible ? scalpBuilder.activeScalpSurfaceMesh() : null
-  ].filter((object) => object?.visible !== false);
-  const occluderHit = raycaster.intersectObjects(occluders, false)[0] || null;
-  return occluderHit && occluderHit.distance < planeHit.distance ? null : planeHit;
-}
 
-const REFERENCE_OVERLAY_HANDLE_HIT_RADIUS = 15;
 
-function referenceOverlayAtPointer(event) {
-  const selectedReference = selectedReferenceImage();
-  if (
-    selectedReference?.type === "overlay"
-    && selectedReference.visible !== false
-    && selectedReference.element
-    && referenceOverlayCornerAtPointer(event, selectedReference.element.getBoundingClientRect())
-  ) return selectedReference;
-  return [...referenceImages].reverse().find((reference) => {
-    if (reference.type !== "overlay" || reference.visible === false || !reference.element) return false;
-    const bounds = reference.element.getBoundingClientRect();
-    return event.clientX >= bounds.left
-      && event.clientX <= bounds.right
-      && event.clientY >= bounds.top
-      && event.clientY <= bounds.bottom;
-  }) || null;
-}
 
-function referenceOverlayCornerAtPointer(event, bounds) {
-  const corners = {
-    nw: { x: bounds.left, y: bounds.top },
-    ne: { x: bounds.right, y: bounds.top },
-    sw: { x: bounds.left, y: bounds.bottom },
-    se: { x: bounds.right, y: bounds.bottom }
-  };
-  return Object.entries(corners).find(([, point]) => (
-    Math.abs(event.clientX - point.x) <= REFERENCE_OVERLAY_HANDLE_HIT_RADIUS
-      && Math.abs(event.clientY - point.y) <= REFERENCE_OVERLAY_HANDLE_HIT_RADIUS
-  ))?.[0] || null;
-}
 
-function beginReferenceOverlayDrag(event, reference) {
-  if (
-    sculptState.state.referenceOverlayDrag
-    || sculptState.state.viewportEditMode !== "reference"
-    || !["select", "move", "scale"].includes(sel.state.activeTool)
-    || reference?.type !== "overlay"
-    || !reference.element
-    || event.button !== 0
-    || event.shiftKey
-    || event.ctrlKey
-    || event.altKey
-    || event.metaKey
-  ) return false;
-  const bounds = reference.element.getBoundingClientRect();
-  const corner = referenceOverlayCornerAtPointer(event, bounds);
-  const mode = corner ? "scale" : "move";
-  const opposite = {
-    nw: { x: bounds.right, y: bounds.bottom },
-    ne: { x: bounds.left, y: bounds.bottom },
-    sw: { x: bounds.right, y: bounds.top },
-    se: { x: bounds.left, y: bounds.top }
-  }[corner] || null;
-  sculptState.state.referenceOverlayDrag = {
-    pointerId: event.pointerId,
-    referenceId: reference.id,
-    mode,
-    corner,
-    opposite,
-    startPointerX: event.clientX,
-    startPointerY: event.clientY,
-    startX: reference.x,
-    startY: reference.y,
-    startScale: reference.scale,
-    startConfigured: reference.overlayConfigured,
-    startBounds: bounds,
-    committed: false
-  };
-  renderer.domElement.setPointerCapture?.(event.pointerId);
-  renderer.domElement.style.cursor = mode === "scale"
-    ? (["nw", "se"].includes(corner) ? "nwse-resize" : "nesw-resize")
-    : "move";
-  updateInteractionLocks();
-  event.preventDefault();
-  return true;
-}
 
-function updateReferenceOverlayDrag(event) {
-  const drag = sculptState.state.referenceOverlayDrag;
-  if (!drag || event.pointerId !== drag.pointerId) return;
-  const reference = referenceImages.find((item) => item.id === drag.referenceId);
-  if (!reference?.element) return;
-  const dx = event.clientX - drag.startPointerX;
-  const dy = event.clientY - drag.startPointerY;
-  if (!drag.committed && Math.hypot(dx, dy) >= 1) {
-    pushUndoState();
-    drag.committed = true;
-  }
-  if (!drag.committed) return;
-  const viewportBounds = viewport.getBoundingClientRect();
-  if (drag.mode === "move") {
-    reference.x = THREE.MathUtils.clamp(drag.startX + dx / viewportBounds.width * 100, 0, 100);
-    reference.y = THREE.MathUtils.clamp(drag.startY + dy / viewportBounds.height * 100, 0, 100);
-  } else {
-    const startDistance = Math.max(1, Math.hypot(
-      drag.startPointerX - drag.opposite.x,
-      drag.startPointerY - drag.opposite.y
-    ));
-    const distance = Math.max(1, Math.hypot(
-      event.clientX - drag.opposite.x,
-      event.clientY - drag.opposite.y
-    ));
-    const nextScale = THREE.MathUtils.clamp(drag.startScale * distance / startDistance, 0.05, 20);
-    const ratio = nextScale / drag.startScale;
-    const width = drag.startBounds.width * ratio;
-    const height = drag.startBounds.height * ratio;
-    const left = ["nw", "sw"].includes(drag.corner)
-      ? drag.opposite.x - width
-      : drag.startBounds.left;
-    const top = ["nw", "ne"].includes(drag.corner)
-      ? drag.opposite.y - height
-      : drag.startBounds.top;
-    reference.scale = nextScale;
-    reference.overlayScale = nextScale;
-    if (reference.overlayAnchor === "top-left") {
-      reference.x = THREE.MathUtils.clamp((left - viewportBounds.left) / viewportBounds.width * 100, 0, 100);
-      reference.y = THREE.MathUtils.clamp((top - viewportBounds.top) / viewportBounds.height * 100, 0, 100);
-    } else {
-      reference.x = THREE.MathUtils.clamp((left + width * 0.5 - viewportBounds.left) / viewportBounds.width * 100, 0, 100);
-      reference.y = THREE.MathUtils.clamp((top + height * 0.5 - viewportBounds.top) / viewportBounds.height * 100, 0, 100);
-    }
-  }
-  reference.overlayConfigured = true;
-  applyReferenceImageRuntime(reference);
-  event.preventDefault();
-}
 
-function finishReferenceOverlayDrag(event, { cancel = false } = {}) {
-  const drag = sculptState.state.referenceOverlayDrag;
-  if (!drag || (event?.pointerId !== undefined && event.pointerId !== drag.pointerId)) return false;
-  sculptState.state.referenceOverlayDrag = null;
-  const reference = referenceImages.find((item) => item.id === drag.referenceId);
-  if (cancel && reference && drag.committed) {
-    reference.x = drag.startX;
-    reference.y = drag.startY;
-    reference.scale = drag.startScale;
-    reference.overlayScale = drag.startScale;
-    reference.overlayConfigured = drag.startConfigured;
-    applyReferenceImageRuntime(reference);
-  }
-  renderer.domElement.releasePointerCapture?.(drag.pointerId);
-  renderer.domElement.style.cursor = "";
-  setReferenceOverlayScaleHandleHover(null);
-  updateInteractionLocks();
-  renderReferenceImagePanel();
-  event?.preventDefault();
-  return true;
-}
 
-function setReferenceOverlayScaleHandleHover(reference, corner = null) {
-  referenceImages.forEach((item) => {
-    item.element?.querySelectorAll(".reference-overlay-scale-handle").forEach((handle) => {
-      handle.classList.toggle(
-        "picker-hover",
-        item === reference && handle.dataset.overlayCorner === corner
-      );
-    });
-  });
-}
 
-function updateReferenceOverlayCursor(event) {
-  if (
-    sculptState.state.referenceOverlayDrag
-    || sculptState.state.viewportEditMode !== "reference"
-    || !["select", "move", "scale"].includes(sel.state.activeTool)
-  ) return;
-  setReferenceOverlayScaleHandleHover(null);
-  const reference = selectedReferenceImage();
-  if (reference?.type !== "overlay" || !reference.element || reference.visible === false) {
-    renderer.domElement.style.cursor = "";
-    return;
-  }
-  const bounds = reference.element.getBoundingClientRect();
-  const corner = referenceOverlayCornerAtPointer(event, bounds);
-  if (corner) {
-    setReferenceOverlayScaleHandleHover(reference, corner);
-    renderer.domElement.style.cursor = ["nw", "se"].includes(corner) ? "nwse-resize" : "nesw-resize";
-  } else {
-    const inside = event.clientX >= bounds.left && event.clientX <= bounds.right
-      && event.clientY >= bounds.top && event.clientY <= bounds.bottom;
-    renderer.domElement.style.cursor = inside ? "move" : "";
-  }
-}
 
-const REFERENCE_CROP_ANCHORS = Object.freeze(["nw", "ne", "se", "sw"]);
 
-function referenceCropAnchorCoordinates(crop) {
-  return {
-    nw: { x: crop.left, y: crop.top },
-    ne: { x: crop.right, y: crop.top },
-    se: { x: crop.right, y: crop.bottom },
-    sw: { x: crop.left, y: crop.bottom }
-  };
-}
 
-function referenceCropAnchorScreenPositions(reference) {
-  if (!reference) return null;
-  const crop = normalizeReferenceCrop(reference.crop);
-  const anchors = referenceCropAnchorCoordinates(crop);
-  if (reference.type !== "overlay" || !reference.element) return null;
-  const bounds = reference.element.getBoundingClientRect();
-  return Object.fromEntries(REFERENCE_CROP_ANCHORS.map((anchor) => [
-    anchor,
-    {
-      x: bounds.left + anchors[anchor].x * bounds.width,
-      y: bounds.top + anchors[anchor].y * bounds.height
-    }
-  ]));
-}
 
-function referenceCropCursor(anchor) {
-  if (["nw", "se"].includes(anchor)) return "nwse-resize";
-  if (["ne", "sw"].includes(anchor)) return "nesw-resize";
-  return "nesw-resize";
-}
 
-function updateReferenceCropHandles() {
-  const reference = selectedReferenceImage();
-  const show = sculptState.state.viewportEditMode === "reference"
-    && reference?.type === "overlay"
-    && reference?.visible !== false;
-  referenceCropHandles.classList.toggle("hidden", !show);
-  if (!show) return;
-  const positions = referenceCropAnchorScreenPositions(reference);
-  if (!positions) {
-    referenceCropHandles.classList.add("hidden");
-    return;
-  }
-  const viewportBounds = viewportPanel.getBoundingClientRect();
-  referenceCropHandleElements.forEach((handle) => {
-    const anchor = handle.dataset.cropAnchor;
-    handle.style.left = `${positions[anchor].x - viewportBounds.left}px`;
-    handle.style.top = `${positions[anchor].y - viewportBounds.top}px`;
-    handle.style.cursor = referenceCropCursor(anchor);
-  });
-}
 
-function referenceCropSourcePoint(event, drag) {
-  return {
-    x: THREE.MathUtils.clamp((event.clientX - drag.bounds.left) / Math.max(1, drag.bounds.width), 0, 1),
-    y: THREE.MathUtils.clamp((event.clientY - drag.bounds.top) / Math.max(1, drag.bounds.height), 0, 1)
-  };
-}
 
-function beginReferenceCrop(event) {
-  if (
-    sculptState.state.referenceCropDrag
-    || sculptState.state.viewportEditMode !== "reference"
-    || event.button !== 0
-    || event.shiftKey
-    || event.ctrlKey
-    || event.altKey
-    || event.metaKey
-  ) return false;
-  const reference = selectedReferenceImage();
-  if (reference?.type !== "overlay" || reference.visible === false) return false;
-  const type = reference.type;
-  const bounds = reference.element?.getBoundingClientRect();
-  const directAnchor = event.target.closest?.("[data-crop-anchor]")?.dataset.cropAnchor;
-  const anchor = REFERENCE_CROP_ANCHORS.includes(directAnchor) ? directAnchor : null;
-  if (!anchor || !bounds) return false;
-  const drag = {
-    pointerId: event.pointerId,
-    referenceId: reference.id,
-    type,
-    mesh: reference.mesh,
-    bounds,
-    anchor,
-    startCrop: normalizeReferenceCrop(reference.crop),
-    startClientX: event.clientX,
-    startClientY: event.clientY,
-    committed: false
-  };
-  sculptState.state.referenceCropDrag = drag;
-  renderer.domElement.setPointerCapture?.(event.pointerId);
-  renderer.domElement.style.cursor = referenceCropCursor(anchor);
-  updateInteractionLocks();
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  return true;
-}
 
-function updateReferenceCrop(event) {
-  const drag = sculptState.state.referenceCropDrag;
-  if (!drag || event.pointerId !== drag.pointerId) return;
-  const reference = referenceImages.find((item) => item.id === drag.referenceId);
-  const current = referenceCropSourcePoint(event, drag);
-  if (!reference || !current) return;
-  const distance = Math.hypot(event.clientX - drag.startClientX, event.clientY - drag.startClientY);
-  if (!drag.committed && distance >= 3) {
-    pushUndoState();
-    drag.committed = true;
-  }
-  if (!drag.committed) return;
-  const crop = { ...drag.startCrop };
-  if (drag.anchor.includes("w")) {
-    crop.left = THREE.MathUtils.clamp(current.x, 0, crop.right - MIN_REFERENCE_CROP_SPAN);
-  }
-  if (drag.anchor.includes("e")) {
-    crop.right = THREE.MathUtils.clamp(current.x, crop.left + MIN_REFERENCE_CROP_SPAN, 1);
-  }
-  if (drag.anchor.includes("n")) {
-    crop.top = THREE.MathUtils.clamp(current.y, 0, crop.bottom - MIN_REFERENCE_CROP_SPAN);
-  }
-  if (drag.anchor.includes("s")) {
-    crop.bottom = THREE.MathUtils.clamp(current.y, crop.top + MIN_REFERENCE_CROP_SPAN, 1);
-  }
-  reference.crop = normalizeReferenceCrop(crop);
-  applyReferenceImageRuntime(reference);
-  updateReferenceCropHandles();
-  event.preventDefault();
-  event.stopImmediatePropagation();
-}
 
-function finishReferenceCrop(event, { cancel = false } = {}) {
-  const drag = sculptState.state.referenceCropDrag;
-  if (!drag || (event?.pointerId !== undefined && event.pointerId !== drag.pointerId)) return false;
-  sculptState.state.referenceCropDrag = null;
-  const reference = referenceImages.find((item) => item.id === drag.referenceId);
-  if (cancel && reference && drag.committed) {
-    reference.crop = { ...drag.startCrop };
-    applyReferenceImageRuntime(reference);
-  }
-  renderer.domElement.releasePointerCapture?.(drag.pointerId);
-  renderer.domElement.style.cursor = "";
-  updateInteractionLocks();
-  updateReferenceCropHandles();
-  renderReferenceImagePanel();
-  event?.preventDefault();
-  return true;
-}
 
-function setHeadSetupEditing(enabled) {
-  if (enabled) deselectStrandsForGuideEditor();
-  if (enabled && scalpState.state.scalpBuilderEditing) scalpBuilder.setScalpBuilderEditing(false);
-  if (enabled && scalpState.state.scalpShapeEditing) scalpBuilder.setScalpShapeEditing(false);
-  if (enabled && scalpState.state.scalpPaintEditing) scalpBuilder.setScalpPaintEditing(false);
-  sculptState.state.headSetupEditing = Boolean(enabled);
-  setHeadReferenceTransparency(false);
-  if (sculptState.state.headSetupEditing) {
-    scalpBuilder.setScalpGuideVisibility(true);
-    scalpBuilder.createScalpBuilderCurveLattice();
-  }
-  else if (!scalpState.state.scalpBuilderEditing) scalpBuilder.disposeScalpBuilderVisuals();
-  scalpBuilder.updateScalpEditingVisibility();
-  placementApi.updatePlacementStatus();
-}
 
 
 
@@ -5401,7 +4191,7 @@ Object.assign(polyToolsDeps, {
   getSelectedLock,
   guideApi,
   hairState: hairState.state,
-  headMeshes,
+  headMeshes: referenceHeadApi.headMeshes,
   lastPointer,
   liveSurfaceGuide: drawFlowApi.liveSurfaceGuide,
   liveSurfaceStrand: drawFlowApi.liveSurfaceStrand,
@@ -5629,7 +4419,7 @@ function fullSceneFocusBounds() {
     ...locks.map((lock) => lock.mesh),
     ...guides.flatMap((guide) => [guide.mesh, guide.rootMesh]),
     scalpBuilder.activeScalpSurfaceMesh(),
-    ...headMeshes()
+    ...referenceHeadApi.headMeshes()
   ].filter(Boolean);
   if (!objects.length) return null;
   const bounds = new THREE.Box3();
@@ -5729,7 +4519,7 @@ function setActiveTool(tool) {
     sculptGeom.finishSculptMoveStroke(null, { cancel: true });
     sculptGeom.setSculptBrushCursorVisible(false);
   }
-  if (sculptState.state.referenceCropDrag) finishReferenceCrop(null, { cancel: true });
+  if (sculptState.state.referenceCropDrag) referenceHeadApi.finishReferenceCrop(null, { cancel: true });
   if (RETIRED_CURVE_LATTICE_SURFACE_TOOLS.has(tool)) tool = "select";
   if (tool === "procedural-draw" && !draw.state.proceduralDrawExperimentalEnabled) tool = "draw";
   const leavingLoftSurface = sel.state.activeTool === "surface-loft" && tool !== "surface-loft";
@@ -5786,8 +4576,8 @@ function setActiveTool(tool) {
   sel.state.activeTool = tool;
   if (sculptBrushToolActive()) sculptGeom.syncSculptBrushStrengthForActiveTool();
   updateStrandSelectionHighlight();
-  updateReferenceSelectionVisuals();
-  updateReferenceCropHandles();
+  referenceHeadApi.updateReferenceSelectionVisuals();
+  referenceHeadApi.updateReferenceCropHandles();
   if (
     ["draw", "procedural-draw", "braid", "panel", "curve-surface"].includes(sel.state.activeTool)
     || sel.state.activeTool === "draw-capsule-guide"
@@ -5818,8 +4608,8 @@ function setActiveTool(tool) {
     if (!sculptState.state.capsuleGuideEditing) guideApi.updateCapsuleGuideHandleColors(guide);
   });
   if (!["relax", "place", "draw", "procedural-draw", "poly", "braid", "panel", "surface-loft", "curve-surface", "draw-capsule-guide"].includes(tool) && !sculptBrushToolActive(tool)) configureTransformControls(tool);
-  if (["move", "scale"].includes(tool) && selectedReferenceImage()?.type === "plane") {
-    attachReferenceImageTransform();
+  if (["move", "scale"].includes(tool) && referenceHeadApi.selectedReferenceImage()?.type === "plane") {
+    referenceHeadApi.attachReferenceImageTransform();
   }
   if (scalpState.state.scalpBuilderEditing && tool === "move") {
     const handle = scalpState.state.scalpBuilderCurveLattice?.handles[scalpState.state.scalpBuilderCurveLattice.selectedIndex];
@@ -9164,7 +7954,7 @@ Object.assign(drawFlowDeps, {
   viewPlaneNormal,
   updateViewPlaneGrid,
   rayFromViewportEvent,
-  headMeshes,
+  headMeshes: referenceHeadApi.headMeshes,
   outwardNormalAtPoint,
   activeCreationShapeDefaults,
   updatePlacementStatus: placementApi.updatePlacementStatus,
@@ -10090,7 +8880,7 @@ function snapshotState() {
       groupLatticeBasePoints: lock.groupLatticeBasePoints?.map(vectorToData) || null,
       placementFrame: lock.placementFrame ? frameToData(lock.placementFrame) : null
     })),
-    referenceImages: referenceImages.map(serializeReferenceImage),
+    referenceImages: referenceImages.map(referenceHeadApi.serializeReferenceImage),
     guides: guides.map((guide) => guide.type === "capsule" ? {
       id: guide.id,
       type: guide.type,
@@ -10411,52 +9201,7 @@ function rootAttachmentFromData(data, lock, { resolveSurface = true } = {}) {
 
 
 
-async function importHeadMeshFile(file) {
-  const importButton = document.querySelector("#importHeadMesh");
-  try {
-    const content = await file.text();
-    const model = new OBJLoader().parse(polygonOnlyObjSource(content));
-    installGuideModel(model, { normalize: true });
-    head.state.importedHeadAsset = {
-      format: "obj",
-      name: file.name || "custom-head.obj",
-      content
-    };
-    importButton.title = `Using ${head.state.importedHeadAsset.name}. Import another head mesh`;
-    document.querySelector("#importFullBodyMesh").title = "Import a full body OBJ, scale it to seven head heights, and align its top to the scalp guide";
-    return true;
-  } catch (error) {
-    console.error("Could not import head OBJ", error);
-    window.alert("That OBJ could not be imported as a head mesh. Please check that it contains valid polygon geometry.");
-    return false;
-  } finally {
-    headMeshFileInput.value = "";
-  }
-}
 
-async function importFullBodyMeshFile(file) {
-  const importButton = document.querySelector("#importFullBodyMesh");
-  try {
-    const content = await file.text();
-    const model = new OBJLoader().parse(polygonOnlyObjSource(content));
-    installGuideModel(model, { normalize: true, fullBody: true });
-    head.state.importedHeadAsset = {
-      format: "obj",
-      name: file.name || "custom-full-body.obj",
-      content,
-      fit: "full-body"
-    };
-    importButton.title = `Using ${head.state.importedHeadAsset.name}. Import another full body mesh`;
-    document.querySelector("#importHeadMesh").title = "Import head mesh from an OBJ file";
-    return true;
-  } catch (error) {
-    console.error("Could not import full body OBJ", error);
-    window.alert("That OBJ could not be imported as a full body mesh. Please check that it contains valid polygon geometry.");
-    return false;
-  } finally {
-    fullBodyMeshFileInput.value = "";
-  }
-}
 
 
 function downloadPreferencesAndPresets() {
@@ -10659,7 +9404,7 @@ async function openHairProjectFile(file, { handle = null } = {}) {
     const content = await file.text();
     const project = validateHairProject(JSON.parse(content));
     if (project.headAssetOmitted === true) {
-      disposeGuideModel(guideState.state.guideModel);
+      referenceHeadApi.disposeGuideModel(guideState.state.guideModel);
       guideState.state.guideModel = null;
       head.state.importedHeadAsset = null;
       document.querySelector("#importHeadMesh").title = "Import head mesh from an OBJ file";
@@ -10667,7 +9412,7 @@ async function openHairProjectFile(file, { handle = null } = {}) {
     } else if (project.headAsset?.format === "obj" && typeof project.headAsset.content === "string") {
       const model = new OBJLoader().parse(polygonOnlyObjSource(project.headAsset.content));
       const fullBody = project.headAsset.fit === "full-body";
-      installGuideModel(model, { normalize: true, fullBody });
+      referenceHeadApi.installGuideModel(model, { normalize: true, fullBody });
       head.state.importedHeadAsset = { ...project.headAsset };
       document.querySelector("#importHeadMesh").title = fullBody
         ? "Import head mesh from an OBJ file"
@@ -10676,7 +9421,7 @@ async function openHairProjectFile(file, { handle = null } = {}) {
         ? `Using ${project.headAsset.name || "custom full body"}. Import another full body mesh`
         : "Import a full body OBJ, scale it to seven head heights, and align its top to the scalp guide";
     } else if (Object.prototype.hasOwnProperty.call(project, "headAsset")) {
-      await loadDefaultGuideModel();
+      await referenceHeadApi.loadDefaultGuideModel();
       document.querySelector("#importHeadMesh").title = "Import head mesh from an OBJ file";
       document.querySelector("#importFullBodyMesh").title = "Import a full body OBJ, scale it to seven head heights, and align its top to the scalp guide";
     }
@@ -10803,8 +9548,8 @@ async function confirmDroppedApplicationFile() {
     await openHairProjectFile(file, { handle: miscState.state.pendingDroppedApplicationHandle });
     return;
   }
-  if (objTarget === "body") await importFullBodyMeshFile(file);
-  else if (objTarget === "head") await importHeadMeshFile(file);
+  if (objTarget === "body") await referenceHeadApi.importFullBodyMeshFile(file);
+  else if (objTarget === "head") await referenceHeadApi.importHeadMeshFile(file);
 }
 
 function pushUndoState() {
@@ -10942,7 +9687,7 @@ function restoreSceneCollectionsForStateRestore(restorePlan, {
     locks.map((lock) => lock.id)
   ));
   restorePlan.scene.guides.forEach((snapshot) => restoreGuide(snapshot));
-  restorePlan.scene.referenceImages.forEach((snapshot) => addReferenceImage(snapshot, { select: false }));
+  restorePlan.scene.referenceImages.forEach((snapshot) => referenceHeadApi.addReferenceImage(snapshot, { select: false }));
 }
 
 function validateSelectionAfterStateRestore() {
@@ -10981,7 +9726,7 @@ function reapplySelectionAfterStateRestore(restorePlan) {
   const pointToRestore = sel.state.selectedPoint ? { ...sel.state.selectedPoint } : null;
   const latticePointToRestore = sel.state.selectedCurveLatticePoint ? { ...sel.state.selectedCurveLatticePoint } : null;
   const controlsToRestore = restorePlan.selection.controlPoints;
-  if (sel.state.selectedReferenceImageId) selectReferenceImage(sel.state.selectedReferenceImageId);
+  if (sel.state.selectedReferenceImageId) referenceHeadApi.selectReferenceImage(sel.state.selectedReferenceImageId);
   else if (sel.state.selectedId) selectLock(sel.state.selectedId, {
     individualClumpMember: !sel.state.clumpViewportSelection,
     selectedIds: [...sel.state.selectedStrandIds],
@@ -11050,7 +9795,7 @@ function restoreState(state, {
 }
 
 function disposeAllEditableObjects() {
-  clearReferenceImages();
+  referenceHeadApi.clearReferenceImages();
   polyToolsApi.clearPolyFillPreview();
   setHoveredStrandWidthEdge(null);
   locks.forEach((lock) => {
@@ -12548,13 +11293,6 @@ function finishSelectionMarquee(event, options = {}) {
   }
 }
 
-function headMeshes() {
-  const meshes = [];
-  guideState.state.guideModel?.traverse((child) => {
-    if (child.isMesh) meshes.push(child);
-  });
-  return meshes;
-}
 
 function strandSplitProfileData(lock) {
   const baseProfilePoints = (lock.sweepProfile?.length >= 4 ? lock.sweepProfile : DEFAULT_SWEEP_PROFILE)
@@ -15222,29 +13960,17 @@ function deleteSelectedGuide() {
   return deleteGuide(guideApi.getSelectedGuide());
 }
 
-function deleteSelectedReferenceImage() {
-  const reference = selectedReferenceImage();
-  if (!reference) return false;
-  pushUndoState();
-  transformControls.detach();
-  disposeReferenceImage(reference);
-  referenceImages.splice(referenceImages.indexOf(reference), 1);
-  sel.state.selectedReferenceImageId = referenceImages.at(-1)?.id || null;
-  if (sel.state.selectedReferenceImageId) selectReferenceImage(sel.state.selectedReferenceImageId);
-  else renderReferenceImagePanel();
-  return true;
-}
 
 function hasDeletableSelection() {
   return Boolean(
-    selectedReferenceImage()
+    referenceHeadApi.selectedReferenceImage()
     || selectedLocksInOrder().length
     || guideApi.getSelectedGuide()
   );
 }
 
 function deleteCurrentSelection() {
-  if (selectedReferenceImage()) return deleteSelectedReferenceImage();
+  if (referenceHeadApi.selectedReferenceImage()) return referenceHeadApi.deleteSelectedReferenceImage();
   if (selectedLocksInOrder().length) return deleteSelectedStrands();
   if (guideApi.getSelectedGuide()) return deleteSelectedGuide();
   // The permanent scalp guide is intentionally not represented as a deletable guide.
@@ -15792,7 +14518,7 @@ function configureContextualRadialMenu(kind, options, listOptions = []) {
 function beginStrandRadialGesture() {
   if (!ui.state.radialMenusEnabled || hairState.state.strandRadialGesture || sculptState.state.duplicatePlacement) return false;
   const lock = getSelectedLock();
-  const hasOtherSelection = Boolean(sel.state.selectedStrandGroup || guideApi.getSelectedGuide() || selectedReferenceImage());
+  const hasOtherSelection = Boolean(sel.state.selectedStrandGroup || guideApi.getSelectedGuide() || referenceHeadApi.selectedReferenceImage());
   if (!lock && hasOtherSelection) return false;
   const selectedClumpGuide = sel.state.clumpViewportSelection ? clumpGuideForLock(lock) : null;
   const kind = selectedClumpGuide
@@ -16327,15 +15053,6 @@ function sideNamingDisplayId(id) {
   })[id] || id;
 }
 
-function referenceViewDisplayLabel(view) {
-  return ({
-    overlay: "Viewport Overlays",
-    front: "Front",
-    back: "Back",
-    left: "Left",
-    right: "Right"
-  })[sideNamingDisplayId(view)] || "Front";
-}
 
 function strandRegionDisplayLabel(region, { short = false } = {}) {
   const displayRegion = sideNamingDisplayId(region);
@@ -16359,11 +15076,11 @@ function updateSideNamingLabels() {
   document.querySelectorAll("[data-reference-drop-target]").forEach((target) => {
     const label = target.querySelector("b");
     if (label && ["front", "back", "left", "right"].includes(target.dataset.referenceDropTarget)) {
-      label.textContent = referenceViewDisplayLabel(target.dataset.referenceDropTarget);
+      label.textContent = referenceHeadApi.referenceViewDisplayLabel(target.dataset.referenceDropTarget);
     }
   });
   referenceImageView.querySelectorAll("option").forEach((option) => {
-    option.textContent = referenceViewDisplayLabel(option.value);
+    option.textContent = referenceHeadApi.referenceViewDisplayLabel(option.value);
   });
   scalpRegionButtons.forEach((button) => {
     const label = button.querySelector("span:last-child");
@@ -16373,7 +15090,7 @@ function updateSideNamingLabels() {
     const label = input.closest("label")?.querySelector("span");
     if (label) label.textContent = strandRegionDisplayLabel(input.dataset.regionVisibility);
   });
-  renderReferenceImagePanel();
+  referenceHeadApi.renderReferenceImagePanel();
   renderLockList();
   const selectedGroup = STRAND_GROUPS.find((group) => group.id === sel.state.selectedStrandGroup);
   groupSettingsTitle.textContent = selectedGroup
@@ -18182,8 +16899,8 @@ deleteOutlinerAction.addEventListener("click", () => {
   if (target?.type === "reference") {
     const reference = referenceImages.find((reference) => reference.id === target.referenceId);
     if (!reference) return;
-    selectReferenceImage(reference.id);
-    deleteSelectedReferenceImage();
+    referenceHeadApi.selectReferenceImage(reference.id);
+    referenceHeadApi.deleteSelectedReferenceImage();
     return;
   }
   if (target?.type === "guide") {
@@ -18896,8 +17613,8 @@ headMeshFileInput.addEventListener("change", async () => {
   if (!file) return;
   const enterHeadSetup = head.state.enterHeadSetupAfterHeadImport;
   head.state.enterHeadSetupAfterHeadImport = false;
-  const imported = await importHeadMeshFile(file);
-  if (imported && enterHeadSetup) setHeadSetupEditing(true);
+  const imported = await referenceHeadApi.importHeadMeshFile(file);
+  if (imported && enterHeadSetup) referenceHeadApi.setHeadSetupEditing(true);
 });
 document.querySelector("#importFullBodyMesh").addEventListener("click", () => {
   head.state.enterHeadSetupAfterFullBodyImport = false;
@@ -18912,8 +17629,8 @@ fullBodyMeshFileInput.addEventListener("change", async () => {
   if (!file) return;
   const enterHeadSetup = head.state.enterHeadSetupAfterFullBodyImport;
   head.state.enterHeadSetupAfterFullBodyImport = false;
-  const imported = await importFullBodyMeshFile(file);
-  if (imported && enterHeadSetup) setHeadSetupEditing(true);
+  const imported = await referenceHeadApi.importFullBodyMeshFile(file);
+  if (imported && enterHeadSetup) referenceHeadApi.setHeadSetupEditing(true);
 });
 scalpGuideSourceInput.addEventListener("change", () => {
   if (scalpGuideSourceInput.value === "default") {
@@ -20128,25 +18845,19 @@ patchNotesDialog.addEventListener("click", (event) => {
 joinDiscordButton.addEventListener("click", () => {
   window.open("https://discord.gg/U4JBykv4yk", "_blank", "noopener,noreferrer");
 });
-function requestReferenceImage(type) {
-  setViewportEditMode("reference");
-  ref.state.pendingReferenceImageType = type;
-  referenceImageFile.value = "";
-  referenceImageFile.click();
-}
 
-createViewportReferenceMenu.addEventListener("click", () => requestReferenceImage("overlay"));
-createPlaneReferenceMenu.addEventListener("click", () => requestReferenceImage("plane"));
-closeReferenceImagePanel.addEventListener("click", () => setReferenceImagePanelOpen(false));
-addViewportReference.addEventListener("click", () => requestReferenceImage("overlay"));
-addPlaneReference.addEventListener("click", () => requestReferenceImage("plane"));
+createViewportReferenceMenu.addEventListener("click", () => referenceHeadApi.requestReferenceImage("overlay"));
+createPlaneReferenceMenu.addEventListener("click", () => referenceHeadApi.requestReferenceImage("plane"));
+closeReferenceImagePanel.addEventListener("click", () => referenceHeadApi.setReferenceImagePanelOpen(false));
+addViewportReference.addEventListener("click", () => referenceHeadApi.requestReferenceImage("overlay"));
+addPlaneReference.addEventListener("click", () => referenceHeadApi.requestReferenceImage("plane"));
 referenceImageFile.addEventListener("change", async () => {
   const file = referenceImageFile.files?.[0];
   const type = ref.state.pendingReferenceImageType;
   ref.state.pendingReferenceImageType = null;
   if (!file || !type) return;
   try {
-    await addReferenceImagesFromFiles([file], type);
+    await referenceHeadApi.addReferenceImagesFromFiles([file], type);
   } catch (error) {
     console.error("Could not add reference image", error);
   }
@@ -20154,37 +18865,37 @@ referenceImageFile.addEventListener("change", async () => {
 window.addEventListener("dragenter", (event) => {
   if (dragContainsApplicationFile(event)) {
     event.preventDefault();
-    setReferenceImageDragActive(false);
+    referenceHeadApi.setReferenceImageDragActive(false);
     return;
   }
-  if (!dragContainsReferenceImage(event)) return;
+  if (!referenceHeadApi.dragContainsReferenceImage(event)) return;
   event.preventDefault();
-  setReferenceImageDragActive(true);
-  setReferenceDropHover(event);
+  referenceHeadApi.setReferenceImageDragActive(true);
+  referenceHeadApi.setReferenceDropHover(event);
 });
 window.addEventListener("dragover", (event) => {
   if (dragContainsApplicationFile(event)) {
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
-    setReferenceImageDragActive(false);
+    referenceHeadApi.setReferenceImageDragActive(false);
     return;
   }
-  if (!dragContainsReferenceImage(event)) return;
+  if (!referenceHeadApi.dragContainsReferenceImage(event)) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = "copy";
-  setReferenceImageDragActive(true);
-  setReferenceDropHover(event);
+  referenceHeadApi.setReferenceImageDragActive(true);
+  referenceHeadApi.setReferenceDropHover(event);
 });
 window.addEventListener("dragleave", (event) => {
-  if (event.relatedTarget == null) setReferenceImageDragActive(false);
+  if (event.relatedTarget == null) referenceHeadApi.setReferenceImageDragActive(false);
 });
-window.addEventListener("dragend", () => setReferenceImageDragActive(false));
+window.addEventListener("dragend", () => referenceHeadApi.setReferenceImageDragActive(false));
 window.addEventListener("drop", async (event) => {
   const transferredFiles = [...(event.dataTransfer?.files || [])];
   const applicationFiles = transferredFiles.filter((file) => applicationDropFileKind(file));
   if (applicationFiles.length) {
     event.preventDefault();
-    setReferenceImageDragActive(false);
+    referenceHeadApi.setReferenceImageDragActive(false);
     if (applicationFiles.length !== 1 || transferredFiles.length !== 1) {
       window.alert("Drop one .ahs or .obj file at a time.");
       return;
@@ -20199,17 +18910,17 @@ window.addEventListener("drop", async (event) => {
     openDroppedApplicationFilePrompt(applicationFiles[0], { handle });
     return;
   }
-  const files = transferredFiles.filter(isSupportedReferenceImageFile);
-  const destination = referenceDropDestination(event);
-  const overlayPosition = destination === "overlay" ? viewportOverlayDropPosition(event) : null;
-  setReferenceImageDragActive(false);
+  const files = transferredFiles.filter(referenceHeadApi.isSupportedReferenceImageFile);
+  const destination = referenceHeadApi.referenceDropDestination(event);
+  const overlayPosition = destination === "overlay" ? referenceHeadApi.viewportOverlayDropPosition(event) : null;
+  referenceHeadApi.setReferenceImageDragActive(false);
   if (!files.length) return;
   event.preventDefault();
 
   if (!destination) return;
   try {
     const type = destination === "overlay" ? "overlay" : "plane";
-    await addReferenceImagesFromFiles(files, type, {
+    await referenceHeadApi.addReferenceImagesFromFiles(files, type, {
       view: type === "plane" ? destination : "front",
       overlayPosition
     });
@@ -20220,65 +18931,65 @@ window.addEventListener("drop", async (event) => {
 
 bindUndoCapture(referenceImageType);
 referenceImageType.addEventListener("change", () => {
-  const reference = selectedReferenceImage();
+  const reference = referenceHeadApi.selectedReferenceImage();
   if (!reference) return;
-  setReferenceImageType(reference, referenceImageType.value);
+  referenceHeadApi.setReferenceImageType(reference, referenceImageType.value);
 });
 [referenceImageVisible, referenceImageSnappedViewOnly, referenceImageOpacity]
   .forEach(bindUndoCapture);
 referenceImageVisible.addEventListener("change", () => {
-  const reference = selectedReferenceImage();
+  const reference = referenceHeadApi.selectedReferenceImage();
   if (!reference) return;
   reference.visible = referenceImageVisible.checked;
-  applyReferenceImageRuntime(reference);
-  renderReferenceImagePanel();
+  referenceHeadApi.applyReferenceImageRuntime(reference);
+  referenceHeadApi.renderReferenceImagePanel();
 });
 referenceImageSnappedViewOnly.addEventListener("change", () => {
-  const reference = selectedReferenceImage();
+  const reference = referenceHeadApi.selectedReferenceImage();
   if (reference?.type !== "plane") return;
   reference.snappedViewOnly = referenceImageSnappedViewOnly.checked;
-  updateReferencePlaneVisibility();
-  renderReferenceImagePanel();
+  referenceHeadApi.updateReferencePlaneVisibility();
+  referenceHeadApi.renderReferenceImagePanel();
 });
 referenceImageOpacity.addEventListener("input", () => {
-  const reference = selectedReferenceImage();
+  const reference = referenceHeadApi.selectedReferenceImage();
   if (!reference) return;
   reference.opacity = Number(referenceImageOpacity.value);
-  applyReferenceImageRuntime(reference);
+  referenceHeadApi.applyReferenceImageRuntime(reference);
   referenceImageOpacityValue.textContent = reference.opacity.toFixed(2);
 });
 referenceImageFlipX.addEventListener("click", () => {
-  const reference = selectedReferenceImage();
+  const reference = referenceHeadApi.selectedReferenceImage();
   if (!reference) return;
   pushUndoState();
   reference.flipX = !reference.flipX;
-  applyReferenceImageRuntime(reference);
-  renderReferenceImagePanel();
+  referenceHeadApi.applyReferenceImageRuntime(reference);
+  referenceHeadApi.renderReferenceImagePanel();
 });
 resetReferenceImageCrop.addEventListener("click", () => {
-  const reference = selectedReferenceImage();
-  if (reference?.type !== "overlay" || referenceCropIsFull(reference)) return;
+  const reference = referenceHeadApi.selectedReferenceImage();
+  if (reference?.type !== "overlay" || referenceHeadApi.referenceCropIsFull(reference)) return;
   pushUndoState();
   reference.crop = { left: 0, top: 0, right: 1, bottom: 1 };
-  applyReferenceImageRuntime(reference);
-  renderReferenceImagePanel();
+  referenceHeadApi.applyReferenceImageRuntime(reference);
+  referenceHeadApi.renderReferenceImagePanel();
 });
 referenceImageView.addEventListener("change", () => {
-  const reference = selectedReferenceImage();
+  const reference = referenceHeadApi.selectedReferenceImage();
   if (reference?.type !== "plane") return;
   pushUndoState();
-  placeReferencePlane(reference, referenceImageView.value);
-  renderReferenceImagePanel();
+  referenceHeadApi.placeReferencePlane(reference, referenceImageView.value);
+  referenceHeadApi.renderReferenceImagePanel();
 });
 bindUndoCapture(referencePlaneInFront);
 referencePlaneInFront.addEventListener("change", () => {
-  const reference = selectedReferenceImage();
+  const reference = referenceHeadApi.selectedReferenceImage();
   if (reference?.type !== "plane") return;
-  setReferencePlaneInFront(reference, referencePlaneInFront.checked);
-  renderReferenceImagePanel();
+  referenceHeadApi.setReferencePlaneInFront(reference, referencePlaneInFront.checked);
+  referenceHeadApi.renderReferenceImagePanel();
 });
 deleteReferenceImage.addEventListener("click", () => {
-  deleteSelectedReferenceImage();
+  referenceHeadApi.deleteSelectedReferenceImage();
 });
 deleteSelectionAction.addEventListener("click", () => {
   deleteCurrentSelection();
@@ -20329,7 +19040,7 @@ scalpBuilderMode.addEventListener("click", () => {
   scalpBuilder.setScalpSetupMenuOpen(false);
 });
 headSetupMode.addEventListener("click", () => {
-  setHeadSetupEditing(!sculptState.state.headSetupEditing);
+  referenceHeadApi.setHeadSetupEditing(!sculptState.state.headSetupEditing);
   scalpBuilder.setScalpSetupMenuOpen(false);
 });
 function toggleCapsuleGuideTool() {
@@ -20360,7 +19071,7 @@ viewportCapsuleGuideTool.addEventListener("click", toggleCapsuleGuideTool);
 curveLatticeGuideMode.addEventListener("click", createCurveLatticeGuideFromUi);
 viewportCurveLatticeGuideTool.addEventListener("click", createCurveLatticeGuideFromUi);
 document.querySelector("#fineTuneScalpGuide").addEventListener("click", () => {
-  setHeadSetupEditing(false);
+  referenceHeadApi.setHeadSetupEditing(false);
   scalpBuilder.setScalpBuilderEditing(true);
 });
 resetScalpBuilderButton.addEventListener("click", scalpBuilder.resetScalpBuilder);
@@ -20369,7 +19080,7 @@ generateScalpBuilderButton.addEventListener("click", scalpBuilder.displayScalpBu
 scalpBuilderShowTemplateInput.addEventListener("change", scalpBuilder.rebuildScalpBuilderTemplateOverlay);
 scalpBuilderTransparentHeadInput.addEventListener("change", () => {
   if (!scalpState.state.scalpBuilderEditing) return;
-  setHeadReferenceTransparency(scalpBuilderTransparentHeadInput.checked, 0.18);
+  referenceHeadApi.setHeadReferenceTransparency(scalpBuilderTransparentHeadInput.checked, 0.18);
 });
 document.addEventListener("pointerdown", (event) => {
   if (!event.target.closest(".app-menu-shell")) closeAppMenus();
@@ -20496,7 +19207,7 @@ Object.entries(headTransformInputs).forEach(([key, input]) => {
   input.addEventListener("input", () => {
     headTransform[key] = Number(input.value);
     headTransformValues[key].textContent = headTransform[key].toFixed(2);
-    applyHeadTransform();
+    referenceHeadApi.applyHeadTransform();
   });
 });
 headTransformResetButtons.forEach((button) => {
@@ -20508,8 +19219,8 @@ headTransformResetButtons.forEach((button) => {
     if (headTransform[key] === resetValue) return;
     pushUndoState();
     headTransform[key] = resetValue;
-    syncHeadTransformInputs();
-    applyHeadTransform();
+    referenceHeadApi.syncHeadTransformInputs();
+    referenceHeadApi.applyHeadTransform();
   });
 });
 scalpRoughScaleInputs.forEach((input) => {
@@ -20585,7 +19296,7 @@ window.addEventListener("keydown", (event) => {
     sculptState.state.selectionRemoveHeld = true;
     syncNavigationModifierLocks();
   }
-  if (event.key === "Escape" && finishReferenceOverlayDrag(event, { cancel: true })) {
+  if (event.key === "Escape" && referenceHeadApi.finishReferenceOverlayDrag(event, { cancel: true })) {
     event.preventDefault();
     return;
   }
@@ -20892,7 +19603,7 @@ window.addEventListener("blur", () => {
   sculptState.state.pointRemovalCandidate = null;
   draw.state.polyShiftPreviewHeld = false;
   polyToolsApi.clearPolyFillPreview();
-  finishReferenceOverlayDrag(null, { cancel: true });
+  referenceHeadApi.finishReferenceOverlayDrag(null, { cancel: true });
   cancelStrandRadialGesture();
   cancelToolShortcutPress();
   cancelDuplicatePlacement();
@@ -21059,7 +19770,7 @@ function resize() {
   updateSculptBrushDockCompact();
   referenceImages
     .filter((reference) => reference.type === "overlay")
-    .forEach(applyReferenceImageRuntime);
+    .forEach(referenceHeadApi.applyReferenceImageRuntime);
   invalidateUvInspector();
 }
 
@@ -21953,8 +20664,8 @@ window.addEventListener("pointermove", trackViewportPointerMove);
 window.addEventListener("pointermove", updateStrandRadialGesture, true);
 window.addEventListener("pointermove", updateToolRadialGesture, true);
 window.addEventListener("pointermove", updateDuplicatePlacement, true);
-window.addEventListener("pointermove", updateReferenceCrop, true);
-window.addEventListener("pointermove", updateReferenceOverlayDrag, true);
+window.addEventListener("pointermove", referenceHeadApi.updateReferenceCrop, true);
+window.addEventListener("pointermove", referenceHeadApi.updateReferenceOverlayDrag, true);
 window.addEventListener("pointermove", sculptGeom.updateSculptMoveStroke, true);
 window.addEventListener("pointermove", bonesApi.updatePanelTipHover);
 window.addEventListener("pointermove", updateStrandBrushHover);
@@ -21981,8 +20692,8 @@ window.addEventListener("pointermove", guideApi.updateCapsuleGuideLoopDrag);
 window.addEventListener("pointermove", updateHoudiniZoomDrag, true);
 window.addEventListener("pointerup", endViewSnap);
 window.addEventListener("pointerup", taperEditor.finishTaperMeshPointDrag, true);
-window.addEventListener("pointerup", finishReferenceCrop, true);
-window.addEventListener("pointerup", finishReferenceOverlayDrag, true);
+window.addEventListener("pointerup", referenceHeadApi.finishReferenceCrop, true);
+window.addEventListener("pointerup", referenceHeadApi.finishReferenceOverlayDrag, true);
 window.addEventListener("pointerup", sculptGeom.finishSculptMoveStroke, true);
 window.addEventListener("pointerup", finishBrushSizeDrag, true);
 window.addEventListener("pointerup", finishStrandWidthEdgeDrag, true);
@@ -22013,8 +20724,8 @@ window.addEventListener("pointerup", endHoudiniZoomDrag);
 window.addEventListener("pointerup", endSelectPointerCapture);
 window.addEventListener("pointercancel", endViewSnap);
 window.addEventListener("pointercancel", (event) => taperEditor.finishTaperMeshPointDrag(event, { cancel: true }), true);
-window.addEventListener("pointercancel", (event) => finishReferenceCrop(event, { cancel: true }), true);
-window.addEventListener("pointercancel", (event) => finishReferenceOverlayDrag(event, { cancel: true }), true);
+window.addEventListener("pointercancel", (event) => referenceHeadApi.finishReferenceCrop(event, { cancel: true }), true);
+window.addEventListener("pointercancel", (event) => referenceHeadApi.finishReferenceOverlayDrag(event, { cancel: true }), true);
 window.addEventListener("pointercancel", (event) => sculptGeom.finishSculptMoveStroke(event, { cancel: true }), true);
 window.addEventListener("pointercancel", finishBrushSizeDrag, true);
 window.addEventListener("pointercancel", (event) => finishStrandWidthEdgeDrag(event, { cancel: true }), true);
@@ -22063,8 +20774,8 @@ renderer.domElement.addEventListener("pointercancel", branchRegion.endBranchSwee
 renderer.domElement.addEventListener("pointerdown", taperEditor.beginTaperMeshPointDrag, true);
 renderer.domElement.addEventListener("pointerdown", blockPointerDuringStrandRadialGesture, true);
 renderer.domElement.addEventListener("pointerdown", confirmDuplicatePlacement, true);
-renderer.domElement.addEventListener("pointerdown", beginReferenceCrop, true);
-referenceCropHandles.addEventListener("pointerdown", beginReferenceCrop, true);
+renderer.domElement.addEventListener("pointerdown", referenceHeadApi.beginReferenceCrop, true);
+referenceCropHandles.addEventListener("pointerdown", referenceHeadApi.beginReferenceCrop, true);
 renderer.domElement.addEventListener("pointerdown", beginBrushSizeDrag, true);
 renderer.domElement.addEventListener("pointerdown", sculptGeom.beginSculptMoveStroke, true);
 renderer.domElement.addEventListener("pointerdown", beginStrandWidthEdgeDrag, true);
@@ -22078,8 +20789,8 @@ renderer.domElement.addEventListener("pointerdown", beginAltOrbit, true);
 renderer.domElement.addEventListener("pointerdown", scalpBuilder.prioritizeScalpBuilderPointSelection, true);
 renderer.domElement.addEventListener("pointermove", updateControlPointHover);
 renderer.domElement.addEventListener("pointermove", guideApi.updateCurveLatticeLoopHover);
-renderer.domElement.addEventListener("pointermove", updateReferenceOverlayCursor);
-referenceCropHandles.addEventListener("pointerover", () => setReferenceOverlayScaleHandleHover(null));
+renderer.domElement.addEventListener("pointermove", referenceHeadApi.updateReferenceOverlayCursor);
+referenceCropHandles.addEventListener("pointerover", () => referenceHeadApi.setReferenceOverlayScaleHandleHover(null));
 renderer.domElement.addEventListener("pointermove", updateStrandWidthEdgeHover);
 renderer.domElement.addEventListener("pointermove", updateCurvePointTopologyCursor);
 renderer.domElement.addEventListener("pointerleave", () => {
@@ -22089,7 +20800,7 @@ renderer.domElement.addEventListener("pointerleave", () => {
   setHoveredControlPoint(null);
   guideApi.setCurveLatticeLoopHover(null);
   setHoveredStrandWidthEdge(null);
-  setReferenceOverlayScaleHandleHover(null);
+  referenceHeadApi.setReferenceOverlayScaleHandleHover(null);
   renderer.domElement.style.cursor = "";
 });
 window.addEventListener("pointercancel", () => {
@@ -22128,25 +20839,25 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     && !event.altKey
     && !event.metaKey
   ) {
-    const overlayReference = sculptState.state.viewportEditMode === "reference" ? referenceOverlayAtPointer(event) : null;
+    const overlayReference = sculptState.state.viewportEditMode === "reference" ? referenceHeadApi.referenceOverlayAtPointer(event) : null;
     if (overlayReference) {
-      selectReferenceImage(overlayReference.id);
+      referenceHeadApi.selectReferenceImage(overlayReference.id);
       if (["select", "move", "scale"].includes(sel.state.activeTool)) {
-        beginReferenceOverlayDrag(event, overlayReference);
+        referenceHeadApi.beginReferenceOverlayDrag(event, overlayReference);
       }
       event.preventDefault();
       return;
     }
-    const referenceHit = referencePlaneHitFromPointer({
+    const referenceHit = referenceHeadApi.referencePlaneHitFromPointer({
       ignoreOcclusion: sculptState.state.viewportEditMode === "reference"
     });
     if (referenceHit?.object?.userData.referenceImageId) {
-      selectReferenceImage(referenceHit.object.userData.referenceImageId);
+      referenceHeadApi.selectReferenceImage(referenceHit.object.userData.referenceImageId);
       event.preventDefault();
       return;
     }
     if (referenceSelectionActive) {
-      selectReferenceImage(null);
+      referenceHeadApi.selectReferenceImage(null);
       event.preventDefault();
       return;
     }
@@ -22537,8 +21248,8 @@ function animate(timestamp = performance.now()) {
   }
   controls.update();
   sculptGeom.updateSculptBrushViabilityPlane();
-  updateReferencePlaneVisibility();
-  updateReferenceCropHandles();
+  referenceHeadApi.updateReferencePlaneVisibility();
+  referenceHeadApi.updateReferenceCropHandles();
   updateViewPlaneGrid();
   updatePullGuideVisual();
   renderUvInspector(timestamp);
