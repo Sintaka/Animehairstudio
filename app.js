@@ -3,7 +3,7 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260812-1";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260812-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260812-1";
-import { createPanelTipStrandApi, TIP_WIDTH_CONTROL_POINTS } from "./modules/geometry/panel-tip-strand.js?v=20260812-1";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260812-1";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260812-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260812-1";
 import { createSegmentControlApi } from "./modules/bones/segment-control.js?v=20260812-1";
@@ -14,6 +14,7 @@ import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260809-16";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260809-15";
 import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave } from "./modules/bones/bone-model.js?v=20260812-1";
+import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260812-1";
 import { createStrandSweepApi } from "./modules/geometry/strand-sweep.js?v=20260810-2";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-14";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";
@@ -1555,6 +1556,11 @@ const segmentControlDeps = {};
 const segmentApi = createSegmentControlApi(segmentControlDeps);
 const boneInteractionDeps = {};
 const bonesApi = createBoneInteractionApi(boneInteractionDeps);
+// Bone view handle api (refactor bones B3): deps filled in one batch after the
+// strandGeometryDeps batch (all deps defined); no boot-time calls before the batch,
+// see devlog/in-progress/b3-bones-handle-refactor-map.md.
+const boneViewHandlesDeps = {};
+const boneViewHandles = createBoneViewHandlesApi(boneViewHandlesDeps);
 const scalpBuilderTemplateOverlay = new THREE.Group();
 scalpBuilderTemplateOverlay.visible = false;
 scene.add(scalpBuilderTemplateOverlay);
@@ -3284,21 +3290,6 @@ function loadBraidMeshPreset(id, path, options) {
 
 loadBraidMeshPreset(DEFAULT_BRAID_MESH_PRESET, "./assets/braid-segment.obj?v=20260720-1");
 loadBraidMeshPreset("chain-links", "./assets/chainlinks.obj?v=20260720-1", { authoredCaps: true });
-
-function createSplitControlHandle() {
-  const handle = new THREE.Mesh(
-    new THREE.SphereGeometry(0.052, 18, 12),
-    new THREE.MeshBasicMaterial({
-      color: 0xff42cf,
-      depthTest: false,
-      depthWrite: false,
-      transparent: true,
-      opacity: 0.68
-    })
-  );
-  handle.renderOrder = 7;
-  return handle;
-}
 
 function frameGuideModel({
   distanceScale = 1,
@@ -16139,162 +16130,21 @@ function createCurveObjects(lock) {
     return handle;
   });
   const arrows = lock.points.map((point, index) => {
-    const arrow = createCurveNormalIndicator();
+    const arrow = boneViewHandles.createCurveNormalIndicator();
     arrow.position.copy(point);
     arrow.userData.lockId = lock.id;
     arrow.userData.pointIndex = index;
     group.add(arrow);
     return arrow;
   });
-  const panelSplitHandles = [];
-  const panelSplitLines = [];
-  const panelSegmentHandles = [];
-  const panelTipHandles = [];
-  const panelTipLines = [];
-  const tipWidthHandles = [];
-  const tipWidthLines = [];
-  const tipNormalArrows = [];
-  if (isPanelGeometry(lock)) {
-    lock.panelSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    lock.panelSplits.forEach((split, index) => {
-      const line = new THREE.Line(
-        new THREE.BufferGeometry(),
-        new THREE.LineBasicMaterial({ color: 0xff42cf, transparent: true, opacity: 0.9, depthTest: false })
-      );
-      line.renderOrder = 6;
-      group.add(line);
-      panelSplitLines.push(line);
-      const handle = createSplitControlHandle();
-      handle.userData.lockId = lock.id;
-      handle.userData.panelSplitIndex = index;
-      group.add(handle);
-      panelSplitHandles.push(handle);
-    });
-    // (green segment spread handles removed - replaced by per-side tip width control)
-    // Tip sub-bone handles: one per sub-bone chain point (full chain like the main
-    // bone, laterally offset to the segment center). Only points below the segment's
-    // fork (zipper) are exposed in updateCurveObjects.
-    const tipMainPointCount = Array.isArray(lock.points) ? lock.points.length : 0;
-    for (let segment = 0; segment < lock.panelSplits.length + 1; segment += 1) {
-      for (let point = 0; point < tipMainPointCount; point += 1) {
-        const handle = createSplitControlHandle();
-        handle.scale.setScalar(0.42);
-        handle.material = new THREE.MeshBasicMaterial({
-          color: 0xffd84d,
-          depthTest: false,
-          depthWrite: false,
-          transparent: true,
-          opacity: 0.9
-        });
-        handle.userData.lockId = lock.id;
-        handle.userData.panelTipIndex = segment;
-        handle.userData.panelTipPoint = point;
-        group.add(handle);
-        panelTipHandles.push(handle);
-        // 旋转模式下选中发尖子骨骼时，每个暴露链点显示一个法线箭头（子骨骼自身法线）。
-        const tipNormalArrow = createCurveNormalIndicator();
-        tipNormalArrow.visible = false;
-        tipNormalArrow.userData.lockId = lock.id;
-        tipNormalArrow.userData.panelTipIndex = segment;
-        tipNormalArrow.userData.panelTipPoint = point;
-        group.add(tipNormalArrow);
-        tipNormalArrows.push(tipNormalArrow);
-      }
-      // Guide line connecting the sub-bone chain points (like a strand guide).
-      const line = new THREE.Line(
-        new THREE.BufferGeometry(),
-        new THREE.LineBasicMaterial({ color: 0xffd84d, transparent: true, opacity: 0.7, depthTest: false })
-      );
-      line.renderOrder = 6;
-      group.add(line);
-      panelTipLines.push(line);
-    }
-    // Tip width control (pink curve + control points, per side along the exposed
-    // below-zipper chain). Only the selected tip segment's points/curve show.
-    for (let segment = 0; segment < lock.panelSplits.length + 1; segment += 1) {
-      const sideHandles = { left: [], right: [] };
-      const sideLines = { left: null, right: null };
-      for (const side of [-1, 1]) {
-        // 5 midpoints (common fork) + the tip end (t=1) = tipWidthControlTs positions.
-        for (let point = 0; point < TIP_WIDTH_CONTROL_POINTS + 1; point += 1) {
-          const handle = createSplitControlHandle();
-          handle.scale.setScalar(0.26);
-          handle.material = new THREE.MeshBasicMaterial({
-            color: 0x5df0a8,
-            depthTest: false,
-            depthWrite: false,
-            transparent: true,
-            opacity: 0.95
-          });
-          handle.userData.lockId = lock.id;
-          handle.userData.tipWidthSegment = segment;
-          handle.userData.tipWidthSide = side;
-          handle.userData.tipWidthIndex = point;
-          group.add(handle);
-          sideHandles[side < 0 ? "left" : "right"].push(handle);
-        }
-        const line = new THREE.Line(
-          new THREE.BufferGeometry(),
-          new THREE.LineBasicMaterial({ color: 0x5df0a8, transparent: true, opacity: 0.85, depthTest: false })
-        );
-        line.renderOrder = 6;
-        line.userData.lockId = lock.id;
-        line.userData.tipWidthLineSegment = segment;
-        line.userData.tipWidthLineSide = side;
-        group.add(line);
-        sideLines[side < 0 ? "left" : "right"] = line;
-      }
-      tipWidthHandles.push(sideHandles);
-      tipWidthLines.push(sideLines);
-    }
-  }
-  let strandSplitHandle = null;
-  let strandSplitLine = null;
-  if (lock.geometryType === "strand") {
-    strandSplitLine = new THREE.Line(
-      new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color: 0xff42cf, transparent: true, opacity: 0.9, depthTest: false })
-    );
-    strandSplitLine.renderOrder = 6;
-    group.add(strandSplitLine);
-    strandSplitHandle = createSplitControlHandle();
-    strandSplitHandle.userData.lockId = lock.id;
-    strandSplitHandle.userData.strandSplitHandle = true;
-    group.add(strandSplitHandle);
-  }
-  let branchSweepStartHandle = null;
-  if (lock.branchRootRegion) {
-    branchSweepStartHandle = createSplitControlHandle();
-    branchSweepStartHandle.scale.setScalar(0.6);
-    branchSweepStartHandle.renderOrder = 40;
-    branchSweepStartHandle.material = new THREE.MeshBasicMaterial({
-      color: 0xffd84d,
-      depthTest: false,
-      depthWrite: false,
-      transparent: true,
-      opacity: 0.95
-    });
-    branchSweepStartHandle.userData.lockId = lock.id;
-    branchSweepStartHandle.userData.branchSweepStartHandle = true;
-    group.add(branchSweepStartHandle);
-  }
+  const boneHandles = boneViewHandles.createBoneViewHandles(lock, group);
   group.visible = false;
   return {
     group,
     line,
     handles,
     arrows,
-    panelSplitHandles,
-    panelSplitLines,
-    panelSegmentHandles,
-    panelTipHandles,
-    panelTipLines,
-    tipNormalArrows,
-    tipWidthHandles,
-    tipWidthLines,
-    strandSplitHandle,
-    strandSplitLine,
-    branchSweepStartHandle,
+    ...boneHandles,
     surfaceObjectAnchor,
     surfaceObjectAnchorHandle,
     surfaceObjectAnchorStem,
@@ -16533,272 +16383,12 @@ function updateCurveObjects(lock, options = {}) {
       && lock.id === sel.state.selectedId
       && ["rotate", "relax"].includes(sel.state.activeTool);
   });
-  const splits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-  lock.curveObjects.panelSplitHandles?.forEach((handle, index) => {
-    const split = splits[index];
-    const line = lock.curveObjects.panelSplitLines?.[index];
-    // Hide the zipper handles while a tip sub-bone is selected: the tip width control
-    // points sit on the segment edges (zipper u), so the bigger zipper sphere would
-    // steal the drag. The zipper LINES stay visible; deselect the tip to drag zippers.
-    const visible = !tipUiActive
-      && !sculptBrushHelpersSuppressed
-      && !brushDebugVisible
-      && isPanelGeometry(lock)
-      && lock.panelSplitEnabled !== false
-      && Boolean(split);
-    handle.visible = visible;
-    if (!visible) {
-      if (line) line.visible = false;
-      return;
-    }
-    handle.position.copy(panelSplitControlPoint(lock, split, null, null, index));
-    handle.material.opacity = sculptState.state.panelSplitDrag?.lockId === lock.id && sculptState.state.panelSplitDrag.splitIndex === index ? 0.9 : 0.68;
-    if (!line) return;
-    line.visible = true;
-    line.geometry.dispose();
-    const points = [];
-    const startT = 1 - split.height;
-    for (let step = 0; step <= 12; step += 1) {
-      points.push(panelSplitControlPoint(lock, split, THREE.MathUtils.lerp(startT, 1, step / 12), null, index));
-    }
-    line.geometry = new THREE.BufferGeometry().setFromPoints(points);
+  boneViewHandles.updateBoneViewHandles(lock, {
+    brushDebugVisible,
+    sculptBrushHelpersSuppressed,
+    tipUiActive,
+    brushBonesOnly
   });
-  const segmentBoundaries = [-1, ...splits.map((split) => split.position), 1];
-  const segmentSplitBones = splitBonesFor(lock);
-  lock.curveObjects.panelSegmentHandles?.forEach((handle, segment) => {
-    const visible = !tipUiActive
-      && !sculptBrushHelpersSuppressed
-      && !brushDebugVisible
-      && isPanelGeometry(lock)
-      && lock.panelSplitEnabled !== false;
-    handle.visible = visible;
-    if (!visible) return;
-    const bone = segmentSplitBones[segment] || null;
-    const span = Math.max(0.0001, segmentBoundaries[segment + 1] - segmentBoundaries[segment]);
-    const spread = bone?.spread ?? 0;
-    const handleU = segmentBoundaries[segment] + (spread / 0.99) * span;
-    handle.position.copy(panelSplitControlPoint(lock, { position: handleU, height: 0 }, null, null, segment));
-    handle.material.opacity = sculptState.state.panelSplitDrag?.lockId === lock.id
-      && sculptState.state.panelSplitDrag.kind === "segment"
-      && sculptState.state.panelSplitDrag.splitIndex === segment
-      ? 0.9 : 0.68;
-  });
-  const tipSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-  const tipSplitBones = splitBonesFor(lock);
-  // Cache each segment's sub-bone chain once (handles + guide lines share it).
-  // One sub-bone chain per SEGMENT (splits.length + 1); mapping over the splits
-  // themselves would drop the last (boundary) segment's chain.
-  const tipChains = tipSplits.length
-    ? Array.from({ length: tipSplits.length + 1 }, (_, segment) => panelTipStrand.splitTipForSegment(lock, segment, tipSplits, tipSplitBones[segment] || null))
-    : [];
-  const tipForkTs = tipSplits.length
-    ? Array.from({ length: tipSplits.length + 1 }, (_, segment) => panelTipStrand.splitForkT(lock, segment, tipSplits))
-    : [];
-  lock.curveObjects.panelTipHandles?.forEach((handle, handleIndex) => {
-    const segment = handle.userData.panelTipIndex;
-    const point = handle.userData.panelTipPoint;
-    const arrow = lock.curveObjects.tipNormalArrows?.[handleIndex];
-    // 旋转模式下选中发尖子骨骼时，给每个暴露链点显示自身法线箭头。
-    const syncTipNormalArrow = () => {
-      if (!arrow) return;
-      const tipSelected = sculptState.state.panelTipSelection?.lockId === lock.id
-        && sculptState.state.panelTipSelection.segmentIndex === segment;
-      arrow.visible = handle.visible && tipSelected && sel.state.activeTool === "rotate";
-      if (!arrow.visible) return;
-      const tip = tipChains[segment];
-      const chainT = point / Math.max(1, tip.points.length - 1);
-      arrow.position.copy(tip.points[point]);
-      arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), panelTipStrand.tipChainFrameAt(lock, tip, tip, chainT, segment, tipSplits).z);
-      arrow.scale.setScalar(0.14);
-    };
-    const visible = (!sculptBrushHelpersSuppressed || tipUiActive)
-      && !brushDebugVisible
-      && isPanelGeometry(lock)
-      && lock.panelSplitEnabled !== false
-      && tipSplits.length > 0;
-    handle.visible = visible;
-    if (!visible) {
-      syncTipNormalArrow();
-      return;
-    }
-    const tip = tipChains[segment];
-    if (!tip || point >= tip.points.length) {
-      handle.visible = false;
-      syncTipNormalArrow();
-      return;
-    }
-    const forkT = tipForkTs[segment] ?? 1;
-    const t = point / Math.max(1, tip.points.length - 1);
-    // Only expose sub-bone points below the segment's fork (zipper); above stays current.
-    if (t <= forkT) {
-      handle.visible = false;
-      syncTipNormalArrow();
-      return;
-    }
-    handle.position.copy(tip.points[point]);
-    // 旋转/缩放模式下把 tip 手柄 quaternion 对齐到发尖链自身 frame（y=切线），使
-    // gizmo 起始朝向=发尖真实朝向，避免 startQuaternion=identity 导致一拖就跳到
-    // 主骨骼朝向；拖拽中保留 gizmo 已施加的旋转（否则每次重建把手会清零增量）。
-    // t 与 syncTipNormalArrow 里的 chainT 相同（point / max(1, length-1)），直接复用。
-    const preserveDragRotation = Boolean(
-      sculptState.state.tipSubBoneRotateDrag
-      && sculptState.state.tipSubBoneRotateDrag.lockId === lock.id
-      && sculptState.state.tipSubBoneRotateDrag.segmentIndex === segment
-      && sculptState.state.tipSubBoneRotateDrag.tipPoint === point
-      && transformControls.object === handle
-    );
-    if (!preserveDragRotation && ["rotate", "scale"].includes(sel.state.activeTool)) {
-      const chainFrame = panelTipStrand.tipChainFrameAt(lock, tip, tip, t, segment, tipSplits);
-      handle.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(chainFrame.x, chainFrame.y, chainFrame.z));
-    }
-    const isSelected = sculptState.state.panelTipSelection?.lockId === lock.id
-      && sculptState.state.panelTipSelection.segmentIndex === segment;
-    const isDragged = sculptState.state.panelSplitDrag?.lockId === lock.id
-      && sculptState.state.panelSplitDrag.kind === "tip"
-      && sculptState.state.panelSplitDrag.splitIndex === segment
-      && sculptState.state.panelSplitDrag.tipPoint === point;
-    handle.material.opacity = isDragged ? 0.95 : (isSelected ? 0.95 : 0.4);
-    syncTipNormalArrow();
-  });
-  // Guide lines connecting each sub-bone's exposed (below-fork) chain portion.
-  lock.curveObjects.panelTipLines?.forEach((line, segment) => {
-    const visible = (!sculptBrushHelpersSuppressed || tipUiActive)
-      && !brushDebugVisible
-      && isPanelGeometry(lock)
-      && lock.panelSplitEnabled !== false
-      && tipSplits.length > 0;
-    line.visible = visible;
-    if (!visible) return;
-    const tip = tipChains[segment];
-    if (!tip || tip.points.length < 2) {
-      line.visible = false;
-      return;
-    }
-    const forkT = tipForkTs[segment] ?? 1;
-    const firstBelow = Math.min(tip.points.length - 1, Math.max(1, Math.ceil(forkT * (tip.points.length - 1))));
-    const exposed = tip.points.slice(firstBelow);
-    if (exposed.length < 2) {
-      line.visible = false;
-      return;
-    }
-    line.geometry.dispose();
-    line.geometry = new THREE.BufferGeometry().setFromPoints(exposed);
-    line.material.opacity = sculptState.state.panelTipSelection?.lockId === lock.id
-      && sculptState.state.panelTipSelection.segmentIndex === segment
-      ? 0.95 : 0.45;
-  });
-  const tipWidthSelection = sculptState.state.panelTipSelection;
-  lock.curveObjects.tipWidthHandles?.forEach((sideHandles, segment) => {
-    const selected = tipWidthSelection
-      && tipWidthSelection.lockId === lock.id
-      && tipWidthSelection.segmentIndex === segment;
-    const baseVisible = Boolean(selected)
-      && (!sculptBrushHelpersSuppressed || tipUiActive)
-      && !brushDebugVisible
-      && isPanelGeometry(lock)
-      && lock.panelSplitEnabled !== false
-      && tipSplits.length > 0;
-    for (const side of [-1, 1]) {
-      const list = side < 0 ? sideHandles.left : sideHandles.right;
-      list.forEach((handle, index) => {
-        if (!baseVisible) {
-          handle.visible = false;
-          return;
-        }
-        const placement = panelTipStrand.tipWidthControlPlacement(lock, segment, tipSplits, tipSplitBones[segment] || null, side, index);
-        if (!placement) {
-          handle.visible = false;
-          return;
-        }
-        handle.visible = true;
-        handle.position.copy(placement.point);
-        const dragging = sculptState.state.panelSplitDrag?.lockId === lock.id
-          && sculptState.state.panelSplitDrag.kind === "tipWidth"
-          && sculptState.state.panelSplitDrag.splitIndex === segment
-          && sculptState.state.panelSplitDrag.tipWidthSide === side
-          && sculptState.state.panelSplitDrag.tipWidthIndex === index;
-        handle.material.opacity = dragging ? 1 : 0.9;
-      });
-    }
-  });
-  lock.curveObjects.tipWidthLines?.forEach((sideLines, segment) => {
-    const selected = tipWidthSelection
-      && tipWidthSelection.lockId === lock.id
-      && tipWidthSelection.segmentIndex === segment;
-    const lineBase = Boolean(selected)
-      && (!sculptBrushHelpersSuppressed || tipUiActive)
-      && !brushDebugVisible
-      && isPanelGeometry(lock)
-      && lock.panelSplitEnabled !== false
-      && tipSplits.length > 0;
-    for (const side of [-1, 1]) {
-      const line = side < 0 ? sideLines.left : sideLines.right;
-      if (!line) continue;
-      if (!lineBase) {
-        line.visible = false;
-        continue;
-      }
-      const edgePoints = panelTipStrand.tipWidthEdgePoints(lock, segment, tipSplits, tipSplitBones[segment] || null, side);
-      if (edgePoints.length < 2) {
-        line.visible = false;
-        continue;
-      }
-      line.geometry.dispose();
-      line.geometry = new THREE.BufferGeometry().setFromPoints(edgePoints);
-      line.visible = true;
-    }
-  });
-  panelTipStrand.updateTipHighlight(lock);
-  const strandSplitVisible = !sculptBrushHelpersSuppressed
-    && !brushDebugVisible
-    && lock.geometryType === "strand"
-    && !lock.hairCard
-    && Boolean(lock.strandSplitEnabled);
-  const strandSplitHandle = lock.curveObjects.strandSplitHandle;
-  const strandSplitLine = lock.curveObjects.strandSplitLine;
-  if (strandSplitHandle) {
-    strandSplitHandle.visible = strandSplitVisible;
-    strandSplitHandle.material.opacity = sculptState.state.panelSplitDrag?.lockId === lock.id && sculptState.state.panelSplitDrag.kind === "strand" ? 0.9 : 0.68;
-    if (strandSplitVisible) {
-      const split = {
-        position: lock.strandSplitPosition,
-        height: lock.strandSplitHeight
-      };
-      const profileData = strandSplitProfileData(lock);
-      strandSplitHandle.position.copy(strandSplitControlPoint(lock, split, null, null, profileData));
-      if (strandSplitLine) {
-        strandSplitLine.visible = true;
-        strandSplitLine.geometry.dispose();
-        const points = [];
-        const startT = 1 - Number(lock.strandSplitHeight ?? 0.3);
-        for (let step = 0; step <= 12; step += 1) {
-          points.push(strandSplitControlPoint(
-            lock,
-            split,
-            THREE.MathUtils.lerp(startT, 1, step / 12),
-            null,
-            profileData
-          ));
-        }
-        strandSplitLine.geometry = new THREE.BufferGeometry().setFromPoints(points);
-      }
-    }
-  }
-  if (strandSplitLine && !strandSplitVisible) strandSplitLine.visible = false;
-  const branchSweepStartHandle = lock.curveObjects.branchSweepStartHandle;
-  if (branchSweepStartHandle) {
-    const sweepStartVisible = !sculptBrushHelpersSuppressed && !lock.locked && lock.id === sel.state.selectedId && lock.branchRootRegion;
-    branchSweepStartHandle.visible = sweepStartVisible;
-    branchSweepStartHandle.material.opacity = sculptState.state.branchSweepStartDrag?.lockId === lock.id ? 0.9 : 0.68;
-    if (sweepStartVisible) {
-      // Sit the handle just off the guide (along the child's outward normal) so it is
-      // visible next to the hair instead of buried inside the root cross-section.
-      const sweepCurve = strandGeometryCurve(lock);
-      const sweepT = THREE.MathUtils.clamp(Number(lock.branchSweepStartT ?? 0.1), 0.02, 0.6);
-      const sweepFrame = strandGeometryFrameAt(lock, sweepCurve, sweepT);
-      branchSweepStartHandle.position.copy(sweepCurve.getPoint(sweepT)).addScaledVector(sweepFrame.z, 0.06);
-    }
-  }
 
   if ("visible" in options) {
     const brushCurveVisibilityAllowed = !sculptBrushToolActive() || sculptBrushShowCurvesInput.checked;
@@ -16810,32 +16400,6 @@ function updateCurveObjects(lock, options = {}) {
   if (lock.wireOverlay) {
     syncLockedStrandWireVisual(lock);
   }
-}
-
-function createCurveNormalIndicator() {
-  const indicator = new THREE.Group();
-  const materialOptions = {
-    color: 0x58f6ff,
-    transparent: true,
-    opacity: 0.88,
-    depthTest: false
-  };
-  const shaft = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(0, 0.76, 0)
-    ]),
-    new THREE.LineBasicMaterial(materialOptions)
-  );
-  const cone = new THREE.Mesh(
-    new THREE.ConeGeometry(0.075, 0.24, 10),
-    new THREE.MeshBasicMaterial(materialOptions)
-  );
-  cone.position.y = 0.88;
-  shaft.renderOrder = 5;
-  cone.renderOrder = 5;
-  indicator.add(shaft, cone);
-  return indicator;
 }
 
 function pointUpDirection(lock, pointIndex) {
@@ -16968,6 +16532,22 @@ Object.assign(strandGeometryDeps, {
   strandInfluenceColor,
   strandProfileTopologyAt,
   strandSweep
+});
+// Bone view handle api deps batch (refactor bones B3): all deps are defined by this
+// point (last dep: strandGeometryFrameAt); the batch takes effect here, before the
+// first runtime calls (createCurveObjects/updateCurveObjects in the curve-objects spine).
+Object.assign(boneViewHandlesDeps, {
+  panelTipStrand,
+  sculptState: sculptState.state,
+  sel: sel.state,
+  transformControls,
+  clonePanelSplits,
+  isPanelGeometry,
+  panelSplitControlPoint,
+  strandSplitControlPoint,
+  strandSplitProfileData,
+  strandGeometryCurve,
+  strandGeometryFrameAt
 });
 
 function sampledSurfaceNormal(lock, t) {
@@ -25023,60 +24603,7 @@ function disposeCurveObjects(lock) {
       part.material?.dispose();
     });
   });
-  lock.curveObjects.panelSplitHandles?.forEach((handle) => {
-    handle.geometry.dispose();
-    handle.material.dispose();
-  });
-  lock.curveObjects.panelSplitLines?.forEach((line) => {
-    line.geometry.dispose();
-    line.material.dispose();
-  });
-  lock.curveObjects.panelSegmentHandles?.forEach((handle) => {
-    handle.geometry.dispose();
-    handle.material.dispose();
-  });
-  lock.curveObjects.panelTipHandles?.forEach((handle) => {
-    handle.geometry.dispose();
-    handle.material.dispose();
-  });
-  lock.curveObjects.panelTipLines?.forEach((line) => {
-    line.geometry.dispose();
-    line.material.dispose();
-  });
-  lock.curveObjects.tipNormalArrows?.forEach((arrow) => {
-    arrow.children.forEach((part) => {
-      part.geometry?.dispose();
-      part.material?.dispose();
-    });
-  });
-  lock.curveObjects.tipWidthHandles?.forEach((seg) => {
-    [...seg.left, ...seg.right].forEach((handle) => {
-      handle.geometry.dispose();
-      handle.material.dispose();
-    });
-  });
-  lock.curveObjects.tipWidthLines?.forEach((seg) => {
-    [seg.left, seg.right].filter(Boolean).forEach((line) => {
-      line.geometry.dispose();
-      line.material.dispose();
-    });
-  });
-  if (lock.curveObjects.tipHighlightMesh) {
-    lock.curveObjects.tipHighlightMesh.geometry.dispose();
-    lock.curveObjects.tipHighlightMesh.material.dispose();
-  }
-  if (lock.curveObjects.strandSplitHandle) {
-    lock.curveObjects.strandSplitHandle.geometry.dispose();
-    lock.curveObjects.strandSplitHandle.material.dispose();
-  }
-  if (lock.curveObjects.branchSweepStartHandle) {
-    lock.curveObjects.branchSweepStartHandle.geometry.dispose();
-    lock.curveObjects.branchSweepStartHandle.material.dispose();
-  }
-  if (lock.curveObjects.strandSplitLine) {
-    lock.curveObjects.strandSplitLine.geometry.dispose();
-    lock.curveObjects.strandSplitLine.material.dispose();
-  }
+  boneViewHandles.disposeBoneViewHandles(lock.curveObjects);
   if (lock.curveObjects.surfaceObjectAnchorHandle) {
     lock.curveObjects.surfaceObjectAnchorHandle.geometry.dispose();
     lock.curveObjects.surfaceObjectAnchorHandle.material.dispose();

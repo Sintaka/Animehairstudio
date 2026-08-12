@@ -39,7 +39,7 @@ app.js 脊柱 (addLock/snapshot/restore/mirror/stroke 各 2 行接线) ──▶
 | B0 ✅ | bone-model.js 移入 modules/bones/ | — | 0（纯移动） | 低 | 已移动，3 处 import 更新（app.js/panel-tip-strand/taper-editor）；verify-smoke 10/11=基线 |
 | B1 ✅ | 段控制胶水 | 5 | ~121 | 低中 | 已迁出 modules/bones/segment-control.js（seam 1；verify-smoke 10/11=基线） |
 | B2 ✅ | 骨骼 gizmo/拖拽/笔刷 | 8 | ~695 | 中 | 已迁出 modules/bones/bone-interaction.js（B2↔G6 双向边经 deps；seam 2；verify-smoke 10/11=基线） |
-| B3 | 视口 handle：createCurveObjects/updateCurveObjects 内 bone 段 + syncTipNormalArrow | 与 curve-objects-core 纠缠 ~480 | — | ~250 | 中高 |
+| B3 ✅ | 视口 handle | 5 段 | ~473 | 中高 | 已迁出 modules/bones/bone-view-handles.js（脊柱改薄 5 点；curveObjects 契约 CDP 8/8 保持；骨骼域 B0-B3 全部完成；verify-smoke 10/11=基线） |
 
 > 骨骼合计净减 ~1.0k 行（不含脊柱接线）。
 
