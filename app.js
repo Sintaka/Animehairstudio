@@ -6,6 +6,8 @@ import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260812-
 import { createPanelTipStrandApi, TIP_WIDTH_CONTROL_POINTS } from "./modules/geometry/panel-tip-strand.js?v=20260812-1";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260812-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260812-1";
+import { createSegmentControlApi } from "./modules/bones/segment-control.js?v=20260812-1";
+import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260812-1";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260809-19";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260809-18";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260809-17";
@@ -801,7 +803,7 @@ transformControls.addEventListener("dragging-changed", (event) => {
   if (transformControls.object?.userData.panelTipIndex != null) {
     if (event.value && transformControls.mode === "rotate") {
       pushUndoState();
-      beginTipSubBoneRotate(transformControls.object);
+      bonesApi.beginTipSubBoneRotate(transformControls.object);
     } else if (!event.value) {
       sculptState.state.tipSubBoneRotateDrag = null;
     }
@@ -926,7 +928,7 @@ transformControls.addEventListener("objectChange", () => {
   if (!lock) return;
   if (handle.userData.panelTipIndex != null) {
     // Tip 子骨骼手柄：旋转增量应用到 tip 链（scale 暂不应用）。
-    applyTipSubBoneTransform(lock, handle);
+    bonesApi.applyTipSubBoneTransform(lock, handle);
     return;
   }
   const pointIndex = handle.userData.pointIndex;
@@ -1545,6 +1547,14 @@ const strandGeometryApi = createStrandGeometryApi(strandGeometryDeps);
 // (restoreRefreshes/guideDeps) can reference sculptGeom without a TDZ issue.
 const sculptGeomDeps = {};
 const sculptGeom = createSculptGeometryApi(sculptGeomDeps);
+
+// Segment control / bone interaction api (refactor bones B1+B2): deps filled in one batch after
+// the taperEditorDeps batch (all deps incl. shapePresets defined); no boot-time calls before the
+// batch, see devlog/in-progress/b1-b2-bones-refactor-map.md.
+const segmentControlDeps = {};
+const segmentApi = createSegmentControlApi(segmentControlDeps);
+const boneInteractionDeps = {};
+const bonesApi = createBoneInteractionApi(boneInteractionDeps);
 const scalpBuilderTemplateOverlay = new THREE.Group();
 scalpBuilderTemplateOverlay.visible = false;
 scene.add(scalpBuilderTemplateOverlay);
@@ -2493,7 +2503,7 @@ Object.assign(curveSurfaceCreateDeps, {
 // point (last dep: proportionalFalloffInput); the batch takes effect here, before the first
 // sculpt-brush DOM listener/boot calls (sculptBrushStrengthInput input listener etc.).
 Object.assign(sculptGeomDeps, {
-  applySubBoneBrushSample,
+  applySubBoneBrushSample: bonesApi.applySubBoneBrushSample,
   average,
   camera,
   commitClumpMemberRestState,
@@ -9213,6 +9223,96 @@ Object.assign(taperEditorDeps, {
   controlPointRotationAt
 });
 
+// Segment control api deps batch (refactor bones B1): all deps are defined by this point (last
+// dep: shapePresets / taperEditorDeps block); the batch takes effect here, before the first boot
+// call (updateAttributeEditorMode -> segmentApi.syncPanelShapeInputs) and before the init-block
+// listeners that reference segmentApi.
+Object.assign(segmentControlDeps, {
+  sculptState: sculptState.state,
+  sel: sel.state,
+  taperEditor,
+  shapePresets,
+  branchSweep,
+  panelCreationDefaults,
+  panelSegmentLabel,
+  previousPanelSegmentButton,
+  nextPanelSegmentButton,
+  panelSegmentSpread,
+  panelSegmentSpreadValue,
+  segmentTaperPreview,
+  segmentDepthPreview,
+  panelShapeInputs,
+  panelShapeValues,
+  panelSplitCountValue,
+  addPanelSplitButton,
+  removePanelSplitButton,
+  sweepProfileEditor,
+  taperMeshPointsToggleRow,
+  taperCurveEditor,
+  getSelectedLock,
+  isPanelGeometry,
+  pushUndoState,
+  updateDrawStrandPreview,
+  updateLockGeometry,
+  rebuildCurveObjects,
+  syncActiveMirror,
+  updateTopologyStats,
+  updateViewportStatsVisibility,
+  clonePanelSplits,
+  snapPanelSplitHeight
+});
+// Bone interaction api deps batch (refactor bones B2): all deps are defined by this point (last
+// dep: shapePresets / taperEditorDeps block); the batch takes effect here, before the init-block
+// pointer/gizmo listener registrations that reference bonesApi.
+Object.assign(boneInteractionDeps, {
+  sculptState: sculptState.state,
+  sel: sel.state,
+  guideState: guideState.state,
+  scalpState: scalpState.state,
+  taperEditor,
+  panelTipStrand,
+  sculptGeom,
+  syncPanelSegmentControls: segmentApi.syncPanelSegmentControls,
+  locks,
+  renderer,
+  camera,
+  raycaster,
+  pointer,
+  transformControls,
+  taperCurveEditor,
+  sculptBrushRadiusInput,
+  sculptBrushFalloffInput,
+  sculptBrushStrengthInput,
+  sculptBrushStrengthByTool,
+  getSelectedLock,
+  isPanelGeometry,
+  pushUndoState,
+  updateLockGeometry,
+  updateCurveObjects,
+  updateInteractionLocks,
+  updateTopologyStats,
+  syncActiveMirror,
+  configureTransformControls,
+  effectiveSculptBrushTool,
+  guidedNormalAt,
+  strandFrameAt,
+  signedAngleAroundAxis,
+  pointerOverTaperEditor,
+  componentEditModeActive,
+  selectLock,
+  strandControlPointHitFromEvent,
+  pointerHitsTransformGizmo,
+  addStrandControlPointSelection,
+  activateStrandControlPoint,
+  closestStrandCurveParameter,
+  clonePanelSplits,
+  snapPanelSplitHeight,
+  strandGeometryCurve,
+  strandSplitProfileData,
+  strandSplitControlPoint,
+  panelSplitControlPoint
+});
+
 
 
 
@@ -9404,41 +9504,6 @@ shapePresetSelects.forEach((select) => select.addEventListener("change", () => s
 
 
 
-function openPanelSegmentCurveEditor(curveKey = "taperCurve") {
-  const selectedLock = getSelectedLock();
-  if (!selectedLock || !isPanelGeometry(selectedLock)) return;
-  const { index } = selectedPanelSegment(selectedLock);
-  const bones = materializeSplitBones(selectedLock);
-  const bone = bones[index];
-  if (!bone) return;
-  if (!Array.isArray(bone[curveKey]) || !bone[curveKey].length) {
-    bone[curveKey] = shapePresets.cloneShapePresetValue(selectedLock[curveKey]);
-  }
-  if (sweepProfileEditor.open) branchSweep.closeSweepProfileEditor();
-  sculptState.state.taperCurveEdit = {
-    type: "segment",
-    id: selectedLock.id,
-    segmentIndex: index,
-    curveKey,
-    side: "primary",
-    selectedIndex: 0,
-    dragPointerId: null,
-    dragDisplayRange: null
-  };
-  taperEditor.ensureSecondaryTaperCurve(taperEditor.activeTaperTarget(), curveKey);
-  document.querySelector("#taperCurveTitle").textContent = curveKey === "depthCurve" ? "Depth Curve" : "Width Curve";
-  taperEditor.updateTaperCurveEditorTargetLabel();
-  taperEditor.setTaperMeshPointsVisible(false);
-  taperMeshPointsToggleRow.classList.add("hidden");
-  taperEditor.renderTaperCurveEditor();
-  taperEditor.renderTaperPreview(
-    curveKey === "depthCurve" ? segmentDepthPreview : segmentTaperPreview,
-    taperEditor.activeTaperTarget(),
-    curveKey
-  );
-  taperCurveEditor.show();
-  updateViewportStatsVisibility();
-}
 
 
 function updateViewportStatsVisibility() {
@@ -15408,7 +15473,7 @@ function applyAltClickCandidate(candidate) {
       sculptState.state.panelSegmentIndex = candidate.segmentIndex;
     }
     updateCurveObjects(lock, { visible: true });
-    syncPanelSegmentControls(lock);
+    segmentApi.syncPanelSegmentControls(lock);
     return true;
   }
   if (candidate.kind === "strand") {
@@ -17826,7 +17891,7 @@ function syncCreationShapeInputs() {
     braidSegmentLengthValue.textContent = Number(defaults.braidSegmentLength).toFixed(2);
     braidRotationValue.textContent = `${Math.round(Number(defaults.braidRotation))} deg`;
   }
-  if (defaults === panelCreationDefaults) syncPanelShapeInputs(defaults);
+  if (defaults === panelCreationDefaults) segmentApi.syncPanelShapeInputs(defaults);
   syncShapePresetSelects();
   syncViewportDrawSettings();
 }
@@ -17845,56 +17910,8 @@ function syncViewportDrawSettings() {
   viewportDrawLayerInput.value = normalizeHairLayer(strandCreationDefaults.hairLayer);
 }
 
-function selectedPanelSegment(lock) {
-  const count = Math.max(1, (Array.isArray(lock?.panelSplits) ? lock.panelSplits.length : 0) + 1);
-  const index = THREE.MathUtils.clamp(Math.round(Number(sculptState.state.panelSegmentIndex || 0)), 0, count - 1);
-  return { index, count };
-}
 
-function syncPanelSegmentControls(target = taperEditor.activeStrandShapeTarget()) {
-  if (!target) return;
-  const { index, count } = selectedPanelSegment(target);
-  const bone = splitBonesFor(target)[index] || null;
-  if (panelSegmentLabel) panelSegmentLabel.textContent = String(index + 1);
-  if (previousPanelSegmentButton) previousPanelSegmentButton.disabled = index === 0;
-  if (nextPanelSegmentButton) nextPanelSegmentButton.disabled = index >= count - 1;
-  if (panelSegmentSpread) panelSegmentSpread.value = String(bone?.spread ?? 0);
-  if (panelSegmentSpreadValue) panelSegmentSpreadValue.textContent = (bone?.spread ?? 0).toFixed(2);
-  const previewTarget = {
-    ...(bone || {}),
-    taperCurve: bone?.taperCurve || target.taperCurve,
-    depthCurve: bone?.depthCurve || target.depthCurve
-  };
-  taperEditor.renderTaperPreview(segmentTaperPreview, previewTarget, "taperCurve");
-  taperEditor.renderTaperPreview(segmentDepthPreview, previewTarget, "depthCurve");
-}
 
-function syncPanelShapeInputs(target = taperEditor.activeStrandShapeTarget()) {
-  if (!target) return;
-  const splits = clonePanelSplits(target.panelSplits, target.panelSplitHeight);
-  if (target.panelSplitSnapToLoops !== false) {
-    splits.forEach((split) => { split.height = snapPanelSplitHeight(split.height, target.panelLengthLoops); });
-  }
-  target.panelSplits = splits;
-  target.panelWidthLoops = THREE.MathUtils.clamp(Math.max(
-    Math.round(Number(target.panelWidthLoops ?? panelCreationDefaults.panelWidthLoops)),
-    splits.length + 1
-  ), 3, 24);
-  Object.entries(panelShapeInputs).forEach(([key, input]) => {
-    if (input.type === "checkbox") input.checked = target[key] !== false;
-    else input.value = Number(target[key] ?? panelCreationDefaults[key]);
-  });
-  Object.entries(panelShapeValues).forEach(([key, output]) => {
-    const value = Number(target[key] ?? panelCreationDefaults[key]);
-    output.textContent = ["panelLengthLoops", "panelWidthLoops"].includes(key)
-      ? String(Math.round(value))
-      : value.toFixed(2);
-  });
-  if (panelSplitCountValue) panelSplitCountValue.textContent = String(splits.length);
-  if (removePanelSplitButton) removePanelSplitButton.disabled = splits.length === 0;
-  if (addPanelSplitButton) addPanelSplitButton.disabled = splits.length >= Math.min(23, target.panelWidthLoops - 1);
-  syncPanelSegmentControls(target);
-}
 
 function syncStrandSplitInputs(target = taperEditor.activeStrandShapeTarget()) {
   if (!target || target.geometryType && target.geometryType !== "strand") return;
@@ -18061,7 +18078,7 @@ function updateAttributeEditorMode() {
     braidSegmentLengthValue.textContent = Number(braid.braidSegmentLength).toFixed(2);
     braidRotationValue.textContent = `${Math.round(Number(braid.braidRotation))} deg`;
   } else if (selectedPanel) {
-    syncPanelShapeInputs(selectedPanel);
+    segmentApi.syncPanelShapeInputs(selectedPanel);
   } else if (editingStrand && !selectedPoly) {
     const strand = getSelectedLock();
     const width = Number(strand?.width ?? strand?.baseWidth ?? 0.16);
@@ -18346,7 +18363,7 @@ function syncInputs(lock) {
   updateTopologyStats();
   syncShapePresetSelects();
   syncClumpGuidePanel(lock);
-  if (isPanelGeometry(lock)) syncPanelShapeInputs(lock);
+  if (isPanelGeometry(lock)) segmentApi.syncPanelShapeInputs(lock);
   if (lock.geometryType === "strand") {
     syncStrandSplitInputs(lock);
     syncHairCardControls(lock);
@@ -23218,7 +23235,7 @@ Object.entries(panelShapeInputs).forEach(([key, input]) => {
     };
     if (isPanelGeometry(selected)) editSelectedLocks(applyValue, { immediate: true });
     else applyValue(target);
-    syncPanelShapeInputs(target);
+    segmentApi.syncPanelShapeInputs(target);
     if (sculptState.state.drawStrandStroke?.outputType === "panel" && target === panelCreationDefaults) {
       sculptState.state.drawStrandStroke.brushSize = Number(target.width) * Number(panelToolSizeInput.value);
       sculptState.state.drawStrandStroke[key] = target[key];
@@ -23228,62 +23245,24 @@ Object.entries(panelShapeInputs).forEach(([key, input]) => {
   });
 });
 
-function changePanelSplitCount(delta) {
-  const selected = getSelectedLock();
-  const target = isPanelGeometry(selected)
-    ? getSelectedLock()
-    : sel.state.activeTool === "panel" ? panelCreationDefaults : null;
-  if (!target) return;
-  const widthLoops = THREE.MathUtils.clamp(Math.round(Number(target.panelWidthLoops ?? 6)), 3, 24);
-  const splits = clonePanelSplits(target.panelSplits, target.panelSplitHeight, widthLoops - 1);
-  if (delta > 0 && splits.length >= widthLoops - 1) return;
-  if (delta < 0 && !splits.length) return;
-  if (isPanelGeometry(target)) pushUndoState();
-  if (delta > 0) {
-    const boundaries = [-0.88, ...splits.map((split) => split.position), 0.88];
-    let largestGapIndex = 0;
-    for (let index = 1; index < boundaries.length - 1; index += 1) {
-      if (boundaries[index + 1] - boundaries[index] > boundaries[largestGapIndex + 1] - boundaries[largestGapIndex]) {
-        largestGapIndex = index;
-      }
-    }
-    const position = (boundaries[largestGapIndex] + boundaries[largestGapIndex + 1]) * 0.5;
-    splits.push({ position, height: Number(target.panelSplitHeight ?? 0.28) });
-    splits.sort((a, b) => a.position - b.position);
-  } else {
-    splits.pop();
-  }
-  target.panelSplits = splits;
-  if (sculptState.state.drawStrandStroke?.outputType === "panel" && target === panelCreationDefaults) {
-    sculptState.state.drawStrandStroke.panelSplits = clonePanelSplits(splits, target.panelSplitHeight, widthLoops - 1);
-    updateDrawStrandPreview();
-  }
-  if (isPanelGeometry(target)) {
-    updateLockGeometry(target, { immediate: true });
-    rebuildCurveObjects(target);
-    syncActiveMirror(target, { refreshUi: true });
-    updateTopologyStats();
-  }
-  syncPanelShapeInputs(target);
-}
 
-addPanelSplitButton?.addEventListener("click", () => changePanelSplitCount(1));
-removePanelSplitButton?.addEventListener("click", () => changePanelSplitCount(-1));
+addPanelSplitButton?.addEventListener("click", () => segmentApi.changePanelSplitCount(1));
+removePanelSplitButton?.addEventListener("click", () => segmentApi.changePanelSplitCount(-1));
 previousPanelSegmentButton?.addEventListener("click", () => {
   const selected = getSelectedLock();
   const target = isPanelGeometry(selected) ? selected : taperEditor.activeStrandShapeTarget();
   if (!target) return;
-  const { index } = selectedPanelSegment(target);
+  const { index } = segmentApi.selectedPanelSegment(target);
   sculptState.state.panelSegmentIndex = Math.max(0, index - 1);
-  syncPanelSegmentControls(target);
+  segmentApi.syncPanelSegmentControls(target);
 });
 nextPanelSegmentButton?.addEventListener("click", () => {
   const selected = getSelectedLock();
   const target = isPanelGeometry(selected) ? selected : taperEditor.activeStrandShapeTarget();
   if (!target) return;
-  const { index, count } = selectedPanelSegment(target);
+  const { index, count } = segmentApi.selectedPanelSegment(target);
   sculptState.state.panelSegmentIndex = Math.min(count - 1, index + 1);
-  syncPanelSegmentControls(target);
+  segmentApi.syncPanelSegmentControls(target);
 });
 if (panelSegmentSpread) {
   bindUndoCapture(panelSegmentSpread);
@@ -23294,7 +23273,7 @@ if (panelSegmentSpread) {
       : sel.state.activeTool === "panel" ? panelCreationDefaults : null;
     if (!target) return;
     const bones = materializeSplitBones(target);
-    const { index } = selectedPanelSegment(target);
+    const { index } = segmentApi.selectedPanelSegment(target);
     const value = THREE.MathUtils.clamp(Number(panelSegmentSpread.value || 0), 0, 0.99);
     if (bones[index]) bones[index].spread = value;
     if (panelSegmentSpreadValue) panelSegmentSpreadValue.textContent = value.toFixed(2);
@@ -23309,8 +23288,8 @@ if (panelSegmentSpread) {
     }
   });
 }
-editPanelSegmentWidthCurveButton?.addEventListener("click", () => openPanelSegmentCurveEditor("taperCurve"));
-editPanelSegmentDepthCurveButton?.addEventListener("click", () => openPanelSegmentCurveEditor("depthCurve"));
+editPanelSegmentWidthCurveButton?.addEventListener("click", () => segmentApi.openPanelSegmentCurveEditor("taperCurve"));
+editPanelSegmentDepthCurveButton?.addEventListener("click", () => segmentApi.openPanelSegmentCurveEditor("depthCurve"));
 [
   [braidWidthInput, braidWidthValue],
   [braidDepthInput, braidDepthValue],
@@ -25116,424 +25095,12 @@ function disposeCurveObjects(lock) {
   });
 }
 
-function beginTipSubBoneRotate(handle) {
-  const lock = locks.find((item) => item.id === handle?.userData?.lockId);
-  const segment = handle?.userData?.panelTipIndex;
-  const point = handle?.userData?.panelTipPoint;
-  if (!lock || segment == null || point == null) return;
-  const splits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-  const bones = materializeSplitBones(lock);
-  const bone = bones[segment];
-  if (!bone) return;
-  const tip = panelTipStrand.splitTipForSegment(lock, segment, splits, bone);
-  if (!tip || point >= tip.points.length) return;
-  // 确保有 authored tip 状态（与视平面拖拽相同：points/restPoints 快照）。
-  if (!bone.tip || !Array.isArray(bone.tip.points) || bone.tip.points.length !== tip.points.length) {
-    bone.tip = {
-      points: tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-      restPoints: tip.restPoints.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-      active: true
-    };
-  }
-  sculptState.state.tipSubBoneRotateDrag = {
-    lockId: lock.id,
-    segmentIndex: segment,
-    tipPoint: point,
-    startQuaternion: handle.quaternion.clone(),
-    startPoints: bone.tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z }))
-  };
-}
 
 // 把 gizmo 的旋转增量应用到 tip 子骨骼链：从被选中链点到链尾绕该点旋转
 // （dq = startQuaternion⁻¹ × handle.quaternion，每次用总增量避免累积）。
-function applyTipSubBoneTransform(lock, handle) {
-  const mode = transformControls.mode;
-  if (mode === "scale") {
-    // scale 暂不应用：把手缩放恢复创建时的基准值，避免 gizmo 视觉累积。
-    handle.scale.setScalar(0.42);
-    return;
-  }
-  if (mode !== "rotate") return;
-  const drag = sculptState.state.tipSubBoneRotateDrag;
-  if (!drag || drag.lockId !== lock.id) return;
-  const segment = handle.userData.panelTipIndex;
-  const point = handle.userData.panelTipPoint;
-  if (drag.segmentIndex !== segment || drag.tipPoint !== point) return;
-  const dq = drag.startQuaternion.clone().invert().multiply(handle.quaternion);
-  const splits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-  const bones = materializeSplitBones(lock);
-  const bone = bones[segment];
-  if (!bone || !bone.tip || !Array.isArray(bone.tip.points) || bone.tip.points.length < 2) return;
-  const pivot = drag.startPoints[point];
-  if (!pivot) return;
-  const pivotVec = new THREE.Vector3(pivot.x, pivot.y, pivot.z);
-  for (let i = point; i < bone.tip.points.length; i += 1) {
-    const src = drag.startPoints[i] || { x: 0, y: 0, z: 0 };
-    const rotated = new THREE.Vector3(src.x, src.y, src.z).sub(pivotVec).applyQuaternion(dq).add(pivotVec);
-    bone.tip.points[i] = { x: rotated.x, y: rotated.y, z: rotated.z };
-  }
-  bone.tip.active = true;
-  updateLockGeometry(lock, { immediate: true });
-  updateCurveObjects(lock, { visible: true });
-  syncActiveMirror(lock, { deferGeometry: false });
-}
 
-function beginPanelSplitHandleDrag(event) {
-  if (event.button !== 0 || event.shiftKey || event.altKey || event.metaKey) return false;
-  const lock = getSelectedLock();
-  const panelHandles = isPanelGeometry(lock) && lock.curveObjects?.group.visible
-    ? lock.curveObjects.panelSplitHandles || []
-    : [];
-  const segmentHandles = isPanelGeometry(lock) && lock.curveObjects?.group.visible
-    ? lock.curveObjects.panelSegmentHandles || []
-    : [];
-  const tipHandles = isPanelGeometry(lock) && lock.curveObjects?.group.visible
-    ? lock.curveObjects.panelTipHandles || []
-    : [];
-  const tipWidthHandles = isPanelGeometry(lock) && lock.curveObjects?.group.visible
-    ? (lock.curveObjects.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right])
-    : [];
-  const strandHandle = lock?.geometryType === "strand"
-    && lock.strandSplitEnabled
-    && lock.curveObjects?.group.visible
-    && lock.curveObjects.strandSplitHandle?.visible
-    ? [lock.curveObjects.strandSplitHandle]
-    : [];
-  const handles = [...tipWidthHandles, ...panelHandles, ...segmentHandles, ...tipHandles, ...strandHandle];
-  if (!handles.length) return false;
-  const hit = raycaster.intersectObjects(handles.filter((handle) => handle.visible), false)[0];
-  if (!hit) return false;
-  // Ctrl+drag is the tip width asymmetric edit; it must not grab zipper/segment/tip handles.
-  if (event.ctrlKey && hit.object.userData.tipWidthIndex == null) return false;
-  const gizmoTipIndex = hit.object.userData.panelTipIndex != null ? hit.object.userData.panelTipIndex : null;
-  if (gizmoTipIndex != null && ["rotate", "scale"].includes(sel.state.activeTool)) {
-    // 旋转/缩放工具：tip 手柄挂到 transform gizmo（与 strand 控制点一致），不做视平面
-    // 拖拽；旋转增量在 objectChange 的 applyTipSubBoneTransform 里应用。
-    sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: gizmoTipIndex };
-    sculptState.state.panelSegmentIndex = gizmoTipIndex;
-    syncPanelSegmentControls(lock);
-    transformControls.detach();
-    configureTransformControls(sel.state.activeTool);
-    transformControls.attach(hit.object);
-    hit.object.userData.tipSubBoneHandle = true;
-    updateCurveObjects(lock, { visible: true });
-    updateInteractionLocks();
-    event.preventDefault();
-    return true;
-  }
-  pushUndoState();
-  transformControls.detach();
-  const tipIndex = hit.object.userData.panelTipIndex != null ? hit.object.userData.panelTipIndex : null;
-  const tipPoint = hit.object.userData.panelTipPoint != null ? hit.object.userData.panelTipPoint : null;
-  const tipWidthIndex = hit.object.userData.tipWidthIndex != null ? hit.object.userData.tipWidthIndex : null;
-  const tipWidthSegment = hit.object.userData.tipWidthSegment != null ? hit.object.userData.tipWidthSegment : null;
-  const tipWidthSide = hit.object.userData.tipWidthSide != null ? hit.object.userData.tipWidthSide : null;
-  let tipStartWorld = null;
-  let tipWidthT = null;
-  let tipWidthStartWorld = null;
-  let tipWidthStartLatOffset = null;
-  let tipWidthStartMult = null;
-  let tipWidthStartClientX = null;
-  let tipWidthStartClientY = null;
-  let tipWidthStartEdgeScreenDist = null;
-  let tipWidthBones = null;
-  if (tipIndex != null && tipPoint != null) {
-    // Selecting a tip sub-bone: remember it and point the segment controls at it.
-    sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: tipIndex };
-    sculptState.state.panelSegmentIndex = tipIndex;
-    syncPanelSegmentControls(lock);
-    const tipSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    const tip = panelTipStrand.splitTipForSegment(lock, tipIndex, tipSplits, splitBonesFor(lock)[tipIndex] || null);
-    if (tip && tip.points[tipPoint]) tipStartWorld = tip.points[tipPoint].clone();
-  } else if (tipWidthSegment != null && tipWidthSide != null && tipWidthIndex != null) {
-    // Selecting a tip width control point also selects that tip sub-bone.
-    sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: tipWidthSegment };
-    sculptState.state.panelSegmentIndex = tipWidthSegment;
-    syncPanelSegmentControls(lock);
-    const tipSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    // 拖拽开始时只 materialize 一次（深克隆 + 双写 lock.splitBones/lock.bones），
-    // 拖拽期间复用同一数组，避免每个 pointermove 都重复深克隆全部骨骼。
-    tipWidthBones = materializeSplitBones(lock);
-    const tipBone = tipWidthBones[tipWidthSegment] || null;
-    const placement = panelTipStrand.tipWidthControlPlacement(lock, tipWidthSegment, tipSplits, tipBone, tipWidthSide, tipWidthIndex);
-    if (placement) {
-      tipWidthT = placement.t;
-      tipWidthStartWorld = placement.point.clone();
-      // Stable drag basis: the edge's signed lateral distance and the current width
-      // multiplier, so dragging scales width by a ratio (no feedback collapse).
-      tipWidthStartLatOffset = placement.point.clone().sub(placement.center).dot(placement.lateral);
-      const boundaries = [-1, ...tipSplits.map((split) => split.position), 1];
-      const edgeU = boundaries[tipWidthSide < 0 ? tipWidthSegment : tipWidthSegment + 1];
-      const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
-      tipWidthStartMult = panelTipStrand.tipPanelWidthAt(lock, placement.t, edgeU, tipBone, tipWidthSegment, tipSplits) / fullWidth;
-      tipWidthStartClientX = event.clientX;
-      tipWidthStartClientY = event.clientY;
-      const rect = renderer.domElement.getBoundingClientRect();
-      tipWidthStartEdgeScreenDist = Math.max(0.0001, sculptGeom.viewportPixelPoint(placement.center, rect).distanceTo(sculptGeom.viewportPixelPoint(placement.point, rect)));
-    }
-  }
-  sculptState.state.panelSplitDrag = {
-    pointerId: event.pointerId,
-    lockId: lock.id,
-    kind: tipWidthIndex != null ? "tipWidth" : tipIndex != null ? "tip" : hit.object.userData.strandSplitHandle
-      ? "strand"
-      : hit.object.userData.panelSegmentIndex != null
-        ? "segment"
-        : "panel",
-    splitIndex: tipWidthSegment != null ? tipWidthSegment : tipIndex != null ? tipIndex : hit.object.userData.panelSegmentIndex != null
-      ? hit.object.userData.panelSegmentIndex
-      : hit.object.userData.panelSplitIndex,
-    tipPoint,
-    tipStartWorld,
-    tipWidthSide,
-    tipWidthIndex,
-    tipWidthT,
-    tipWidthStartWorld,
-    tipWidthStartLatOffset,
-    tipWidthStartMult,
-    tipWidthStartClientX,
-    tipWidthStartClientY,
-    tipWidthStartEdgeScreenDist,
-    tipWidthBones
-  };
-  renderer.domElement.setPointerCapture?.(event.pointerId);
-  renderer.domElement.style.cursor = "grabbing";
-  updateCurveObjects(lock, { visible: true });
-  updateInteractionLocks();
-  return true;
-}
 
-function updatePanelSplitHandleDrag(event) {
-  if (!sculptState.state.panelSplitDrag || event.pointerId !== sculptState.state.panelSplitDrag.pointerId) return;
-  const lock = locks.find((item) => item.id === sculptState.state.panelSplitDrag.lockId);
-  if (!lock) {
-    endPanelSplitHandleDrag(event);
-    return;
-  }
-  const rect = renderer.domElement.getBoundingClientRect();
-  const targetX = event.clientX - rect.left;
-  const targetY = event.clientY - rect.top;
-  const curve = strandGeometryCurve(lock);
-  let best = null;
-  if (sculptState.state.panelSplitDrag.kind === "strand") {
-    const profileData = strandSplitProfileData(lock);
-    for (let tStep = 0; tStep <= 48; tStep += 1) {
-      const t = THREE.MathUtils.lerp(0.2, 0.98, tStep / 48);
-      for (let uStep = 0; uStep <= 40; uStep += 1) {
-        const u = THREE.MathUtils.lerp(-0.8, 0.8, uStep / 40);
-        const projected = strandSplitControlPoint(
-          lock,
-          { position: u, height: 1 - t },
-          t,
-          curve,
-          profileData
-        ).project(camera);
-        if (projected.z < -1 || projected.z > 1) continue;
-        const x = (projected.x * 0.5 + 0.5) * rect.width;
-        const y = (-projected.y * 0.5 + 0.5) * rect.height;
-        const distanceSq = (x - targetX) ** 2 + (y - targetY) ** 2;
-        if (!best || distanceSq < best.distanceSq) best = { distanceSq, position: u, height: 1 - t };
-      }
-    }
-    if (!best) return;
-    lock.strandSplitPosition = THREE.MathUtils.clamp(best.position, -0.8, 0.8);
-    lock.strandSplitHeight = THREE.MathUtils.clamp(best.height, 0.02, 0.8);
-    updateLockGeometry(lock, { immediate: true });
-    updateCurveObjects(lock, { visible: true });
-    syncActiveMirror(lock, { deferGeometry: false });
-    updateTopologyStats();
-    event.preventDefault();
-    return;
-  }
-  if (sculptState.state.panelSplitDrag.kind === "tip") {
-    // View-plane move of the segment's tip sub-bone control point: the pointer's NDC
-    // position at the tip's depth becomes the new tip point (length + direction).
-    const startWorld = sculptState.state.panelSplitDrag.tipStartWorld;
-    if (!startWorld) return;
-    const startProj = startWorld.clone().project(camera);
-    const ndcX = (2 * targetX) / rect.width - 1;
-    const ndcY = -((2 * targetY) / rect.height - 1);
-    const newWorld = new THREE.Vector3(ndcX, ndcY, startProj.z).unproject(camera);
-    const segment = sculptState.state.panelSplitDrag.splitIndex;
-    const point = sculptState.state.panelSplitDrag.tipPoint;
-    const bones = materializeSplitBones(lock);
-    const bone = bones[segment];
-    if (!bone) return;
-    const splitsForTip = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    const tip = panelTipStrand.splitTipForSegment(lock, segment, splitsForTip, bone);
-    if (!tip || tip.restPoints.length < 1 || point == null || point >= tip.restPoints.length) return;
-    const rest = tip.restPoints;
-    // Preserve deltas on other chain points; only the dragged point moves.
-    const authored = (Array.isArray(bone.tip?.points) && bone.tip.points.length === rest.length)
-      ? bone.tip
-      : {
-        points: rest.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-        restPoints: rest.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-        active: true
-      };
-    const delta = newWorld.clone().sub(rest[point]);
-    authored.points[point] = {
-      x: rest[point].x + delta.x,
-      y: rest[point].y + delta.y,
-      z: rest[point].z + delta.z
-    };
-    authored.restPoints = rest.map((p) => ({ x: p.x, y: p.y, z: p.z }));
-    authored.active = true;
-    bone.tip = authored;
-    updateLockGeometry(lock, { immediate: true });
-    updateCurveObjects(lock, { visible: true });
-    syncActiveMirror(lock, { deferGeometry: false });
-    updateTopologyStats();
-    event.preventDefault();
-    return;
-  }
-  if (sculptState.state.panelSplitDrag.kind === "tipWidth") {
-    const drag = sculptState.state.panelSplitDrag;
-    const segment = drag.splitIndex;
-    const side = drag.tipWidthSide;
-    const t = drag.tipWidthT;
-    if (segment == null || side == null || t == null) return;
-    const splitsForWidth = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    // 复用拖拽开始时 materialize 的骨骼数组（它就是 lock.splitBones，编辑持续生效）；
-    // 缺失或数量不对时回退重新 materialize，避免每个 pointermove 都深克隆全部骨骼。
-    const bones = Array.isArray(drag.tipWidthBones) && drag.tipWidthBones.length === splitsForWidth.length + 1
-      ? drag.tipWidthBones
-      : materializeSplitBones(lock);
-    const bone = bones[segment];
-    if (!bone) return;
-    const tip = panelTipStrand.splitTipForSegment(lock, segment, splitsForWidth, bone);
-    if (!tip || tip.points.length < 2) return;
-    const edge = panelTipStrand.tipWidthEdgePosition(lock, segment, splitsForWidth, bone, side, t);
-    if (!edge) return;
-    const center = edge.center;
-    const lateral = edge.lateral;
-    const startWorld = drag.tipWidthStartWorld || center;
-    const startProj = startWorld.clone().project(camera);
-    const ndcX = (2 * targetX) / rect.width - 1;
-    const ndcY = -((2 * targetY) / rect.height - 1);
-    const cursorWorld = new THREE.Vector3(ndcX, ndcY, startProj.z).unproject(camera);
-    // World-space relative mapping (no screen foreshortening amplification): the width
-    // multiplier follows the cursor's WORLD lateral distance from the chain center,
-    // scaled by the start edge distance. At drag start latOffset == startLatOffset so
-    // nothing jumps; the response is proportional to the real lateral movement, not the
-    // on-screen edge size (which made tiny drags jump a whole "layer" when foreshortened).
-    const latOffset = cursorWorld.clone().sub(center).dot(lateral);
-    const startLatOffset = Math.max(0.0001, drag.tipWidthStartLatOffset || 0.0001);
-    // Half sensitivity: a full edge-length drag changes the width by ~50% instead of
-    // 100%, so tiny drags don't jump the whole side (the "dent" on drag start).
-    const ratio = latOffset / startLatOffset;
-    const rawMult = (drag.tipWidthStartMult ?? 1) * (1 + (ratio - 1) * 0.5);
-    // Floor at 30% of the drag's start width (absolute min 0.08): a single inward drag
-    // can thin the tip but not collapse it into a needle (repeated drags thin further).
-    const floorMult = Math.max(0.08, (drag.tipWidthStartMult ?? 1) * 0.3);
-    const newWidthMult = THREE.MathUtils.clamp(rawMult, floorMult, 2);
-    if (event.ctrlKey) {
-      // 按住 Ctrl = 非对称：只调被拖的一侧。
-      panelTipStrand.setTipWidthCurveValue(lock, segment, splitsForWidth, bone, side, t, newWidthMult);
-    } else {
-      // 默认 = 对称：两侧同一 t 设为同一个 multiplier（真正对称，不按起始比例）。
-      panelTipStrand.setTipWidthCurveValue(lock, segment, splitsForWidth, bone, side, t, newWidthMult);
-      panelTipStrand.setTipWidthCurveValue(lock, segment, splitsForWidth, bone, -side, t, newWidthMult);
-    }
-    updateLockGeometry(lock, { immediate: true });
-    updateCurveObjects(lock, { visible: true });
-    syncActiveMirror(lock, { deferGeometry: false });
-    updateTopologyStats();
-    // 视口拖拽改的是同一段骨宽曲线：浮动面板开着且目标一致时同步重绘。
-    if (taperCurveEditor.open
-      && sculptState.state.taperCurveEdit?.type === "segment"
-      && sculptState.state.taperCurveEdit.id === lock.id
-      && sculptState.state.taperCurveEdit.segmentIndex === segment) {
-      taperEditor.renderTaperCurveEditor();
-    }
-    // 右侧属性面板预览同步：该 lock 是当前选中/面板尖端选中时热更新。
-    if (sculptState.state.panelTipSelection?.lockId === lock.id || getSelectedLock()?.id === lock.id) {
-      syncPanelSegmentControls(lock);
-    }
-    event.preventDefault();
-    return;
-  }
-  if (sculptState.state.panelSplitDrag.kind === "segment") {
-    const segmentSplits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    const segment = sculptState.state.panelSplitDrag.splitIndex;
-    const segBoundaries = [-1, ...segmentSplits.map((split) => split.position), 1];
-    if (segment < 0 || segment >= segBoundaries.length - 1) {
-      endPanelSplitHandleDrag(event);
-      return;
-    }
-    const span = Math.max(0.0001, segBoundaries[segment + 1] - segBoundaries[segment]);
-    let segmentBest = null;
-    for (let uStep = 0; uStep <= 48; uStep += 1) {
-      const u = THREE.MathUtils.lerp(segBoundaries[segment], segBoundaries[segment + 1], uStep / 48);
-      const projected = panelSplitControlPoint(lock, { position: u, height: 0 }, 1, curve, segment).project(camera);
-      if (projected.z < -1 || projected.z > 1) continue;
-      const x = (projected.x * 0.5 + 0.5) * rect.width;
-      const y = (-projected.y * 0.5 + 0.5) * rect.height;
-      const distanceSq = (x - targetX) ** 2 + (y - targetY) ** 2;
-      if (!segmentBest || distanceSq < segmentBest.distanceSq) segmentBest = { distanceSq, u };
-    }
-    if (!segmentBest) return;
-    const bones = materializeSplitBones(lock);
-    const bone = bones[segment];
-    if (bone) {
-      bone.spread = THREE.MathUtils.clamp(((segmentBest.u - segBoundaries[segment]) / span) * 0.99, 0, 0.99);
-    }
-    updateLockGeometry(lock, { immediate: true });
-    updateCurveObjects(lock, { visible: true });
-    syncActiveMirror(lock, { deferGeometry: false });
-    updateTopologyStats();
-    event.preventDefault();
-    return;
-  }
-  for (let tStep = 0; tStep <= 42; tStep += 1) {
-    const t = THREE.MathUtils.lerp(0.22, 1, tStep / 42);
-    for (let uStep = 0; uStep <= 48; uStep += 1) {
-      const u = THREE.MathUtils.lerp(-0.88, 0.88, uStep / 48);
-      const projected = panelSplitControlPoint(
-        lock,
-        { position: u, height: 1 - t },
-        t,
-        curve,
-        sculptState.state.panelSplitDrag.splitIndex
-      ).project(camera);
-      if (projected.z < -1 || projected.z > 1) continue;
-      const x = (projected.x * 0.5 + 0.5) * rect.width;
-      const y = (-projected.y * 0.5 + 0.5) * rect.height;
-      const distanceSq = (x - targetX) ** 2 + (y - targetY) ** 2;
-      if (!best || distanceSq < best.distanceSq) best = { distanceSq, position: u, height: 1 - t };
-    }
-  }
-  if (!best) return;
-  const splits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight, Math.max(0, Number(lock.panelWidthLoops ?? 6) - 1));
-  const index = sculptState.state.panelSplitDrag.splitIndex;
-  if (!splits[index]) return;
-  const minimumSeparation = Math.min(0.12, 0.8 / Math.max(3, Number(lock.panelWidthLoops ?? 6)));
-  const minPosition = index > 0 ? splits[index - 1].position + minimumSeparation : -0.88;
-  const maxPosition = index < splits.length - 1 ? splits[index + 1].position - minimumSeparation : 0.88;
-  splits[index].position = THREE.MathUtils.clamp(best.position, minPosition, maxPosition);
-  let nextHeight = best.height < 0.018 ? 0 : THREE.MathUtils.clamp(best.height, 0, 0.78);
-  if (lock.panelSplitSnapToLoops !== false) {
-    nextHeight = snapPanelSplitHeight(nextHeight, lock.panelLengthLoops);
-  }
-  splits[index].height = nextHeight;
-  lock.panelSplits = splits;
-  updateLockGeometry(lock, { immediate: true });
-  updateCurveObjects(lock, { visible: true });
-  syncActiveMirror(lock, { deferGeometry: false });
-  updateTopologyStats();
-  event.preventDefault();
-}
 
-function endPanelSplitHandleDrag(event) {
-  if (!sculptState.state.panelSplitDrag || (event?.pointerId !== undefined && event.pointerId !== sculptState.state.panelSplitDrag.pointerId)) return;
-  const { pointerId, lockId } = sculptState.state.panelSplitDrag;
-  sculptState.state.panelSplitDrag = null;
-  if (renderer.domElement.hasPointerCapture?.(pointerId)) renderer.domElement.releasePointerCapture(pointerId);
-  renderer.domElement.style.cursor = "";
-  const lock = locks.find((item) => item.id === lockId);
-  if (lock) updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
-  updateInteractionLocks();
-}
 
 orthographicViewToggle.addEventListener("click", () => setOrthographicView(!viewportState.state.orthographicView));
 
@@ -26066,116 +25633,6 @@ function updateCurvePointTopologyCursor(event) {
   renderer.domElement.classList.toggle("curve-point-remove-cursor", removing);
 }
 
-function prepareCurvePointSelection(event) {
-  if (event.button !== 0) return;
-  if (!componentEditModeActive()) {
-    // Object mode: a highlighted (hovered) control point still selects its strand, so
-    // clicking a bone never falls through to the parent hair that sits underneath it.
-    const hovered = guideState.state.hoveredControlPoint;
-    if (hovered?.userData?.lockId && hovered.userData.pointIndex !== undefined) {
-      selectLock(hovered.userData.lockId, {
-        individualClumpMember: hovered.userData.lockId === sel.state.selectedId && !sel.state.clumpViewportSelection
-      });
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    }
-    return;
-  }
-  const removingCurvePoint = event.shiftKey && event.ctrlKey && !event.altKey && !event.metaKey;
-  const insertingCurvePoint = event.shiftKey && event.altKey && !event.ctrlKey && !event.metaKey;
-  const addingSelection = event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
-  const removingSelection = event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey;
-  if (sel.state.activeTool === "curve-surface") return;
-  if (sculptState.state.viewportEditMode !== "strand" || event.metaKey || sculptState.state.proportionalSizeEdit || sculptState.state.proportionalHotkeyPress || scalpState.state.scalpShapeEditing || scalpState.state.scalpPaintEditing || scalpState.state.scalpBuilderEditing || sculptState.state.capsuleGuideEditing || ["place", "draw", "procedural-draw", "braid", "panel", "surface-loft", "surface-guide"].includes(sel.state.activeTool)) return;
-  const polySelectionModifier = sel.state.activeTool === "poly"
-    && (
-      event.ctrlKey && !event.shiftKey && !event.altKey
-      || event.altKey && !event.shiftKey && !event.ctrlKey
-    );
-  if (
-    (event.shiftKey || event.ctrlKey || event.altKey)
-    && !addingSelection
-    && !removingSelection
-    && !removingCurvePoint
-    && !insertingCurvePoint
-    && !polySelectionModifier
-  ) return;
-  const selectedLock = getSelectedLock();
-  const handles = selectedLock?.curveObjects?.group.visible ? selectedLock.curveObjects.handles : [];
-  if (!handles.length) return;
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  const hit = strandControlPointHitFromEvent(event, selectedLock);
-  // If the click is on the move/rotate/scale gizmo, let the gizmo win: once a bone
-  // is already selected (gizmo attached), clicking it again - or a nearby point that
-  // the gizmo picker overlaps - must not re-select / steal the point, otherwise the
-  // gizmo center becomes unclickable. Only the remove/insert curve-point modes keep
-  // point priority over the gizmo.
-  if (
-    !removingCurvePoint
-    && !insertingCurvePoint
-    && pointerHitsTransformGizmo(event)
-  ) return;
-  if (sel.state.activeTool === "poly") {
-    if (!hit || hit.object === transformControls.object) return;
-    if (event.altKey) {
-      sculptState.state.pointRemovalCandidate = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        lockId: hit.object.userData.lockId,
-        pointIndex: hit.object.userData.pointIndex,
-        selectionOnly: true
-      };
-      return;
-    }
-    if (event.ctrlKey) {
-      addStrandControlPointSelection(hit.object);
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      return;
-    }
-    if (activateStrandControlPoint(hit.object, event)) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    }
-    return;
-  }
-  if (insertingCurvePoint) {
-    if (hit || ["poly", "surface", "curve-surface"].includes(selectedLock.geometryType)) return;
-    const curveHit = raycaster.intersectObject(selectedLock.curveObjects.line, false)[0];
-    if (!curveHit) return;
-    sculptState.state.curvePointInsertionCandidate = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      lockId: selectedLock.id,
-      parameter: closestStrandCurveParameter(selectedLock, curveHit.point)
-    };
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    return;
-  }
-  if (!hit || hit.object === transformControls.object) return;
-  if (removingCurvePoint) {
-    sculptState.state.pointRemovalCandidate = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      lockId: hit.object.userData.lockId,
-      pointIndex: hit.object.userData.pointIndex
-    };
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    return;
-  }
-  if (activateStrandControlPoint(hit.object, event)) {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  }
-}
 
 function finishCurvePointInsertion(event) {
   const candidate = sculptState.state.curvePointInsertionCandidate;
@@ -26256,180 +25713,7 @@ function updateStrandBrushHover(event) {
   }
 }
 
-function updatePanelTipHover(event) {
-  if (pointerOverTaperEditor(event)) {
-    if (sculptState.state.panelTipHover) {
-      sculptState.state.panelTipHover = { lockId: null, segmentIndex: null };
-      panelTipStrand.updateTipHighlight(getSelectedLock());
-    }
-    return;
-  }
-  const lock = getSelectedLock();
-  let hover = { lockId: null, segmentIndex: null };
-  if (lock && isPanelGeometry(lock) && lock.panelSplitEnabled !== false && Array.isArray(lock.panelSplits) && lock.panelSplits.length) {
-    const rect = renderer.domElement.getBoundingClientRect();
-    const pointerNDC = new THREE.Vector2(
-      ((event.clientX - rect.left) / rect.width) * 2 - 1,
-      -((event.clientY - rect.top) / rect.height) * 2 + 1
-    );
-    raycaster.setFromCamera(pointerNDC, camera);
-    const hit = raycaster.intersectObject(lock.mesh, false)[0];
-    const panelWeights = lock.mesh.geometry?.userData?.panelWeights;
-    if (hit && hit.face && panelWeights) {
-      const segment = panelWeights[hit.face.a * 3 + 1];
-      if (segment >= 0) hover = { lockId: lock.id, segmentIndex: segment };
-    }
-  }
-  const changed = sculptState.state.panelTipHover?.lockId !== hover.lockId
-    || sculptState.state.panelTipHover?.segmentIndex !== hover.segmentIndex;
-  sculptState.state.panelTipHover = hover;
-  if (changed) panelTipStrand.updateTipHighlight(lock);
-}
 
-function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
-  // When a split tip sub-bone is selected, the brush edits ONLY that sub-bone's chain
-  // points (masked by screen distance) - never other sub-bones or the main chain.
-  // The brush is consumed even when no chain point is under the cursor, so a selected
-  // sub-bone blocks main-bone edits until it is deselected. Scale/orient center on the
-  // sub-bone's exposed root (first below-fork chain point).
-  const selection = sculptState.state.panelTipSelection;
-  if (!selection) return false;
-  const lock = locks.find((item) => item.id === selection.lockId);
-  if (!lock || !isPanelGeometry(lock) || lock.panelSplitEnabled === false) return false;
-  const segmentIndex = selection.segmentIndex;
-  const splits = clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-  if (segmentIndex == null || segmentIndex < 0 || segmentIndex >= splits.length + 1) return true;
-  if (!stroke.undoCaptured) { pushUndoState(); stroke.undoCaptured = true; }
-  const bones = materializeSplitBones(lock);
-  const bone = bones[segmentIndex];
-  if (!bone) return true;
-  const tip = panelTipStrand.splitTipForSegment(lock, segmentIndex, splits, bone);
-  if (!tip || tip.restPoints.length < 2) return true;
-  const rest = tip.restPoints;
-  const authored = (Array.isArray(bone.tip?.points) && bone.tip.points.length === rest.length)
-    ? bone.tip
-    : {
-      points: rest.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-      restPoints: rest.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-      active: true
-    };
-  const current = authored.points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
-  const points = current.map((p) => p.clone());
-  const rect = renderer.domElement.getBoundingClientRect();
-  const cursor = new THREE.Vector2(clientX - rect.left, clientY - rect.top);
-  const radius = Number(sculptBrushRadiusInput.value);
-  const falloff = Number(sculptBrushFalloffInput.value);
-  const strength = Number(sculptBrushStrengthByTool[effectiveSculptBrushTool()] ?? sculptBrushStrengthInput.value);
-  const reverse = Boolean(stroke.reverse);
-  const tool = effectiveSculptBrushTool();
-  const forkT = panelTipStrand.splitForkT(lock, segmentIndex, splits);
-  const firstBelow = Math.min(rest.length - 1, Math.max(1, Math.ceil(forkT * (rest.length - 1))));
-  const scaleCenter = current[firstBelow] || current[0];
-  const weights = new Array(current.length).fill(0);
-  for (let index = firstBelow; index < current.length; index += 1) {
-    weights[index] = sculptGeom.sculptBrushPointWeight(current[index], cursor, rect, radius, falloff);
-  }
-  let changed = false;
-  if (tool === "sculpt-scale") {
-    // Uniform scale of the whole exposed chain around the exposed root (ZBrush-like
-    // sub-tool transform). Cursor falloff is intentionally not applied so the result
-    // reads as a scale, not a cursor-masked nudge that looks like a move.
-    const amount = (reverse ? -1 : 1) * strength * (deltaX + deltaY) * 0.004;
-    for (let index = firstBelow; index < current.length; index += 1) {
-      const dir = current[index].clone().sub(scaleCenter);
-      points[index].addScaledVector(dir, amount);
-      changed = true;
-    }
-  } else if (tool === "sculpt-slide") {
-    const curve = new THREE.CatmullRomCurve3(current);
-    for (let index = firstBelow; index < current.length; index += 1) {
-      if (weights[index] <= 0) continue;
-      const t = index / Math.max(1, current.length - 1);
-      const tangent = curve.getTangent(t).normalize();
-      const dragWorld = sculptGeom.sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
-      const amount = (reverse ? -1 : 1) * weights[index] * strength * dragWorld.dot(tangent);
-      points[index].addScaledVector(tangent, amount);
-      changed = true;
-    }
-  } else if (tool === "sculpt-push") {
-    const curve = new THREE.CatmullRomCurve3(current);
-    for (let index = firstBelow; index < current.length; index += 1) {
-      if (weights[index] <= 0) continue;
-      const t = index / Math.max(1, current.length - 1);
-      const point = curve.getPoint(t);
-      const tangent = curve.getTangent(t).normalize();
-      // Same push direction as the main hair brush: the strand's guided normal
-      // (radial outward / authored surface normal) + twist. No tip special case.
-      const twist = Array.isArray(authored.twists) ? Number(authored.twists[index]) || 0 : 0;
-      const up = guidedNormalAt(lock, point, tangent, t)
-        .applyAxisAngle(tangent, twist)
-        .normalize();
-      const dragWorld = sculptGeom.sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
-      const amount = (reverse ? -1 : 1) * weights[index] * strength * dragWorld.dot(up);
-      points[index].addScaledVector(up, amount);
-      changed = true;
-    }
-  } else if (tool === "sculpt-smooth") {
-    const smoothDeltas = smoothSculptPointDeltas(points, weights, strength, 0.04);
-    for (let index = firstBelow; index < current.length; index += 1) {
-      const d = smoothDeltas[index];
-      points[index].x += d.x;
-      points[index].y += d.y;
-      points[index].z += d.z;
-      changed = true;
-    }
-  } else if (tool === "sculpt-orient") {
-    // Roll the tip section around its chain tangent so the tip's NORMAL faces the
-    // viewport (same semantics as the main hair's orient brush). Only the section
-    // orientation changes; the chain (bone position) does NOT move.
-    const curve = new THREE.CatmullRomCurve3(current);
-    const restCurve = new THREE.CatmullRomCurve3(rest);
-    const twistArr = (Array.isArray(authored.twists) && authored.twists.length === current.length)
-      ? authored.twists.map((v) => Number(v) || 0)
-      : current.map(() => 0);
-    for (let index = firstBelow; index < current.length; index += 1) {
-      if (weights[index] <= 0) continue;
-      const t = index / Math.max(1, current.length - 1);
-      const tangent = curve.getTangent(t).normalize();
-      const point = curve.getPoint(t);
-      const restTangent = restCurve.getTangent(t).normalize();
-      const dq = restTangent.dot(tangent) < -0.9999
-        ? (new THREE.Quaternion()).setFromAxisAngle(
-          Math.abs(restTangent.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0),
-          Math.PI
-        )
-        : (new THREE.Quaternion()).setFromUnitVectors(restTangent, tangent);
-      const mainFrame = strandFrameAt(lock, t);
-      const currentNormal = mainFrame.z.clone().applyQuaternion(dq).applyAxisAngle(tangent, twistArr[index]).normalize();
-      let targetUp = camera.position.clone().sub(point).projectOnPlane(tangent);
-      if (targetUp.lengthSq() < 0.0001) targetUp.copy(currentNormal);
-      targetUp.normalize();
-      const angle = signedAngleAroundAxis(currentNormal, targetUp, tangent);
-      twistArr[index] = twistArr[index] + angle * weights[index] * strength * 0.2;
-      changed = true;
-    }
-    if (changed) authored.twists = twistArr.map((v) => Number(v) || 0);
-  } else {
-    // move (and any fallback): masked view-plane translation
-    for (let index = firstBelow; index < current.length; index += 1) {
-      if (weights[index] <= 0) continue;
-      const dragWorld = sculptGeom.sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
-      points[index].addScaledVector(dragWorld, (reverse ? -1 : 1) * weights[index] * strength);
-      changed = true;
-    }
-  }
-  if (changed) {
-    authored.points = points.map((p) => ({ x: p.x, y: p.y, z: p.z }));
-    authored.restPoints = rest.map((p) => ({ x: p.x, y: p.y, z: p.z }));
-    authored.active = true;
-    bone.tip = authored;
-    stroke.editedLockIds.add(lock.id);
-    updateLockGeometry(lock, { immediate: true });
-    updateCurveObjects(lock, { visible: true });
-    updateTopologyStats();
-  }
-  return true;
-}
 
 
 function strandControlPointHit(event, lock = getSelectedLock()) {
@@ -26744,7 +26028,7 @@ window.addEventListener("pointermove", updateDuplicatePlacement, true);
 window.addEventListener("pointermove", updateReferenceCrop, true);
 window.addEventListener("pointermove", updateReferenceOverlayDrag, true);
 window.addEventListener("pointermove", sculptGeom.updateSculptMoveStroke, true);
-window.addEventListener("pointermove", updatePanelTipHover);
+window.addEventListener("pointermove", bonesApi.updatePanelTipHover);
 window.addEventListener("pointermove", updateStrandBrushHover);
 window.addEventListener("pointermove", updateBrushSizeDrag, true);
 window.addEventListener("pointermove", updateStrandWidthEdgeDrag, true);
@@ -26763,7 +26047,7 @@ window.addEventListener("pointermove", handleViewportPointerMove);
 window.addEventListener("pointermove", scalpBuilder.updateScalpLatticeDrag);
 window.addEventListener("pointermove", scalpBuilder.updateScalpPaint);
 window.addEventListener("pointermove", scalpBuilder.updateScalpBuilderStroke);
-window.addEventListener("pointermove", updatePanelSplitHandleDrag);
+window.addEventListener("pointermove", bonesApi.updatePanelSplitHandleDrag);
 window.addEventListener("pointermove", guideApi.updateCapsuleGuideLoopHover);
 window.addEventListener("pointermove", guideApi.updateCapsuleGuideLoopDrag);
 window.addEventListener("pointermove", updateHoudiniZoomDrag, true);
@@ -26788,7 +26072,7 @@ renderer.domElement.addEventListener("pointerup", curveSurfaceCreate.finishCurve
 window.addEventListener("pointerup", scalpBuilder.endScalpLatticeDrag);
 window.addEventListener("pointerup", scalpBuilder.endScalpPaint);
 window.addEventListener("pointerup", scalpBuilder.finishScalpBuilderStroke);
-window.addEventListener("pointerup", endPanelSplitHandleDrag);
+window.addEventListener("pointerup", bonesApi.endPanelSplitHandleDrag);
 window.addEventListener("pointerup", guideApi.endCapsuleGuideLoopDrag);
 window.addEventListener("pointerup", finishSelectionMarquee);
 window.addEventListener("pointerup", polyToolsApi.finishPolyAltDelete, true);
@@ -26822,7 +26106,7 @@ renderer.domElement.addEventListener("pointercancel", (event) => curveSurfaceCre
 window.addEventListener("pointercancel", scalpBuilder.endScalpLatticeDrag);
 window.addEventListener("pointercancel", scalpBuilder.endScalpPaint);
 window.addEventListener("pointercancel", (event) => scalpBuilder.finishScalpBuilderStroke(event, { cancel: true }));
-window.addEventListener("pointercancel", endPanelSplitHandleDrag);
+window.addEventListener("pointercancel", bonesApi.endPanelSplitHandleDrag);
 window.addEventListener("pointercancel", guideApi.endCapsuleGuideLoopDrag);
 window.addEventListener("pointercancel", () => {
   sculptState.state.emptySelectionPointer = null;
@@ -26861,7 +26145,7 @@ renderer.domElement.addEventListener("pointerdown", beginBlenderNavigation, true
 renderer.domElement.addEventListener("pointerdown", trackViewportPointerDown, true);
 renderer.domElement.addEventListener("pointerdown", prepareSelectPointerCapture, true);
 renderer.domElement.addEventListener("pointerdown", beginHoudiniZoomDrag, true);
-renderer.domElement.addEventListener("pointerdown", prepareCurvePointSelection, true);
+renderer.domElement.addEventListener("pointerdown", bonesApi.prepareCurvePointSelection, true);
 renderer.domElement.addEventListener("pointerdown", beginAltOrbit, true);
 renderer.domElement.addEventListener("pointerdown", scalpBuilder.prioritizeScalpBuilderPointSelection, true);
 renderer.domElement.addEventListener("pointermove", updateControlPointHover);
@@ -26994,7 +26278,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
       sculptState.state.altClickCandidate = null;
     }
   }
-  if (beginPanelSplitHandleDrag(event)) {
+  if (bonesApi.beginPanelSplitHandleDrag(event)) {
     event.preventDefault();
     return;
   }
@@ -27021,14 +26305,14 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
         sculptState.state.panelSegmentIndex = hoverSeg;
       }
       updateCurveObjects(selectedLockNow, { visible: true });
-      syncPanelSegmentControls(selectedLockNow);
+      segmentApi.syncPanelSegmentControls(selectedLockNow);
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
     } else if (selected && selected.lockId === selectedLockNow?.id) {
       sculptState.state.panelTipSelection = null;
       updateCurveObjects(selectedLockNow, { visible: true });
-      syncPanelSegmentControls(selectedLockNow);
+      segmentApi.syncPanelSegmentControls(selectedLockNow);
     }
   }
   if (sel.state.activeTool === "draw-capsule-guide") {
@@ -27435,12 +26719,12 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     undoHistory,
     updateCurveObjects,
     transformControls,
-    beginTipSubBoneRotate,
+    beginTipSubBoneRotate: bonesApi.beginTipSubBoneRotate,
     updateTipHighlight: panelTipStrand.updateTipHighlight,
     updateStrandBrushHover,
     syncStrandHoverOutline,
     splitTipForSegment: panelTipStrand.splitTipForSegment,
-    applySubBoneBrushSample,
+    applySubBoneBrushSample: bonesApi.applySubBoneBrushSample,
     tipWidthSideForkT: panelTipStrand.tipWidthSideForkT,
     tipSegmentWeightAt: panelTipStrand.tipSegmentWeightAt,
     tipWidthCommonForkT: panelTipStrand.tipWidthCommonForkT,
@@ -27458,7 +26742,7 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     buildTipWidthCurve: panelTipStrand.buildTipWidthCurve,
     tipWidthResetCurve: panelTipStrand.tipWidthResetCurve,
     renderTaperCurveEditor: taperEditor.renderTaperCurveEditor,
-    syncPanelSegmentControls,
+    syncPanelSegmentControls: segmentApi.syncPanelSegmentControls,
     sampleTaperCurve,
     sampleAsymmetricTaperCurve,
     strandFrameAt,
