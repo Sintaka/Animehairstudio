@@ -44,7 +44,6 @@ import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260809-4
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
-import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { solvePulledStrand } from "./modules/geometry/strand-constraints.js?v=20260720-1";
 import {
@@ -136,20 +135,14 @@ import {
   scaleCapsuleRadialLoops
 } from "./modules/geometry/capsule-curve.js?v=20260804-1";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./modules/io/obj-export.js?v=20260726-1";
-import { polygonOnlyObjSource } from "./modules/io/obj-import.js?v=20260801-1";
 import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260806-4";
 import {
-  cleanFileBaseName,
   fileActionFormat,
   fileNameForAction,
   normalizeExportContents
 } from "./modules/io/file-actions.js?v=20260728-1";
 import { applicationDropFileKind } from "./modules/io/file-drop.js?v=20260803-1";
 import { mirrorSelectionTargets } from "./modules/edit/mirror-selection.js?v=20260805-1";
-import {
-  listRecentProjects,
-  rememberRecentProject
-} from "./modules/io/recent-projects.js?v=20260803-1";
 import { uvCoordinateBounds, uvViewTransform } from "./modules/geometry/uv-inspector.js?v=20260726-1";
 import {
   cameraFacingPlaneNormal,
@@ -163,7 +156,6 @@ import {
 import { squareChildRing, holeBoundary, connectSide, connectBoundaryToRing } from "./modules/geometry/branch-connect.js?v=20260807-2";
 import {
   createHairProject,
-  validateHairProject
 } from "./modules/io/project-schema.js?v=20260728-2";
 import {
   createProjectRestorePlan,
@@ -258,11 +250,6 @@ import {
   removeShapePreset
 } from "./modules/data/shape-presets.js?v=20260729-1";
 import {
-  createPreferencesBackup,
-  normalizePreferencesBackup,
-  preferencesBackupFileName
-} from "./modules/core/preferences-backup.js?v=20260726-3";
-import {
   readStoredBooleanPreference,
   readStoredPreference,
   writeStoredPreference
@@ -281,7 +268,19 @@ import {
   createClumpBrushTemplate,
   normalizeClumpBrushTemplate
 } from "./modules/data/clump-brush-presets.js?v=20260803-3";
+import { createMaterialUiApi } from "./modules/material/material-ui.js?v=20260812-1";
+import { createIoTailApi } from "./modules/io/io-tail.js?v=20260812-1";
 
+// Material UI api (refactor batch A6): deps filled in one batch after the renderLockList
+// definition; created early so the drawFlowDeps batch can reference materialApi.* without a
+// TDZ issue; see devlog/in-progress/material-io-refactor-map.md.
+const materialDeps = {};
+const materialApi = createMaterialUiApi(materialDeps);
+// IO tail api (refactor batch C1): deps filled in one batch after dataToVector; created early
+// so scalpBuilderDeps/proceduralDuplicateDeps/fileApi wiring can reference ioApi.* without a
+// TDZ issue; see devlog/in-progress/material-io-refactor-map.md.
+const ioDeps = {};
+const ioApi = createIoTailApi(ioDeps);
 function saveLanguage(language) {
   writeStoredPreference(window, LANGUAGE_STORAGE_KEY, language);
 }
@@ -3209,7 +3208,7 @@ Object.assign(scalpBuilderDeps, {
   configureTransformControls,
   confirmScalpBuilderButton,
   createOutlinerVisibilityToggle,
-  createRootAttachment,
+  createRootAttachment: ioApi.createRootAttachment,
   curveNetworkSection,
   dataToVector,
   defaultCurveLatticePoints: guideApi.defaultCurveLatticePoints,
@@ -3310,7 +3309,7 @@ Object.assign(scalpBuilderDeps, {
   syncGuideInputs: guideApi.syncGuideInputs,
   syncHeadTransformInputs: referenceHeadApi.syncHeadTransformInputs,
   syncLockFromCurve,
-  syncRootAttachmentMetadata,
+  syncRootAttachmentMetadata: ioApi.syncRootAttachmentMetadata,
   syncViewportDrawSettings,
   templatePlaneIntersectionSegments,
   trianglePlaneIntersections: referenceHeadApi.trianglePlaneIntersections,
@@ -7167,316 +7166,8 @@ const branchBridge = createBranchBridgeApi({
   branchState: branch.state
 });
 
-function hairMaterialDefinition(materialId) {
-  return resolveHairMaterialDefinition(hairMaterialDefinitions, materialId);
-}
-
-function materialForLock(lock) {
-  return hairMaterialDefinition(lock.materialId || DEFAULT_HAIR_MATERIAL_ID);
-}
-
-function activeHairMaterialDefinition() {
-  const definition = hairMaterialDefinition(hairState.state.activeHairMaterialId);
-  hairState.state.activeHairMaterialId = definition.id;
-  return definition;
-}
-
-function strandDisplayColor(lock) {
-  const layer = HAIR_LAYERS.find((item) => item.id === normalizeHairLayer(lock.hairLayer)) || HAIR_LAYERS[1];
-  const region = SCALP_REGIONS[lock.scalpRegion || "unassigned"] || SCALP_REGIONS.unassigned;
-  const definition = materialForLock(lock);
-  const materialColor = definition.shader === ANIME_ANISOTROPIC_SHADER
-    ? definition.animeBaseColor
-    : definition.color;
-  const color = new THREE.Color(hairState.state.showGroupColors ? region.color : materialColor);
-  const adjustedFactor = hairState.state.showGroupColors
-    ? layer.colorFactor
-    : sel.state.layerColorShiftsEnabled ? Number(MATERIAL_LAYER_COLOR_FACTORS[layer.id] ?? 1) : 1;
-  if (hairState.state.showGroupColors || sel.state.layerColorShiftsEnabled) {
-    color.offsetHSL(Number(LAYER_HUE_SHIFTS[layer.id] ?? 0), 0, 0);
-  }
-  color.multiplyScalar(adjustedFactor);
-  return `#${color.getHexString()}`;
-}
-
-function setAnimeHairBaseColor(material, color) {
-  if (material.userData.hairShader === ANIME_ANISOTROPIC_SHADER) {
-    const definition = material.userData.definition;
-    material.uniforms.uBaseColor.value.set(color);
-    material.uniforms.uShadowColor.value.set(definition.animeShadowColor);
-    material.uniforms.uSoftShadowColor.value.set(definition.animeSoftShadowColor);
-    material.uniforms.uHighlightColor.value.set(definition.animeHighlightColor);
-    material.uniforms.uRimColor.value.set(definition.animeRimColor);
-    return;
-  }
-  material.color.set(color);
-}
-
-function createAnimeAnisotropicMaterial(lock) {
-  const definition = materialForLock(lock);
-  const material = new THREE.ShaderMaterial({
-    name: "HairAnimeAnisotropicMaterial",
-    uniforms: {
-      uBaseColor: { value: new THREE.Color(strandDisplayColor(lock)) },
-      uShadowColor: { value: new THREE.Color(definition.animeShadowColor) },
-      uSoftShadowColor: { value: new THREE.Color(definition.animeSoftShadowColor) },
-      uHighlightColor: { value: new THREE.Color(definition.animeHighlightColor) },
-      uRimColor: { value: new THREE.Color(definition.animeRimColor) },
-      uLightDirection: { value: animeAnisotropicLightDirection },
-      uShadowThreshold: { value: definition.animeShadowThreshold },
-      uShadowSoftness: { value: definition.animeShadowSoftness },
-      uSoftShadowStrength: { value: definition.animeSoftShadowStrength },
-      uSoftShadowSpread: { value: definition.animeSoftShadowSpread },
-      uRimStrength: { value: definition.animeRimStrength },
-      uRimWidth: { value: definition.animeRimWidth },
-      uHighlightStrength: { value: definition.animeHighlightStrength },
-      uHighlightWidth: { value: definition.animeHighlightWidth },
-      uAnisotropy: { value: definition.animeAnisotropy },
-      uHighlightJaggedness: { value: definition.animeHighlightJaggedness },
-      uHighlightNoiseScale: { value: definition.animeHighlightNoiseScale },
-      uHighlightNoiseBlur: { value: definition.animeHighlightNoiseBlur },
-      uHighlightTopFade: { value: definition.animeHighlightTopFade },
-      uHighlightTopBlur: { value: definition.animeHighlightTopBlur },
-      uHighlightEdgeSuppression: { value: definition.animeHighlightEdgeSuppression },
-      uOpacity: { value: 1 }
-    },
-    vertexShader: ANIME_ANISOTROPIC_VERTEX_SHADER,
-    fragmentShader: ANIME_ANISOTROPIC_FRAGMENT_SHADER,
-    side: THREE.FrontSide,
-    transparent: false,
-    depthWrite: true,
-    depthTest: true,
-    extensions: { derivatives: true }
-  });
-  material.userData.hairShader = ANIME_ANISOTROPIC_SHADER;
-  return material;
-}
-
-function createHairMaterial(lock) {
-  const definition = materialForLock(lock);
-  if (definition.shader === ANIME_ANISOTROPIC_SHADER) {
-    const material = createAnimeAnisotropicMaterial(lock);
-    material.userData.definition = definition;
-    return material;
-  }
-  if (definition.shader === LAMBERT_SHADER) {
-    const material = new THREE.MeshLambertMaterial({
-      name: "HairLambertMaterial",
-      color: strandDisplayColor(lock),
-      vertexColors: true,
-      side: THREE.FrontSide,
-      transparent: false,
-      depthWrite: true,
-      depthTest: true
-    });
-    material.userData.hairShader = LAMBERT_SHADER;
-    material.userData.definition = definition;
-    return material;
-  }
-  const material = new THREE.MeshPhysicalMaterial({
-    name: "HairAnisotropicMaterial",
-    color: strandDisplayColor(lock),
-    roughness: definition.roughness,
-    metalness: 0,
-    anisotropy: 1,
-    anisotropyRotation: Math.PI / 2,
-    vertexColors: true,
-    side: THREE.FrontSide,
-    transparent: false,
-    depthWrite: true,
-    depthTest: true
-  });
-  material.userData.hairShader = STANDARD_ANISOTROPIC_SHADER;
-  material.userData.definition = definition;
-  return material;
-}
-
 const STRAND_SELECTION_OUTLINE_COLOR = 0xffd45e;
 const STRAND_MIRROR_OUTLINE_COLOR = 0x5ef2ff;
-
-function createStrandSelectionOutline(geometry, options = {}) {
-  const material = new THREE.ShaderMaterial({
-    name: "StrandSelectionOutlineMaterial",
-    uniforms: {
-      uColor: { value: new THREE.Color(options.color ?? STRAND_SELECTION_OUTLINE_COLOR) },
-      uOutlineWidth: { value: options.width ?? 0.007 }
-    },
-    vertexShader: `
-      uniform float uOutlineWidth;
-      void main() {
-        vec3 expandedPosition = position + normal * uOutlineWidth;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(expandedPosition, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform vec3 uColor;
-      void main() {
-        gl_FragColor = vec4(uColor, 1.0);
-      }
-    `,
-    side: THREE.BackSide,
-    transparent: options.opacity != null && options.opacity < 1,
-    opacity: options.opacity ?? 1,
-    depthTest: true,
-    depthWrite: false,
-    toneMapped: false
-  });
-  const outline = new THREE.Mesh(geometry, material);
-  outline.name = "StrandSelectionOutline";
-  outline.visible = false;
-  outline.renderOrder = options.renderOrder ?? 2;
-  outline.raycast = () => {};
-  return outline;
-}
-
-function strandUsesDoubleSidedMaterial(lock) {
-  return ["braid", "poly"].includes(lock?.geometryType)
-    || Boolean(lock?.hairCard)
-    || (
-      lock?.geometryType === "curve-surface"
-      && Boolean(lock?.curveSurfaceCompoundProfile)
-    );
-}
-
-function applyMaterialDefinitionToLock(lock) {
-  if (lock.mesh.material === lock.uvCheckerMaterial && lock.uvCheckerOriginalMaterial) {
-    lock.mesh.material = lock.uvCheckerOriginalMaterial;
-  }
-  const definition = materialForLock(lock);
-  if (lock.mesh.material.userData.hairShader !== definition.shader) {
-    const previousMaterial = lock.mesh.material;
-    lock.mesh.material = createHairMaterial(lock);
-  lock.mesh.material.side = lock.branchRootRegion || strandUsesDoubleSidedMaterial(lock)
-      ? THREE.DoubleSide
-      : THREE.FrontSide;
-    previousMaterial.dispose();
-  }
-  lock.mesh.material.userData.definition = definition;
-  setAnimeHairBaseColor(lock.mesh.material, strandViewportBaseColor(lock));
-  if (lock.mesh.material.userData.hairShader === STANDARD_ANISOTROPIC_SHADER) {
-    lock.mesh.material.roughness = definition.roughness;
-  } else if (lock.mesh.material.userData.hairShader === ANIME_ANISOTROPIC_SHADER) {
-    Object.keys(ANIME_ANISOTROPIC_NUMERIC_FIELDS).forEach((key) => {
-      const uniformName = `u${key.slice("anime".length)}`;
-      lock.mesh.material.uniforms[uniformName].value = definition[key];
-    });
-  }
-  updateStrandSelectionHighlightForLock(lock);
-  if (hairState.state.uvCheckerEnabled) ensureUvCheckerForLock(lock);
-}
-
-function refreshMaterialUsers(materialId) {
-  locks.forEach((lock) => {
-    if ((lock.materialId || DEFAULT_HAIR_MATERIAL_ID) === materialId) applyMaterialDefinitionToLock(lock);
-  });
-  updateStrandSelectionHighlight();
-  if (sculptState.state.drawStrandStroke) drawFlowApi.updateDrawStrandPreview();
-  renderLockList();
-}
-
-function renderHairMaterialOutliner() {
-  const usageCounts = hairMaterialUsageCounts(locks, hairMaterialDefinitions, DEFAULT_HAIR_MATERIAL_ID);
-  const activeDefinition = activeHairMaterialDefinition();
-  hairMaterialOutliner.replaceChildren(...hairMaterialDefinitions.map((material) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "material-outliner-item";
-    button.dataset.hairMaterialId = material.id;
-    button.setAttribute("role", "option");
-    button.setAttribute("aria-selected", String(material.id === activeDefinition.id));
-    button.classList.toggle("active", material.id === activeDefinition.id);
-
-    const swatch = document.createElement("span");
-    swatch.className = "material-outliner-swatch";
-    swatch.style.backgroundColor = normalizeHairShader(material.shader) === ANIME_ANISOTROPIC_SHADER
-      ? material.animeBaseColor
-      : material.color;
-    const name = document.createElement("span");
-    name.className = "material-outliner-name";
-    name.textContent = material.name;
-    const count = document.createElement("span");
-    count.className = "material-outliner-count";
-    const users = usageCounts.get(material.id) || 0;
-    count.textContent = `${users}`;
-    count.title = `${users} strand${users === 1 ? "" : "s"}`;
-    button.append(swatch, name, count);
-    return button;
-  }));
-}
-
-function renderHairMaterialOptions(selectedMaterialId = DEFAULT_HAIR_MATERIAL_ID) {
-  hairMaterialSelect.replaceChildren(...hairMaterialDefinitions.map((material) => {
-    const option = document.createElement("option");
-    option.value = material.id;
-    option.textContent = material.name;
-    return option;
-  }));
-  hairMaterialSelect.value = hairMaterialDefinition(selectedMaterialId).id;
-}
-
-function syncHairMaterialEditor(lock = null) {
-  if (lock) hairState.state.activeHairMaterialId = materialForLock(lock).id;
-  const definition = activeHairMaterialDefinition();
-  deleteProjectHairMaterialButton.disabled = definition.id === DEFAULT_HAIR_MATERIAL_ID;
-  const assignedMaterialId = getSelectedLock()?.materialId || DEFAULT_HAIR_MATERIAL_ID;
-  renderHairMaterialOptions(assignedMaterialId);
-  renderHairMaterialOutliner();
-  hairMaterialNameInput.value = definition.name;
-  hairMaterialShaderInput.value = definition.shader;
-  hairMaterialColorInput.value = definition.color;
-  hairMaterialRoughnessInput.value = String(definition.roughness);
-  hairMaterialRoughnessValue.textContent = definition.roughness.toFixed(2);
-  const animeShader = definition.shader === ANIME_ANISOTROPIC_SHADER;
-  hairMaterialStandardControls.classList.toggle("hidden", animeShader);
-  hairMaterialRoughnessControl.classList.toggle("hidden", definition.shader !== STANDARD_ANISOTROPIC_SHADER);
-  hairMaterialAnimeControls.classList.toggle("hidden", !animeShader);
-  Object.entries(hairMaterialAnimeColorInputs).forEach(([key, input]) => {
-    input.value = definition[key];
-  });
-  Object.entries(hairMaterialAnimeNumericControls).forEach(([key, control]) => {
-    const field = ANIME_ANISOTROPIC_NUMERIC_FIELDS[key];
-    control.input.value = String(definition[key]);
-    control.output.textContent = Number(definition[key]).toFixed(field.digits);
-  });
-}
-
-function createProjectHairMaterial({ assignToSelected = false } = {}) {
-  const lock = getSelectedLock();
-  pushUndoState();
-  const source = assignToSelected && lock ? materialForLock(lock) : activeHairMaterialDefinition();
-  hairState.state.hairMaterialIndex += 1;
-  const material = normalizeHairMaterialDefinition({ ...source });
-  material.id = `hair-material-${crypto.randomUUID()}`;
-  material.name = `Hair Material ${hairState.state.hairMaterialIndex}`;
-  hairMaterialDefinitions.push(material);
-  hairState.state.activeHairMaterialId = material.id;
-  if (assignToSelected && lock) {
-    editSelectedLocks((item) => {
-      item.materialId = material.id;
-      applyMaterialDefinitionToLock(item);
-    }, { renderList: false });
-  }
-  syncHairMaterialEditor();
-  renderLockList();
-}
-
-function deleteActiveHairMaterial() {
-  const material = activeHairMaterialDefinition();
-  if (material.id === DEFAULT_HAIR_MATERIAL_ID) return;
-  pushUndoState();
-  hairMaterialDefinitions.splice(hairMaterialDefinitions.indexOf(material), 1);
-  locks.forEach((lock) => {
-    if ((lock.materialId || DEFAULT_HAIR_MATERIAL_ID) === material.id) {
-      lock.materialId = DEFAULT_HAIR_MATERIAL_ID;
-      applyMaterialDefinitionToLock(lock);
-      syncActiveMirror(lock, { refreshUi: true });
-    }
-  });
-  hairState.state.activeHairMaterialId = DEFAULT_HAIR_MATERIAL_ID;
-  syncHairMaterialEditor();
-  renderLockList();
-  hairMaterialOutliner.querySelector(`[data-hair-material-id="${CSS.escape(DEFAULT_HAIR_MATERIAL_ID)}"]`)?.focus();
-}
 
 function createHairTopologyGeometry(sourceGeometry) {
   const geometry = sourceGeometry.toNonIndexed();
@@ -8038,11 +7729,11 @@ Object.assign(drawFlowDeps, {
   groupDefaultsFor,
   pointsWithLayerOffset,
   normalizeHairLayer,
-  strandDisplayColor,
-  strandUsesDoubleSidedMaterial,
-  createHairMaterial,
-  materialForLock,
-  setAnimeHairBaseColor,
+  strandDisplayColor: materialApi.strandDisplayColor,
+  strandUsesDoubleSidedMaterial: materialApi.strandUsesDoubleSidedMaterial,
+  createHairMaterial: materialApi.createHairMaterial,
+  materialForLock: materialApi.materialForLock,
+  setAnimeHairBaseColor: materialApi.setAnimeHairBaseColor,
   clonePanelSplits,
   mirroredVector,
   viewPlaneNormal,
@@ -8142,7 +7833,7 @@ Object.assign(proceduralDuplicateDeps, {
   syncLockFromCurve,
   updateLockGeometry,
   flushPendingLockGeometryUpdates,
-  createRootAttachment,
+  createRootAttachment: ioApi.createRootAttachment,
   renderLockList,
   updateCount,
   selectLock,
@@ -8458,7 +8149,7 @@ function addLock(presetName, overrides = {}, options = {}) {
   lock.polyFaces = lock.geometryType === "poly" ? normalizePolyFaces(lock.points, base.polyFaces) : [];
   lock.rootAttachmentEnabled = lock.geometryType !== "poly" && base.rootAttachmentEnabled !== false;
   lock.rootAttachment = lock.rootAttachmentEnabled
-    ? rootAttachmentFromData(base.rootAttachment || null, lock)
+    ? ioApi.rootAttachmentFromData(base.rootAttachment || null, lock)
     : null;
   if (lock.rootAttachment) {
     lock.rootSurfacePoint = lock.rootAttachment.surfacePoint.clone();
@@ -8472,14 +8163,14 @@ function addLock(presetName, overrides = {}, options = {}) {
   if (base.layerOffsetApplied == null && lock.geometryType !== "poly") applyLayerOffset(lock);
   lock.mesh = new THREE.Mesh(
     strandGeometryApi.createHairGeometry(lock),
-    createHairMaterial(lock)
+    materialApi.createHairMaterial(lock)
   );
-  lock.mesh.material.side = lock.branchRootRegion || strandUsesDoubleSidedMaterial(lock)
+  lock.mesh.material.side = lock.branchRootRegion || materialApi.strandUsesDoubleSidedMaterial(lock)
     ? THREE.DoubleSide
     : THREE.FrontSide;
-  lock.selectionOutline = createStrandSelectionOutline(lock.mesh.geometry);
+  lock.selectionOutline = materialApi.createStrandSelectionOutline(lock.mesh.geometry);
   lock.mesh.add(lock.selectionOutline);
-  lock.hoverOutline = createStrandSelectionOutline(lock.mesh.geometry, {
+  lock.hoverOutline = materialApi.createStrandSelectionOutline(lock.mesh.geometry, {
     color: 0xffb45e,
     opacity: 0.72,
     renderOrder: 2
@@ -8771,7 +8462,7 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   partner.rootAttachmentEnabled = lock.rootAttachmentEnabled !== false;
   partner.rootSurfacePoint = mirroredVector(lock.rootSurfacePoint);
   partner.rootSurfaceNormal = mirroredVector(lock.rootSurfaceNormal)?.normalize() || null;
-  partner.rootAttachment = partner.rootAttachmentEnabled ? createRootAttachment(partner) : null;
+  partner.rootAttachment = partner.rootAttachmentEnabled ? ioApi.createRootAttachment(partner) : null;
   partner.radialSegments = lock.radialSegments;
   partner.lengthSegments = lock.lengthSegments;
   partner.dynamicDensity = Boolean(lock.dynamicDensity);
@@ -8806,7 +8497,7 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
     || (partner.curveObjects.panelSplitHandles?.length || 0) !== (partner.panelSplits?.length || 0)
   ) rebuildCurveObjects(partner);
   syncLockFromCurve(partner);
-  applyMaterialDefinitionToLock(partner);
+  materialApi.applyMaterialDefinitionToLock(partner);
   updateLockGeometry(partner, {
     defer: Boolean(options.deferGeometry),
     immediate: options.immediate,
@@ -9037,7 +8728,7 @@ function snapshotState() {
       rootAttachmentEnabled: lock.rootAttachmentEnabled !== false,
       rootAttachment: lock.geometryType === "poly"
         ? null
-        : rootAttachmentToData(syncRootAttachmentMetadata(lock)),
+        : ioApi.rootAttachmentToData(ioApi.syncRootAttachmentMetadata(lock)),
       strandRotation: Number(lock.strandRotation ?? 0),
       twist: lock.twist,
       twistCurve: lock.twistCurve.map((point) => ({ ...point })),
@@ -9112,311 +8803,6 @@ function snapshotState() {
 }
 
 
-
-function rootAttachmentFrame(lock, normal) {
-  const tangent = lock.placementFrame?.flow?.clone()
-    || lock.points?.[1]?.clone().sub(lock.points[0])
-    || new THREE.Vector3(0, -1, 0);
-  tangent.projectOnPlane(normal);
-  if (tangent.lengthSq() < 0.000001) tangent.set(0, -1, 0).projectOnPlane(normal);
-  if (tangent.lengthSq() < 0.000001) tangent.set(1, 0, 0).projectOnPlane(normal);
-  tangent.normalize();
-  const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
-  return { tangent, bitangent };
-}
-
-function rootAttachmentLocalFrame(normal, tangent, bitangent) {
-  const mesh = scalpBuilder.activeScalpSurfaceMesh();
-  if (!mesh) {
-    return {
-      normal: normal.clone(),
-      tangent: tangent.clone(),
-      bitangent: bitangent.clone()
-    };
-  }
-  mesh.updateMatrixWorld(true);
-  const inverseWorld = mesh.matrixWorld.clone().invert();
-  return {
-    normal: normal.clone().transformDirection(inverseWorld).normalize(),
-    tangent: tangent.clone().transformDirection(inverseWorld).normalize(),
-    bitangent: bitangent.clone().transformDirection(inverseWorld).normalize()
-  };
-}
-
-function resolveRootAttachment(attachment) {
-  const mesh = scalpBuilder.activeScalpSurfaceMesh();
-  const geometry = mesh?.geometry;
-  const position = geometry?.getAttribute("position");
-  const triangleIndex = Number(attachment?.surfaceLocation?.triangleIndex);
-  const barycentric = attachment?.surfaceLocation?.barycentric;
-  if (!mesh || !position || !Number.isInteger(triangleIndex) || triangleIndex < 0 || !barycentric) return null;
-
-  const index = geometry.getIndex();
-  const offset = triangleIndex * 3;
-  if (offset + 2 >= (index?.count ?? position.count)) return null;
-  const ia = index ? index.getX(offset) : offset;
-  const ib = index ? index.getX(offset + 1) : offset + 1;
-  const ic = index ? index.getX(offset + 2) : offset + 2;
-  const a = new THREE.Vector3().fromBufferAttribute(position, ia);
-  const b = new THREE.Vector3().fromBufferAttribute(position, ib);
-  const c = new THREE.Vector3().fromBufferAttribute(position, ic);
-  const weightTotal = barycentric.x + barycentric.y + barycentric.z || 1;
-  const localPoint = a.multiplyScalar(barycentric.x / weightTotal)
-    .addScaledVector(b, barycentric.y / weightTotal)
-    .addScaledVector(c, barycentric.z / weightTotal);
-
-  mesh.updateMatrixWorld(true);
-  const point = localPoint.applyMatrix4(mesh.matrixWorld);
-  const localFrame = attachment.localFrame;
-  if (!localFrame) return { point };
-  const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
-  const normal = localFrame.normal.clone().applyMatrix3(normalMatrix).normalize();
-  const tangent = localFrame.tangent.clone().transformDirection(mesh.matrixWorld).projectOnPlane(normal).normalize();
-  const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
-  return { point, normal, tangent, bitangent };
-}
-
-const ROOT_LOCAL_CURVE_FIELDS = Object.freeze({
-  points: "points",
-  clumpRestPoints: "clumpRestPoints",
-  clumpGuideRestPoints: "clumpGuideRestPoints",
-  groupLatticeBasePoints: "groupLatticeBasePoints"
-});
-
-function curvePointsToRootLocal(points, origin, frame) {
-  if (!points?.length || !origin || !frame) return null;
-  return points.map((point) => {
-    const delta = point.clone().sub(origin);
-    return new THREE.Vector3(
-      delta.dot(frame.bitangent),
-      delta.dot(frame.tangent),
-      delta.dot(frame.normal)
-    );
-  });
-}
-
-function curvePointsFromRootLocal(points, origin, frame) {
-  if (!points?.length || !origin || !frame) return null;
-  return points.map((point) => origin.clone()
-    .addScaledVector(frame.bitangent, point.x)
-    .addScaledVector(frame.tangent, point.y)
-    .addScaledVector(frame.normal, point.z));
-}
-
-function syncRootAttachmentLocalCurves(lock, attachment) {
-  if (!lock?.points?.length || !attachment) return;
-  const resolved = resolveRootAttachment(attachment);
-  const frame = {
-    normal: resolved?.normal || attachment.normal,
-    tangent: resolved?.tangent || attachment.tangent,
-    bitangent: resolved?.bitangent || attachment.bitangent
-  };
-  const origin = lock.points[0];
-  attachment.localCurves = {};
-  Object.entries(ROOT_LOCAL_CURVE_FIELDS).forEach(([attachmentKey, lockKey]) => {
-    const localPoints = curvePointsToRootLocal(lock[lockKey], origin, frame);
-    if (localPoints) attachment.localCurves[attachmentKey] = localPoints;
-  });
-}
-
-function applyRootAttachmentLocalCurves(lock) {
-  if (lock?.geometryType === "poly") return false;
-  const attachment = lock?.rootAttachment;
-  if (!attachment?.localCurves?.points?.length) return false;
-  const resolved = resolveRootAttachment(attachment);
-  if (!resolved?.point || !resolved.normal || !resolved.tangent || !resolved.bitangent) return false;
-  const rootOffset = scalpBuilder.rootScalpOffsetDistance(attachment.localOffset)
-    + layerOffsetForLock(lock) * layerRootOffsetFactor(attachment.hairLayer);
-  const origin = resolved.point.clone().addScaledVector(resolved.normal, rootOffset);
-  const frame = {
-    normal: resolved.normal,
-    tangent: resolved.tangent,
-    bitangent: resolved.bitangent
-  };
-
-  Object.entries(ROOT_LOCAL_CURVE_FIELDS).forEach(([attachmentKey, lockKey]) => {
-    const restored = curvePointsFromRootLocal(attachment.localCurves[attachmentKey], origin, frame);
-    if (restored) lock[lockKey] = restored;
-  });
-  lock.rootSurfacePoint = resolved.point.clone();
-  lock.rootSurfaceNormal = resolved.normal.clone();
-  if (lock.placementFrame) {
-    lock.placementFrame.root.copy(origin);
-    lock.placementFrame.normal.copy(resolved.normal);
-    lock.placementFrame.flow.copy(resolved.tangent);
-    lock.placementFrame.side.copy(resolved.bitangent);
-  }
-  return true;
-}
-
-
-function createRootAttachment(lock, sourceOverride = null) {
-  if (lock?.rootAttachmentEnabled === false) return null;
-  const sourcePoint = sourceOverride?.clone() || lock.rootSurfacePoint?.clone() || lock.points?.[0]?.clone();
-  if (!sourcePoint) return null;
-  const surface = scalpBuilder.closestPointOnActiveScalp(sourcePoint, lock.scalpRegion || null);
-  const point = surface?.point || sourcePoint;
-  const normal = surface?.normal
-    || lock.rootSurfaceNormal?.clone()?.normalize()
-    || new THREE.Vector3(0, 1, 0);
-  const frame = rootAttachmentFrame(lock, normal);
-  const localFrame = rootAttachmentLocalFrame(normal, frame.tangent, frame.bitangent);
-  return {
-    version: 3,
-    coordinateSpace: "scalp-local",
-    scalpRegion: lock.scalpRegion || "unassigned",
-    regionPosition: surface?.regionPosition ? { ...surface.regionPosition } : null,
-    surfaceLocation: surface ? {
-      triangleIndex: surface.triangleIndex,
-      barycentric: surface.barycentric.clone()
-    } : null,
-    surfacePoint: point.clone(),
-    normal: normal.clone(),
-    tangent: frame.tangent,
-    bitangent: frame.bitangent,
-    localFrame,
-    hairLayer: normalizeHairLayer(lock.hairLayer),
-    localOffset: Number(lock.rootScalpOffset ?? 0)
-  };
-}
-
-function syncRootAttachmentMetadata(lock) {
-  if (!lock) return null;
-  if (lock.rootAttachmentEnabled === false) {
-    lock.rootAttachment = null;
-    return null;
-  }
-  if (!lock.rootAttachment) lock.rootAttachment = createRootAttachment(lock);
-  if (!lock.rootAttachment) return null;
-  lock.rootAttachment.scalpRegion = lock.scalpRegion || "unassigned";
-  lock.rootAttachment.hairLayer = normalizeHairLayer(lock.hairLayer);
-  lock.rootAttachment.localOffset = Number(lock.rootScalpOffset ?? 0);
-  if (lock.rootSurfacePoint) lock.rootAttachment.surfacePoint.copy(lock.rootSurfacePoint);
-  if (lock.rootSurfaceNormal) lock.rootAttachment.normal.copy(lock.rootSurfaceNormal).normalize();
-  const frame = rootAttachmentFrame(lock, lock.rootAttachment.normal);
-  lock.rootAttachment.tangent.copy(frame.tangent);
-  lock.rootAttachment.bitangent.copy(frame.bitangent);
-  lock.rootAttachment.localFrame = rootAttachmentLocalFrame(
-    lock.rootAttachment.normal,
-    lock.rootAttachment.tangent,
-    lock.rootAttachment.bitangent
-  );
-  lock.rootAttachment.version = 3;
-  lock.rootAttachment.coordinateSpace = "scalp-local";
-  syncRootAttachmentLocalCurves(lock, lock.rootAttachment);
-  return lock.rootAttachment;
-}
-
-function rootAttachmentToData(attachment) {
-  if (!attachment) return null;
-  return {
-    version: Number(attachment.version || 1),
-    coordinateSpace: attachment.coordinateSpace || "scalp-local",
-    scalpRegion: attachment.scalpRegion || "unassigned",
-    regionPosition: attachment.regionPosition ? { ...attachment.regionPosition } : null,
-    surfaceLocation: attachment.surfaceLocation ? {
-      triangleIndex: Number(attachment.surfaceLocation.triangleIndex),
-      barycentric: vectorToData(attachment.surfaceLocation.barycentric)
-    } : null,
-    surfacePoint: vectorToData(attachment.surfacePoint),
-    normal: vectorToData(attachment.normal),
-    tangent: vectorToData(attachment.tangent),
-    bitangent: vectorToData(attachment.bitangent),
-    localFrame: attachment.localFrame ? {
-      normal: vectorToData(attachment.localFrame.normal),
-      tangent: vectorToData(attachment.localFrame.tangent),
-      bitangent: vectorToData(attachment.localFrame.bitangent)
-    } : null,
-    localCurves: attachment.localCurves ? Object.fromEntries(
-      Object.entries(attachment.localCurves).map(([key, points]) => [key, points.map(vectorToData)])
-    ) : null,
-    hairLayer: normalizeHairLayer(attachment.hairLayer),
-    localOffset: Number(attachment.localOffset ?? 0)
-  };
-}
-
-function rootAttachmentFromData(data, lock, { resolveSurface = true } = {}) {
-  if (!data) return createRootAttachment(lock);
-  const normal = dataToVector(data.normal || vectorToData(lock.rootSurfaceNormal || new THREE.Vector3(0, 1, 0))).normalize();
-  const tangent = dataToVector(data.tangent || { x: 0, y: -1, z: 0 }).normalize();
-  const bitangent = dataToVector(data.bitangent || { x: 1, y: 0, z: 0 }).normalize();
-  const attachment = {
-    version: Number(data.version || 1),
-    coordinateSpace: data.coordinateSpace || "scalp-local",
-    scalpRegion: data.scalpRegion || lock.scalpRegion || "unassigned",
-    regionPosition: data.regionPosition ? { ...data.regionPosition } : null,
-    surfaceLocation: data.surfaceLocation ? {
-      triangleIndex: Number(data.surfaceLocation.triangleIndex),
-      barycentric: dataToVector(data.surfaceLocation.barycentric)
-    } : null,
-    surfacePoint: dataToVector(data.surfacePoint || vectorToData(lock.rootSurfacePoint || lock.points[0])),
-    normal,
-    tangent,
-    bitangent,
-    localFrame: data.localFrame ? {
-      normal: dataToVector(data.localFrame.normal).normalize(),
-      tangent: dataToVector(data.localFrame.tangent).normalize(),
-      bitangent: dataToVector(data.localFrame.bitangent).normalize()
-    } : rootAttachmentLocalFrame(normal, tangent, bitangent),
-    localCurves: data.localCurves ? Object.fromEntries(
-      Object.entries(data.localCurves).map(([key, points]) => [key, points.map(dataToVector)])
-    ) : null,
-    hairLayer: normalizeHairLayer(data.hairLayer ?? lock.hairLayer),
-    localOffset: Number(data.localOffset ?? lock.rootScalpOffset ?? 0)
-  };
-  const resolved = resolveSurface ? resolveRootAttachment(attachment) : null;
-  if (resolved) {
-    attachment.surfacePoint.copy(resolved.point);
-    if (resolved.normal) attachment.normal.copy(resolved.normal);
-    if (resolved.tangent) attachment.tangent.copy(resolved.tangent);
-    if (resolved.bitangent) attachment.bitangent.copy(resolved.bitangent);
-  }
-  return attachment;
-}
-
-
-
-
-
-
-
-function downloadPreferencesAndPresets() {
-  const exportedAt = new Date();
-  const backup = createPreferencesBackup({
-    appVersion: APP_VERSION,
-    exportedAt: exportedAt.toISOString(),
-    preferences: {
-      language: documentLocalizer.language,
-      navigationTips: viewportState.state.navigationTipsEnabled,
-      navigationStyle: viewportState.state.navigationStyle,
-      cameraSmoothingEnabled: viewportState.state.cameraSmoothingEnabled,
-      cameraSmoothingStrength: viewportState.state.cameraSmoothingStrength,
-      toolTips: miscState.state.toolTipsEnabled,
-      compactToolButtons: miscState.state.compactToolButtonsEnabled,
-      viewportStatistics: viewportState.state.viewportStatisticsEnabled,
-      twistCurveAllStrandsPreview: hairState.state.twistCurveAllStrandsPreviewEnabled,
-      layerColorShifts: sel.state.layerColorShiftsEnabled,
-      outlinerFolderColors: sel.state.outlinerFolderColorsEnabled,
-      sideNamingPerspective: miscState.state.sideNamingPerspective,
-      controlPointDisplaySize: guideState.state.controlPointDisplaySize,
-      viewportBackgroundColor: viewportState.state.viewportBackgroundColor,
-      radialMenus: ui.state.radialMenusEnabled,
-      proceduralDrawExperimental: draw.state.proceduralDrawExperimentalEnabled,
-      defaultShader: hairState.state.defaultHairShader
-    },
-    presets: projectState.state.customCreationPresets,
-    shapePresets: projectState.state.customShapePresets
-  });
-  fileApi.downloadProjectFile(
-    `${JSON.stringify(backup, null, 2)}\n`,
-    preferencesBackupFileName(exportedAt)
-  );
-}
-
-function importedBooleanPreference(value, fallback) {
-  return typeof value === "boolean" ? value : fallback;
-}
-
 // Preset library deps batch (refactor batch B3): all deps are defined by this point (last
 // dep: shapePresets / taperEditorDeps block); creationPresets is filled in-place right after
 // its creation below. The braid mesh preset loads + shape preset UI boot run here so the
@@ -9461,90 +8847,6 @@ const creationPresets = createCreationPresetsApi({
 });
 presetLibraryDeps.creationPresets = creationPresets;
 
-async function loadPreferencesAndPresets(file) {
-  const backup = normalizePreferencesBackup(JSON.parse(await file.text()));
-  const preferences = backup.preferences;
-  setNavigationTipsEnabled(importedBooleanPreference(preferences.navigationTips, viewportState.state.navigationTipsEnabled));
-  if (preferences.navigationStyle != null) setNavigationStyle(preferences.navigationStyle);
-  setCameraSmoothingEnabled(importedBooleanPreference(preferences.cameraSmoothingEnabled, viewportState.state.cameraSmoothingEnabled));
-  if (preferences.cameraSmoothingStrength != null) {
-    setCameraSmoothingStrength(preferences.cameraSmoothingStrength);
-  }
-  setToolTipsEnabled(importedBooleanPreference(preferences.toolTips, miscState.state.toolTipsEnabled));
-  setCompactToolButtonsEnabled(importedBooleanPreference(preferences.compactToolButtons, miscState.state.compactToolButtonsEnabled));
-  setViewportStatisticsEnabled(importedBooleanPreference(preferences.viewportStatistics, viewportState.state.viewportStatisticsEnabled));
-  setTwistCurveAllStrandsPreviewEnabled(importedBooleanPreference(
-    preferences.twistCurveAllStrandsPreview,
-    hairState.state.twistCurveAllStrandsPreviewEnabled
-  ));
-  setLayerColorShiftsEnabled(importedBooleanPreference(preferences.layerColorShifts, sel.state.layerColorShiftsEnabled));
-  setOutlinerFolderColorsEnabled(importedBooleanPreference(preferences.outlinerFolderColors, sel.state.outlinerFolderColorsEnabled));
-  if (preferences.sideNamingPerspective != null) {
-    setSideNamingPerspective(preferences.sideNamingPerspective);
-  }
-  if (preferences.controlPointDisplaySize != null) {
-    setControlPointDisplaySize(preferences.controlPointDisplaySize);
-  }
-  if (preferences.viewportBackgroundColor != null) {
-    setViewportBackgroundColor(preferences.viewportBackgroundColor);
-  }
-  radialMenuApi.setRadialMenusEnabled(importedBooleanPreference(preferences.radialMenus, ui.state.radialMenusEnabled));
-  clumpProceduralApi.setProceduralDrawExperimentalEnabled(importedBooleanPreference(
-    preferences.proceduralDrawExperimental,
-    draw.state.proceduralDrawExperimentalEnabled
-  ));
-  if (typeof preferences.language === "string") {
-    const language = documentLocalizer.setLanguage(normalizeLanguage(preferences.language));
-    languageSelect.value = language;
-    saveLanguage(language);
-  }
-  if (preferences.defaultShader != null) setDefaultHairShader(preferences.defaultShader);
-  projectState.state.customCreationPresets = creationPresets.normalizeCreationPresetLibrary(backup.presets);
-  creationPresets.saveCustomCreationPresets();
-  projectState.state.customShapePresets = normalizeShapePresetLibrary(backup.shapePresets);
-  shapePresets.saveCustomShapePresets();
-  presetLibraryApi.populateShapePresetSelects();
-  presetLibraryApi.populateDrawBrushPresetSelect(hairState.state.drawStrandMode);
-  presetLibraryApi.populateCreationPresetSelect(
-    braidToolPresetInput,
-    "braid",
-    braidCreationDefaults.braidMeshPreset === "chain-links" ? "chain-links" : "classic"
-  );
-  ui.state.preferencesOpenSnapshot = {
-    radialMenusEnabled: ui.state.radialMenusEnabled,
-    proceduralDrawExperimentalEnabled: draw.state.proceduralDrawExperimentalEnabled,
-    navigationTipsEnabled: viewportState.state.navigationTipsEnabled,
-    navigationStyle: viewportState.state.navigationStyle,
-    cameraSmoothingEnabled: viewportState.state.cameraSmoothingEnabled,
-    cameraSmoothingStrength: viewportState.state.cameraSmoothingStrength,
-    toolTipsEnabled: miscState.state.toolTipsEnabled,
-    compactToolButtonsEnabled: miscState.state.compactToolButtonsEnabled,
-    viewportStatisticsEnabled: viewportState.state.viewportStatisticsEnabled,
-    twistCurveAllStrandsPreviewEnabled: hairState.state.twistCurveAllStrandsPreviewEnabled,
-    layerColorShiftsEnabled: sel.state.layerColorShiftsEnabled,
-    outlinerFolderColorsEnabled: sel.state.outlinerFolderColorsEnabled,
-    sideNamingPerspective: miscState.state.sideNamingPerspective,
-    controlPointDisplaySize: guideState.state.controlPointDisplaySize,
-    viewportBackgroundColor: viewportState.state.viewportBackgroundColor,
-    defaultHairShader: hairState.state.defaultHairShader
-  };
-  preferencesBackupStatus.textContent = "Preferences and presets loaded.";
-}
-
-async function handlePreferencesAndPresetsFile(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  preferencesBackupStatus.textContent = "Loading preferences and presets...";
-  try {
-    await loadPreferencesAndPresets(file);
-  } catch (error) {
-    console.error("Could not load preferences and presets", error);
-    preferencesBackupStatus.textContent = error?.message || "Could not load preferences and presets.";
-  } finally {
-    preferencesAndPresetsFile.value = "";
-  }
-}
-
 
 const fileApi = createProjectSaveApi({
   get currentProjectName() { return projectState.state.currentProjectName; },
@@ -9572,161 +8874,15 @@ const fileApi = createProjectSaveApi({
   strandCurveParameters,
   curveSurfaceControllerCurves: curveSurfaceCreate.curveSurfaceControllerCurves,
   bonesFor,
-  safelyRememberRecentProject
+  safelyRememberRecentProject: ioApi.safelyRememberRecentProject
 });
 
-async function openHairProjectFile(file, { handle = null } = {}) {
-  try {
-    const content = await file.text();
-    const project = validateHairProject(JSON.parse(content));
-    if (project.headAssetOmitted === true) {
-      referenceHeadApi.disposeGuideModel(guideState.state.guideModel);
-      guideState.state.guideModel = null;
-      head.state.importedHeadAsset = null;
-      document.querySelector("#importHeadMesh").title = "Import head mesh from an OBJ file";
-      document.querySelector("#importFullBodyMesh").title = "Import a full body OBJ, scale it to seven head heights, and align its top to the scalp guide";
-    } else if (project.headAsset?.format === "obj" && typeof project.headAsset.content === "string") {
-      const model = new OBJLoader().parse(polygonOnlyObjSource(project.headAsset.content));
-      const fullBody = project.headAsset.fit === "full-body";
-      referenceHeadApi.installGuideModel(model, { normalize: true, fullBody });
-      head.state.importedHeadAsset = { ...project.headAsset };
-      document.querySelector("#importHeadMesh").title = fullBody
-        ? "Import head mesh from an OBJ file"
-        : `Using ${project.headAsset.name || "custom head"}. Import another head mesh`;
-      document.querySelector("#importFullBodyMesh").title = fullBody
-        ? `Using ${project.headAsset.name || "custom full body"}. Import another full body mesh`
-        : "Import a full body OBJ, scale it to seven head heights, and align its top to the scalp guide";
-    } else if (Object.prototype.hasOwnProperty.call(project, "headAsset")) {
-      await referenceHeadApi.loadDefaultGuideModel();
-      document.querySelector("#importHeadMesh").title = "Import head mesh from an OBJ file";
-      document.querySelector("#importFullBodyMesh").title = "Import a full body OBJ, scale it to seven head heights, and align its top to the scalp guide";
-    }
-    if (project.scalpGuideAsset?.format === "obj" && typeof project.scalpGuideAsset.content === "string") {
-      const scalpModel = new OBJLoader().parse(project.scalpGuideAsset.content);
-      scalpBuilder.installCustomScalpGuide(scalpModel, {
-        name: project.scalpGuideAsset.name || "custom-scalp.obj",
-        content: project.scalpGuideAsset.content,
-        preserveCoordinates: Boolean(project.scalpGuideAsset.preserveCoordinates),
-        quadWirePositions: project.scalpGuideAsset.quadWirePositions
-      });
-    } else if (Object.prototype.hasOwnProperty.call(project, "scalpGuideAsset")) {
-      scalpState.state.importedScalpGuideAsset = null;
-      scalpBuilder.setScalpGuideSource("default");
-    }
-    restoreState(project.state);
-    scalpBuilder.realignFullBodyGuideToScalpTop();
-    if (guideState.state.guideModel?.userData?.fullBodyReference) {
-      frameViewportBounds(scalpBuilder.fullBodyScalpFocusBounds());
-    }
-    if (project.metadata?.name) projectState.state.currentProjectName = project.metadata.name;
-    projectState.state.quickSaveFileHandle = handle || null;
-    projectState.state.quickSaveFileName = cleanFileBaseName(file.name || `${project.metadata?.name || "Untitled Hair Project"}.ahs`, "Untitled Hair Project");
-    presetLibraryStatus.textContent = `${project.metadata?.name || "Project"} opened`;
-    undoHistory.clear(); redoHistory.clear(); updateHistoryButtons(); // loading is a fresh undo base, not an undoable step
-    presetLibraryApi.setPresetLibraryOpen(false);
-    await safelyRememberRecentProject(file.name || `${project.metadata?.name || "Untitled Hair Project"}.ahs`, content);
-  } catch (error) {
-    console.error(error);
-    presetLibraryStatus.textContent = "Could not open project file";
-  } finally {
-    hairProjectFileInput.value = "";
-  }
-}
 
-function dragContainsApplicationFile(event) {
-  return [...(event.dataTransfer?.items || [])]
-    .filter((item) => item.kind === "file")
-    .some((item) => (
-      applicationDropFileKind(item.getAsFile?.())
-      || !SUPPORTED_REFERENCE_IMAGE_TYPES.has(String(item.type || "").toLowerCase())
-    ));
-}
 
-async function safelyRememberRecentProject(name, content) {
-  try {
-    await rememberRecentProject({ name, content });
-    if (!recentProjectsSubmenu.classList.contains("hidden")) await renderRecentProjectsMenu();
-  } catch (error) {
-    console.warn("Could not update recent projects", error);
-  }
-}
 
-async function renderRecentProjectsMenu() {
-  recentProjectsSubmenu.replaceChildren();
-  let entries = [];
-  try {
-    entries = await listRecentProjects();
-  } catch (error) {
-    console.warn("Could not read recent projects", error);
-  }
-  if (!entries.length) {
-    const empty = document.createElement("p");
-    empty.className = "app-menu-empty";
-    empty.textContent = "No recent projects";
-    recentProjectsSubmenu.append(empty);
-    return;
-  }
-  entries.forEach((entry) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.role = "menuitem";
-    button.textContent = entry.name;
-    button.title = entry.name;
-    button.addEventListener("click", () => {
-      closeAppMenus();
-      openDroppedApplicationFilePrompt({
-        name: entry.name,
-        text: async () => entry.content
-      });
-    });
-    recentProjectsSubmenu.append(button);
-  });
-}
 
-function openDroppedApplicationFilePrompt(file, { handle = null } = {}) {
-  const kind = applicationDropFileKind(file);
-  if (!kind) return false;
-  projectState.state.pendingDroppedApplicationFile = file;
-  miscState.state.pendingDroppedApplicationKind = kind;
-  miscState.state.pendingDroppedApplicationHandle = handle || null;
-  dropImportFileName.textContent = file.name;
-  const isProject = kind === "project";
-  dropImportDialogTitle.textContent = isProject ? "Open Dropped Project?" : "Import Dropped OBJ?";
-  dropImportDescription.textContent = isProject
-    ? "Opening this project will replace the current scene."
-    : "Choose how the dropped OBJ should be used.";
-  dropImportWarning.textContent = isProject
-    ? "You will lose any unsaved progress in the current project."
-    : "Importing a head or full body mesh replaces the current character mesh. You will lose any unsaved mesh setup.";
-  dropObjTargetChoices.classList.toggle("hidden", isProject);
-  confirmDropImport.textContent = isProject ? "Open Project" : "Import OBJ";
-  if (!isProject) {
-    const headTarget = dropImportForm.querySelector('input[name="dropObjTarget"][value="head"]');
-    headTarget.checked = true;
-  }
-  if (!dropImportDialog.open) dropImportDialog.showModal();
-  return true;
-}
 
-function closeDroppedApplicationFilePrompt() {
-  if (dropImportDialog.open) dropImportDialog.close();
-}
 
-async function confirmDroppedApplicationFile() {
-  const file = projectState.state.pendingDroppedApplicationFile;
-  const kind = miscState.state.pendingDroppedApplicationKind;
-  if (!file || !kind) return;
-  const objTarget = kind === "obj"
-    ? dropImportForm.querySelector('input[name="dropObjTarget"]:checked')?.value
-    : null;
-  closeDroppedApplicationFilePrompt();
-  if (kind === "project") {
-    await openHairProjectFile(file, { handle: miscState.state.pendingDroppedApplicationHandle });
-    return;
-  }
-  if (objTarget === "body") await referenceHeadApi.importFullBodyMeshFile(file);
-  else if (objTarget === "head") await referenceHeadApi.importHeadMeshFile(file);
-}
 
 function pushUndoState() {
   if (undo.state.restoringHistory) return;
@@ -9920,7 +9076,7 @@ function reapplySelectionAfterStateRestore(restorePlan) {
     renderLockList();
     updateAttributeEditorMode();
     updateSelectedPointLabel();
-    syncHairMaterialEditor();
+    materialApi.syncHairMaterialEditor();
   }
   if (pointToRestore) selectCurvePoint(pointToRestore.lockId, pointToRestore.pointIndex);
   else if (latticePointToRestore) {
@@ -10177,26 +9333,26 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     branchRegion.syncBranchRootRegionOffsets(lock);
   }
   lock.rootAttachment = lock.rootAttachmentEnabled && !deferRootAttachment
-    ? rootAttachmentFromData(snapshot.rootAttachment || null, lock, {
+    ? ioApi.rootAttachmentFromData(snapshot.rootAttachment || null, lock, {
       resolveSurface: remapRootAttachment
     })
     : null;
   lock.rootSurfacePoint = lock.rootAttachment?.surfacePoint?.clone() || lock.rootSurfacePoint;
   lock.rootSurfaceNormal = lock.rootAttachment?.normal?.clone() || lock.rootSurfaceNormal;
-  if (remapRootAttachment) applyRootAttachmentLocalCurves(lock);
+  if (remapRootAttachment) ioApi.applyRootAttachmentLocalCurves(lock);
   lock.radialSegments = lock.radialSegments || 10;
   lock.lengthSegments = lock.lengthSegments || 26;
   if (legacyUniformLayerOffset && lock.geometryType !== "poly") applyLayerOffset(lock, lock.layerOffsetApplied);
   lock.mesh = new THREE.Mesh(
     strandGeometryApi.createHairGeometry(lock),
-    createHairMaterial(lock)
+    materialApi.createHairMaterial(lock)
   );
-  lock.mesh.material.side = lock.branchRootRegion || strandUsesDoubleSidedMaterial(lock)
+  lock.mesh.material.side = lock.branchRootRegion || materialApi.strandUsesDoubleSidedMaterial(lock)
     ? THREE.DoubleSide
     : THREE.FrontSide;
-  lock.selectionOutline = createStrandSelectionOutline(lock.mesh.geometry);
+  lock.selectionOutline = materialApi.createStrandSelectionOutline(lock.mesh.geometry);
   lock.mesh.add(lock.selectionOutline);
-  lock.hoverOutline = createStrandSelectionOutline(lock.mesh.geometry, {
+  lock.hoverOutline = materialApi.createStrandSelectionOutline(lock.mesh.geometry, {
     color: 0xffb45e,
     opacity: 0.72,
     renderOrder: 2
@@ -10283,6 +9439,29 @@ function vectorToData(vector) {
 function dataToVector(data) {
   return new THREE.Vector3(data.x, data.y, data.z);
 }
+// IO tail api deps batch (refactor batch C1): all deps are defined by this point (last dep:
+// dataToVector; ioApi.openHairProjectFile also needs fileApi + restoreState defined earlier); the
+// batch takes effect here, before the bootstrap init and all runtime open/import/remember calls.
+Object.assign(ioDeps, {
+  scalpBuilder, layerOffsetForLock, layerRootOffsetFactor, normalizeHairLayer,
+  vectorToData, dataToVector,
+  fileApi, documentLocalizer, saveLanguage, languageSelect,
+  braidCreationDefaults, braidToolPresetInput, creationPresets, shapePresets,
+  projectState, hairState: hairState.state, sel: sel.state, ui: ui.state,
+  draw: draw.state, miscState: miscState.state, guideState: guideState.state,
+  viewportState: viewportState.state, scalpState, head,
+  radialMenuApi, clumpProceduralApi, presetLibraryApi, referenceHeadApi,
+  restoreState, undoHistory, redoHistory, updateHistoryButtons,
+  frameViewportBounds, closeAppMenus, SUPPORTED_REFERENCE_IMAGE_TYPES,
+  setNavigationTipsEnabled, setNavigationStyle, setCameraSmoothingEnabled, setCameraSmoothingStrength,
+  setToolTipsEnabled, setCompactToolButtonsEnabled, setViewportStatisticsEnabled,
+  setTwistCurveAllStrandsPreviewEnabled, setLayerColorShiftsEnabled, setOutlinerFolderColorsEnabled,
+  setSideNamingPerspective, setControlPointDisplaySize, setViewportBackgroundColor, setDefaultHairShader,
+  presetLibraryStatus, hairProjectFileInput, recentProjectsSubmenu,
+  preferencesAndPresetsFile, preferencesBackupStatus,
+  dropImportDialog, dropImportForm, dropImportDialogTitle, dropImportDescription,
+  dropImportFileName, dropImportWarning, dropObjTargetChoices, confirmDropImport
+});
 
 function frameToData(frame) {
   return {
@@ -11772,14 +10951,14 @@ function syncLockFromCurve(lock) {
       scalpBuilder.rootScalpOffsetDistance(lock.rootScalpOffset) + layerOffsetForLock(lock) * layerRootOffsetFactor(lock.hairLayer)
     );
     if (first.distanceToSquared(expectedRoot) > 0.000004) {
-      lock.rootAttachment = createRootAttachment(lock, first);
+      lock.rootAttachment = ioApi.createRootAttachment(lock, first);
       if (lock.rootAttachment) {
         lock.rootSurfacePoint = lock.rootAttachment.surfacePoint.clone();
         lock.rootSurfaceNormal = lock.rootAttachment.normal.clone();
       }
     }
   }
-  syncRootAttachmentMetadata(lock);
+  ioApi.syncRootAttachmentMetadata(lock);
   lock.x = first.x;
   lock.y = first.y;
   lock.z = first.z;
@@ -11798,7 +10977,7 @@ function rebuildLockGeometry(lock, options = {}) {
     lock.wireOverlay.geometry = createHairTopologyGeometry(lock.mesh.geometry);
   }
   setStrandSelectionVisual(lock);
-  lock.mesh.material.side = lock.branchRootRegion || strandUsesDoubleSidedMaterial(lock)
+  lock.mesh.material.side = lock.branchRootRegion || materialApi.strandUsesDoubleSidedMaterial(lock)
     ? THREE.DoubleSide
     : THREE.FrontSide;
   lock.mesh.material.needsUpdate = true;
@@ -11916,7 +11095,7 @@ function ensureUvCheckerForLock(lock) {
     });
     lock.uvCheckerMaterial = checkerMaterial;
   }
-  const desiredSide = strandUsesDoubleSidedMaterial(lock)
+  const desiredSide = materialApi.strandUsesDoubleSidedMaterial(lock)
     ? THREE.DoubleSide
     : THREE.FrontSide;
   checkerMaterial.color.set(0xffffff);
@@ -12102,13 +11281,13 @@ function setUvCheckerEnabled(enabled) {
 
 function strandViewportBaseColor(lock) {
   if (lock.locked) {
-    const mutedColor = new THREE.Color(strandDisplayColor(lock));
+    const mutedColor = new THREE.Color(materialApi.strandDisplayColor(lock));
     mutedColor.lerp(new THREE.Color(0x747780), 0.18);
     return `#${mutedColor.getHexString()}`;
   }
   if (sculptBrushSelectionMaskActive()) {
-    if (sculptBrushSelectionAllows(lock)) return strandDisplayColor(lock);
-    const maskedColor = new THREE.Color(strandDisplayColor(lock));
+    if (sculptBrushSelectionAllows(lock)) return materialApi.strandDisplayColor(lock);
+    const maskedColor = new THREE.Color(materialApi.strandDisplayColor(lock));
     maskedColor.multiplyScalar(0.28);
     return `#${maskedColor.getHexString()}`;
   }
@@ -12118,21 +11297,21 @@ function strandViewportBaseColor(lock) {
   const inSelectedClump = selectedClumpId && lock.clumpId === selectedClumpId;
   if (inSelectedClump) return lock.id === sel.state.selectedId ? 0x76d4d9 : 0x5bbec4;
   if (lock.id === sel.state.selectedId) {
-    const selectedColor = new THREE.Color(strandDisplayColor(lock));
+    const selectedColor = new THREE.Color(materialApi.strandDisplayColor(lock));
     selectedColor.lerp(new THREE.Color(STRAND_SELECTION_OUTLINE_COLOR), 0.12);
     return `#${selectedColor.getHexString()}`;
   }
   if (sel.state.selectedStrandIds.has(lock.id)) {
-    const selectedColor = new THREE.Color(strandDisplayColor(lock));
+    const selectedColor = new THREE.Color(materialApi.strandDisplayColor(lock));
     selectedColor.lerp(new THREE.Color(STRAND_SELECTION_OUTLINE_COLOR), 0.08);
     return `#${selectedColor.getHexString()}`;
   }
   if (strandMirrorPartnerHighlighted(lock)) {
-    const mirrorColor = new THREE.Color(strandDisplayColor(lock));
+    const mirrorColor = new THREE.Color(materialApi.strandDisplayColor(lock));
     mirrorColor.lerp(new THREE.Color(STRAND_MIRROR_OUTLINE_COLOR), 0.12);
     return `#${mirrorColor.getHexString()}`;
   }
-  return strandDisplayColor(lock);
+  return materialApi.strandDisplayColor(lock);
 }
 
 function strandMirrorPartnerHighlighted(lock) {
@@ -12176,7 +11355,7 @@ function setStrandSelectionVisual(lock) {
   if (material.userData.uvChecker === true) {
     material.color.set(0xffffff);
   } else {
-    setAnimeHairBaseColor(material, strandViewportBaseColor(lock));
+    materialApi.setAnimeHairBaseColor(material, strandViewportBaseColor(lock));
     if (lock.locked) applyLockedStrandPalette(material);
   }
   material.emissive?.set(0x000000);
@@ -12957,7 +12136,7 @@ function updateSelectedPointLabel() {
 function syncInputs(lock) {
   inputs.name.value = lock.name;
   strandLayerInput.value = normalizeHairLayer(lock.hairLayer);
-  syncHairMaterialEditor(lock);
+  materialApi.syncHairMaterialEditor(lock);
   taperEditor.renderTaperPreview(taperPreviewPaths.strand, lock, "taperCurve");
   taperEditor.renderTaperPreview(taperPreviewPaths.strandDepth, lock, "depthCurve");
   branchSweep.renderTwistCurvePreview(strandTwistCurvePreview, lock);
@@ -13746,7 +12925,7 @@ function setTwistCurveAllStrandsPreviewEnabled(enabled, { persist = true } = {})
 function setLayerColorShiftsEnabled(enabled, { persist = true } = {}) {
   sel.state.layerColorShiftsEnabled = Boolean(enabled);
   layerColorShiftsPreferenceInput.checked = sel.state.layerColorShiftsEnabled;
-  locks.forEach(applyMaterialDefinitionToLock);
+  locks.forEach(materialApi.applyMaterialDefinitionToLock);
   if (sculptState.state.drawStrandStroke) drawFlowApi.updateDrawStrandPreview();
   renderLockList();
   if (persist) saveBooleanPreference(LAYER_COLOR_SHIFTS_PREFERENCE_KEY, sel.state.layerColorShiftsEnabled);
@@ -14014,7 +13193,7 @@ function createOutlinerStrandButton(lock, options = {}) {
   }
   const swatch = document.createElement("span");
   swatch.className = "swatch";
-  swatch.style.background = new THREE.Color(strandDisplayColor(lock)).getStyle();
+  swatch.style.background = new THREE.Color(materialApi.strandDisplayColor(lock)).getStyle();
   const name = document.createElement("span");
   name.className = "outliner-rename-label";
   name.textContent = lock.name;
@@ -14370,7 +13549,7 @@ function renderLockList() {
       layerSelect.type = "button";
       const layerSwatch = document.createElement("span");
       layerSwatch.className = "outliner-layer-swatch";
-      layerSwatch.style.background = strandDisplayColor(layerRoots[0]);
+      layerSwatch.style.background = materialApi.strandDisplayColor(layerRoots[0]);
       const layerLabel = document.createElement("span");
       layerLabel.textContent = layer.label;
       const layerCount = document.createElement("span");
@@ -14405,6 +13584,22 @@ function renderLockList() {
   list.appendChild(createSelectionSetsOutlinerFolder());
   drawFlowApi.refreshLiveSurfaceOptions();
 }
+// Material UI api deps batch (refactor batch A6): all deps are defined by this point (last dep:
+// renderLockList); the batch takes effect here, before the material UI listener registrations
+// and the boot-time materialApi.syncHairMaterialEditor() call.
+Object.assign(materialDeps, {
+  hairMaterialDefinitions, animeAnisotropicLightDirection,
+  hairState: hairState.state, sel: sel.state, sculptState: sculptState.state,
+  STRAND_SELECTION_OUTLINE_COLOR,
+  pushUndoState, getSelectedLock, editSelectedLocks, renderLockList,
+  syncActiveMirror, updateStrandSelectionHighlight, updateStrandSelectionHighlightForLock,
+  ensureUvCheckerForLock, strandViewportBaseColor, normalizeHairLayer, drawFlowApi,
+  hairMaterialSelect, hairMaterialOutliner, deleteProjectHairMaterialButton,
+  hairMaterialNameInput, hairMaterialShaderInput, hairMaterialColorInput,
+  hairMaterialRoughnessInput, hairMaterialRoughnessValue, hairMaterialStandardControls,
+  hairMaterialRoughnessControl, hairMaterialAnimeControls, hairMaterialAnimeColorInputs,
+  hairMaterialAnimeNumericControls
+});
 
 function updateCount() {
   const lockText = `${locks.length} ${locks.length === 1 ? "strand" : "strands"}`;
@@ -14902,24 +14097,24 @@ hairMaterialSelect.addEventListener("change", () => {
   pushUndoState();
   editSelectedLocks((item) => {
     item.materialId = hairMaterialSelect.value;
-    applyMaterialDefinitionToLock(item);
+    materialApi.applyMaterialDefinitionToLock(item);
   }, { renderList: false });
-  syncHairMaterialEditor(lock);
+  materialApi.syncHairMaterialEditor(lock);
   renderLockList();
   syncMultiStrandInputs(lock);
 });
 
 newHairMaterialButton.addEventListener("click", () => {
-  createProjectHairMaterial({ assignToSelected: true });
+  materialApi.createProjectHairMaterial({ assignToSelected: true });
 });
 
-addProjectHairMaterialButton.addEventListener("click", () => createProjectHairMaterial());
-deleteProjectHairMaterialButton.addEventListener("click", deleteActiveHairMaterial);
+addProjectHairMaterialButton.addEventListener("click", () => materialApi.createProjectHairMaterial());
+deleteProjectHairMaterialButton.addEventListener("click", materialApi.deleteActiveHairMaterial);
 hairMaterialOutliner.addEventListener("click", (event) => {
   const item = event.target.closest("[data-hair-material-id]");
   if (!item) return;
   hairState.state.activeHairMaterialId = item.dataset.hairMaterialId;
-  syncHairMaterialEditor();
+  materialApi.syncHairMaterialEditor();
   hairMaterialOutliner.querySelector(`[data-hair-material-id="${CSS.escape(item.dataset.hairMaterialId)}"]`)?.focus();
 });
 
@@ -14932,44 +14127,44 @@ hairMaterialOutliner.addEventListener("click", (event) => {
   ...Object.values(hairMaterialAnimeNumericControls).map((control) => control.input)
 ].forEach(bindUndoCapture);
 hairMaterialNameInput.addEventListener("input", () => {
-  const material = activeHairMaterialDefinition();
+  const material = materialApi.activeHairMaterialDefinition();
   material.name = hairMaterialNameInput.value || "Untitled Material";
-  renderHairMaterialOptions(getSelectedLock()?.materialId || DEFAULT_HAIR_MATERIAL_ID);
-  renderHairMaterialOutliner();
+  materialApi.renderHairMaterialOptions(getSelectedLock()?.materialId || DEFAULT_HAIR_MATERIAL_ID);
+  materialApi.renderHairMaterialOutliner();
 });
 hairMaterialShaderInput.addEventListener("change", () => {
-  const material = activeHairMaterialDefinition();
+  const material = materialApi.activeHairMaterialDefinition();
   material.shader = normalizeHairShader(hairMaterialShaderInput.value);
-  refreshMaterialUsers(material.id);
-  syncHairMaterialEditor();
+  materialApi.refreshMaterialUsers(material.id);
+  materialApi.syncHairMaterialEditor();
 });
 hairMaterialColorInput.addEventListener("input", () => {
-  const material = activeHairMaterialDefinition();
+  const material = materialApi.activeHairMaterialDefinition();
   material.color = hairMaterialColorInput.value;
-  refreshMaterialUsers(material.id);
-  renderHairMaterialOutliner();
+  materialApi.refreshMaterialUsers(material.id);
+  materialApi.renderHairMaterialOutliner();
 });
 hairMaterialRoughnessInput.addEventListener("input", () => {
-  const material = activeHairMaterialDefinition();
+  const material = materialApi.activeHairMaterialDefinition();
   material.roughness = Number(hairMaterialRoughnessInput.value);
   hairMaterialRoughnessValue.textContent = material.roughness.toFixed(2);
-  refreshMaterialUsers(material.id);
+  materialApi.refreshMaterialUsers(material.id);
 });
 Object.entries(hairMaterialAnimeColorInputs).forEach(([key, input]) => {
   input.addEventListener("input", () => {
-    const material = activeHairMaterialDefinition();
+    const material = materialApi.activeHairMaterialDefinition();
     material[key] = input.value;
-    refreshMaterialUsers(material.id);
-    renderHairMaterialOutliner();
+    materialApi.refreshMaterialUsers(material.id);
+    materialApi.renderHairMaterialOutliner();
   });
 });
 Object.entries(hairMaterialAnimeNumericControls).forEach(([key, control]) => {
   control.input.addEventListener("input", () => {
-    const material = activeHairMaterialDefinition();
+    const material = materialApi.activeHairMaterialDefinition();
     const field = ANIME_ANISOTROPIC_NUMERIC_FIELDS[key];
     material[key] = THREE.MathUtils.clamp(Number(control.input.value), field.min, field.max);
     control.output.textContent = material[key].toFixed(field.digits);
-    refreshMaterialUsers(material.id);
+    materialApi.refreshMaterialUsers(material.id);
   });
 });
 Object.entries(groupInputs).forEach(([key, input]) => {
@@ -15378,7 +14573,7 @@ document.querySelector("#openHairProject").addEventListener("click", async () =>
         }]
       });
       const file = await handle.getFile();
-      await openHairProjectFile(file, { handle });
+      await ioApi.openHairProjectFile(file, { handle });
       return;
     } catch (error) {
       if (error?.name === "AbortError") return;
@@ -15389,7 +14584,7 @@ document.querySelector("#openHairProject").addEventListener("click", async () =>
 });
 hairProjectFileInput.addEventListener("change", () => {
   const [file] = hairProjectFileInput.files;
-  if (file) openHairProjectFile(file);
+  if (file) ioApi.openHairProjectFile(file);
 });
 
 
@@ -15421,10 +14616,10 @@ hairProjectFileInput.addEventListener("change", () => {
 
 dropImportForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  await confirmDroppedApplicationFile();
+  await ioApi.confirmDroppedApplicationFile();
 });
 [closeDropImportDialog, cancelDropImport].forEach((button) => {
-  button.addEventListener("click", closeDroppedApplicationFilePrompt);
+  button.addEventListener("click", ioApi.closeDroppedApplicationFilePrompt);
 });
 dropImportDialog.addEventListener("close", () => {
   projectState.state.pendingDroppedApplicationFile = null;
@@ -16294,7 +15489,7 @@ appMenuTriggers.forEach((trigger) => {
       createCompoundStrandButton.disabled = false;
       createCompoundStrandButton.title = "Create a new editable three-curve compound strand";
     }
-    if (menu.id === "fileMenu") renderRecentProjectsMenu();
+    if (menu.id === "fileMenu") ioApi.renderRecentProjectsMenu();
     setAppMenuOpen(trigger, menu, menu.classList.contains("hidden"));
   });
 });
@@ -16303,7 +15498,7 @@ recentProjectsMenu.addEventListener("click", async (event) => {
   const open = recentProjectsSubmenu.classList.contains("hidden");
   recentProjectsSubmenu.classList.toggle("hidden", !open);
   recentProjectsMenu.setAttribute("aria-expanded", String(open));
-  if (open) await renderRecentProjectsMenu();
+  if (open) await ioApi.renderRecentProjectsMenu();
 });
 appMenuDropdowns.forEach((menu) => {
   menu.addEventListener("click", (event) => {
@@ -16525,8 +15720,8 @@ loadPreferencesAndPresetsButton.addEventListener("click", () => {
   preferencesAndPresetsFile.value = "";
   preferencesAndPresetsFile.click();
 });
-preferencesAndPresetsFile.addEventListener("change", handlePreferencesAndPresetsFile);
-downloadPreferencesAndPresetsButton.addEventListener("click", downloadPreferencesAndPresets);
+preferencesAndPresetsFile.addEventListener("change", ioApi.handlePreferencesAndPresetsFile);
+downloadPreferencesAndPresetsButton.addEventListener("click", ioApi.downloadPreferencesAndPresets);
 preferencesDialog.addEventListener("click", (event) => {
   if (event.target === preferencesDialog) cancelPreferencesDialog();
 });
@@ -16669,7 +15864,7 @@ referenceImageFile.addEventListener("change", async () => {
   }
 });
 window.addEventListener("dragenter", (event) => {
-  if (dragContainsApplicationFile(event)) {
+  if (ioApi.dragContainsApplicationFile(event)) {
     event.preventDefault();
     referenceHeadApi.setReferenceImageDragActive(false);
     return;
@@ -16680,7 +15875,7 @@ window.addEventListener("dragenter", (event) => {
   referenceHeadApi.setReferenceDropHover(event);
 });
 window.addEventListener("dragover", (event) => {
-  if (dragContainsApplicationFile(event)) {
+  if (ioApi.dragContainsApplicationFile(event)) {
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
     referenceHeadApi.setReferenceImageDragActive(false);
@@ -16713,7 +15908,7 @@ window.addEventListener("drop", async (event) => {
     if (item?.getAsFileSystemHandle) {
       try { handle = await item.getAsFileSystemHandle(); } catch { handle = null; }
     }
-    openDroppedApplicationFilePrompt(applicationFiles[0], { handle });
+    ioApi.openDroppedApplicationFilePrompt(applicationFiles[0], { handle });
     return;
   }
   const files = transferredFiles.filter(referenceHeadApi.isSupportedReferenceImageFile);
@@ -17299,7 +16494,7 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     if (event.repeat) return;
     if (hairMaterialPanel.contains(document.activeElement)) {
-      deleteActiveHairMaterial();
+      materialApi.deleteActiveHairMaterial();
       return;
     }
     deleteCurrentSelection();
@@ -19140,7 +18335,7 @@ toggleAttributeEditorPanelButton.addEventListener("click", () => {
 
 setAttributeEditorTab("main");
 syncCompactSidebarLayout();
-syncHairMaterialEditor();
+materialApi.syncHairMaterialEditor();
 renderLockList();
 updateAttributeEditorMode();
 setSideNamingPerspective(miscState.state.sideNamingPerspective, { persist: false });

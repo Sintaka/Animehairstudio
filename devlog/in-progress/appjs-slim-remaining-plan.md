@@ -24,14 +24,14 @@
 | A3 ✅ | procedural duplicate | 22 | ~676 | 低 | 已迁出 modules/geometry/procedural-duplicate.js（radialMenuDeps 3 项重接；verify-smoke 10/11=基线） |
 | A4 ✅ | reference + head/body | 70 | ~1,288 | 低中 | 已迁出 modules/scene/reference-head.js（新建 scene 域；18 处跨模块重接含 drawFlowDeps；boot loadDefaultGuideModel 处理；verify-smoke 10/11=基线） |
 | A5 | poly tools | 28 | ~665 | ~530 | 低中 | 16 | 自洽工具集 |
-| A6 | material | 16 | ~310 | ~250 | 低 | 51 | 小但干净，material-state.js 已在 |
+| A6 ✅ | material | 16 | ~308 | 低 | 已迁出 modules/material/material-ui.js（drawFlowDeps 5 项重接；verify-smoke 10/11=基线） |
 | B1 | strand/panel/split/tip 几何与编辑 | ~100 | ~4,500 | ~3,400 | 中 | ~220 | 最大剩余块，建议分 2-3 批；与 bone roadmap 强相关（先拆几何，bones 改动落模块内更安全） |
 | B2 ✅ | draw/creation 流程 | 73 | ~1,619 | 中高 | B2-1 draw-flow.js + B2-2 placement.js 全部完成（verify-smoke 10/11=基线） |
 | B3 ✅ | preset library（含 hair 生成器） | 32+5嵌套 | ~1,980 | 中 | 已迁出 modules/io/preset-library.js（删 7 个死函数 1,072 行；装配 presetLibraryApi→creationPresets 顺序；verify-smoke 10/11=基线） |
 | B4 | taper curve editor | ~39 | ~1,680 | ~1,300 | 中 | 63 | 自洽编辑器；updateSelectedTaperPoint 单函数 601 行 |
 | B5 | sculpt 笔刷 | ~45 | ~1,000 | ~800 | 中 | ~55 | sculpt-brush.js 已有纯函数底座；delta mush 不触及 |
 | B6 ✅ | clump/procedural | 40 | ~748 | 中 | 已迁出 modules/geometry/clump-procedural.js（7 个 deps 批 19 项重接含 drawFlowDeps 4；verify-smoke 10/11=基线） |
-| C1 | IO 遗留 + rootAttachment | 26 | ~610 | ~490 | 低 | 40 | 与「createProjectSaveApi(deps) 收敛为单 store」一并收尾 |
+| C1 ✅ | IO 遗留 + rootAttachment | 22+1常量 | ~523 | 低 | 已迁出 modules/io/io-tail.js（scalpBuilderDeps 2/proceduralDuplicateDeps 1/fileApi 1 重接；createProjectSaveApi 收敛判定不值得做）；**appjs-slim-remaining-plan 全部完成** |
 
 > A=低风险快赢批（约 4,360 行净减），B=大块批（约 9,390 行），C=收尾。全部完成 app.js 可到 ~18.5k 行。
 
