@@ -113,3 +113,44 @@
 - 集成：`app.js`/`index.html` 增加 Split Tip Length + Reset Split Tips；序列化/镜像/快照/恢复接 `strandSplitBones`。
 - 验证：`node --check` 全绿；`verify-smoke` 10/11（基线一致）。
 - 延后：每管独立 Width/Depth 曲线面板、视口拖拽旋转编辑、USDA `skel:joints/weights`——随骨骼系统轮继续。
+
+---
+
+## 6. 全量统一评估（panel ↔ strand 单内核，2026-08-13）
+
+> 用户命题：panel 与普通发丝是否可合并为同一架构，仅通过创建时预设参数不同达成。结论：**可行，但不是零成本直接合并**；需要先做一次「剖面 / split / tip 子骨骼 / 每顶点权重」内核抽象，之后 panel 与 strand 才成为同一内核的两个预设。当前已具备部分共享件，仍有 4 个关键缺口。
+
+### 6.1 已共享（可复用）
+- `modules/geometry/tip-sub-bone.js`：tip 链/帧/权重纯函数，panel 与 strand 已共用（Route 1/2 落地）。
+- `modules/bones/bone-model.js`：`bonesFor` 统一视图 + `normalizeBone/normalizeStrandTip/strandSplitBones` 数据形状已基本对齐。
+- `modules/geometry/strand-sweep.js`：闭合管扫掠内核（strand + child 共用）；panel 尚未接入。
+- 序列化/镜像/快照/恢复：`splitBones` / `strandSplitBones` / `strandTip` 均已接。
+
+### 6.2 关键差距
+1. **几何拓扑不同**：
+   - strand：闭合管；split = 1 个切分 → 两根闭合管（`createSplitStrandGeometry`，`sectionBases`）。
+   - panel：开放曲面（front/back + side walls + zipper walls + caps），u 方向 N 个 zipper → N+1 段（`createPanelStrandGeometry`，`addPatch/addQuad`）。
+   - 统一需要一个 `profile` 抽象支持 `closed: true/false` 与 `splits[]`（0..N），并让 wall/cap/zipper 拓扑作为 open-profile 特例生成。
+2. **参数化维度不同**：
+   - strand 只有 t；split 由标量 `strandSplitPosition/Height/Gap`。
+   - panel 是 t×u；split 是 `panelSplits[{position,height}]`，`panelWeights` 需要 u。
+   - 统一需给 strand 一个隐式 u（剖面环/宽度坐标），或让权重只依赖「leaf bone + t」、split 位置由 leaf 决定。
+3. **每顶点权重索引模型不同**：
+   - panel：`panelWeights[vertex*3] = [mainJoint, segment, weight]`（panel-tip-strand.js L889/894）。
+   - strand split：`strandSplitWeights[vertex*3] = [tube, 0, weight]`（strand-geometry.js L169）。
+   - 统一为 `[leafBone, weight]`（或 `[main, leaf, weight]`）后，高亮 / USDA / 镜像可共用。
+4. **数据模型与 UI 不同**：
+   - panel：`panelSplits` + `splitBones`；segment selector + spread + 每段 Width/Depth 曲线 + zipper/tip 手柄。
+   - strand：`strandSplit*` + `strandSplitBones`（2 管）+ `strandTip`；Split Spacing + Split Tip Length + 单尖/两管手柄。
+   - 统一为 `splits`（通用）+ `tipBones`（通用 leaf list）+ `profile` 预设；编辑器改为 leaf 驱动（现有 `taper-editor` 的 segment 模式可泛化）。
+
+### 6.3 推荐路线（达成「仅预设不同」）
+- Phase A（已完成）：tip 原语 + `bonesFor` + strand 单尖/两管 tip。
+- Phase B：抽象通用 `leafWeights`，统一 panel/strand 每顶点权重形状。
+- Phase C：泛化 `sweepSide` 支持 open profile + 0..N splits；panel 改走该内核，保留 zipper wall/cap 生成作为 open-profile 特例。
+- Phase D：数据字段迁移 `panelSplits/splitBones` → 通用 `splits/tipBones`（旧档兼容），UI 改为 leaf 驱动；`createHairGeometry` 单入口。
+
+### 6.4 风险与回归
+- child-strand bridge 依赖 `createSplitStrandGeometry` 的 `sectionBases/splitFusedGrid/quadFaces/triangleEdgeMasks` userData 契约，内核泛化必须保持。
+- panel 水密性、线框 mask、折叠 quad 清理、镜像段序、旧 .ahs 派生默认不能破坏。
+- 建议按 Phase 提交，每 Phase `node --check` + `verify-smoke`（10/11 基线）+ seam/契约 CDP。
