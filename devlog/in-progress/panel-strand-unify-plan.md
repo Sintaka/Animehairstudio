@@ -37,7 +37,7 @@
 
 ## 5. 本轮执行细化（2026-08-13，supervisor 落地）
 
-> 状态：进行中。把 §3「待接手 agent 补齐」落成可执行的字段/API/文件边界与分派顺序。编码铁律见 `devlog/APPJS_SPLIT_GUIDE.md` §7：改中文文件一律 UTF-8 无 BOM + CRLF，禁止 PowerShell 管道喂中文给 node stdin。
+> 状态：Route 1 已实现（2026-08-13），Route 2 待执行。本节把 §3「待接手 agent 补齐」落成可执行的字段/API/文件边界与分派顺序。编码铁律见 `devlog/APPJS_SPLIT_GUIDE.md` §7：改中文文件一律 UTF-8 无 BOM + CRLF，禁止 PowerShell 管道喂中文给 node stdin。
 
 ### 5.1 分派顺序（文件不相交）
 
@@ -79,3 +79,13 @@
 - `node --check` 全绿；`node scripts/verify-smoke.mjs assets/presets/layered-side-bun.ahs` 基线 10/11（branch-bridge 内容相关失败与 HEAD 一致）。
 - 普通发丝开启/编辑 tip 不破坏默认扫掠（无 tip 时行为不变）；旧 .ahs 无 `strandTip` 正常加载并派生默认。
 - USDA 骨骼导出本轮仅保证不回归（骨骼/weights 正式导出延后到骨骼系统轮）。
+
+### 5.6 Route 1 实施记录（2026-08-13）
+
+- 基础层：`modules/geometry/tip-sub-bone.js`（发丝无关 tip 链/帧/权重纯函数）+ `modules/bones/bone-model.js`（`strandTip` 数据模型、`bonesFor` 输出 `main.N-1.tip.i`）。
+- 几何层：`strand-geometry.js` `createBaseHairGeometry` 普通发丝 tip 重投影（t-only 权重 `tipWeightAt` + `tipChainFrameAt`）；`panel-tip-strand.js` 内部改用 tip-sub-bone 原语（行为不变）。
+- 视口层：`bone-view-handles.js` 普通发丝 tip 手柄 + 引导线（显示，拖拽编辑延后）。
+- 修复跨层消费：`bone-interaction.js` 两处普通对象→Vector3；`scripts/verify-tip-select.mjs` 同修。
+- 集成：app.js/ index.html 增加 Tip Sub-Bone 控件（enable / tip start / tip length / reset）；快照/镜像/恢复/保存接 `strandTip`/`strandTipStart`；版本 0.2.62，缓存号 20260813-1。
+- 验证：`node --check` 全绿；`verify-smoke` 10/11（branch-bridge 内容相关失败与基线一致）。
+- 明确延后：普通发丝 tip 的视口拖拽/旋转编辑、骨骼 registry 统一、USDA weights/skel:joints——待「骨骼系统」轮随普适化继续。

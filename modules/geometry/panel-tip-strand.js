@@ -8,11 +8,18 @@ import {
   sampleTaperCurve
 } from "./curve-math.js?v=20260811-1";
 import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260727-5";
-import { cloneSplitBones } from "../bones/bone-model.js?v=20260812-1";
+import { cloneSplitBones } from "../bones/bone-model.js?v=20260813-1";
+import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260813-1";
 
 // Shared tip width control point count: 5 midpoints (common fork) + the tip end (t=1).
 // app.js createCurveObjects reuses this constant for the viewport tip width handles.
 export const TIP_WIDTH_CONTROL_POINTS = 5;
+
+// splitTipForSegment returns plain {x,y,z} chain points from the tip-sub-bone
+// primitives; consumers that need real THREE.Vector3 (CatmullRomCurve3) convert here.
+function tipChainPointsAsVectors(points) {
+  return points.map((point) => new THREE.Vector3(point.x, point.y, point.z));
+}
 
 export function createPanelTipStrandApi(deps) {
   // deps: store proxy (sculptState.state) + app.js helper functions (clonePanelSplits/
@@ -480,30 +487,16 @@ function tipSurfaceFrameAt(lock, t, centerU = null, segmentIndex = -1, splits = 
 // 被主骨骼法线限制。segment 段中心使用 tipSurfaceFrameAt（垂直于面板表面、含
 // camber/曲率），非 segment 回退 tipPanelFrameAt。
 function tipChainFrameAt(lock, tip, restTip, t, segmentIndex = -1, splits = null) {
-  const curve = new THREE.CatmullRomCurve3(tip.points);
-  const rest = restTip && Array.isArray(restTip.restPoints) ? restTip : tip;
-  const restCurve = new THREE.CatmullRomCurve3(rest.restPoints);
-  const authoredTangent = curve.getTangent(t).normalize();
-  const restTangent = restCurve.getTangent(t).normalize();
-  const dq = restTangent.dot(authoredTangent) < -0.9999
-    ? (new THREE.Quaternion()).setFromAxisAngle(
-      Math.abs(restTangent.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0),
-      Math.PI
-    )
-    : (new THREE.Quaternion()).setFromUnitVectors(restTangent, authoredTangent);
-  const y = authoredTangent;
   const panel = tipPanelFrameAt(lock, t);
   // 段中心处用面板表面帧（垂直于面板表面、含 camber/曲率）作为参考法线，而不是
   // 直接沿用主面板法线：发尖子骨骼的横向/法线跟随主发片构建曲线的表面曲率。
   const referenceZ = (segmentIndex >= 0 && Array.isArray(splits) && splits.length)
     ? tipSurfaceFrameAt(lock, t, null, segmentIndex, splits).z
     : panel.z;
-  const z = referenceZ.clone().applyQuaternion(dq);
-  z.addScaledVector(y, -z.dot(y));
-  if (z.lengthSq() < 1e-8) z.copy(panel.z);
-  z.normalize();
-  const x = new THREE.Vector3().crossVectors(y, z).normalize();
-  return { x, y, z };
+  // Delegate to the strand-agnostic tip-sub-bone primitive: y = authored chain
+  // tangent, z = reference normal rotated by the rest->authored bend (Gram-Schmidt
+  // against y), x = lateral (binormal). Accepts plain {x,y,z} chain points.
+  return tipSubBoneTipChainFrameAt(restTip, tip, t, referenceZ);
 }
 
 // Edge position of a tip side at chain parameter t, matching the geometry's own tip
@@ -513,7 +506,7 @@ function tipChainFrameAt(lock, tip, restTip, t, segmentIndex = -1, splits = null
 function tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t) {
   const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
   if (!tip || tip.points.length < 2 || !tip.restPoints || tip.restPoints.length < 2) return null;
-  const curve = new THREE.CatmullRomCurve3(tip.points);
+  const curve = new THREE.CatmullRomCurve3(tipChainPointsAsVectors(tip.points));
   const authoredCenter = curve.getPoint(t);
   const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
   if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return null;
@@ -661,37 +654,12 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
   const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
   const mainCount = Array.isArray(lock.points) ? lock.points.length : 0;
   if (mainCount < 2) return null;
-  const restPoints = [];
-  for (let index = 0; index < mainCount; index += 1) {
-    const t = index / Math.max(1, mainCount - 1);
-    // 发尖子骨骼 rest 链沿主发片构建曲线在段中心的表面曲率生成（法线垂直于面板
-    // 表面、含 camber/曲率），不再沿用主骨骼法线。rest 基准变化后，旧数据的
-    // authored delta 会在新 rest 上重新叠加，无需改动 .ahs 文件。
-    restPoints.push(tipSurfaceFrameAt(lock, t, centerU, segmentIndex, splits).point);
-  }
-  const authored = splitBone?.tip;
-  const twists = (authored && Array.isArray(authored.twists))
-    ? restPoints.map((_, index) => Number(authored.twists[index]) || 0)
-    : restPoints.map(() => 0);
-  if (
-    authored
-    && Array.isArray(authored.points)
-    && Array.isArray(authored.restPoints)
-    && authored.points.length === restPoints.length
-    && authored.restPoints.length === restPoints.length
-  ) {
-    const delta = authored.points.map((point, index) => {
-      const rest = authored.restPoints[index] || { x: 0, y: 0, z: 0 };
-      return new THREE.Vector3(point.x - rest.x, point.y - rest.y, point.z - rest.z);
-    });
-    return {
-      restPoints,
-      points: restPoints.map((point, index) => point.clone().add(delta[index])),
-      twists,
-      active: authored.active !== false
-    };
-  }
-  return { restPoints, points: restPoints.map((point) => point.clone()), twists, active: true };
+  // 发尖子骨骼 rest 链沿主发片构建曲线在段中心的表面曲率生成（法线垂直于面板
+  // 表面、含 camber/曲率），不再沿用主骨骼法线。rest 基准变化后，旧数据的
+  // authored delta 会在新 rest 上重新叠加，无需改动 .ahs 文件。
+  const restPointAt = (t) => tipSurfaceFrameAt(lock, t, centerU, segmentIndex, splits).point;
+  const chain = materializeTipChain(splitBone?.tip || null, restPointAt, mainCount);
+  return { restPoints: chain.restPoints, points: chain.points, twists: chain.twists, active: chain.active };
 }
 
 function createPanelStrandGeometry(lock) {
@@ -855,9 +823,9 @@ function createPanelStrandGeometry(lock) {
     const tip = (!latticeControlled && segment >= 0 && hasZipper)
       ? splitTipForSegment(lock, segment, splits, bone)
       : null;
-    const tipCurve = tip && tip.points.length >= 2 ? new THREE.CatmullRomCurve3(tip.points) : null;
+    const tipCurve = tip && tip.points.length >= 2 ? new THREE.CatmullRomCurve3(tipChainPointsAsVectors(tip.points)) : null;
     const tipRestCurve = tip && tip.restPoints && tip.restPoints.length >= 2
-      ? new THREE.CatmullRomCurve3(tip.restPoints)
+      ? new THREE.CatmullRomCurve3(tipChainPointsAsVectors(tip.restPoints))
       : tipCurve;
     const front = [];
     const back = [];

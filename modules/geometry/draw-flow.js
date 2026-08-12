@@ -20,7 +20,7 @@ import {
   bonesToData,
   splitBonesFromData,
   splitBonesToData
-} from "../bones/bone-model.js?v=20260812-1";
+} from "../bones/bone-model.js?v=20260813-1";
 import {
   CURVE_LATTICE_FEATURE_ENABLED,
   DEFAULT_BRAID_MESH_PRESET,

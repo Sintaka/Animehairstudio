@@ -1,8 +1,9 @@
 // bone-view-handles.js - Viewport bone/segment/split handle create/update/dispose (refactor bones B3).
 // Extracted from app.js; coupling injected via createBoneViewHandlesApi(deps).
 import * as THREE from "three";
-import { splitBonesFor } from "./bone-model.js?v=20260812-1";
-import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260812-1";
+import { splitBonesFor, strandTipFor } from "./bone-model.js?v=20260813-1";
+import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260813-1";
+import { materializeTipChain, sampleTipPosition } from "../geometry/tip-sub-bone.js?v=20260813-1";
 
 // deps: store .state proxies (sculptState/sel) + module instances (panelTipStrand) + shared
 //   objects (transformControls) + app.js helper functions (clonePanelSplits/isPanelGeometry/
@@ -174,6 +175,8 @@ function createBoneViewHandles(lock, group) {
   }
   let strandSplitHandle = null;
   let strandSplitLine = null;
+  let strandTipHandle = null;
+  let strandTipLine = null;
   if (lock.geometryType === "strand") {
     strandSplitLine = new THREE.Line(
       new THREE.BufferGeometry(),
@@ -185,6 +188,28 @@ function createBoneViewHandles(lock, group) {
     strandSplitHandle.userData.lockId = lock.id;
     strandSplitHandle.userData.strandSplitHandle = true;
     group.add(strandSplitHandle);
+    // Ordinary-strand single tip sub-bone handle + guide line (Route 1); shown only
+    // when the lock is a non-split, non-hair-card strand with a materialized strandTip.
+    strandTipLine = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0xffd84d, transparent: true, opacity: 0.7, depthTest: false })
+    );
+    strandTipLine.renderOrder = 6;
+    strandTipLine.userData.lockId = lock.id;
+    strandTipLine.userData.strandTipLine = true;
+    group.add(strandTipLine);
+    strandTipHandle = createSplitControlHandle();
+    strandTipHandle.scale.setScalar(0.5);
+    strandTipHandle.material = new THREE.MeshBasicMaterial({
+      color: 0xffd84d,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.9
+    });
+    strandTipHandle.userData.lockId = lock.id;
+    strandTipHandle.userData.strandTipHandle = true;
+    group.add(strandTipHandle);
   }
   let branchSweepStartHandle = null;
   if (lock.branchRootRegion) {
@@ -213,6 +238,8 @@ function createBoneViewHandles(lock, group) {
     tipWidthLines,
     strandSplitHandle,
     strandSplitLine,
+    strandTipHandle,
+    strandTipLine,
     branchSweepStartHandle
   };
 }
@@ -471,6 +498,34 @@ function updateBoneViewHandles(lock, ctx) {
     }
   }
   if (strandSplitLine && !strandSplitVisible) strandSplitLine.visible = false;
+  const strandTip = strandTipFor(lock);
+  const strandTipHandle = lock.curveObjects.strandTipHandle;
+  const strandTipLine = lock.curveObjects.strandTipLine;
+  if (strandTipHandle) {
+    const strandTipVisible = !sculptBrushHelpersSuppressed
+      && !brushDebugVisible
+      && lock.geometryType === "strand"
+      && !lock.hairCard
+      && !lock.strandSplitEnabled
+      && Boolean(strandTip);
+    strandTipHandle.visible = strandTipVisible;
+    if (strandTipLine) strandTipLine.visible = strandTipVisible;
+    if (strandTipVisible) {
+      const tipChain = materializeTipChain(
+        strandTip,
+        (t) => deps.strandGeometryCurve(lock).getPoint(t),
+        Math.max(2, Array.isArray(lock.points) ? lock.points.length : 2)
+      );
+      const tipEnd = sampleTipPosition(tipChain, 1);
+      strandTipHandle.position.set(tipEnd.x, tipEnd.y, tipEnd.z);
+      if (strandTipLine) {
+        strandTipLine.geometry.dispose();
+        const points = tipChain.points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+        strandTipLine.geometry = new THREE.BufferGeometry().setFromPoints(points);
+        strandTipLine.visible = true;
+      }
+    }
+  }
   const branchSweepStartHandle = lock.curveObjects.branchSweepStartHandle;
   if (branchSweepStartHandle) {
     const sweepStartVisible = !sculptBrushHelpersSuppressed && !lock.locked && lock.id === deps.sel.selectedId && lock.branchRootRegion;
@@ -541,6 +596,14 @@ function disposeBoneViewHandles(curveObjects) {
   if (curveObjects.strandSplitLine) {
     curveObjects.strandSplitLine.geometry.dispose();
     curveObjects.strandSplitLine.material.dispose();
+  }
+  if (curveObjects.strandTipHandle) {
+    curveObjects.strandTipHandle.geometry.dispose();
+    curveObjects.strandTipHandle.material.dispose();
+  }
+  if (curveObjects.strandTipLine) {
+    curveObjects.strandTipLine.geometry.dispose();
+    curveObjects.strandTipLine.material.dispose();
   }
 }
 

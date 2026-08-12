@@ -678,7 +678,7 @@ try {
       const bone = bones[seg] || null;
       const tip = t.splitTipForSegment(lock, seg, splits, bone);
       if (!tip || tip.points.length < 2) continue;
-      const curve = new t.THREE.CatmullRomCurve3(tip.points);
+      const curve = new t.THREE.CatmullRomCurve3(tip.points.map((p) => new t.THREE.Vector3(p.x, p.y, p.z)));
       for (const tt of [0.6, 0.8, 0.95]) {
         const at = curve.getTangent(tt).normalize();
         for (const side of [-1, 1]) {

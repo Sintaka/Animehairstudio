@@ -1,7 +1,7 @@
 // segment-control.js - Panel segment control glue (refactor bones B1).
 // Extracted from app.js; coupling injected via createXxxApi(deps).
 import * as THREE from "three";
-import { splitBonesFor, materializeSplitBones } from "./bone-model.js?v=20260812-1";
+import { splitBonesFor, materializeSplitBones } from "./bone-model.js?v=20260813-1";
 
 // deps: store .state proxies (sculptState/sel) + module instances (taperEditor/shapePresets/
 //   branchSweep) + DOM elements (panelSegmentLabel/previousPanelSegmentButton/nextPanelSegmentButton/

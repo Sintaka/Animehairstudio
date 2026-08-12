@@ -1050,6 +1050,13 @@
             <label class="toggle-row" for="strandSplitEnabled" title="Divides the strand profile into two closed branches that separate toward the tip."><span>Split Geometry</span><input id="strandSplitEnabled" type="checkbox" /></label>
             <label class="topology-control" title="Controls how far apart the two tip branches open.">Split Spacing <input id="strandSplitGap" type="range" min="0" max="0.5" step="0.01" value="0.12" /><output id="strandSplitGapValue" class="slider-value">0.12</output></label>
           </div>
+          <div id="strandTipControls" class="draw-shape-controls">
+            <div class="subsection-label">Tip Sub-Bone</div>
+            <label class="toggle-row" for="strandTipEnabled" title="Adds an editable tip sub-bone to the end of this strand (single tip)."><span>Tip Sub-Bone</span><input id="strandTipEnabled" type="checkbox" /></label>
+            <label class="topology-control" title="Sets where along the strand the tip sub-bone influence begins (t).">Tip Start <input id="strandTipStart" type="range" min="0.2" max="0.95" step="0.01" value="0.75" /><output id="strandTipStartValue" class="slider-value">0.75</output></label>
+            <label class="topology-control" title="Extends or shortens the tip along its rest tangent (negative shortens, positive extends).">Tip Length <input id="strandTipLength" type="range" min="-0.5" max="1.5" step="0.01" value="0" /><output id="strandTipLengthValue" class="slider-value">0.00</output></label>
+            <button id="resetStrandTip" type="button" title="Reset the tip sub-bone to the strand rest pose.">Reset Tip</button>
+          </div>
         </div>
 
         <div id="headPanel" class="panel-section sliders hidden" data-attribute-panel="tools">
@@ -2084,6 +2091,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260812-18"></script>
+    <script type="module" src="./app.js?v=20260813-1"></script>
   </body>
 </html>

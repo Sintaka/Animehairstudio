@@ -16,6 +16,8 @@ import {
   compoundProfileBridgePlan
 } from "./compound-strand.js?v=20260806-6";
 import { DEFAULT_SWEEP_PROFILE, ROUND_SWEEP_PROFILE } from "../core/app-config.js?v=20260809-2";
+import { strandTipFor } from "../bones/bone-model.js?v=20260813-1";
+import { materializeTipChain, tipChainFrameAt, tipWeightAt, sampleTipPosition } from "./tip-sub-bone.js?v=20260813-1";
 
 export function createStrandGeometryApi(deps) {
   // deps: api objects (branchSweep/strandSweep/branchBridge/curveSurfaceCreate/panelTipStrand/
@@ -836,8 +838,60 @@ function createBaseHairGeometry(lock) {
   });
   const { vertices, normals, tangents, uvs, colors, indices, quadFaces, actualLengthSegments } = sweep;
 
+  // Route 1: regular-strand single tip sub-bone (strandTip). When strandTip is null
+  // (or a row's tip weight is <= 0) the whole path stays identical to the base sweep.
+  const authoredStrandTip = (lock.geometryType === "strand" && !lock.strandSplitEnabled) ? strandTipFor(lock) : null;
+  const strandTip = authoredStrandTip && authoredStrandTip.active !== false ? authoredStrandTip : null;
+  const tipStart = strandTip ? THREE.MathUtils.clamp(Number(lock.strandTipStart ?? 0.75), 0.2, 0.95) : null;
+  let tipChain = null;
+  let tipFrames = null;
+  if (strandTip) {
+    // Same lengthSegments derivation as the shared sweep kernel, so the re-projection
+    // rows align 1:1 with the swept vertices (tipCurveParameters.length ===
+    // actualLengthSegments + 1; both call deps.strandCurveParameters on the same curve).
+    const curlSegments = lock.curlEnabled ? Math.ceil(Number(lock.curlCount ?? 4) * 14) : 0;
+    const tipLengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), curlSegments), 4, 256);
+    const tipCurveParameters = deps.strandCurveParameters(lock, curve, tipLengthSegments);
+    tipFrames = [];
+    let tipPrevFrame = null;
+    for (let row = 0; row <= actualLengthSegments; row += 1) {
+      tipPrevFrame = deps.strandGeometryFrameAt(lock, curve, tipCurveParameters[row], tipPrevFrame);
+      tipFrames.push(tipPrevFrame);
+    }
+    // Tip chain: rest runs along the strand's own center line (curve.getPoint); the
+    // authored lock.strandTip deltas are re-applied over that rest by materializeTipChain.
+    const tipCount = Math.max(2, Array.isArray(lock.points) ? lock.points.length : 2);
+    tipChain = materializeTipChain(strandTip, (t) => curve.getPoint(t), tipCount);
+    // Re-project tip rows: blend each swept ring toward the tip chain's own frame by
+    // the t-only tip weight (0 before tipStart, 1 at the strand end). Vertex
+    // indices/faces are unchanged.
+    for (let row = 0; row <= actualLengthSegments; row += 1) {
+      const t = tipCurveParameters[row];
+      const w = tipWeightAt(t, tipStart);
+      if (w <= 0) continue;
+      const frame = tipFrames[row];
+      const referenceZ = frame.z.clone();
+      const tipFrame = tipChainFrameAt(tipChain, tipChain, t, referenceZ);
+      const tipCenter = sampleTipPosition(tipChain, t);
+      const scaleX = sampleScale(lock.pointScales, t, "x");
+      const scaleZ = sampleScale(lock.pointScales, t, "z");
+      const warped = deps.strandProfileTopologyAt(lock, t, profileSlotPoints, scaleX, scaleZ);
+      for (let column = 0; column < profileVertexCount; column += 1) {
+        const idx = row * profileVertexCount + column;
+        const original = new THREE.Vector3(vertices[idx * 3], vertices[idx * 3 + 1], vertices[idx * 3 + 2]);
+        const target = new THREE.Vector3(tipCenter.x, tipCenter.y, tipCenter.z)
+          .addScaledVector(tipFrame.x, warped[column].x)
+          .addScaledVector(tipFrame.z, warped[column].z);
+        const final = original.clone().lerp(target, w);
+        vertices[idx * 3] = final.x;
+        vertices[idx * 3 + 1] = final.y;
+        vertices[idx * 3 + 2] = final.z;
+      }
+    }
+  }
+
   const startPoint = curve.getPoint(0);
-  const endPoint = curve.getPoint(1);
+  let endPoint = curve.getPoint(1);
   const startCenter = vertices.length / 3;
   vertices.push(startPoint.x, startPoint.y, startPoint.z);
   normals.push(0, 1, 0);
@@ -847,9 +901,18 @@ function createBaseHairGeometry(lock) {
   const startColor = deps.strandInfluenceColor(lock, 0);
   colors.push(startColor.r, startColor.g, startColor.b);
   const endCenter = vertices.length / 3;
+  let endFrame = deps.strandGeometryFrameAt(lock, curve, 1);
+  // Tip end cap: the cap center and outward follow the tip chain end (length edits
+  // may extend past the rest curve end). startPoint/startFrame stay on the rest curve.
+  if (strandTip && tipFrames && tipChain) {
+    const tipEndReferenceZ = tipFrames[actualLengthSegments].z.clone();
+    const tipEndFrame = tipChainFrameAt(tipChain, tipChain, 1, tipEndReferenceZ);
+    const tipEndPoint = sampleTipPosition(tipChain, 1);
+    endPoint = new THREE.Vector3(tipEndPoint.x, tipEndPoint.y, tipEndPoint.z);
+    endFrame = tipEndFrame;
+  }
   vertices.push(endPoint.x, endPoint.y, endPoint.z);
   normals.push(0, -1, 0);
-  const endFrame = deps.strandGeometryFrameAt(lock, curve, 1);
   tangents.push(endFrame.x.x, endFrame.x.y, endFrame.x.z, 1);
   uvs.push(0.5, 1);
   const endColor = deps.strandInfluenceColor(lock, 1);

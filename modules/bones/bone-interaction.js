@@ -1,7 +1,7 @@
 // bone-interaction.js - Bone gizmo / handle drag / brush interaction (refactor bones B2).
 // Extracted from app.js; coupling injected via createXxxApi(deps).
 import * as THREE from "three";
-import { splitBonesFor, materializeSplitBones } from "./bone-model.js?v=20260812-1";
+import { splitBonesFor, materializeSplitBones } from "./bone-model.js?v=20260813-1";
 import { smoothSculptPointDeltas } from "../sculpt/sculpt-brush.js?v=20260806-1";
 
 // deps: store .state proxies (sculptState/sel/guideState/scalpState) + module instances
@@ -143,7 +143,7 @@ function beginPanelSplitHandleDrag(event) {
     deps.syncPanelSegmentControls(lock);
     const tipSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const tip = deps.panelTipStrand.splitTipForSegment(lock, tipIndex, tipSplits, splitBonesFor(lock)[tipIndex] || null);
-    if (tip && tip.points[tipPoint]) tipStartWorld = tip.points[tipPoint].clone();
+    if (tip && tip.points[tipPoint]) tipStartWorld = new THREE.Vector3(tip.points[tipPoint].x, tip.points[tipPoint].y, tip.points[tipPoint].z);
   } else if (tipWidthSegment != null && tipWidthSide != null && tipWidthIndex != null) {
     // Selecting a tip width control point also selects that tip sub-bone.
     deps.sculptState.panelTipSelection = { lockId: lock.id, segmentIndex: tipWidthSegment };
@@ -531,7 +531,7 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
     // viewport (same semantics as the main hair's orient brush). Only the section
     // orientation changes; the chain (bone position) does NOT move.
     const curve = new THREE.CatmullRomCurve3(current);
-    const restCurve = new THREE.CatmullRomCurve3(rest);
+    const restCurve = new THREE.CatmullRomCurve3(rest.map((p) => new THREE.Vector3(p.x, p.y, p.z)));
     const twistArr = (Array.isArray(authored.twists) && authored.twists.length === current.length)
       ? authored.twists.map((v) => Number(v) || 0)
       : current.map(() => 0);

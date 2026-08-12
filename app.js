@@ -3,18 +3,19 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260812-1";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260812-2";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260812-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260812-1";
-import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260812-1";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260813-1";
+import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260813-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260812-1";
 import { createSegmentControlApi } from "./modules/bones/segment-control.js?v=20260812-2";
-import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260812-1";
+import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260813-1";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260809-19";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260809-18";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260809-17";
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260809-16";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260809-15";
-import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave } from "./modules/bones/bone-model.js?v=20260812-1";
-import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260812-1";
+import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip } from "./modules/bones/bone-model.js?v=20260813-1";
+import { materializeTipChain } from "./modules/geometry/tip-sub-bone.js?v=20260813-1";
+import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260813-1";
 import { createStrandSweepApi } from "./modules/geometry/strand-sweep.js?v=20260810-2";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-15";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";
@@ -1213,6 +1214,7 @@ const strandCreationDefaults = {
   strandSplitPosition: 0,
   strandSplitHeight: 0.3,
   strandSplitGap: 0.12,
+  strandTipStart: 0.75,
   curlCount: 4,
   curlDisplacement: 0.18,
   taperCurve: DEFAULT_TAPER_CURVE.map((point) => ({ ...point })),
@@ -2732,6 +2734,16 @@ const strandSplitInputs = {
 const strandSplitValues = {
   strandSplitGap: document.querySelector("#strandSplitGapValue")
 };
+const strandTipInputs = {
+  strandTipEnabled: document.querySelector("#strandTipEnabled"),
+  strandTipStart: document.querySelector("#strandTipStart")
+};
+const strandTipValues = {
+  strandTipStart: document.querySelector("#strandTipStartValue")
+};
+const strandTipLengthInput = document.querySelector("#strandTipLength");
+const strandTipLengthValue = document.querySelector("#strandTipLengthValue");
+const resetStrandTipButton = document.querySelector("#resetStrandTip");
 const panelSplitCountValue = document.querySelector("#panelSplitCount");
 const addPanelSplitButton = document.querySelector("#addPanelSplit");
 const removePanelSplitButton = document.querySelector("#removePanelSplit");
@@ -8065,6 +8077,8 @@ function addLock(presetName, overrides = {}, options = {}) {
   lock.strandSplitPosition = THREE.MathUtils.clamp(Number(base.strandSplitPosition ?? 0), -0.8, 0.8);
   lock.strandSplitHeight = THREE.MathUtils.clamp(Number(base.strandSplitHeight ?? 0.3), 0.02, 0.8);
   lock.strandSplitGap = THREE.MathUtils.clamp(Number(base.strandSplitGap ?? 0.12), 0, 0.5);
+  lock.strandTipStart = THREE.MathUtils.clamp(Number(base.strandTipStart ?? strandCreationDefaults.strandTipStart ?? 0.75), 0.2, 0.95);
+  lock.strandTip = Array.isArray(base.strandTip?.points) ? strandTipFromData(base.strandTip, lock) : null;
   lock.profileOffset = Number(base.profileOffset ?? topologyDefaults.profileOffset ?? 0);
   const surfaceColumns = normalizeSurfaceLatticeCount(base.surfaceColumns, DEFAULT_SURFACE_LATTICE_COLUMNS);
   const surfaceRows = normalizeSurfaceLatticeCount(base.surfaceRows, DEFAULT_SURFACE_LATTICE_ROWS);
@@ -8279,6 +8293,8 @@ function createMirrorPartner(lock, options = {}) {
     strandSplitPosition: -Number(lock.strandSplitPosition ?? 0),
     strandSplitHeight: Number(lock.strandSplitHeight ?? 0.3),
     strandSplitGap: Number(lock.strandSplitGap ?? 0.12),
+    strandTipStart: Number(lock.strandTipStart ?? 0.75),
+    strandTip: mirrorStrandTip(lock.strandTip),
     panelSplitEnabled: lock.panelSplitEnabled,
     panelSplitSnapToLoops: lock.panelSplitSnapToLoops !== false,
     panelSplitHeight: lock.panelSplitHeight,
@@ -8435,6 +8451,8 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   partner.strandSplitPosition = -Number(lock.strandSplitPosition ?? 0);
   partner.strandSplitHeight = Number(lock.strandSplitHeight ?? 0.3);
   partner.strandSplitGap = Number(lock.strandSplitGap ?? 0.12);
+  partner.strandTipStart = Number(lock.strandTipStart ?? 0.75);
+  partner.strandTip = mirrorStrandTip(lock.strandTip);
   partner.panelSplitEnabled = lock.panelSplitEnabled !== false;
   partner.panelSplitSnapToLoops = lock.panelSplitSnapToLoops !== false;
   partner.panelSplitHeight = Number(lock.panelSplitHeight ?? panelCreationDefaults.panelSplitHeight);
@@ -8651,6 +8669,8 @@ function snapshotState() {
       strandSplitPosition: Number(lock.strandSplitPosition ?? 0),
       strandSplitHeight: Number(lock.strandSplitHeight ?? 0.3),
       strandSplitGap: Number(lock.strandSplitGap ?? 0.12),
+      strandTipStart: Number(lock.strandTipStart ?? 0.75),
+      strandTip: lock.strandTip ? strandTipToData(lock.strandTip) : null,
       panelSplitEnabled: lock.panelSplitEnabled !== false,
       panelSplitSnapToLoops: lock.panelSplitSnapToLoops !== false,
       panelSplitHeight: Number(lock.panelSplitHeight ?? panelCreationDefaults.panelSplitHeight),
@@ -9189,6 +9209,8 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     strandSplitPosition: THREE.MathUtils.clamp(Number(snapshot.strandSplitPosition ?? 0), -0.8, 0.8),
     strandSplitHeight: THREE.MathUtils.clamp(Number(snapshot.strandSplitHeight ?? 0.3), 0.02, 0.8),
     strandSplitGap: THREE.MathUtils.clamp(Number(snapshot.strandSplitGap ?? 0.12), 0, 0.5),
+    strandTipStart: THREE.MathUtils.clamp(Number(snapshot.strandTipStart ?? 0.75), 0.2, 0.95),
+    strandTip: strandTipFromData(snapshot.strandTip, snapshot),
     profileOffset: Number(snapshot.profileOffset ?? 0),
     geometryType: snapshot.geometryType === "surface" && snapshot.points?.length !== surfaceColumns * surfaceRows
       ? "panel"
@@ -11731,6 +11753,7 @@ function syncCreationShapeInputs() {
     drawStrandCurlCountValue.textContent = Number(defaults.curlCount).toFixed(2);
     drawStrandCurlDisplacementValue.textContent = Number(defaults.curlDisplacement).toFixed(2);
     syncStrandSplitInputs(defaults);
+    syncStrandTipInputs(defaults);
   }
   syncHairCardControls(defaults);
   if (defaults === braidCreationDefaults) {
@@ -11769,6 +11792,37 @@ function syncStrandSplitInputs(target = taperEditor.activeStrandShapeTarget()) {
   strandSplitInputs.strandSplitGap.value = gap;
   strandSplitInputs.strandSplitGap.disabled = !target.strandSplitEnabled;
   strandSplitValues.strandSplitGap.textContent = gap.toFixed(2);
+}
+
+function currentStrandTipChain(target) {
+  if (!target || target.geometryType !== "strand") return null;
+  const curve = strandGeometryCurve(target);
+  const count = Math.max(2, Array.isArray(target.points) ? target.points.length : 2);
+  return materializeTipChain(target.strandTip, (t) => curve.getPoint(t), count);
+}
+
+function currentStrandTipLength(target, chain = currentStrandTipChain(target)) {
+  if (!chain || !chain.points.length || !chain.restPoints.length) return 0;
+  const rest = new THREE.CatmullRomCurve3(chain.restPoints.map((p) => new THREE.Vector3(p.x, p.y, p.z)));
+  const restTangent = rest.getTangent(1).normalize();
+  const last = chain.points[chain.points.length - 1];
+  const restLast = chain.restPoints[chain.restPoints.length - 1];
+  return new THREE.Vector3(last.x, last.y, last.z).sub(new THREE.Vector3(restLast.x, restLast.y, restLast.z)).dot(restTangent);
+}
+
+function syncStrandTipInputs(target = taperEditor.activeStrandShapeTarget()) {
+  const strandTarget = Boolean(target && target.geometryType === "strand");
+  const enabled = strandTarget && Boolean(target.strandTip && Array.isArray(target.strandTip.points) && target.strandTip.active !== false);
+  strandTipInputs.strandTipEnabled.checked = enabled;
+  const tipStart = strandTarget
+    ? THREE.MathUtils.clamp(Number(target.strandTipStart ?? strandCreationDefaults.strandTipStart ?? 0.75), 0.2, 0.95)
+    : Number(strandCreationDefaults.strandTipStart ?? 0.75);
+  strandTipInputs.strandTipStart.value = String(tipStart);
+  strandTipValues.strandTipStart.textContent = tipStart.toFixed(2);
+  strandTipLengthInput.disabled = !enabled;
+  const length = enabled ? currentStrandTipLength(target) : 0;
+  strandTipLengthInput.value = String(length.toFixed(2));
+  strandTipLengthValue.textContent = length.toFixed(2);
 }
 
 function syncHairCardControls(target = taperEditor.activeStrandShapeTarget()) {
@@ -12177,6 +12231,7 @@ function syncInputs(lock) {
   if (isPanelGeometry(lock)) segmentApi.syncPanelShapeInputs(lock);
   if (lock.geometryType === "strand") {
     syncStrandSplitInputs(lock);
+    syncStrandTipInputs(lock);
     syncHairCardControls(lock);
   } else {
     syncHairCardControls(lock);
@@ -15194,6 +15249,90 @@ Object.entries(strandSplitInputs).forEach(([key, input]) => {
       drawFlowApi.updateDrawStrandPreview();
     }
     if (selected?.geometryType === "strand") syncMultiStrandInputs(selected);
+  });
+});
+
+function applyStrandTipToTarget(target, updater) {
+  const selected = getSelectedLock();
+  if (selected?.geometryType === "strand") {
+    editSelectedLocks((item) => { updater(item); }, { immediate: true });
+    syncMultiStrandInputs(selected);
+  } else {
+    updater(target);
+  }
+  syncStrandTipInputs(target);
+}
+
+function strandTipTarget() {
+  const selected = getSelectedLock();
+  return selected?.geometryType === "strand" ? selected : null;
+}
+
+bindUndoCapture(strandTipInputs.strandTipEnabled);
+strandTipInputs.strandTipEnabled.addEventListener("change", () => {
+  const target = strandTipTarget();
+  if (!target) return;
+  applyStrandTipToTarget(target, (item) => {
+    if (strandTipInputs.strandTipEnabled.checked) {
+      const chain = currentStrandTipChain(item);
+      if (!chain) return;
+      item.strandTip = {
+        points: chain.points.map((p) => ({ ...p })),
+        restPoints: chain.restPoints.map((p) => ({ ...p })),
+        twists: chain.twists.map((v) => Number(v) || 0),
+        active: true
+      };
+      if (item.strandTipStart == null) item.strandTipStart = 0.75;
+    } else {
+      item.strandTip = null;
+    }
+  });
+});
+
+bindUndoCapture(strandTipInputs.strandTipStart);
+strandTipInputs.strandTipStart.addEventListener("input", () => {
+  const target = strandTipTarget();
+  if (!target) return;
+  const value = THREE.MathUtils.clamp(Number(strandTipInputs.strandTipStart.value || 0.75), 0.2, 0.95);
+  strandTipValues.strandTipStart.textContent = value.toFixed(2);
+  applyStrandTipToTarget(target, (item) => { item.strandTipStart = value; });
+});
+
+bindUndoCapture(strandTipLengthInput);
+strandTipLengthInput.addEventListener("input", () => {
+  const target = strandTipTarget();
+  if (!target) return;
+  const value = THREE.MathUtils.clamp(Number(strandTipLengthInput.value || 0), -0.5, 1.5);
+  strandTipLengthValue.textContent = value.toFixed(2);
+  applyStrandTipToTarget(target, (item) => {
+    const chain = currentStrandTipChain(item);
+    if (!chain || !chain.points.length || !chain.restPoints.length) return;
+    const rest = new THREE.CatmullRomCurve3(chain.restPoints.map((p) => new THREE.Vector3(p.x, p.y, p.z)));
+    const restTangent = rest.getTangent(1).normalize();
+    const restLast = chain.restPoints[chain.restPoints.length - 1];
+    const last = new THREE.Vector3(restLast.x, restLast.y, restLast.z).addScaledVector(restTangent, value);
+    chain.points[chain.points.length - 1] = { x: last.x, y: last.y, z: last.z };
+    item.strandTip = {
+      points: chain.points.map((p) => ({ ...p })),
+      restPoints: chain.restPoints.map((p) => ({ ...p })),
+      twists: chain.twists.map((v) => Number(v) || 0),
+      active: true
+    };
+  });
+});
+
+resetStrandTipButton?.addEventListener("click", () => {
+  const target = strandTipTarget();
+  if (!target) return;
+  applyStrandTipToTarget(target, (item) => {
+    const chain = currentStrandTipChain(item);
+    if (!chain || !chain.points.length || !chain.restPoints.length) return;
+    item.strandTip = {
+      points: chain.restPoints.map((p) => ({ ...p })),
+      restPoints: chain.restPoints.map((p) => ({ ...p })),
+      twists: chain.restPoints.map(() => 0),
+      active: true
+    };
   });
 });
 
