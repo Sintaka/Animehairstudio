@@ -23,7 +23,7 @@ app.js 脊柱 (addLock/snapshot/restore/mirror/stroke 各 2 行接线) ──▶
 | 批次 | 内容 | 函数数 | 净减估 | 难度 | 说明 |
 |---|---|---|---|---|---|
 | G4 ✅ | curve-surface / surface-lattice 创建 | 50 | ~1,077 | 低 | 已迁出 modules/geometry/curve-surface-create.js（0.2.60 前，verify-smoke 10/11=基线） |
-| G7 | poly 拓扑 | 28 | ~500 | 低中 | 自洽工具集 |
+| G7 ✅ | poly 拓扑 | 28 | ~612 | 低中 | 已迁出 modules/geometry/poly-tools.js（verify-smoke 10/11=基线） |
 | G5 | taper 编辑器（含 activeTaperTarget） | 31 | ~1,180 | 中 | updateSelectedTaperPoint 601 行大函数 |
 | G1 | 面板/tip strand 几何（含 tip sub-bone 消费） | 34 | ~620 | 中 | 与 G2 同属最大块，建议与 G2 分 2 批 |
 | G2 | split strand 几何 | 1 | ~120 | 中 | 单函数但拓扑复杂 |
