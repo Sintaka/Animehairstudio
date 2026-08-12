@@ -1,4 +1,4 @@
-﻿# 统一骨骼模型（KineFX 式，混合持久化）— P1 设计
+# 统一骨骼模型（KineFX 式，混合持久化）— P1 设计
 
 > 分支：0.2.58-panel-split-refactor；目标版本 `0.1.4-Sintaka.0.2.59`。本文件为 P1 统一骨骼模型的**设计规范**；实施见 split-bone-refactor-plan.md（P1）。
 > 灵感：Houdini KineFX——所有骨骼都是普通点，带 `name` 和 transform；本项目无矩阵，只有 **P（位置）+ 旋转（四元数）**。
@@ -46,3 +46,40 @@
 - P1a：bone-model.js（bonesFor）+ splitBones 数据/序列化链路（零几何变化）。
 - P1b：createPanelStrandGeometry 重铸（见 split-bone-refactor-plan.md §3）。
 - P1c/P1d：UI/视口（段选择器、每段曲线、split 子骨骼手柄、镜像段序、EN/JA/ZH）。
+
+
+## 6. Panel ↔ 普通发丝兼容性与发尖子骨骼迁移评估（0.2.61，深度评估）
+
+> 结论：**几何层已部分统一（扫掠内核），但「split/发尖子骨骼」当前是 panel 专属；迁移到普通发丝可行，但需要先抽取发尖通用原语，并按「单发丝尖端子骨骼 → split 两管子骨骼」分两步走，而不是照搬 panel 的 u 分区/权重数学。**
+
+### 6.1 现状差异（panel vs strand）
+
+- 共享：`strand-sweep.js` `sweepSide` 已统一「默认发丝扫掠 + 子发片扫掠」（同曲线/同 `strandGeometryFrameAt`/`strandProfileTopologyAt`/`sampleScale`）。
+- panel（`createPanelStrandGeometry`）：**不走 sweepSide**——它是 u 参数化连续曲面（front/back 壳 + 墙/端盖），用 `panelWeights`（每顶点 [mainJoint, segment, weight]）+ `tipTransform` 做尖端子骨骼混合；`panelSplits` 把 u 切成 N+1 段。
+- strand split（`createSplitStrandGeometry`）：**1 个 split** 把截面多边形切成两根**闭合管子**，沿同一条曲线扫掠，开口用绝对 `splitGap × smoothstep × direction`；无子骨骼、无 tip 链、无每顶点权重（顶点只属于某根管子，不混合）。
+- 结论：两者「split」语义不同——panel 是连续曲面的 u 分区，strand 是截面多边形硬切成两根管。直接复用 panel 的 `tipSegmentWeightAt`/`splitTipForSegment` 需要 u 参数化，而普通发丝没有 u。
+
+### 6.2 发尖子骨骼的依赖清单（要迁移必须先泛化）
+
+- 数据：`lock.panelSplits` → `splitBonesFor`（N+1 split bone + tip）；strand 只有标量 `strandSplit*`。
+- 几何：`tipSegmentWeightAt`（u 边界 + 每侧 fork → weight）、`splitTipForSegment`（rest 链 + authored tip 链）、`tipTransform`（rest→authored 四元数 + twist roll）。
+- UI/手柄：`panelTipHandles/Lines`、`tipWidthHandles/Lines`、spread 手柄、segment 曲线面板——全部以 `segmentIndex`/`panelSplits` 为键。
+- 导出：`panelWeights` → USDA `skel:joints/weights`；`bonesFor` 输出 `split.k` + `split.k.tip.i`。
+
+### 6.3 兼容与复用可能
+
+- 高复用：tip 链（rest+delta）、twist roll、frame 跟随、Width/Depth 曲线采样、曲线编辑 UI、`bonesFor` 的 `kind` 标签——这些与 u 无关，可抽成发丝无关模块。
+- 低复用（panel 专属，不应硬搬）：`panelWeights` 的 u 分区、`tipWidthSpreadGap` 的段内相对开口、zipper 墙/端盖拓扑。
+- 骨骼模型已泛化：`normalizeBone/normalizeSplitBones` 已接受 `tip` 对象与曲线；`lock.bones` registry 与 `bonesFor` 的 `kind` 字段是统一接缝——普通发丝只需产出同构的 `split/tip` 条目。
+
+### 6.4 推荐迁移路线（骨骼统一视角）
+
+- **Route 1（最小，先做）**：给普通发丝加「单尖端子骨骼」——数据用 `lock.strandTip`（或单元素 `splitBones`），几何用 t-only 的 `strandTipWeights`（从 `tipStart` 到 t=1 沿整根线性爬升，无需 u），复用 `tipTransform`/`tipChainFrameAt`/曲线面板；`bonesFor` 输出 `main.N-1.tip.i`。收益最高、风险最低，直接复用现有发尖编辑 UX。
+- **Route 2（后做）**：升级 `createSplitStrandGeometry` 为「两根管子各一个子骨骼」——把绝对 `splitGap` 换成相对 spread + 每管 Width/Depth 曲线，给每顶点 [tube, weight]（现有 `sectionBases` 已能定位两根管），与 panel 语义对齐（相对、无 crossover），并接入同一套曲线 UI/手柄。
+- **统一接缝**：把 `splitBonesFor(lock)` 泛化为接受 strand split 描述（`strandSplitBones` 或由 `strandSplit*` 派生长度为 1 的 splits），`bonesFor` 已按 `kind` 输出，USDA/调试消费方即可统一。
+- 不建议：把 panel 的 `panelWeights`/zipper 数学照搬到普通发丝；u 分区应保持 panel 专属。
+
+### 6.5 决策建议
+
+- 优先级：Route 1 > Route 2 > 「全套 panel 化」。
+- 落地前先把 tip 链/weight 原语抽到发丝无关模块（如 `modules/geometry/tip-sub-bone.js`），避免 panel/strand 双份实现。

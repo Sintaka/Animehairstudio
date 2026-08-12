@@ -101,3 +101,36 @@
 - **新函数要暴露给 app.js**：加进模块 return 对象，app.js 调用点改 `api.X`。
 - **改完必验证**：node --check（.mjs 副本）+ verify-smoke（10/11 基线）+ seam/契约 CDP（如涉及 tip/bone）。
 - **编码铁律**：改任何含中文的文件都用 UTF-8 无 BOM 写入；不要用 PowerShell 管道把中文喂给 node stdin。
+
+
+## 8. 进一步瘦身评估（0.2.61，深度评估）
+
+> 结论：**app.js 已接近「编排层地板」；再拆主要是伪模块化**。真正可拆的只剩少量 UI 辅助函数簇，收益约 200–500 行，不值得为拆而拆，除非出现明确驱动（第二入口 / 测试 harness / 某功能需要独立复用）。
+
+实测基线（0.2.61）：app.js **18,412 行**、**494 个顶层 function**、**828 个顶层 const**（大量是 `document.querySelector` DOM 引用）、**1 个顶层 let（camera）**、**515 处 addEventListener**；`import` 83 条、约 30 个 `createXxxApi` 实例；modules 85 文件 / 30,939 行。原版 39,207 行 → 当前 18,412 行（−53%）。
+
+### 8.1 剩余代码三大块与是否该拆
+
+1. **脊柱（不拆=正确）**
+   - undo/snapshot/mirror 数据管线：`mirrorPartnerFor`(8222)、`snapshotState`(8552)、`pushUndoState`(8893)、`restoreState`(9111)、`restoreLock`(9156) 等，约 1,100–1,300 行。
+   - selection 粘合层：`selectLock`(11450)→`getSelectedLock`(12189)，45 函数 / 291 调用点，约 900 行。
+   - curve-objects 核心：`createCurveObjects`(10334)/`updateCurveObjects`(10510)/`syncLockFromCurve`(10945)/`rebuildLockGeometry`(10975) + `outwardNormalAtPoint`/`guidedNormalAt`/`strandGeometryCurve`/`strandGeometryFrameAt`，约 800–1,000 行。
+   - 这些是**跨子系统横切**：抽出去会形成模块间循环依赖，或把隐藏耦合显式化为「注入一切」的 deps 传参，收益为负——正是 §6 已判定的伪模块化。
+
+2. **编排/初始化/事件绑定（不拆）**
+   - 顶部 828 个 const 大多是 DOM 引用；deps 批填（7497/7576/7615/8812 等）+ bootstrap + animate + 515 个 addEventListener。这部分是「胶水」本身，拆到模块只是搬家，不减少耦合（绑定要引用所有 store/api），反而增加跳转成本。
+
+3. **过小/过散单点（拆了意义不大）**
+   - `setupEditableSliderControls`(355)、`updateInteractionLocks`(4952)、`configureTransformControls`(4963)、`pointerHitsTransformGizmo`(5015)、`rayFromViewportEvent`(5992)、`profileToCanvas`(7418)/`renderProfilePreview`(7425)/`renderHairCardCoveragePath`(7444)、`updateViewportStatsVisibility`(7959)、`strandControlPointHitFromEvent`(10276)、`renderLockList`(13440)、`bindUndoCapture`(13625)、`activateStrandControlPoint`(16980)/`addStrandControlPointSelection`(17057)/`closestStrandCurveParameter`(17184) 等。
+   - 这些都是 20–150 行的单点，散落且依赖 DOM/store/其它 app.js helper；即使全部抽出，总收益约 200–500 行，却要新增十几个「一次引用」小模块，性价比低。
+
+### 8.2 什么情况下才值得再拆
+
+- 出现**第二入口/复用需求**：如 SSR、测试 harness、Web Worker、或「无 UI 导出服务」需要复用某组 helper，再按真实边界抽。
+- 某个功能要**独立演进**且改动频繁（如 profile 预览、大纲列表、transform gizmo 命中），此时抽出可隔离回归。
+- 否则建议保持现状，把精力放在 seam/契约测试与「删除死绑定」上，而不是追求行数。
+
+### 8.3 比瘦身更划算的下一步
+
+- 用 `node scripts/gen-function-index.js` 定期刷新 FUNCTION_INDEX（0.2.61 改动后已略过期）。
+- 清理已确认的死绑定/死 DOM 引用（如 server.js `/api/save-project` 死代码）比再拆模块更实在。
