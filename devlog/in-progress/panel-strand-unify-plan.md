@@ -37,7 +37,7 @@
 
 ## 5. 本轮执行细化（2026-08-13，supervisor 落地）
 
-> 状态：Route 1 已实现（2026-08-13），Route 2 待执行。本节把 §3「待接手 agent 补齐」落成可执行的字段/API/文件边界与分派顺序。编码铁律见 `devlog/APPJS_SPLIT_GUIDE.md` §7：改中文文件一律 UTF-8 无 BOM + CRLF，禁止 PowerShell 管道喂中文给 node stdin。
+> 状态：Route 1 + Route 2 已实现（2026-08-13），剩余骨骼系统随普适化继续。本节把 §3「待接手 agent 补齐」落成可执行的字段/API/文件边界与分派顺序。编码铁律见 `devlog/APPJS_SPLIT_GUIDE.md` §7：改中文文件一律 UTF-8 无 BOM + CRLF，禁止 PowerShell 管道喂中文给 node stdin。
 
 ### 5.1 分派顺序（文件不相交）
 
