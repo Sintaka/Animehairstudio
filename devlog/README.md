@@ -25,14 +25,16 @@ python -m http.server 8080 --bind 127.0.0.1
 |---|---|
 | **新 Agent 快速入口（保留代码清单 + 决策总览，先读这个）** | [AGENT_QUICKSTART.md](AGENT_QUICKSTART.md) |
 | 重构计划 / 执行状态 | [REFACTOR_PLAN.md](REFACTOR_PLAN.md) |
+| **从原版拆分指引（完成，新 agent 必读）** | [APPJS_SPLIT_GUIDE.md](APPJS_SPLIT_GUIDE.md) |
 | 函数索引（机器生成，函数名→行号→calls） | [FUNCTION_INDEX.md](FUNCTION_INDEX.md)（`node scripts/gen-function-index.js` 重新生成） |
-| 全局状态登记表（机器生成，241 个 let 按 refs/子系统排序，阶段 3 地图） | [GLOBAL_LET_INVENTORY.md](GLOBAL_LET_INVENTORY.md)（`node scripts/gen-let-inventory.js` 重新生成） |
+| 全局状态登记表（机器生成，当前 1 个 let=camera，阶段 3 地图） | [GLOBAL_LET_INVENTORY.md](GLOBAL_LET_INVENTORY.md)（`node scripts/gen-let-inventory.js` 重新生成） |
 | 状态管理架构（scene-store 模式 / 15 个 store 清单 / 替换验证 9 点） | [STATE_MANAGEMENT.md](STATE_MANAGEMENT.md) |
 | 子发片系统架构（数据流 / 5 子系统划分 / 依赖清单 / 3d-3 拆分方案） | [BranchSystem.md](BranchSystem.md) |
 | 迁移方法论（脚本化提取 / 依赖注入 / 模块间 import / 9 点验证清单） | [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) |
 | 开发规范 / 持续修改功能（本地适配清单）/ 许可证 | [development-standards.md](development-standards.md) |
 | JS 改动标注（索引 + 6 个子系统专题） | [js-change-annotations.md](js-change-annotations.md)（索引）+ [annotations-bridge.md](annotations-bridge.md) / [annotations-region-panel.md](annotations-region-panel.md) / [annotations-root-bone.md](annotations-root-bone.md) / [annotations-split.md](annotations-split.md) / [annotations-display-fixes.md](annotations-display-fixes.md) / [annotations-adapt.md](annotations-adapt.md) |
 | **进行中计划 / In-progress plans** | [in-progress/panel-split-tip-bones.md](in-progress/panel-split-tip-bones.md)（**权威当前状态**：尖端子骨骼实施 + 修复记录 §8.5–§8.9，0.2.59）+ [in-progress/bone-system-roadmap.md](in-progress/bone-system-roadmap.md)（骨骼推进路线 + registry，Phase A/B/C 已落地 §4.5）+ [in-progress/split-bone-refactor-plan.md](in-progress/split-bone-refactor-plan.md)（Split Spacing/Trim → split 子骨骼，P1 已实现）+ [in-progress/unified-bone-model.md](in-progress/unified-bone-model.md)（KineFX 式统一骨骼模型，已实现）+ [in-progress/child-sweep-unification.md](in-progress/child-sweep-unification.md)（子发片=默认扫掠+桥接+根部移动，P2 已实现）；完成后归档 [plans/archive/](plans/archive/) |
+| 拆分延续计划（已完成） | [in-progress/appjs-slim-remaining-plan.md](in-progress/appjs-slim-remaining-plan.md)（剩余批次 A2/A3/A4/A6/B2/B3/B6/C1 全部完成）+ [in-progress/geometry-bones-extraction-plan.md](in-progress/geometry-bones-extraction-plan.md)（几何 G1-G7 + 骨骼 B0-B3 全部完成）+ 各批 <batch>-refactor-map.md 引用图 |
 | Bug 修复 / 已知问题 | [bug-fixes.md](bug-fixes.md) |
 | 修改型笔刷开发规范 | [brush-dev-spec.md](brush-dev-spec.md) |
 | 本地适配进度 | [local-adaptation-log.md](local-adaptation-log.md) |

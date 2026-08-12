@@ -1,6 +1,6 @@
 # app.js 瘦身第二阶段计划（剩余子系统迁出）
 
-> 状态：规划中（未开工）。目标版本 0.1.4-Sintaka.0.2.60+（与 delta mush 并行不冲突）。
+> 状态：**完成**（2026-08-12，A2/A3/A4/A6/B2/B3/B6/C1 全部落地，8 个 commit；app.js 26,288→18,401 行；createProjectSaveApi 收敛判定不值得做，见 APPJS_SPLIT_GUIDE.md §6）。
 > 前置：REFACTOR_PLAN 阶段 3d 批次 1-5 已完成（creation/shape preset、branch 系列、scalp、curve/guide），app.js 37,914→32,530 行。
 > 本计划基于 devlog/in-progress/ 的只读盘点（2026-08-12），行数/函数数/外部调用点为毛估（FUNCTION_INDEX 相邻函数行距）。
 

@@ -1,4 +1,4 @@
-﻿# 新 Agent 快速入口 / AGENT QUICKSTART
+# 新 Agent 快速入口 / AGENT QUICKSTART
 
 > 目的：让一个新 agent（或新开发者）在几分钟内知道「本 fork 改了哪些代码、哪些**必须保留**、当时的**决策**是什么」，避免从头通读 1.7MB 的 `app.js` 或 106KB 的 `js-change-annotations.md`。
 > 维护：功能分支合入 / daily build +1 时，如涉及本页列出的保留代码或决策，请同步更新本页；详细条目仍按主题追加到各专题文件，本页只做摘要与指针。
@@ -9,12 +9,12 @@
 2. `devlog/README.md` —— devlog 索引字典（各专题文件入口）
 3. `devlog/development-standards.md` —— 开发规范 + 「持续修改功能」清单（main 更新后要优先同步的本地功能）+ 许可证
 4. `devlog/main-sync-conflicts.md` —— 与 main 合并的全部决策（Local 选项移除、桥接区与 compound 并存策略、17 处冲突分类）
-5. 按需跳读：`devlog/js-change-annotations.md`（子系统索引表 + 指向 6 个 `annotations-*.md` 专题文件）、`devlog/FUNCTION_INDEX.md`（机器生成的函数目录）、`devlog/STATE_MANAGEMENT.md`（**状态管理架构：15 个 store 清单 + 替换验证 9 点**）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）
+5. 按需跳读：`devlog/APPJS_SPLIT_GUIDE.md`（**从原版拆分指引**：历程/当前架构/拆分模式/每批执行模板/踩坑/定位字典，新 agent 必读）、`devlog/js-change-annotations.md`（子系统索引表 + 指向 6 个 `annotations-*.md` 专题文件）、`devlog/FUNCTION_INDEX.md`（机器生成的函数目录）、`devlog/STATE_MANAGEMENT.md`（**状态管理架构：15 个 store 清单 + 替换验证 9 点**）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）
 
 ## 1. 仓库结构速览
 
-- `app.js`（≈1.6MB 单体）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 全部在这里。
-- `modules/*.js` —— 按域分目录（core/data/geometry/io/edit/sculpt/material/branch/scalp）；**全局状态已收敛到 15 个 store**（见 `devlog/STATE_MANAGEMENT.md`），不要再新增 app.js 全局 let。
+- `app.js`（≈18.4k 行，编排层）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 等业务逻辑已按子系统迁入 modules（见 `APPJS_SPLIT_GUIDE.md` §2）。
+- `modules/*.js` —— 按域分目录（core/data/geometry/io/edit/sculpt/material/branch/scalp/bones/scene，共 85 个文件）；**全局状态已收敛到 15 个 store，全局 let 只剩 camera**（见 `devlog/STATE_MANAGEMENT.md`），不要再新增 app.js 全局 let。
 - `index.html` / `styles.css` —— UI。
 - `server.js` —— main 带来的静态文件服务；`/api/save-project` 已是**死代码**（三个 Local 选项已移除，勿再调用）。
 - `devlog/` —— 全部开发记录（本页所在）。
@@ -43,7 +43,7 @@
 
 ### 2.5 Panel Split 子骨骼 / 统一骨骼模型（0.2.59 起）
 - `lock.splitBones`：每 split 段一个完整变换骨骼（P/orient 四元数/spread + 每段 Width/Depth 曲线）；**混合持久化**——旧档无字段时内存派生、编辑后整体落盘；镜像段序反转 mirrorSplitBones。
-- `modules/geometry/bone-model.js`：`bonesFor(lock)` 统一骨骼视图（main/split/child 命名空间，主骨骼有子骨骼才架空）；`splitBonesFor`/`materializeSplitBones`。
+- `modules/bones/bone-model.js`：`bonesFor(lock)` 统一骨骼视图（main/split/child 命名空间，主骨骼有子骨骼才架空）；`splitBonesFor`/`materializeSplitBones`。
 - `createPanelStrandGeometry`：段内局部 u' + 每段曲线 + **相对缩放**（恒 uStart≤uEnd 根除 crossover），删除 trim/gap 位移；**zipper 水密拓扑保留**（墙 quad/端盖/snap-to-loops/退化跳过/焊接/法线平滑）。
 - 子发片扫掠统一：`modules/geometry/strand-sweep.js`（`sweepSide`），`createBranchChildGeometry` = 默认扫掠 + 桥接 + 根部移动优化。
 
@@ -69,7 +69,7 @@
 - **分支**：新功能必须独立 checkout 新分支；禁止直接 merge main；合并/冲突处理由主进程负责。
 - **查代码**：先用 `Select-String` / `git grep` 按函数名定点搜（第 2 节已列关键函数名），**不要整文件读**。
 - **记 devlog**：每 commit 一句话 + 指向详细文件；新条目追加到对应专题文件，不重复全文。
-- **验证**：Playwright headless + 静态服务器 `127.0.0.1:8080` + `D:/Downloads/Sussurro_v1_004*.ahs`（当前常用 0043）；不要用 `file://` 打开。
+- **验证**：`node scripts/verify-smoke.mjs assets/presets/layered-side-bun.ahs`（10/11 基线，唯一失败 branch-bridge 为内容相关）；或 Playwright headless + 静态服务器 `127.0.0.1:8080` + `D:/Downloads/Sussurro_v1_004*.ahs`（当前常用 0043）；不要用 `file://` 打开。
 - **版本/缓存号**：改 `modules/core/app-config.js` 的 `APP_VERSION` 与 `index.html` 缓存号 `?v=YYYYMMDD-N`，与 devlog「最近版本」保持一致。
 
 ## 5. 常见坑（吸取过的教训）
