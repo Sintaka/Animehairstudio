@@ -1,6 +1,7 @@
 import { createScalpBuilderApi } from "./modules/scalp/scalp-builder.js?v=20260811-1";
 import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260811-3";
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260812-1";
+import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260812-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260812-1";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260809-19";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260809-18";
@@ -1519,6 +1520,12 @@ const curveSurfaceCreate = createCurveSurfaceCreateApi(curveSurfaceCreateDeps);
 // Poly topology editing api (refactor 3d batch G7): deps filled in one batch after the last dep is
 // defined; no boot-time calls before the batch, see devlog/in-progress/g7-poly-refactor-map.md.
 const polyToolsDeps = {};
+
+// Taper curve editor api (refactor 3d batch G5): deps filled in one batch after the last dep is
+// defined (after createShapePresetsApi); no boot-time calls before the batch, see
+// devlog/in-progress/g5-taper-refactor-map.md.
+const taperEditorDeps = {};
+const taperEditor = createTaperEditorApi(taperEditorDeps);
 const polyToolsApi = createPolyToolsApi(polyToolsDeps);
 const scalpBuilderTemplateOverlay = new THREE.Group();
 scalpBuilderTemplateOverlay.visible = false;
@@ -1969,7 +1976,7 @@ const restoreRefreshes = new RestoreRefreshRegistry()
   .register("placement-status", updatePlacementStatus)
   .register("display-visibility", applyDisplayVisibilityFilters)
   .register("sculpt-brush-debug", refreshSculptBrushDebugAfterStateRestore)
-  .register("curve-editors", refreshTaperCurveEditorAfterStateRestore);
+  .register("curve-editors", taperEditor.refreshTaperCurveEditorAfterStateRestore);
 const strandGroupOpen = new Map(STRAND_GROUPS.map((group) => [group.id, true]));
 const strandLayerOpen = new Map();
 const referenceGroupOpen = new Map(["overlay", "front", "back", "left", "right"].map((id) => [id, true]));
@@ -9439,10 +9446,10 @@ function triangulatePolygon3D(points, outward) {
 
 const branchSweep = createBranchSweepApi({
   activeCreationShapeDefaults, activeProfileOffset, applyGroupDefaultsToExistingStrands,
-  closeTaperCurveEditor, compatibleSelectedLocks, creationToolActive, editSelectedLocks,
+  closeTaperCurveEditor: taperEditor.closeTaperCurveEditor, compatibleSelectedLocks, creationToolActive, editSelectedLocks,
   getSelectedLock, profileToCanvas, renderHairCardCoveragePath, renderProfilePreview,
-  strandRegionDisplayLabel, syncShapePresetSelects, taperMeshPointExtentPerValue,
-  taperMeshPointFrame, taperSamples, updateDrawStrandPreview, updateViewportStatsVisibility, locks,
+  strandRegionDisplayLabel, syncShapePresetSelects, taperMeshPointExtentPerValue: taperEditor.taperMeshPointExtentPerValue,
+  taperMeshPointFrame: taperEditor.taperMeshPointFrame, taperSamples: taperEditor.taperSamples, updateDrawStrandPreview, updateViewportStatsVisibility, locks,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT, TWIST_CURVE_VALUE_MAX, STRAND_GROUPS,
   sculptState: sculptState.state, projectState: projectState.state, selState: sel.state, miscState: miscState.state
 });
@@ -10699,9 +10706,6 @@ function activeCreationShapeDefaults() {
   return strandCreationDefaults;
 }
 
-function activeStrandShapeTarget() {
-  return getSelectedLock() || (creationToolActive() ? activeCreationShapeDefaults() : null);
-}
 
 function curvePolylineLength(points) {
   let length = 0;
@@ -10906,33 +10910,6 @@ function renderHairCardCoveragePath(path, profile, visible, mapPoint) {
   );
 }
 
-function activeTaperTarget() {
-  if (!sculptState.state.taperCurveEdit) return null;
-  if (sculptState.state.taperCurveEdit.type === "segment") {
-    // The editor target for a segment is its split sub-bone (live reference into
-    // lock.splitBones); curve edits mutate the bone directly.
-    const lock = locks.find((item) => item.id === sculptState.state.taperCurveEdit.id);
-    if (!lock) return null;
-    // 复用已 materialize 的 lock.splitBones（live 引用）：每次重新调用
-    // materializeSplitBones 都会深克隆曲线数组，导致浮动面板拖动 segment 曲线点
-    // 时写进临时数组、宽度不生效。length 不匹配（splits 变化）时才重新 materialize。
-    const splitCount = (Array.isArray(lock.panelSplits) ? lock.panelSplits.length : 0) + 1;
-    const bones = (Array.isArray(lock.splitBones) && lock.splitBones.length === splitCount)
-      ? lock.splitBones
-      : materializeSplitBones(lock);
-    const bone = bones[sculptState.state.taperCurveEdit.segmentIndex] || null;
-    if (!bone) return null;
-    const curveKey = sculptState.state.taperCurveEdit.curveKey;
-    if (!Array.isArray(bone[curveKey]) || !bone[curveKey].length) {
-      bone[curveKey] = shapePresets.cloneShapePresetValue(lock[curveKey]);
-    }
-    if (bone.centerAsymmetricProfile == null) bone.centerAsymmetricProfile = Boolean(lock.centerAsymmetricProfile);
-    return bone;
-  }
-  if (sculptState.state.taperCurveEdit.type === "group") return strandGroupDefaults[sculptState.state.taperCurveEdit.id] || null;
-  if (sculptState.state.taperCurveEdit.type === "creation") return activeCreationShapeDefaults();
-  return locks.find((lock) => lock.id === sculptState.state.taperCurveEdit.id) || null;
-}
 
 
 
@@ -10953,7 +10930,7 @@ const shapePresets = createShapePresetsApi({
   syncCreationShapeInputs,
   editSelectedLocks,
   syncInputs,
-  shapeTargetForSelect,
+  shapeTargetForSelect: taperEditor.shapeTargetForSelect,
   syncShapePresetSelects,
   SHAPE_PRESETS,
   strandCreationDefaults,
@@ -10961,99 +10938,96 @@ const shapePresets = createShapePresetsApi({
   panelCreationDefaults
 });
 
-function activeTaperCurve() {
-  const target = activeTaperTarget();
-  if (!target || !sculptState.state.taperCurveEdit) return null;
-  if (branchSweep.twistCurveEditing()) return target.twistCurve || null;
-  if (branchSweep.proceduralBranchCurveEditing()) return target[sculptState.state.taperCurveEdit.curveKey] || null;
-  const key = sculptState.state.taperCurveEdit.side === "secondary"
-    ? shapePresets.taperSecondaryKey()
-    : sculptState.state.taperCurveEdit.curveKey;
-  return target[key] || target[sculptState.state.taperCurveEdit.curveKey] || null;
-}
-
-function ensureSecondaryTaperCurve(target, curveKey = sculptState.state.taperCurveEdit?.curveKey) {
-  if (!target || !curveKey) return null;
-  if (branchSweep.twistCurveEditing(curveKey) || branchSweep.proceduralBranchCurveEditing(curveKey)) return null;
-  const secondaryKey = shapePresets.taperSecondaryKey(curveKey);
-  if (!target[secondaryKey]?.length) {
-    target[secondaryKey] = shapePresets.cloneShapePresetValue(target[curveKey]);
-  }
-  return target[secondaryKey];
-}
-
-function taperSamples(curve, count = 80) {
-  return Array.from({ length: count + 1 }, (_, index) => {
-    const position = index / count;
-    return { position, value: sampleTaperCurve(curve, position) };
-  });
-}
-
-function ensureAsymmetricTaperPreviewElements(path) {
-  const svg = path?.ownerSVGElement;
-  if (!svg) return {};
-  let secondaryPath = svg.querySelector(".taper-preview-secondary");
-  let centerLine = svg.querySelector(".taper-preview-center");
-  if (!secondaryPath) {
-    secondaryPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    secondaryPath.setAttribute("class", "taper-preview-secondary hidden");
-    svg.insertBefore(secondaryPath, path.nextSibling);
-  }
-  if (!centerLine) {
-    centerLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    centerLine.setAttribute("class", "taper-preview-center hidden");
-    centerLine.setAttribute("x1", "9");
-    centerLine.setAttribute("y1", "35");
-    centerLine.setAttribute("x2", "151");
-    centerLine.setAttribute("y2", "35");
-    svg.insertBefore(centerLine, secondaryPath.nextSibling);
-  }
-  return { secondaryPath, centerLine };
-}
-
-function renderTaperPreview(path, target, curveKey) {
-  const curve = target?.[curveKey];
-  if (!path || !curve?.length) return;
-  const asymmetric = !branchSweep.proceduralBranchCurveEditing(curveKey)
-    && Boolean(target[shapePresets.taperAsymmetryKey(curveKey)]);
-  const baseline = asymmetric ? 35 : 63;
-  const verticalExtent = asymmetric ? 26 : 54;
-  const secondaryCurve = asymmetric ? (target[shapePresets.taperSecondaryKey(curveKey)] || curve) : null;
-  const primarySamples = taperSamples(curve, 48);
-  const secondarySamples = asymmetric ? taperSamples(secondaryCurve, 48) : [];
-  const previewValueMax = asymmetric
-    ? Math.max(0.0001, ...primarySamples.map((point) => point.value), ...secondarySamples.map((point) => point.value))
-    : TAPER_VALUE_MAX;
-  const sampled = primarySamples.map((point) => ({
-    x: 9 + point.position * 142,
-    y: baseline - (point.value / previewValueMax) * verticalExtent
-  }));
-  const line = sampled.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
-  path.setAttribute("d", `${line} L151,${baseline} L9,${baseline} Z`);
-  const { secondaryPath, centerLine } = ensureAsymmetricTaperPreviewElements(path);
-  secondaryPath?.classList.toggle("hidden", !asymmetric);
-  centerLine?.classList.toggle("hidden", !asymmetric);
-  if (!asymmetric) {
-    secondaryPath?.removeAttribute("d");
-    return;
-  }
-  const secondarySampled = secondarySamples.map((point) => ({
-    x: 9 + point.position * 142,
-    y: 35 + (point.value / previewValueMax) * 26
-  }));
-  const secondaryLine = secondarySampled
-    .map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`)
-    .join(" ");
-  secondaryPath?.setAttribute("d", `${secondaryLine} L151,35 L9,35 Z`);
-}
+// Taper curve editor api (refactor 3d batch G5): batch fill after createShapePresetsApi - the last
+// cross-module api dep (shapePresets; branchSweep is earlier) is now defined; all other deps
+// (stores/locks/DOM consts/helper functions) are defined earlier. First runtime call is the taper
+// wiring block below; module-internal cross-calls only run on user interaction.
+Object.assign(taperEditorDeps, {
+  sculptState: sculptState.state,
+  sel: sel.state,
+  hairState: hairState.state,
+  miscState: miscState.state,
+  branchSweep,
+  shapePresets,
+  locks,
+  strandGroupDefaults,
+  camera,
+  renderer,
+  raycaster,
+  taperMeshPointsGroup,
+  taperMeshPointGeometry,
+  taperMeshPointMaterial,
+  taperMeshPointSelectedMaterial,
+  taperMeshPointCenterMaterial,
+  DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE,
+  DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE,
+  taperCurveEditor,
+  taperCurveTarget,
+  taperCurveCanvas,
+  taperCurvePath,
+  taperCurveSecondaryPath,
+  taperCurveBaseAxis,
+  taperCurveValueAxis,
+  taperCurveCenterLine,
+  taperCurvePoints,
+  taperCurveOptions,
+  taperAsymmetryToggleRow,
+  taperAsymmetryToggle,
+  centerAsymmetricProfileRow,
+  centerAsymmetricProfileToggle,
+  taperMeshPointsToggleRow,
+  taperMeshPointsToggle,
+  taperPointValue,
+  taperPointPosition,
+  taperPointInterpolation,
+  taperPreviewPaths,
+  segmentTaperPreview,
+  segmentDepthPreview,
+  strandTwistCurvePreview,
+  proceduralBranchLengthCurvePreview,
+  proceduralBranchShapeCurvePreview,
+  sweepProfileEditor,
+  sweepProfileTarget,
+  groupDefaultsWarning,
+  getSelectedLock,
+  pushUndoState,
+  editSelectedLocks,
+  updateLockGeometry,
+  rebuildLockGeometry,
+  updateCurveObjects,
+  updateDrawStrandPreview,
+  syncActiveMirror,
+  mirrorPartnerFor,
+  updateInteractionLocks,
+  setActiveTool,
+  setHoveredStrandWidthEdge,
+  rayFromViewportEvent,
+  applyGroupDefaultsToExistingStrands,
+  activeCreationShapeDefaults,
+  creationToolActive,
+  syncShapePresetSelects,
+  updateViewportStatsVisibility,
+  compatibleSelectedLocks,
+  strandRegionDisplayLabel,
+  clonePanelSplits,
+  isPanelGeometry,
+  tipWidthSideForkT,
+  proceduralGuideForLock,
+  strandGeometryFrameAt,
+  strandGeometryCurve,
+  transportedStrandFrameAt,
+  braidFrameAt,
+  controlPointRotationAt
+});
 
 
 
 
-function shapeTargetForSelect(select) {
-  if (select.closest("#groupSettingsPanel")) return sel.state.selectedStrandGroup ? strandGroupDefaults[sel.state.selectedStrandGroup] : null;
-  return activeStrandShapeTarget();
-}
+
+
+
+
+
 
 const shapePresetButtons = new Map();
 
@@ -11094,7 +11068,7 @@ function syncShapePresetRemoveButtons() {
 function syncShapePresetSelects() {
   shapePresetSelects.forEach((select) => {
     const key = select.dataset.shapePreset;
-    const target = shapeTargetForSelect(select);
+    const target = taperEditor.shapeTargetForSelect(select);
     const value = target?.[key];
     const builtInMatch = SHAPE_PRESETS[key].find((preset) => shapePresets.shapeValuesMatch(value, preset.value));
     const customMatch = projectState.state.customShapePresets[key].find((preset) => (
@@ -11142,7 +11116,7 @@ function populateShapePresetSelects() {
 
 function openSaveShapePreset(select) {
   const key = select.dataset.shapePreset;
-  const target = shapeTargetForSelect(select);
+  const target = taperEditor.shapeTargetForSelect(select);
   if (!target?.[key]?.length) return;
   projectState.state.pendingCreationPresetType = null;
   projectState.state.pendingShapePresetSave = {
@@ -11217,568 +11191,25 @@ setupShapePresetControls();
 populateShapePresetSelects();
 shapePresetSelects.forEach((select) => select.addEventListener("change", () => shapePresets.applyShapePreset(select)));
 
-function taperPointToCanvas(point, curveSide = "primary", asymmetric = false) {
-  const x = 30 + point.position * 460;
-  if (branchSweep.twistCurveEditing()) {
-    const displayRange = sculptState.state.taperCurveEdit?.dragDisplayRange || twistCurveDisplayRange(
-      activeTaperCurve(),
-      TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
-      TWIST_CURVE_VALUE_MAX
-    );
-    return { x, y: 110 - (point.value / displayRange) * 80 };
-  }
-  if (!asymmetric) {
-    return { x, y: 190 - (point.value / TAPER_VALUE_MAX) * 170 };
-  }
-  const direction = curveSide === "secondary" ? 1 : -1;
-  return { x, y: 110 + direction * (point.value / TAPER_VALUE_MAX) * 80 };
-}
-
-function canvasToTaperPoint(event, pointIndex) {
-  const rect = taperCurveCanvas.getBoundingClientRect();
-  const canvasX = (event.clientX - rect.left) * (520 / rect.width);
-  const canvasY = (event.clientY - rect.top) * (220 / rect.height);
-  const curve = activeTaperCurve();
-  const editingTwist = branchSweep.twistCurveEditing();
-  const asymmetric = !branchSweep.proceduralBranchCurveEditing()
-    && Boolean(activeTaperTarget()?.[shapePresets.taperAsymmetryKey()]);
-  const isEndpoint = pointIndex === 0 || pointIndex === curve.length - 1;
-  const twistDisplayRange = sculptState.state.taperCurveEdit?.dragDisplayRange || twistCurveDisplayRange(
-    curve,
-    TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
-    TWIST_CURVE_VALUE_MAX
-  );
-  const value = editingTwist
-    ? (110 - canvasY) / 80 * twistDisplayRange
-    : asymmetric
-    ? (
-        sculptState.state.taperCurveEdit.side === "secondary"
-          ? (canvasY - 110) / 80 * TAPER_VALUE_MAX
-          : (110 - canvasY) / 80 * TAPER_VALUE_MAX
-      )
-    : (190 - canvasY) / 170 * TAPER_VALUE_MAX;
-  const constrainedValue = branchSweep.proceduralBranchShapeCurveEditing() && isEndpoint
-    ? (pointIndex === 0 ? 0 : 1)
-    : THREE.MathUtils.clamp(
-        value,
-        editingTwist ? -TWIST_CURVE_VALUE_MAX : 0,
-        editingTwist ? TWIST_CURVE_VALUE_MAX : TAPER_VALUE_MAX
-      );
-  return {
-    position: isEndpoint ? (pointIndex === 0 ? 0 : 1) : THREE.MathUtils.clamp((canvasX - 30) / 460, 0.01, 0.99),
-    value: constrainedValue
-  };
-}
-
-function clearTaperMeshPoints() {
-  taperMeshPointsGroup.children.forEach((child) => {
-    if (child.userData.twistMeshCurvePath || child.userData.twistMeshCurveFill) {
-      child.geometry?.dispose?.();
-    }
-  });
-  taperMeshPointsGroup.clear();
-  taperMeshPointsGroup.visible = false;
-}
-
-function taperMeshPointFrame(lock, curve, position, curveKey = sculptState.state.taperCurveEdit?.curveKey) {
-  if (curveKey === "twistCurve") {
-    return transportedStrandFrameAt(lock, curve, position, {
-      twistAt: (parameter) => controlPointRotationAt(lock, parameter)
-    });
-  }
-  if (lock.geometryType === "braid") return braidFrameAt(lock, curve, position);
-  return strandGeometryFrameAt(lock, curve, position);
-}
 
 
 
 
-function taperMeshPointExtentPerValue(lock, position, side, axis) {
-  const scale = sampleScale(lock.pointScales, position, axis);
-  if (isPanelGeometry(lock)) {
-    const baseDimension = axis === "z"
-      ? Number(lock.panelThickness ?? 0.08)
-      : Number(lock.width ?? 0.62);
-    return Math.max(0.0001, baseDimension * 0.5 * scale);
-  }
-  if (lock.geometryType === "braid") {
-    const baseDimension = axis === "z"
-      ? Number(lock.braidDepth ?? 0.44)
-      : Number(lock.braidWidth ?? 0.34);
-    const dimensionScale = axis === "z"
-      ? Number(lock.depthScale ?? 1)
-      : Number(lock.widthScale ?? 1);
-    return Math.max(0.0001, baseDimension * dimensionScale * 0.5 * scale);
-  }
-  const profile = branchSweep.trimmedSweepProfile(
-    (lock.sweepProfile?.length >= 4 ? lock.sweepProfile : DEFAULT_SWEEP_PROFILE)
-      .map((point) => ({ ...point, z: point.z + Number(lock.profileOffset || 0) })),
-    lock
-  );
-  const profileExtent = side < 0
-    ? Math.abs(Math.min(...profile.map((point) => point[axis]), -0.0001))
-    : Math.max(...profile.map((point) => point[axis]), 0.0001);
-  const baseDimension = axis === "z"
-    ? Number(lock.depth ?? 0.16)
-    : Number(lock.baseWidth ?? lock.width ?? 0.16);
-  const dimensionScale = axis === "z"
-    ? Number(lock.depthScale ?? 1)
-    : Number(lock.widthScale ?? 1);
-  return Math.max(
-    0.0001,
-    baseDimension * dimensionScale * scale * profileExtent
-  );
-}
-
-function updateTaperMeshPoints() {
-  clearTaperMeshPoints();
-  const lock = sculptState.state.taperCurveEdit?.type === "strand"
-    ? locks.find((item) => item.id === sculptState.state.taperCurveEdit.id)
-    : null;
-  const target = activeTaperTarget();
-  const curvePoints = activeTaperCurve();
-  const applicable = Boolean(
-    hairState.state.taperMeshPointsVisible
-    && ["taperCurve", "depthCurve", "twistCurve"].includes(sculptState.state.taperCurveEdit?.curveKey)
-    && lock
-    && curvePoints?.length
-  );
-  if (!applicable) return;
-
-  const curve = strandGeometryCurve(lock);
-  const editingTwist = branchSweep.twistCurveEditing();
-  const axis = editingTwist ? "twist" : sculptState.state.taperCurveEdit.curveKey === "depthCurve" ? "z" : "x";
-  const frameAxis = axis === "z" ? "z" : "x";
-  const asymmetric = Boolean(
-    axis === "z" ? target?.asymmetricDepthCurve : target?.asymmetricWidthCurve
-  );
-  const primaryCurve = editingTwist
-    ? target.twistCurve
-    : axis === "z" ? target.depthCurve : target.taperCurve;
-  const twistDisplayRange = editingTwist
-    ? sculptState.state.taperMeshPointDrag?.displayRange || twistCurveDisplayRange(
-        primaryCurve,
-        TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
-        TWIST_CURVE_VALUE_MAX
-      )
-    : null;
-  const curveSides = editingTwist
-    ? [{ curvePoints: primaryCurve, sides: [1], curveSide: "primary" }]
-    : asymmetric
-    ? [
-        { curvePoints: primaryCurve, sides: [1], curveSide: "primary" },
-        {
-          curvePoints: ensureSecondaryTaperCurve(target, sculptState.state.taperCurveEdit.curveKey),
-          sides: [-1],
-          curveSide: "secondary"
-        }
-      ]
-    : [{ curvePoints: primaryCurve, sides: [-1, 1], curveSide: "primary" }];
-  if (editingTwist) branchSweep.addTwistMeshCurvePath(lock, curve, primaryCurve, twistDisplayRange);
-  curveSides.forEach(({ curvePoints: sideCurvePoints, sides, curveSide }) => sideCurvePoints.forEach((point, pointIndex) => {
-    const frame = taperMeshPointFrame(lock, curve, point.position, sculptState.state.taperCurveEdit.curveKey);
-    sides.forEach((side) => {
-      const selected = curveSide === sculptState.state.taperCurveEdit.side && pointIndex === sculptState.state.taperCurveEdit.selectedIndex;
-      const handle = new THREE.Mesh(
-        taperMeshPointGeometry,
-        selected ? taperMeshPointSelectedMaterial : taperMeshPointMaterial
-      );
-      const extent = editingTwist
-        ? branchSweep.twistMeshPointDistancePerDegree(lock, point.position, twistDisplayRange) * point.value
-        : taperMeshPointExtentPerValue(lock, point.position, side, axis) * point.value;
-      handle.position.copy(frame.point).addScaledVector(
-        editingTwist ? branchSweep.twistMeshGraphAxis(frame) : frame[frameAxis],
-        editingTwist ? extent : side * extent
-      );
-      handle.renderOrder = 35;
-      handle.userData.taperMeshPoint = true;
-      handle.userData.lockId = lock.id;
-      handle.userData.pointIndex = pointIndex;
-      handle.userData.side = side;
-      handle.userData.curveSide = curveSide;
-      if (selected) {
-        const center = new THREE.Mesh(taperMeshPointGeometry, taperMeshPointCenterMaterial);
-        center.scale.setScalar(0.46);
-        center.renderOrder = 36;
-        center.raycast = () => {};
-        handle.add(center);
-      }
-      taperMeshPointsGroup.add(handle);
-    });
-  }));
-  taperMeshPointsGroup.visible = true;
-}
-
-function setTaperMeshPointsVisible(visible) {
-  hairState.state.taperMeshPointsVisible = Boolean(
-    visible
-    && sculptState.state.taperCurveEdit?.type === "strand"
-    && ["taperCurve", "depthCurve", "twistCurve"].includes(sculptState.state.taperCurveEdit?.curveKey)
-  );
-  if (hairState.state.taperMeshPointsVisible && ["draw", "procedural-draw", "braid", "panel"].includes(sel.state.activeTool)) {
-    setActiveTool("select");
-  }
-  taperMeshPointsToggle.checked = hairState.state.taperMeshPointsVisible;
-  updateTaperMeshPoints();
-  const lock = sculptState.state.taperCurveEdit?.type === "strand"
-    ? locks.find((item) => item.id === sculptState.state.taperCurveEdit.id)
-    : null;
-  if (lock) updateCurveObjects(lock, { visible: true });
-  if (hairState.state.taperMeshPointsVisible && branchSweep.twistCurveEditing()) setHoveredStrandWidthEdge(null);
-}
-
-function renderTaperCurveEditor() {
-  const curve = activeTaperCurve();
-  if (!curve?.length) return;
-  const target = activeTaperTarget();
-  const editingTwist = branchSweep.twistCurveEditing();
-  const editingProceduralBranch = branchSweep.proceduralBranchCurveEditing();
-  const asymmetric = !editingTwist && !editingProceduralBranch && Boolean(target?.[shapePresets.taperAsymmetryKey()]);
-  taperCurveOptions.classList.toggle("hidden", editingProceduralBranch);
-  const segmentEditing = sculptState.state.taperCurveEdit.type === "segment";
-  // 发尖子骨骼（segment）宽度曲线的隐藏/记录点：t < 本侧 fork 的点只用于保持两侧
-  // 控制参数一致，不应在浮动面板里被拖动。primary→+1，secondary→-1。
-  const segmentLock = segmentEditing ? locks.find((item) => item.id === sculptState.state.taperCurveEdit.id) : null;
-  const segmentSplits = segmentLock ? clonePanelSplits(segmentLock.panelSplits, segmentLock.panelSplitHeight) : null;
-  const tipSideForkFor = (curveSide) => {
-    if (!segmentLock || !segmentSplits || !segmentSplits.length) return 0;
-    return tipWidthSideForkT(
-      segmentLock,
-      sculptState.state.taperCurveEdit.segmentIndex,
-      segmentSplits,
-      curveSide === "secondary" ? -1 : 1
-    );
-  };
-  taperAsymmetryToggleRow.classList.toggle("hidden", editingTwist || editingProceduralBranch || segmentEditing);
-  taperAsymmetryToggle.checked = asymmetric;
-  centerAsymmetricProfileRow.classList.toggle("hidden", !asymmetric || segmentEditing);
-  centerAsymmetricProfileToggle.checked = Boolean(target?.centerAsymmetricProfile);
-  const ctrlHint = document.querySelector("#taperCurveCtrlHint");
-  if (ctrlHint) ctrlHint.classList.toggle("hidden", !segmentEditing);
-  taperCurveBaseAxis.classList.toggle("hidden", asymmetric || editingTwist);
-  taperCurveCenterLine.classList.toggle("hidden", !asymmetric && !editingTwist);
-  taperCurveSecondaryPath.classList.toggle("hidden", !asymmetric);
-  taperCurveValueAxis.setAttribute("y1", asymmetric || editingTwist ? "30" : "20");
-  const primaryCurve = target[sculptState.state.taperCurveEdit.curveKey];
-  const primarySampled = taperSamples(primaryCurve, 120)
-    .map((point) => taperPointToCanvas(point, "primary", asymmetric));
-  const primaryLine = primarySampled
-    .map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`)
-    .join(" ");
-  const baseline = asymmetric || editingTwist ? 110 : 190;
-  taperCurvePath.setAttribute("d", `${primaryLine} L490,${baseline} L30,${baseline} Z`);
-  if (asymmetric) {
-    const secondaryCurve = ensureSecondaryTaperCurve(target);
-    const secondarySampled = taperSamples(secondaryCurve, 120)
-      .map((point) => taperPointToCanvas(point, "secondary", true));
-    const secondaryLine = secondarySampled
-      .map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`)
-      .join(" ");
-    taperCurveSecondaryPath.setAttribute("d", `${secondaryLine} L490,110 L30,110 Z`);
-  } else {
-    taperCurveSecondaryPath.removeAttribute("d");
-  }
-  taperCurvePoints.replaceChildren();
-  const visibleCurves = asymmetric
-    ? [
-        { curve: primaryCurve, side: "primary" },
-        { curve: ensureSecondaryTaperCurve(target), side: "secondary" }
-      ]
-    : [{ curve: primaryCurve, side: "primary" }];
-  visibleCurves.forEach(({ curve: visibleCurve, side }) => {
-    visibleCurve.forEach((point, index) => {
-      const canvasPoint = taperPointToCanvas(point, side, asymmetric);
-      const selected = side === sculptState.state.taperCurveEdit.side && index === sculptState.state.taperCurveEdit.selectedIndex;
-      const handle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      handle.setAttribute("cx", canvasPoint.x);
-      handle.setAttribute("cy", canvasPoint.y);
-      handle.setAttribute("r", selected ? 6 : 5);
-      handle.setAttribute("class", `profile-point${selected ? " selected" : ""}`);
-      handle.dataset.taperPoint = index;
-      handle.dataset.curveSide = side;
-      if (segmentEditing && point.position < tipSideForkFor(side) - 1e-4) {
-        handle.dataset.tipHidden = "1";
-        handle.classList.add("tip-hidden");
-      }
-      taperCurvePoints.appendChild(handle);
-    });
-  });
-  const selected = curve[sculptState.state.taperCurveEdit.selectedIndex];
-  taperPointValue.min = editingTwist ? String(twistRateUnitsFromDegrees(-TWIST_CURVE_VALUE_MAX)) : "0";
-  taperPointValue.max = editingTwist ? String(twistRateUnitsFromDegrees(TWIST_CURVE_VALUE_MAX)) : String(TAPER_VALUE_MAX);
-  taperPointValue.step = "0.01";
-  taperPointValue.value = editingTwist
-    ? String(Number(twistRateUnitsFromDegrees(selected.value).toFixed(2)))
-    : selected.value.toFixed(2);
-  taperPointValue.disabled = branchSweep.proceduralBranchShapeCurveEditing()
-    && (sculptState.state.taperCurveEdit.selectedIndex === 0 || sculptState.state.taperCurveEdit.selectedIndex === curve.length - 1);
-  taperPointPosition.value = selected.position.toFixed(2);
-  taperPointPosition.disabled = sculptState.state.taperCurveEdit.selectedIndex === 0 || sculptState.state.taperCurveEdit.selectedIndex === curve.length - 1;
-  taperPointInterpolation.value = selected.interpolation;
-  document.querySelector("#deleteTaperPoint").disabled = curve.length <= 2 || taperPointPosition.disabled;
-  updateTaperMeshPoints();
-}
-
-function updateTaperCurveEditorTargetLabel() {
-  if (!sculptState.state.taperCurveEdit) return;
-  const group = STRAND_GROUPS.find((item) => item.id === sculptState.state.taperCurveEdit.id);
-  const lock = locks.find((item) => item.id === sculptState.state.taperCurveEdit.id);
-  const multiCount = sculptState.state.taperCurveEdit.type === "strand" && lock ? compatibleSelectedLocks(lock).length : 0;
-  taperCurveTarget.textContent = sculptState.state.taperCurveEdit.type === "creation"
-    ? "New strand defaults"
-    : sculptState.state.taperCurveEdit.type === "group"
-      ? `${group ? strandRegionDisplayLabel(group.id) : "Group"} defaults`
-      : multiCount > 1
-        ? `${multiCount} selected strands`
-        : lock?.name || "Selected strand";
-}
-
-function retargetOpenTaperCurveEditor(lock) {
-  if (!taperCurveEditor.open || sculptState.state.taperCurveEdit?.type !== "strand") return;
-  flushScheduledTaperCurveEdit();
-  finishTaperMeshPointDrag(null);
-  const nextTarget = branchSweep.proceduralBranchCurveEditing()
-    ? proceduralGuideForLock(lock)
-    : lock;
-  if (!nextTarget) {
-    closeTaperCurveEditor();
-    return;
-  }
-  sculptState.state.taperCurveEdit.id = nextTarget.id;
-  updateTaperCurveEditorTargetLabel();
-  refreshTaperCurveEditorAfterStateRestore();
-}
-
-function refreshTaperCurveEditorAfterStateRestore() {
-  if (!taperCurveEditor.open || !sculptState.state.taperCurveEdit) return;
-  const target = activeTaperTarget();
-  if (!target) {
-    closeTaperCurveEditor();
-    return;
-  }
-  if (!branchSweep.proceduralBranchCurveEditing() && sculptState.state.taperCurveEdit.side === "secondary" && !target[shapePresets.taperAsymmetryKey()]) {
-    sculptState.state.taperCurveEdit.side = "primary";
-  }
-  const curve = activeTaperCurve();
-  if (!curve?.length) {
-    closeTaperCurveEditor();
-    return;
-  }
-  if (
-    sculptState.state.taperCurveEdit.dragPointerId !== null
-    && taperCurveCanvas.hasPointerCapture?.(sculptState.state.taperCurveEdit.dragPointerId)
-  ) {
-    taperCurveCanvas.releasePointerCapture(sculptState.state.taperCurveEdit.dragPointerId);
-  }
-  sculptState.state.taperCurveEdit.dragPointerId = null;
-  sculptState.state.taperCurveEdit.dragDisplayRange = null;
-  sculptState.state.taperCurveEdit.selectedIndex = THREE.MathUtils.clamp(
-    sculptState.state.taperCurveEdit.selectedIndex,
-    0,
-    curve.length - 1
-  );
-  renderTaperCurveEditor();
-}
 
 
-function scheduleTaperCurveEdit() {
-  sculptState.state.taperCurveEditInteractiveDirty = true;
-  if (sculptState.state.scheduledTaperCurveEditFrame !== null) return;
-  sculptState.state.scheduledTaperCurveEditFrame = requestAnimationFrame(() => {
-    sculptState.state.scheduledTaperCurveEditFrame = null;
-    applyTaperCurveEdit({ interactive: true });
-  });
-}
 
-function flushScheduledTaperCurveEdit() {
-  if (sculptState.state.scheduledTaperCurveEditFrame !== null) {
-    cancelAnimationFrame(sculptState.state.scheduledTaperCurveEditFrame);
-    sculptState.state.scheduledTaperCurveEditFrame = null;
-  }
-  if (!sculptState.state.taperCurveEditInteractiveDirty) return false;
-  sculptState.state.taperCurveEditInteractiveDirty = false;
-  applyTaperCurveEdit();
-  return true;
-}
 
-function cancelScheduledTaperCurveEdit() {
-  const scheduled = sculptState.state.scheduledTaperCurveEditFrame !== null || sculptState.state.taperCurveEditInteractiveDirty;
-  if (sculptState.state.scheduledTaperCurveEditFrame !== null) cancelAnimationFrame(sculptState.state.scheduledTaperCurveEditFrame);
-  sculptState.state.scheduledTaperCurveEditFrame = null;
-  sculptState.state.taperCurveEditInteractiveDirty = false;
-  return scheduled;
-}
 
-function applyTaperCurveEdit({ interactive = false } = {}) {
-  if (!sculptState.state.taperCurveEdit) return;
-  const editingTwist = branchSweep.twistCurveEditing();
-  const editingProceduralBranch = branchSweep.proceduralBranchCurveEditing();
-  if (editingProceduralBranch) {
-    const guide = proceduralGuideForLock(activeTaperTarget());
-    if (guide) {
-      const curveKey = sculptState.state.taperCurveEdit.curveKey;
-      const defaultCurve = branchSweep.proceduralBranchShapeCurveEditing(curveKey)
-        ? DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE
-        : DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE;
-      guide[curveKey] = normalizeTaperCurve(guide[curveKey] || defaultCurve);
-      updateLockGeometry(guide, { immediate: true, updateBranches: false });
-      const mirroredGuide = proceduralGuideForLock(mirrorPartnerFor(guide));
-      if (mirroredGuide) {
-        mirroredGuide[curveKey] = shapePresets.cloneShapePresetValue(guide[curveKey]);
-        updateLockGeometry(mirroredGuide, { immediate: true, updateBranches: false });
-      }
-      renderTaperPreview(
-        branchSweep.proceduralBranchShapeCurveEditing(curveKey)
-          ? proceduralBranchShapeCurvePreview
-          : proceduralBranchLengthCurvePreview,
-        guide,
-        curveKey
-      );
-    }
-    renderTaperCurveEditor();
-    return;
-  }
-  if (sculptState.state.taperCurveEdit.type === "group") {
-    applyGroupDefaultsToExistingStrands(sculptState.state.taperCurveEdit.id);
-    renderTaperPreview(
-      sculptState.state.taperCurveEdit.curveKey === "depthCurve" ? taperPreviewPaths.groupDepth : taperPreviewPaths.group,
-      activeTaperTarget(),
-      sculptState.state.taperCurveEdit.curveKey
-    );
-  } else if (sculptState.state.taperCurveEdit.type === "creation") {
-    if (editingTwist) branchSweep.renderTwistCurvePreview(strandTwistCurvePreview, activeTaperTarget());
-    else {
-      renderTaperPreview(
-        sculptState.state.taperCurveEdit.curveKey === "depthCurve" ? taperPreviewPaths.strandDepth : taperPreviewPaths.strand,
-        activeTaperTarget(),
-        sculptState.state.taperCurveEdit.curveKey
-      );
-    }
-    if (sculptState.state.drawStrandStroke) updateDrawStrandPreview();
-  } else if (sculptState.state.taperCurveEdit.type === "segment") {
-    const lock = locks.find((item) => item.id === sculptState.state.taperCurveEdit.id);
-    const bone = activeTaperTarget();
-    if (lock && bone) {
-      const curveKey = sculptState.state.taperCurveEdit.curveKey;
-      if (Array.isArray(bone[curveKey])) bone[curveKey] = normalizeTaperCurve(bone[curveKey]);
-      const secondaryKey = shapePresets.taperSecondaryKey(curveKey);
-      if (Array.isArray(bone[secondaryKey])) bone[secondaryKey] = normalizeTaperCurve(bone[secondaryKey]);
-      bone[shapePresets.taperAsymmetryKey(curveKey)] = Boolean(bone[shapePresets.taperAsymmetryKey(curveKey)]);
-      bone.centerAsymmetricProfile = Boolean(bone.centerAsymmetricProfile);
-      updateLockGeometry(lock, { immediate: true, updateBranches: false });
-      syncActiveMirror(lock, { deferGeometry: false });
-    }
-    renderTaperPreview(
-      sculptState.state.taperCurveEdit.curveKey === "depthCurve" ? segmentDepthPreview : segmentTaperPreview,
-      activeTaperTarget(),
-      sculptState.state.taperCurveEdit.curveKey
-    );
-  } else {
-    const lock = locks.find((item) => item.id === sculptState.state.taperCurveEdit.id);
-    if (lock) {
-      // A branch child's width/depth curves are normally remapped from the parent
-      // (branchHierarchy.updateBranchChildren). Mark them authored so the user's direct edits persist.
-      if (lock.branchParentId) lock.branchCurvesAuthored = true;
-      const curveKey = sculptState.state.taperCurveEdit.curveKey;
-      const primaryCurve = shapePresets.cloneShapePresetValue(lock[curveKey]);
-      if (editingTwist) {
-        if (interactive) {
-          if (hairState.state.twistCurveAllStrandsPreviewEnabled) {
-            editSelectedLocks((item) => {
-              if (item !== lock) item.twistCurve = shapePresets.cloneShapePresetValue(primaryCurve);
-            }, {
-              immediate: true,
-              renderList: false,
-              updateCurveObjects: false,
-              updateClump: false,
-              updateTopology: false
-            });
-          } else {
-            rebuildLockGeometry(lock, {
-              updateCurveObjects: false,
-              updateClump: false
-            });
-          }
-        } else {
-          editSelectedLocks((item) => {
-            if (item !== lock) item.twistCurve = shapePresets.cloneShapePresetValue(primaryCurve);
-          }, {
-            renderList: false,
-            updateCurveObjects: false
-          });
-        }
-      } else {
-        const secondaryKey = shapePresets.taperSecondaryKey(curveKey);
-        const asymmetryKey = shapePresets.taperAsymmetryKey(curveKey);
-        const secondaryCurve = shapePresets.cloneShapePresetValue(lock[secondaryKey] || lock[curveKey]);
-        const asymmetric = Boolean(lock[asymmetryKey]);
-        const centered = Boolean(lock.centerAsymmetricProfile);
-        editSelectedLocks((item) => {
-          if (item === lock) return;
-          item[curveKey] = shapePresets.cloneShapePresetValue(primaryCurve);
-          item[secondaryKey] = shapePresets.cloneShapePresetValue(secondaryCurve);
-          item[asymmetryKey] = asymmetric;
-          item.centerAsymmetricProfile = centered;
-        }, { renderList: false });
-      }
-    }
-    if (editingTwist) branchSweep.renderTwistCurvePreview(strandTwistCurvePreview, activeTaperTarget());
-    else {
-      renderTaperPreview(
-        sculptState.state.taperCurveEdit.curveKey === "depthCurve" ? taperPreviewPaths.strandDepth : taperPreviewPaths.strand,
-        activeTaperTarget(),
-        sculptState.state.taperCurveEdit.curveKey
-      );
-    }
-  }
-  renderTaperCurveEditor();
-  if (!interactive) syncShapePresetSelects();
-}
 
-function openTaperCurveEditor(curveKey = "taperCurve") {
-  let nextEdit = null;
-  const selectedLock = getSelectedLock();
-  const proceduralGuide = branchSweep.proceduralBranchCurveEditing(curveKey)
-    ? proceduralGuideForLock(selectedLock)
-    : null;
-  if (proceduralGuide) {
-    const defaultCurve = branchSweep.proceduralBranchShapeCurveEditing(curveKey)
-      ? DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE
-      : DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE;
-    proceduralGuide[curveKey] = normalizeTaperCurve(proceduralGuide[curveKey] || defaultCurve);
-    nextEdit = { type: "strand", id: proceduralGuide.id, curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
-  } else if (selectedLock && !branchSweep.proceduralBranchCurveEditing(curveKey)) nextEdit = { type: "strand", id: selectedLock.id, curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
-  else if (!branchSweep.proceduralBranchCurveEditing(curveKey) && sel.state.selectedStrandGroup && curveKey !== "twistCurve") nextEdit = { type: "group", id: sel.state.selectedStrandGroup, curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
-  else if (!branchSweep.proceduralBranchCurveEditing(curveKey) && creationToolActive()) nextEdit = { type: "creation", id: "new-strand", curveKey, side: "primary", selectedIndex: 0, dragPointerId: null, dragDisplayRange: null };
-  if (!nextEdit) return;
-  if (sweepProfileEditor.open) branchSweep.closeSweepProfileEditor();
-  if (nextEdit.type === "group" && !miscState.state.groupDefaultsWarningAcknowledged) {
-    const hasExistingStrands = locks.some((lock) => (lock.scalpRegion || "unassigned") === nextEdit.id);
-    if (hasExistingStrands) {
-      miscState.state.groupDefaultsWarningContinuation = () => openTaperCurveEditor(curveKey);
-      groupDefaultsWarning.showModal();
-      return;
-    }
-  }
-  sculptState.state.taperCurveEdit = nextEdit;
-  if (!branchSweep.twistCurveEditing(curveKey) && !branchSweep.proceduralBranchCurveEditing(curveKey)) ensureSecondaryTaperCurve(activeTaperTarget(), curveKey);
-  document.querySelector("#taperCurveTitle").textContent = curveKey === "proceduralBranchShapeCurve"
-    ? "Branch Shape"
-    : curveKey === "proceduralBranchLengthCurve"
-    ? "Branch Length Curve"
-    : curveKey === "twistCurve"
-    ? "Twist Rate Curve"
-    : curveKey === "depthCurve" ? "Depth Curve" : "Width Curve";
-  updateTaperCurveEditorTargetLabel();
-  setTaperMeshPointsVisible(curveKey !== "twistCurve");
-  taperMeshPointsToggleRow.classList.toggle(
-    "hidden",
-    nextEdit.type !== "strand" || branchSweep.proceduralBranchCurveEditing(curveKey)
-  );
-  renderTaperCurveEditor();
-  taperCurveEditor.show();
-  updateViewportStatsVisibility();
-}
+
+
+
+
+
+
+
+
+
 
 function openPanelSegmentCurveEditor(curveKey = "taperCurve") {
   const selectedLock = getSelectedLock();
@@ -11801,33 +11232,21 @@ function openPanelSegmentCurveEditor(curveKey = "taperCurve") {
     dragPointerId: null,
     dragDisplayRange: null
   };
-  ensureSecondaryTaperCurve(activeTaperTarget(), curveKey);
+  taperEditor.ensureSecondaryTaperCurve(taperEditor.activeTaperTarget(), curveKey);
   document.querySelector("#taperCurveTitle").textContent = curveKey === "depthCurve" ? "Depth Curve" : "Width Curve";
-  updateTaperCurveEditorTargetLabel();
-  setTaperMeshPointsVisible(false);
+  taperEditor.updateTaperCurveEditorTargetLabel();
+  taperEditor.setTaperMeshPointsVisible(false);
   taperMeshPointsToggleRow.classList.add("hidden");
-  renderTaperCurveEditor();
-  renderTaperPreview(
+  taperEditor.renderTaperCurveEditor();
+  taperEditor.renderTaperPreview(
     curveKey === "depthCurve" ? segmentDepthPreview : segmentTaperPreview,
-    activeTaperTarget(),
+    taperEditor.activeTaperTarget(),
     curveKey
   );
   taperCurveEditor.show();
   updateViewportStatsVisibility();
 }
 
-function closeTaperCurveEditor() {
-  flushScheduledTaperCurveEdit();
-  if (sculptState.state.taperCurveEdit?.dragPointerId !== null && taperCurveCanvas.hasPointerCapture?.(sculptState.state.taperCurveEdit.dragPointerId)) {
-    taperCurveCanvas.releasePointerCapture(sculptState.state.taperCurveEdit.dragPointerId);
-  }
-  finishTaperMeshPointDrag(null);
-  setTaperMeshPointsVisible(false);
-  taperMeshPointsToggleRow.classList.add("hidden");
-  sculptState.state.taperCurveEdit = null;
-  if (taperCurveEditor.open) taperCurveEditor.close();
-  updateViewportStatsVisibility();
-}
 
 function updateViewportStatsVisibility() {
   const curveEditorOpen = taperCurveEditor.open;
@@ -11862,20 +11281,6 @@ function canvasToProfile(event) {
 
 
 
-function retargetFloatingStrandEditors() {
-  const lock = getSelectedLock();
-  if (!lock) return;
-  if (sweepProfileEditor.open && sculptState.state.sweepProfileEdit?.type === "strand") {
-    sculptState.state.sweepProfileEdit.id = lock.id;
-    sweepProfileTarget.textContent = lock.name || "Selected strand";
-    branchSweep.renderSweepProfileEditor();
-  }
-  if (taperCurveEditor.open && sculptState.state.taperCurveEdit?.type === "strand") {
-    sculptState.state.taperCurveEdit.id = lock.id;
-    taperCurveTarget.textContent = lock.name || "Selected strand";
-    renderTaperCurveEditor();
-  }
-}
 
 function addLock(presetName, overrides = {}, options = {}) {
   const base = { ...presets[presetName], ...overrides };
@@ -12258,7 +11663,7 @@ function decoupleMirroredClump(guide) {
 
 const branchRegion = createBranchRegionApi({
   locks, rebuildLockGeometry, updateCurveObjects, getSelectedLock, pushUndoState,
-  resize, pointerToNdc, closeSweepProfileEditor: branchSweep.closeSweepProfileEditor, closeTaperCurveEditor,
+  resize, pointerToNdc, closeSweepProfileEditor: branchSweep.closeSweepProfileEditor, closeTaperCurveEditor: taperEditor.closeTaperCurveEditor,
   branchRootRegionWorldPoints: branchBridge.branchRootRegionWorldPoints, strandGeometryCurve, raycaster, camera, renderer,
   branchState: branch.state, sculptState: sculptState.state, viewportState: viewportState.state,
   selState: sel.state, hairState: hairState.state,
@@ -13378,7 +12783,7 @@ function undoLastAction() {
     undo.state.restoringHistory = false;
     updateHistoryButtons();
   }
-  if (taperCurveEditor.open) renderTaperCurveEditor();
+  if (taperCurveEditor.open) taperEditor.renderTaperCurveEditor();
 }
 
 function redoLastAction() {
@@ -13395,7 +12800,7 @@ function redoLastAction() {
     undo.state.restoringHistory = false;
     updateHistoryButtons();
   }
-  if (taperCurveEditor.open) renderTaperCurveEditor();
+  if (taperCurveEditor.open) taperEditor.renderTaperCurveEditor();
 }
 
 function updateHistoryButtons() {
@@ -18671,7 +18076,7 @@ function strandWidthEdgeSample(lock, t, side, frameOverride = null, curveOverrid
     side,
     t
   );
-  const extent = taperMeshPointExtentPerValue(lock, t, side, "x") * curveValue;
+  const extent = taperEditor.taperMeshPointExtentPerValue(lock, t, side, "x") * curveValue;
   return {
     center: frame.point.clone(),
     edge: frame.point.clone().addScaledVector(frame.x, side * extent)
@@ -19465,7 +18870,7 @@ function rebuildLockGeometry(lock, options = {}) {
     hairState.state.taperMeshPointsVisible
     && sculptState.state.taperCurveEdit?.type === "strand"
     && sculptState.state.taperCurveEdit.id === lock.id
-  ) updateTaperMeshPoints();
+  ) taperEditor.updateTaperMeshPoints();
   if (options.updateClump !== false && !miscState.state.clumpUpdateInProgress && lock.clumpGuide) updateClumpMembers(lock);
   if (options.updateBranches !== false && !branch.state.branchUpdateInProgress) branchHierarchy.updateBranchChildren(lock);
   invalidateUvInspector();
@@ -19941,7 +19346,7 @@ function refreshStrandSelectionConsumers({
   syncActiveInputs = false
 } = {}) {
   const lock = getSelectedLock();
-  retargetOpenTaperCurveEditor(lock);
+  taperEditor.retargetOpenTaperCurveEditor(lock);
   resetGuideSelectionVisuals();
   updateStrandSelectionHighlight();
   refreshStrandCurveSelectionVisuals();
@@ -20026,7 +19431,7 @@ function selectLock(id, options = {}) {
   refreshStrandSelectionConsumers({
     syncActiveInputs: true
   });
-  retargetFloatingStrandEditors();
+  taperEditor.retargetFloatingStrandEditors();
   branchRegion.retargetBranchRegionEditor();
 }
 
@@ -20066,8 +19471,8 @@ function syncGroupInputs() {
   document.querySelector("#groupRootScalpOffsetValue").textContent = Number(groupInputs.rootScalpOffset.value).toFixed(2);
   document.querySelector("#groupProfileOffsetValue").textContent = Number(defaults.profileOffset || 0).toFixed(2);
   renderProfilePreview(profilePreviewPaths.group, defaults.sweepProfile, defaults.profileOffset, defaults);
-  renderTaperPreview(taperPreviewPaths.group, defaults, "taperCurve");
-  renderTaperPreview(taperPreviewPaths.groupDepth, defaults, "depthCurve");
+  taperEditor.renderTaperPreview(taperPreviewPaths.group, defaults, "taperCurve");
+  taperEditor.renderTaperPreview(taperPreviewPaths.groupDepth, defaults, "depthCurve");
   const group = STRAND_GROUPS.find((item) => item.id === sel.state.selectedStrandGroup);
   groupSettingsTitle.textContent = group ? strandRegionDisplayLabel(group.id) : "Group Settings";
   updateTopologyStats();
@@ -20244,8 +19649,8 @@ function syncShapeDimensionInputs(target) {
 function syncCreationShapeInputs() {
   const defaults = activeCreationShapeDefaults();
   strandLayerInput.value = normalizeHairLayer(defaults.hairLayer);
-  renderTaperPreview(taperPreviewPaths.strand, defaults, "taperCurve");
-  renderTaperPreview(taperPreviewPaths.strandDepth, defaults, "depthCurve");
+  taperEditor.renderTaperPreview(taperPreviewPaths.strand, defaults, "taperCurve");
+  taperEditor.renderTaperPreview(taperPreviewPaths.strandDepth, defaults, "depthCurve");
   branchSweep.renderTwistCurvePreview(strandTwistCurvePreview, defaults);
   renderProfilePreview(profilePreviewPaths.strand, defaults.sweepProfile, defaults.profileOffset, defaults);
   syncShapeDimensionInputs(defaults);
@@ -20299,7 +19704,7 @@ function selectedPanelSegment(lock) {
   return { index, count };
 }
 
-function syncPanelSegmentControls(target = activeStrandShapeTarget()) {
+function syncPanelSegmentControls(target = taperEditor.activeStrandShapeTarget()) {
   if (!target) return;
   const { index, count } = selectedPanelSegment(target);
   const bone = splitBonesFor(target)[index] || null;
@@ -20313,11 +19718,11 @@ function syncPanelSegmentControls(target = activeStrandShapeTarget()) {
     taperCurve: bone?.taperCurve || target.taperCurve,
     depthCurve: bone?.depthCurve || target.depthCurve
   };
-  renderTaperPreview(segmentTaperPreview, previewTarget, "taperCurve");
-  renderTaperPreview(segmentDepthPreview, previewTarget, "depthCurve");
+  taperEditor.renderTaperPreview(segmentTaperPreview, previewTarget, "taperCurve");
+  taperEditor.renderTaperPreview(segmentDepthPreview, previewTarget, "depthCurve");
 }
 
-function syncPanelShapeInputs(target = activeStrandShapeTarget()) {
+function syncPanelShapeInputs(target = taperEditor.activeStrandShapeTarget()) {
   if (!target) return;
   const splits = clonePanelSplits(target.panelSplits, target.panelSplitHeight);
   if (target.panelSplitSnapToLoops !== false) {
@@ -20344,7 +19749,7 @@ function syncPanelShapeInputs(target = activeStrandShapeTarget()) {
   syncPanelSegmentControls(target);
 }
 
-function syncStrandSplitInputs(target = activeStrandShapeTarget()) {
+function syncStrandSplitInputs(target = taperEditor.activeStrandShapeTarget()) {
   if (!target || target.geometryType && target.geometryType !== "strand") return;
   strandSplitInputs.strandSplitEnabled.checked = Boolean(target.strandSplitEnabled);
   const gap = Number(target.strandSplitGap ?? strandCreationDefaults.strandSplitGap);
@@ -20353,7 +19758,7 @@ function syncStrandSplitInputs(target = activeStrandShapeTarget()) {
   strandSplitValues.strandSplitGap.textContent = gap.toFixed(2);
 }
 
-function syncHairCardControls(target = activeStrandShapeTarget()) {
+function syncHairCardControls(target = taperEditor.activeStrandShapeTarget()) {
   const strandTarget = target === strandCreationDefaults || target?.geometryType === "strand";
   const enabled = strandTarget && Boolean(target.hairCard);
   hairCardControl.classList.toggle("hair-card-hidden", !strandTarget);
@@ -20394,8 +19799,8 @@ function syncProceduralAccessoryEditControls(guide = proceduralGuideForLock(getS
   proceduralBranchEditCountValue.textContent = String(branchCount);
   proceduralBranchEditLengthInput.value = String(branchLength);
   proceduralBranchEditLengthValue.textContent = branchLength.toFixed(2);
-  renderTaperPreview(proceduralBranchLengthCurvePreview, guide, "proceduralBranchLengthCurve");
-  renderTaperPreview(proceduralBranchShapeCurvePreview, guide, "proceduralBranchShapeCurve");
+  taperEditor.renderTaperPreview(proceduralBranchLengthCurvePreview, guide, "proceduralBranchLengthCurve");
+  taperEditor.renderTaperPreview(proceduralBranchShapeCurvePreview, guide, "proceduralBranchShapeCurve");
   proceduralBranchEditTipOffsetInput.value = String(branchTipOffset);
   proceduralBranchEditTipOffsetValue.textContent = branchTipOffset.toFixed(2);
 }
@@ -20763,8 +20168,8 @@ function syncInputs(lock) {
   inputs.name.value = lock.name;
   strandLayerInput.value = normalizeHairLayer(lock.hairLayer);
   syncHairMaterialEditor(lock);
-  renderTaperPreview(taperPreviewPaths.strand, lock, "taperCurve");
-  renderTaperPreview(taperPreviewPaths.strandDepth, lock, "depthCurve");
+  taperEditor.renderTaperPreview(taperPreviewPaths.strand, lock, "taperCurve");
+  taperEditor.renderTaperPreview(taperPreviewPaths.strandDepth, lock, "depthCurve");
   branchSweep.renderTwistCurvePreview(strandTwistCurvePreview, lock);
   if (!isPanelGeometry(lock)) syncShapeDimensionInputs(lock);
   inputs.rootScalpOffset.value = lock.rootScalpOffset ?? 0;
@@ -24725,92 +24130,74 @@ document.querySelector("#resetSweepProfile").addEventListener("click", () => {
   sculptState.state.sweepProfileEdit.selectedIndex = 0;
   branchSweep.applySweepProfileEdit();
 });
-editTaperCurveButtons.forEach((button) => button.addEventListener("click", () => openTaperCurveEditor(button.dataset.curveKey)));
-document.querySelector("#closeTaperCurve").addEventListener("click", closeTaperCurveEditor);
+editTaperCurveButtons.forEach((button) => button.addEventListener("click", () => taperEditor.openTaperCurveEditor(button.dataset.curveKey)));
+document.querySelector("#closeTaperCurve").addEventListener("click", taperEditor.closeTaperCurveEditor);
 taperCurveEditor.addEventListener("cancel", () => {
-  flushScheduledTaperCurveEdit();
-  finishTaperMeshPointDrag(null);
-  setTaperMeshPointsVisible(false);
+  taperEditor.flushScheduledTaperCurveEdit();
+  taperEditor.finishTaperMeshPointDrag(null);
+  taperEditor.setTaperMeshPointsVisible(false);
   taperMeshPointsToggleRow.classList.add("hidden");
   sculptState.state.taperCurveEdit = null;
 });
 taperCurveEditor.addEventListener("close", updateViewportStatsVisibility);
 taperMeshPointsToggle.addEventListener("change", () => {
-  setTaperMeshPointsVisible(taperMeshPointsToggle.checked);
+  taperEditor.setTaperMeshPointsVisible(taperMeshPointsToggle.checked);
 });
-function releaseTaperCurveEditorFieldFocus() {
-  const focused = document.activeElement;
-  if (!focused || !taperCurveEditor.contains(focused)) return;
-  const tag = focused.tagName?.toLowerCase();
-  if (
-    tag === "input"
-    || tag === "textarea"
-    || tag === "select"
-    || focused.isContentEditable
-  ) focused.blur();
-}
 taperAsymmetryToggle.addEventListener("change", () => {
-  const target = activeTaperTarget();
+  const target = taperEditor.activeTaperTarget();
   if (!target || !sculptState.state.taperCurveEdit || branchSweep.twistCurveEditing() || branchSweep.proceduralBranchCurveEditing()) return;
   pushUndoState();
   if (taperAsymmetryToggle.checked) {
     target[shapePresets.taperSecondaryKey()] = shapePresets.cloneShapePresetValue(target[sculptState.state.taperCurveEdit.curveKey]);
   } else {
-    ensureSecondaryTaperCurve(target);
+    taperEditor.ensureSecondaryTaperCurve(target);
   }
   target[shapePresets.taperAsymmetryKey()] = taperAsymmetryToggle.checked;
   if (!taperAsymmetryToggle.checked) sculptState.state.taperCurveEdit.side = "primary";
   sculptState.state.taperCurveEdit.selectedIndex = 0;
-  applyTaperCurveEdit();
+  taperEditor.applyTaperCurveEdit();
 });
 centerAsymmetricProfileToggle.addEventListener("change", () => {
-  const target = activeTaperTarget();
+  const target = taperEditor.activeTaperTarget();
   if (!target || !sculptState.state.taperCurveEdit || branchSweep.twistCurveEditing() || branchSweep.proceduralBranchCurveEditing()) return;
   pushUndoState();
   target.centerAsymmetricProfile = centerAsymmetricProfileToggle.checked;
-  applyTaperCurveEdit();
+  taperEditor.applyTaperCurveEdit();
 });
 taperCurveCanvas.addEventListener("pointerdown", (event) => {
   const pointIndex = Number(event.target?.dataset?.taperPoint);
   if (!Number.isInteger(pointIndex) || !sculptState.state.taperCurveEdit) return;
   // 隐藏/记录点（segment 曲线里 t < 本侧 fork）不可拖。
   if (event.target.dataset.tipHidden === "1") return;
-  releaseTaperCurveEditorFieldFocus();
+  taperEditor.releaseTaperCurveEditorFieldFocus();
   pushUndoState();
   sculptState.state.taperCurveEdit.side = event.target.dataset.curveSide === "secondary" ? "secondary" : "primary";
   sculptState.state.taperCurveEdit.selectedIndex = pointIndex;
   sculptState.state.taperCurveEdit.dragDisplayRange = branchSweep.twistCurveEditing()
     ? twistCurveDisplayRange(
-        activeTaperCurve(),
+        taperEditor.activeTaperCurve(),
         TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
         TWIST_CURVE_VALUE_MAX
       )
     : null;
   sculptState.state.taperCurveEdit.dragPointerId = event.pointerId;
   taperCurveCanvas.setPointerCapture?.(event.pointerId);
-  renderTaperCurveEditor();
+  taperEditor.renderTaperCurveEditor();
   event.preventDefault();
 });
 taperCurveCanvas.addEventListener("pointermove", (event) => {
   if (!sculptState.state.taperCurveEdit || sculptState.state.taperCurveEdit.dragPointerId !== event.pointerId) return;
-  const curve = activeTaperCurve();
+  const curve = taperEditor.activeTaperCurve();
   const selected = curve?.[sculptState.state.taperCurveEdit.selectedIndex];
   if (!selected) return;
-  Object.assign(selected, canvasToTaperPoint(event, sculptState.state.taperCurveEdit.selectedIndex));
+  Object.assign(selected, taperEditor.canvasToTaperPoint(event, sculptState.state.taperCurveEdit.selectedIndex));
   curve.sort((a, b) => a.position - b.position);
   sculptState.state.taperCurveEdit.selectedIndex = curve.indexOf(selected);
-  scheduleTaperCurveEdit();
+  taperEditor.scheduleTaperCurveEdit();
   event.preventDefault();
 });
-function finishTaperCurveDrag(event) {
-  if (!sculptState.state.taperCurveEdit || sculptState.state.taperCurveEdit.dragPointerId !== event.pointerId) return;
-  if (taperCurveCanvas.hasPointerCapture?.(event.pointerId)) taperCurveCanvas.releasePointerCapture(event.pointerId);
-  sculptState.state.taperCurveEdit.dragPointerId = null;
-  sculptState.state.taperCurveEdit.dragDisplayRange = null;
-  if (!flushScheduledTaperCurveEdit()) renderTaperCurveEditor();
-}
-taperCurveCanvas.addEventListener("pointerup", finishTaperCurveDrag);
-taperCurveCanvas.addEventListener("pointercancel", finishTaperCurveDrag);
+taperCurveCanvas.addEventListener("pointerup", taperEditor.finishTaperCurveDrag);
+taperCurveCanvas.addEventListener("pointercancel", taperEditor.finishTaperCurveDrag);
 // Branch root region editor (2D u/v rectangle).
 const branchRegionCanvas = document.querySelector("#branchRegionCanvas");
 const branchRegionDialog = document.querySelector("#branchRegionEditor");
@@ -24845,180 +24232,11 @@ branchRegionCanvas.addEventListener("pointerup", branchRegion.endBranchRegionCan
 branchRegionCanvas.addEventListener("pointercancel", branchRegion.endBranchRegionCanvasDrag);
 document.querySelector("#resetBranchRegionZoom").addEventListener("click", branchRegion.resetBranchRegionZoom);
 
-function beginTaperMeshPointDrag(event) {
-  if (
-    event.button !== 0
-    || !hairState.state.taperMeshPointsVisible
-    || !taperMeshPointsGroup.visible
-    || sculptState.state.taperMeshPointDrag
-    || event.shiftKey
-    || event.ctrlKey
-    || event.altKey
-    || event.metaKey
-  ) return;
-  rayFromViewportEvent(event);
-  const hit = raycaster.intersectObjects(taperMeshPointsGroup.children, false)[0];
-  if (!hit?.object?.userData.taperMeshPoint) return;
-  releaseTaperCurveEditorFieldFocus();
-  const lock = locks.find((item) => item.id === hit.object.userData.lockId);
-  sculptState.state.taperCurveEdit.side = hit.object.userData.curveSide === "secondary" ? "secondary" : "primary";
-  const curvePoints = activeTaperCurve();
-  const pointIndex = hit.object.userData.pointIndex;
-  const curvePoint = curvePoints?.[pointIndex];
-  if (!lock || !curvePoint) return;
 
-  const curve = strandGeometryCurve(lock);
-  const editingTwist = branchSweep.twistCurveEditing();
-  const frame = taperMeshPointFrame(lock, curve, curvePoint.position, sculptState.state.taperCurveEdit.curveKey);
-  const cameraDirection = new THREE.Vector3();
-  camera.getWorldDirection(cameraDirection).normalize();
-  const axis = editingTwist ? "twist" : sculptState.state.taperCurveEdit.curveKey === "depthCurve" ? "z" : "x";
-  const shapeAxis = editingTwist ? branchSweep.twistMeshGraphAxis(frame) : frame[axis].clone();
-  const projectedAxis = shapeAxis.addScaledVector(
-    cameraDirection,
-    -shapeAxis.dot(cameraDirection)
-  );
-  const projectedLength = projectedAxis.length();
-  if (projectedLength < 0.08) return;
-  projectedAxis.multiplyScalar(1 / projectedLength);
-  const side = hit.object.userData.side;
-  const displayRange = editingTwist
-    ? twistCurveDisplayRange(
-        curvePoints,
-        TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
-        TWIST_CURVE_VALUE_MAX
-      )
-    : null;
-  const extentPerValue = editingTwist
-    ? branchSweep.twistMeshPointDistancePerDegree(lock, curvePoint.position, displayRange)
-    : taperMeshPointExtentPerValue(lock, curvePoint.position, side, axis);
-  const screenExtentPerValue = extentPerValue * projectedLength;
-  if (screenExtentPerValue < 0.00000001) return;
-  const shapeVector = projectedAxis.clone().multiplyScalar(screenExtentPerValue * side);
-  const positionVector = frame.y.clone().addScaledVector(
-    cameraDirection,
-    -frame.y.dot(cameraDirection)
-  ).multiplyScalar(curve.getLength());
-  const endpoint = pointIndex === 0 || pointIndex === curvePoints.length - 1;
 
-  pushUndoState();
-  sculptState.state.taperCurveEdit.selectedIndex = pointIndex;
-  sculptState.state.taperMeshPointDrag = {
-    pointerId: event.pointerId,
-    lockId: lock.id,
-    point: curvePoint,
-    side,
-    center: frame.point.clone(),
-    shapeVector,
-    positionVector: endpoint || positionVector.lengthSq() < 0.0001 ? null : positionVector,
-    plane: new THREE.Plane().setFromNormalAndCoplanarPoint(cameraDirection, frame.point),
-    originalValue: curvePoint.value,
-    originalPosition: curvePoint.position,
-    displayRange,
-    valueMinimum: editingTwist ? -TWIST_CURVE_VALUE_MAX : 0,
-    valueMaximum: editingTwist ? TWIST_CURVE_VALUE_MAX : TAPER_VALUE_MAX
-  };
-  renderer.domElement.setPointerCapture?.(event.pointerId);
-  renderer.domElement.style.cursor = "ew-resize";
-  updateInteractionLocks();
-  renderTaperCurveEditor();
-  event.preventDefault();
-  event.stopImmediatePropagation();
-}
 
-function updateTaperMeshPointDrag(event) {
-  const drag = sculptState.state.taperMeshPointDrag;
-  if (!drag || event.pointerId !== drag.pointerId) return;
-  const curve = activeTaperCurve();
-  const point = drag.point;
-  const pointIndex = curve?.indexOf(point) ?? -1;
-  if (pointIndex < 0) {
-    finishTaperMeshPointDrag(event);
-    return;
-  }
-  rayFromViewportEvent(event);
-  const intersection = raycaster.ray.intersectPlane(drag.plane, new THREE.Vector3());
-  if (!intersection) return;
-  const delta = intersection.sub(drag.center);
-  const shapeLengthSquared = drag.shapeVector.lengthSq();
-  if (drag.positionVector) {
-    const positionLengthSquared = drag.positionVector.lengthSq();
-    const crossTerm = drag.shapeVector.dot(drag.positionVector);
-    const determinant = shapeLengthSquared * positionLengthSquared - crossTerm * crossTerm;
-    const determinantThreshold = Math.max(
-      0.0000000000000001,
-      shapeLengthSquared * positionLengthSquared * 0.000001
-    );
-    if (determinant > determinantThreshold) {
-      const shapeProjection = delta.dot(drag.shapeVector);
-      const positionProjection = delta.dot(drag.positionVector);
-      point.value = THREE.MathUtils.clamp(
-        (shapeProjection * positionLengthSquared - positionProjection * crossTerm) / determinant,
-        drag.valueMinimum,
-        drag.valueMaximum
-      );
-      const positionDelta = (
-        positionProjection * shapeLengthSquared - shapeProjection * crossTerm
-      ) / determinant;
-      const minimumPosition = Number(curve[pointIndex - 1]?.position ?? 0) + 0.01;
-      const maximumPosition = Number(curve[pointIndex + 1]?.position ?? 1) - 0.01;
-      point.position = THREE.MathUtils.clamp(
-        drag.originalPosition + positionDelta,
-        minimumPosition,
-        maximumPosition
-      );
-    }
-  } else if (shapeLengthSquared > 0.0000000000000001) {
-    point.value = THREE.MathUtils.clamp(
-      delta.dot(drag.shapeVector) / shapeLengthSquared,
-      drag.valueMinimum,
-      drag.valueMaximum
-    );
-  }
-  sculptState.state.taperCurveEdit.selectedIndex = curve.indexOf(point);
-  scheduleTaperCurveEdit();
-  event.preventDefault();
-  event.stopImmediatePropagation();
-}
-
-function finishTaperMeshPointDrag(event, { cancel = false } = {}) {
-  const drag = sculptState.state.taperMeshPointDrag;
-  if (!drag || (event?.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
-  if (cancel) {
-    cancelScheduledTaperCurveEdit();
-    const curve = activeTaperCurve();
-    if (curve?.includes(drag.point)) {
-      drag.point.value = drag.originalValue;
-      drag.point.position = drag.originalPosition;
-      sculptState.state.taperCurveEdit.selectedIndex = curve.indexOf(drag.point);
-      applyTaperCurveEdit();
-    }
-  } else flushScheduledTaperCurveEdit();
-  sculptState.state.taperMeshPointDrag = null;
-  if (renderer.domElement.hasPointerCapture?.(drag.pointerId)) {
-    renderer.domElement.releasePointerCapture(drag.pointerId);
-  }
-  renderer.domElement.style.cursor = "";
-  updateInteractionLocks();
-  updateTaperMeshPoints();
-  event?.preventDefault();
-  event?.stopImmediatePropagation();
-}
-
-function updateSelectedTaperPoint(key, value) {
-  const curve = activeTaperCurve();
-  const selected = curve?.[sculptState.state.taperCurveEdit?.selectedIndex];
-  if (!selected) return;
-  selected[key] = value;
-  if (key === "position") {
-    selected.position = THREE.MathUtils.clamp(Number(value), 0.01, 0.99);
-    curve.sort((a, b) => a.position - b.position);
-    sculptState.state.taperCurveEdit.selectedIndex = curve.indexOf(selected);
-  }
-  applyTaperCurveEdit();
-}
 [taperPointValue, taperPointPosition, taperPointInterpolation].forEach(bindUndoCapture);
-taperPointValue.addEventListener("input", () => updateSelectedTaperPoint(
+taperPointValue.addEventListener("input", () => taperEditor.updateSelectedTaperPoint(
   "value",
   THREE.MathUtils.clamp(
     branchSweep.twistCurveEditing()
@@ -25028,10 +24246,10 @@ taperPointValue.addEventListener("input", () => updateSelectedTaperPoint(
     branchSweep.twistCurveEditing() ? TWIST_CURVE_VALUE_MAX : TAPER_VALUE_MAX
   )
 ));
-taperPointPosition.addEventListener("input", () => updateSelectedTaperPoint("position", Number(taperPointPosition.value)));
-taperPointInterpolation.addEventListener("change", () => updateSelectedTaperPoint("interpolation", taperPointInterpolation.value));
+taperPointPosition.addEventListener("input", () => taperEditor.updateSelectedTaperPoint("position", Number(taperPointPosition.value)));
+taperPointInterpolation.addEventListener("change", () => taperEditor.updateSelectedTaperPoint("interpolation", taperPointInterpolation.value));
 document.querySelector("#addTaperPoint").addEventListener("click", () => {
-  const curve = activeTaperCurve();
+  const curve = taperEditor.activeTaperCurve();
   if (!curve?.length || !sculptState.state.taperCurveEdit) return;
   pushUndoState();
   const index = Math.min(sculptState.state.taperCurveEdit.selectedIndex, curve.length - 2);
@@ -25043,20 +24261,20 @@ document.querySelector("#addTaperPoint").addEventListener("click", () => {
     interpolation: left.interpolation
   });
   sculptState.state.taperCurveEdit.selectedIndex = index + 1;
-  applyTaperCurveEdit();
+  taperEditor.applyTaperCurveEdit();
 });
 document.querySelector("#deleteTaperPoint").addEventListener("click", () => {
-  const curve = activeTaperCurve();
+  const curve = taperEditor.activeTaperCurve();
   if (!curve || curve.length <= 2 || !sculptState.state.taperCurveEdit) return;
   const index = sculptState.state.taperCurveEdit.selectedIndex;
   if (index === 0 || index === curve.length - 1) return;
   pushUndoState();
   curve.splice(index, 1);
   sculptState.state.taperCurveEdit.selectedIndex = Math.min(index, curve.length - 1);
-  applyTaperCurveEdit();
+  taperEditor.applyTaperCurveEdit();
 });
 document.querySelector("#resetTaperCurve").addEventListener("click", () => {
-  const curve = activeTaperCurve();
+  const curve = taperEditor.activeTaperCurve();
   if (!curve || !sculptState.state.taperCurveEdit) return;
   pushUndoState();
   const braidCreationCurve = sculptState.state.taperCurveEdit.type === "creation" && sel.state.activeTool === "braid";
@@ -25088,7 +24306,7 @@ document.querySelector("#resetTaperCurve").addEventListener("click", () => {
   curve.splice(0, curve.length, ...defaultCurve.map((point) => ({ ...point })));
   if (segmentWidthReset) {
     // Reset 同时重置另一侧曲线：两侧都恢复为整段全 1。
-    const bone = activeTaperTarget();
+    const bone = taperEditor.activeTaperTarget();
     const otherSide = sculptState.state.taperCurveEdit.side === "secondary" ? 1 : -1;
     const otherKey = sculptState.state.taperCurveEdit.side === "secondary" ? "taperCurve" : "taperCurveSecondary";
     if (bone) {
@@ -25107,7 +24325,7 @@ document.querySelector("#resetTaperCurve").addEventListener("click", () => {
     }
   }
   sculptState.state.taperCurveEdit.selectedIndex = 0;
-  applyTaperCurveEdit();
+  taperEditor.applyTaperCurveEdit();
 });
 bindUndoCapture(inputs.name);
 inputs.name.addEventListener("input", () => {
@@ -25906,7 +25124,7 @@ addPanelSplitButton?.addEventListener("click", () => changePanelSplitCount(1));
 removePanelSplitButton?.addEventListener("click", () => changePanelSplitCount(-1));
 previousPanelSegmentButton?.addEventListener("click", () => {
   const selected = getSelectedLock();
-  const target = isPanelGeometry(selected) ? selected : activeStrandShapeTarget();
+  const target = isPanelGeometry(selected) ? selected : taperEditor.activeStrandShapeTarget();
   if (!target) return;
   const { index } = selectedPanelSegment(target);
   sculptState.state.panelSegmentIndex = Math.max(0, index - 1);
@@ -25914,7 +25132,7 @@ previousPanelSegmentButton?.addEventListener("click", () => {
 });
 nextPanelSegmentButton?.addEventListener("click", () => {
   const selected = getSelectedLock();
-  const target = isPanelGeometry(selected) ? selected : activeStrandShapeTarget();
+  const target = isPanelGeometry(selected) ? selected : taperEditor.activeStrandShapeTarget();
   if (!target) return;
   const { index, count } = selectedPanelSegment(target);
   sculptState.state.panelSegmentIndex = Math.min(count - 1, index + 1);
@@ -28079,7 +27297,7 @@ function updatePanelSplitHandleDrag(event) {
       && sculptState.state.taperCurveEdit?.type === "segment"
       && sculptState.state.taperCurveEdit.id === lock.id
       && sculptState.state.taperCurveEdit.segmentIndex === segment) {
-      renderTaperCurveEditor();
+      taperEditor.renderTaperCurveEditor();
     }
     // 右侧属性面板预览同步：该 lock 是当前选中/面板尖端选中时热更新。
     if (sculptState.state.panelTipSelection?.lockId === lock.id || getSelectedLock()?.id === lock.id) {
@@ -30098,7 +29316,7 @@ syncSculptBrushControls();
 updateLightAngleFromInputs();
 applyDisplayVisibilityFilters();
 updateInteractionLocks();
-window.addEventListener("pointermove", updateTaperMeshPointDrag, true);
+window.addEventListener("pointermove", taperEditor.updateTaperMeshPointDrag, true);
 window.addEventListener("pointermove", updateTransformScalePointer, true);
 window.addEventListener("pointermove", trackViewportPointerMove);
 window.addEventListener("pointermove", updateStrandRadialGesture, true);
@@ -30131,7 +29349,7 @@ window.addEventListener("pointermove", guideApi.updateCapsuleGuideLoopHover);
 window.addEventListener("pointermove", guideApi.updateCapsuleGuideLoopDrag);
 window.addEventListener("pointermove", updateHoudiniZoomDrag, true);
 window.addEventListener("pointerup", endViewSnap);
-window.addEventListener("pointerup", finishTaperMeshPointDrag, true);
+window.addEventListener("pointerup", taperEditor.finishTaperMeshPointDrag, true);
 window.addEventListener("pointerup", finishReferenceCrop, true);
 window.addEventListener("pointerup", finishReferenceOverlayDrag, true);
 window.addEventListener("pointerup", finishSculptMoveStroke, true);
@@ -30163,7 +29381,7 @@ window.addEventListener("pointerup", endAltOrbit);
 window.addEventListener("pointerup", endHoudiniZoomDrag);
 window.addEventListener("pointerup", endSelectPointerCapture);
 window.addEventListener("pointercancel", endViewSnap);
-window.addEventListener("pointercancel", (event) => finishTaperMeshPointDrag(event, { cancel: true }), true);
+window.addEventListener("pointercancel", (event) => taperEditor.finishTaperMeshPointDrag(event, { cancel: true }), true);
 window.addEventListener("pointercancel", (event) => finishReferenceCrop(event, { cancel: true }), true);
 window.addEventListener("pointercancel", (event) => finishReferenceOverlayDrag(event, { cancel: true }), true);
 window.addEventListener("pointercancel", (event) => finishSculptMoveStroke(event, { cancel: true }), true);
@@ -30211,7 +29429,7 @@ renderer.domElement.addEventListener("pointercancel", branchRegion.endBranchSwee
 ["pointerdown", "click", "dblclick"].forEach((eventName) => {
   renderer.domElement.addEventListener(eventName, blockProportionalSizingEvent, true);
 });
-renderer.domElement.addEventListener("pointerdown", beginTaperMeshPointDrag, true);
+renderer.domElement.addEventListener("pointerdown", taperEditor.beginTaperMeshPointDrag, true);
 renderer.domElement.addEventListener("pointerdown", blockPointerDuringStrandRadialGesture, true);
 renderer.domElement.addEventListener("pointerdown", confirmDuplicatePlacement, true);
 renderer.domElement.addEventListener("pointerdown", beginReferenceCrop, true);
@@ -30820,7 +30038,7 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     setTipWidthCurveValue,
     buildTipWidthCurve,
     tipWidthResetCurve,
-    renderTaperCurveEditor,
+    renderTaperCurveEditor: taperEditor.renderTaperCurveEditor,
     syncPanelSegmentControls,
     sampleTaperCurve,
     sampleAsymmetricTaperCurve,
