@@ -1,4 +1,4 @@
-# clump/procedural 迁出 — 函数引用图（批次 B6）
+﻿# clump/procedural 迁出 — 函数引用图（批次 B6）
 
 > 只读盘点：2026-08-12 · 分支 `0.2.59-refactor` · **工作区 app.js 22,689 行**（FUNCTION_INDEX.json 快照 23,071 行已过时——B2-2 placement.js 正在工作区迁出未提交；本表已按当前工作区逐函数名重新锚定）。未改动 app.js/modules/*。
 > 口径：行号全部为当前工作区实测；毛行 = 函数体大括号精确匹配（含行内注释/空行，不含夹层）。
@@ -367,3 +367,87 @@
 - `undoState.locks.find`（proceduralDuplicateSourceSnapshots / beginDuplicatePlacement 各 1 处）是 undoState 参数属性访问，非全局 locks，未改写（扫描已区分）。
 - app.js 净减：20,631 → 19,955（-676 行；模块 802 行含脚手架，净减略高于本表 600-650 估，因 728 行移除 + 52 行脚手架）。
 - 未 commit、未动 index.html / FUNCTION_INDEX / verify-smoke / 其它批次产物。
+
+---
+
+## 执行记录 B6a（2026-08-12 · 分支 0.2.59-refactor · HEAD a82ffe4）
+
+### 实际迁出（40 函数 / 827 毛行，按当前工作区 19,955 行重新锚定）
+
+> 本表 §1 B6a 清单 41 函数中 clumpMirrorRadialOptions 已于 A2（radial-menu.js L182）迁出、不在 app.js，故本批实际 40 函数 / 827 毛行（= 833 − 6）。
+
+| 函数 | 原 L 范围（app.js） | 毛行 |
+|---|---|---|
+| mirroredClumpPartners | L8560-8564 | 5 |
+| createMirroredClump | L8566-8586 | 21 |
+| decoupleMirroredClump | L8588-8595 | 8 |
+| nextClumpName | L10322-10327 | 6 |
+| initializeClumpShape | L10329-10338 | 10 |
+| stableClumpVariation | L10340-10350 | 11 |
+| createClumpFromLocks | L10352-10375 | 24 |
+| addLockToClump | L10377-10393 | 17 |
+| pointerToNdc | L10433-10439 | 7 |
+| gridProfileSkipCol | L10449-10456 | 8 |
+| clumpDirectMembers | L10473-10476 | 4 |
+| clumpMembersForGuide | L10478-10480 | 3 |
+| clumpGuideForLock | L10482-10485 | 4 |
+| proceduralGuideForLock | L10487-10492 | 6 |
+| proceduralAccessoryMembersForGuide | L10494-10499 | 6 |
+| proceduralBranchMembersForGuide | L10501-10506 | 6 |
+| proceduralBranchTemplatesForGuide | L10508-10518 | 11 |
+| proceduralBranchWorldPoints | L10520-10531 | 12 |
+| applyProceduralBranchSettings | L10533-10570 | 38 |
+| proceduralAccessoryMapsForGuide | L10572-10586 | 15 |
+| setProceduralAccessoryGeometry | L10588-10600 | 13 |
+| createProceduralAccessoryLock | L10602-10652 | 51 |
+| applyProceduralAccessorySettings | L10654-10703 | 50 |
+| clumpFrameAt | L10705-10711 | 7 |
+| commitClumpMemberRestState | L10713-10794 | 82 |
+| updateClumpMembers | L10796-10898 | 103 |
+| dissolveClump | L10900-10935 | 36 |
+| detachLockFromClump | L10937-10961 | 25 |
+| proceduralParentOutlineVisible | L12700-12705 | 6 |
+| syncProceduralParentVisibility | L12707-12714 | 8 |
+| syncProceduralAccessoryEditControls | L13122-13159 | 38 |
+| syncClumpGuidePanel | L13566-13591 | 26 |
+| selectionCanBecomeClump | L13975-13978 | 4 |
+| createClumpFromSelection | L13980-13990 | 11 |
+| setProceduralDrawExperimentalEnabled | L14232-14245 | 14 |
+| outlinerClumpLocks | L14602-14604 | 3 |
+| handleOutlinerClumpDrop | L14606-14627 | 22 |
+| createOutlinerClump | L14811-14891 | 81 |
+| beginProceduralAccessoryEdit | L16577-16581 | 5 |
+| updateSelectedProceduralAccessories | L16582-16601 | 20 |
+
+### 装配与接线
+- 新模块：modules/geometry/clump-procedural.js（949 行含脚手架，导出 createClumpProceduralApi(deps)）。
+- app.js：import 插入 L26（createClumpProceduralApi?v=20260812-1）；api 创建 L1519-1520（紧跟 proceduralDuplicateApi）；deps 批填 L8157-8223（}); 生效行 L8223，紧跟 proceduralDuplicateDeps 批填之后）。
+- 模块级 import：THREE；curve-math.js（clumpMemberGuideParameter/remapEnvelopeCurveRange/normalizeTaperCurve）；procedural-draw.js（proceduralBranchTemplateData）。
+- 注入模块 api：drawFlowApi（proceduralDrawClumpTemplate/drawClumpStrandMaps/createDrawnLock）、branchRootBone（branchWorldVector/captureBranchLocalState）、taperEditor（renderTaperPreview）。
+- store .state 代理：sel（4 处）/ sculptState（2 处）/ draw（8 处）/ miscState（2 处），模块内全部 deps.X.y，双重 .state 0 处。
+- app.js 注入：locks/renderer/clumpOpen + DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE/DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE/PROCEDURAL_DRAW_EXPERIMENTAL_PREFERENCE_KEY + 27 个 clump/procedural DOM + 29 个脊柱 helper（pushUndoState/updateLockGeometry/rebuildCurveObjects/renderLockList/updateCount/selectLock/getSelectedLock/deleteLocks/syncActiveMirror/syncLockFromCurve/mirrorPartnerFor/createMirrorPartner/syncMirrorPartnerFromLock/decoupleMirrorPartner/fitPointAttributes/setPointScale/outwardNormalAtPoint/transportedStrandFrameAt/saveBooleanPreference/setActiveTool/strandVisibleForDisplay/syncLockedStrandWireVisual/selectedLocksInOrder/setLocksOutlinerVisibility/createOutlinerStrandButton/createOutlinerVisibilityToggle/handleOutlinerRenameClick/showOutlinerContextMenu）。
+
+### 跨批次重接（app.js 模块 deps 注入行改指 clumpProceduralApi.X）
+- drawFlowDeps 4 项：nextClumpName/createClumpFromLocks/updateClumpMembers/applyProceduralBranchSettings（L8056-8059；draw-flow.js 模块内 deps.* 未动）。
+- radialMenuDeps 8 项：mirroredClumpPartners/clumpGuideForLock/selectionCanBecomeClump/createClumpFromSelection/createMirroredClump/decoupleMirroredClump/dissolveClump/outlinerClumpLocks（L2978-3004）。
+- sculptGeomDeps 1 项：commitClumpMemberRestState（L2522）。
+- branchRootBoneDeps 1 项：commitClumpMemberRestState（L5452，行内多条目行）。
+- taperEditorDeps 1 项：proceduralGuideForLock（L7872）。
+- branchRegionDeps 1 项：pointerToNdc（L8643）。
+- strandGeometryDeps 3 项：gridProfileSkipCol/proceduralBranchTemplatesForGuide/proceduralBranchWorldPoints（L11638-11643）。
+- 外部调用点改写共 70 处 = deps 批填 19 项 + 运行时调用 51 处。deps 批填 19：sculptGeomDeps 1（commitClumpMemberRestState）、radialMenuDeps 8（mirroredClumpPartners/clumpGuideForLock/selectionCanBecomeClump/createClumpFromSelection/createMirroredClump/decoupleMirroredClump/dissolveClump/outlinerClumpLocks）、branchRootBoneDeps 1（commitClumpMemberRestState）、taperEditorDeps 1（proceduralGuideForLock）、drawFlowDeps 4（nextClumpName/createClumpFromLocks/updateClumpMembers/applyProceduralBranchSettings）、branchRegionDeps 1（pointerToNdc）、strandGeometryDeps 3（gridProfileSkipCol/proceduralBranchTemplatesForGuide/proceduralBranchWorldPoints）。运行时 51：commitClumpMemberRestState×8、clumpGuideForLock×4、updateClumpMembers×6、syncProceduralParentVisibility×4、setProceduralDrawExperimentalEnabled×4、beginProceduralAccessoryEdit×3、updateSelectedProceduralAccessories×3、mirroredClumpPartners×2、dissolveClump×2、outlinerClumpLocks×5、proceduralParentOutlineVisible×1、syncProceduralAccessoryEditControls×1、syncClumpGuidePanel×1、selectionCanBecomeClump×1、handleOutlinerClumpDrop×1、createOutlinerClump×1、createClumpFromSelection×1、decoupleMirroredClump×1、createMirroredClump×1、detachLockFromClump×1。
+
+### 回归验证（7 项）
+1. 裸引用静态扫描归零：app.js 40 名全部只以 clumpProceduralApi.X / DOM 变量名（dissolveClumpAction/createClumpFromSelectionAction）出现；模块内 29 helper + 30 const/DOM + 3 api 全部 deps.X 化，自由标识符与 app.js 顶层名/import 绑定碰撞 0。
+2. store 双重 .state：模块 deps.X.state 0 处。
+3. 引导期时序：批填生效行 L8223；api 创建 L1519 早于 sculptGeomDeps（L2522）等全部引用；首运行时调用 = boot L19145 updateAttributeEditorMode() → syncProceduralAccessoryEditControls，远晚于 L8223；无 boot 期调用早于批填。
+4. 跨批次重接：上述 7 个 deps 批填 19 项全部改指 clumpProceduralApi.X；draw-flow/radial-menu/taper-editor/strand-geometry/branch-region-panel/sculpt-geometry/branch-root-bone 模块内 deps.* 引用未动；branch-root-bone.js 对 commitClumpMemberRestState 仍仅注释提及（死 dep，已改指 clumpProceduralApi 保留结构）。
+5. 编码：UTF-8 无 BOM、CRLF（app.js 19,207 行 / 模块 949 行全 CRLF）；非 ASCII 守恒 182 = 181 + 1（唯一 ° 随 syncClumpGuidePanel 迁移，逐字节一致）。
+6. 语法：node --check 双文件 .mjs 副本均通过（exit 0）。
+7. 本记录已写入本文件。
+
+### 边界存疑点
+- 本表 §1 B6a 含 clumpMirrorRadialOptions（L15522-15527，旧锚定），实际已随 A2 radial-menu.js 迁出，不在本批（径向菜单镜像选项保持 radial-menu.js 内，经 deps.mirroredClumpPartners 消费）。
+- branchRootBoneDeps.commitClumpMemberRestState 为死 dep（branch-root-bone.js 仅注释提及），按任务要求改指 clumpProceduralApi 保留结构，未删。
+- app.js 净减：19,955 → 19,207（−748 行；模块 949 行含脚手架，毛行 827 + 脚手架 ~122）。
+- 未 commit、未动 index.html / FUNCTION_INDEX / verify-smoke / 已提交模块（draw-flow.js/procedural-duplicate.js/radial-menu.js 等）与其它批次产物。

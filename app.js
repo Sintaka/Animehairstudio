@@ -23,6 +23,7 @@ import { createDrawFlowApi } from "./modules/geometry/draw-flow.js?v=20260812-1"
 import { createRadialMenuApi } from "./modules/geometry/radial-menu.js?v=20260812-1";
 import { createPlacementApi } from "./modules/geometry/placement.js?v=20260812-1";
 import { createProceduralDuplicateApi } from "./modules/geometry/procedural-duplicate.js?v=20260812-3";
+import { createClumpProceduralApi } from "./modules/geometry/clump-procedural.js?v=20260812-1";
 import { createReferenceHeadApi } from "./modules/scene/reference-head.js?v=20260812-2";
 import { createMiscStore } from "./modules/core/misc-store.js?v=20260809-12";
 import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260809-11";
@@ -865,8 +866,8 @@ transformControls.addEventListener("dragging-changed", (event) => {
   }
   if (!event.value) {
     const editedLock = locks.find((item) => item.id === sculptState.state.activeHandleEdit?.lockId);
-    commitClumpMemberRestState(editedLock);
-    commitClumpMemberRestState(mirrorPartnerFor(editedLock));
+    clumpProceduralApi.commitClumpMemberRestState(editedLock);
+    clumpProceduralApi.commitClumpMemberRestState(mirrorPartnerFor(editedLock));
     flushPendingLockGeometryUpdates();
     sculptState.state.activeHandleEdit = null;
     sculptState.state.activeLatticeMultiEdit = null;
@@ -1511,6 +1512,12 @@ const placementApi = createPlacementApi(placementDeps);
 // devlog/in-progress/clump-procedural-refactor-map.md.
 const proceduralDuplicateDeps = {};
 const proceduralDuplicateApi = createProceduralDuplicateApi(proceduralDuplicateDeps);
+
+// Clump / procedural api (refactor batch B6a / plan B6): deps filled in one batch after the
+// proceduralDuplicateDeps block (all const/let deps defined); no boot-time calls before the
+// batch, see devlog/in-progress/clump-procedural-refactor-map.md.
+const clumpProceduralDeps = {};
+const clumpProceduralApi = createClumpProceduralApi(clumpProceduralDeps);
 
 // Radial menu api (refactor batch A2): deps filled in one batch after the
 // referenceHeadApi block (all const/let deps defined); no boot-time calls before
@@ -2512,7 +2519,7 @@ Object.assign(sculptGeomDeps, {
   applySubBoneBrushSample: bonesApi.applySubBoneBrushSample,
   average,
   camera,
-  commitClumpMemberRestState,
+  commitClumpMemberRestState: clumpProceduralApi.commitClumpMemberRestState,
   curveFrameAt,
   effectiveSculptBrushTool,
   flushPendingLockGeometryUpdates,
@@ -2968,14 +2975,14 @@ Object.assign(radialMenuDeps, {
   selectedLocksInOrder,
   mirrorPartnerFor,
   hiddenStrandsExist,
-  mirroredClumpPartners,
+  mirroredClumpPartners: clumpProceduralApi.mirroredClumpPartners,
   lockedStrandsExist,
-  clumpGuideForLock,
+  clumpGuideForLock: clumpProceduralApi.clumpGuideForLock,
   getSelectedLock,
   strandIsolationActive,
-  selectionCanBecomeClump,
+  selectionCanBecomeClump: clumpProceduralApi.selectionCanBecomeClump,
   selectedProceduralDuplicateSources: proceduralDuplicateApi.selectedProceduralDuplicateSources,
-  createClumpFromSelection,
+  createClumpFromSelection: clumpProceduralApi.createClumpFromSelection,
   lockSelectedStrands,
   unlockAllStrands,
   hideSelectedStrands,
@@ -2991,10 +2998,10 @@ Object.assign(radialMenuDeps, {
   selectLock,
   decoupleMirrorPartner,
   renderLockList,
-  createMirroredClump,
-  decoupleMirroredClump,
-  dissolveClump,
-  outlinerClumpLocks,
+  createMirroredClump: clumpProceduralApi.createMirroredClump,
+  decoupleMirroredClump: clumpProceduralApi.decoupleMirroredClump,
+  dissolveClump: clumpProceduralApi.dissolveClump,
+  outlinerClumpLocks: clumpProceduralApi.outlinerClumpLocks,
   deleteLocks,
   beginDuplicatePlacement: proceduralDuplicateApi.beginDuplicatePlacement,
   setObjectSpaceEditing,
@@ -3114,8 +3121,8 @@ function setLockHairLayer(lock, layerId) {
     updateLockGeometry(item);
   });
   miscState.state.clumpUpdateInProgress = false;
-  const guide = clumpGuideForLock(lock);
-  if (guide) updateClumpMembers(guide);
+  const guide = clumpProceduralApi.clumpGuideForLock(lock);
+  if (guide) clumpProceduralApi.updateClumpMembers(guide);
 }
 
 function setGroupLayerOffset(region, layerId, offset) {
@@ -5442,7 +5449,7 @@ function updateStrandObjectTransform(handle) {
 }
 
 const branchRootBone = createBranchRootBoneApi({
-  commitClumpMemberRestState, componentEditModeActive, controlPointRotationAt,
+  commitClumpMemberRestState: clumpProceduralApi.commitClumpMemberRestState, componentEditModeActive, controlPointRotationAt,
   curveFrameAt, curveFrameAtPoint, getSelectedLock, strandControlPointFrame,
   transportedStrandFrameAt, updateBranchChildren: branchHierarchy.updateBranchChildren, locks, transformControls,
   updateBranchRootRegionCenter: (lock, u, v) => branchRegion.updateBranchRootRegionCenter(lock, u, v),
@@ -6186,8 +6193,8 @@ function endViewPlaneMove(event) {
   if (!sculptState.state.viewPlaneMoveDrag || (event?.pointerId !== undefined && event.pointerId !== sculptState.state.viewPlaneMoveDrag.pointerId)) return;
   const pointerId = sculptState.state.viewPlaneMoveDrag.pointerId;
   const editedLock = locks.find((item) => item.id === sculptState.state.activeHandleEdit?.lockId);
-  commitClumpMemberRestState(editedLock);
-  commitClumpMemberRestState(mirrorPartnerFor(editedLock));
+  clumpProceduralApi.commitClumpMemberRestState(editedLock);
+  clumpProceduralApi.commitClumpMemberRestState(mirrorPartnerFor(editedLock));
   sculptState.state.viewPlaneMoveDrag = null;
   updateViewPlaneNormalGuide();
   flushPendingLockGeometryUpdates();
@@ -6444,8 +6451,8 @@ function updateRelaxEdit(event) {
 function endRelaxEdit() {
   if (!sculptState.state.relaxEdit) return;
   const editedLock = locks.find((item) => item.id === sculptState.state.relaxEdit.lockId);
-  commitClumpMemberRestState(editedLock);
-  commitClumpMemberRestState(mirrorPartnerFor(editedLock));
+  clumpProceduralApi.commitClumpMemberRestState(editedLock);
+  clumpProceduralApi.commitClumpMemberRestState(mirrorPartnerFor(editedLock));
   sculptState.state.relaxEdit = null;
   flushPendingLockGeometryUpdates();
   updateInteractionLocks();
@@ -7654,7 +7661,7 @@ function setGroupLengthScale(region, value) {
       }
       lock.regionLengthReference = curvePolylineLength(lock.regionLengthBasePoints);
       lock.regionLengthApplied = nextScale;
-      if (lock.branchParentId || (lock.clumpId && !lock.clumpGuide)) commitClumpMemberRestState(lock);
+      if (lock.branchParentId || (lock.clumpId && !lock.clumpGuide)) clumpProceduralApi.commitClumpMemberRestState(lock);
       syncLockFromCurve(lock);
     });
     targets.forEach((lock) => updateLockGeometry(lock, { immediate: true }));
@@ -7862,7 +7869,7 @@ Object.assign(taperEditorDeps, {
   clonePanelSplits,
   isPanelGeometry,
   tipWidthSideForkT: panelTipStrand.tipWidthSideForkT,
-  proceduralGuideForLock,
+  proceduralGuideForLock: clumpProceduralApi.proceduralGuideForLock,
   strandGeometryFrameAt,
   strandGeometryCurve,
   transportedStrandFrameAt,
@@ -8046,10 +8053,10 @@ Object.assign(drawFlowDeps, {
   activeCreationShapeDefaults,
   updatePlacementStatus: placementApi.updatePlacementStatus,
   applyPlacedStrandScaleProfile: placementApi.applyPlacedStrandScaleProfile,
-  nextClumpName,
-  createClumpFromLocks,
-  updateClumpMembers,
-  applyProceduralBranchSettings
+  nextClumpName: clumpProceduralApi.nextClumpName,
+  createClumpFromLocks: clumpProceduralApi.createClumpFromLocks,
+  updateClumpMembers: clumpProceduralApi.updateClumpMembers,
+  applyProceduralBranchSettings: clumpProceduralApi.applyProceduralBranchSettings
 });
 // Placement flow api deps batch (refactor batch B2-2): all deps are defined by this point
 // (last const/let deps: shapePresets / draw DOM inputs); the batch takes effect here, before
@@ -8142,6 +8149,77 @@ Object.assign(proceduralDuplicateDeps, {
   updateHistoryButtons,
   updateInteractionLocks,
   syncActiveMirror
+});
+
+// Clump / procedural api deps batch (refactor batch B6a / plan B6): all deps are defined by
+// this point (last const/let deps: clumpOpen / procedural* DOM + outliner helpers); the batch
+// takes effect here, before the bootstrap init and before all clump UI listener registrations.
+Object.assign(clumpProceduralDeps, {
+  sel: sel.state,
+  sculptState: sculptState.state,
+  draw: draw.state,
+  miscState: miscState.state,
+  locks,
+  renderer,
+  clumpOpen,
+  DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE,
+  DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE,
+  PROCEDURAL_DRAW_EXPERIMENTAL_PREFERENCE_KEY,
+  clumpGuidePanel,
+  clumpGuideStatus,
+  clumpInfluenceControl,
+  clumpInfluenceInput,
+  clumpInfluenceValue,
+  clumpShapeControls,
+  clumpShapeInputs,
+  clumpShapeValues,
+  proceduralAccessoryEditPanel,
+  proceduralAccessoryEditCountInput,
+  proceduralAccessoryEditCountValue,
+  proceduralAccessoryEditRadiusInput,
+  proceduralAccessoryEditRadiusValue,
+  proceduralAccessoryEditParentVisibleInput,
+  proceduralBranchEditCountInput,
+  proceduralBranchEditCountValue,
+  proceduralBranchEditLengthInput,
+  proceduralBranchEditLengthValue,
+  proceduralBranchEditTipOffsetInput,
+  proceduralBranchEditTipOffsetValue,
+  proceduralBranchLengthCurvePreview,
+  proceduralBranchShapeCurvePreview,
+  proceduralDrawExperimentalPreferenceInput,
+  proceduralDrawToolButton,
+  drawFlowApi,
+  branchRootBone,
+  taperEditor,
+  pushUndoState,
+  updateLockGeometry,
+  rebuildCurveObjects,
+  renderLockList,
+  updateCount,
+  selectLock,
+  getSelectedLock,
+  deleteLocks,
+  syncActiveMirror,
+  syncLockFromCurve,
+  mirrorPartnerFor,
+  createMirrorPartner,
+  syncMirrorPartnerFromLock,
+  decoupleMirrorPartner,
+  fitPointAttributes,
+  setPointScale,
+  outwardNormalAtPoint,
+  transportedStrandFrameAt,
+  saveBooleanPreference,
+  setActiveTool,
+  strandVisibleForDisplay,
+  syncLockedStrandWireVisual,
+  selectedLocksInOrder,
+  setLocksOutlinerVisibility,
+  createOutlinerStrandButton,
+  createOutlinerVisibilityToggle,
+  handleOutlinerRenameClick,
+  showOutlinerContextMenu
 });
 
 
@@ -8416,7 +8494,7 @@ function addLock(presetName, overrides = {}, options = {}) {
   ensureUvCheckerForLock(lock);
   hairGroup.add(lock.mesh);
   lock.mesh.visible = strandVisibleForDisplay(lock);
-  syncProceduralParentVisibility(lock);
+  clumpProceduralApi.syncProceduralParentVisibility(lock);
   curveGroup.add(lock.curveObjects.group);
   if (!options.deferUi) {
     selectLock(lock.mesh.visible ? lock.id : undefined);
@@ -8557,46 +8635,12 @@ function createMirrorPartnerForNewLock(lock) {
   return createMirrorPartner(lock, { deferUi: true });
 }
 
-function mirroredClumpPartners(guide) {
-  return outlinerClumpLocks(guide)
-    .map((lock) => mirrorPartnerFor(lock))
-    .filter(Boolean);
-}
 
-function createMirroredClump(guide, options = {}) {
-  const sourceLocks = outlinerClumpLocks(guide);
-  if (!guide?.clumpGuide || sourceLocks.length < 2) return null;
-  if (sourceLocks.some((lock) => mirrorPartnerFor(lock))) return null;
-  const mirroredLocks = sourceLocks
-    .map((lock) => createMirrorPartner(lock, { deferUi: true }))
-    .filter(Boolean);
-  if (mirroredLocks.length !== sourceLocks.length) return null;
-  const mirroredGuide = createClumpFromLocks(mirroredLocks, {
-    name: guide.clumpName || nextClumpName()
-  });
-  if (!mirroredGuide) return null;
-  syncMirrorPartnerFromLock(guide, mirroredGuide, { updateClump: false });
-  updateClumpMembers(mirroredGuide);
-  clumpOpen.set(mirroredGuide.clumpId, false);
-  if (!options.deferUi) {
-    renderLockList();
-    updateCount();
-  }
-  return mirroredGuide;
-}
 
-function decoupleMirroredClump(guide) {
-  const sourceLocks = outlinerClumpLocks(guide);
-  const linkedLocks = sourceLocks.filter((lock) => mirrorPartnerFor(lock));
-  if (!linkedLocks.length) return false;
-  linkedLocks.forEach(decoupleMirrorPartner);
-  renderLockList();
-  return true;
-}
 
 const branchRegion = createBranchRegionApi({
   locks, rebuildLockGeometry, updateCurveObjects, getSelectedLock, pushUndoState,
-  resize, pointerToNdc, closeSweepProfileEditor: branchSweep.closeSweepProfileEditor, closeTaperCurveEditor: taperEditor.closeTaperCurveEditor,
+  resize, pointerToNdc: clumpProceduralApi.pointerToNdc, closeSweepProfileEditor: branchSweep.closeSweepProfileEditor, closeTaperCurveEditor: taperEditor.closeTaperCurveEditor,
   branchRootRegionWorldPoints: branchBridge.branchRootRegionWorldPoints, strandGeometryCurve, raycaster, camera, renderer,
   branchState: branch.state, sculptState: sculptState.state, viewportState: viewportState.state,
   selState: sel.state, hairState: hairState.state,
@@ -9445,7 +9489,7 @@ async function loadPreferencesAndPresets(file) {
     setViewportBackgroundColor(preferences.viewportBackgroundColor);
   }
   radialMenuApi.setRadialMenusEnabled(importedBooleanPreference(preferences.radialMenus, ui.state.radialMenusEnabled));
-  setProceduralDrawExperimentalEnabled(importedBooleanPreference(
+  clumpProceduralApi.setProceduralDrawExperimentalEnabled(importedBooleanPreference(
     preferences.proceduralDrawExperimental,
     draw.state.proceduralDrawExperimentalEnabled
   ));
@@ -10167,7 +10211,7 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
   ensureUvCheckerForLock(lock);
   hairGroup.add(lock.mesh);
   lock.mesh.visible = strandVisibleForDisplay(lock);
-  syncProceduralParentVisibility(lock);
+  clumpProceduralApi.syncProceduralParentVisibility(lock);
   curveGroup.add(lock.curveObjects.group);
 }
 
@@ -10319,78 +10363,10 @@ function createCurvePoints(lock) {
 }
 
 
-function nextClumpName() {
-  const used = new Set(locks.map((lock) => lock.clumpName).filter(Boolean));
-  let index = 1;
-  while (used.has(`Clump ${index}`)) index += 1;
-  return `Clump ${index}`;
-}
 
-function initializeClumpShape(guide) {
-  if (!guide) return;
-  guide.clumpSpread = Number(guide.clumpSpread ?? 1);
-  guide.clumpDepthSpread = Number(guide.clumpDepthSpread ?? 1);
-  guide.clumpTipFan = Number(guide.clumpTipFan ?? 0);
-  guide.clumpRoll = Number(guide.clumpRoll ?? 0);
-  guide.clumpStrandWidth = Number(guide.clumpStrandWidth ?? 1);
-  guide.clumpStrandDepth = Number(guide.clumpStrandDepth ?? 1);
-  guide.clumpVariation = Number(guide.clumpVariation ?? 0);
-}
 
-function stableClumpVariation(id = "") {
-  let hash = 2166136261;
-  for (let index = 0; index < id.length; index += 1) {
-    hash ^= id.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  const first = ((hash >>> 0) % 2001) / 1000 - 1;
-  hash = Math.imul(hash ^ 0x9e3779b9, 16777619);
-  const second = ((hash >>> 0) % 2001) / 1000 - 1;
-  return { first, second };
-}
 
-function createClumpFromLocks(clumpLocks, options = {}) {
-  const members = clumpLocks.filter(Boolean);
-  if (members.length < (options.allowSingle ? 1 : 2)) return null;
-  const clumpId = crypto.randomUUID();
-  const guide = members[0];
-  const name = options.name || nextClumpName();
-  members.forEach((lock, index) => {
-    lock.clumpId = clumpId;
-    lock.clumpName = name;
-    lock.clumpGuide = index === 0;
-    lock.clumpGuideId = guide.id;
-    lock.clumpInfluence = 1;
-    lock.clumpRestPoints = lock.points.map((point) => point.clone());
-    lock.clumpRestTwists = [...lock.pointTwists];
-    lock.clumpRestScales = lock.pointScales.map((scale) => ({ x: scale.x, z: scale.z }));
-    if (index === 0) {
-      initializeClumpShape(lock);
-      lock.clumpGuideRestPoints = lock.points.map((point) => point.clone());
-      lock.clumpGuideRestTwists = [...lock.pointTwists];
-      lock.clumpGuideRestScales = lock.pointScales.map((scale) => ({ x: scale.x, z: scale.z }));
-    }
-  });
-  return guide;
-}
 
-function addLockToClump(lock, guide, options = {}) {
-  if (!lock || !guide?.clumpGuide || !guide.clumpId || lock.id === guide.id) return false;
-  if (lock.clumpGuide || lock.clumpId === guide.clumpId) return false;
-  if (lock.clumpId) detachLockFromClump(lock);
-  lock.clumpId = guide.clumpId;
-  lock.clumpName = guide.clumpName;
-  lock.clumpGuide = false;
-  lock.clumpGuideId = guide.id;
-  lock.clumpInfluence = 1;
-  lock.clumpRestPoints = lock.points.map((point) => point.clone());
-  lock.clumpRestTwists = [...lock.pointTwists];
-  lock.clumpRestScales = lock.pointScales.map((scale) => ({ x: scale.x, z: scale.z }));
-  lock.clumpParameterStart = THREE.MathUtils.clamp(Number(options.parameterStart ?? 0), 0, 1);
-  lock.clumpParameterEnd = THREE.MathUtils.clamp(Number(options.parameterEnd ?? 1), lock.clumpParameterStart, 1);
-  if (options.update !== false) updateClumpMembers(guide);
-  return true;
-}
 
 
 
@@ -10430,13 +10406,6 @@ function addLockToClump(lock, guide, options = {}) {
 // Map the viewport navigation style onto the 2D region panel instead of always
 // copying Houdini's Alt+RMB zoom. Alt+MMB pan stays available in every style.
 
-function pointerToNdc(event) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  return new THREE.Vector2(
-    ((event.clientX - rect.left) / rect.width) * 2 - 1,
-    -((event.clientY - rect.top) / rect.height) * 2 + 1
-  );
-}
 
 // Sweep-start control: drag the yellow handle along the child guide to set where
 // the sweep (and therefore the bridge) starts.
@@ -10446,14 +10415,6 @@ function pointerToNdc(event) {
 // Cache of the parent-surface grid region for a child's branchRootRegion.
 // Recomputed only when the control points change; parent moves never touch it.
 // Grid metadata for creased profiles: the column that no face edge starts at.
-function gridProfileSkipCol(edges, vertexCount) {
-  const starts = new Set();
-  edges.forEach((edge) => starts.add(edge.start % vertexCount));
-  for (let c = 0; c < vertexCount; c += 1) {
-    if (!starts.has(c)) return c;
-  }
-  return -1;
-}
 
 
 // World positions of the 4 region edge control points on the parent surface grid.
@@ -10470,495 +10431,23 @@ function gridProfileSkipCol(edges, vertexCount) {
 
 
 
-function clumpDirectMembers(guide) {
-  if (!guide?.clumpGuide || !guide.clumpId) return [];
-  return locks.filter((lock) => lock.clumpId === guide.clumpId && lock.id !== guide.id);
-}
 
-function clumpMembersForGuide(guide) {
-  return clumpDirectMembers(guide);
-}
 
-function clumpGuideForLock(lock) {
-  if (!lock?.clumpId) return null;
-  return locks.find((item) => item.clumpId === lock.clumpId && item.clumpGuide) || null;
-}
 
-function proceduralGuideForLock(lock) {
-  const guide = lock?.proceduralDrawGuide
-    ? lock
-    : (lock?.clumpGuide ? lock : clumpGuideForLock(lock));
-  return guide?.proceduralDrawGuide ? guide : null;
-}
 
-function proceduralAccessoryMembersForGuide(guide) {
-  if (!guide?.proceduralDrawGuide) return [];
-  return clumpMembersForGuide(guide)
-    .filter((lock) => lock.proceduralAccessory)
-    .sort((a, b) => Number(a.proceduralAccessoryIndex ?? 0) - Number(b.proceduralAccessoryIndex ?? 0));
-}
 
-function proceduralBranchMembersForGuide(guide) {
-  if (!guide?.proceduralDrawGuide) return [];
-  return locks
-    .filter((lock) => lock.branchParentId === guide.id && lock.proceduralBranch)
-    .sort((a, b) => Number(a.proceduralBranchIndex ?? 0) - Number(b.proceduralBranchIndex ?? 0));
-}
 
-function proceduralBranchTemplatesForGuide(guide, count, length, tipOffset) {
-  return proceduralBranchTemplateData({
-    count,
-    pointCount: guide?.points?.length || 0,
-    length,
-    tipOffset,
-    lengthCurve: guide?.proceduralBranchLengthCurve || DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE,
-    shapeCurve: guide?.proceduralBranchShapeCurve || DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE,
-    sampleCount: 5
-  });
-}
 
-function proceduralBranchWorldPoints(guide, template) {
-  const frame = transportedStrandFrameAt(
-    guide,
-    new THREE.CatmullRomCurve3(guide.points),
-    template.parameter,
-    { twistOverride: 0 }
-  );
-  return template.localPoints.map(([x, y, z]) => frame.point.clone().add(branchRootBone.branchWorldVector(
-    new THREE.Vector3(x, y, z),
-    frame
-  )));
-}
 
-function applyProceduralBranchSettings(guide, { count, length, tipOffset }) {
-  if (!guide?.proceduralDrawGuide) return;
-  const normalizedLength = THREE.MathUtils.clamp(Number(length), 0.1, 3);
-  const normalizedTipOffset = THREE.MathUtils.clamp(Number(tipOffset), 0, 2);
-  const templates = proceduralBranchTemplatesForGuide(
-    guide,
-    THREE.MathUtils.clamp(Math.round(Number(count)), 0, 64),
-    normalizedLength,
-    normalizedTipOffset
-  );
-  const normalizedCount = templates.length;
-  const legacyMembers = proceduralBranchMembersForGuide(guide);
-  if (legacyMembers.length) {
-    deleteLocks([...legacyMembers, ...legacyMembers.map(mirrorPartnerFor).filter(Boolean)]);
-  }
 
-  guide.proceduralBranchCount = normalizedCount;
-  guide.proceduralBranchLength = normalizedLength;
-  guide.proceduralBranchTipOffset = normalizedTipOffset;
-  updateLockGeometry(guide, { updateBranches: false });
 
-  const mirroredGuide = proceduralGuideForLock(mirrorPartnerFor(guide));
-  if (mirroredGuide) {
-    mirroredGuide.proceduralDrawGuide = true;
-    mirroredGuide.proceduralBranchCount = normalizedCount;
-    mirroredGuide.proceduralBranchLength = normalizedLength;
-    mirroredGuide.proceduralBranchLengthCurve = normalizeTaperCurve(
-      guide.proceduralBranchLengthCurve || DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE
-    );
-    mirroredGuide.proceduralBranchShapeCurve = normalizeTaperCurve(
-      guide.proceduralBranchShapeCurve || DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE
-    );
-    mirroredGuide.proceduralBranchTipOffset = normalizedTipOffset;
-    updateLockGeometry(mirroredGuide, { updateBranches: false });
-  }
-  renderLockList();
-  updateCount();
-}
 
-function proceduralAccessoryMapsForGuide(guide, count, radius) {
-  const samples = guide.points.map((point, index) => ({
-    point: point.clone(),
-    normal: guide.pointSurfaceNormals?.[index]?.clone?.() || null
-  }));
-  const template = drawFlowApi.proceduralDrawClumpTemplate({
-    proceduralAccessoryCount: count,
-    proceduralAccessoryRadius: radius,
-    proceduralParentShape: guide
-  });
-  return {
-    template,
-    maps: drawFlowApi.drawClumpStrandMaps(samples, Number(guide.baseWidth ?? guide.width), template).slice(1)
-  };
-}
 
-function setProceduralAccessoryGeometry(lock, strandMap, index) {
-  lock.proceduralAccessory = true;
-  lock.proceduralAccessoryIndex = index;
-  lock.points = strandMap.points.map((point) => point.clone());
-  lock.pointSurfaceNormals = strandMap.pointSurfaceNormals.map((normal) => normal?.clone?.() || null);
-  fitPointAttributes(lock, lock.points.length);
-  lock.clumpRestPoints = lock.points.map((point) => point.clone());
-  lock.clumpRestTwists = [...lock.pointTwists];
-  lock.clumpRestScales = lock.pointScales.map((scale) => ({ x: scale.x, z: scale.z }));
-  if (lock.curveObjects.handles.length !== lock.points.length) rebuildCurveObjects(lock);
-  syncLockFromCurve(lock);
-  updateLockGeometry(lock);
-}
 
-function createProceduralAccessoryLock(guide, source, strandMap, shapeTemplate, clumpTemplate, index) {
-  const template = {
-    ...shapeTemplate,
-    settings: {
-      strandRotation: source.strandRotation,
-      twist: source.twist,
-      twistCurve: source.twistCurve,
-      taperCurve: source.taperCurve,
-      depthCurve: source.depthCurve,
-      taperCurveSecondary: source.taperCurveSecondary,
-      depthCurveSecondary: source.depthCurveSecondary,
-      asymmetricWidthCurve: source.asymmetricWidthCurve,
-      asymmetricDepthCurve: source.asymmetricDepthCurve,
-      centerAsymmetricProfile: source.centerAsymmetricProfile,
-      widthScale: source.widthScale,
-      depthScale: source.depthScale,
-      sweepProfile: source.sweepProfile,
-      profileOffset: source.profileOffset,
-      radialSegments: source.radialSegments,
-      lengthSegments: source.lengthSegments,
-      dynamicDensity: source.dynamicDensity,
-      densityAggression: source.densityAggression,
-      twistDensity: source.twistDensity,
-      hairLayer: source.hairLayer,
-      rootScalpOffset: source.rootScalpOffset
-    }
-  };
-  const stroke = {
-    brushSize: Number(guide.baseWidth ?? guide.width),
-    brushDepth: Number(guide.depth ?? guide.width),
-    scalpRegion: guide.scalpRegion,
-    scalpOffset: 0,
-    rootAttachmentEnabled: false,
-    surfaceNormalInfluence: Number(guide.surfaceNormalInfluence ?? 0),
-    proceduralDraw: true,
-    proceduralParentVisible: !guide.proceduralParentHidden
-  };
-  const lock = drawFlowApi.createDrawnLock(
-    stroke,
-    strandMap.points,
-    strandMap.pointSurfaceNormals,
-    Number(guide.baseWidth ?? guide.width) * (shapeTemplate.width / clumpTemplate.baseWidth),
-    false,
-    template,
-    clumpTemplate
-  );
-  addLockToClump(lock, guide);
-  lock.proceduralAccessory = true;
-  lock.proceduralAccessoryIndex = index;
-  return lock;
-}
 
-function applyProceduralAccessorySettings(guide, { count, radius, parentVisible }) {
-  if (!guide?.proceduralDrawGuide) return;
-  const normalizedCount = THREE.MathUtils.clamp(Math.round(Number(count)), 0, 16);
-  const normalizedRadius = THREE.MathUtils.clamp(Number(radius), 0, 2);
-  const { template, maps } = proceduralAccessoryMapsForGuide(guide, normalizedCount, normalizedRadius);
-  let members = proceduralAccessoryMembersForGuide(guide);
-  const source = members[0] || guide;
 
-  if (members.length > normalizedCount) {
-    const removed = members.slice(normalizedCount);
-    const removedWithMirrors = [...removed, ...removed.map(mirrorPartnerFor).filter(Boolean)];
-    deleteLocks(removedWithMirrors);
-    members = proceduralAccessoryMembersForGuide(guide);
-  }
-  while (members.length < normalizedCount) {
-    const index = members.length;
-    const lock = createProceduralAccessoryLock(guide, source, maps[index], template.strands[index + 1], template, index);
-    const mirroredGuide = proceduralGuideForLock(mirrorPartnerFor(guide));
-    if (mirroredGuide) {
-      const partner = createMirrorPartner(lock, { deferUi: true });
-      addLockToClump(partner, mirroredGuide);
-      partner.proceduralAccessory = true;
-      partner.proceduralAccessoryIndex = index;
-    }
-    members.push(lock);
-  }
 
-  guide.proceduralAccessoryCount = normalizedCount;
-  guide.proceduralAccessoryRadius = normalizedRadius;
-  guide.proceduralParentHidden = !parentVisible;
-  guide.clumpGuideRestPoints = guide.points.map((point) => point.clone());
-  guide.clumpGuideRestTwists = [...guide.pointTwists];
-  guide.clumpGuideRestScales = guide.pointScales.map((scale) => ({ x: scale.x, z: scale.z }));
-  members.forEach((lock, index) => {
-    setProceduralAccessoryGeometry(lock, maps[index], index);
-    syncActiveMirror(lock, { deferGeometry: false });
-  });
-  syncProceduralParentVisibility(guide);
-  const mirroredGuide = proceduralGuideForLock(mirrorPartnerFor(guide));
-  if (mirroredGuide) {
-    syncMirrorPartnerFromLock(guide, mirroredGuide);
-    mirroredGuide.proceduralDrawGuide = true;
-    mirroredGuide.proceduralAccessoryCount = normalizedCount;
-    mirroredGuide.proceduralAccessoryRadius = normalizedRadius;
-    mirroredGuide.proceduralParentHidden = !parentVisible;
-    syncProceduralParentVisibility(mirroredGuide);
-  }
-  renderLockList();
-  updateCount();
-}
 
-function clumpFrameAt(curve, t) {
-  const point = curve.getPoint(t);
-  const y = curve.getTangent(t).normalize();
-  const z = outwardNormalAtPoint(point, y);
-  const x = new THREE.Vector3().crossVectors(y, z).normalize();
-  return { point, x, y, z };
-}
-
-function commitClumpMemberRestState(lock) {
-  if (lock?.branchParentId) {
-    branchRootBone.captureBranchLocalState(lock);
-    return;
-  }
-  if (!lock?.clumpId || lock.clumpGuide || !lock.points?.length) return;
-  const guide = clumpGuideForLock(lock);
-  if (!guide?.clumpGuideRestPoints?.length || guide.points.length < 2) return;
-  const restGuideCurve = new THREE.CatmullRomCurve3(guide.clumpGuideRestPoints);
-  const currentGuideCurve = new THREE.CatmullRomCurve3(guide.points);
-  const influence = THREE.MathUtils.clamp(Number(guide.clumpInfluence ?? 1), 0, 1);
-  initializeClumpShape(guide);
-  const spread = THREE.MathUtils.clamp(guide.clumpSpread, 0, 2.5);
-  const depthSpread = THREE.MathUtils.clamp(guide.clumpDepthSpread, 0, 2.5);
-  const tipFan = THREE.MathUtils.clamp(guide.clumpTipFan, -1, 1.5);
-  const roll = THREE.MathUtils.degToRad(guide.clumpRoll);
-  const rollCos = Math.cos(roll);
-  const rollSin = Math.sin(roll);
-  const strandWidth = THREE.MathUtils.clamp(guide.clumpStrandWidth, 0.1, 2.5);
-  const strandDepth = THREE.MathUtils.clamp(guide.clumpStrandDepth, 0.1, 2.5);
-  const variation = THREE.MathUtils.clamp(guide.clumpVariation, 0, 1);
-  const memberVariation = stableClumpVariation(lock.id);
-  const restPoints = [];
-  const restTwists = [];
-  const restScales = [];
-
-  lock.points.forEach((point, index) => {
-    const t = index / Math.max(1, lock.points.length - 1);
-    const guideT = clumpMemberGuideParameter(t, lock.clumpParameterStart, lock.clumpParameterEnd);
-    const guideIndex = Math.round(guideT * Math.max(0, guide.points.length - 1));
-    const restFrame = clumpFrameAt(restGuideCurve, guideT);
-    const currentFrame = clumpFrameAt(currentGuideCurve, guideT);
-    const fanScale = Math.max(0.04, 1 + tipFan * t);
-    const variationScale = 1 + memberVariation.first * variation * 0.16 * t;
-    const widthFactor = spread * fanScale * variationScale;
-    const depthFactor = depthSpread * fanScale * variationScale;
-    const variationBow = Math.sin(Math.PI * t) * memberVariation.second * variation * 0.08;
-    const inverseInfluence = 1 - influence;
-    const columnX = restFrame.x.clone().multiplyScalar(inverseInfluence)
-      .addScaledVector(currentFrame.x, influence * widthFactor * rollCos)
-      .addScaledVector(currentFrame.z, influence * widthFactor * rollSin);
-    const columnY = restFrame.y.clone().multiplyScalar(inverseInfluence)
-      .addScaledVector(currentFrame.y, influence);
-    const columnZ = restFrame.z.clone().multiplyScalar(inverseInfluence)
-      .addScaledVector(currentFrame.x, -influence * depthFactor * rollSin)
-      .addScaledVector(currentFrame.z, influence * depthFactor * rollCos);
-    const basis = new THREE.Matrix3().set(
-      columnX.x, columnY.x, columnZ.x,
-      columnX.y, columnY.y, columnZ.y,
-      columnX.z, columnY.z, columnZ.z
-    );
-    const constant = restFrame.point.clone().multiplyScalar(inverseInfluence)
-      .addScaledVector(currentFrame.point, influence)
-      .addScaledVector(currentFrame.x, influence * variationBow);
-    const coordinates = point.clone().sub(constant);
-    if (Math.abs(basis.determinant()) > 1e-8) coordinates.applyMatrix3(basis.invert());
-    restPoints.push(restFrame.point.clone()
-      .addScaledVector(restFrame.x, coordinates.x)
-      .addScaledVector(restFrame.y, coordinates.y)
-      .addScaledVector(restFrame.z, coordinates.z));
-
-    const guideTwistDelta = Number(guide.pointTwists[guideIndex] || 0)
-      - Number(guide.clumpGuideRestTwists?.[guideIndex] || 0);
-    restTwists.push(Number(lock.pointTwists[index] || 0) - guideTwistDelta * influence);
-
-    const guideRestScale = guide.clumpGuideRestScales?.[guideIndex] || { x: 1, z: 1 };
-    const guideScale = guide.pointScales[guideIndex] || guideRestScale;
-    const widthVariation = 1 + memberVariation.second * variation * 0.12;
-    const depthVariation = 1 - memberVariation.second * variation * 0.08;
-    const widthScaleFactor = guideScale.x / Math.max(0.18, guideRestScale.x) * strandWidth * widthVariation;
-    const depthScaleFactor = guideScale.z / Math.max(0.18, guideRestScale.z) * strandDepth * depthVariation;
-    const currentScale = lock.pointScales[index] || { x: 1, z: 1 };
-    restScales.push({
-      x: currentScale.x / Math.max(1e-6, inverseInfluence + influence * widthScaleFactor),
-      z: currentScale.z / Math.max(1e-6, inverseInfluence + influence * depthScaleFactor)
-    });
-  });
-
-  lock.clumpRestPoints = restPoints;
-  lock.clumpRestTwists = restTwists;
-  lock.clumpRestScales = restScales;
-}
-
-function updateClumpMembers(guide) {
-  let members = clumpMembersForGuide(guide);
-  if (guide?.proceduralDrawGuide) {
-    const proceduralMembers = proceduralAccessoryMembersForGuide(guide);
-    if (proceduralMembers.length && guide.points.length >= 2) {
-      const count = THREE.MathUtils.clamp(
-        Math.round(Number(guide.proceduralAccessoryCount ?? proceduralMembers.length)),
-        1,
-        16
-      );
-      const radius = THREE.MathUtils.clamp(Number(guide.proceduralAccessoryRadius ?? 0.7), 0, 2);
-      const { maps } = proceduralAccessoryMapsForGuide(guide, count, radius);
-      proceduralMembers.forEach((member, index) => {
-        if (maps[index]) setProceduralAccessoryGeometry(member, maps[index], index);
-      });
-    }
-    members = members.filter((member) => !member.proceduralAccessory);
-  }
-  if (!members.length || guide.clumpGuideRestPoints?.length < 2 || guide.points.length < 2) return;
-  const restGuideCurve = new THREE.CatmullRomCurve3(guide.clumpGuideRestPoints);
-  const currentGuideCurve = new THREE.CatmullRomCurve3(guide.points);
-  const influence = THREE.MathUtils.clamp(Number(guide.clumpInfluence ?? 1), 0, 1);
-  initializeClumpShape(guide);
-  const spread = THREE.MathUtils.clamp(guide.clumpSpread, 0, 2.5);
-  const depthSpread = THREE.MathUtils.clamp(guide.clumpDepthSpread, 0, 2.5);
-  const tipFan = THREE.MathUtils.clamp(guide.clumpTipFan, -1, 1.5);
-  const roll = THREE.MathUtils.degToRad(guide.clumpRoll);
-  const strandWidth = THREE.MathUtils.clamp(guide.clumpStrandWidth, 0.1, 2.5);
-  const strandDepth = THREE.MathUtils.clamp(guide.clumpStrandDepth, 0.1, 2.5);
-  const variation = THREE.MathUtils.clamp(guide.clumpVariation, 0, 1);
-  miscState.state.clumpUpdateInProgress = true;
-  try {
-    members.forEach((member) => {
-      if (member.clumpShapeCurveInheritance) {
-        const start = THREE.MathUtils.clamp(Number(member.clumpParameterStart ?? 0), 0, 1);
-        const end = THREE.MathUtils.clamp(Number(member.clumpParameterEnd ?? 1), start, 1);
-        member.taperCurve = remapEnvelopeCurveRange(guide.taperCurve, start, end);
-        member.depthCurve = remapEnvelopeCurveRange(guide.depthCurve, start, end);
-        member.taperCurveSecondary = remapEnvelopeCurveRange(
-          guide.taperCurveSecondary || guide.taperCurve,
-          start,
-          end
-        );
-        member.depthCurveSecondary = remapEnvelopeCurveRange(
-          guide.depthCurveSecondary || guide.depthCurve,
-          start,
-          end
-        );
-        member.asymmetricWidthCurve = Boolean(guide.asymmetricWidthCurve);
-        member.asymmetricDepthCurve = Boolean(guide.asymmetricDepthCurve);
-        member.centerAsymmetricProfile = Boolean(guide.centerAsymmetricProfile);
-      }
-      const memberVariation = stableClumpVariation(member.id);
-      if (!member.clumpRestPoints?.length) member.clumpRestPoints = member.points.map((point) => point.clone());
-      member.points.forEach((point, index) => {
-        const t = index / Math.max(1, member.points.length - 1);
-        const guideT = clumpMemberGuideParameter(t, member.clumpParameterStart, member.clumpParameterEnd);
-        const guideIndex = Math.round(guideT * Math.max(0, guide.points.length - 1));
-        const basePoint = member.clumpRestPoints[index] || member.clumpRestPoints.at(-1);
-        const restFrame = clumpFrameAt(restGuideCurve, guideT);
-        const currentFrame = clumpFrameAt(currentGuideCurve, guideT);
-        const offset = basePoint.clone().sub(restFrame.point);
-        const fanScale = Math.max(0.04, 1 + tipFan * t);
-        const variationScale = 1 + memberVariation.first * variation * 0.16 * t;
-        const offsetX = offset.dot(restFrame.x) * spread * fanScale * variationScale;
-        const offsetZ = offset.dot(restFrame.z) * depthSpread * fanScale * variationScale;
-        const rollCos = Math.cos(roll);
-        const rollSin = Math.sin(roll);
-        const rolledX = offsetX * rollCos - offsetZ * rollSin;
-        const rolledZ = offsetX * rollSin + offsetZ * rollCos;
-        const variationBow = Math.sin(Math.PI * t) * memberVariation.second * variation * 0.08;
-        const target = currentFrame.point.clone()
-          .addScaledVector(currentFrame.x, rolledX + variationBow)
-          .addScaledVector(currentFrame.y, offset.dot(restFrame.y))
-          .addScaledVector(currentFrame.z, rolledZ);
-        if (member.clumpShapeCurveInheritance && index === 0) {
-          point.copy(guide.points[guideIndex]);
-        } else {
-          point.copy(basePoint).lerp(target, influence);
-        }
-        const restTwist = Number(member.clumpRestTwists?.[index] ?? member.pointTwists[index] ?? 0);
-        const guideTwistDelta = Number(guide.pointTwists[guideIndex] || 0)
-          - Number(guide.clumpGuideRestTwists?.[guideIndex] || 0);
-        member.pointTwists[index] = restTwist + guideTwistDelta * influence;
-        const restScale = member.clumpRestScales?.[index] || member.pointScales[index] || { x: 1, z: 1 };
-        const guideRestScale = guide.clumpGuideRestScales?.[guideIndex] || { x: 1, z: 1 };
-        const guideScale = guide.pointScales[guideIndex] || guideRestScale;
-        const widthVariation = 1 + memberVariation.second * variation * 0.12;
-        const depthVariation = 1 - memberVariation.second * variation * 0.08;
-        setPointScale(
-          member,
-          index,
-          THREE.MathUtils.lerp(restScale.x, restScale.x * guideScale.x / Math.max(0.18, guideRestScale.x) * strandWidth * widthVariation, influence),
-          THREE.MathUtils.lerp(restScale.z, restScale.z * guideScale.z / Math.max(0.18, guideRestScale.z) * strandDepth * depthVariation, influence)
-        );
-      });
-      syncLockFromCurve(member);
-      updateLockGeometry(member);
-    });
-  } finally {
-    miscState.state.clumpUpdateInProgress = false;
-  }
-}
-
-function dissolveClump(clumpId) {
-  if (!clumpId) return;
-  clumpOpen.delete(clumpId);
-  locks.filter((lock) => lock.clumpId === clumpId).forEach((lock) => {
-    delete lock.clumpId;
-    delete lock.clumpName;
-    delete lock.clumpGuide;
-    delete lock.clumpGuideId;
-    delete lock.clumpInfluence;
-    delete lock.clumpSpread;
-    delete lock.clumpDepthSpread;
-    delete lock.clumpTipFan;
-    delete lock.clumpRoll;
-    delete lock.clumpStrandWidth;
-    delete lock.clumpStrandDepth;
-    delete lock.clumpVariation;
-    delete lock.proceduralDrawGuide;
-    delete lock.proceduralAccessory;
-    delete lock.proceduralAccessoryIndex;
-    delete lock.proceduralAccessoryCount;
-    delete lock.proceduralAccessoryRadius;
-    delete lock.proceduralParentHidden;
-    delete lock.proceduralBranchCount;
-    delete lock.proceduralBranchLength;
-    delete lock.proceduralBranchTipOffset;
-    delete lock.clumpRestPoints;
-    delete lock.clumpGuideRestPoints;
-    delete lock.clumpRestTwists;
-    delete lock.clumpGuideRestTwists;
-    delete lock.clumpRestScales;
-    delete lock.clumpGuideRestScales;
-    delete lock.clumpParameterStart;
-    delete lock.clumpParameterEnd;
-    delete lock.clumpShapeCurveInheritance;
-  });
-}
-
-function detachLockFromClump(lock) {
-  if (!lock?.clumpId) return;
-  const guide = clumpGuideForLock(lock);
-  if (lock.clumpGuide) {
-    dissolveClump(lock.clumpId);
-    return;
-  }
-  delete lock.clumpId;
-  delete lock.clumpName;
-  delete lock.clumpGuide;
-  delete lock.clumpGuideId;
-  delete lock.clumpInfluence;
-  delete lock.proceduralAccessory;
-  delete lock.proceduralAccessoryIndex;
-  delete lock.proceduralBranch;
-  delete lock.proceduralBranchIndex;
-  delete lock.clumpRestPoints;
-  delete lock.clumpRestTwists;
-  delete lock.clumpRestScales;
-  delete lock.clumpParameterStart;
-  delete lock.clumpParameterEnd;
-  delete lock.clumpShapeCurveInheritance;
-  const remaining = guide ? clumpMembersForGuide(guide) : [];
-  if (guide && remaining.length < 1) dissolveClump(guide.clumpId);
-}
 
 
 
@@ -12146,12 +11635,12 @@ Object.assign(strandGeometryDeps, {
   branchSweep,
   createBraidGeometry,
   curveSurfaceCreate,
-  gridProfileSkipCol,
+  gridProfileSkipCol: clumpProceduralApi.gridProfileSkipCol,
   locks,
   outwardNormalAtPoint,
   panelTipStrand,
-  proceduralBranchTemplatesForGuide,
-  proceduralBranchWorldPoints,
+  proceduralBranchTemplatesForGuide: clumpProceduralApi.proceduralBranchTemplatesForGuide,
+  proceduralBranchWorldPoints: clumpProceduralApi.proceduralBranchWorldPoints,
   strandCurveParameters,
   strandGeometryCurve,
   strandGeometryFrameAt,
@@ -12313,14 +11802,14 @@ function rebuildLockGeometry(lock, options = {}) {
     ? THREE.DoubleSide
     : THREE.FrontSide;
   lock.mesh.material.needsUpdate = true;
-  syncProceduralParentVisibility(lock);
+  clumpProceduralApi.syncProceduralParentVisibility(lock);
   if (options.updateCurveObjects !== false) updateCurveObjects(lock);
   if (
     hairState.state.taperMeshPointsVisible
     && sculptState.state.taperCurveEdit?.type === "strand"
     && sculptState.state.taperCurveEdit.id === lock.id
   ) taperEditor.updateTaperMeshPoints();
-  if (options.updateClump !== false && !miscState.state.clumpUpdateInProgress && lock.clumpGuide) updateClumpMembers(lock);
+  if (options.updateClump !== false && !miscState.state.clumpUpdateInProgress && lock.clumpGuide) clumpProceduralApi.updateClumpMembers(lock);
   if (options.updateBranches !== false && !branch.state.branchUpdateInProgress) branchHierarchy.updateBranchChildren(lock);
   invalidateUvInspector();
 }
@@ -12678,7 +12167,7 @@ function syncLockedStrandWireVisual(lock) {
   if (!uniforms) return;
   uniforms.lineColor.value.set(lock.locked ? 0xff4fd8 : 0x66f5ff);
   uniforms.opacity.value = lock.locked ? 0.25 : 0.72;
-  overlay.visible = Boolean(lock.locked || hairState.state.hairTopologyVisible || proceduralParentOutlineVisible(lock));
+  overlay.visible = Boolean(lock.locked || hairState.state.hairTopologyVisible || clumpProceduralApi.proceduralParentOutlineVisible(lock));
 }
 
 function setStrandSelectionVisual(lock) {
@@ -12693,25 +12182,11 @@ function setStrandSelectionVisual(lock) {
   material.emissive?.set(0x000000);
   if (material.emissiveIntensity !== undefined) material.emissiveIntensity = 1;
   syncStrandSelectionOutline(lock);
-  syncProceduralParentVisibility(lock);
+  clumpProceduralApi.syncProceduralParentVisibility(lock);
   syncLockedStrandWireVisual(lock);
 }
 
-function proceduralParentOutlineVisible(lock) {
-  return Boolean(
-    lock?.proceduralParentHidden
-    && (lock.id === sel.state.selectedId || sel.state.selectedStrandIds.has(lock.id))
-  );
-}
 
-function syncProceduralParentVisibility(lock) {
-  if (!lock?.mesh?.material) return;
-  lock.mesh.material.visible = !lock.proceduralParentHidden;
-  lock.mesh.castShadow = !lock.proceduralParentHidden;
-  if (lock.wireOverlay) {
-    syncLockedStrandWireVisual(lock);
-  }
-}
 
 function updateStrandSelectionHighlightForLock(item) {
   setStrandSelectionVisual(item);
@@ -12791,7 +12266,7 @@ function selectLock(id, options = {}) {
   setViewportEditMode("strand", { clearSelection: false, activateSelect: false });
   setOutlinerTab("strands");
   const requestedLock = locks.find((lock) => lock.id === id);
-  const requestedGuide = clumpGuideForLock(requestedLock);
+  const requestedGuide = clumpProceduralApi.clumpGuideForLock(requestedLock);
   const selectWholeClump = Boolean(requestedLock?.clumpId && requestedGuide && !options.individualClumpMember);
   if (selectWholeClump) id = requestedGuide.id;
   const requestedIds = selectWholeClump
@@ -13119,44 +12594,6 @@ function syncHairCardControls(target = taperEditor.activeStrandShapeTarget()) {
   hairCardIncompatibleControls.forEach((control) => control.classList.toggle("hair-card-hidden", enabled));
 }
 
-function syncProceduralAccessoryEditControls(guide = proceduralGuideForLock(getSelectedLock())) {
-  const visible = Boolean(guide);
-  proceduralAccessoryEditPanel.classList.toggle("hidden", !visible);
-  if (!guide) return;
-  const members = proceduralAccessoryMembersForGuide(guide);
-  const count = THREE.MathUtils.clamp(
-    Math.round(Number(guide.proceduralAccessoryCount ?? members.length)),
-    0,
-    16
-  );
-  const radius = THREE.MathUtils.clamp(Number(guide.proceduralAccessoryRadius ?? 0.7), 0, 2);
-  const branchCount = THREE.MathUtils.clamp(
-    Math.round(Number(guide.proceduralBranchCount ?? proceduralBranchMembersForGuide(guide).length)),
-    0,
-    64
-  );
-  const branchLength = THREE.MathUtils.clamp(Number(guide.proceduralBranchLength ?? 0.6), 0.1, 3);
-  const branchTipOffset = THREE.MathUtils.clamp(Number(guide.proceduralBranchTipOffset ?? 0.35), 0, 2);
-  guide.proceduralBranchLengthCurve = normalizeTaperCurve(
-    guide.proceduralBranchLengthCurve || DEFAULT_PROCEDURAL_BRANCH_LENGTH_CURVE
-  );
-  guide.proceduralBranchShapeCurve = normalizeTaperCurve(
-    guide.proceduralBranchShapeCurve || DEFAULT_PROCEDURAL_BRANCH_SHAPE_CURVE
-  );
-  proceduralAccessoryEditCountInput.value = String(count);
-  proceduralAccessoryEditCountValue.textContent = String(count);
-  proceduralAccessoryEditRadiusInput.value = String(radius);
-  proceduralAccessoryEditRadiusValue.textContent = radius.toFixed(2);
-  proceduralAccessoryEditParentVisibleInput.checked = !guide.proceduralParentHidden;
-  proceduralBranchEditCountInput.value = String(branchCount);
-  proceduralBranchEditCountValue.textContent = String(branchCount);
-  proceduralBranchEditLengthInput.value = String(branchLength);
-  proceduralBranchEditLengthValue.textContent = branchLength.toFixed(2);
-  taperEditor.renderTaperPreview(proceduralBranchLengthCurvePreview, guide, "proceduralBranchLengthCurve");
-  taperEditor.renderTaperPreview(proceduralBranchShapeCurvePreview, guide, "proceduralBranchShapeCurve");
-  proceduralBranchEditTipOffsetInput.value = String(branchTipOffset);
-  proceduralBranchEditTipOffsetValue.textContent = branchTipOffset.toFixed(2);
-}
 
 function updateAttributeEditorMode() {
   const editingGroup = Boolean(sel.state.selectedStrandGroup);
@@ -13201,7 +12638,7 @@ function updateAttributeEditorMode() {
   const drawToolSettingsVisible = ["draw", "procedural-draw"].includes(sel.state.activeTool);
   drawStrandToolPanel.classList.toggle("hidden", !drawToolSettingsVisible);
   drawStrandToolTitle.textContent = sel.state.activeTool === "procedural-draw" ? "Procedural Draw Tool" : "Draw Strand Tool";
-  syncProceduralAccessoryEditControls();
+  clumpProceduralApi.syncProceduralAccessoryEditControls();
   drawBrushPresetInput.closest(".creation-preset-row")?.classList.toggle("hidden", sel.state.activeTool === "procedural-draw");
   drawContinueFromTipInput.closest(".toggle-row")?.classList.toggle("hidden", sel.state.activeTool === "procedural-draw");
   sculptMoveToolPanel.classList.toggle("hidden", !sculptBrushToolActive());
@@ -13551,7 +12988,7 @@ function syncInputs(lock) {
   renderProfilePreview(profilePreviewPaths.strand, lock.sweepProfile, lock.profileOffset, lock);
   updateTopologyStats();
   presetLibraryApi.syncShapePresetSelects();
-  syncClumpGuidePanel(lock);
+  clumpProceduralApi.syncClumpGuidePanel(lock);
   if (isPanelGeometry(lock)) segmentApi.syncPanelShapeInputs(lock);
   if (lock.geometryType === "strand") {
     syncStrandSplitInputs(lock);
@@ -13563,32 +13000,6 @@ function syncInputs(lock) {
   syncMultiStrandInputs(lock);
 }
 
-function syncClumpGuidePanel(lock = getSelectedLock()) {
-  const guide = clumpGuideForLock(lock);
-  const inClump = Boolean(lock?.clumpId && guide);
-  clumpGuidePanel.classList.toggle("hidden", !inClump);
-  if (!inClump) return;
-  const memberCount = clumpMembersForGuide(guide).length;
-  const influence = THREE.MathUtils.clamp(Number(guide.clumpInfluence ?? 1), 0, 1);
-  initializeClumpShape(guide);
-  clumpGuideStatus.textContent = lock.clumpGuide
-    ? `${lock.clumpName || "Clump"} guide - ${memberCount} bound ${memberCount === 1 ? "strand" : "strands"}`
-    : `${lock.clumpName || "Clump"} member - driven by ${guide.name}`;
-  clumpInfluenceControl.classList.toggle("hidden", !lock.clumpGuide);
-  clumpShapeControls.classList.toggle("hidden", !lock.clumpGuide);
-  clumpInfluenceInput.value = influence;
-  clumpInfluenceValue.textContent = influence.toFixed(2);
-  Object.entries(clumpShapeInputs).forEach(([key, input]) => {
-    input.value = guide[`clump${key[0].toUpperCase()}${key.slice(1)}`];
-  });
-  clumpShapeValues.spread.textContent = guide.clumpSpread.toFixed(2);
-  clumpShapeValues.depthSpread.textContent = guide.clumpDepthSpread.toFixed(2);
-  clumpShapeValues.tipFan.textContent = guide.clumpTipFan.toFixed(2);
-  clumpShapeValues.roll.textContent = `${Math.round(guide.clumpRoll)}°`;
-  clumpShapeValues.strandWidth.textContent = guide.clumpStrandWidth.toFixed(2);
-  clumpShapeValues.strandDepth.textContent = guide.clumpStrandDepth.toFixed(2);
-  clumpShapeValues.variation.textContent = guide.clumpVariation.toFixed(2);
-}
 
 function getSelectedLock() {
   return locks.find((lock) => lock.id === sel.state.selectedId);
@@ -13972,22 +13383,7 @@ function rebuildSelectedCurves() {
   return true;
 }
 
-function selectionCanBecomeClump(selection = selectedLocksInOrder()) {
-  return selection.length >= 2
-    && selection.every((lock) => lock.geometryType === "strand" && !lock.clumpId);
-}
 
-function createClumpFromSelection() {
-  const selection = selectedLocksInOrder();
-  if (!selectionCanBecomeClump(selection)) return null;
-  pushUndoState();
-  const guide = createClumpFromLocks(selection);
-  if (!guide) return null;
-  clumpOpen.set(guide.clumpId, false);
-  selectLock(guide.id);
-  renderLockList();
-  return guide;
-}
 
 function cleanSelectionSets() {
   const normalized = normalizeSelectionSets(selectionSets, locks.map((lock) => lock.id));
@@ -14156,11 +13552,11 @@ function showOutlinerContextMenu(event, target) {
   const strand = target.type === "strand" ? locks.find((lock) => lock.id === target.lockId) : null;
   const clumpGuide = isClump ? locks.find((lock) => lock.id === target.guideId) : null;
   const hasMirrorPartner = Boolean(mirrorPartnerFor(strand));
-  const clumpHasMirrorPartners = mirroredClumpPartners(clumpGuide).length > 0;
+  const clumpHasMirrorPartners = clumpProceduralApi.mirroredClumpPartners(clumpGuide).length > 0;
   const canCreateSelectionClump = Boolean(
     strand
     && sel.state.selectedStrandIds.has(strand.id)
-    && selectionCanBecomeClump()
+    && clumpProceduralApi.selectionCanBecomeClump()
   );
   const canCreateSelectionSet = Boolean(
     strand
@@ -14229,20 +13625,6 @@ function setPullMoveEnabled(enabled) {
   setActiveTool("move");
 }
 
-function setProceduralDrawExperimentalEnabled(enabled, { persist = true } = {}) {
-  draw.state.proceduralDrawExperimentalEnabled = Boolean(enabled);
-  proceduralDrawExperimentalPreferenceInput.checked = draw.state.proceduralDrawExperimentalEnabled;
-  proceduralDrawToolButton.classList.toggle("experimental-tool-hidden", !draw.state.proceduralDrawExperimentalEnabled);
-  proceduralDrawToolButton.hidden = !draw.state.proceduralDrawExperimentalEnabled;
-  proceduralDrawToolButton.setAttribute("aria-hidden", String(!draw.state.proceduralDrawExperimentalEnabled));
-  proceduralDrawToolButton.tabIndex = draw.state.proceduralDrawExperimentalEnabled ? 0 : -1;
-  if (!draw.state.proceduralDrawExperimentalEnabled && sel.state.activeTool === "procedural-draw") {
-    setActiveTool("draw");
-  }
-  if (persist) {
-    saveBooleanPreference(PROCEDURAL_DRAW_EXPERIMENTAL_PREFERENCE_KEY, draw.state.proceduralDrawExperimentalEnabled);
-  }
-}
 
 function setNavigationTipsEnabled(enabled, { persist = true } = {}) {
   viewportState.state.navigationTipsEnabled = Boolean(enabled);
@@ -14573,7 +13955,7 @@ function savePreferencesDialog() {
 function cancelPreferencesDialog() {
   if (ui.state.preferencesOpenSnapshot) {
     radialMenuApi.setRadialMenusEnabled(ui.state.preferencesOpenSnapshot.radialMenusEnabled, { persist: false });
-    setProceduralDrawExperimentalEnabled(
+    clumpProceduralApi.setProceduralDrawExperimentalEnabled(
       ui.state.preferencesOpenSnapshot.proceduralDrawExperimentalEnabled,
       { persist: false }
     );
@@ -14599,32 +13981,7 @@ function cancelPreferencesDialog() {
   preferencesDialog.close();
 }
 
-function outlinerClumpLocks(guide) {
-  return guide?.clumpGuide ? [guide, ...clumpMembersForGuide(guide)] : [];
-}
 
-function handleOutlinerClumpDrop(event, targetLock) {
-  event.preventDefault();
-  event.stopPropagation();
-  const sourceId = event.dataTransfer?.getData("text/plain");
-  const source = locks.find((lock) => lock.id === sourceId);
-  const targetGuide = clumpGuideForLock(targetLock);
-  if (!source || !targetLock || source.id === targetLock.id) return;
-  if (source.clumpGuide) return;
-  if (targetGuide && source.clumpId === targetGuide.clumpId) return;
-  pushUndoState();
-  let guide = targetGuide;
-  if (guide) {
-    if (!addLockToClump(source, guide)) return;
-  } else {
-    if (source.clumpId) detachLockFromClump(source);
-    guide = createClumpFromLocks([targetLock, source]);
-  }
-  if (!guide) return;
-  clumpOpen.set(guide.clumpId, false);
-  selectLock(guide.id);
-  renderLockList();
-}
 
 function createOutlinerStrandButton(lock, options = {}) {
   const shell = document.createElement("div");
@@ -14706,7 +14063,7 @@ function createOutlinerStrandButton(lock, options = {}) {
   button.addEventListener("dragleave", () => button.classList.remove("drop-target"));
   button.addEventListener("drop", (event) => {
     button.classList.remove("drop-target");
-    handleOutlinerClumpDrop(event, lock);
+    clumpProceduralApi.handleOutlinerClumpDrop(event, lock);
   });
   shell.append(visibility, button);
   return shell;
@@ -14808,87 +14165,6 @@ function createOutlinerCurveSurface(lock) {
   return container;
 }
 
-function createOutlinerClump(guide) {
-  const clumpLocks = outlinerClumpLocks(guide);
-  const isOpen = clumpOpen.get(guide.clumpId) === true;
-  const selectedLock = getSelectedLock();
-  const containsSelection = clumpLocks.some((lock) => sel.state.selectedStrandIds.has(lock.id));
-  const container = document.createElement("div");
-  container.className = `outliner-clump${isOpen ? " open" : ""}${containsSelection ? " selected" : ""}`;
-  const header = document.createElement("div");
-  header.className = "outliner-clump-head";
-  header.title = "Clump container";
-  const disclosure = document.createElement("button");
-  disclosure.type = "button";
-  disclosure.className = "outliner-clump-disclosure";
-  disclosure.textContent = ">";
-  disclosure.title = `${isOpen ? "Collapse" : "Expand"} ${guide.clumpName || "clump"}`;
-  disclosure.setAttribute("aria-expanded", String(isOpen));
-  disclosure.addEventListener("click", () => {
-    clumpOpen.set(guide.clumpId, !isOpen);
-    renderLockList();
-  });
-  const clumpVisibleCount = clumpLocks.filter(strandVisibleForDisplay).length;
-  const visibility = createOutlinerVisibilityToggle({
-    visible: clumpLocks.length > 0 && clumpVisibleCount === clumpLocks.length,
-    partial: clumpVisibleCount > 0 && clumpVisibleCount < clumpLocks.length,
-    label: guide.clumpName || "Clump",
-    onToggle: () => {
-      pushUndoState();
-      setLocksOutlinerVisibility(clumpLocks, clumpVisibleCount !== clumpLocks.length);
-    }
-  });
-  const select = document.createElement("button");
-  select.type = "button";
-  select.className = "outliner-clump-select";
-  const folderIcon = document.createElement("span");
-  folderIcon.className = "outliner-folder-icon";
-  folderIcon.setAttribute("aria-hidden", "true");
-  const label = document.createElement("span");
-  label.className = "outliner-rename-label";
-  label.textContent = guide.clumpName || "Clump";
-  const count = document.createElement("span");
-  count.className = "outliner-clump-count";
-  count.textContent = clumpLocks.length;
-  select.append(folderIcon, label, count);
-  select.addEventListener("click", (event) => handleOutlinerRenameClick(event, {
-    label,
-    value: guide.clumpName || "Clump",
-    onSelect: () => selectLock(guide.id),
-    onCommit: (nextName) => {
-      clumpLocks.forEach((lock) => {
-        lock.clumpName = nextName;
-      });
-      syncClumpGuidePanel();
-    },
-    rerender: renderLockList
-  }));
-  [header, select].forEach((target) => {
-    target.addEventListener("dragover", (event) => {
-      if (!event.dataTransfer.types.includes("text/plain")) return;
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-      header.classList.add("drop-target");
-    });
-    target.addEventListener("dragleave", () => header.classList.remove("drop-target"));
-    target.addEventListener("drop", (event) => {
-      header.classList.remove("drop-target");
-      handleOutlinerClumpDrop(event, guide);
-    });
-  });
-  header.append(disclosure, visibility, select);
-  header.addEventListener("contextmenu", (event) => showOutlinerContextMenu(event, {
-    type: "clump",
-    clumpId: guide.clumpId,
-    guideId: guide.id
-  }));
-  const children = document.createElement("div");
-  children.className = "outliner-clump-children";
-  children.appendChild(createOutlinerStrandButton(guide, { nested: true }));
-  clumpDirectMembers(guide).forEach((lock) => children.appendChild(createOutlinerStrandButton(lock, { nested: true })));
-  container.append(header, children);
-  return container;
-}
 
 function selectionSetMatchesCurrentSelection(selectionSet) {
   const memberIds = selectionSet.strandIds.filter((id) => locks.some((lock) => lock.id === id));
@@ -14986,7 +14262,7 @@ function renderLockList() {
       if (lock.clumpId && !lock.clumpGuide) return false;
       return (lock.scalpRegion || "unassigned") === group.id;
     });
-    const groupLocks = groupRoots.flatMap((lock) => lock.clumpGuide ? outlinerClumpLocks(lock) : [lock]);
+    const groupLocks = groupRoots.flatMap((lock) => lock.clumpGuide ? clumpProceduralApi.outlinerClumpLocks(lock) : [lock]);
     const groupElement = document.createElement("div");
     const isOpen = strandGroupOpen.get(group.id) || groupLocks.some((lock) => sel.state.selectedStrandIds.has(lock.id));
     groupElement.className = `outliner-group${isOpen ? " open" : ""}`;
@@ -15057,11 +14333,11 @@ function renderLockList() {
     HAIR_LAYERS.forEach((layer) => {
       const layerRoots = groupRoots.filter((lock) => normalizeHairLayer(lock.hairLayer) === layer.id);
       if (!layerRoots.length) return;
-      const layerLockCount = layerRoots.reduce((total, lock) => total + (lock.clumpGuide ? outlinerClumpLocks(lock).length : 1), 0);
+      const layerLockCount = layerRoots.reduce((total, lock) => total + (lock.clumpGuide ? clumpProceduralApi.outlinerClumpLocks(lock).length : 1), 0);
       const layerKey = `${group.id}:${layer.id}`;
       const layerOpen = strandLayerOpen.get(layerKey) !== false || layerRoots.some((lock) => (
         sel.state.selectedStrandIds.has(lock.id)
-        || (lock.clumpId && outlinerClumpLocks(lock).some((item) => sel.state.selectedStrandIds.has(item.id)))
+        || (lock.clumpId && clumpProceduralApi.outlinerClumpLocks(lock).some((item) => sel.state.selectedStrandIds.has(item.id)))
       ));
       const layerElement = document.createElement("div");
       layerElement.className = `outliner-layer${layerOpen ? " open" : ""}`;
@@ -15078,7 +14354,7 @@ function renderLockList() {
         strandLayerOpen.set(layerKey, !layerOpen);
         renderLockList();
       });
-      const layerLocks = layerRoots.flatMap((lock) => lock.clumpGuide ? outlinerClumpLocks(lock) : [lock]);
+      const layerLocks = layerRoots.flatMap((lock) => lock.clumpGuide ? clumpProceduralApi.outlinerClumpLocks(lock) : [lock]);
       const layerVisibleCount = layerLocks.filter(strandVisibleForDisplay).length;
       const layerVisibility = createOutlinerVisibilityToggle({
         visible: layerLocks.length > 0 && layerVisibleCount === layerLocks.length,
@@ -15117,7 +14393,7 @@ function renderLockList() {
         layerItems.appendChild(
           lock.geometryType === "curve-surface"
             ? createOutlinerCurveSurface(lock)
-            : lock.clumpGuide ? createOutlinerClump(lock) : createOutlinerStrandButton(lock)
+            : lock.clumpGuide ? clumpProceduralApi.createOutlinerClump(lock) : createOutlinerStrandButton(lock)
         );
       });
       layerElement.append(layerHeader, layerItems);
@@ -15310,13 +14586,13 @@ viewportDrawLayerInput.addEventListener("change", () => {
 bindUndoCapture(clumpInfluenceInput);
 clumpInfluenceInput.addEventListener("input", () => {
   const lock = getSelectedLock();
-  const guide = clumpGuideForLock(lock);
+  const guide = clumpProceduralApi.clumpGuideForLock(lock);
   if (!guide) return;
   guide.clumpInfluence = THREE.MathUtils.clamp(Number(clumpInfluenceInput.value), 0, 1);
   clumpInfluenceValue.textContent = guide.clumpInfluence.toFixed(2);
-  updateClumpMembers(guide);
+  clumpProceduralApi.updateClumpMembers(guide);
   const mirroredGuide = syncActiveMirror(guide);
-  if (mirroredGuide?.clumpGuide) updateClumpMembers(mirroredGuide);
+  if (mirroredGuide?.clumpGuide) clumpProceduralApi.updateClumpMembers(mirroredGuide);
 });
 
 const clumpShapeProperties = {
@@ -15332,15 +14608,15 @@ const clumpShapeProperties = {
 Object.entries(clumpShapeInputs).forEach(([key, input]) => {
   bindUndoCapture(input);
   input.addEventListener("input", () => {
-    const guide = clumpGuideForLock(getSelectedLock());
+    const guide = clumpProceduralApi.clumpGuideForLock(getSelectedLock());
     if (!guide?.clumpGuide) return;
     guide[clumpShapeProperties[key]] = Number(input.value);
     clumpShapeValues[key].textContent = key === "roll"
       ? `${Math.round(guide.clumpRoll)}°`
       : Number(input.value).toFixed(2);
-    updateClumpMembers(guide);
+    clumpProceduralApi.updateClumpMembers(guide);
     const mirroredGuide = syncActiveMirror(guide);
-    if (mirroredGuide?.clumpGuide) updateClumpMembers(mirroredGuide);
+    if (mirroredGuide?.clumpGuide) clumpProceduralApi.updateClumpMembers(mirroredGuide);
   });
 });
 
@@ -15353,7 +14629,7 @@ editScalpOutlinerAction.addEventListener("click", () => {
 
 createClumpFromSelectionAction.addEventListener("click", () => {
   hideOutlinerContextMenu();
-  createClumpFromSelection();
+  clumpProceduralApi.createClumpFromSelection();
 });
 
 createSelectionSetFromSelectedAction.addEventListener("click", () => {
@@ -15403,7 +14679,7 @@ dissolveClumpAction.addEventListener("click", () => {
   const guide = target?.type === "clump" ? locks.find((lock) => lock.id === target.guideId) : null;
   if (!guide?.clumpId) return;
   pushUndoState();
-  dissolveClump(guide.clumpId);
+  clumpProceduralApi.dissolveClump(guide.clumpId);
   sel.state.clumpViewportSelection = false;
   hideOutlinerContextMenu();
   selectLock(guide.id);
@@ -15424,11 +14700,11 @@ mirrorInstanceAction.addEventListener("click", () => {
   pushUndoState();
   hideOutlinerContextMenu();
   if (guide) {
-    if (mirroredClumpPartners(guide).length) {
-      decoupleMirroredClump(guide);
+    if (clumpProceduralApi.mirroredClumpPartners(guide).length) {
+      clumpProceduralApi.decoupleMirroredClump(guide);
       return;
     }
-    const mirroredGuide = createMirroredClump(guide);
+    const mirroredGuide = clumpProceduralApi.createMirroredClump(guide);
     if (mirroredGuide) selectLock(mirroredGuide.id);
     return;
   }
@@ -15464,7 +14740,7 @@ deleteOutlinerAction.addEventListener("click", () => {
   }
   if (target?.type === "clump") {
     const guide = locks.find((lock) => lock.id === target.guideId);
-    const targets = outlinerClumpLocks(guide);
+    const targets = clumpProceduralApi.outlinerClumpLocks(guide);
     if (!targets.length) return;
     pushUndoState();
     deleteLocks(targets);
@@ -16574,31 +15850,6 @@ drawStrandSmoothingInput.addEventListener("input", () => {
 drawStrandCurveStepInput.addEventListener("input", () => {
   drawStrandCurveStepValue.textContent = Number(drawStrandCurveStepInput.value).toFixed(2);
 });
-function beginProceduralAccessoryEdit() {
-  if (sculptState.state.proceduralAccessoryEditHistoryOpen) return;
-  pushUndoState();
-  sculptState.state.proceduralAccessoryEditHistoryOpen = true;
-}
-function updateSelectedProceduralAccessories() {
-  const guide = proceduralGuideForLock(getSelectedLock());
-  if (!guide) return;
-  proceduralAccessoryEditCountValue.textContent = String(Math.round(Number(proceduralAccessoryEditCountInput.value)));
-  proceduralAccessoryEditRadiusValue.textContent = Number(proceduralAccessoryEditRadiusInput.value).toFixed(2);
-  proceduralBranchEditCountValue.textContent = String(Math.round(Number(proceduralBranchEditCountInput.value)));
-  proceduralBranchEditLengthValue.textContent = Number(proceduralBranchEditLengthInput.value).toFixed(2);
-  proceduralBranchEditTipOffsetValue.textContent = Number(proceduralBranchEditTipOffsetInput.value).toFixed(2);
-  applyProceduralAccessorySettings(guide, {
-    count: proceduralAccessoryEditCountInput.value,
-    radius: proceduralAccessoryEditRadiusInput.value,
-    parentVisible: proceduralAccessoryEditParentVisibleInput.checked
-  });
-  applyProceduralBranchSettings(guide, {
-    count: proceduralBranchEditCountInput.value,
-    length: proceduralBranchEditLengthInput.value,
-    tipOffset: proceduralBranchEditTipOffsetInput.value
-  });
-  syncProceduralAccessoryEditControls(guide);
-}
 [
   proceduralAccessoryEditCountInput,
   proceduralAccessoryEditRadiusInput,
@@ -16608,16 +15859,16 @@ function updateSelectedProceduralAccessories() {
 ].forEach((input) => {
   input.addEventListener("pointerdown", () => {
     sculptState.state.proceduralAccessoryEditPointerActive = true;
-    beginProceduralAccessoryEdit();
+    clumpProceduralApi.beginProceduralAccessoryEdit();
   });
   input.addEventListener("input", () => {
-    beginProceduralAccessoryEdit();
-    updateSelectedProceduralAccessories();
+    clumpProceduralApi.beginProceduralAccessoryEdit();
+    clumpProceduralApi.updateSelectedProceduralAccessories();
     if (!sculptState.state.proceduralAccessoryEditPointerActive) sculptState.state.proceduralAccessoryEditHistoryOpen = false;
   });
   input.addEventListener("change", () => {
-    beginProceduralAccessoryEdit();
-    updateSelectedProceduralAccessories();
+    clumpProceduralApi.beginProceduralAccessoryEdit();
+    clumpProceduralApi.updateSelectedProceduralAccessories();
     sculptState.state.proceduralAccessoryEditHistoryOpen = false;
   });
   input.addEventListener("pointerup", () => {
@@ -16631,7 +15882,7 @@ function updateSelectedProceduralAccessories() {
 });
 proceduralAccessoryEditParentVisibleInput.addEventListener("change", () => {
   pushUndoState();
-  updateSelectedProceduralAccessories();
+  clumpProceduralApi.updateSelectedProceduralAccessories();
   sculptState.state.proceduralAccessoryEditHistoryOpen = false;
 });
 function syncDrawCurlControls() {
@@ -17066,7 +16317,7 @@ turntableSpeedInput.addEventListener("input", () => {
 });
 setTurntableActive(false);
 radialMenuApi.setRadialMenusEnabled(ui.state.radialMenusEnabled, { persist: false });
-setProceduralDrawExperimentalEnabled(draw.state.proceduralDrawExperimentalEnabled, { persist: false });
+clumpProceduralApi.setProceduralDrawExperimentalEnabled(draw.state.proceduralDrawExperimentalEnabled, { persist: false });
 setNavigationTipsEnabled(viewportState.state.navigationTipsEnabled, { persist: false });
 setNavigationStyle(viewportState.state.navigationStyle, { persist: false });
 setCameraSmoothingEnabled(viewportState.state.cameraSmoothingEnabled, { persist: false });
@@ -17287,7 +16538,7 @@ radialMenusPreferenceInput.addEventListener("change", () => {
   radialMenuApi.setRadialMenusEnabled(radialMenusPreferenceInput.checked, { persist: false });
 });
 proceduralDrawExperimentalPreferenceInput.addEventListener("change", () => {
-  setProceduralDrawExperimentalEnabled(proceduralDrawExperimentalPreferenceInput.checked, { persist: false });
+  clumpProceduralApi.setProceduralDrawExperimentalEnabled(proceduralDrawExperimentalPreferenceInput.checked, { persist: false });
 });
 navigationTipsPreferenceInput.addEventListener("change", () => {
   setNavigationTipsEnabled(navigationTipsPreferenceInput.checked, { persist: false });
@@ -18190,8 +17441,8 @@ function deleteLocks(targetLocks) {
     }
   });
   targets.forEach((item) => {
-    if (item.clumpGuide) dissolveClump(item.clumpId);
-    else if (item.clumpId) detachLockFromClump(item);
+    if (item.clumpGuide) clumpProceduralApi.dissolveClump(item.clumpId);
+    else if (item.clumpId) clumpProceduralApi.detachLockFromClump(item);
   });
   targets.forEach((parent) => {
     branchHierarchy.branchChildrenFor(parent).forEach((child) => {
@@ -18703,7 +17954,7 @@ function resampleStrandCurveData(lock, parameters) {
 }
 
 function finishStrandCurveTopologyChange(lock) {
-  commitClumpMemberRestState(lock);
+  clumpProceduralApi.commitClumpMemberRestState(lock);
   syncLockFromCurve(lock);
   rebuildCurveObjects(lock);
   updateLockGeometry(lock, { immediate: true });

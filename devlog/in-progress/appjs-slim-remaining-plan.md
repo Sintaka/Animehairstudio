@@ -30,7 +30,7 @@
 | B3 ✅ | preset library（含 hair 生成器） | 32+5嵌套 | ~1,980 | 中 | 已迁出 modules/io/preset-library.js（删 7 个死函数 1,072 行；装配 presetLibraryApi→creationPresets 顺序；verify-smoke 10/11=基线） |
 | B4 | taper curve editor | ~39 | ~1,680 | ~1,300 | 中 | 63 | 自洽编辑器；updateSelectedTaperPoint 单函数 601 行 |
 | B5 | sculpt 笔刷 | ~45 | ~1,000 | ~800 | 中 | ~55 | sculpt-brush.js 已有纯函数底座；delta mush 不触及 |
-| B6 | clump/procedural | 36 | ~860 | ~690 | 中 | 72 | 与 draw 相关但自成一组 |
+| B6 ✅ | clump/procedural | 40 | ~748 | 中 | 已迁出 modules/geometry/clump-procedural.js（7 个 deps 批 19 项重接含 drawFlowDeps 4；verify-smoke 10/11=基线） |
 | C1 | IO 遗留 + rootAttachment | 26 | ~610 | ~490 | 低 | 40 | 与「createProjectSaveApi(deps) 收敛为单 store」一并收尾 |
 
 > A=低风险快赢批（约 4,360 行净减），B=大块批（约 9,390 行），C=收尾。全部完成 app.js 可到 ~18.5k 行。
