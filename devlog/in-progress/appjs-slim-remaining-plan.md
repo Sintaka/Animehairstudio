@@ -21,7 +21,7 @@
 |---|---|---|---|---|---|---|---|
 | A1 | curve-surface / surface-lattice 创建 | ~50 | ~1,200 | ~950 | 低 | 43 | 低耦合高收益，curve-surface.js 等模块已就位 |
 | A2 ✅ | radial menu | 37+3常量 | ~769 | 低 | 已迁出 modules/geometry/radial-menu.js（22 处接线；A4 重接已处理；verify-smoke 10/11=基线） |
-| A3 | procedural duplicate | 22 | ~730 | ~580 | 低 | 17 | 极低耦合、自洽 |
+| A3 ✅ | procedural duplicate | 22 | ~676 | 低 | 已迁出 modules/geometry/procedural-duplicate.js（radialMenuDeps 3 项重接；verify-smoke 10/11=基线） |
 | A4 ✅ | reference + head/body | 70 | ~1,288 | 低中 | 已迁出 modules/scene/reference-head.js（新建 scene 域；18 处跨模块重接含 drawFlowDeps；boot loadDefaultGuideModel 处理；verify-smoke 10/11=基线） |
 | A5 | poly tools | 28 | ~665 | ~530 | 低中 | 16 | 自洽工具集 |
 | A6 | material | 16 | ~310 | ~250 | 低 | 51 | 小但干净，material-state.js 已在 |

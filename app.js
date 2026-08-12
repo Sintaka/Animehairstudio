@@ -22,6 +22,7 @@ import { createPresetLibraryApi } from "./modules/io/preset-library.js?v=2026081
 import { createDrawFlowApi } from "./modules/geometry/draw-flow.js?v=20260812-1";
 import { createRadialMenuApi } from "./modules/geometry/radial-menu.js?v=20260812-1";
 import { createPlacementApi } from "./modules/geometry/placement.js?v=20260812-1";
+import { createProceduralDuplicateApi } from "./modules/geometry/procedural-duplicate.js?v=20260812-3";
 import { createReferenceHeadApi } from "./modules/scene/reference-head.js?v=20260812-2";
 import { createMiscStore } from "./modules/core/misc-store.js?v=20260809-12";
 import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260809-11";
@@ -1505,6 +1506,12 @@ const drawFlowApi = createDrawFlowApi(drawFlowDeps);
 const placementDeps = {};
 const placementApi = createPlacementApi(placementDeps);
 
+// Procedural duplicate api (refactor batch B6b / plan A3): deps filled in one batch after the
+// placementDeps block (all const/let deps defined); no boot-time calls before the batch, see
+// devlog/in-progress/clump-procedural-refactor-map.md.
+const proceduralDuplicateDeps = {};
+const proceduralDuplicateApi = createProceduralDuplicateApi(proceduralDuplicateDeps);
+
 // Radial menu api (refactor batch A2): deps filled in one batch after the
 // referenceHeadApi block (all const/let deps defined); no boot-time calls before
 // the batch, see devlog/in-progress/radial-menu-refactor-map.md.
@@ -2967,7 +2974,7 @@ Object.assign(radialMenuDeps, {
   getSelectedLock,
   strandIsolationActive,
   selectionCanBecomeClump,
-  selectedProceduralDuplicateSources,
+  selectedProceduralDuplicateSources: proceduralDuplicateApi.selectedProceduralDuplicateSources,
   createClumpFromSelection,
   lockSelectedStrands,
   unlockAllStrands,
@@ -2975,7 +2982,7 @@ Object.assign(radialMenuDeps, {
   unhideHiddenStrands,
   createSelectionSetFromSelection,
   editSelectionSetFromSelection,
-  openProceduralDuplicateDialog,
+  openProceduralDuplicateDialog: proceduralDuplicateApi.openProceduralDuplicateDialog,
   toggleSelectedStrandIsolation,
   deleteSelectedStrands,
   pushUndoState,
@@ -2989,7 +2996,7 @@ Object.assign(radialMenuDeps, {
   dissolveClump,
   outlinerClumpLocks,
   deleteLocks,
-  beginDuplicatePlacement,
+  beginDuplicatePlacement: proceduralDuplicateApi.beginDuplicatePlacement,
   setObjectSpaceEditing,
   setViewPlaneMove,
   setPullMoveEnabled,
@@ -8092,6 +8099,51 @@ Object.assign(placementDeps, {
   strandRegionDisplayLabel
 });
 
+// Procedural duplicate api deps batch (refactor batch B6b / plan A3): all deps are defined by
+// this point (last const/let deps: placementStatus / proceduralDuplicate* DOM + THREE preview
+// objects); the batch takes effect here, before the bootstrap init and before all procedural
+// duplicate pointer/UI listener registrations.
+Object.assign(proceduralDuplicateDeps, {
+  sculptState: sculptState.state,
+  undoHistory,
+  redoHistory,
+  locks,
+  raycaster,
+  placementStatus,
+  proceduralDuplicateDialog,
+  proceduralDuplicateCountInput,
+  proceduralDuplicateRootSinkInput,
+  proceduralDuplicateSecondPointOutwardInput,
+  proceduralDuplicateSecondPointTowardRootInput,
+  proceduralDuplicateSpacingNote,
+  proceduralDuplicateStatus,
+  proceduralDuplicateArcPreview,
+  proceduralDuplicateCirclePreview,
+  proceduralDuplicateArcMarker,
+  drawFlowApi,
+  placementApi,
+  scalpBuilder,
+  rayFromViewportEvent,
+  viewPlaneNormal,
+  layerOffsetForLock,
+  layerRootOffsetFactor,
+  selectedLocksInOrder,
+  deleteLocks,
+  restoreLock,
+  snapshotState,
+  createMirrorPartnerForNewLock,
+  syncLockFromCurve,
+  updateLockGeometry,
+  flushPendingLockGeometryUpdates,
+  createRootAttachment,
+  renderLockList,
+  updateCount,
+  selectLock,
+  updateHistoryButtons,
+  updateInteractionLocks,
+  syncActiveMirror
+});
+
 
 
 
@@ -9640,7 +9692,7 @@ function pushUndoState() {
 }
 
 function undoLastAction() {
-  if (proceduralDuplicateDialog.open) closeProceduralDuplicateDialog();
+  if (proceduralDuplicateDialog.open) proceduralDuplicateApi.closeProceduralDuplicateDialog();
   const state = undoHistory.pop();
   if (!state) return;
   redoHistory.push(snapshotState());
@@ -9657,7 +9709,7 @@ function undoLastAction() {
 }
 
 function redoLastAction() {
-  if (proceduralDuplicateDialog.open) closeProceduralDuplicateDialog();
+  if (proceduralDuplicateDialog.open) proceduralDuplicateApi.closeProceduralDuplicateDialog();
   const state = redoHistory.pop();
   if (!state) return;
   undoHistory.push(snapshotState());
@@ -9687,7 +9739,7 @@ function resetTransientInteractionsForStateRestore() {
   transformControls.detach();
   sculptState.state.duplicatePlacement = null;
   sculptState.state.proceduralDuplicateModeActive = false;
-  hideProceduralDuplicateArcPreview();
+  proceduralDuplicateApi.hideProceduralDuplicateArcPreview();
   radialMenuApi.hideStrandRadialMenu();
   radialMenuApi.hideToolRadialMenu();
   sculptState.state.placeEdit = null;
@@ -12728,7 +12780,7 @@ function refreshStrandSelectionConsumers({
   if (updateTopology) updateTopologyStats();
   refreshRebuildCurveDialog();
   if (proceduralDuplicateDialog.open && !sculptState.state.rebuildingProceduralDuplicatePreview) {
-    rebuildProceduralDuplicatePreview({ updateSources: true });
+    proceduralDuplicateApi.rebuildProceduralDuplicatePreview({ updateSources: true });
   }
   if (syncActiveInputs && lock) syncInputs(lock);
   if (!componentEditModeActive() && sculptState.state.viewportEditMode === "strand") attachStrandObjectTransform();
@@ -14545,734 +14597,6 @@ function cancelPreferencesDialog() {
   }
   ui.state.preferencesOpenSnapshot = null;
   preferencesDialog.close();
-}
-
-function duplicatePlacementTarget(event, placement) {
-  const ray = rayFromViewportEvent(event);
-  const scalpHit = raycaster.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0] || null;
-  if (scalpHit) {
-    const normal = drawFlowApi.worldNormalAtHit(scalpHit);
-    return {
-      root: scalpHit.point.clone().addScaledVector(
-        normal,
-        scalpBuilder.rootScalpOffsetDistance(placement.lock.rootScalpOffset)
-          + layerOffsetForLock(placement.lock) * layerRootOffsetFactor(placement.lock.hairLayer)
-      ),
-      surfacePoint: scalpHit.point.clone(),
-      surfaceNormal: normal,
-      scalpRegion: scalpBuilder.scalpTriangleRegion(scalpHit.object, scalpHit.faceIndex),
-      attached: placement.sourceAttachmentEnabled
-    };
-  }
-  const root = ray.intersectPlane(placement.viewPlane, new THREE.Vector3());
-  if (!root) return null;
-  return {
-    root,
-    surfacePoint: root.clone(),
-    surfaceNormal: placement.lock.rootSurfaceNormal?.clone() || viewPlaneNormal(),
-    attached: false
-  };
-}
-
-function proceduralDuplicateSourceSnapshots(sources, undoState) {
-  return sources.map((source) => undoState.locks.find((snapshot) => snapshot.id === source.id)).filter(Boolean);
-}
-
-function proceduralDuplicateEligibleLock(lock) {
-  return Boolean(
-    lock
-    && locks.includes(lock)
-    && !lock.proceduralDuplicatePreview
-    && lock.points?.length >= 2
-    && !["poly", "surface", "curve-surface"].includes(lock.geometryType)
-  );
-}
-
-function selectedProceduralDuplicateSources() {
-  const selected = selectedLocksInOrder();
-  return selected.length === 2 && selected.every(proceduralDuplicateEligibleLock) ? selected : [];
-}
-
-function updateProceduralDuplicateSpacingNote() {
-  const count = THREE.MathUtils.clamp(Math.round(Number(proceduralDuplicateCountInput.value) || 1), 1, 32);
-  proceduralDuplicateCountInput.value = String(count);
-  const numberInput = proceduralDuplicateCountInput
-    .closest(".slider-input-row")
-    ?.querySelector(".slider-number-input");
-  if (numberInput && document.activeElement !== numberInput) numberInput.value = String(count);
-  proceduralDuplicateSpacingNote.textContent = count === 1
-    ? "1 duplicate will be placed halfway between the selected strands."
-    : `${count} duplicates will evenly divide the space into ${count + 1} intervals.`;
-}
-
-function clearProceduralDuplicatePreview() {
-  hideProceduralDuplicateArcPreview();
-  const previewIds = sculptState.state.proceduralDuplicatePreview?.createdIds || [];
-  sculptState.state.proceduralDuplicatePreview = null;
-  if (!previewIds.length) return;
-  const previewLocks = previewIds
-    .map((id) => locks.find((lock) => lock.id === id))
-    .filter(Boolean);
-  if (previewLocks.length) deleteLocks(previewLocks);
-}
-
-function closeProceduralDuplicateDialog({ commit = false } = {}) {
-  if (!commit) clearProceduralDuplicatePreview();
-  hideProceduralDuplicateArcPreview();
-  sculptState.state.proceduralDuplicateWindowSourceIds = [];
-  proceduralDuplicateStatus.textContent = "";
-  if (proceduralDuplicateDialog.open) proceduralDuplicateDialog.close();
-}
-
-function openProceduralDuplicateDialog() {
-  const sources = selectedProceduralDuplicateSources();
-  if (sources.length !== 2) {
-    placementStatus.textContent = "Duplicate Procedural requires exactly two selected strand curves.";
-    return false;
-  }
-  sculptState.state.proceduralDuplicateWindowSourceIds = sources.map((source) => source.id);
-  proceduralDuplicateCountInput.value = "1";
-  proceduralDuplicateStatus.textContent = "";
-  updateProceduralDuplicateSpacingNote();
-  if (!proceduralDuplicateDialog.open) proceduralDuplicateDialog.show();
-  rebuildProceduralDuplicatePreview();
-  proceduralDuplicateCountInput.focus();
-  proceduralDuplicateCountInput.select();
-  return true;
-}
-
-function proceduralDuplicateCopySnapshot(sourceSnapshot, duplicateId, name) {
-  return {
-    ...sourceSnapshot,
-    id: duplicateId,
-    name,
-    mirrorPartnerId: null,
-    clumpId: null,
-    clumpName: null,
-    clumpGuide: false,
-    clumpGuideId: null,
-    clumpRestPoints: null,
-    clumpGuideRestPoints: null,
-    clumpRestTwists: null,
-    clumpGuideRestTwists: null,
-    clumpRestScales: null,
-    clumpGuideRestScales: null,
-    curveLatticeBinding: null,
-    groupLatticeBasePoints: null
-  };
-}
-
-function proceduralDuplicateHeadCenter() {
-  const meshes = scalpBuilder.scalpBuilderHeadMeshes().filter((mesh) => mesh.visible !== false);
-  if (!meshes.length) return null;
-  meshes.forEach((mesh) => mesh.updateMatrixWorld(true));
-  const bounds = meshes.reduce(
-    (box, mesh) => box.expandByObject(mesh, true),
-    new THREE.Box3()
-  );
-  return bounds.isEmpty() ? null : bounds.getCenter(new THREE.Vector3());
-}
-
-function hideProceduralDuplicateArcPreview() {
-  proceduralDuplicateCirclePreview.visible = false;
-  proceduralDuplicateArcPreview.visible = false;
-  proceduralDuplicateArcMarker.visible = false;
-}
-
-function proceduralDuplicateReferencePoints(procedural) {
-  const [first, second] = procedural?.sources || [];
-  if (!first?.points?.length || !second?.points?.length) return null;
-  return lowestSharedHorizontalPolylinePointData(first.points, second.points)?.intersections || null;
-}
-
-function updateProceduralDuplicateArcPreview(procedural) {
-  const references = proceduralDuplicateReferencePoints(procedural);
-  const center = proceduralDuplicateHeadCenter();
-  if (!references || !center) {
-    hideProceduralDuplicateArcPreview();
-    return;
-  }
-  const circle = horizontalCircleThroughPointData(references[0], references[1], center);
-  const points = Array.from({ length: 49 }, (_, index) => horizontalCirclePointData(
-    circle,
-    index / 48
-  )).map((point) => new THREE.Vector3(point.x, point.y, point.z));
-  const circlePoints = Array.from({ length: 96 }, (_, index) => {
-    const angle = index / 96 * Math.PI * 2;
-    return new THREE.Vector3(
-      circle.center.x + Math.cos(angle) * circle.radius,
-      circle.firstY,
-      circle.center.z + Math.sin(angle) * circle.radius
-    );
-  });
-  proceduralDuplicateCirclePreview.geometry.dispose();
-  proceduralDuplicateCirclePreview.geometry = new THREE.BufferGeometry().setFromPoints(circlePoints);
-  proceduralDuplicateCirclePreview.visible = true;
-  proceduralDuplicateArcPreview.geometry.dispose();
-  proceduralDuplicateArcPreview.geometry = new THREE.BufferGeometry().setFromPoints(points);
-  proceduralDuplicateArcPreview.visible = true;
-  const markerIndex = Math.round(
-    THREE.MathUtils.clamp(Number(procedural.blendAmount ?? 0), 0, 1) * (points.length - 1)
-  );
-  proceduralDuplicateArcMarker.position.copy(points[markerIndex]);
-  proceduralDuplicateArcMarker.visible = true;
-}
-
-function applyProceduralDuplicateBlend(lock, procedural, placedRoot, explicitBlend = null) {
-  const [first, second] = procedural.sources;
-  const headCenter = proceduralDuplicateHeadCenter();
-  const blend = Number.isFinite(explicitBlend)
-    ? THREE.MathUtils.clamp(explicitBlend, 0, 1)
-    : headCenter
-      ? surfaceArcBlendAmount(placedRoot, first.points[0], second.points[0], headCenter)
-      : proximityCurveBlendAmount(placedRoot, first.points[0], second.points[0]);
-  const blendedSourceNormal = blendDirectionPointData(
-    first.rootSurfaceNormal,
-    second.rootSurfaceNormal,
-    blend
-  );
-  const pointCount = Math.max(first.points.length, second.points.length);
-  const cylindricalPoints = headCenter
-    ? blendCylindricalPolylinePointData(
-      first.points,
-      second.points,
-      headCenter,
-      blend,
-      pointCount
-    )
-    : null;
-  if (cylindricalPoints) {
-    const rootCorrection = placedRoot.clone().sub(new THREE.Vector3(
-      cylindricalPoints[0].x,
-      cylindricalPoints[0].y,
-      cylindricalPoints[0].z
-    ));
-    const lastPointIndex = Math.max(1, cylindricalPoints.length - 1);
-    const automaticRootBlendEnd = Math.min(1, 2 / lastPointIndex);
-    lock.points = cylindricalPoints.map((point, index) => {
-      const correctionWeight = rootCorrectionFalloff(
-        index / lastPointIndex,
-        automaticRootBlendEnd
-      );
-      return new THREE.Vector3(
-        point.x + rootCorrection.x * correctionWeight,
-        point.y + rootCorrection.y * correctionWeight,
-        point.z + rootCorrection.z * correctionWeight
-      );
-    });
-    const sourcesAttached = first.rootAttachmentEnabled !== false
-      && second.rootAttachmentEnabled !== false;
-    const secondPointOutwardDistance = THREE.MathUtils.clamp(
-      Number(procedural.secondPointOutward) || 0,
-      0,
-      1
-    ) * ROOT_SCALP_OFFSET_DISTANCE;
-    const secondPointTowardRoot = THREE.MathUtils.clamp(
-      Number(procedural.secondPointTowardRoot) || 0,
-      0,
-      0.95
-    );
-    if (lock.points[1] && secondPointTowardRoot > 0) {
-      lock.points[1].lerp(lock.points[0], secondPointTowardRoot);
-    }
-    let secondPointSurfaceNormal = null;
-    if (sourcesAttached) {
-      const bridgePointCount = Math.min(2, lock.points.length - 2);
-      const minimumSurfaceOffset = Math.max(
-        0.003,
-        scalpBuilder.rootScalpOffsetDistance(lock.rootScalpOffset)
-          + layerOffsetForLock(lock) * layerRootOffsetFactor(lock.hairLayer)
-      );
-      for (let index = 1; index <= bridgePointCount; index += 1) {
-        const surface = scalpBuilder.closestPointOnActiveScalp(lock.points[index], null);
-        if (!surface?.point || !surface?.normal) continue;
-        const normal = surface.normal.clone().normalize();
-        if (index === 1) secondPointSurfaceNormal = normal;
-        const signedDistance = lock.points[index].clone().sub(surface.point).dot(normal);
-        if (signedDistance < minimumSurfaceOffset) {
-          lock.points[index].copy(surface.point).addScaledVector(normal, minimumSurfaceOffset);
-        }
-      }
-    }
-    if (lock.points[1] && secondPointOutwardDistance > 0) {
-      const outwardNormal = secondPointSurfaceNormal || new THREE.Vector3(
-        blendedSourceNormal.x,
-        blendedSourceNormal.y,
-        blendedSourceNormal.z
-      ).normalize();
-      lock.points[1].addScaledVector(outwardNormal, secondPointOutwardDistance);
-    }
-  } else {
-    const relativePoints = blendSurfaceOrientedPolylinePointData(
-      first.points,
-      second.points,
-      first.rootSurfaceNormal,
-      second.rootSurfaceNormal,
-      blendedSourceNormal,
-      blend,
-      pointCount
-    );
-    lock.points = relativePoints.map((point) => new THREE.Vector3(
-      placedRoot.x + point.x,
-      placedRoot.y + point.y,
-      placedRoot.z + point.z
-    ));
-  }
-  lock.pointWidths = blendSampleArrays(first.pointWidths, second.pointWidths, blend, pointCount, 1);
-  lock.pointTwists = blendSampleArrays(first.pointTwists, second.pointTwists, blend, pointCount, 0);
-  lock.pointScales = Array.from({ length: pointCount }, (_, index) => {
-    const t = pointCount === 1 ? 0 : index / (pointCount - 1);
-    return {
-      x: THREE.MathUtils.lerp(
-        sampleArray(first.pointScales?.map((scale) => scale.x), t, 1),
-        sampleArray(second.pointScales?.map((scale) => scale.x), t, 1),
-        blend
-      ),
-      z: THREE.MathUtils.lerp(
-        sampleArray(first.pointScales?.map((scale) => scale.z), t, 1),
-        sampleArray(second.pointScales?.map((scale) => scale.z), t, 1),
-        blend
-      )
-    };
-  });
-  lock.pointSurfaceNormals = [];
-  lock.taperCurve = blendTaperCurves(first.taperCurve, second.taperCurve, blend);
-  lock.depthCurve = blendTaperCurves(first.depthCurve, second.depthCurve, blend);
-  lock.taperCurveSecondary = blendTaperCurves(first.taperCurveSecondary, second.taperCurveSecondary, blend);
-  lock.depthCurveSecondary = blendTaperCurves(first.depthCurveSecondary, second.depthCurveSecondary, blend);
-  lock.twistCurve = blendEnvelopeCurves(
-    first.twistCurve,
-    second.twistCurve,
-    blend,
-    DEFAULT_TWIST_CURVE,
-    -TWIST_CURVE_VALUE_MAX,
-    TWIST_CURVE_VALUE_MAX
-  );
-  [
-    "baseWidth",
-    "depth",
-    "widthScale",
-    "depthScale",
-    "strandRotation",
-    "twist",
-    "profileOffset",
-    "curlCount",
-    "curlDisplacement",
-    "surfaceNormalInfluence"
-  ].forEach((key) => {
-    lock[key] = THREE.MathUtils.lerp(Number(first[key] ?? lock[key] ?? 0), Number(second[key] ?? lock[key] ?? 0), blend);
-  });
-  lock.width = Math.max(0.04, lock.baseWidth * (
-    lock.pointWidths.reduce((sum, value) => sum + value, 0) / lock.pointWidths.length
-  ));
-  lock.asymmetricWidthCurve = Boolean(first.asymmetricWidthCurve || second.asymmetricWidthCurve);
-  lock.asymmetricDepthCurve = Boolean(first.asymmetricDepthCurve || second.asymmetricDepthCurve);
-  lock.centerAsymmetricProfile = blend < 0.5
-    ? Boolean(first.centerAsymmetricProfile)
-    : Boolean(second.centerAsymmetricProfile);
-  procedural.blendAmount = blend;
-}
-
-function buildEvenlySpacedProceduralDuplicates(sources, count, undoState) {
-  const amounts = evenlySpacedInteriorAmounts(count, 32);
-  const sourceSnapshots = proceduralDuplicateSourceSnapshots(sources, undoState);
-  if (sourceSnapshots.length !== 2) {
-    proceduralDuplicateStatus.textContent = "The selected strands could not be duplicated.";
-    return [];
-  }
-  const [first, second] = sourceSnapshots;
-  const headCenter = proceduralDuplicateHeadCenter();
-  const rootSink = THREE.MathUtils.clamp(Number(proceduralDuplicateRootSinkInput.value) || 0, 0, 1);
-  const secondPointOutward = THREE.MathUtils.clamp(
-    Number(proceduralDuplicateSecondPointOutwardInput.value) || 0,
-    0,
-    1
-  );
-  const secondPointTowardRoot = THREE.MathUtils.clamp(
-    Number(proceduralDuplicateSecondPointTowardRootInput.value) || 0,
-    0,
-    0.95
-  );
-  const arcPoints = headCenter
-    ? surfaceArcPolylinePointData(
-      first.points[0],
-      second.points[0],
-      headCenter,
-      count + 1
-    ).slice(1, -1)
-    : amounts.map((amount) => ({
-      x: THREE.MathUtils.lerp(first.points[0].x, second.points[0].x, amount),
-      y: THREE.MathUtils.lerp(first.points[0].y, second.points[0].y, amount),
-      z: THREE.MathUtils.lerp(first.points[0].z, second.points[0].z, amount)
-    }));
-  const createdIds = [];
-  amounts.forEach((amount, index) => {
-    const duplicateId = crypto.randomUUID();
-    restoreLock(proceduralDuplicateCopySnapshot(
-      first,
-      duplicateId,
-      `${sources[0].name} Procedural ${index + 1}`
-    ));
-    const duplicate = locks.find((lock) => lock.id === duplicateId);
-    if (!duplicate) return;
-    duplicate.rootScalpOffset = THREE.MathUtils.clamp(
-      THREE.MathUtils.lerp(
-        Number(first.rootScalpOffset ?? duplicate.rootScalpOffset ?? 0),
-        Number(second.rootScalpOffset ?? duplicate.rootScalpOffset ?? 0),
-        amount
-      ) - rootSink,
-      -1,
-      1
-    );
-    const arcPointData = arcPoints[index];
-    const arcRoot = new THREE.Vector3(arcPointData.x, arcPointData.y, arcPointData.z);
-    const sourceNormalData = blendDirectionPointData(first.rootSurfaceNormal, second.rootSurfaceNormal, amount);
-    const sourceNormal = new THREE.Vector3(
-      sourceNormalData.x,
-      sourceNormalData.y,
-      sourceNormalData.z
-    ).normalize();
-    const sourcesAttached = first.rootAttachmentEnabled !== false && second.rootAttachmentEnabled !== false;
-    const surface = sourcesAttached ? scalpBuilder.closestPointOnActiveScalp(arcRoot, null) : null;
-    const surfaceNormal = surface?.normal?.clone().normalize() || sourceNormal;
-    const surfacePoint = surface?.point?.clone() || arcRoot.clone();
-    const placedRoot = surface
-      ? surfacePoint.clone().addScaledVector(
-        surfaceNormal,
-        scalpBuilder.rootScalpOffsetDistance(duplicate.rootScalpOffset)
-          + layerOffsetForLock(duplicate) * layerRootOffsetFactor(duplicate.hairLayer)
-      )
-      : arcRoot;
-    const procedural = {
-      sources: sourceSnapshots,
-      sourceIds: sources.map((source) => source.id),
-      sourceNames: sources.map((source) => source.name),
-      blendAmount: amount,
-      secondPointOutward,
-      secondPointTowardRoot
-    };
-    applyProceduralDuplicateBlend(duplicate, procedural, placedRoot, amount);
-    duplicate.scalpRegion = amount < 0.5 ? sources[0].scalpRegion : sources[1].scalpRegion;
-    duplicate.rootSurfacePoint = surfacePoint;
-    duplicate.rootSurfaceNormal = surfaceNormal;
-    duplicate.rootAttachmentEnabled = Boolean(surface);
-    duplicate.rootAttachment = surface ? createRootAttachment(duplicate, surfacePoint) : null;
-    syncLockFromCurve(duplicate);
-    updateLockGeometry(duplicate, { defer: true });
-    const mirrored = createMirrorPartnerForNewLock(duplicate);
-    duplicate.proceduralDuplicatePreview = true;
-    duplicate.mesh.raycast = () => {};
-    createdIds.push(duplicate.id);
-    if (mirrored) {
-      mirrored.proceduralDuplicatePreview = true;
-      mirrored.mesh.raycast = () => {};
-      createdIds.push(mirrored.id);
-    }
-  });
-  flushPendingLockGeometryUpdates();
-  renderLockList();
-  updateCount();
-  return createdIds;
-}
-
-function rebuildProceduralDuplicatePreview({ updateSources = false } = {}) {
-  if (!proceduralDuplicateDialog.open || sculptState.state.rebuildingProceduralDuplicatePreview) return false;
-  sculptState.state.rebuildingProceduralDuplicatePreview = true;
-  try {
-    clearProceduralDuplicatePreview();
-    if (updateSources) {
-      const selectedSources = selectedProceduralDuplicateSources();
-      sculptState.state.proceduralDuplicateWindowSourceIds = selectedSources.map((source) => source.id);
-    }
-    const sources = sculptState.state.proceduralDuplicateWindowSourceIds
-      .map((id) => locks.find((lock) => lock.id === id))
-      .filter(proceduralDuplicateEligibleLock);
-    if (sources.length !== 2) {
-      proceduralDuplicateStatus.textContent = "Select exactly two strand curves to update the live preview.";
-      return false;
-    }
-    const count = THREE.MathUtils.clamp(Math.round(Number(proceduralDuplicateCountInput.value) || 1), 1, 32);
-    const undoState = snapshotState();
-    const previewSources = proceduralDuplicateSourceSnapshots(sources, undoState);
-    const createdIds = buildEvenlySpacedProceduralDuplicates(sources, count, undoState);
-    if (!createdIds.length) {
-      proceduralDuplicateStatus.textContent = "No duplicate strands could be previewed.";
-      return false;
-    }
-    sculptState.state.proceduralDuplicatePreview = {
-      undoState,
-      createdIds,
-      sourceIds: sources.map((source) => source.id)
-    };
-    updateProceduralDuplicateArcPreview({
-      sources: previewSources,
-      blendAmount: 0.5
-    });
-    proceduralDuplicateStatus.textContent = "Live preview — confirm to keep these duplicates.";
-    placementApi.updatePlacementStatus();
-    return true;
-  } finally {
-    sculptState.state.rebuildingProceduralDuplicatePreview = false;
-  }
-}
-
-function confirmProceduralDuplicatePreview() {
-  const preview = sculptState.state.proceduralDuplicatePreview;
-  if (!preview?.createdIds?.length) {
-    proceduralDuplicateStatus.textContent = "There is no valid duplicate preview to confirm.";
-    return false;
-  }
-  const createdLocks = preview.createdIds
-    .map((id) => locks.find((lock) => lock.id === id))
-    .filter(Boolean);
-  if (!createdLocks.length) return false;
-  createdLocks.forEach((lock) => {
-    lock.proceduralDuplicatePreview = false;
-    lock.mesh.raycast = THREE.Mesh.prototype.raycast;
-  });
-  undoHistory.push(preview.undoState);
-  redoHistory.clear();
-  updateHistoryButtons();
-  sculptState.state.proceduralDuplicatePreview = null;
-  closeProceduralDuplicateDialog({ commit: true });
-  selectLock(createdLocks[0].id, {
-    individualClumpMember: true,
-    selectedIds: createdLocks.map((lock) => lock.id)
-  });
-  placementApi.updatePlacementStatus();
-  return true;
-}
-
-function updateDuplicatePlacement(event) {
-  const placement = sculptState.state.duplicatePlacement;
-  if (!placement || sculptState.state.altOrbitDrag || event.altKey) return;
-  const anchorLock = locks.find((item) => item.id === placement.lockId);
-  if (!anchorLock?.points?.length) {
-    sculptState.state.duplicatePlacement = null;
-    sculptState.state.proceduralDuplicateModeActive = false;
-    hideProceduralDuplicateArcPreview();
-    updateInteractionLocks();
-    return;
-  }
-  placement.lock = anchorLock;
-  const target = duplicatePlacementTarget(event, placement);
-  if (!target) return;
-  const anchorEntry = placement.entries.find((entry) => entry.lockId === placement.lockId);
-  const sharedDelta = target.root.clone().sub(anchorEntry.startRoot);
-  placement.entries.forEach((entry) => {
-    const lock = locks.find((item) => item.id === entry.lockId);
-    if (!lock?.points?.length) return;
-    const desiredRoot = entry.startRoot.clone().add(sharedDelta);
-    const proceduralAnchor = Boolean(placement.procedural && entry.lockId === placement.lockId);
-    const surface = target.attached && entry.sourceAttachmentEnabled
-      ? proceduralAnchor
-        ? { point: target.surfacePoint, normal: target.surfaceNormal }
-        : scalpBuilder.closestPointOnActiveScalp(desiredRoot, lock.scalpRegion || null)
-      : null;
-    if (proceduralAnchor && target.scalpRegion) lock.scalpRegion = target.scalpRegion;
-    const surfacePoint = surface?.point?.clone() || desiredRoot.clone();
-    const surfaceNormal = surface?.normal?.clone()
-      || lock.rootSurfaceNormal?.clone()
-      || target.surfaceNormal.clone();
-    surfaceNormal.normalize();
-    const placedRoot = surface
-      ? surfacePoint.clone().addScaledVector(
-        surfaceNormal,
-        scalpBuilder.rootScalpOffsetDistance(lock.rootScalpOffset)
-          + layerOffsetForLock(lock) * layerRootOffsetFactor(lock.hairLayer)
-      )
-      : desiredRoot;
-    const delta = placedRoot.clone().sub(lock.points[0]);
-    if (placement.procedural && entry.lockId === placement.lockId) {
-      applyProceduralDuplicateBlend(lock, placement.procedural, placedRoot);
-    } else {
-      lock.points.forEach((point) => point.add(delta));
-    }
-    lock.placementFrame?.root?.add(delta);
-    lock.rootSurfacePoint = surfacePoint;
-    lock.rootSurfaceNormal = surfaceNormal;
-    lock.rootAttachmentEnabled = Boolean(surface);
-    lock.rootAttachment = surface ? createRootAttachment(lock, surfacePoint) : null;
-    syncLockFromCurve(lock);
-    updateLockGeometry(lock, placement.procedural ? { defer: true } : { immediate: true });
-    if (placement.procedural && entry.lockId === placement.lockId) {
-      syncActiveMirror(lock, { deferGeometry: true });
-    }
-  });
-  if (placement.procedural) {
-    updateProceduralDuplicateArcPreview(placement.procedural);
-    placementApi.updatePlacementStatus();
-  }
-  event.preventDefault();
-  event.stopImmediatePropagation();
-}
-
-function beginDuplicatePlacement(sourceOrSources) {
-  if (!sourceOrSources || sculptState.state.duplicatePlacement) return null;
-  const sources = [...new Set(Array.isArray(sourceOrSources) ? sourceOrSources : [sourceOrSources])]
-    .filter((source) => locks.includes(source));
-  if (!sources.length) return null;
-  const undoState = snapshotState();
-  const duplicateIds = [];
-  sources.forEach((source) => {
-    const sourceSnapshot = undoState.locks.find((lock) => lock.id === source.id);
-    if (!sourceSnapshot) return;
-    const duplicateId = crypto.randomUUID();
-    duplicateIds.push(duplicateId);
-    restoreLock({
-      ...sourceSnapshot,
-      id: duplicateId,
-      name: `${source.name} Copy`,
-      mirrorPartnerId: null,
-      clumpId: null,
-      clumpName: null,
-      clumpGuide: false,
-      clumpGuideId: null,
-      clumpRestPoints: null,
-      clumpGuideRestPoints: null,
-      clumpRestTwists: null,
-      clumpGuideRestTwists: null,
-      clumpRestScales: null,
-      clumpGuideRestScales: null,
-      curveLatticeBinding: null,
-      groupLatticeBasePoints: null
-    });
-  });
-  const duplicates = duplicateIds
-    .map((id) => locks.find((lock) => lock.id === id))
-    .filter(Boolean);
-  if (!duplicates.length) return null;
-  const duplicate = duplicates[0];
-  sculptState.state.duplicatePlacement = {
-    lockId: duplicate.id,
-    lockIds: duplicates.map((lock) => lock.id),
-    sourceIds: sources.map((source) => source.id),
-    lock: duplicate,
-    entries: duplicates.map((lock, index) => ({
-      lockId: lock.id,
-      startRoot: lock.points[0].clone(),
-      sourceAttachmentEnabled: sources[index]?.rootAttachmentEnabled !== false
-    })),
-    sourceAttachmentEnabled: sources[0].rootAttachmentEnabled !== false,
-    undoState,
-    viewPlane: new THREE.Plane().setFromNormalAndCoplanarPoint(
-      viewPlaneNormal(),
-      duplicate.points[0]
-    )
-  };
-  selectLock(duplicate.id, {
-    individualClumpMember: true,
-    selectedIds: duplicates.map((lock) => lock.id)
-  });
-  renderLockList();
-  updateCount();
-  updateInteractionLocks();
-  placementApi.updatePlacementStatus();
-  return duplicates.length === 1 ? duplicate : duplicates;
-}
-
-function beginProceduralDuplicatePlacement(
-  sourceLocks = null,
-  { cancelSelectionIds = null } = {}
-) {
-  const currentSelection = selectedLocksInOrder();
-  const sourceSelection = Array.isArray(sourceLocks) ? sourceLocks : currentSelection;
-  const sources = sourceSelection.filter((lock) => (
-    locks.includes(lock)
-    &&
-    lock.points?.length >= 2
-    && !["poly", "surface", "curve-surface"].includes(lock.geometryType)
-  ));
-  if (sources.length !== 2 || (!sourceLocks && currentSelection.length !== 2)) {
-    placementStatus.textContent = "Duplicate Procedural requires exactly two selected strand curves.";
-    return null;
-  }
-  const duplicate = beginDuplicatePlacement(sources[0]);
-  if (!duplicate || Array.isArray(duplicate) || !sculptState.state.duplicatePlacement) return null;
-  const sourceSnapshots = proceduralDuplicateSourceSnapshots(sources, sculptState.state.duplicatePlacement.undoState);
-  if (sourceSnapshots.length !== 2) {
-    cancelDuplicatePlacement();
-    return null;
-  }
-  duplicate.name = `${sources[0].name} Procedural Copy`;
-  sculptState.state.duplicatePlacement.sourceIds = sources.map((source) => source.id);
-  sculptState.state.duplicatePlacement.cancelSelectionIds = cancelSelectionIds || sculptState.state.duplicatePlacement.sourceIds;
-  sculptState.state.duplicatePlacement.procedural = {
-    sources: sourceSnapshots,
-    sourceIds: sources.map((source) => source.id),
-    sourceNames: sources.map((source) => source.name),
-    blendAmount: 0
-  };
-  updateProceduralDuplicateArcPreview(sculptState.state.duplicatePlacement.procedural);
-  const mirrored = createMirrorPartnerForNewLock(duplicate);
-  if (mirrored) sculptState.state.duplicatePlacement.lockIds.push(mirrored.id);
-  renderLockList();
-  updateCount();
-  placementApi.updatePlacementStatus();
-  return duplicate;
-}
-
-function confirmDuplicatePlacement(event) {
-  if (
-    !sculptState.state.duplicatePlacement
-    || event.button !== 0
-    || event.shiftKey
-    || event.ctrlKey
-    || event.altKey
-    || event.metaKey
-  ) return false;
-  updateDuplicatePlacement(event);
-  const placement = sculptState.state.duplicatePlacement;
-  const { lockId, lockIds, undoState } = placement;
-  sculptState.state.duplicatePlacement = null;
-  hideProceduralDuplicateArcPreview();
-  undoHistory.push(undoState);
-  redoHistory.clear();
-  updateHistoryButtons();
-  updateInteractionLocks();
-  selectLock(lockId, {
-    individualClumpMember: true,
-    selectedIds: placement.procedural ? [lockId] : lockIds
-  });
-  placementApi.updatePlacementStatus();
-  if (placement.procedural && sculptState.state.proceduralDuplicateModeActive) {
-    const sources = placement.procedural.sourceIds
-      .map((id) => locks.find((lock) => lock.id === id))
-      .filter(Boolean);
-    const nextDuplicate = beginProceduralDuplicatePlacement(sources, {
-      cancelSelectionIds: [lockId]
-    });
-    if (!nextDuplicate) sculptState.state.proceduralDuplicateModeActive = false;
-  }
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  return true;
-}
-
-function cancelDuplicatePlacement() {
-  if (!sculptState.state.duplicatePlacement) return false;
-  const procedural = Boolean(sculptState.state.duplicatePlacement.procedural);
-  const duplicateIds = sculptState.state.duplicatePlacement.lockIds || [sculptState.state.duplicatePlacement.lockId];
-  const selectionIds = sculptState.state.duplicatePlacement.cancelSelectionIds
-    || sculptState.state.duplicatePlacement.sourceIds
-    || [];
-  const duplicates = duplicateIds
-    .map((id) => locks.find((lock) => lock.id === id))
-    .filter(Boolean);
-  sculptState.state.duplicatePlacement = null;
-  if (procedural) sculptState.state.proceduralDuplicateModeActive = false;
-  hideProceduralDuplicateArcPreview();
-  if (duplicates.length) deleteLocks(duplicates);
-  const source = locks.find((lock) => selectionIds.includes(lock.id));
-  if (source) {
-    selectLock(source.id, {
-      individualClumpMember: true,
-      selectedIds: selectionIds
-    });
-  }
-  updateInteractionLocks();
-  placementApi.updatePlacementStatus();
-  return true;
 }
 
 function outlinerClumpLocks(guide) {
@@ -18238,29 +17562,29 @@ rebuildCurveDialog.addEventListener("click", (event) => {
   if (event.target === rebuildCurveDialog) rebuildCurveDialog.close();
 });
 proceduralDuplicateCountInput.addEventListener("input", () => {
-  updateProceduralDuplicateSpacingNote();
-  rebuildProceduralDuplicatePreview();
+  proceduralDuplicateApi.updateProceduralDuplicateSpacingNote();
+  proceduralDuplicateApi.rebuildProceduralDuplicatePreview();
 });
 [
   proceduralDuplicateRootSinkInput,
   proceduralDuplicateSecondPointOutwardInput,
   proceduralDuplicateSecondPointTowardRootInput
 ].forEach((input) => {
-  input.addEventListener("input", () => rebuildProceduralDuplicatePreview());
+  input.addEventListener("input", () => proceduralDuplicateApi.rebuildProceduralDuplicatePreview());
 });
 proceduralDuplicateForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  confirmProceduralDuplicatePreview();
+  proceduralDuplicateApi.confirmProceduralDuplicatePreview();
 });
 [closeProceduralDuplicateButton, cancelProceduralDuplicateButton].forEach((button) => {
-  button.addEventListener("click", closeProceduralDuplicateDialog);
+  button.addEventListener("click", proceduralDuplicateApi.closeProceduralDuplicateDialog);
 });
 proceduralDuplicateDialog.addEventListener("click", (event) => {
-  if (event.target === proceduralDuplicateDialog) closeProceduralDuplicateDialog();
+  if (event.target === proceduralDuplicateDialog) proceduralDuplicateApi.closeProceduralDuplicateDialog();
 });
 proceduralDuplicateDialog.addEventListener("cancel", (event) => {
   event.preventDefault();
-  closeProceduralDuplicateDialog();
+  proceduralDuplicateApi.closeProceduralDuplicateDialog();
 });
 scalpPaintToggle.addEventListener("click", () => {
   scalpBuilder.setScalpPaintEditing(!scalpState.state.scalpPaintEditing);
@@ -18532,11 +17856,11 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (event.key === "Escape" && proceduralDuplicateDialog.open) {
-    closeProceduralDuplicateDialog();
+    proceduralDuplicateApi.closeProceduralDuplicateDialog();
     event.preventDefault();
     return;
   }
-  if (event.key === "Escape" && cancelDuplicatePlacement()) {
+  if (event.key === "Escape" && proceduralDuplicateApi.cancelDuplicatePlacement()) {
     event.preventDefault();
     return;
   }
@@ -18615,7 +17939,7 @@ window.addEventListener("keydown", (event) => {
     && event.key.toLowerCase() === "d"
   ) {
     event.preventDefault();
-    if (!event.repeat) beginDuplicatePlacement(selectedLocksInOrder());
+    if (!event.repeat) proceduralDuplicateApi.beginDuplicatePlacement(selectedLocksInOrder());
     return;
   }
   if (
@@ -18837,7 +18161,7 @@ window.addEventListener("blur", () => {
   referenceHeadApi.finishReferenceOverlayDrag(null, { cancel: true });
   radialMenuApi.cancelStrandRadialGesture();
   radialMenuApi.cancelToolShortcutPress();
-  cancelDuplicatePlacement();
+  proceduralDuplicateApi.cancelDuplicatePlacement();
   sculptState.state.brushSizeHotkeyHeld = false;
   setSculptBrushShiftSmoothHeld(false);
   finishBrushSizeDrag();
@@ -19894,7 +19218,7 @@ window.addEventListener("pointermove", updateTransformScalePointer, true);
 window.addEventListener("pointermove", trackViewportPointerMove);
 window.addEventListener("pointermove", radialMenuApi.updateStrandRadialGesture, true);
 window.addEventListener("pointermove", radialMenuApi.updateToolRadialGesture, true);
-window.addEventListener("pointermove", updateDuplicatePlacement, true);
+window.addEventListener("pointermove", proceduralDuplicateApi.updateDuplicatePlacement, true);
 window.addEventListener("pointermove", referenceHeadApi.updateReferenceCrop, true);
 window.addEventListener("pointermove", referenceHeadApi.updateReferenceOverlayDrag, true);
 window.addEventListener("pointermove", sculptGeom.updateSculptMoveStroke, true);
@@ -20004,7 +19328,7 @@ renderer.domElement.addEventListener("pointercancel", branchRegion.endBranchSwee
 });
 renderer.domElement.addEventListener("pointerdown", taperEditor.beginTaperMeshPointDrag, true);
 renderer.domElement.addEventListener("pointerdown", radialMenuApi.blockPointerDuringStrandRadialGesture, true);
-renderer.domElement.addEventListener("pointerdown", confirmDuplicatePlacement, true);
+renderer.domElement.addEventListener("pointerdown", proceduralDuplicateApi.confirmDuplicatePlacement, true);
 renderer.domElement.addEventListener("pointerdown", referenceHeadApi.beginReferenceCrop, true);
 referenceCropHandles.addEventListener("pointerdown", referenceHeadApi.beginReferenceCrop, true);
 renderer.domElement.addEventListener("pointerdown", beginBrushSizeDrag, true);
