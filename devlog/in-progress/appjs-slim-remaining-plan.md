@@ -26,7 +26,7 @@
 | A5 | poly tools | 28 | ~665 | ~530 | 低中 | 16 | 自洽工具集 |
 | A6 | material | 16 | ~310 | ~250 | 低 | 51 | 小但干净，material-state.js 已在 |
 | B1 | strand/panel/split/tip 几何与编辑 | ~100 | ~4,500 | ~3,400 | 中 | ~220 | 最大剩余块，建议分 2-3 批；与 bone roadmap 强相关（先拆几何，bones 改动落模块内更安全） |
-| B2 ✅(1/2) | draw/creation 流程（B2-1 draw-stroke+live-surface 完成） | 55 | ~1,237 | 中高 | B2-1 已迁出 modules/geometry/draw-flow.js（12 处跨模块重接；B2-2 放置 18 函数待迁；verify-smoke 10/11=基线） |
+| B2 ✅ | draw/creation 流程 | 73 | ~1,619 | 中高 | B2-1 draw-flow.js + B2-2 placement.js 全部完成（verify-smoke 10/11=基线） |
 | B3 ✅ | preset library（含 hair 生成器） | 32+5嵌套 | ~1,980 | 中 | 已迁出 modules/io/preset-library.js（删 7 个死函数 1,072 行；装配 presetLibraryApi→creationPresets 顺序；verify-smoke 10/11=基线） |
 | B4 | taper curve editor | ~39 | ~1,680 | ~1,300 | 中 | 63 | 自洽编辑器；updateSelectedTaperPoint 单函数 601 行 |
 | B5 | sculpt 笔刷 | ~45 | ~1,000 | ~800 | 中 | ~55 | sculpt-brush.js 已有纯函数底座；delta mush 不触及 |

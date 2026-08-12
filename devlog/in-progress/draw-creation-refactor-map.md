@@ -288,3 +288,35 @@
 5. ?????? UTF-8 ? BOM?CRLF?? ASCII ???app.js ???? 184 ? ASCII ???????? 0 ? ASCII???
 6. ???`node --check` ????.mjs ??????????verify-smoke 10/11 = ??????? branch-bridge ?????? HEAD ?????
 7. ??????????
+
+
+## 执行记录 B2-2 — 放置流程迁出（2026-08-12）
+
+> 分支 `0.2.59-refactor` · 基 3f6d102 · app.js 23,071 行（工作树 CRLF）→ 迁出后 22,689 行。
+
+### 迁出（实际）
+- 簇 E 18 个放置函数全部迁出到 `modules/geometry/placement.js`（`createPlacementApi(deps)`，481 行，独立模块，未并入已提交的 draw-flow.js）：
+  createPlacedStrand/placedPointCount/createPlacedPoints/pushPointOutsideHead/resizePlacedStrand/applyPlacedStrandScaleProfile/beginPlaceEdit/updatePlaceEdit/updatePlacementLength/updatePlacementOrientation/endPlaceEdit/confirmPendingPlacedStrand/pendingPlacedLock/beginPlacementPointer/finishPlacementPointer/confirmPlacementStep/finishPlacementFlow/updatePlacementStatus。
+- 原 app.js L12037-12474（438 行）删除，置换为 B2-2 提取注释（三行）。
+- 净减：app.js 23,071 → 22,689（-382； git diff 口径 -502/+120）。
+- 注：`confirmPendingPlacedStrand` 在全仓库无任何调用点（仅定义），属死函数，随簇 E 一并迁出（保持行为不变）。
+
+### 接线（app.js）
+- 导入 `createPlacementApi`（`./modules/geometry/placement.js?v=20260812-1`）。
+- L1504 创建 `const placementDeps = {}; const placementApi = createPlacementApi(placementDeps);`（紧随 drawFlowApi）。
+- L9181 `Object.assign(placementDeps, {...})` 批填（在 drawFlowDeps 批后、preset-library boot L10530 前）：store .state 代理 5（sel/sculptState/scalpState/hairState/miscState）+ 场景 6（camera/renderer/locks/guides/scalpSurfaceGroup/scalpSurfaceMesh）+ 模块 api 3（scalpBuilder/shapePresets/drawFlow=drawFlowApi）+ 常量/DOM 7（strandCreationDefaults/braidMeshPresets/placementStatus/placeStrandScalpOffsetInput/proportionalRadiusInput/braidMeshPresetInput）+ app.js 函数 21（addLock/updateLockGeometry/rebuildCurveObjects/updateCount/renderLockList/selectLock/getSelectedLock/selectCurvePoint/pushUndoState/updateInteractionLocks/createMirrorPartnerForNewLock/syncLockFromCurve/syncActiveMirror/syncInputs/fitPointAttributes/deselectStrands/pullMoveActive/componentEditModeActive/sculptBrushToolActive/effectiveSculptBrushTool/strandRegionDisplayLabel）。
+- updatePlacementStatus 内原 `drawFlowApi.X` 改 `deps.drawFlow.X`（selectedCurveLatticeGuide/activeStrokeSurfaceValue/activeStrokeDynamicEnabled）；DEFAULT_HAIR_COLOR 直接 import app-config（与 draw-flow.js 同例）。
+
+### 重接（app.js 外部调用点改写 64 处行）
+- deps 批填 10 处改 placementApi.*：curveSurfaceCreateDeps（finishPlacementFlow/updatePlacementStatus）、scalpBuilderDeps、guideDeps、polyToolsDeps、drawFlowDeps（updatePlacementStatus/applyPlacedStrandScaleProfile）、presetLibraryDeps（updatePlacementStatus/pushPointOutsideHead）、creationPresets 内联 deps（updatePlacementStatus）。
+- 事件/胶水：restoreRefreshes.register、createStrandsFromCurveLattice 内 applyPlacedStrandScaleProfile(lock)、setActiveTool 内 finishPlacementFlow、pointer 监听（updatePlaceEdit/endPlaceEdit×2/finishPlacementPointer/beginPlacementPointer×2/pendingPlacedLock/finishPlacementFlow×2）、updatePlacementStatus() 50 处。
+- 模块侧零改动：所有模块经 deps.X 引用，无需改模块文件。
+- B6→B2 交叉边核对：drawFlowDeps 仍注入 nextClumpName/createClumpFromLocks/updateClumpMembers/applyProceduralBranchSettings（app.js 本体，B6 批前不变）；本批无 B2→B6 新增。
+- `__AHS_TEST_SEAM` 不含本批函数，无 seam 重导出。
+
+### 踩坑
+1. deps 批填里的简写键 `updatePlacementStatus,` 被全局重接后变成 `placementApi.updatePlacementStatus,`（对象成员简写不允许）→ 改 `updatePlacementStatus: placementApi.updatePlacementStatus,` 共 10 处。
+2. `scalpActiveVertexIndices` 在 app.js 原为裸引用（仅 `scalpState.state.scalpActiveVertexIndices` 存在）——原代码潜在 ReferenceError 分支；迁出时改 `deps.scalpState.scalpActiveVertexIndices`（实时读 store），经 deps 接线后该分支可用（行为修正，见报告边界存疑点）。
+3. PowerShell→node stdin 管道丢中文（`执行记录` 变 `????`）→ 记录与注释改用 ASCII 或 \uXXXX 编码写入。
+4. 批填点必须早于 preset-library boot（loadBraidMeshPreset→registerBraidMeshPreset→updatePlacementStatus，L10530），故 placementDeps 批放在 drawFlowDeps 批后（L9181）、boot 前；时序审计 batch(9181)<boot(10530)<restoreRefreshes.run(11025)<指针监听(21966)。
+5. 验证全过（简要）：裸引用扫描零；store 双重 .state 零；跨批重接 10 处 deps + 54 处胶水；UTF-8 无 BOM、CRLF、非 ASCII 守恒 184→184；node --check 双文件通过。

@@ -20,6 +20,7 @@ import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";
 import { createPresetLibraryApi } from "./modules/io/preset-library.js?v=20260812-1";
 import { createDrawFlowApi } from "./modules/geometry/draw-flow.js?v=20260812-1";
+import { createPlacementApi } from "./modules/geometry/placement.js?v=20260812-1";
 import { createMiscStore } from "./modules/core/misc-store.js?v=20260809-12";
 import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260809-11";
 import { createScalpStore } from "./modules/scalp/scalp-store.js?v=20260809-10";
@@ -1496,6 +1497,11 @@ const curveSurfaceCreate = createCurveSurfaceCreateApi(curveSurfaceCreateDeps);
 // devlog/in-progress/draw-creation-refactor-map.md.
 const drawFlowDeps = {};
 const drawFlowApi = createDrawFlowApi(drawFlowDeps);
+// Placement flow api (refactor batch B2-2): deps filled in one batch after the drawFlowDeps
+// block (all const/let deps defined) and before the preset-library boot; no boot-time
+// placement calls before the batch, see devlog/in-progress/draw-creation-refactor-map.md.
+const placementDeps = {};
+const placementApi = createPlacementApi(placementDeps);
 
 // Poly topology editing api (refactor 3d batch G7): deps filled in one batch after the last dep is
 // defined; no boot-time calls before the batch, see devlog/in-progress/g7-poly-refactor-map.md.
@@ -1984,7 +1990,7 @@ const undoHistory = new BoundedHistory(60);
 const redoHistory = new BoundedHistory(60);
 const restoreRefreshes = new RestoreRefreshRegistry()
   .register("counts", updateCount)
-  .register("placement-status", updatePlacementStatus)
+  .register("placement-status", placementApi.updatePlacementStatus)
   .register("display-visibility", applyDisplayVisibilityFilters)
   .register("sculpt-brush-debug", sculptGeom.refreshSculptBrushDebugAfterStateRestore)
   .register("curve-editors", taperEditor.refreshTaperCurveEditorAfterStateRestore);
@@ -2442,7 +2448,7 @@ Object.assign(curveSurfaceCreateDeps, {
   drawSurfaceHitFromEvent: drawFlowApi.drawSurfaceHitFromEvent,
   exitSetupEditors,
   finishDrawStrandStroke: drawFlowApi.finishDrawStrandStroke,
-  finishPlacementFlow,
+  finishPlacementFlow: placementApi.finishPlacementFlow,
   getSelectedLock,
   loftHorizontalPreview,
   loftHorizontalStep,
@@ -2478,7 +2484,7 @@ Object.assign(curveSurfaceCreateDeps, {
   updateCurveObjects,
   updateInteractionLocks,
   updateLockGeometry,
-  updatePlacementStatus,
+  updatePlacementStatus: placementApi.updatePlacementStatus,
   updateTopologyStats,
   vectorToData,
   viewPlaneNormal,
@@ -3428,7 +3434,7 @@ Object.assign(scalpBuilderDeps, {
   updateGuideViewToggle: guideApi.updateGuideViewToggle,
   updateInteractionLocks,
   updateLockGeometry,
-  updatePlacementStatus,
+  updatePlacementStatus: placementApi.updatePlacementStatus,
   updateViewportToolVisibility: guideApi.updateViewportToolVisibility,
   upperContourCurve,
 });
@@ -4300,7 +4306,7 @@ function refreshSelectionModeVisuals() {
   updateSelectedPointLabel();
   updateViewPlaneGrid();
   guideApi.updateViewportToolVisibility();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 function setViewportSelectionMode(mode) {
@@ -4354,7 +4360,7 @@ function setViewportEditMode(mode, options = {}) {
   if (activateSelect && sel.state.activeTool !== "select") setActiveTool("select");
   guideApi.updateGuideControlsVisibility();
   updateAttributeEditorMode();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 function createOutlinerVisibilityToggle({ visible, partial = false, label, onToggle }) {
@@ -5062,7 +5068,7 @@ function setHeadSetupEditing(enabled) {
   }
   else if (!scalpState.state.scalpBuilderEditing) scalpBuilder.disposeScalpBuilderVisuals();
   scalpBuilder.updateScalpEditingVisibility();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 
@@ -5107,7 +5113,7 @@ function hideSelectedStrands() {
   pushUndoState();
   setLocksOutlinerVisibility(targets, false);
   deselectStrands();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
   return true;
 }
 
@@ -5116,7 +5122,7 @@ function unhideHiddenStrands() {
   if (!targets.length) return false;
   pushUndoState();
   setLocksOutlinerVisibility(targets, true);
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
   return true;
 }
 
@@ -5132,7 +5138,7 @@ function setStrandIsolation(lockIds = null) {
   sel.state.isolatedStrandIds = nextIds.length ? new Set(nextIds) : null;
   applyStrandDisplayVisibility();
   renderLockList();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
   return strandIsolationActive();
 }
 
@@ -5371,7 +5377,7 @@ Object.assign(guideDeps, {
   updateCount,
   updateCurveObjects,
   updateInteractionLocks,
-  updatePlacementStatus,
+  updatePlacementStatus: placementApi.updatePlacementStatus,
   updateScalpEditingVisibility: scalpBuilder.updateScalpEditingVisibility,
   updateSelectedPointLabel,
   vectorToData,
@@ -5421,7 +5427,7 @@ Object.assign(polyToolsDeps, {
   updateHistoryButtons,
   updateInteractionLocks,
   updateLockGeometry,
-  updatePlacementStatus,
+  updatePlacementStatus: placementApi.updatePlacementStatus,
   updateTopologyStats,
   viewportDrawLayerInput,
   worldNormalAtHit: drawFlowApi.worldNormalAtHit,
@@ -5496,7 +5502,7 @@ function createStrandsFromCurveLattice(guide) {
       points,
       curveLatticeBinding: { guideId: guide.id, column }
     }, { deferUi: true });
-    applyPlacedStrandScaleProfile(lock);
+    placementApi.applyPlacedStrandScaleProfile(lock);
     updateLockGeometry(lock);
     created.push(lock);
   }
@@ -5712,7 +5718,7 @@ function setSculptBrushShiftSmoothHeld(held) {
   sculptState.state.sculptBrushShiftSmoothHeld = nextHeld;
   syncSculptBrushToolButtons();
   sculptGeom.syncSculptBrushStrengthForActiveTool();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 function setActiveTool(tool) {
@@ -5768,7 +5774,7 @@ function setActiveTool(tool) {
   if ((scalpState.state.scalpBuilderEditing && !setupTransformTool) || scalpState.state.scalpPaintEditing || sculptState.state.headSetupEditing || scalpState.state.scalpShapeEditing) {
     exitSetupEditors();
   }
-  if (tool !== "place") finishPlacementFlow();
+  if (tool !== "place") placementApi.finishPlacementFlow();
   if (!["draw", "procedural-draw", "braid", "panel"].includes(tool)) drawFlowApi.finishDrawStrandStroke(null, { cancel: true });
   if (!["draw", "procedural-draw", "braid", "panel"].includes(tool)) drawStrandBrushCursor.visible = false;
   if (previousTool === "poly" && tool !== "poly") {
@@ -5850,7 +5856,7 @@ function setActiveTool(tool) {
   }
   updateAttributeEditorMode();
   updateViewPlaneGrid();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 function setDrawStrandMode(mode) {
@@ -5860,7 +5866,7 @@ function setDrawStrandMode(mode) {
   draw.state.activeCustomDrawClumpTemplate = null;
   drawBrushPresetInput.value = mode;
   syncDrawCurlControls();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 function setObjectSpaceEditing(enabled) {
@@ -5876,7 +5882,7 @@ function setObjectSpaceEditing(enabled) {
   configureTransformControls(sel.state.activeTool);
   if (!componentEditModeActive() && sculptState.state.viewportEditMode === "strand") attachStrandObjectTransform();
   if (!componentEditModeActive() && sculptState.state.viewportEditMode === "guide") attachGuideObjectTransform();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 function setHierarchyEditing(enabled) {
@@ -5888,7 +5894,7 @@ function setHierarchyEditing(enabled) {
   locks.forEach((lock) => updateLockGeometry(lock));
   locks.forEach((lock) => updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId }));
   updateAttributeEditorMode();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 function setProportionalEditing(enabled) {
@@ -5907,7 +5913,7 @@ function setProportionalEditing(enabled) {
   if (!sculptState.state.proportionalEditing) endProportionalSizeEdit();
   updateInteractionLocks();
   updateAttributeEditorMode();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 function beginProportionalSizeEdit(event) {
@@ -5919,7 +5925,7 @@ function beginProportionalSizeEdit(event) {
     didDrag: false
   };
   updateInteractionLocks();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 function updateProportionalSizeEdit(event) {
@@ -5929,7 +5935,7 @@ function updateProportionalSizeEdit(event) {
   const nextRadius = THREE.MathUtils.clamp(sculptState.state.proportionalSizeEdit.startRadius + drag / 70, Number(proportionalRadiusInput.min), Number(proportionalRadiusInput.max));
   proportionalRadiusInput.value = nextRadius.toFixed(1);
   refreshProportionalPreview();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
   event.preventDefault();
 }
 
@@ -5937,7 +5943,7 @@ function endProportionalSizeEdit() {
   if (!sculptState.state.proportionalSizeEdit) return;
   sculptState.state.proportionalSizeEdit = null;
   updateInteractionLocks();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 function activateProportionalHotkeyHold() {
@@ -6675,7 +6681,7 @@ function selectSurfaceObjectAnchor(lock, attachTransform = ["move", "rotate", "s
   updateCurveObjects(lock, { visible: lock.id === sel.state.selectedId });
   transformControls.detach();
   if (attachTransform) attachSurfaceObjectAnchorTransform(lock);
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
   return true;
 }
 
@@ -9161,12 +9167,59 @@ Object.assign(drawFlowDeps, {
   headMeshes,
   outwardNormalAtPoint,
   activeCreationShapeDefaults,
-  updatePlacementStatus,
-  applyPlacedStrandScaleProfile,
+  updatePlacementStatus: placementApi.updatePlacementStatus,
+  applyPlacedStrandScaleProfile: placementApi.applyPlacedStrandScaleProfile,
   nextClumpName,
   createClumpFromLocks,
   updateClumpMembers,
   applyProceduralBranchSettings
+});
+// Placement flow api deps batch (refactor batch B2-2): all deps are defined by this point
+// (last const/let deps: shapePresets / draw DOM inputs); the batch takes effect here, before
+// the preset-library boot (loadBraidMeshPreset -> registerBraidMeshPreset -> updatePlacementStatus)
+// and before all placement pointer/UI listener registrations.
+Object.assign(placementDeps, {
+  sel: sel.state,
+  sculptState: sculptState.state,
+  scalpState: scalpState.state,
+  hairState: hairState.state,
+  miscState: miscState.state,
+  camera,
+  renderer,
+  locks,
+  guides,
+  scalpSurfaceGroup,
+  scalpSurfaceMesh,
+  scalpBuilder,
+  shapePresets,
+  strandCreationDefaults,
+  braidMeshPresets,
+  placementStatus,
+  placeStrandScalpOffsetInput,
+  proportionalRadiusInput,
+  braidMeshPresetInput,
+  drawFlow: drawFlowApi,
+  addLock,
+  updateLockGeometry,
+  rebuildCurveObjects,
+  updateCount,
+  renderLockList,
+  selectLock,
+  getSelectedLock,
+  selectCurvePoint,
+  pushUndoState,
+  updateInteractionLocks,
+  createMirrorPartnerForNewLock,
+  syncLockFromCurve,
+  syncActiveMirror,
+  syncInputs,
+  fitPointAttributes,
+  deselectStrands,
+  pullMoveActive,
+  componentEditModeActive,
+  sculptBrushToolActive,
+  effectiveSculptBrushTool,
+  strandRegionDisplayLabel
 });
 
 
@@ -10454,11 +10507,11 @@ Object.assign(presetLibraryDeps, {
   guideState: guideState.state, drawState: draw.state, miscState: miscState.state,
   undoHistory, redoHistory, locks,
   shapePresets, scalpBuilder, taperEditor,
-  updateLockGeometry, getSelectedLock, updatePlacementStatus, restoreState, snapshotState,
+  updateLockGeometry, getSelectedLock, updatePlacementStatus: placementApi.updatePlacementStatus, restoreState, snapshotState,
   updateHistoryButtons, pushUndoState, updateDrawStrandPreview: drawFlowApi.updateDrawStrandPreview, syncCreationShapeInputs,
   setDrawStrandMode, setDrawStrandBrushCursorScale, activeStrokeBrushSize: drawFlowApi.activeStrokeBrushSize,
   normalizedLiveSurfaceSelection: drawFlowApi.normalizedLiveSurfaceSelection, drawSurfaceDynamicEnabled: drawFlowApi.drawSurfaceDynamicEnabled, setDrawSurfaceDynamicEnabled: drawFlowApi.setDrawSurfaceDynamicEnabled,
-  pushPointOutsideHead, updateViewportStatsVisibility,
+  pushPointOutsideHead: placementApi.pushPointOutsideHead, updateViewportStatsVisibility,
   presetLibrary, presetLibraryToggle, presetLibraryGrid, presetLibraryStatus, presetFilterButtons,
   shapePresetSelects, shapePresetButtons,
   drawBrushPresetInput, braidToolPresetInput,
@@ -10480,7 +10533,7 @@ const creationPresets = createCreationPresetsApi({
   normalizeHairLayer, normalizeClumpBrushTemplate,
   normalizeToolPresetLibrary, emptyToolPresetLibrary, activeStrokeSurfaceValue: drawFlowApi.activeStrokeSurfaceValue,
   drawSurfaceDynamicEnabled: drawFlowApi.drawSurfaceDynamicEnabled, createClumpBrushTemplate, normalizeBraidDimensions: presetLibraryApi.normalizeBraidDimensions,
-  getSelectedLock, syncCreationShapeInputs, updatePlacementStatus, applyCreationToolSettings: presetLibraryApi.applyCreationToolSettings,
+  getSelectedLock, syncCreationShapeInputs, updatePlacementStatus: placementApi.updatePlacementStatus, applyCreationToolSettings: presetLibraryApi.applyCreationToolSettings,
   braidCreationDefaults, strandCreationDefaults, DEFAULT_BRAID_MESH_PRESET,
   CREATION_PRESET_STORAGE_KEY, LEGACY_CLUMP_PRESET_STORAGE_KEY,
   projectState, drawState: draw.state, hairState: hairState.state, selState: sel.state, guideState: guideState.state
@@ -12034,444 +12087,9 @@ function detachLockFromClump(lock) {
 
 
 
-function createPlacedStrand(hit) {
-  const normalMatrix = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
-  const normal = hit.face.normal.clone().applyMatrix3(normalMatrix).normalize();
-  const surfaceCenter = scalpSurfaceGroup.getWorldPosition(new THREE.Vector3());
-  if (normal.dot(hit.point.clone().sub(surfaceCenter).normalize()) < 0) normal.negate();
-
-  const hitCurveLattice = hit.object.userData.curveLatticeGuideId
-    ? guides.find((guide) => guide.id === hit.object.userData.curveLatticeGuideId)
-    : null;
-  const scalpRegion = hitCurveLattice?.scalpRegion || scalpBuilder.scalpRegionAtHit(hit);
-  const localRootOffset = THREE.MathUtils.clamp(
-    strandCreationDefaults.rootScalpOffset + Number(placeStrandScalpOffsetInput.value),
-    -1,
-    1
-  );
-  const root = hit.point.clone().addScaledVector(normal, scalpBuilder.rootScalpOffsetDistance(localRootOffset));
-  let flow = new THREE.Vector3(0, -1, 0).projectOnPlane(normal).normalize();
-  if (flow.lengthSq() < 0.01) {
-    flow = root.clone().sub(surfaceCenter).setY(0).normalize();
-  }
-  if (flow.lengthSq() < 0.01) {
-    flow = new THREE.Vector3(0, 0, 1).projectOnPlane(normal).normalize();
-  }
-  const side = new THREE.Vector3().crossVectors(flow, normal).normalize();
-  const length = 1.28;
-  const frame = { root, normal, flow, side, sideSign: Math.sign(root.x || 1), gravity: new THREE.Vector3(0, -1, 0), orientationStrength: 0 };
-  const points = createPlacedPoints(frame, length);
-  const placed = addLock("front", {
-    x: root.x,
-    y: root.y,
-    z: root.z,
-    length,
-    curve: points.at(-1).x - root.x,
-    width: 0.16,
-    taper: 0.58,
-    strandRotation: strandCreationDefaults.strandRotation,
-    twist: strandCreationDefaults.twist,
-    twistCurve: shapePresets.cloneShapePresetValue(strandCreationDefaults.twistCurve),
-    taperCurve: shapePresets.cloneShapePresetValue(strandCreationDefaults.taperCurve),
-    depthCurve: shapePresets.cloneShapePresetValue(strandCreationDefaults.depthCurve),
-    widthScale: strandCreationDefaults.widthScale,
-    depthScale: strandCreationDefaults.depthScale,
-    sweepProfile: shapePresets.cloneShapePresetValue(strandCreationDefaults.sweepProfile),
-    profileOffset: strandCreationDefaults.profileOffset,
-    color: DEFAULT_HAIR_COLOR,
-    scalpRegion,
-    rootScalpOffset: localRootOffset,
-    rootSurfacePoint: hit.point,
-    rootSurfaceNormal: normal,
-    points
-  });
-  placed.placementFrame = frame;
-  placed.placementFrame.root.copy(placed.points[0]);
-  applyPlacedStrandScaleProfile(placed);
-  updateLockGeometry(placed);
-  sel.state.pendingPlacedLockId = placed.id;
-  if (createMirrorPartnerForNewLock(placed)) {
-    renderLockList();
-    updateCount();
-  }
-  selectCurvePoint(placed.id, 0);
-  return placed;
-}
-
-function placedPointCount(length) {
-  return THREE.MathUtils.clamp(Math.round(length / 0.42) + 2, 3, 9);
-}
-
-function createPlacedPoints(frame, length, countOverride) {
-  const count = countOverride ?? placedPointCount(length);
-  const gravity = frame.gravity || new THREE.Vector3(0, -1, 0);
-  const orientationStrength = frame.orientationStrength || 0;
-  const surfaceSlide = frame.flow.clone().multiplyScalar(length * THREE.MathUtils.lerp(0.18, 0.38, orientationStrength));
-  const sideCurl = frame.side.clone().multiplyScalar(frame.sideSign * Math.min(0.12, length * 0.035));
-  const points = [];
-  for (let i = 0; i < count; i += 1) {
-    const t = count <= 1 ? 0 : i / (count - 1);
-    const fall = length * t * 0.92;
-    const point = frame.root.clone()
-      .add(gravity.clone().multiplyScalar(fall))
-      .add(surfaceSlide.clone().multiplyScalar(1 - Math.exp(-t * 3.2)))
-      .add(sideCurl.clone().multiplyScalar(t * t));
-    points.push(i === 0 ? point : pushPointOutsideHead(point, frame.normal, 0.055 + t * 0.035));
-  }
-  return points;
-}
-
-function pushPointOutsideHead(point, fallbackNormal, margin) {
-  const local = scalpSurfaceGroup.worldToLocal(point.clone());
-  const direction = local.clone();
-  if (direction.lengthSq() < 0.0001) {
-    direction.set(
-      fallbackNormal.x / Math.max(0.001, scalpSurfaceGroup.scale.x),
-      fallbackNormal.y / Math.max(0.001, scalpSurfaceGroup.scale.y),
-      fallbackNormal.z / Math.max(0.001, scalpSurfaceGroup.scale.z)
-    );
-  }
-  direction.normalize();
-  const activeGeometry = scalpBuilder.activeScalpSurfaceMesh().geometry;
-  const position = activeGeometry.getAttribute("position");
-  const sample = new THREE.Vector3();
-  let bestAlignment = -Infinity;
-  let surfaceRadius = 1;
-  const activeIndices = scalpBuilder.activeScalpSurfaceMesh() === scalpSurfaceMesh
-    ? scalpActiveVertexIndices
-    : [...Array(position.count).keys()];
-  for (const index of activeIndices) {
-    sample.fromBufferAttribute(position, index);
-    const alignment = sample.clone().normalize().dot(direction);
-    if (alignment > bestAlignment) {
-      bestAlignment = alignment;
-      surfaceRadius = Math.max(0.05, sample.dot(direction));
-    }
-  }
-  if (local.length() >= surfaceRadius) return point;
-  const averageScale = (scalpSurfaceGroup.scale.x + scalpSurfaceGroup.scale.y + scalpSurfaceGroup.scale.z) / 3;
-  return scalpSurfaceGroup.localToWorld(direction.multiplyScalar(surfaceRadius + margin / Math.max(0.001, averageScale)));
-}
-
-function resizePlacedStrand(lock, length, width, options = {}) {
-  lock.length = length;
-  lock.width = width;
-  lock.baseWidth = width;
-  lock.points = createPlacedPoints(lock.placementFrame, length, options.pointCount);
-  fitPointAttributes(lock, lock.points.length);
-  applyPlacedStrandScaleProfile(lock);
-  syncLockFromCurve(lock);
-  if (lock.curveObjects.handles.length !== lock.points.length) {
-    rebuildCurveObjects(lock);
-  }
-  updateLockGeometry(lock);
-  syncActiveMirror(lock);
-  syncInputs(lock);
-  selectCurvePoint(lock.id, Math.min(sel.state.selectedPoint?.pointIndex || 0, lock.points.length - 1));
-}
-
-function applyPlacedStrandScaleProfile(lock) {
-  lock.pointScales = lock.points.map(() => ({ x: 1, z: 1 }));
-  lock.pointWidths = lock.pointScales.map(() => 1);
-}
-
-function beginPlaceEdit(lock, event, options = {}) {
-  if (options.saveUndo !== false && !sculptState.state.placeEdit) pushUndoState();
-  sculptState.state.placeEdit = {
-    mode: "two-step",
-    step: options.step || "direction",
-    lockId: lock.id,
-    startX: event.clientX,
-    startY: event.clientY,
-    baseLength: lock.length,
-    baseWidth: lock.baseWidth,
-    pointCount: lock.points.length,
-    lastLength: lock.length,
-    lastWidth: lock.baseWidth
-  };
-  updateInteractionLocks();
-  updatePlacementStatus();
-}
-
-function updatePlaceEdit(event) {
-  if (!sculptState.state.placeEdit || sculptState.state.proportionalSizeEdit) return;
-  if (sculptState.state.placementPointer?.isDown) return;
-  const lock = locks.find((item) => item.id === sculptState.state.placeEdit.lockId);
-  if (!lock?.placementFrame) return;
-  if (sculptState.state.placeEdit.step === "direction") {
-    updatePlacementOrientation(lock.placementFrame, event);
-    resizePlacedStrand(lock, sculptState.state.placeEdit.lastLength, sculptState.state.placeEdit.lastWidth, { pointCount: sculptState.state.placeEdit.pointCount });
-    return;
-  }
-  updatePlacementLength(lock, event);
-  event.preventDefault();
-}
-
-function updatePlacementLength(lock, event) {
-  const dragDistance = Math.hypot(event.clientX - sculptState.state.placeEdit.startX, event.clientY - sculptState.state.placeEdit.startY);
-  const length = THREE.MathUtils.clamp(0.38 + dragDistance / 115, 0.38, 3.4);
-  const width = THREE.MathUtils.clamp(sculptState.state.placeEdit.baseWidth * (0.85 + length / Math.max(0.1, sculptState.state.placeEdit.baseLength) * 0.15), 0.045, 0.34);
-  sculptState.state.placeEdit.pointCount = placedPointCount(length);
-  sculptState.state.placeEdit.lastLength = length;
-  sculptState.state.placeEdit.lastWidth = width;
-  resizePlacedStrand(lock, length, width, { pointCount: sculptState.state.placeEdit.pointCount });
-}
-
-function updatePlacementOrientation(frame, event) {
-  const dx = event.clientX - sculptState.state.placeEdit.startX;
-  const dy = event.clientY - sculptState.state.placeEdit.startY;
-  const dragDistance = Math.hypot(dx, dy);
-  if (dragDistance < 8) return;
-
-  const cameraRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
-  const cameraUp = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
-  const dragWorld = cameraRight.multiplyScalar(dx).add(cameraUp.multiplyScalar(-dy));
-  const flow = dragWorld.projectOnPlane(frame.normal).normalize();
-  if (flow.lengthSq() < 0.01) return;
-
-  frame.flow.copy(flow);
-  frame.side.crossVectors(frame.flow, frame.normal).normalize();
-  frame.sideSign = Math.sign(frame.flow.x || frame.root.x || 1);
-  frame.orientationStrength = THREE.MathUtils.clamp((dragDistance - 8) / 90, 0, 1);
-}
-
-function endPlaceEdit(event) {
-  if (!sculptState.state.placeEdit) return;
-  if (sculptState.state.placeEdit.mode === "two-step") return;
-  const lock = locks.find((item) => item.id === sculptState.state.placeEdit.lockId);
-  if (lock?.placementFrame) {
-    resizePlacedStrand(lock, sculptState.state.placeEdit.lastLength, sculptState.state.placeEdit.lastWidth);
-  }
-  if (renderer.domElement.hasPointerCapture?.(event.pointerId)) {
-    renderer.domElement.releasePointerCapture(event.pointerId);
-  }
-  sculptState.state.placeEdit = null;
-  updateInteractionLocks();
-  updatePlacementStatus();
-}
-
-function confirmPendingPlacedStrand(options = {}) {
-  if (!sel.state.pendingPlacedLockId) return;
-  const confirmedId = sel.state.pendingPlacedLockId;
-  sel.state.pendingPlacedLockId = null;
-  if (options.deselect && sel.state.selectedId === confirmedId) {
-    deselectStrands();
-  }
-  updatePlacementStatus();
-}
-
-function pendingPlacedLock() {
-  return locks.find((lock) => lock.id === sel.state.pendingPlacedLockId);
-}
-
-function beginPlacementPointer(event, headHit) {
-  sculptState.state.placementPointer = {
-    isDown: true,
-    startX: event.clientX,
-    startY: event.clientY,
-    startTime: performance.now(),
-    headHit
-  };
-}
-
-function finishPlacementPointer(event) {
-  if (!sculptState.state.placementPointer?.isDown) return false;
-  const heldMs = performance.now() - sculptState.state.placementPointer.startTime;
-  const moved = Math.hypot(event.clientX - sculptState.state.placementPointer.startX, event.clientY - sculptState.state.placementPointer.startY);
-  const isClick = heldMs < 280 && moved < 6;
-  const headHit = sculptState.state.placementPointer.headHit;
-  sculptState.state.placementPointer = null;
-  if (!isClick) {
-    updatePlacementStatus();
-    return true;
-  }
-  if (sculptState.state.placeEdit) {
-    confirmPlacementStep(event);
-    return true;
-  }
-  if (headHit) {
-    pushUndoState();
-    const placed = createPlacedStrand(headHit);
-    beginPlaceEdit(placed, event, { saveUndo: false });
-    return true;
-  }
-  return false;
-}
-
-function confirmPlacementStep(event) {
-  if (!sculptState.state.placeEdit) return false;
-  const lock = locks.find((item) => item.id === sculptState.state.placeEdit.lockId);
-  if (!lock?.placementFrame) {
-    finishPlacementFlow();
-    return true;
-  }
-  if (sculptState.state.placeEdit.step === "direction") {
-    updatePlacementOrientation(lock.placementFrame, event);
-    resizePlacedStrand(lock, sculptState.state.placeEdit.lastLength, sculptState.state.placeEdit.lastWidth, { pointCount: sculptState.state.placeEdit.pointCount });
-    sculptState.state.placeEdit.step = "length";
-    sculptState.state.placeEdit.startX = event.clientX;
-    sculptState.state.placeEdit.startY = event.clientY;
-    sculptState.state.placeEdit.baseLength = lock.length;
-    sculptState.state.placeEdit.baseWidth = lock.baseWidth;
-    updatePlacementStatus();
-    return true;
-  }
-  updatePlacementLength(lock, event);
-  finishPlacementFlow({ keepSelected: true });
-  return true;
-}
-
-function finishPlacementFlow(options = {}) {
-  const placedId = sel.state.pendingPlacedLockId;
-  sculptState.state.placeEdit = null;
-  sel.state.pendingPlacedLockId = null;
-  updateInteractionLocks();
-  if (options.deselect && sel.state.selectedId === placedId) {
-    deselectStrands();
-  } else if (options.keepSelected && placedId) {
-    selectLock(placedId);
-  }
-  updatePlacementStatus();
-}
-
-function updatePlacementStatus() {
-  if (!placementStatus) return;
-  let message = "";
-  if (sculptState.state.duplicatePlacement?.procedural) {
-    const blend = Math.round((sculptState.state.duplicatePlacement.procedural.blendAmount ?? 0) * 100);
-    const [firstName, secondName] = sculptState.state.duplicatePlacement.procedural.sourceNames;
-    message = `Procedural duplicate: ${100 - blend}% ${firstName} / ${blend}% ${secondName}. Click to place repeatedly. Press Enter or Alt+D to finish.`;
-  } else if (sculptState.state.duplicatePlacement) {
-    const duplicateCount = sculptState.state.duplicatePlacement.lockIds?.length || 1;
-    message = duplicateCount > 1
-      ? `Duplicate ${duplicateCount} strands: move the pointer to position them, then left-click to place. Press Esc to cancel.`
-      : "Duplicate strand: move the pointer to position its root, then left-click to place. Press Esc to cancel.";
-  } else if (sculptState.state.proportionalSizeEdit) {
-    message = `Proportional influence: ${Number(proportionalRadiusInput.value).toFixed(1)}. Release B to finish.`;
-  } else if (scalpState.state.scalpBuilderEditing) {
-    message = scalpState.state.scalpBuilderCurveLattice
-      ? "Scalp curve lattice: select a cyan point and use the gizmo to shape the cage. Hold Alt and drag to orbit."
-      : "Loading the authored scalp curve lattice...";
-  } else if (scalpState.state.scalpLatticeEditing) {
-    message = "Placement lattice: drag a cyan cage point, or select it for axis controls.";
-  } else if (scalpState.state.scalpPaintEditing) {
-    message = `Paint ${strandRegionDisplayLabel(scalpState.state.activeScalpRegion)}: drag over the scalp. Hold Shift, Ctrl, or Alt to orbit.`;
-  } else if (scalpState.state.scalpShapeEditing) {
-    message = "Placement shape: adjust the artist controls in the panel. Advanced lattice is optional.";
-  } else if (sculptBrushToolActive()) {
-    const sculptTool = effectiveSculptBrushTool();
-    message = sculptTool === "sculpt-smooth"
-      ? "Smooth Brush: drag across visible strands to smooth nearby control points. Roots remain attached; release Shift to restore the selected brush."
-      : sculptTool === "sculpt-inflate"
-        ? "Inflate Brush: drag across visible strands to make them wider and thicker. Hold Shift for Smooth; Alt-drag orbits."
-        : "Move Brush: drag across visible strands to move nearby control points in the view plane. Hold Shift for Smooth; Alt-drag orbits.";
-  } else if (sel.state.activeTool === "place") {
-    if (sculptState.state.placeEdit?.step === "direction") {
-      message = "Step 1 of 2: move the mouse to choose hair flow, click to confirm. Hold and drag to orbit.";
-    } else if (sculptState.state.placeEdit?.step === "length") {
-      message = "Step 2 of 2: move the mouse to set length, click to finish. Hold and drag to orbit.";
-    } else {
-      message = drawFlowApi.selectedCurveLatticeGuide()
-        ? "Place strand: click the selected curve lattice to set the root. Hold and drag to orbit."
-        : "Place strand: click the scalp guide to set the root. Hold and drag to orbit.";
-    }
-  } else if (["draw", "procedural-draw"].includes(sel.state.activeTool)) {
-    const drawLabel = sel.state.activeTool === "procedural-draw"
-      ? "Draw procedural strand"
-      : hairState.state.drawStrandMode === "clump"
-      ? "Draw 3 strand clump"
-      : hairState.state.drawStrandMode === "ponytail-clump" ? "Draw ponytail clump"
-      : hairState.state.drawStrandMode === "coil" ? "Draw coil" : "Draw strand";
-    const surfaceMode = drawFlowApi.activeStrokeSurfaceValue();
-    const dynamicSurface = drawFlowApi.activeStrokeDynamicEnabled(surfaceMode);
-    if (surfaceMode === "contextual-plane") {
-      message = `${drawLabel}: draw on the contextual 2D plane at the project origin. The closest view axis chooses its orientation.`;
-    } else if (!dynamicSurface) {
-      message = `${drawLabel}: drag across the selected surface. The stroke remains strictly conformed to it.`;
-    } else {
-      message = sculptState.state.drawStrandStroke
-        ? `${drawLabel}: drag across the live surface. Beyond its boundary, the stroke continues on the contextual 2D plane.`
-        : `${drawLabel}: drag from the chosen live surface. Hold Shift for a surface-conformed eight-direction stroke; hold Ctrl or Alt for viewport navigation.`;
-    }
-  } else if (sel.state.activeTool === "poly") {
-    message = sculptState.state.polyBrushStroke
-      ? sculptState.state.polyBrushStroke.kind === "relax"
-        ? "Poly Brush: Shift-drag across the mesh to relax nearby vertices on the live surface."
-        : sculptState.state.polyBrushStroke.kind === "vertex"
-        ? "Poly Brush: drag the vertex across the active live surface."
-        : "Poly Brush: drag to extend a strip of authored quads."
-      : "Poly Brush: Ctrl-click vertices to add them to the selection, Alt-click selected vertices to remove them, Shift-drag the mesh to relax, Shift-click a gap to fill or bridge, and Alt-click unselected components to delete.";
-  } else if (sel.state.activeTool === "braid") {
-    const surfaceMode = drawFlowApi.activeStrokeSurfaceValue();
-    const dynamicSurface = drawFlowApi.activeStrokeDynamicEnabled(surfaceMode);
-    if (!braidMeshPresets.has(braidMeshPresetInput.value)) {
-      message = "Braid: loading the selected mesh preset...";
-    } else if (surfaceMode === "contextual-plane") {
-      message = "Draw braid: draw on the contextual 2D plane at the project origin. The closest view axis chooses its orientation.";
-    } else if (!dynamicSurface) {
-      message = "Draw braid: drag across the selected surface. The braid remains strictly conformed to it.";
-    } else {
-      message = sculptState.state.drawStrandStroke
-        ? "Draw braid: drag across the live surface. Beyond its boundary, the braid continues on the contextual 2D plane."
-        : "Draw braid: drag a continuous path from the chosen live surface. Hold Shift for a surface-conformed eight-direction stroke; hold Ctrl or Alt for viewport navigation.";
-    }
-  } else if (sel.state.activeTool === "panel") {
-    const surfaceMode = drawFlowApi.activeStrokeSurfaceValue();
-    const dynamicSurface = drawFlowApi.activeStrokeDynamicEnabled(surfaceMode);
-    if (surfaceMode === "contextual-plane") {
-      message = "Split Panel: draw its center path on the contextual 2D plane.";
-    } else if (!dynamicSurface) {
-      message = "Split Panel: drag across the selected surface. The center path remains conformed to it.";
-    } else {
-      message = sculptState.state.drawStrandStroke
-        ? "Split Panel: drag across the live surface. Beyond its boundary, continue on the contextual plane."
-        : "Split Panel: drag a center path from the chosen live surface. Hold Shift for a surface-conformed eight-direction stroke.";
-    }
-  } else if (sel.state.activeTool === "curve-surface") {
-    message = sculptState.state.curveSurfaceDraft?.activeStroke
-      ? "Curve Surface: release to add this controller and its connected hair card. Hold Shift for an eight-direction surface-conformed curve."
-      : sculptState.state.curveSurfaceDraft?.curves?.length
-        ? "Curve Surface: draw another controller, hold Shift for a straight surface-conformed curve, or press Enter to confirm."
-        : "Curve Surface: draw the first hair-card controller. Hold Shift for a straight surface-conformed curve; hold Ctrl or Alt for viewport navigation."
-  } else if (sel.state.activeTool === "draw-capsule-guide") {
-    message = sculptState.state.capsuleGuideDrawStroke
-      ? "Draw Capsule Guide: drag from the open root toward the rounded tip, then release to create the guide."
-      : "Draw Capsule Guide: drag from root to tip on the active live surface. Hold Ctrl or Alt for viewport navigation.";
-  } else if (sel.state.activeTool === "surface-loft") {
-    if (miscState.state.loftSurfaceDraft?.horizontalPoints) {
-      message = miscState.state.loftSurfaceDraft.activeStroke
-        ? "Loft Surface step 2 of 2: draw the vertical curve. Release to create the surface."
-        : "Loft Surface step 2 of 2: draw a vertical curve crossing the magenta horizontal curve. Press Esc to restart.";
-    } else {
-      message = miscState.state.loftSurfaceDraft?.activeStroke
-        ? "Loft Surface step 1 of 2: draw the horizontal curve."
-        : "Loft Surface step 1 of 2: draw a horizontal profile on the chosen Live Surface.";
-    }
-  } else if (sculptState.state.capsuleGuideEditing) {
-    message = "Capsule guide: select a horizontal loop, then use Move, Rotate, or Scale to edit the entire loop.";
-  } else if (["select", "move", "rotate", "scale"].includes(sel.state.activeTool) && drawFlowApi.selectedCurveLatticeGuide()) {
-    message = sel.state.selectedStrandGroup
-      ? "Group curve: move a cyan control point to reshape every strand in the selected group."
-      : "Curve lattice guide: click a control point, or click an edge to select its full horizontal or vertical loop.";
-  } else if (pullMoveActive()) {
-    message = "Pull strand: drag a curve point to pose the chain. The root stays planted and nearby points follow.";
-  } else if (sculptState.state.proportionalEditing) {
-    message = "Proportional editing: tap B to toggle off, or hold B and drag to resize influence.";
-  } else if (
-    !componentEditModeActive()
-    && sculptState.state.viewportEditMode === "strand"
-    && ["move", "rotate", "scale"].includes(sel.state.activeTool)
-    && getSelectedLock()
-  ) {
-    message = `${sel.state.activeTool[0].toUpperCase()}${sel.state.activeTool.slice(1)} object: the active gizmo is rooted at the strand origin; all selected strands are affected.`;
-  } else if (sculptState.state.objectSpaceEditing && ["move", "rotate", "scale"].includes(sel.state.activeTool)) {
-    message = "Object space: gizmo is aligned to the selected curve point. Press O for world space.";
-  }
-  placementStatus.textContent = message;
-  const hidden = !miscState.state.toolTipsEnabled || !message;
-  placementStatus.classList.toggle("hidden", hidden);
-  placementStatus.setAttribute("aria-hidden", String(hidden));
-}
+// Placement flow (cluster E, refactor batch B2-2) extracted to modules/geometry/placement.js
+// (createPlacementApi); all app.js call sites below rewired to placementApi.*; see
+// devlog/in-progress/draw-creation-refactor-map.md "B2-2 execution record".
 
 function deselectStrands() {
   guideApi.clearMultiPointSelection();
@@ -14957,7 +14575,7 @@ function showCurveLatticeForGroup(region) {
   });
   if (guide) guideApi.syncGuideInputs(guide);
   guideApi.updateGuideControlsVisibility();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 function selectStrandGroup(region) {
@@ -14977,7 +14595,7 @@ function selectStrandGroup(region) {
     curveLatticeToggle.setAttribute("aria-pressed", "false");
     updateAttributeEditorMode();
     guideApi.updateGuideControlsVisibility();
-    updatePlacementStatus();
+    placementApi.updatePlacementStatus();
     renderLockList();
     refreshRebuildCurveDialog();
     return;
@@ -15141,7 +14759,7 @@ function lockStrands(targets) {
     updateStrandSelectionHighlight();
     renderLockList();
   }
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
   return true;
 }
 
@@ -15162,7 +14780,7 @@ function unlockStrands(targets) {
   });
   updateStrandSelectionHighlight();
   renderLockList();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
   return true;
 }
 
@@ -16643,7 +16261,7 @@ function setScaleSensitivity(value) {
 function setToolTipsEnabled(enabled, { persist = true } = {}) {
   miscState.state.toolTipsEnabled = Boolean(enabled);
   toolTipsPreferenceInput.checked = miscState.state.toolTipsEnabled;
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
   if (persist) saveBooleanPreference(TOOL_TIPS_PREFERENCE_KEY, miscState.state.toolTipsEnabled);
 }
 
@@ -16761,7 +16379,7 @@ function updateSideNamingLabels() {
   groupSettingsTitle.textContent = selectedGroup
     ? strandRegionDisplayLabel(selectedGroup.id)
     : "Group Settings";
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 function setSideNamingPerspective(value, { persist = true } = {}) {
@@ -17443,7 +17061,7 @@ function rebuildProceduralDuplicatePreview({ updateSources = false } = {}) {
       blendAmount: 0.5
     });
     proceduralDuplicateStatus.textContent = "Live preview — confirm to keep these duplicates.";
-    updatePlacementStatus();
+    placementApi.updatePlacementStatus();
     return true;
   } finally {
     sculptState.state.rebuildingProceduralDuplicatePreview = false;
@@ -17473,7 +17091,7 @@ function confirmProceduralDuplicatePreview() {
     individualClumpMember: true,
     selectedIds: createdLocks.map((lock) => lock.id)
   });
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
   return true;
 }
 
@@ -17535,7 +17153,7 @@ function updateDuplicatePlacement(event) {
   });
   if (placement.procedural) {
     updateProceduralDuplicateArcPreview(placement.procedural);
-    updatePlacementStatus();
+    placementApi.updatePlacementStatus();
   }
   event.preventDefault();
   event.stopImmediatePropagation();
@@ -17601,7 +17219,7 @@ function beginDuplicatePlacement(sourceOrSources) {
   renderLockList();
   updateCount();
   updateInteractionLocks();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
   return duplicates.length === 1 ? duplicate : duplicates;
 }
 
@@ -17642,7 +17260,7 @@ function beginProceduralDuplicatePlacement(
   if (mirrored) sculptState.state.duplicatePlacement.lockIds.push(mirrored.id);
   renderLockList();
   updateCount();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
   return duplicate;
 }
 
@@ -17668,7 +17286,7 @@ function confirmDuplicatePlacement(event) {
     individualClumpMember: true,
     selectedIds: placement.procedural ? [lockId] : lockIds
   });
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
   if (placement.procedural && sculptState.state.proceduralDuplicateModeActive) {
     const sources = placement.procedural.sourceIds
       .map((id) => locks.find((lock) => lock.id === id))
@@ -17705,7 +17323,7 @@ function cancelDuplicatePlacement() {
     });
   }
   updateInteractionLocks();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
   return true;
 }
 
@@ -18414,7 +18032,7 @@ viewportDrawLayerInput.addEventListener("change", () => {
   strandCreationDefaults.hairLayer = layerId;
   if (sel.state.activeTool === "draw" && !getSelectedLock()) strandLayerInput.value = layerId;
   if (sculptState.state.drawStrandStroke?.outputType === "strand") drawFlowApi.updateDrawStrandPreview();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 });
 
 bindUndoCapture(clumpInfluenceInput);
@@ -18505,7 +18123,7 @@ promoteLiveSurfaceGuideAction.addEventListener("click", () => {
   hideOutlinerContextMenu();
   renderLockList();
   if (promoted) drawFlowApi.setActiveStrokeSurfaceValue(`strand:${lock.id}`);
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 });
 
 dissolveClumpAction.addEventListener("click", () => {
@@ -19360,7 +18978,7 @@ curveLatticeToggle.addEventListener("click", (event) => {
   if (!CURVE_LATTICE_FEATURE_ENABLED) return;
   if (!event.shiftKey && guideApi.getSelectedGuide()?.type === "curve-lattice") {
     deselectStrands();
-    updatePlacementStatus();
+    placementApi.updatePlacementStatus();
     updateViewPlaneGrid();
     return;
   }
@@ -19473,7 +19091,7 @@ surfaceGuideNameInput.addEventListener("change", () => {
   surfaceGuideNameInput.value = guide.name;
   guideApi.renderGuideOutliner();
   drawFlowApi.refreshLiveSurfaceOptions();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 });
 bindUndoCapture(surfaceGuideColorInput);
 surfaceGuideColorInput.addEventListener("input", () => {
@@ -19499,7 +19117,7 @@ surfaceGuideFresnelInput.addEventListener("change", () => {
 });
 surfaceGuideFitScalpButton.addEventListener("click", () => {
   scalpBuilder.createScalpFittedCapsuleGuide();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 });
 
 Object.entries(scalpInputs).forEach(([key, input]) => {
@@ -19800,7 +19418,7 @@ function handleLiveSurfaceChange() {
   drawSurfaceDynamicButton.disabled = drawFlowApi.activeStrokeSurfaceValue() === "contextual-plane";
   scalpBuilder.autoShowScalpGuideForActiveTool();
   scalpBuilder.updateScalpEditingVisibility();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 drawStrandSurfaceInput.addEventListener("change", handleLiveSurfaceChange);
@@ -20061,7 +19679,7 @@ braidMeshPresetInput.addEventListener("change", () => {
   if (sculptState.state.drawStrandStroke?.outputType === "braid") {
     sculptState.state.drawStrandStroke.braidMeshPreset = presetId;
     drawFlowApi.updateDrawStrandPreview();
-    updatePlacementStatus();
+    placementApi.updatePlacementStatus();
     return;
   }
   const braid = getSelectedLock();
@@ -20071,7 +19689,7 @@ braidMeshPresetInput.addEventListener("change", () => {
   } else {
     braidCreationDefaults.braidMeshPreset = presetId;
   }
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 });
 hierarchyToggle.addEventListener("click", () => setHierarchyEditing(!sculptState.state.hierarchyEditing));
 hierarchyRecursiveTransformInput.addEventListener("change", () => {
@@ -20733,7 +20351,7 @@ function createCurveLatticeGuideFromUi() {
   setViewportEditMode("guide");
   createStandaloneCurveLatticeGuide();
   scalpBuilder.setScalpSetupMenuOpen(false);
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 capsuleGuideMode.addEventListener("click", toggleCapsuleGuideTool);
@@ -20922,18 +20540,18 @@ scalpRegionButtons.forEach((button) => {
   button.addEventListener("click", () => scalpBuilder.setActiveScalpRegion(button.dataset.scalpRegion));
 });
 document.querySelector("#clearScalpRegions").addEventListener("click", () => scalpBuilder.clearScalpRegions());
-scalpBrushSizeInput.addEventListener("input", () => updatePlacementStatus());
+scalpBrushSizeInput.addEventListener("input", () => placementApi.updatePlacementStatus());
 
 [proportionalRadiusInput, proportionalFalloffInput].forEach((input) => {
   input.addEventListener("input", () => {
     refreshProportionalPreview();
-    updatePlacementStatus();
+    placementApi.updatePlacementStatus();
   });
 });
 proportionalLockRootInput.addEventListener("change", () => {
   sculptState.state.proportionalRootLocked = proportionalLockRootInput.checked;
   refreshProportionalPreview();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 });
 
 window.addEventListener("keydown", (event) => {
@@ -21712,7 +21330,7 @@ function refreshStrandControlPointSelection(lock) {
   updateViewPlaneGrid();
   guideApi.updateViewportToolVisibility();
   updateInteractionLocks();
-  updatePlacementStatus();
+  placementApi.updatePlacementStatus();
 }
 
 function addStrandControlPointSelection(handle) {
@@ -22345,7 +21963,7 @@ window.addEventListener("pointermove", updateStrandWidthEdgeDrag, true);
 window.addEventListener("pointermove", updateViewSnap, true);
 window.addEventListener("pointermove", updateViewPlaneMove);
 window.addEventListener("pointermove", updateRelaxEdit);
-window.addEventListener("pointermove", updatePlaceEdit);
+window.addEventListener("pointermove", placementApi.updatePlaceEdit);
 window.addEventListener("pointermove", drawFlowApi.updateDrawStrandStroke);
 window.addEventListener("pointermove", guideApi.updateCapsuleGuideDrawStroke);
 window.addEventListener("pointermove", curveSurfaceCreate.updateCurveSurfaceStroke);
@@ -22370,7 +21988,7 @@ window.addEventListener("pointerup", finishBrushSizeDrag, true);
 window.addEventListener("pointerup", finishStrandWidthEdgeDrag, true);
 window.addEventListener("pointerup", endViewPlaneMove);
 window.addEventListener("pointerup", endRelaxEdit);
-window.addEventListener("pointerup", endPlaceEdit);
+window.addEventListener("pointerup", placementApi.endPlaceEdit);
 window.addEventListener("pointerup", drawFlowApi.finishDrawStrandStroke);
 window.addEventListener("pointerup", guideApi.finishCapsuleGuideDrawStroke);
 window.addEventListener("pointerup", polyToolsApi.finishPolyBrushStroke, true);
@@ -22407,7 +22025,7 @@ window.addEventListener("pointercancel", () => { sculptState.state.pointRemovalC
 window.addEventListener("pointercancel", endBlenderNavigation);
 window.addEventListener("pointercancel", endViewPlaneMove);
 window.addEventListener("pointercancel", endRelaxEdit);
-window.addEventListener("pointercancel", endPlaceEdit);
+window.addEventListener("pointercancel", placementApi.endPlaceEdit);
 window.addEventListener("pointercancel", (event) => drawFlowApi.finishDrawStrandStroke(event, { cancel: true }));
 window.addEventListener("pointercancel", (event) => guideApi.finishCapsuleGuideDrawStroke(event, { cancel: true }));
 window.addEventListener("pointercancel", (event) => curveSurfaceCreate.finishLoftSurfaceStroke(event, { cancel: true }));
@@ -22426,7 +22044,7 @@ window.addEventListener("pointercancel", endAltOrbit);
 window.addEventListener("pointercancel", endHoudiniZoomDrag);
 window.addEventListener("pointercancel", endSelectPointerCapture);
 window.addEventListener("pointerup", (event) => {
-  if (sel.state.activeTool === "place" && finishPlacementPointer(event)) {
+  if (sel.state.activeTool === "place" && placementApi.finishPlacementPointer(event)) {
     event.preventDefault();
   }
 });
@@ -22688,21 +22306,21 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   if (sel.state.activeTool === "place") {
     if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
     if (sculptState.state.placeEdit) {
-      beginPlacementPointer(event);
+      placementApi.beginPlacementPointer(event);
       return;
     }
-    const pendingLock = pendingPlacedLock();
+    const pendingLock = placementApi.pendingPlacedLock();
     if (sel.state.pendingPlacedLockId && !pendingLock) {
-      finishPlacementFlow();
+      placementApi.finishPlacementFlow();
     } else if (pendingLock) {
-      finishPlacementFlow({ keepSelected: true });
+      placementApi.finishPlacementFlow({ keepSelected: true });
       return;
     }
     const curveLattice = drawFlowApi.selectedCurveLatticeGuide();
     const surfaceHit = curveLattice
       ? raycaster.intersectObjects([curveLattice.mesh, curveLattice.rootMesh].filter((object) => object && object.visible !== false), false)[0]
       : raycaster.intersectObject(scalpBuilder.activeScalpSurfaceMesh(), false)[0];
-    beginPlacementPointer(event, surfaceHit);
+    placementApi.beginPlacementPointer(event, surfaceHit);
     return;
   }
   if (selectionToolSupportsPicking()) {
