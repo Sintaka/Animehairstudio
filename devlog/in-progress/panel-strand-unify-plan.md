@@ -89,3 +89,27 @@
 - 集成：app.js/ index.html 增加 Tip Sub-Bone 控件（enable / tip start / tip length / reset）；快照/镜像/恢复/保存接 `strandTip`/`strandTipStart`；版本 0.2.62，缓存号 20260813-1。
 - 验证：`node --check` 全绿；`verify-smoke` 10/11（branch-bridge 内容相关失败与基线一致）。
 - 明确延后：普通发丝 tip 的视口拖拽/旋转编辑、骨骼 registry 统一、USDA weights/skel:joints——待「骨骼系统」轮随普适化继续。
+
+### 5.7 Route 2 执行细化（2026-08-13，split 发丝两管子骨骼）
+
+> 状态：已实现（2026-08-13）。目标：让 `createSplitStrandGeometry` 的两根闭合管各拥有一个 tip 子骨骼，复用 Route 1 的 `tip-sub-bone` 原语与 `bonesFor` 接缝；本轮先做「数据 + 几何 + 序列化 + 最小 UI」，每管独立 Width/Depth 曲线与视口拖拽编辑随骨骼系统轮补齐。
+
+- 数据模型：
+  - `lock.strandSplitBones` = 长度 2 数组（可空），每项复用 split bone 形状：`{ name, parent, parentParam, p, orient, tip, spread, taperCurve, taperCurveSecondary, depthCurve, depthCurveSecondary, asymmetricWidthCurve, asymmetricDepthCurve }`，kind="split"。
+  - 默认 `spread = clamp(strandSplitGap, 0, 0.99)`（相对语义，与当前绝对 `strandSplitGap` 的默认观感一致；不引入 panel 的 ×2）。
+  - `bonesFor(lock)`：strand split 时输出 `split.0/split.1` 及 `split.k.tip.i` 叶子，主链 role=root；与 Route 1 的 `strandTip` 互斥（split 时不输出 `main.N-1.tip.*`）。
+- 几何（`createSplitStrandGeometry`）：
+  - 每管 tip 链 rest = 管中心线 `curve.getPoint(t) + frame.x * (baseWidth * bone.spread * smoothstep(t, splitStart, 1) * direction)`；authored delta 用 `materializeTipChain` 叠加。
+  - 每管在 `t >= splitStart` 用 `tipWeightAt(t, splitStart)` 把环顶点 blend 到 tip 链 frame；端盖 outward 改用每管 `tipChainFrameAt(...,1)` 的 y。
+  - 输出 `geometry.userData.strandSplitWeights`（每顶点 [tube, 0, weight]）供后续 USDA/高亮；fused grid/sectionBases 元数据保持不动。
+- 最小 UI（主进程）：Split Tip Length + Reset Split Tips；Split Spacing 继续写 `strandSplitGap` 并派生两管 spread。
+- 验证：`node --check`；`verify-smoke` 10/11 基线；旧 split 发丝无 `strandSplitBones` 时默认派生、观感不变。
+
+### 5.8 Route 2 实施记录（2026-08-13）
+
+- 数据层：`bone-model.js` 新增 `strandSplitBonesFor/materializeStrandSplitBones/strandSplitBonesToData/FromData/mirrorStrandSplitBones`；`bonesFor` 对 split 发丝输出 `split.0/split.1` 与 `split.k.tip.i`，并与 Route 1 `strandTip` 互斥。
+- 几何层：`strand-geometry.js` `createSplitStrandGeometry` 改为每管相对 spread（默认 `strandSplitGap` 数值等价）+ 每管 tip 链重投影 + 端盖随 tip 帧；输出 `geometry.userData.strandSplitWeights`；fused grid/sectionBases 不变。
+- 视口层：`bone-view-handles.js` 为两根管各加 tip 手柄 + 引导线。
+- 集成：`app.js`/`index.html` 增加 Split Tip Length + Reset Split Tips；序列化/镜像/快照/恢复接 `strandSplitBones`。
+- 验证：`node --check` 全绿；`verify-smoke` 10/11（基线一致）。
+- 延后：每管独立 Width/Depth 曲线面板、视口拖拽旋转编辑、USDA `skel:joints/weights`——随骨骼系统轮继续。

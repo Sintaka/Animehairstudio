@@ -16,7 +16,7 @@ import {
   compoundProfileBridgePlan
 } from "./compound-strand.js?v=20260806-6";
 import { DEFAULT_SWEEP_PROFILE, ROUND_SWEEP_PROFILE } from "../core/app-config.js?v=20260809-2";
-import { strandTipFor } from "../bones/bone-model.js?v=20260813-1";
+import { strandSplitBonesFor, strandTipFor } from "../bones/bone-model.js?v=20260813-1";
 import { materializeTipChain, tipChainFrameAt, tipWeightAt, sampleTipPosition } from "./tip-sub-bone.js?v=20260813-1";
 
 export function createStrandGeometryApi(deps) {
@@ -109,8 +109,13 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   const triangleEdgeMasks = [];
   const splitHeight = THREE.MathUtils.clamp(Number(lock.strandSplitHeight ?? 0.3), 0.02, 0.8);
   const splitStart = 1 - splitHeight;
-  const splitGap = THREE.MathUtils.clamp(Number(lock.strandSplitGap ?? 0.12), 0, 0.5);
-  const baseSeparation = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1) * splitGap;
+  // Route 2: per-tube spread comes from each split bone (relative semantics); the
+  // legacy absolute splitGap only derives the default spread so old files keep the
+  // same look (default 0.12 -> spread 0.12; opening = baseWidth * spread).
+  const baseWidth = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1);
+  const splitBones = strandSplitBonesFor(lock);
+  const defaultSplitSpread = THREE.MathUtils.clamp(Number(lock.strandSplitGap ?? 0.12), 0, 0.99);
+  const strandSplitWeights = splitBones ? [] : null;
   let sideTriangleCount = 0;
 
   // Per-section vertex/face bases so the child-strand bridge can address each tube.
@@ -146,9 +151,12 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
         polygon
       );
       const color = deps.strandInfluenceColor(lock, t);
+      const tubeSpread = splitBones
+        ? (splitBones[sectionIndex]?.spread ?? defaultSplitSpread)
+        : defaultSplitSpread;
       const opening = t <= splitStart
         ? 0
-        : baseSeparation * THREE.MathUtils.smoothstep(t, splitStart, 1) * section.direction;
+        : baseWidth * tubeSpread * THREE.MathUtils.smoothstep(t, splitStart, 1) * section.direction;
       section.points.forEach((profile, column) => {
         const warped = warpedSection[column];
         const ringPoint = frame.x.clone().multiplyScalar(warped.x);
@@ -158,6 +166,7 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
         tangents.push(frame.y.x, frame.y.y, frame.y.z, 1);
         uvs.push(column / ringSize, t);
         colors.push(color.r, color.g, color.b);
+        if (strandSplitWeights) strandSplitWeights.push(sectionIndex, 0, tipWeightAt(t, splitStart));
       });
     });
 
@@ -174,6 +183,71 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
       }
     }
   });
+
+  // Route 2: per-tube tip sub-bones (strand split). Each tube's rest chain follows its
+  // own center line (curve + frame.x * spread opening); authored bone.tip deltas are
+  // re-applied by materializeTipChain, then each swept ring blends toward the tip
+  // chain's own frame by the t-only tip weight (0 before splitStart, 1 at the strand
+  // end). Vertex indices/faces are unchanged (only positions move).
+  let tipChains = null;
+  if (splitBones) {
+    tipChains = sections.map((section, sectionIndex) => {
+      const bone = splitBones[sectionIndex] || null;
+      const tubeSpread = bone?.spread ?? defaultSplitSpread;
+      const direction = section.direction;
+      const restPointAt = (t) => {
+        let row = 0;
+        let bestDistance = Infinity;
+        for (let r = 0; r < curveParameters.length; r += 1) {
+          const distance = Math.abs(curveParameters[r] - t);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            row = r;
+          }
+        }
+        const frame = frames[row];
+        const point = curve.getPoint(t);
+        const opening = t <= splitStart
+          ? 0
+          : baseWidth * tubeSpread * THREE.MathUtils.smoothstep(t, splitStart, 1) * direction;
+        return point.addScaledVector(frame.x, opening);
+      };
+      const tipCount = Math.max(2, Array.isArray(lock.points) ? lock.points.length : 2);
+      return materializeTipChain(bone?.tip || null, restPointAt, tipCount);
+    });
+    sections.forEach((section, sectionIndex) => {
+      const tipChain = tipChains[sectionIndex];
+      const ringSize = section.points.length;
+      const sectionStart = sectionBases[sectionIndex].base;
+      for (let row = 0; row <= actualLengthSegments; row += 1) {
+        const t = curveParameters[row];
+        const w = tipWeightAt(t, splitStart);
+        if (w <= 0) continue;
+        const referenceZ = frames[row].z.clone();
+        const tipFrame = tipChainFrameAt(tipChain, tipChain, t, referenceZ);
+        const tipCenter = sampleTipPosition(tipChain, t);
+        const scaleX = sampleScale(lock.pointScales, t, "x");
+        const scaleZ = sampleScale(lock.pointScales, t, "z");
+        const warpedSection = deps.strandProfileTopologyAt(lock, t, section.points, scaleX, scaleZ, polygon);
+        for (let column = 0; column < ringSize; column += 1) {
+          const idx = sectionStart + row * ringSize + column;
+          const original = new THREE.Vector3(
+            vertices[idx * 3],
+            vertices[idx * 3 + 1],
+            vertices[idx * 3 + 2]
+          );
+          const warped = warpedSection[column];
+          const target = new THREE.Vector3(tipCenter.x, tipCenter.y, tipCenter.z)
+            .addScaledVector(tipFrame.x, warped.x)
+            .addScaledVector(tipFrame.z, warped.z);
+          const final = original.clone().lerp(target, w);
+          vertices[idx * 3] = final.x;
+          vertices[idx * 3 + 1] = final.y;
+          vertices[idx * 3 + 2] = final.z;
+        }
+      }
+    });
+  }
   const sideFaceCount = sectionFaceBase;
   const quadFaces = [];
   sections.forEach((section, sectionIndex) => {
@@ -200,7 +274,10 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     );
     const endOffset = sectionStart + actualLengthSegments * ringSize;
     const startOutward = frames[0].y.clone().negate();
-    const endOutward = frames[actualLengthSegments].y;
+    const tipChain = tipChains ? tipChains[sectionIndex] : null;
+    const endOutward = tipChain
+      ? tipChainFrameAt(tipChain, tipChain, 1, frames[actualLengthSegments].z.clone()).y
+      : frames[actualLengthSegments].y;
     capTriangles.forEach(([a, b, c]) => {
       pushOrientedTriangle(indices, vertices, sectionStart + a, sectionStart + b, sectionStart + c, startOutward);
       pushOrientedTriangle(indices, vertices, endOffset + a, endOffset + b, endOffset + c, endOutward);
@@ -253,6 +330,9 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices);
+  if (strandSplitWeights) {
+    geometry.userData.strandSplitWeights = new Float32Array(strandSplitWeights);
+  }
   geometry.userData.sideTriangleCount = sideTriangleCount;
   geometry.userData.triangleEdgeMasks = triangleEdgeMasks;
   geometry.userData.actualLengthSegments = actualLengthSegments;

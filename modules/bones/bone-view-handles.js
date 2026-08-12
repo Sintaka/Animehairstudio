@@ -1,7 +1,7 @@
 // bone-view-handles.js - Viewport bone/segment/split handle create/update/dispose (refactor bones B3).
 // Extracted from app.js; coupling injected via createBoneViewHandlesApi(deps).
 import * as THREE from "three";
-import { splitBonesFor, strandTipFor } from "./bone-model.js?v=20260813-1";
+import { splitBonesFor, strandSplitBonesFor, strandTipFor } from "./bone-model.js?v=20260813-1";
 import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260813-1";
 import { materializeTipChain, sampleTipPosition } from "../geometry/tip-sub-bone.js?v=20260813-1";
 
@@ -175,6 +175,8 @@ function createBoneViewHandles(lock, group) {
   }
   let strandSplitHandle = null;
   let strandSplitLine = null;
+  let strandSplitTipHandles = [];
+  let strandSplitTipLines = [];
   let strandTipHandle = null;
   let strandTipLine = null;
   if (lock.geometryType === "strand") {
@@ -188,6 +190,32 @@ function createBoneViewHandles(lock, group) {
     strandSplitHandle.userData.lockId = lock.id;
     strandSplitHandle.userData.strandSplitHandle = true;
     group.add(strandSplitHandle);
+    // Split-strand per-tube tip sub-bone handles + guide lines (Route 2): one per
+    // tube (0/1), shown only while the lock is a split strand with strandSplitBones.
+    for (let tubeIndex = 0; tubeIndex < 2; tubeIndex += 1) {
+      const strandSplitTipHandle = createSplitControlHandle();
+      strandSplitTipHandle.scale.setScalar(0.5);
+      strandSplitTipHandle.material = new THREE.MeshBasicMaterial({
+        color: 0xffd84d,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.9
+      });
+      strandSplitTipHandle.userData.lockId = lock.id;
+      strandSplitTipHandle.userData.strandSplitTipTube = tubeIndex;
+      group.add(strandSplitTipHandle);
+      strandSplitTipHandles.push(strandSplitTipHandle);
+      const strandSplitTipLine = new THREE.Line(
+        new THREE.BufferGeometry(),
+        new THREE.LineBasicMaterial({ color: 0xffd84d, transparent: true, opacity: 0.7, depthTest: false })
+      );
+      strandSplitTipLine.renderOrder = 6;
+      strandSplitTipLine.userData.lockId = lock.id;
+      strandSplitTipLine.userData.strandSplitTipLineTube = tubeIndex;
+      group.add(strandSplitTipLine);
+      strandSplitTipLines.push(strandSplitTipLine);
+    }
     // Ordinary-strand single tip sub-bone handle + guide line (Route 1); shown only
     // when the lock is a non-split, non-hair-card strand with a materialized strandTip.
     strandTipLine = new THREE.Line(
@@ -238,6 +266,8 @@ function createBoneViewHandles(lock, group) {
     tipWidthLines,
     strandSplitHandle,
     strandSplitLine,
+    strandSplitTipHandles,
+    strandSplitTipLines,
     strandTipHandle,
     strandTipLine,
     branchSweepStartHandle
@@ -498,6 +528,41 @@ function updateBoneViewHandles(lock, ctx) {
     }
   }
   if (strandSplitLine && !strandSplitVisible) strandSplitLine.visible = false;
+  // Split-strand per-tube tip handles + guide lines (Route 2). Mutually exclusive
+  // with the Route 1 single strandTip block below (that block requires
+  // !lock.strandSplitEnabled, and strandSplitBones is null for non-split strands).
+  const strandSplitBones = strandSplitBonesFor(lock);
+  const splitTipVisible = !sculptBrushHelpersSuppressed
+    && !brushDebugVisible
+    && lock.geometryType === "strand"
+    && !lock.hairCard
+    && Boolean(strandSplitBones);
+  const strandSplitTipHandles = lock.curveObjects.strandSplitTipHandles;
+  const strandSplitTipLines = lock.curveObjects.strandSplitTipLines;
+  if (Array.isArray(strandSplitTipHandles)) {
+    for (let tubeIndex = 0; tubeIndex < 2; tubeIndex += 1) {
+      const handle = strandSplitTipHandles[tubeIndex];
+      const line = Array.isArray(strandSplitTipLines) ? strandSplitTipLines[tubeIndex] : null;
+      if (!handle) continue;
+      handle.visible = splitTipVisible;
+      if (line) line.visible = splitTipVisible;
+      if (!splitTipVisible) continue;
+      const bone = strandSplitBones[tubeIndex] || null;
+      const tipChain = materializeTipChain(
+        bone?.tip || null,
+        (t) => deps.strandGeometryCurve(lock).getPoint(t),
+        Math.max(2, Array.isArray(lock.points) ? lock.points.length : 2)
+      );
+      const tipEnd = sampleTipPosition(tipChain, 1);
+      handle.position.set(tipEnd.x, tipEnd.y, tipEnd.z);
+      if (line) {
+        line.geometry.dispose();
+        const points = tipChain.points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+        line.geometry = new THREE.BufferGeometry().setFromPoints(points);
+        line.visible = true;
+      }
+    }
+  }
   const strandTip = strandTipFor(lock);
   const strandTipHandle = lock.curveObjects.strandTipHandle;
   const strandTipLine = lock.curveObjects.strandTipLine;
@@ -597,6 +662,14 @@ function disposeBoneViewHandles(curveObjects) {
     curveObjects.strandSplitLine.geometry.dispose();
     curveObjects.strandSplitLine.material.dispose();
   }
+  curveObjects.strandSplitTipHandles?.forEach((handle) => {
+    handle.geometry.dispose();
+    handle.material.dispose();
+  });
+  curveObjects.strandSplitTipLines?.forEach((line) => {
+    line.geometry.dispose();
+    line.material.dispose();
+  });
   if (curveObjects.strandTipHandle) {
     curveObjects.strandTipHandle.geometry.dispose();
     curveObjects.strandTipHandle.material.dispose();

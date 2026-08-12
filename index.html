@@ -1049,6 +1049,8 @@
             <div class="subsection-label">Split Tip</div>
             <label class="toggle-row" for="strandSplitEnabled" title="Divides the strand profile into two closed branches that separate toward the tip."><span>Split Geometry</span><input id="strandSplitEnabled" type="checkbox" /></label>
             <label class="topology-control" title="Controls how far apart the two tip branches open.">Split Spacing <input id="strandSplitGap" type="range" min="0" max="0.5" step="0.01" value="0.12" /><output id="strandSplitGapValue" class="slider-value">0.12</output></label>
+            <label class="topology-control" title="Extends or shortens both split-tube tips along their rest tangents.">Tip Length <input id="strandSplitTipLength" type="range" min="-0.5" max="1.5" step="0.01" value="0" /><output id="strandSplitTipLengthValue" class="slider-value">0.00</output></label>
+            <button id="resetStrandSplitTips" type="button" title="Reset both split-tube tip sub-bones to their rest pose.">Reset Split Tips</button>
           </div>
           <div id="strandTipControls" class="draw-shape-controls">
             <div class="subsection-label">Tip Sub-Bone</div>

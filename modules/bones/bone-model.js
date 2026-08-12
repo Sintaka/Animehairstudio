@@ -103,6 +103,7 @@ export function bonesFor(lock, options = {}) {
   const points = Array.isArray(lock?.points) ? lock.points : [];
   const mainCount = points.length;
   const strandTip = strandTipFor(lock);
+  const strandSplitBones = strandSplitBonesFor(lock);
   const locks = Array.isArray(options.locks) ? options.locks : [];
   const children = locks.filter((child) => child?.branchParentId === lock?.id && Array.isArray(child.points));
   // "架空" semantics: when the strand has sub-bones (split segments or branch
@@ -114,7 +115,8 @@ export function bonesFor(lock, options = {}) {
       && Array.isArray(lock.panelSplits)
       && lock.panelSplits.length > 0)
     || (Array.isArray(lock?.bones) && lock.bones.length > 0)
-    || !!strandTip;
+    || !!strandTip
+    || !!strandSplitBones;
   const mainRole = hasSubBones ? "root" : "geometry";
   for (let i = 0; i < mainCount; i += 1) {
     const p = points[i];
@@ -149,7 +151,27 @@ export function bonesFor(lock, options = {}) {
       }
     });
   }
-  if (strandTip && mainCount > 0 && !["panel", "surface"].includes(lock?.geometryType)) {
+  if (strandSplitBones) {
+    strandSplitBones.forEach((bone, k) => {
+      const name = bone.name || `split.${k}`;
+      bones.push({ ...bone, name, kind: "split", role: "leaf" });
+      if (bone.tip && Array.isArray(bone.tip.points) && bone.tip.points.length) {
+        bone.tip.points.forEach((p, i) => {
+          bones.push({
+            name: `${name}.tip.${i}`,
+            parent: name,
+            parentParam: i / Math.max(1, bone.tip.points.length - 1),
+            p: p ? { x: Number(p.x), y: Number(p.y), z: Number(p.z) } : null,
+            orient: null,
+            scale: null,
+            kind: "tip",
+            role: "leaf"
+          });
+        });
+      }
+    });
+  }
+  if (strandTip && mainCount > 0 && !["panel", "surface"].includes(lock?.geometryType) && !strandSplitBones) {
     const tipName = `main.${mainCount - 1}.tip`;
     strandTip.points.forEach((p, i) => {
       bones.push({
@@ -281,6 +303,113 @@ export function mirrorStrandTip(tip) {
     restPoints: normalized.restPoints ? normalized.restPoints.map((p) => ({ ...p, x: -p.x })) : null,
     twists: normalized.twists ? normalized.twists.map((v) => -Number(v)) : null
   };
+}
+
+// ---- strand split sub-bone data model (Route 2: split-strand two-tube tips) ----
+// lock.strandSplitBones is optional (length 2, kind="split"); old files without it
+// derive two default bones (spread = strandSplitGap, tip = null) in memory.
+
+export function defaultStrandSplitSpread(lock) {
+  // Relative per-tube tip spread fraction; derived from the legacy absolute gap so
+  // old files keep a comparable look (default 0.12), clamped so tubes never invert.
+  return THREE.MathUtils.clamp(Number(lock?.strandSplitGap ?? 0.12), 0, SPREAD_MAX);
+}
+
+function normalizeStrandSplitBone(bone, lock, index) {
+  const normalized = normalizeBone(bone, null, lock);
+  normalized.name = bone?.name || `split.${index}`;
+  if (bone?.spread == null) normalized.spread = defaultStrandSplitSpread(lock);
+  normalized.tip = normalizeStrandTip(bone?.tip);
+  normalized.kind = "split";
+  return normalized;
+}
+
+// Effective strand split bones for a split-strand lock: exactly two tubes (left/right),
+// taken from the authored lock.strandSplitBones when present, otherwise derived defaults
+// (not written back). Returns null for any non-split-strand lock.
+export function strandSplitBonesFor(lock) {
+  if (lock?.geometryType !== "strand" || !lock.strandSplitEnabled) return null;
+  const stored = Array.isArray(lock?.strandSplitBones) && lock.strandSplitBones.length === 2
+    ? lock.strandSplitBones
+    : null;
+  if (stored) return stored.map((bone, k) => normalizeStrandSplitBone(bone, lock, k));
+  const spread = defaultStrandSplitSpread(lock);
+  return [0, 1].map((k) => ({
+    name: `split.${k}`,
+    parent: "main",
+    parentParam: 1,
+    p: null,
+    orient: null,
+    tip: null,
+    spread,
+    taperCurve: null,
+    taperCurveSecondary: null,
+    depthCurve: null,
+    depthCurveSecondary: null,
+    asymmetricWidthCurve: null,
+    asymmetricDepthCurve: null,
+    kind: "split"
+  }));
+}
+
+// Materialize derived defaults into the persisted field (call before authoring an edit).
+export function materializeStrandSplitBones(lock) {
+  if (!lock) return null;
+  const bones = strandSplitBonesFor(lock);
+  if (!bones) return null;
+  lock.strandSplitBones = bones.map((bone) => ({ ...bone }));
+  return lock.strandSplitBones;
+}
+
+export function strandSplitBonesToData(bones) {
+  if (!Array.isArray(bones) || !bones.length) return null;
+  return bones.map((bone) => ({
+    name: bone.name,
+    parent: bone.parent,
+    parentParam: Number(bone.parentParam ?? 0.5),
+    p: bone.p ? { x: bone.p.x, y: bone.p.y, z: bone.p.z } : null,
+    orient: bone.orient ? { x: bone.orient.x, y: bone.orient.y, z: bone.orient.z, w: bone.orient.w } : null,
+    spread: Number(bone.spread ?? 0.12),
+    taperCurve: bone.taperCurve ? bone.taperCurve.map((p) => ({ ...p })) : null,
+    taperCurveSecondary: bone.taperCurveSecondary ? bone.taperCurveSecondary.map((p) => ({ ...p })) : null,
+    depthCurve: bone.depthCurve ? bone.depthCurve.map((p) => ({ ...p })) : null,
+    depthCurveSecondary: bone.depthCurveSecondary ? bone.depthCurveSecondary.map((p) => ({ ...p })) : null,
+    asymmetricWidthCurve: bone.asymmetricWidthCurve == null ? null : Boolean(bone.asymmetricWidthCurve),
+    asymmetricDepthCurve: bone.asymmetricDepthCurve == null ? null : Boolean(bone.asymmetricDepthCurve),
+    kind: bone.kind || "split",
+    meta: bone.meta ? { ...bone.meta } : null,
+    tip: bone.tip && Array.isArray(bone.tip.points)
+      ? {
+        points: bone.tip.points.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })),
+        restPoints: Array.isArray(bone.tip.restPoints) ? bone.tip.restPoints.map((p) => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })) : null,
+        twists: Array.isArray(bone.tip.twists) ? bone.tip.twists.map((v) => Number(v) || 0) : null,
+        active: bone.tip.active !== false
+      }
+      : null
+  }));
+}
+
+export function strandSplitBonesFromData(data, lock = null) {
+  if (!Array.isArray(data) || data.length !== 2) return null;
+  return data.map((bone, k) => normalizeStrandSplitBone(bone, lock, k));
+}
+
+// Mirror strand split bones: flip lateral p/tip x and negate twists per tube. The two
+// tubes are left/right symmetric, so the order is kept (no reverse).
+export function mirrorStrandSplitBones(bones) {
+  if (!Array.isArray(bones) || !bones.length) return null;
+  return bones.map((bone) => ({
+    ...bone,
+    p: bone.p ? { ...bone.p, x: -bone.p.x } : null,
+    tip: bone.tip && Array.isArray(bone.tip.points)
+      ? {
+        ...bone.tip,
+        points: bone.tip.points.map((p) => ({ x: -p.x, y: p.y, z: p.z })),
+        restPoints: Array.isArray(bone.tip.restPoints) ? bone.tip.restPoints.map((p) => ({ x: -p.x, y: p.y, z: p.z })) : null,
+        twists: Array.isArray(bone.tip.twists) ? bone.tip.twists.map((v) => -Number(v)) : null
+      }
+      : null
+  }));
 }
 
 // ---- unified authored-bone registry (lock.bones) ----
