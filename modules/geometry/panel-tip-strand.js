@@ -8,7 +8,7 @@ import {
   sampleTaperCurve
 } from "./curve-math.js?v=20260811-1";
 import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260727-5";
-import { cloneSplitBones } from "./bone-model.js?v=20260810-1";
+import { cloneSplitBones } from "../bones/bone-model.js?v=20260812-1";
 
 // Shared tip width control point count: 5 midpoints (common fork) + the tip end (t=1).
 // app.js createCurveObjects reuses this constant for the viewport tip width handles.

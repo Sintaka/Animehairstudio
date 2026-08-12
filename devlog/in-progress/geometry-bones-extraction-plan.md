@@ -36,7 +36,7 @@ app.js 脊柱 (addLock/snapshot/restore/mirror/stroke 各 2 行接线) ──▶
 
 | 批次 | 内容 | 行区间 | 函数 | 净减估 | 难度 |
 |---|---|---|---|---|---|
-| B0 | bone-model.js 移入 modules/bones/（单 commit 零行为） | — | — | 0（纯移动） | 低 |
+| B0 ✅ | bone-model.js 移入 modules/bones/ | — | 0（纯移动） | 低 | 已移动，3 处 import 更新（app.js/panel-tip-strand/taper-editor）；verify-smoke 10/11=基线 |
 | B1 | 段控制胶水：syncPanelSegmentControls/selectedPanelSegment/syncPanelShapeInputs/openPanelSegmentCurveEditor/changePanelSplitCount | 21925-21975、11828-11863、27556-27705 | 5 | ~180 | 低中 |
 | B2 | 骨骼 gizmo/拖拽/笔刷：beginTipSubBoneRotate/applyTipSubBoneTransform/begin·update·endPanelSplitHandleDrag/applySubBoneBrushSample/updatePanelTipHover/prepareCurvePointSelection | 29444-29884、31032-31176、31002-31031、30394-30504 | 8 | ~540 | 中 |
 | B3 | 视口 handle：createCurveObjects/updateCurveObjects 内 bone 段 + syncTipNormalArrow | 与 curve-objects-core 纠缠 ~480 | — | ~250 | 中高 |

@@ -892,6 +892,29 @@
 | `setAttributeEditorPanelCollapsed` | 27363 | function |  | 3 |
 | `setAttributeEditorTab` | 27369 | function |  | 6 |
 
+## modules/bones/bone-model.js（349 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `defaultSplitSpread` | 11 | function | export | 3 |
+| `normalizeSplitBones` | 17 | function | export | 6 |
+| `srcCurve` | 27 | arrow |  | 4 |
+| `cloneSplitBones` | 59 | function | export | 2 |
+| `splitBonesFor` | 67 | function | export | 3 |
+| `materializeSplitBones` | 83 | function | export | 1 |
+| `bonesFor` | 101 | function | export | 1 |
+| `splitBonesToData` | 172 | function | export | 1 |
+| `splitBonesFromData` | 200 | function | export | 1 |
+| `mirrorSplitBones` | 205 | function | export | 1 |
+| `normalizeBone` | 230 | function | export | 6 |
+| `curve` | 233 | arrow |  | 4 |
+| `pick` | 237 | arrow |  | 6 |
+| `normalizeBones` | 269 | function | export | 2 |
+| `bonesToData` | 276 | function | export | 2 |
+| `bonesFromData` | 307 | function | export | 1 |
+| `mirrorBones` | 313 | function | export | 1 |
+| `registryForSave` | 333 | function | export | 1 |
+
 ## modules/branch/branch-store.js（43 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
@@ -1105,29 +1128,6 @@
 | `normalizeHairShader` | 5 | function | export | 1 |
 | `normalizedHexColor` | 52 | function |  | 6 |
 | `normalizeAnimeAnisotropicSettings` | 56 | function | export | 1 |
-
-## modules/geometry/bone-model.js（349 行）
-
-| 函数 | 行号 | 类型 | 导出 | calls |
-|---|---|---|---|---|
-| `defaultSplitSpread` | 11 | function | export | 3 |
-| `normalizeSplitBones` | 17 | function | export | 6 |
-| `srcCurve` | 27 | arrow |  | 4 |
-| `cloneSplitBones` | 59 | function | export | 2 |
-| `splitBonesFor` | 67 | function | export | 3 |
-| `materializeSplitBones` | 83 | function | export | 1 |
-| `bonesFor` | 101 | function | export | 1 |
-| `splitBonesToData` | 172 | function | export | 1 |
-| `splitBonesFromData` | 200 | function | export | 1 |
-| `mirrorSplitBones` | 205 | function | export | 1 |
-| `normalizeBone` | 230 | function | export | 6 |
-| `curve` | 233 | arrow |  | 4 |
-| `pick` | 237 | arrow |  | 6 |
-| `normalizeBones` | 269 | function | export | 2 |
-| `bonesToData` | 276 | function | export | 2 |
-| `bonesFromData` | 307 | function | export | 1 |
-| `mirrorBones` | 313 | function | export | 1 |
-| `registryForSave` | 333 | function | export | 1 |
 
 ## modules/geometry/branch-bridge.js（999 行）
 

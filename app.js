@@ -11,7 +11,7 @@ import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260809-17";
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260809-16";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260809-15";
-import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave } from "./modules/geometry/bone-model.js?v=20260810-1";
+import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave } from "./modules/bones/bone-model.js?v=20260812-1";
 import { createStrandSweepApi } from "./modules/geometry/strand-sweep.js?v=20260810-2";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-14";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";

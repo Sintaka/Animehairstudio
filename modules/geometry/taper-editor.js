@@ -9,7 +9,7 @@ import {
   twistCurveDisplayRange,
   twistRateUnitsFromDegrees
 } from "./curve-math.js?v=20260811-1";
-import { materializeSplitBones } from "./bone-model.js?v=20260810-1";
+import { materializeSplitBones } from "../bones/bone-model.js?v=20260812-1";
 import {
   DEFAULT_SWEEP_PROFILE,
   STRAND_GROUPS,

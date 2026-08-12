@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-12T08:08:49.923Z",
+  "generatedAt": "2026-08-12T08:10:26.374Z",
   "totalFunctions": 1810,
   "files": [
     {
@@ -6197,6 +6197,138 @@
       ]
     },
     {
+      "file": "modules/bones/bone-model.js",
+      "lineCount": 349,
+      "functions": [
+        {
+          "name": "defaultSplitSpread",
+          "line": 11,
+          "kind": "function",
+          "exported": true,
+          "calls": 3
+        },
+        {
+          "name": "normalizeSplitBones",
+          "line": 17,
+          "kind": "function",
+          "exported": true,
+          "calls": 6
+        },
+        {
+          "name": "srcCurve",
+          "line": 27,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 4
+        },
+        {
+          "name": "cloneSplitBones",
+          "line": 59,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "splitBonesFor",
+          "line": 67,
+          "kind": "function",
+          "exported": true,
+          "calls": 3
+        },
+        {
+          "name": "materializeSplitBones",
+          "line": 83,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "bonesFor",
+          "line": 101,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "splitBonesToData",
+          "line": 172,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "splitBonesFromData",
+          "line": 200,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "mirrorSplitBones",
+          "line": 205,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "normalizeBone",
+          "line": 230,
+          "kind": "function",
+          "exported": true,
+          "calls": 6
+        },
+        {
+          "name": "curve",
+          "line": 233,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 4
+        },
+        {
+          "name": "pick",
+          "line": 237,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 6
+        },
+        {
+          "name": "normalizeBones",
+          "line": 269,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "bonesToData",
+          "line": 276,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "bonesFromData",
+          "line": 307,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "mirrorBones",
+          "line": 313,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "registryForSave",
+          "line": 333,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
       "file": "modules/branch/branch-store.js",
       "lineCount": 43,
       "functions": [
@@ -6814,138 +6946,6 @@
         {
           "name": "normalizeAnimeAnisotropicSettings",
           "line": 56,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        }
-      ]
-    },
-    {
-      "file": "modules/geometry/bone-model.js",
-      "lineCount": 349,
-      "functions": [
-        {
-          "name": "defaultSplitSpread",
-          "line": 11,
-          "kind": "function",
-          "exported": true,
-          "calls": 3
-        },
-        {
-          "name": "normalizeSplitBones",
-          "line": 17,
-          "kind": "function",
-          "exported": true,
-          "calls": 6
-        },
-        {
-          "name": "srcCurve",
-          "line": 27,
-          "kind": "arrow",
-          "exported": false,
-          "calls": 4
-        },
-        {
-          "name": "cloneSplitBones",
-          "line": 59,
-          "kind": "function",
-          "exported": true,
-          "calls": 2
-        },
-        {
-          "name": "splitBonesFor",
-          "line": 67,
-          "kind": "function",
-          "exported": true,
-          "calls": 3
-        },
-        {
-          "name": "materializeSplitBones",
-          "line": 83,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "bonesFor",
-          "line": 101,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "splitBonesToData",
-          "line": 172,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "splitBonesFromData",
-          "line": 200,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "mirrorSplitBones",
-          "line": 205,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "normalizeBone",
-          "line": 230,
-          "kind": "function",
-          "exported": true,
-          "calls": 6
-        },
-        {
-          "name": "curve",
-          "line": 233,
-          "kind": "arrow",
-          "exported": false,
-          "calls": 4
-        },
-        {
-          "name": "pick",
-          "line": 237,
-          "kind": "arrow",
-          "exported": false,
-          "calls": 6
-        },
-        {
-          "name": "normalizeBones",
-          "line": 269,
-          "kind": "function",
-          "exported": true,
-          "calls": 2
-        },
-        {
-          "name": "bonesToData",
-          "line": 276,
-          "kind": "function",
-          "exported": true,
-          "calls": 2
-        },
-        {
-          "name": "bonesFromData",
-          "line": 307,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "mirrorBones",
-          "line": 313,
-          "kind": "function",
-          "exported": true,
-          "calls": 1
-        },
-        {
-          "name": "registryForSave",
-          "line": 333,
           "kind": "function",
           "exported": true,
           "calls": 1
