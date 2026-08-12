@@ -433,17 +433,16 @@ function renderTaperCurveEditor() {
   const displayAsymmetric = taperDisplayAsymmetric(target);
   if (deps.sculptState.taperCurveEdit) deps.sculptState.taperCurveEdit.displayAsymmetric = displayAsymmetric;
   deps.taperCurveOptions.classList.toggle("hidden", editingProceduralBranch);
-  // 发尖子骨骼（segment）宽度曲线的隐藏/记录点：t < 本侧 fork 的点只用于保持两侧
-  // 控制参数一致，不应在浮动面板里被拖动。primary→+1，secondary→-1。
+  // 发尖子骨骼（segment）宽度曲线的隐藏/记录点：t < 公共 fork（最深 zipper）的点
+  // 只用于保持两侧控制参数一致，不应在浮动面板里被拖动。
   const segmentLock = segmentEditing ? deps.locks.find((item) => item.id === deps.sculptState.taperCurveEdit.id) : null;
   const segmentSplits = segmentLock ? deps.clonePanelSplits(segmentLock.panelSplits, segmentLock.panelSplitHeight) : null;
-  const tipSideForkFor = (curveSide) => {
+  const tipSideForkFor = () => {
     if (!segmentLock || !segmentSplits || !segmentSplits.length) return 0;
-    return deps.tipWidthSideForkT(
+    return deps.tipWidthCommonForkT(
       segmentLock,
       deps.sculptState.taperCurveEdit.segmentIndex,
-      segmentSplits,
-      curveSide === "secondary" ? -1 : 1
+      segmentSplits
     );
   };
   deps.taperAsymmetryToggleRow.classList.toggle("hidden", editingTwist || editingProceduralBranch || segmentEditing);
@@ -493,7 +492,7 @@ function renderTaperCurveEditor() {
       handle.setAttribute("class", `profile-point${selected ? " selected" : ""}`);
       handle.dataset.taperPoint = index;
       handle.dataset.curveSide = side;
-      if (segmentEditing && point.position < tipSideForkFor(side) - 1e-4) {
+      if (segmentEditing && point.position < tipSideForkFor() - 1e-4) {
         handle.dataset.tipHidden = "1";
         handle.classList.add("tip-hidden");
       }

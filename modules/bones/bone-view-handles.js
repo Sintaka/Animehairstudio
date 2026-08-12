@@ -78,7 +78,23 @@ function createBoneViewHandles(lock, group) {
       group.add(handle);
       panelSplitHandles.push(handle);
     });
-    // (green segment spread handles removed - replaced by per-side tip width control)
+    // Green segment spread handles: one per segment (0..splits.length), shown while a
+    // tip sub-bone is selected and dragged to write bone.spread directly (0..0.99).
+    for (let segment = 0; segment < lock.panelSplits.length + 1; segment += 1) {
+      const handle = createSplitControlHandle();
+      handle.scale.setScalar(0.42);
+      handle.material = new THREE.MeshBasicMaterial({
+        color: 0x5df0a8,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.95
+      });
+      handle.userData.lockId = lock.id;
+      handle.userData.panelSegmentIndex = segment;
+      group.add(handle);
+      panelSegmentHandles.push(handle);
+    }
     // Tip sub-bone handles: one per sub-bone chain point (full chain like the main
     // bone, laterally offset to the segment center). Only points below the segment's
     // fork (zipper) are exposed in updateCurveObjects.
@@ -236,7 +252,7 @@ function updateBoneViewHandles(lock, ctx) {
   const segmentBoundaries = [-1, ...splits.map((split) => split.position), 1];
   const segmentSplitBones = splitBonesFor(lock);
   lock.curveObjects.panelSegmentHandles?.forEach((handle, segment) => {
-    const visible = !tipUiActive
+    const visible = tipUiActive
       && !sculptBrushHelpersSuppressed
       && !brushDebugVisible
       && deps.isPanelGeometry(lock)

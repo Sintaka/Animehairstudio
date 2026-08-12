@@ -200,20 +200,12 @@ function tipWidthCommonForkT(lock, segmentIndex, splits) {
   return 1 - Math.max(leftZipper ?? 0, rightZipper ?? 0);
 }
 
-// Reset curve for a tip (segment) width curve: full width (value 1) across the exposed
-// region, with BOTH fork boundary points sampled from the global curve so the zipper row
-// stays continuous after Reset. The geometry fork is not always this side's own fork: a
-// segment that sits entirely on one side of u samples only the primary curve
-// (asymmetricWidthCurve=false), so its geometry fork is the OPPOSITE side's fork. Writing
-// both sides' fork points at the global curve's value keeps the curve continuous with the
-// global curve at every possible geometry fork (no width step -> no zipper crack when
-// spread>0 exposes the seam).
+// Reset curve for a tip (segment) width curve: Reset 后整条曲线全 1 (full width value 1)
+// across the entire exposed region, including both fork boundary points, so no global
+// curve sampling happens after Reset.
 function tipWidthResetCurve(lock, segmentIndex, splits, side) {
-  // Same global curve choice as buildTipWidthCurve: the curve this side follows in the
-  // locked (above-zipper) region, which the sampler falls back to below the fork.
-  const globalCurve = side < 0
-    ? ((lock.asymmetricWidthCurve && lock.taperCurveSecondary) ? lock.taperCurveSecondary : lock.taperCurve)
-    : lock.taperCurve;
+  // Reset 后整条曲线全 1: no global curve sampling, every point (both fork boundaries
+  // and exposed-region control positions) is at full width value 1.
   const commonForkT = tipWidthCommonForkT(lock, segmentIndex, splits);
   const points = [];
   const addPoint = (position, value) => {
@@ -226,11 +218,10 @@ function tipWidthResetCurve(lock, segmentIndex, splits, side) {
     });
   };
   addPoint(0, 1);
-  // Both fork boundary points at the global curve's value (continuous with the locked
-  // region); the exposed-region control positions stay at full width (value 1).
+  // Both fork boundary points at full width (value 1), same as the control positions.
   for (const forkSide of [-1, 1]) {
     const forkT = tipWidthSideForkT(lock, segmentIndex, splits, forkSide);
-    addPoint(forkT, sampleTaperCurve(globalCurve, forkT));
+    addPoint(forkT, 1);
   }
   for (const position of tipWidthControlTs(commonForkT)) {
     addPoint(position, 1);

@@ -7564,6 +7564,7 @@ Object.assign(taperEditorDeps, {
   clonePanelSplits,
   isPanelGeometry,
   tipWidthSideForkT: panelTipStrand.tipWidthSideForkT,
+  tipWidthCommonForkT: panelTipStrand.tipWidthCommonForkT,
   proceduralGuideForLock: clumpProceduralApi.proceduralGuideForLock,
   strandGeometryFrameAt,
   strandGeometryCurve,

@@ -432,6 +432,24 @@ splitBone.tip = {
 10. **模板字符串内嵌反引号会破坏 .cjs 脚本**：devlog 内容含 markdown 反引号时，写进模板字符串会提前闭合。**教训：把长内容写进临时 .txt，脚本读取再插入。**
 
 
+### 8.28 发尖 Reset 全 1 + 绿色 spread 手柄 + Width Curve 中段可编辑 + Panel Hair Cards 评估（0.2.61）
+
+> 本轮按用户反馈做三项发尖收尾 + 一项 panel Hair Cards 评估（Hair Cards 未实现，仅评估）。
+
+**1. Reset curve 全 1**：`tipWidthResetCurve` 不再采样全局曲线写 fork 边界点，改为所有点 value=1（含两个 fork 边界点与 position 0）。这是有意的行为取舍——spread>0 时 Reset 后 fork 行会从全局宽度阶跃到 1（原 0.2.60 的「fork 连续」防裂特性被撤销），用户接受全 1 的简单语义。若后续需要两者兼顾，可再引入「锁定区跟随全局 + 暴露区全 1」的混合重置。
+
+**2. 绿色 spread 手柄（视口拖拽直接写 Segment Spread）**：恢复被 8.11 删除的 `panelSegmentHandles`（绿色 `#5df0a8` 球，每段一个），仅在该发尖被选中时显示，位置按当前 `bone.spread` 计算；拖拽命中 `userData.panelSegmentIndex` 走既有 kind="segment" 路径，直接写 `bone.spread = clamp(((u-left)/span)*0.99, 0, 0.99)`，与右侧 `#panelSegmentSpread` 滑杆一致。
+
+**3. Width Curve 浮动面板中段可编辑**：`renderTaperCurveEditor` 的 `tipSideForkFor` 由「本侧 fork」改为「公共 fork（最深 zipper，`tipWidthCommonForkT`）」——只有 t 小于公共 fork 的锁定点打 `tip-hidden`，两 zipper 之间的点现在可选中/拖拽；`taperEditorDeps` 补充 `tipWidthCommonForkT`。
+
+**Panel Hair Cards 评估（未实现，仅评估）**：
+- 结论：**可行，兼容度高**。`lock.hairCard` 与材质双面判定（`strandUsesDoubleSidedMaterial` 已对 `Boolean(lock.hairCard)` 返回 DoubleSide）均已是通用字段/逻辑，panel 仅需补几何与 UI。
+- 几何：`createPanelStrandGeometry` 的 `addPatch` 当前 front+back+walls+caps；Hair Card 模式只需在 `lock.hairCard` 时只发 front 行（shell=+1）与 front 面 quad，跳过 back/walls/caps，并置 `geometry.userData.openSurface=true`。surface（lattice）面板同理。
+- 兼容：发尖子骨骼/zipper 分段/spread/panelWeights/USDA 蒙皮都作用在 front 面板上，Hair Card 单面后这些系统保持兼容（zipper 的「墙」仅存在于 front/back 之间，单面后自然省略）。panelThickness/depthCurve 在单面模式下无实际作用但无需删。
+- 待办（若实施）：`syncHairCardControls` 目前只对 strand 目标显示开关；需放开 panel 目标并接 `hairCardInput` change 分支；面板属性编辑器需让 Hair Card 开关对 panel 可见。建议独立 feature 分支实现。
+
+**验证**：node --check 全绿；verify-smoke 10/11（branch-bridge 基线失败，与 HEAD 一致）。verify-tip-select 契约测试因仓库内无 Sussurro_v1_0041/0042/0044 资产无法在本机运行，相关断言已按新语义改写（Reset 全 1、fork 采样=1、浮动面板公共 fork 阈值、Reset 按钮双面全 1）。
+
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

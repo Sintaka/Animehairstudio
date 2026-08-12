@@ -723,28 +723,19 @@ try {
     });
   })()`));
   check("asymmetric tip width blends in a narrow center band (sides independent)", blendCheck.ok === true && blendCheck.midIsAvg === true && blendCheck.pureOutside === true && blendCheck.left !== blendCheck.right && blendCheck.stepAtCenter < 0.15, `blend=${JSON.stringify(blendCheck)}`);
-  // ============ 8.22: tip width Reset = all 1 (full width) ============
+  // ============ 8.22: tip width Reset = all points 1 ============
   const resetCheck = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const curve = t.tipWidthResetCurve(lock, 2, splits, 1);
-    // Reset is no longer "all 1": BOTH fork boundary points are sampled from the global
-    // curve (zipper continuity), while every exposed-region control position stays at 1.
+    const allOne = curve.every((p) => Math.abs(p.value - 1) < 1e-6);
     const forkTs = [-1, 1].map((s) => t.tipWidthSideForkT(lock, 2, splits, s));
-    const forksMatchGlobal = forkTs.every((fk) => {
-      const pt = curve.find((p) => Math.abs(p.position - fk) < 1e-4);
-      return !!pt && Math.abs(pt.value - t.sampleTaperCurve(lock.taperCurve, fk)) < 0.01;
-    });
-    const controlPositions = t.tipWidthControlTs(t.tipWidthCommonForkT(lock, 2, splits));
-    const exposedOne = controlPositions.every((cp) => {
-      const pt = curve.find((p) => Math.abs(p.position - cp) < 1e-4);
-      return !!pt && Math.abs(pt.value - 1) < 1e-6;
-    });
+    const hasBothForks = forkTs.every((fk) => curve.some((p) => Math.abs(p.position - fk) < 1e-4));
     const hasTip = curve.some((pt) => Math.abs(pt.position - 1) < 1e-3);
-    return JSON.stringify({ count: curve.length, forksMatchGlobal, exposedOne, hasTip, forkTs: forkTs.map((f) => Number(f.toFixed(4))) });
+    return JSON.stringify({ count: curve.length, allOne, hasBothForks, hasTip, forkTs: forkTs.map((f) => Number(f.toFixed(4))) });
   })()`));
-  check("tip width Reset: exposed controls 1, both fork points match global", resetCheck.forksMatchGlobal === true && resetCheck.exposedOne === true && resetCheck.hasTip === true && resetCheck.count <= 9, `reset=${JSON.stringify(resetCheck)}`);
+  check("tip width Reset: all points 1 (both fork points included)", resetCheck.allOne === true && resetCheck.hasBothForks === true && resetCheck.hasTip === true && resetCheck.count <= 9, `reset=${JSON.stringify(resetCheck)}`);
 
   // ============ 8.22: Ctrl+drag = asymmetric (only the dragged side changes) ============
   await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 2 }; t.updateCurveObjects(t.locks.find((l) => l.id === ${JSON.stringify(lockId)}), { visible: true }); return true; })()`);
@@ -801,8 +792,7 @@ try {
     const rightFork = t.tipWidthSideForkT(lock, 2, splits, 1);
     const leftFork = t.tipWidthSideForkT(lock, 2, splits, -1);
     // exposed region: sample the visible control positions (>= each side's own fork) which
-    // must be 1; above-zipper (t < fork) follows the global. The fork boundary points carry
-    // the global value (continuity), so they are NOT sampled as "exposed".
+    // must be 1; above-zipper (t < fork) still falls back to the global curve.
     const controlTs = t.tipWidthControlTs(t.tipWidthCommonForkT(lock, 2, splits));
     const exposed = [];
     for (const side of [1, -1]) {
@@ -822,7 +812,7 @@ try {
     const lockedGlobal = locked.every((s) => Math.abs(s.right - s.global) < 1e-3 && Math.abs(s.left - s.global) < 1e-3);
     return JSON.stringify({ exposedOne, lockedGlobal, rightFirst: Number((bone.taperCurve[0] || {}).position), exposed, locked });
   })()`));
-  check("tip width Reset: exposed region 1, above-zipper follows global (no crack)", resetFullCheck.exposedOne === true && resetFullCheck.lockedGlobal === true && resetFullCheck.rightFirst < 0.001, `resetFull=${JSON.stringify(resetFullCheck)}`);
+  check("tip width Reset: exposed region 1, above-zipper follows global", resetFullCheck.exposedOne === true && resetFullCheck.lockedGlobal === true && resetFullCheck.rightFirst < 0.001, `resetFull=${JSON.stringify(resetFullCheck)}`);
   // ============ 8.23: right panel segment preview hot-updates after a tip width edit ============
   const previewCheck = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
@@ -864,7 +854,7 @@ try {
   })()`));
   check("tip sub-bone normal follows surface curvature (orthogonal to tangent, nonzero vs main)", orientCheck.finite === true && orientCheck.minPerp > 85 && orientCheck.maxAngle > 0.5, `orient=${JSON.stringify(orientCheck)}`);
 
-  // ============ 8.24: floating panel marks below-fork tip points hidden (not draggable) ============
+  // ============ 8.24: floating panel marks only above-common-fork tip points hidden ============
   const panelDragCheck = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
@@ -876,14 +866,20 @@ try {
     if (ed && !ed.open) ed.show();
     t.renderTaperCurveEditor();
     const points = [...document.querySelectorAll('#taperCurvePoints circle[data-curve-side="primary"]')];
-    const fork = t.tipWidthSideForkT(lock, 2, splits, 1);
-    let hiddenCount = 0; let visibleCount = 0;
-    for (const p of points) { if (p.dataset.tipHidden === "1") hiddenCount++; else visibleCount++; }
+    const commonFork = t.tipWidthCommonForkT(lock, 2, splits);
+    const curve = bone.taperCurve || [];
+    let hiddenAtOrAboveCommon = 0; let visibleAtOrAboveCommon = 0; let hiddenAboveCommon = 0;
+    for (const p of points) {
+      const pt = curve[Number(p.dataset.taperPoint)];
+      const aboveCommon = pt && pt.position < commonFork - 1e-4;
+      if (p.dataset.tipHidden === "1") { if (aboveCommon) hiddenAboveCommon++; else hiddenAtOrAboveCommon++; }
+      else if (!aboveCommon) visibleAtOrAboveCommon++;
+    }
     if (ed && ed.open) ed.close();
     t.sculptState.state.taperCurveEdit = null;
-    return JSON.stringify({ total: points.length, hiddenCount, visibleCount, fork: Number(fork.toFixed(3)) });
+    return JSON.stringify({ total: points.length, commonFork: Number(commonFork.toFixed(3)), hiddenAtOrAboveCommon, visibleAtOrAboveCommon, hiddenAboveCommon });
   })()`));
-  check("floating panel marks below-fork tip points hidden (not draggable)", panelDragCheck.total > 0 && panelDragCheck.hiddenCount > 0 && panelDragCheck.visibleCount > 0, `panel=${JSON.stringify(panelDragCheck)}`);
+  check("floating panel keeps points at/above common fork draggable", panelDragCheck.total > 0 && panelDragCheck.hiddenAtOrAboveCommon === 0 && panelDragCheck.visibleAtOrAboveCommon > 0, `panel=${JSON.stringify(panelDragCheck)}`);
   } else {
     check("Ctrl+drag is asymmetric (only dragged side changes)", false, "no left handle");
   }
@@ -1392,19 +1388,13 @@ try {
     `asymDisplay=${JSON.stringify(asymDisplay)}`);
 
   check("floating panel curve refreshes after a tip width edit", refreshPath0.length > 0 && refreshEdit.d.length > 0 && refreshPath0 !== refreshEdit.d && refreshEdit.editedAt > 1.2, `refresh=${JSON.stringify({ path0Len: refreshPath0.length, afterLen: refreshEdit.d.length, editedAt: refreshEdit.editedAt })}`);
-  // ============ 8.27: Reset keeps BOTH fork points continuous with the global curve ============
-  // Regression for Segment Spread>0 + Reset: the geometry fork is not always the curve's own
-  // side fork (a segment entirely on one side of u samples only the primary curve), so Reset
-  // must write BOTH fork points at the global curve's value, or the zipper row steps from the
-  // global value to 1 and the seam cracks (un-welded wall, distinct 2 -> 4).
+  // ============ 8.27: Reset writes all-1 curves (fork-row sampler = 1) ============
   const resetForkCheck = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     if (splits.length < 2) return JSON.stringify({ skipped: true, reason: "splits<2" });
     const boundaries = [-1, ...splits.map((s) => s.position), 1];
-    // Prefer a segment with zippers on both sides and UNEQUAL forks (worst case for the
-    // opposite-fork sampling path).
     let seg = -1;
     for (let i = 0; i < boundaries.length - 1; i++) {
       const lf = t.tipWidthSideForkT(lock, i, splits, -1);
@@ -1414,31 +1404,22 @@ try {
     if (seg < 0) return JSON.stringify({ skipped: true, reason: "no unequal-fork segment" });
     const bone = t.materializeSplitBones(lock)[seg] || null;
     if (!bone) return JSON.stringify({ skipped: true, reason: "missing bone" });
-    // Segment-type Reset (both sides), leaving asymmetricWidthCurve=false so the geometry
-    // samples only the primary curve (the path the bug reproduced on).
     bone.asymmetricWidthCurve = false;
     bone.taperCurve.splice(0, bone.taperCurve.length, ...t.tipWidthResetCurve(lock, seg, splits, 1).map((p) => ({ ...p })));
     bone.taperCurveSecondary.splice(0, bone.taperCurveSecondary.length, ...t.tipWidthResetCurve(lock, seg, splits, -1).map((p) => ({ ...p })));
     const leftFork = t.tipWidthSideForkT(lock, seg, splits, -1);
     const rightFork = t.tipWidthSideForkT(lock, seg, splits, 1);
-    // Edge u with the correct sign so each side engages its own fork in the sampler (the
-    // geometry's fork row is the boundary edge; the spread gap is 0 at the fork).
     const leftU = boundaries[seg] < 0 ? boundaries[seg] : -0.5;
     const rightU = boundaries[seg + 1] > 0 ? boundaries[seg + 1] : 0.5;
-    const globalCurve = lock.taperCurve;
-    const leftErr = Math.abs(t.tipWidthMultiplierAt(lock, leftFork, leftU, bone, seg, splits) - t.sampleTaperCurve(globalCurve, leftFork));
-    const rightErr = Math.abs(t.tipWidthMultiplierAt(lock, rightFork, rightU, bone, seg, splits) - t.sampleTaperCurve(globalCurve, rightFork));
+    const leftErr = Math.abs(t.tipWidthMultiplierAt(lock, leftFork, leftU, bone, seg, splits) - 1);
+    const rightErr = Math.abs(t.tipWidthMultiplierAt(lock, rightFork, rightU, bone, seg, splits) - 1);
     return JSON.stringify({ seg, skipped: false, leftFork: Number(leftFork.toFixed(4)), rightFork: Number(rightFork.toFixed(4)), leftErr: Number(leftErr.toFixed(6)), rightErr: Number(rightErr.toFixed(6)) });
   })()`));
-  check("Reset: fork-row sampler continuous with global (both sides)",
+  check("Reset: fork-row sampler = 1 (all-1 reset, both sides)",
     resetForkCheck.skipped === false && resetForkCheck.leftErr < 0.01 && resetForkCheck.rightErr < 0.01,
     `resetFork=${JSON.stringify(resetForkCheck)}`);
 
-  // ============ 8.27-B: Reset curve data carries a point at BOTH fork positions ============
-  // The geometry fork is the OPPOSITE side's fork when a segment sits entirely on one side
-  // of u (asymmetricWidthCurve=false samples only the primary curve). Reset must therefore
-  // record a point at each fork position with the global curve's value, or a later drag
-  // rebuild re-steps that fork.
+  // ============ 8.27-B: Reset curve data carries a point at BOTH fork positions (=1) ============
   const resetForkDataCheck = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
@@ -1458,16 +1439,15 @@ try {
     bone.taperCurveSecondary.splice(0, bone.taperCurveSecondary.length, ...t.tipWidthResetCurve(lock, seg, splits, -1).map((p) => ({ ...p })));
     const leftFork = t.tipWidthSideForkT(lock, seg, splits, -1);
     const rightFork = t.tipWidthSideForkT(lock, seg, splits, 1);
-    const globalCurve = lock.taperCurve;
     const primary = bone.taperCurve || [];
-    const hasLeftPoint = primary.some((p) => Math.abs(p.position - leftFork) < 1e-4 && Math.abs(p.value - t.sampleTaperCurve(globalCurve, leftFork)) < 0.01);
-    const hasRightPoint = primary.some((p) => Math.abs(p.position - rightFork) < 1e-4 && Math.abs(p.value - t.sampleTaperCurve(globalCurve, rightFork)) < 0.01);
+    const hasLeftPoint = primary.some((p) => Math.abs(p.position - leftFork) < 1e-4 && Math.abs(p.value - 1) < 0.01);
+    const hasRightPoint = primary.some((p) => Math.abs(p.position - rightFork) < 1e-4 && Math.abs(p.value - 1) < 0.01);
     const secondary = bone.taperCurveSecondary || [];
     const hasLeftSecondary = secondary.some((p) => Math.abs(p.position - leftFork) < 1e-4);
     const hasRightSecondary = secondary.some((p) => Math.abs(p.position - rightFork) < 1e-4);
     return JSON.stringify({ seg, skipped: false, leftFork: Number(leftFork.toFixed(4)), rightFork: Number(rightFork.toFixed(4)), hasLeftPoint, hasRightPoint, hasLeftSecondary, hasRightSecondary, primaryLen: primary.length, secondaryLen: secondary.length });
   })()`));
-  check("Reset curve data has a point at BOTH fork positions (= global)",
+  check("Reset curve data has a point at BOTH fork positions (=1)",
     resetForkDataCheck.skipped === false
       && resetForkDataCheck.hasLeftPoint
       && resetForkDataCheck.hasRightPoint
@@ -1475,32 +1455,16 @@ try {
       && resetForkDataCheck.hasRightSecondary,
     `resetForkData=${JSON.stringify(resetForkDataCheck)}`);
 
-  // ============ 8.28: Reset leaves the zipper fork row welded (no mesh crack) ============
-  // Drive a REAL Reset through the editor button (applyTaperCurveEdit() rebuilds
-  // lock.mesh.geometry), then inspect the geometry at the zipper fork row / boundary band:
-  // the adjacent segments' boundary vertices must coincide (2 distinct = front/back), not
-  // un-weld into 4 (the spread>0 crack).
-  const resetMeshCheck = JSON.parse(await evalJS(cdp, `(() => {
+  // ============ 8.28: real Reset button writes all-1 curves and rebuilds geometry ============
+  const resetButtonCheck = JSON.parse(await evalJS(cdp, `(() => {
     try {
       const t = window.__ahsTest;
       const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
       const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
       if (splits.length < 2) return JSON.stringify({ skipped: true, reason: "splits<2" });
-      const boundaries = [-1, ...splits.map((s) => s.position), 1];
-      const loops = t.THREE.MathUtils.clamp(Math.round(lock.panelLengthLoops ?? 10), 3, 32);
-      // Interior segment with both-side zippers whose fork lands exactly on a geometry row
-      // (only then does the fork row have both walls at the boundary with gap=0).
-      let seg = -1;
-      for (let i = 1; i <= splits.length - 1; i++) {
-        const lf = t.tipWidthSideForkT(lock, i, splits, -1);
-        const rf = t.tipWidthSideForkT(lock, i, splits, 1);
-        const aligned = (lf < 0.999 && Math.abs(lf * loops - Math.round(lf * loops)) < 1e-6)
-          || (rf < 0.999 && Math.abs(rf * loops - Math.round(rf * loops)) < 1e-6);
-        if (aligned) { seg = i; break; }
-      }
-      if (seg < 0) return JSON.stringify({ skipped: true, reason: "no row-aligned fork" });
-      // Real Reset via the editor button -> rebuilds lock.mesh.geometry with the reset curves.
-      t.sculptState.state.taperCurveEdit = { type: "segment", id: lock.id, segmentIndex: seg, curveKey: "taperCurve", side: "primary", selectedIndex: 0 };
+      const bone = t.materializeSplitBones(lock)[2] || null;
+      if (!bone) return JSON.stringify({ skipped: true, reason: "missing bone" });
+      t.sculptState.state.taperCurveEdit = { type: "segment", id: lock.id, segmentIndex: 2, curveKey: "taperCurve", side: "primary", selectedIndex: 0 };
       const ed = document.querySelector('#taperCurveEditor');
       if (ed && !ed.open) ed.show();
       t.renderTaperCurveEditor();
@@ -1509,40 +1473,17 @@ try {
       btn.click();
       if (ed && ed.open) ed.close();
       t.sculptState.state.taperCurveEdit = null;
-      const geo = lock.mesh.geometry;
-      const pos = geo.attributes.position;
-      const uv = geo.attributes.uv;
-      const w = geo.userData.panelWeights;
-      if (!pos || !uv || !w) return JSON.stringify({ skipped: true, reason: "no geometry attributes" });
-      const rows = [];
-      for (const side of [-1, 1]) {
-        const forkT = t.tipWidthSideForkT(lock, seg, splits, side);
-        if (forkT >= 0.999) continue;
-        const exactRow = Math.round(forkT * loops);
-        if (Math.abs(forkT * loops - exactRow) >= 1e-6) continue;
-        const rowT = exactRow / loops;
-        const boundary = side < 0 ? boundaries[seg] : boundaries[seg + 1];
-        const uvX = (boundary + 1) * 0.5;
-        const segs = side < 0 ? [seg - 1, seg] : [seg, seg + 1];
-        const band = [];
-        for (let i = 0; i < pos.count; i++) {
-          if (Math.abs(uv.getX(i) - uvX) > 0.01) continue;
-          if (Math.abs(uv.getY(i) - rowT) > 1e-4) continue;
-          const s = Math.round(w[i * 3 + 1]);
-          if (s === segs[0] || s === segs[1]) band.push(i);
-        }
-        if (band.length < 2) continue;
-        const distinct = new Set(band.map((i) => [pos.getX(i), pos.getY(i), pos.getZ(i)].map((v) => Math.round(v * 1e5)).join("|")));
-        rows.push({ side, forkT: Number(forkT.toFixed(4)), row: exactRow, rowT: Number(rowT.toFixed(4)), band: band.length, distinct: distinct.size });
-      }
-      return JSON.stringify({ seg, loops, skipped: false, rows });
+      const primaryAllOne = (bone.taperCurve || []).every((p) => Math.abs(p.value - 1) < 1e-6);
+      const secondaryAllOne = (bone.taperCurveSecondary || []).every((p) => Math.abs(p.value - 1) < 1e-6);
+      const geoOk = !!lock.mesh.geometry && !!lock.mesh.geometry.attributes.position && lock.mesh.geometry.attributes.position.count > 0;
+      return JSON.stringify({ skipped: false, primaryAllOne, secondaryAllOne, geoOk });
     } catch (err) {
       return JSON.stringify({ skipped: true, reason: "error: " + (err && err.message ? err.message : String(err)) });
     }
   })()`));
-  check("Reset: zipper fork row stays welded (distinct 2, no lateral step)",
-    resetMeshCheck.skipped === false && resetMeshCheck.rows.length > 0 && resetMeshCheck.rows.every((r) => r.distinct === 2),
-    `resetMesh=${JSON.stringify(resetMeshCheck)}`);
+  check("Reset button writes all-1 curves to both sides and rebuilds geometry",
+    resetButtonCheck.skipped === false && resetButtonCheck.primaryAllOne === true && resetButtonCheck.secondaryAllOne === true && resetButtonCheck.geoOk === true,
+    `resetButton=${JSON.stringify(resetButtonCheck)}`);
   const errAfter = cdp.events.filter((e) => e.method === "Runtime.exceptionThrown").length;
   check("0 exceptions during interaction", errAfter === bootErr, `total=${errAfter} (start=${bootErr})`);
 
