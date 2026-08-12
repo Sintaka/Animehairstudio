@@ -15,7 +15,7 @@
 - **JS 改动标注**：所有 .js 修改/新增，需在 devlog「JS 改动标注」中标注与原有 JS 的差别/新增功能。
 - **快捷键分区**：新增/修改的快捷键必须放在独立分区（自己的栏），不得改动原有快捷键说明；若与原有快捷键冲突或被代替，需标暗红并指向代替按键。
 - **语言支持**：新增说明/文案需要同步添加现有语言支持（EN / JA / ZH）。
-- **版本号规范（2026-08 起）**：完整版本号格式 `0.1.4-Sintaka.0.2.<dailybuild>`（当前 `0.1.4-Sintaka.0.2.57`）。`0.1.4` 主版本**与上游保持对齐**（不随本地改动递增）；`Sintaka` 为本地 fork 标记；`0.2` 为分段版本号（功能迭代时更新）；末尾 dailybuild **可直接递增到 5 位数**（如 12 → 13 → … → 12345，分段版本号更新时清零）。版本号写入 `modules/core/app-config.js` 的 `APP_VERSION`，显示在顶栏与 Settings → Version。
+- **版本号规范（2026-08 起）**：完整版本号格式 `0.1.4-Sintaka.0.2.<dailybuild>`（当前 `0.1.4-Sintaka.0.2.60`）。`0.1.4` 主版本**与上游保持对齐**（不随本地改动递增）；`Sintaka` 为本地 fork 标记；`0.2` 为分段版本号（功能迭代时更新）；末尾 dailybuild **可直接递增到 5 位数**（如 12 → 13 → … → 12345，分段版本号更新时清零）。版本号写入 `modules/core/app-config.js` 的 `APP_VERSION`，显示在顶栏与 Settings → Version。
 - **Codex 子智能体（强制流程，2026-08 起）**：涉及代码修改的任务**默认交给并行 Codex 子智能体执行**（即使只派 1 个也持续此流程），主进程（supervisor）负责深度调研、切分任务、合并审查与最终验证；无需用户每次手动提示。适用：并行调研（多 bug 根因分析、跨分支 diff 对比）、隔离小改动（按文件/子系统边界切分，避免共享文件冲突）。规则：子任务必须文件/子系统不相交；子 agent 产出后主进程统一审查整合并跑回归；关键路径阻塞任务不委托；若需新增/调整此流程约定，直接写入本规范，勿等用户重复说明。
 - **许可证合规**：保留原作者 LICENSE 与 .github/FUNDING.yml（捐赠链接不得删改）；再分发须附带 LICENSE、标明修改、仅限免费非商业；商用 / 打包分发需作者书面许可；引入第三方代码时确保许可兼容。
 
@@ -41,7 +41,7 @@
 | Branch Bridge Smooth（Strength / Detail） | 启用 | 独立 Branch Bridge 面板，仅选中子发片时显示；标准 float+滑杆+重置（0.2.45–0.2.47） |
 | Region 同步速度滑块（Sync L/R、Sync U/D） | 启用 | Branch Root Region 面板；默认 L/R 0.45、U/D 1.0；`updateBranchRootRegionCenter` 按速度缩放（0.2.52–0.2.53） |
 | 刘海 / 面板线框三角面显示修复 | 启用 | 显示层 masks 修复（0.2.54–0.2.56）；导出数据一直是四边面；详见 bug-fixes.md #3 |
-| Panel Split 子骨骼 / 统一骨骼模型（Split Spacing/Trim 重铸） | 启用 | 0.2.59 起：每 split 段一个 `lock.splitBones` 完整变换骨骼（P/orient 四元数/spread + 每段 Width/Depth 曲线，混合持久化）；`createPanelStrandGeometry` 段内局部 u' + 每段曲线 + 相对缩放（根除 crossover），删除 trim/gap 位移；`bonesFor(lock)` 统一骨骼视图；子发片扫掠内核统一（modules/geometry/strand-sweep.js） |
+| Panel Split 子骨骼 / 统一骨骼模型（Split Spacing/Trim 重铸） | 启用 | 0.2.59 起：每 split 段一个 `lock.splitBones` 完整变换骨骼（P/orient 四元数/spread + 每段 Width/Depth 曲线，混合持久化）；`createPanelStrandGeometry` 段内局部 u' + 每段曲线 + 相对缩放（根除 crossover），删除 trim/gap 位移；`bonesFor(lock)` 统一骨骼视图；子发片扫掠内核统一（modules/geometry/strand-sweep.js）；0.2.60：发尖（segment）曲线编辑统一为普通 Width Curve 面板（Width/Depth 预设 select + 小铅笔替代大按钮、浮动面板随子发尖切换热刷新、Reset 保持 fork 连续不裂） |
 | 状态管理 store 体系（scene-store + 15 个域 store） | 启用 | 全局 let 241→1（仅 camera）；新状态一律进对应 store（清单见 STATE_MANAGEMENT.md）；app.js 不新增全局 let；业务逻辑拆分完成（app.js 39,207→18,401 行，见 APPJS_SPLIT_GUIDE.md） |
 | 拖放统一分发 | deprecated | main 0.1.4 已有应用文件拖放确认对话框，本地实现已删除 |
 | 雕刻笔刷选择遮罩 | deprecated | main 0.1.4 已有 sculptBrushSelectionAllows，本地实现已删除 |

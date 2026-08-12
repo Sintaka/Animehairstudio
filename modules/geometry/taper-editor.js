@@ -9,7 +9,7 @@ import {
   twistCurveDisplayRange,
   twistRateUnitsFromDegrees
 } from "./curve-math.js?v=20260811-1";
-import { materializeSplitBones } from "../bones/bone-model.js?v=20260812-1";
+import { materializeSplitBones, splitBonesFor } from "../bones/bone-model.js?v=20260812-1";
 import {
   DEFAULT_SWEEP_PROFILE,
   STRAND_GROUPS,
@@ -88,6 +88,33 @@ function taperSamples(curve, count = 80) {
     return { position, value: sampleTaperCurve(curve, position) };
   });
 }
+
+// Segment editing: the bone's asymmetricWidthCurve/asymmetricDepthCurve flag stays true
+// (geometry routing depends on it), but the FLOATING PANEL should show a dual asymmetric
+// layout only when the two side curves actually differ (default viewport drags write both
+// sides the same value = symmetric). Compare shared sampled points with a tight epsilon.
+function taperCurvesActuallyDiffer(target, curveKey) {
+  const primary = target?.[curveKey];
+  const secondary = target?.[deps.shapePresets.taperSecondaryKey(curveKey)];
+  if (!Array.isArray(primary) || !Array.isArray(secondary)) return false;
+  const primarySamples = taperSamples(primary, 40);
+  const secondarySamples = taperSamples(secondary, 40);
+  for (let index = 0; index < primarySamples.length; index += 1) {
+    if (Math.abs(primarySamples[index].value - secondarySamples[index].value) > 1e-4) return true;
+  }
+  return false;
+}
+// Display-asymmetric flag shared by renderTaperCurveEditor / canvasToTaperPoint /
+// refreshTaperCurveEditorAfterStateRestore: segment edits follow whether the actual side
+// curves differ; strand/group/creation edits keep the authored data flag.
+function taperDisplayAsymmetric(target) {
+  if (!deps.sculptState.taperCurveEdit) return false;
+  if (deps.branchSweep.twistCurveEditing() || deps.branchSweep.proceduralBranchCurveEditing()) return false;
+  if (deps.sculptState.taperCurveEdit.type === "segment") {
+    return taperCurvesActuallyDiffer(target, deps.sculptState.taperCurveEdit.curveKey);
+  }
+  return Boolean(target?.[deps.shapePresets.taperAsymmetryKey()]);
+}
 function ensureAsymmetricTaperPreviewElements(path) {
   const svg = path?.ownerSVGElement;
   if (!svg) return {};
@@ -144,8 +171,54 @@ function renderTaperPreview(path, target, curveKey) {
     .join(" ");
   secondaryPath?.setAttribute("d", `${secondaryLine} L151,35 L9,35 Z`);
 }
+// Read-only view of the selected panel's current split segment bone, used by the
+// shape-preset selects (syncShapePresetSelects / openSaveShapePreset). Never materializes:
+// syncing/displaying the select must not write splitBones. Returns a shallow copy with
+// per-field fallback to the lock-level curve so the select shows the segment's effective curve.
+function segmentCurveTarget() {
+  const lock = deps.getSelectedLock();
+  if (!lock || !deps.isPanelGeometry(lock)) return null;
+  const splitCount = (Array.isArray(lock.panelSplits) ? lock.panelSplits.length : 0) + 1;
+  const index = THREE.MathUtils.clamp(
+    Math.round(Number(deps.sculptState.panelSegmentIndex ?? 0)),
+    0,
+    splitCount - 1
+  );
+  const bone = splitBonesFor(lock)[index];
+  if (!bone) return null;
+  return {
+    ...bone,
+    taperCurve: bone.taperCurve || lock.taperCurve,
+    taperCurveSecondary: bone.taperCurveSecondary || lock.taperCurveSecondary,
+    depthCurve: bone.depthCurve || lock.depthCurve,
+    depthCurveSecondary: bone.depthCurveSecondary || lock.depthCurveSecondary,
+    asymmetricWidthCurve: bone.asymmetricWidthCurve == null ? Boolean(lock.asymmetricWidthCurve) : bone.asymmetricWidthCurve,
+    asymmetricDepthCurve: bone.asymmetricDepthCurve == null ? Boolean(lock.asymmetricDepthCurve) : bone.asymmetricDepthCurve,
+    centerAsymmetricProfile: bone.centerAsymmetricProfile == null ? Boolean(lock.centerAsymmetricProfile) : bone.centerAsymmetricProfile
+  };
+}
+// Live split bone for the selected panel segment (used by applyShapePreset). Reuses the
+// already-materialized lock.splitBones when the split count matches (same rule as
+// activeTaperTarget so preset writes hit the live bone); materializes otherwise. The index
+// is clamped the same way selectedPanelSegment / syncPanelSegmentControls clamp it.
+function segmentCurveTargetForWrite() {
+  const lock = deps.getSelectedLock();
+  if (!lock || !deps.isPanelGeometry(lock)) return null;
+  const splitCount = (Array.isArray(lock.panelSplits) ? lock.panelSplits.length : 0) + 1;
+  const bones = (Array.isArray(lock.splitBones) && lock.splitBones.length === splitCount)
+    ? lock.splitBones
+    : materializeSplitBones(lock);
+  if (!bones) return null;
+  const index = THREE.MathUtils.clamp(
+    Math.round(Number(deps.sculptState.panelSegmentIndex ?? 0)),
+    0,
+    splitCount - 1
+  );
+  return bones[index] || null;
+}
 function shapeTargetForSelect(select) {
   if (select.closest("#groupSettingsPanel")) return deps.sel.selectedStrandGroup ? deps.strandGroupDefaults[deps.sel.selectedStrandGroup] : null;
+  if (select.closest("[data-segment-curve]")) return segmentCurveTarget();
   return activeStrandShapeTarget();
 }
 function taperPointToCanvas(point, curveSide = "primary", asymmetric = false) {
@@ -170,8 +243,7 @@ function canvasToTaperPoint(event, pointIndex) {
   const canvasY = (event.clientY - rect.top) * (220 / rect.height);
   const curve = activeTaperCurve();
   const editingTwist = deps.branchSweep.twistCurveEditing();
-  const asymmetric = !deps.branchSweep.proceduralBranchCurveEditing()
-    && Boolean(activeTaperTarget()?.[deps.shapePresets.taperAsymmetryKey()]);
+  const asymmetric = taperDisplayAsymmetric(activeTaperTarget());
   const isEndpoint = pointIndex === 0 || pointIndex === curve.length - 1;
   const twistDisplayRange = deps.sculptState.taperCurveEdit?.dragDisplayRange || twistCurveDisplayRange(
     curve,
@@ -354,9 +426,13 @@ function renderTaperCurveEditor() {
   const target = activeTaperTarget();
   const editingTwist = deps.branchSweep.twistCurveEditing();
   const editingProceduralBranch = deps.branchSweep.proceduralBranchCurveEditing();
-  const asymmetric = !editingTwist && !editingProceduralBranch && Boolean(target?.[deps.shapePresets.taperAsymmetryKey()]);
-  deps.taperCurveOptions.classList.toggle("hidden", editingProceduralBranch);
   const segmentEditing = deps.sculptState.taperCurveEdit.type === "segment";
+  // Segment edits keep the geometric routing flag (asymmetricWidthCurve/asymmetricDepthCurve)
+  // true at all times, so the panel's display mode follows whether the two side curves
+  // actually differ (default viewport drags write both sides the same value = symmetric).
+  const displayAsymmetric = taperDisplayAsymmetric(target);
+  if (deps.sculptState.taperCurveEdit) deps.sculptState.taperCurveEdit.displayAsymmetric = displayAsymmetric;
+  deps.taperCurveOptions.classList.toggle("hidden", editingProceduralBranch);
   // 发尖子骨骼（segment）宽度曲线的隐藏/记录点：t < 本侧 fork 的点只用于保持两侧
   // 控制参数一致，不应在浮动面板里被拖动。primary→+1，secondary→-1。
   const segmentLock = segmentEditing ? deps.locks.find((item) => item.id === deps.sculptState.taperCurveEdit.id) : null;
@@ -371,24 +447,24 @@ function renderTaperCurveEditor() {
     );
   };
   deps.taperAsymmetryToggleRow.classList.toggle("hidden", editingTwist || editingProceduralBranch || segmentEditing);
-  deps.taperAsymmetryToggle.checked = asymmetric;
-  deps.centerAsymmetricProfileRow.classList.toggle("hidden", !asymmetric || segmentEditing);
+  deps.taperAsymmetryToggle.checked = displayAsymmetric;
+  deps.centerAsymmetricProfileRow.classList.toggle("hidden", !displayAsymmetric || segmentEditing);
   deps.centerAsymmetricProfileToggle.checked = Boolean(target?.centerAsymmetricProfile);
   const ctrlHint = document.querySelector("#taperCurveCtrlHint");
   if (ctrlHint) ctrlHint.classList.toggle("hidden", !segmentEditing);
-  deps.taperCurveBaseAxis.classList.toggle("hidden", asymmetric || editingTwist);
-  deps.taperCurveCenterLine.classList.toggle("hidden", !asymmetric && !editingTwist);
-  deps.taperCurveSecondaryPath.classList.toggle("hidden", !asymmetric);
-  deps.taperCurveValueAxis.setAttribute("y1", asymmetric || editingTwist ? "30" : "20");
+  deps.taperCurveBaseAxis.classList.toggle("hidden", displayAsymmetric || editingTwist);
+  deps.taperCurveCenterLine.classList.toggle("hidden", !displayAsymmetric && !editingTwist);
+  deps.taperCurveSecondaryPath.classList.toggle("hidden", !displayAsymmetric);
+  deps.taperCurveValueAxis.setAttribute("y1", displayAsymmetric || editingTwist ? "30" : "20");
   const primaryCurve = target[deps.sculptState.taperCurveEdit.curveKey];
   const primarySampled = taperSamples(primaryCurve, 120)
-    .map((point) => taperPointToCanvas(point, "primary", asymmetric));
+    .map((point) => taperPointToCanvas(point, "primary", displayAsymmetric));
   const primaryLine = primarySampled
     .map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`)
     .join(" ");
-  const baseline = asymmetric || editingTwist ? 110 : 190;
+  const baseline = displayAsymmetric || editingTwist ? 110 : 190;
   deps.taperCurvePath.setAttribute("d", `${primaryLine} L490,${baseline} L30,${baseline} Z`);
-  if (asymmetric) {
+  if (displayAsymmetric) {
     const secondaryCurve = ensureSecondaryTaperCurve(target);
     const secondarySampled = taperSamples(secondaryCurve, 120)
       .map((point) => taperPointToCanvas(point, "secondary", true));
@@ -400,7 +476,7 @@ function renderTaperCurveEditor() {
     deps.taperCurveSecondaryPath.removeAttribute("d");
   }
   deps.taperCurvePoints.replaceChildren();
-  const visibleCurves = asymmetric
+  const visibleCurves = displayAsymmetric
     ? [
         { curve: primaryCurve, side: "primary" },
         { curve: ensureSecondaryTaperCurve(target), side: "secondary" }
@@ -408,7 +484,7 @@ function renderTaperCurveEditor() {
     : [{ curve: primaryCurve, side: "primary" }];
   visibleCurves.forEach(({ curve: visibleCurve, side }) => {
     visibleCurve.forEach((point, index) => {
-      const canvasPoint = taperPointToCanvas(point, side, asymmetric);
+      const canvasPoint = taperPointToCanvas(point, side, displayAsymmetric);
       const selected = side === deps.sculptState.taperCurveEdit.side && index === deps.sculptState.taperCurveEdit.selectedIndex;
       const handle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
       handle.setAttribute("cx", canvasPoint.x);
@@ -453,7 +529,17 @@ function updateTaperCurveEditorTargetLabel() {
         : lock?.name || "Selected strand";
 }
 function retargetOpenTaperCurveEditor(lock) {
-  if (!deps.taperCurveEditor.open || deps.sculptState.taperCurveEdit?.type !== "strand") return;
+  if (!deps.taperCurveEditor.open || !deps.sculptState.taperCurveEdit) return;
+  if (deps.sculptState.taperCurveEdit.type === "segment") {
+    // 子发尖段编辑：同一 lock 下切换子发尖时同步浮动面板。视口点击/段步进按钮在
+    // syncPanelSegmentControls 里走 retargetOpenSegmentTaperEditor；这里额外覆盖
+    // refreshStrandSelectionConsumers（选择变化）路径，strand 行为保持不变。
+    if (deps.sculptState.taperCurveEdit.id === lock?.id) {
+      retargetOpenSegmentTaperEditor(lock, deps.sculptState.panelSegmentIndex);
+    }
+    return;
+  }
+  if (deps.sculptState.taperCurveEdit.type !== "strand") return;
   flushScheduledTaperCurveEdit();
   finishTaperMeshPointDrag(null);
   const nextTarget = deps.branchSweep.proceduralBranchCurveEditing()
@@ -467,6 +553,27 @@ function retargetOpenTaperCurveEditor(lock) {
   updateTaperCurveEditorTargetLabel();
   refreshTaperCurveEditorAfterStateRestore();
 }
+// 热刷新：浮动面板正在编辑某一 lock 的子发尖曲线时，把 taperCurveEdit 重定向到新的
+// segmentIndex（面板曲线 + 目标标签即时更新）。不同 lock 或非 segment 编辑时 no-op。
+function retargetOpenSegmentTaperEditor(lock, index) {
+  if (!deps.taperCurveEditor.open || deps.sculptState.taperCurveEdit?.type !== "segment") return;
+  if (!lock || deps.sculptState.taperCurveEdit.id !== lock.id) return;
+  const splitCount = (Array.isArray(lock.panelSplits) ? lock.panelSplits.length : 0) + 1;
+  const nextIndex = THREE.MathUtils.clamp(
+    Math.max(0, Math.round(Number(index ?? deps.sculptState.panelSegmentIndex ?? 0))),
+    0,
+    splitCount - 1
+  );
+  flushScheduledTaperCurveEdit();
+  finishTaperMeshPointDrag(null);
+  if (deps.sculptState.taperCurveEdit.segmentIndex !== nextIndex) {
+    deps.sculptState.taperCurveEdit.segmentIndex = nextIndex;
+    deps.sculptState.taperCurveEdit.side = "primary";
+    deps.sculptState.taperCurveEdit.selectedIndex = 0;
+  }
+  updateTaperCurveEditorTargetLabel();
+  renderTaperCurveEditor();
+}
 function refreshTaperCurveEditorAfterStateRestore() {
   if (!deps.taperCurveEditor.open || !deps.sculptState.taperCurveEdit) return;
   const target = activeTaperTarget();
@@ -474,7 +581,7 @@ function refreshTaperCurveEditorAfterStateRestore() {
     closeTaperCurveEditor();
     return;
   }
-  if (!deps.branchSweep.proceduralBranchCurveEditing() && deps.sculptState.taperCurveEdit.side === "secondary" && !target[deps.shapePresets.taperAsymmetryKey()]) {
+  if (!deps.branchSweep.proceduralBranchCurveEditing() && deps.sculptState.taperCurveEdit.side === "secondary" && !taperDisplayAsymmetric(target)) {
     deps.sculptState.taperCurveEdit.side = "primary";
   }
   const curve = activeTaperCurve();
@@ -576,6 +683,14 @@ function applyTaperCurveEdit({ interactive = false } = {}) {
       if (Array.isArray(bone[curveKey])) bone[curveKey] = normalizeTaperCurve(bone[curveKey]);
       const secondaryKey = deps.shapePresets.taperSecondaryKey(curveKey);
       if (Array.isArray(bone[secondaryKey])) bone[secondaryKey] = normalizeTaperCurve(bone[secondaryKey]);
+      // 对称显示模式（面板上一次渲染判定两侧曲线实际相同）下，把被编辑一侧的曲线克隆写入
+      // 另一侧，保持两侧一致：浮动面板只显示 primary，一次对称编辑不会因 flag 恒 true
+      // 而突然切到非对称显示。视口 Ctrl 非对称拖拽不经过这里，几何数据不受影响。
+      if (!deps.sculptState.taperCurveEdit.displayAsymmetric) {
+        const editingSide = deps.sculptState.taperCurveEdit.side === "secondary" ? "secondary" : "primary";
+        if (editingSide === "secondary") bone[curveKey] = deps.shapePresets.cloneShapePresetValue(bone[secondaryKey]);
+        else bone[secondaryKey] = deps.shapePresets.cloneShapePresetValue(bone[curveKey]);
+      }
       bone[deps.shapePresets.taperAsymmetryKey(curveKey)] = Boolean(bone[deps.shapePresets.taperAsymmetryKey(curveKey)]);
       bone.centerAsymmetricProfile = Boolean(bone.centerAsymmetricProfile);
       deps.updateLockGeometry(lock, { immediate: true, updateBranches: false });
@@ -913,6 +1028,8 @@ function updateSelectedTaperPoint(key, value) {
     taperSamples,
     ensureAsymmetricTaperPreviewElements,
     renderTaperPreview,
+    segmentCurveTarget,
+    segmentCurveTargetForWrite,
     shapeTargetForSelect,
     taperPointToCanvas,
     canvasToTaperPoint,
@@ -924,6 +1041,7 @@ function updateSelectedTaperPoint(key, value) {
     renderTaperCurveEditor,
     updateTaperCurveEditorTargetLabel,
     retargetOpenTaperCurveEditor,
+    retargetOpenSegmentTaperEditor,
     refreshTaperCurveEditorAfterStateRestore,
     scheduleTaperCurveEdit,
     flushScheduledTaperCurveEdit,

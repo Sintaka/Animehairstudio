@@ -382,6 +382,35 @@ splitBone.tip = {
 
 **回归测试（scripts/verify-tip-select.mjs，46/46）**：新增 spread clamp（gap(spread=1)==gap(0.99)、materialize 读回 0.99）、权重斜线（构造不等高 zipper：左 fork 0.4 / 右 0.65，tMid 处高侧权重>0、低侧=0、中间单调且在两者间）、gizmo 朝向（真实指针选中 tip 手柄后 handle.quaternion 与链 frame 夹角 0°、非 identity、startQuaternion==frame）；原 43 项全过。三档 smoke（0041/0042/0044）11/11 通过。
 
+### 8.27 发尖曲线编辑统一（0.2.60，分支 0.2.60-bugfix）
+
+> 本轮 4 项：浮动面板非对称显示一致性、子发尖切换热刷新、Reset fork 连续（zipper 开裂）、segment 曲线面板统一为普通 Width Curve 形态。回归：verify-tip-select **51/51**、verify-smoke **10/11**（branch-bridge 基线失败）。
+
+**1. 浮动面板非对称显示跟随真实数据（Bug 1）**
+- 症状：视口默认拖绿色控制点 = 等比对称（两侧写同值），但浮动面板曲线因 `bone.asymmetricWidthCurve` 恒 true（几何路由依赖）而持续显示非对称（双曲线+中线），两者不一致。
+- 修复（taper-editor.js）：新增 `taperCurvesActuallyDiffer`（40 采样点、epsilon 1e-4 比较两侧）与 `taperDisplayAsymmetric`；段编辑时显示用「两侧曲线实际是否不同」，`bone.asymmetricWidthCurve` 数据 flag 保持 true。`canvasToTaperPoint` / `refreshTaperCurveEditorAfterStateRestore` 同步改用同一判定。
+- 对称显示下 `applyTaperCurveEdit` segment 分支把被编辑一侧克隆写入另一侧（primary↔secondary，depth 同理），一次对称编辑不会突然切到非对称；视口 Ctrl 非对称拖拽不经过此路径。
+
+**2. 子发尖切换浮动面板热刷新（Bug 3）**
+- 根因：`retargetOpenTaperCurveEditor` / `retargetFloatingStrandEditors` 只处理 type==="strand"；视口点击另一段发尖、Segment 步进按钮都只调 `syncPanelSegmentControls`，不刷新浮动面板。
+- 修复：taper-editor.js 新增 `retargetOpenSegmentTaperEditor(lock, index)`（flush/finish drag → clamp segmentIndex → 更新标签 + 重渲染），`retargetOpenTaperCurveEditor` 增加 segment 分支；segment-control.js `syncPanelSegmentControls` 末尾与 app.js 视口 tip 点击处、prev/next 步进按钮调用。
+
+**3. Reset curve fork 连续（Bug 2，zipper 端点开裂）**
+- 症状：Segment Spread>0 时浮动面板点 Reset，fork 行宽度乘数从全局值（0044 实测 1.163）阶跃到 1，zipper 端点（墙起始行）顶点解焊开裂（间距 0.0136、distinct 2→4）；spread 让墙列内收使错位更明显。
+- 根因（浏览器实测）：`tipWidthResetCurve` 把 fork 边界点写成 1，而采样器 `tipWidthMultiplierAt` 在 t>=fork 切到骨曲线 → 阶跃。关键：几何实际 fork ≠ 曲线数据里的本侧 sideForkT（segment 整段落在一侧 u 时只采样 primary 曲线），只改本侧 fork 点无效。
+- 修复（panel-tip-strand.js）：`tipWidthResetCurve` 重写——position 0=1 + **两侧 fork 点**各取 `sampleTaperCurve(globalCurve, fork)` + 暴露区控制点=1，去重排序；`buildTipWidthCurve` 加写对侧 fork 点（防后续拖拽重建再阶跃）。`tipWidthMultiplierAt` 与权重机制（tipSegmentWeightAt）未动。
+- 新回归断言 3 项：fork 行采样器连续、Reset 曲线数据含两侧 fork 点（值=全局）、fork 行网格焊接（distinct=2）。
+
+**4. Segment 曲线面板统一为普通 Width Curve 形态（架构 Phase 1）**
+- 目标：子发尖曲线面板与普通曲线一致——「Width Curve/Depth Curve」heading + 预设 select + 右上角小铅笔，移除「Edit Segment Width Curve/Depth Curve」大按钮。
+- 改动：index.html（`#panelSegmentCurveControls[data-segment-curve]` 两行曲线块，保留 segmentTaperPreview/segmentDepthPreview id）；app.js（editTaperCurveButtons 按 `[data-segment-curve]` 分派、shapePresets/segmentControl deps 扩充、删大按钮绑定）；taper-editor.js（`shapeTargetForSelect` segment 分支 + 只读 `segmentCurveTarget`（不 materialize，防同步 select 写出 splitBones）+ 写路径 `segmentCurveTargetForWrite`）；shape-presets.js（`applyShapePreset` segment 分支：整条预设写 bone、secondary 克隆、asymmetric flag=true、刷新几何/预览/浮动面板）；segment-control.js（`syncPanelSegmentControls` 首行 `syncShapePresetSelects()`，覆盖 prev/next、切段、视口拖拽全部触发点）。
+- 预设整条 [0,1] 写入 bone，锁定区由采样器回退全局曲线保持不裂；未用 buildTipWidthCurve 重建（避免丢「select 显示预设名」）。
+- 遗留（Phase 2 候选）：右侧小预览（renderTaperPreview）仍按 asymmetric flag 显示双曲线，与浮动面板显示可后续统一；depth 曲线的 tipHidden 标记（深度无 fork 语义）可恢复全点可编辑。
+
+**验证**：verify-tip-select.mjs 51/51（原 46 + 新增 5：段编辑器热刷新、对称/非对称显示切换、Reset fork 连续×3），0 页面异常；verify-smoke 10/11 基线。
+
+**未来工作（架构，Phase 2/3）**：合并 openTaperCurveEditor / openPanelSegmentCurveEditor 打开路径；数据模型整体升级评估（Route A 保留「左右独立曲线+asymmetric 恒 true」路由 vs Route B 重构为 {primary, secondary} 结构，当前推荐 Route A，除非出现跨 segment/strand 预设互套的真实需求）——详见架构子智能体输出，未落盘。
+
 ## 踩坑记录：发尖 WidthCurve 专项（8.10–8.20 复盘）
 
 > 这一轮发尖 WidthCurve 前后改了 11 个版本（8.10–8.20）才真正修对，把踩过的坑记下来，避免重蹈。

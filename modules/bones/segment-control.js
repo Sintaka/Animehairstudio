@@ -20,6 +20,9 @@ function selectedPanelSegment(lock) {
 }
 
 function syncPanelSegmentControls(target = deps.taperEditor.activeStrandShapeTarget()) {
+  // Refresh the width/depth curve preset selects (segment selects included) on every sync,
+  // including when no panel target is selected (resets the selects).
+  deps.syncShapePresetSelects();
   if (!target) return;
   const { index, count } = selectedPanelSegment(target);
   const bone = splitBonesFor(target)[index] || null;
@@ -35,6 +38,8 @@ function syncPanelSegmentControls(target = deps.taperEditor.activeStrandShapeTar
   };
   deps.taperEditor.renderTaperPreview(deps.segmentTaperPreview, previewTarget, "taperCurve");
   deps.taperEditor.renderTaperPreview(deps.segmentDepthPreview, previewTarget, "depthCurve");
+  // 浮动面板开着且正在编辑同一 lock 的子发尖曲线时，同步到当前段（热刷新）。
+  deps.taperEditor.retargetOpenSegmentTaperEditor?.(target, index);
 }
 
 function syncPanelShapeInputs(target = deps.taperEditor.activeStrandShapeTarget()) {

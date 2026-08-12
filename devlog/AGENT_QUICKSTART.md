@@ -46,6 +46,7 @@
 - `modules/bones/bone-model.js`：`bonesFor(lock)` 统一骨骼视图（main/split/child 命名空间，主骨骼有子骨骼才架空）；`splitBonesFor`/`materializeSplitBones`。
 - `createPanelStrandGeometry`：段内局部 u' + 每段曲线 + **相对缩放**（恒 uStart≤uEnd 根除 crossover），删除 trim/gap 位移；**zipper 水密拓扑保留**（墙 quad/端盖/snap-to-loops/退化跳过/焊接/法线平滑）。
 - 子发片扫掠统一：`modules/geometry/strand-sweep.js`（`sweepSide`），`createBranchChildGeometry` = 默认扫掠 + 桥接 + 根部移动优化。
+- **0.2.60**：发尖（segment）宽度/深度曲线编辑统一到普通曲线 UI——右侧面板 Width/Depth Curve 预设 select + 右上角小铅笔（替代 Edit Segment Width Curve/Depth Curve 大按钮），预设作用于当前段 split bone；浮动面板随子发尖切换热刷新；浮动面板非对称显示跟随两侧曲线实际差异（默认对称、Ctrl 视口拖拽=非对称）；Reset 保持 fork 连续（zipper 端点不裂）。
 
 
 ### 2.4 日常本地适配

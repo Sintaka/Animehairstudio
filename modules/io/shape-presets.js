@@ -1,4 +1,4 @@
-﻿// shape-presets.js — shape-preset logic layer (refactor 3d-2).
+// shape-presets.js — shape-preset logic layer (refactor 3d-2).
 // Extracted from app.js; coupling injected via createShapePresetsApi(deps).
 export function cloneShapePresetValue(value) {
   return value.map((point) => ({ ...point }));
@@ -57,6 +57,28 @@ export function createShapePresetsApi(deps) {
     const preset = custom
       ? deps.projectState.state.customShapePresets[key].find((item) => item.id === select.value.replace(/^custom:/, ""))
       : deps.SHAPE_PRESETS[key].find((item) => item.id === select.value);
+    if (select.closest("[data-segment-curve]")) {
+      // Split segment target: write the preset into this segment's live split bone
+      // (segmentCurveTargetForWrite) and refresh geometry/preview immediately. Segments
+      // always route through the asymmetric geometry path (asymmetricWidthCurve/asymmetricDepthCurve=true).
+      const lock = deps.getSelectedLock();
+      const bone = deps.segmentCurveTargetForWrite();
+      if (!preset || !lock || !bone) return;
+      deps.pushUndoState();
+      bone[key] = cloneShapePresetValue(preset.value);
+      bone[taperSecondaryKey(key)] = cloneShapePresetValue(preset.secondaryValue || preset.value);
+      bone[taperAsymmetryKey(key)] = true;
+      deps.updateLockGeometry(lock, { immediate: true, updateBranches: false });
+      deps.syncActiveMirror(lock, { deferGeometry: false });
+      deps.syncPanelSegmentControls(lock);
+      if (
+        deps.sculptState.taperCurveEdit?.type === "segment"
+        && deps.sculptState.taperCurveEdit.id === lock.id
+        && deps.sculptState.taperCurveEdit.segmentIndex === (deps.sculptState.panelSegmentIndex ?? 0)
+      ) deps.renderTaperCurveEditor();
+      deps.syncShapePresetSelects();
+      return;
+    }
     const target = deps.shapeTargetForSelect(select);
     if (!preset || !target) return;
     deps.pushUndoState();

@@ -201,14 +201,39 @@ function tipWidthCommonForkT(lock, segmentIndex, splits) {
 }
 
 // Reset curve for a tip (segment) width curve: full width (value 1) across the exposed
-// region - the side's own fork boundary plus the common-fork control positions.
+// region, with BOTH fork boundary points sampled from the global curve so the zipper row
+// stays continuous after Reset. The geometry fork is not always this side's own fork: a
+// segment that sits entirely on one side of u samples only the primary curve
+// (asymmetricWidthCurve=false), so its geometry fork is the OPPOSITE side's fork. Writing
+// both sides' fork points at the global curve's value keeps the curve continuous with the
+// global curve at every possible geometry fork (no width step -> no zipper crack when
+// spread>0 exposes the seam).
 function tipWidthResetCurve(lock, segmentIndex, splits, side) {
-  const sideForkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
+  // Same global curve choice as buildTipWidthCurve: the curve this side follows in the
+  // locked (above-zipper) region, which the sampler falls back to below the fork.
+  const globalCurve = side < 0
+    ? ((lock.asymmetricWidthCurve && lock.taperCurveSecondary) ? lock.taperCurveSecondary : lock.taperCurve)
+    : lock.taperCurve;
   const commonForkT = tipWidthCommonForkT(lock, segmentIndex, splits);
-  const points = [{ position: 0, value: 1, interpolation: "linear" }];
-  points.push({ position: sideForkT, value: 1, interpolation: "linear" });
+  const points = [];
+  const addPoint = (position, value) => {
+    const clampedPosition = THREE.MathUtils.clamp(Number(position) || 0, 0, 1);
+    if (points.some((point) => Math.abs(point.position - clampedPosition) < 1e-4)) return;
+    points.push({
+      position: clampedPosition,
+      value: THREE.MathUtils.clamp(Number(value) ?? 0.5, 0.08, 2),
+      interpolation: "linear"
+    });
+  };
+  addPoint(0, 1);
+  // Both fork boundary points at the global curve's value (continuous with the locked
+  // region); the exposed-region control positions stay at full width (value 1).
+  for (const forkSide of [-1, 1]) {
+    const forkT = tipWidthSideForkT(lock, segmentIndex, splits, forkSide);
+    addPoint(forkT, sampleTaperCurve(globalCurve, forkT));
+  }
   for (const position of tipWidthControlTs(commonForkT)) {
-    points.push({ position, value: 1, interpolation: "linear" });
+    addPoint(position, 1);
   }
   points.sort((a, b) => a.position - b.position);
   return points;
@@ -311,6 +336,14 @@ function buildTipWidthCurve(lock, segmentIndex, splits, bone, side) {
   const zeroPoint = current && current.find((point) => Math.abs(Number(point.position) || 0) < 1e-4);
   if (zeroPoint) addPoint(0, zeroPoint.value);
   addPoint(sideForkT, sampleTaperCurve(globalCurve, sideForkT));
+  // 也写入对侧 fork 点（值取全局曲线采样）：Reset 后曲线数据里两侧 fork 都保留记录点；
+  // asymmetricWidthCurve=false 时几何整段只采样 primary 曲线，其 fork 位置可能是对侧
+  // fork（segment 全落在 u 一侧）。只写本侧 fork 会在后续拖拽重建曲线时让对侧 fork
+  // 重新阶跃（zipper 开裂）。
+  addPoint(
+    tipWidthSideForkT(lock, segmentIndex, splits, -side),
+    sampleTaperCurve(globalCurve, tipWidthSideForkT(lock, segmentIndex, splits, -side))
+  );
   const controlTs = tipWidthControlTs(tipWidthCommonForkT(lock, segmentIndex, splits));
   for (const position of controlTs) {
     const edited = current && current.find((point) => Math.abs(point.position - position) < 1e-3);

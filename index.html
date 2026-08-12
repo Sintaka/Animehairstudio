@@ -978,13 +978,15 @@
               </div>
             </div>
             <label class="topology-control" title="Controls how far this segment's tip narrows relative to its own width (per-segment Split Spacing).">Segment Spread <input id="panelSegmentSpread" type="range" min="0" max="0.99" step="0.01" value="0.5" /><output id="panelSegmentSpreadValue" class="slider-value">0.50</output></label>
-            <div class="panel-zipper-count-row" title="Edits this segment's own width/depth curve (falls back to the global curve when empty).">
-              <button id="editPanelSegmentWidthCurve" type="button" title="Edit this segment's width curve" aria-label="Edit this segment's width curve">Edit Segment Width Curve</button>
-              <button id="editPanelSegmentDepthCurve" type="button" title="Edit this segment's depth curve" aria-label="Edit this segment's depth curve">Edit Segment Depth Curve</button>
-            </div>
-            <div class="panel-segment-preview-row" title="Selected segment width/depth curve preview.">
-              <svg class="taper-preview" viewBox="0 0 160 70" preserveAspectRatio="none" role="img" aria-label="Selected segment width curve preview"><path id="segmentTaperPreview"></path></svg>
-              <svg class="taper-preview" viewBox="0 0 160 70" preserveAspectRatio="none" role="img" aria-label="Selected segment depth curve preview"><path id="segmentDepthPreview"></path></svg>
+            <div id="panelSegmentCurveControls" data-segment-curve="1">
+              <div class="curve-heading-row"><div class="subsection-label">Width Curve</div><select class="shape-preset-select" data-shape-preset="taperCurve" aria-label="Selected segment width curve preset"></select></div>
+              <div class="taper-curve-control">
+                <div class="shape-preview-shell"><svg class="taper-preview" viewBox="0 0 160 70" preserveAspectRatio="none" role="img" aria-label="Selected segment width curve preview"><path id="segmentTaperPreview"></path></svg><button class="shape-edit-button edit-shape-curve" data-curve-key="taperCurve" type="button" title="Edit segment width curve" aria-label="Edit segment width curve"><span class="pencil-glyph" aria-hidden="true"></span></button></div>
+              </div>
+              <div class="curve-heading-row"><div class="subsection-label">Depth Curve</div><select class="shape-preset-select" data-shape-preset="depthCurve" aria-label="Selected segment depth curve preset"></select></div>
+              <div class="taper-curve-control">
+                <div class="shape-preview-shell"><svg class="taper-preview" viewBox="0 0 160 70" preserveAspectRatio="none" role="img" aria-label="Selected segment depth curve preview"><path id="segmentDepthPreview"></path></svg><button class="shape-edit-button edit-shape-curve" data-curve-key="depthCurve" type="button" title="Edit segment depth curve" aria-label="Edit segment depth curve"><span class="pencil-glyph" aria-hidden="true"></span></button></div>
+              </div>
             </div>
             <div class="subsection-label">Split Tip</div>
             <label class="toggle-row" for="panelSplitEnabled" title="Shows independent zipper handles for adding and positioning tip slits."><span>Split Geometry</span><input id="panelSplitEnabled" type="checkbox" checked /></label>
@@ -2082,6 +2084,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260812-17"></script>
+    <script type="module" src="./app.js?v=20260812-18"></script>
   </body>
 </html>

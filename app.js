@@ -1,12 +1,12 @@
 import { createScalpBuilderApi } from "./modules/scalp/scalp-builder.js?v=20260811-1";
 import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260811-3";
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260812-1";
-import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260812-1";
+import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260812-2";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260812-1";
 import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260812-1";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260812-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260812-1";
-import { createSegmentControlApi } from "./modules/bones/segment-control.js?v=20260812-1";
+import { createSegmentControlApi } from "./modules/bones/segment-control.js?v=20260812-2";
 import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260812-1";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260809-19";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260809-18";
@@ -16,7 +16,7 @@ import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js
 import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave } from "./modules/bones/bone-model.js?v=20260812-1";
 import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260812-1";
 import { createStrandSweepApi } from "./modules/geometry/strand-sweep.js?v=20260810-2";
-import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-14";
+import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-15";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";
 import { createPresetLibraryApi } from "./modules/io/preset-library.js?v=20260812-1";
 import { createDrawFlowApi } from "./modules/geometry/draw-flow.js?v=20260812-1";
@@ -2740,8 +2740,6 @@ const previousPanelSegmentButton = document.querySelector("#previousPanelSegment
 const nextPanelSegmentButton = document.querySelector("#nextPanelSegment");
 const panelSegmentSpread = document.querySelector("#panelSegmentSpread");
 const panelSegmentSpreadValue = document.querySelector("#panelSegmentSpreadValue");
-const editPanelSegmentWidthCurveButton = document.querySelector("#editPanelSegmentWidthCurve");
-const editPanelSegmentDepthCurveButton = document.querySelector("#editPanelSegmentDepthCurve");
 const segmentTaperPreview = document.querySelector("#segmentTaperPreview");
 const segmentDepthPreview = document.querySelector("#segmentDepthPreview");
 const groupInputs = {
@@ -7480,6 +7478,12 @@ const shapePresets = createShapePresetsApi({
   syncInputs,
   shapeTargetForSelect: taperEditor.shapeTargetForSelect,
   syncShapePresetSelects: presetLibraryApi.syncShapePresetSelects,
+  getSelectedLock,
+  segmentCurveTargetForWrite: taperEditor.segmentCurveTargetForWrite,
+  updateLockGeometry,
+  syncActiveMirror,
+  syncPanelSegmentControls: segmentApi.syncPanelSegmentControls,
+  renderTaperCurveEditor: taperEditor.renderTaperCurveEditor,
   SHAPE_PRESETS,
   strandCreationDefaults,
   braidCreationDefaults,
@@ -7577,6 +7581,7 @@ Object.assign(segmentControlDeps, {
   sel: sel.state,
   taperEditor,
   shapePresets,
+  syncShapePresetSelects: presetLibraryApi.syncShapePresetSelects,
   branchSweep,
   panelCreationDefaults,
   panelSegmentLabel,
@@ -14356,7 +14361,10 @@ document.querySelector("#resetSweepProfile").addEventListener("click", () => {
   sculptState.state.sweepProfileEdit.selectedIndex = 0;
   branchSweep.applySweepProfileEdit();
 });
-editTaperCurveButtons.forEach((button) => button.addEventListener("click", () => taperEditor.openTaperCurveEditor(button.dataset.curveKey)));
+editTaperCurveButtons.forEach((button) => button.addEventListener("click", () => {
+  if (button.closest("[data-segment-curve]")) segmentApi.openPanelSegmentCurveEditor(button.dataset.curveKey);
+  else taperEditor.openTaperCurveEditor(button.dataset.curveKey);
+}));
 document.querySelector("#closeTaperCurve").addEventListener("click", taperEditor.closeTaperCurveEditor);
 taperCurveEditor.addEventListener("cancel", () => {
   taperEditor.flushScheduledTaperCurveEdit();
@@ -15287,6 +15295,7 @@ previousPanelSegmentButton?.addEventListener("click", () => {
   const { index } = segmentApi.selectedPanelSegment(target);
   sculptState.state.panelSegmentIndex = Math.max(0, index - 1);
   segmentApi.syncPanelSegmentControls(target);
+  taperEditor.retargetOpenSegmentTaperEditor?.(target, sculptState.state.panelSegmentIndex);
 });
 nextPanelSegmentButton?.addEventListener("click", () => {
   const selected = getSelectedLock();
@@ -15295,6 +15304,7 @@ nextPanelSegmentButton?.addEventListener("click", () => {
   const { index, count } = segmentApi.selectedPanelSegment(target);
   sculptState.state.panelSegmentIndex = Math.min(count - 1, index + 1);
   segmentApi.syncPanelSegmentControls(target);
+  taperEditor.retargetOpenSegmentTaperEditor?.(target, sculptState.state.panelSegmentIndex);
 });
 if (panelSegmentSpread) {
   bindUndoCapture(panelSegmentSpread);
@@ -15320,8 +15330,6 @@ if (panelSegmentSpread) {
     }
   });
 }
-editPanelSegmentWidthCurveButton?.addEventListener("click", () => segmentApi.openPanelSegmentCurveEditor("taperCurve"));
-editPanelSegmentDepthCurveButton?.addEventListener("click", () => segmentApi.openPanelSegmentCurveEditor("depthCurve"));
 [
   [braidWidthInput, braidWidthValue],
   [braidDepthInput, braidDepthValue],
@@ -17946,6 +17954,8 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
       }
       updateCurveObjects(selectedLockNow, { visible: true });
       segmentApi.syncPanelSegmentControls(selectedLockNow);
+      // 子发尖段切换：浮动面板开着且正在编辑该 lock 时热刷新到新段。
+      taperEditor.retargetOpenSegmentTaperEditor?.(selectedLockNow, hoverSeg);
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
