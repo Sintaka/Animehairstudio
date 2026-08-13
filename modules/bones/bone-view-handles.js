@@ -310,9 +310,21 @@ function updateBoneViewHandles(lock, ctx) {
     line.geometry = new THREE.BufferGeometry().setFromPoints(points);
   });
   const segmentBoundaries = [-1, ...splits.map((split) => split.position), 1];
-  const segmentSplitBones = splitBonesFor(lock);
-  // 发尖段绿色手柄需要跟随 tip trim/curve，提前算出真实 splits（与后面 tipChains 共用同一份）。
+  // 发尖段绿色手柄需要跟随 tip trim/curve，提前算出真实 splits（与 tipChains 共用同一份）。
   const tipSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+  // 提前算出发尖子骨骼链：绿色手柄 = trim/curve 适配的 rest 尖端表面点 + 发尖子骨骼
+  // authored 位移（跟随用户修改的发尖位置）；后面的 pink tip 手柄/链线/tipWidth 继续
+  // 复用同一份 tipChains/tipForkTs，避免重复计算。
+  const tipSplitBones = splitBonesFor(lock);
+  // Cache each segment's sub-bone chain once (handles + guide lines share it).
+  // One sub-bone chain per SEGMENT (splits.length + 1); mapping over the splits
+  // themselves would drop the last (boundary) segment's chain.
+  const tipChains = tipSplits.length
+    ? Array.from({ length: tipSplits.length + 1 }, (_, segment) => deps.panelTipStrand.splitTipForSegment(lock, segment, tipSplits, tipSplitBones[segment] || null))
+    : [];
+  const tipForkTs = tipSplits.length
+    ? Array.from({ length: tipSplits.length + 1 }, (_, segment) => deps.panelTipStrand.splitForkT(lock, segment, tipSplits))
+    : [];
   lock.curveObjects.panelSegmentHandles?.forEach((handle, segment) => {
     // 有意设计（请勿改动）：只要任一子发尖被选中，所有段的绿色手柄都会显示，视口里可以
     // 同时拖任意段的手柄来调该段 spread；拖非选中段的手柄不会切换 panelTipSelection
@@ -324,30 +336,30 @@ function updateBoneViewHandles(lock, ctx) {
       && lock.panelSplitEnabled !== false;
     handle.visible = visible;
     if (!visible) return;
-    const bone = segmentSplitBones[segment] || null;
+    const bone = tipSplitBones[segment] || null;
     const span = Math.max(0.0001, segmentBoundaries[segment + 1] - segmentBoundaries[segment]);
     const spread = bone?.spread ?? 0;
     const handleU = segmentBoundaries[segment] + (spread / 0.99) * span;
-    // 跟随 tip trim/curve：tipSurfaceFrameAt 内部已应用 panelTipCurve + edge trim
-    // （tipOffsetSampleT），在适配后的尖端沿切线（y）再外推一点，避免与发尖子骨骼
-    // 手柄重合。spread→handleU 的横向映射保持不变。
+    // 绿色手柄 = trim/curve 适配的 rest 尖端表面点 + 发尖子骨骼 authored 位移（跟随
+    // 用户修改的发尖位置）：tipSurfaceFrameAt 内部已应用 panelTipCurve + edge trim
+    // （tipOffsetSampleT），在适配后的尖端沿切线（y）再外推一点避免与发尖子骨骼手柄
+    // 重合；随后叠加链最后一点（t=1 尖端）的 authored delta（points − restPoints）。
+    // spread→handleU 的横向映射保持不变。
     const surfaceFrame = deps.panelTipStrand.tipSurfaceFrameAt(lock, 1, handleU, segment, tipSplits);
     handle.position.copy(surfaceFrame.point).addScaledVector(surfaceFrame.y, TIP_SEGMENT_HANDLE_TANGENT_OFFSET);
+    const chain = tipChains[segment];
+    let delta = null;
+    if (chain && Array.isArray(chain.points) && Array.isArray(chain.restPoints)
+      && chain.points.length >= 2 && chain.restPoints.length >= 2) {
+      const last = chain.points.length - 1;
+      delta = new THREE.Vector3().subVectors(chain.points[last], chain.restPoints[last]);
+    }
+    if (delta) handle.position.add(delta);
     handle.material.opacity = deps.sculptState.panelSplitDrag?.lockId === lock.id
       && deps.sculptState.panelSplitDrag.kind === "segment"
       && deps.sculptState.panelSplitDrag.splitIndex === segment
       ? 0.9 : 0.68;
   });
-  const tipSplitBones = splitBonesFor(lock);
-  // Cache each segment's sub-bone chain once (handles + guide lines share it).
-  // One sub-bone chain per SEGMENT (splits.length + 1); mapping over the splits
-  // themselves would drop the last (boundary) segment's chain.
-  const tipChains = tipSplits.length
-    ? Array.from({ length: tipSplits.length + 1 }, (_, segment) => deps.panelTipStrand.splitTipForSegment(lock, segment, tipSplits, tipSplitBones[segment] || null))
-    : [];
-  const tipForkTs = tipSplits.length
-    ? Array.from({ length: tipSplits.length + 1 }, (_, segment) => deps.panelTipStrand.splitForkT(lock, segment, tipSplits))
-    : [];
   lock.curveObjects.panelTipHandles?.forEach((handle, handleIndex) => {
     const segment = handle.userData.panelTipIndex;
     const point = handle.userData.panelTipPoint;

@@ -464,6 +464,16 @@ splitBone.tip = {
 
 **验证**：node --check 3 文件全绿；单测与 verify-smoke 与 HEAD 基线一致（dom-contract/core-math shortcut-registry 为已知契约分叉失败；verify-smoke 8/10 因仓库无 .ahs 资产，selection/branch-bridge 两项环境性失败与基线相同）。
 
+### 8.30 发尖控件 2 项修复：W 移动 gizmo 不生效 + 绿色手柄不跟 authored（0.2.65，分支 0.2.65-bugfix）
+
+> 本轮修复上轮遗留的两个发尖控件问题（用户反馈 + 深度定位，未轻信直觉）：
+
+**1. W 移动 gizmo 拖点不生效、切选择就瞬移回去**：根因是 `beginTipSubBoneTranslate` 在 `bone-interaction.js` 中实现了但**漏在 `createBoneInteractionApi` 的 return 对象里导出** → app.js `dragging-changed` 里 `bonesApi.beginTipSubBoneTranslate(...)` 是 undefined → 抛 TypeError → `tipSubBoneTranslateDrag` 从未设置 → `applyTipSubBoneTransform` 的 translate 分支因 `!drag` 提前 return → 发尖链从未被写入 → gizmo 拖出来的点只是视觉位移、下次 updateCurveObjects 就瞬移回原位（move 笔刷走 `applySubBoneBrushSample` 不依赖该导出所以正常）。修复：return 对象补 `beginTipSubBoneTranslate,`。数据流本身（materializeSplitBones → 写 bone.tip.points → splitBonesFor 读回）用真实模块测试验证持久化成立（persisted == solved 端点）。
+
+**2. 绿色手柄只跟 trim、不跟用户修改的发尖子骨骼位置**：绿色手柄位置用 `tipSurfaceFrameAt(lock,1,handleU,segment,tipSplits).point`（纯 rest 表面点，含 panelTipCurve/edge trim），不含 `bone.tip` 的 authored delta。修复：把 `tipSplitBones/tipChains/tipForkTs` 的计算提前到绿色 forEach 之前（pink tip 手柄/链线/tipWidth 继续复用同一份，避免重复计算），绿色手柄在 rest 表面点 + 切线外推之后，再叠加链最后一点（t=1 尖端）的 authored delta（`points[last] − restPoints[last]`）。无 authored 编辑时 delta=0，行为与原来完全一致。
+
+**验证**：node --check 2 文件全绿；verify-smoke 8/10 与 HEAD 基线一致（仓库无 .ahs 资产，selection/branch-bridge 环境性失败）；真实模块数据流测试确认 tip.points 写入经 splitBonesFor 持久化。
+
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

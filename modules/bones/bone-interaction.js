@@ -854,6 +854,7 @@ function prepareCurvePointSelection(event) {
 
   return {
     beginTipSubBoneRotate,
+    beginTipSubBoneTranslate,
     applyTipSubBoneTransform,
     beginPanelSplitHandleDrag,
     updatePanelSplitHandleDrag,

@@ -28,6 +28,7 @@
 > - ② 所有段绿色手柄在任一子发尖选中时显示、拖非选中段不切换选中——有意设计，`bone-view-handles.js` 补注释规范化；
 > - ③ 绿色手柄位置改跟随 tip trim/curve（`tipSurfaceFrameAt`）+ 沿切线外推 `TIP_SEGMENT_HANDLE_TANGENT_OFFSET=0.08`，不再浮在未 trim 尖端；
 > - ④ W 移动 gizmo 可挂发尖子骨骼（gizmo 挂载扩为 move/rotate/scale），translate 用 `solvePulledStrand` 按 fork 以下暴露区整体求解（`beginTipSubBoneTranslate` / `applyTipSubBoneTransform` translate 分支），app.js `dragging-changed` 支持 translate。
+> - ⑤ 修复两个遗留问题：W 移动 gizmo 拖点不生效（`beginTipSubBoneTranslate` 漏导出，`bonesApi.beginTipSubBoneTranslate` 为 undefined → translate 分支提前 return）；绿色手柄叠加 authored delta（`points[last]−restPoints[last]`），跟随用户修改的发尖位置（详见 §8.30）。
 
 ## 最近更新（0.2.59）
 
