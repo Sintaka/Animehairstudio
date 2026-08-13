@@ -162,6 +162,16 @@
 
       <section class="viewport-panel" aria-label="3D hair editor">
         <div id="viewport"></div>
+        <div id="cameraViewCube" class="camera-view-cube" role="group" aria-label="Camera view controls">
+          <div id="cameraViewCubeModel" class="camera-view-cube-model">
+            <button class="camera-view-cube-face camera-view-cube-front" type="button" data-camera-view="front" title="Snap camera to front view" aria-label="Front view">Front</button>
+            <button class="camera-view-cube-face camera-view-cube-back" type="button" data-camera-view="back" title="Snap camera to back view" aria-label="Back view">Back</button>
+            <button class="camera-view-cube-face camera-view-cube-left" type="button" data-camera-view="left" title="Snap camera to left view" aria-label="Left view">Left</button>
+            <button class="camera-view-cube-face camera-view-cube-right" type="button" data-camera-view="right" title="Snap camera to right view" aria-label="Right view">Right</button>
+            <button class="camera-view-cube-face camera-view-cube-top" type="button" data-camera-view="top" title="Snap camera to top view" aria-label="Top view">Top</button>
+            <button class="camera-view-cube-face camera-view-cube-bottom" type="button" data-camera-view="bottom" title="Snap camera to bottom view" aria-label="Bottom view">Bottom</button>
+          </div>
+        </div>
         <div id="viewportReferenceImages" class="viewport-reference-images" aria-hidden="true"></div>
         <div id="referenceImageDropTarget" class="reference-image-drop-target" aria-hidden="true">
           <div class="reference-image-drop-shell">

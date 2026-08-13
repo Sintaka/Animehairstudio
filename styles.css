@@ -3385,6 +3385,90 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
   gap: 8px;
 }
 
+.camera-view-cube {
+  position: absolute;
+  top: 66px;
+  right: 18px;
+  z-index: 6;
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  perspective: 220px;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.camera-view-cube-model {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.camera-view-cube-face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #ffffff30;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--glass-panel-color, #19181d) 82%, #ffffff 6%);
+  box-shadow: inset 0 0 12px #ffffff08;
+  color: #d8d2dc;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.025em;
+  text-align: center;
+  text-transform: uppercase;
+  backface-visibility: hidden;
+  cursor: pointer;
+}
+
+.camera-view-cube-face:hover,
+.camera-view-cube-face:focus-visible {
+  border-color: #58f6ff;
+  background: color-mix(in srgb, var(--glass-panel-color, #19181d) 72%, #58f6ff 18%);
+  color: #7df8ff;
+  outline: none;
+}
+
+.camera-view-cube-face.active {
+  border-color: #58f6ffb8;
+  color: #58f6ff;
+}
+
+.camera-view-cube-front {
+  transform: translateZ(23px);
+}
+
+.camera-view-cube-back {
+  transform: rotateY(180deg) translateZ(23px);
+}
+
+.camera-view-cube-left {
+  transform: rotateY(-90deg) translateZ(23px);
+}
+
+.camera-view-cube-right {
+  transform: rotateY(90deg) translateZ(23px);
+}
+
+.camera-view-cube-top {
+  transform: rotateX(90deg) translateZ(23px);
+}
+
+.camera-view-cube-bottom {
+  transform: rotateX(-90deg) translateZ(23px);
+}
 .orthographic-view-button.active {
   border-color: #dca052;
   background: #332718;

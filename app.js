@@ -437,6 +437,8 @@ setupEditableSliderControls();
 
 const viewport = document.querySelector("#viewport");
 const viewportPanel = viewport.closest(".viewport-panel");
+const cameraViewCubeModel = document.querySelector("#cameraViewCubeModel");
+const cameraViewCubeFaces = [...document.querySelectorAll("[data-camera-view]")];
 const referenceImageDropTarget = document.querySelector("#referenceImageDropTarget");
 const referenceOverlayDropMarker = document.querySelector("#referenceOverlayDropMarker");
 const selectionMarquee = document.querySelector("#selectionMarquee");
@@ -17249,6 +17251,53 @@ function endViewSnap(event) {
   event?.preventDefault();
 }
 
+const CAMERA_VIEW_AXES = Object.freeze({
+  front: new THREE.Vector3(0, 0, 1),
+  back: new THREE.Vector3(0, 0, -1),
+  left: new THREE.Vector3(-1, 0, 0),
+  right: new THREE.Vector3(1, 0, 0),
+  top: new THREE.Vector3(0, 1, 0),
+  bottom: new THREE.Vector3(0, -1, 0)
+});
+
+function updateCameraViewCube() {
+  const offset = camera.position.clone().sub(controls.target);
+  if (offset.lengthSq() < 0.000001) return;
+  offset.normalize();
+  const yaw = Math.atan2(offset.x, offset.z);
+  const pitch = Math.atan2(offset.y, Math.hypot(offset.x, offset.z));
+  cameraViewCubeModel.style.transform = `rotateX(${-pitch}rad) rotateY(${-yaw}rad)`;
+
+  const activeAxisKey = cardinalAxisKey(nearestCardinalAxis(offset));
+  cameraViewCubeFaces.forEach((face) => {
+    const axis = CAMERA_VIEW_AXES[face.dataset.cameraView];
+    const active = Boolean(axis && cardinalAxisKey(axis) === activeAxisKey);
+    face.classList.toggle("active", active);
+    if (active) face.setAttribute("aria-current", "true");
+    else face.removeAttribute("aria-current");
+  });
+}
+
+function activateView(event) {
+  const face = event.currentTarget;
+  const axis = CAMERA_VIEW_AXES[face?.dataset?.cameraView];
+  if (!axis) return;
+  const distance = Math.max(0.01, camera.position.distanceTo(controls.target));
+  ui.state.shiftSnappedViewActive = true;
+  snapCameraToCardinalAxis(axis, distance);
+  updateCameraViewCube();
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+cameraViewCubeFaces.forEach((face) => {
+  face.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  face.addEventListener("click", activateView);
+});
+
 function activateStrandControlPoint(handle, event) {
   if (!componentEditModeActive()) return false;
   if (!handle?.userData?.lockId) return false;
@@ -18531,6 +18580,7 @@ function animate(timestamp = performance.now()) {
     camera.lookAt(controls.target);
   }
   controls.update();
+  updateCameraViewCube();
   sculptGeom.updateSculptBrushViabilityPlane();
   referenceHeadApi.updateReferencePlaneVisibility();
   referenceHeadApi.updateReferenceCropHandles();
