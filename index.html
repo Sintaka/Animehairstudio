@@ -1763,9 +1763,29 @@
                     <span><strong>Compact tool buttons</strong><small>Hide shortcut labels and reduce the size of viewport tool buttons.</small></span>
                     <input id="compactToolButtonsPreference" type="checkbox" />
                   </label>
+                  <label class="preference-select" for="sidePanelStylePreference">
+                    <span><strong>Panel style</strong><small>Choose how the side panels sit over the viewport.</small></span>
+                    <select id="sidePanelStylePreference">
+                      <option value="default">Default Panels</option>
+                      <option value="none">No Panels</option>
+                      <option value="glass">Glass Panels</option>
+                    </select>
+                  </label>
+                  <label class="preference-color" for="glassPanelColorPreference">
+                    <span><strong>Glass panel color</strong><small>Set the dark smokey tint used by Glass Panels.</small></span>
+                    <span class="preference-color-control">
+                      <input id="glassPanelColorPreference" type="color" value="#19181d" />
+                      <output id="glassPanelColorPreferenceValue" for="glassPanelColorPreference">#19181D</output>
+                      <button id="resetGlassPanelColor" class="slider-reset-button" type="button" title="Reset glass panel color" aria-label="Reset glass panel color">&#x21BA;</button>
+                    </span>
+                  </label>
                   <label class="preference-toggle" for="outlinerFolderColorsPreference">
                     <span><strong>Outliner folder colors</strong><small>Tint strand region folders with their region colors.</small></span>
                     <input id="outlinerFolderColorsPreference" type="checkbox" checked />
+                  </label>
+                  <label class="preference-slider" for="outlinerFolderColorOpacityPreference">
+                    <span><strong>Folder color opacity</strong><small>Adjust the strength of region colors in strand folders.</small></span>
+                    <input id="outlinerFolderColorOpacityPreference" type="range" min="0" max="100" step="1" value="100" />
                   </label>
                 </div>
               </div>
@@ -2228,6 +2248,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260813-2"></script>
+    <script type="module" src="./app.js?v=20260813-3"></script>
   </body>
 </html>

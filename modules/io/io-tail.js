@@ -311,6 +311,9 @@ function downloadPreferencesAndPresets() {
       twistCurveAllStrandsPreview: deps.hairState.twistCurveAllStrandsPreviewEnabled,
       layerColorShifts: deps.sel.layerColorShiftsEnabled,
       outlinerFolderColors: deps.sel.outlinerFolderColorsEnabled,
+      sidePanelStyle: deps.miscState.sidePanelStyle,
+      glassPanelColor: deps.miscState.glassPanelColor,
+      outlinerFolderColorOpacity: deps.miscState.outlinerFolderColorOpacity,
       sideNamingPerspective: deps.miscState.sideNamingPerspective,
       controlPointDisplaySize: deps.guideState.controlPointDisplaySize,
       viewportBackgroundColor: deps.viewportState.viewportBackgroundColor,
@@ -352,6 +355,15 @@ async function loadPreferencesAndPresets(file) {
   ));
   deps.setLayerColorShiftsEnabled(importedBooleanPreference(preferences.layerColorShifts, deps.sel.layerColorShiftsEnabled));
   deps.setOutlinerFolderColorsEnabled(importedBooleanPreference(preferences.outlinerFolderColors, deps.sel.outlinerFolderColorsEnabled));
+  if (preferences.sidePanelStyle != null) {
+    deps.setSidePanelStyle(preferences.sidePanelStyle);
+  }
+  if (preferences.glassPanelColor != null) {
+    deps.setGlassPanelColor(preferences.glassPanelColor);
+  }
+  if (preferences.outlinerFolderColorOpacity != null) {
+    deps.setOutlinerFolderColorOpacity(preferences.outlinerFolderColorOpacity);
+  }
   if (preferences.sideNamingPerspective != null) {
     deps.setSideNamingPerspective(preferences.sideNamingPerspective);
   }
@@ -403,6 +415,9 @@ async function loadPreferencesAndPresets(file) {
     twistCurveAllStrandsPreviewEnabled: deps.hairState.twistCurveAllStrandsPreviewEnabled,
     layerColorShiftsEnabled: deps.sel.layerColorShiftsEnabled,
     outlinerFolderColorsEnabled: deps.sel.outlinerFolderColorsEnabled,
+    sidePanelStyle: deps.miscState.sidePanelStyle,
+    glassPanelColor: deps.miscState.glassPanelColor,
+    outlinerFolderColorOpacity: deps.miscState.outlinerFolderColorOpacity,
     sideNamingPerspective: deps.miscState.sideNamingPerspective,
     controlPointDisplaySize: deps.guideState.controlPointDisplaySize,
     viewportBackgroundColor: deps.viewportState.viewportBackgroundColor,

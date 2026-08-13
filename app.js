@@ -280,7 +280,7 @@ import {
   normalizeClumpBrushTemplate
 } from "./modules/data/clump-brush-presets.js?v=20260803-3";
 import { createMaterialUiApi } from "./modules/material/material-ui.js?v=20260813-1";
-import { createIoTailApi } from "./modules/io/io-tail.js?v=20260813-1";
+import { createIoTailApi } from "./modules/io/io-tail.js?v=20260813-2";
 
 // Material UI api (refactor batch A6): deps filled in one batch after the renderLockList
 // definition; created early so the drawFlowDeps batch can reference materialApi.* without a
@@ -308,6 +308,11 @@ const VIEWPORT_STATISTICS_PREFERENCE_KEY = "anime-hair-studio-viewport-statistic
 const TWIST_CURVE_ALL_STRANDS_PREVIEW_PREFERENCE_KEY = "anime-hair-studio-twist-curve-all-strands-preview";
 const LAYER_COLOR_SHIFTS_PREFERENCE_KEY = "anime-hair-studio-layer-color-shifts";
 const OUTLINER_FOLDER_COLORS_PREFERENCE_KEY = "anime-hair-studio-outliner-folder-colors";
+const SIDE_PANEL_STYLE_PREFERENCE_KEY = "anime-hair-studio-side-panel-style";
+const GLASS_PANEL_COLOR_PREFERENCE_KEY = "anime-hair-studio-glass-panel-color";
+const LEGACY_DEFAULT_GLASS_PANEL_COLOR = "#0b0a0e";
+const DEFAULT_GLASS_PANEL_COLOR = "#19181d";
+const OUTLINER_FOLDER_COLOR_OPACITY_PREFERENCE_KEY = "anime-hair-studio-outliner-folder-color-opacity";
 const CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY = "anime-hair-studio-control-point-display-size";
 const VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY = "anime-hair-studio-viewport-background-color";
 const DEFAULT_VIEWPORT_BACKGROUND_COLOR = "#2b2730";
@@ -345,6 +350,23 @@ function normalizeScaleSensitivity(value) {
 function normalizeViewportBackgroundColor(value) {
   const color = String(value || "").trim().toLowerCase();
   return /^#[0-9a-f]{6}$/.test(color) ? color : DEFAULT_VIEWPORT_BACKGROUND_COLOR;
+}
+
+
+function normalizeOutlinerFolderColorOpacity(value) {
+  const opacity = Number(value);
+  return Number.isFinite(opacity) ? Math.min(100, Math.max(0, opacity)) : 100;
+}
+
+function normalizeGlassPanelColor(value) {
+  const color = String(value || "").trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(color) ? color : DEFAULT_GLASS_PANEL_COLOR;
+}
+
+function normalizeSidePanelStyle(value) {
+  if (value === "glass" || value === "none") return value;
+  if (value === "transparent") return "none";
+  return value === true || value === "true" ? "none" : "default";
 }
 
 function normalizeSideNamingPerspective(value) {
@@ -1917,6 +1939,21 @@ hairState.state.twistCurveAllStrandsPreviewEnabled = readStoredBooleanPreference
 );
 sel.state.layerColorShiftsEnabled = readStoredBooleanPreference(window, LAYER_COLOR_SHIFTS_PREFERENCE_KEY, true);
 sel.state.outlinerFolderColorsEnabled = readStoredBooleanPreference(window, OUTLINER_FOLDER_COLORS_PREFERENCE_KEY, true);
+miscState.state.sidePanelStyle = readStoredPreference(window, SIDE_PANEL_STYLE_PREFERENCE_KEY, {
+  fallback: "default",
+  normalize: normalizeSidePanelStyle
+});
+miscState.state.glassPanelColor = readStoredPreference(window, GLASS_PANEL_COLOR_PREFERENCE_KEY, {
+  fallback: DEFAULT_GLASS_PANEL_COLOR,
+  normalize: normalizeGlassPanelColor
+});
+if (miscState.state.glassPanelColor === LEGACY_DEFAULT_GLASS_PANEL_COLOR) {
+  miscState.state.glassPanelColor = DEFAULT_GLASS_PANEL_COLOR;
+}
+miscState.state.outlinerFolderColorOpacity = readStoredPreference(window, OUTLINER_FOLDER_COLOR_OPACITY_PREFERENCE_KEY, {
+  fallback: 100,
+  normalize: normalizeOutlinerFolderColorOpacity
+});
 guideState.state.controlPointDisplaySize = readStoredPreference(window, CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY, {
   fallback: 1,
   normalize: normalizeControlPointDisplaySize
@@ -2179,6 +2216,14 @@ const viewportStatisticsPreferenceInput = document.querySelector("#viewportStati
 const twistCurvePreviewPreferenceButtons = [...document.querySelectorAll("[data-twist-curve-preview]")];
 const layerColorShiftsPreferenceInput = document.querySelector("#layerColorShiftsPreference");
 const outlinerFolderColorsPreferenceInput = document.querySelector("#outlinerFolderColorsPreference");
+const sidePanelStylePreferenceInput = document.querySelector("#sidePanelStylePreference");
+const glassPanelColorPreferenceInput = document.querySelector("#glassPanelColorPreference");
+const glassPanelColorPreferenceValue = document.querySelector("#glassPanelColorPreferenceValue");
+const resetGlassPanelColorButton = document.querySelector("#resetGlassPanelColor");
+const outlinerFolderColorOpacityPreferenceInput = document.querySelector("#outlinerFolderColorOpacityPreference");
+const outlinerFolderColorOpacityPreferenceNumberInput = outlinerFolderColorOpacityPreferenceInput
+  .closest(".slider-input-row")
+  ?.querySelector('input[type="number"]');
 const sideNamingPerspectivePreferenceInput = document.querySelector("#sideNamingPerspectivePreference");
 const controlPointDisplaySizePreferenceInput = document.querySelector("#controlPointDisplaySizePreference");
 const controlPointDisplaySizePreferenceNumberInput = controlPointDisplaySizePreferenceInput
@@ -9939,6 +9984,7 @@ Object.assign(ioDeps, {
   setNavigationTipsEnabled, setNavigationStyle, setCameraSmoothingEnabled, setCameraSmoothingStrength,
   setToolTipsEnabled, setCompactToolButtonsEnabled, setViewportStatisticsEnabled,
   setTwistCurveAllStrandsPreviewEnabled, setLayerColorShiftsEnabled, setOutlinerFolderColorsEnabled,
+  setSidePanelStyle, setGlassPanelColor, setOutlinerFolderColorOpacity,
   setSideNamingPerspective, setControlPointDisplaySize, setViewportBackgroundColor, setDefaultHairShader,
   setAutosaveEnabled, setAutosaveInterval, recovery: recovery.state,
   clearAcknowledgedRecovery,
@@ -13566,11 +13612,49 @@ function setLayerColorShiftsEnabled(enabled, { persist = true } = {}) {
 function setOutlinerFolderColorsEnabled(enabled, { persist = true } = {}) {
   sel.state.outlinerFolderColorsEnabled = Boolean(enabled);
   outlinerFolderColorsPreferenceInput.checked = sel.state.outlinerFolderColorsEnabled;
+  outlinerFolderColorOpacityPreferenceInput.disabled = !sel.state.outlinerFolderColorsEnabled;
   document.body.classList.toggle("outliner-folder-colors-disabled", !sel.state.outlinerFolderColorsEnabled);
   if (persist) {
     saveBooleanPreference(OUTLINER_FOLDER_COLORS_PREFERENCE_KEY, sel.state.outlinerFolderColorsEnabled);
   }
 }
+
+function setSidePanelStyle(value, { persist = true } = {}) {
+  miscState.state.sidePanelStyle = normalizeSidePanelStyle(value);
+  sidePanelStylePreferenceInput.value = miscState.state.sidePanelStyle;
+  document.body.classList.toggle("glass-side-panels", miscState.state.sidePanelStyle === "glass");
+  document.body.classList.toggle("no-panels", miscState.state.sidePanelStyle === "none");
+  if (persist) {
+    writeStoredPreference(window, SIDE_PANEL_STYLE_PREFERENCE_KEY, miscState.state.sidePanelStyle);
+  }
+}
+
+function setGlassPanelColor(value, { persist = true } = {}) {
+  miscState.state.glassPanelColor = normalizeGlassPanelColor(value);
+  glassPanelColorPreferenceInput.value = miscState.state.glassPanelColor;
+  glassPanelColorPreferenceValue.textContent = miscState.state.glassPanelColor.toUpperCase();
+  document.documentElement.style.setProperty("--glass-panel-color", miscState.state.glassPanelColor);
+  if (persist) {
+    writeStoredPreference(window, GLASS_PANEL_COLOR_PREFERENCE_KEY, miscState.state.glassPanelColor);
+  }
+}
+
+function setOutlinerFolderColorOpacity(value, { persist = true } = {}) {
+  miscState.state.outlinerFolderColorOpacity = normalizeOutlinerFolderColorOpacity(value);
+  outlinerFolderColorOpacityPreferenceInput.value = String(miscState.state.outlinerFolderColorOpacity);
+  if (outlinerFolderColorOpacityPreferenceNumberInput) {
+    outlinerFolderColorOpacityPreferenceNumberInput.value = String(miscState.state.outlinerFolderColorOpacity);
+  }
+  const factor = miscState.state.outlinerFolderColorOpacity / 100;
+  document.documentElement.style.setProperty("--outliner-folder-border-mix", `${58 * factor}%`);
+  document.documentElement.style.setProperty("--outliner-folder-background-mix", `${11 * factor}%`);
+  document.documentElement.style.setProperty("--outliner-folder-group-line-mix", `${24 * factor}%`);
+  document.documentElement.style.setProperty("--outliner-folder-layer-line-mix", `${18 * factor}%`);
+  if (persist) {
+    writeStoredPreference(window, OUTLINER_FOLDER_COLOR_OPACITY_PREFERENCE_KEY, miscState.state.outlinerFolderColorOpacity);
+  }
+}
+
 
 function sideNamingDisplayId(id) {
   if (miscState.state.sideNamingPerspective !== "character") return id;
@@ -13725,6 +13809,9 @@ function openPreferencesDialog() {
     twistCurveAllStrandsPreviewEnabled: hairState.state.twistCurveAllStrandsPreviewEnabled,
     layerColorShiftsEnabled: sel.state.layerColorShiftsEnabled,
     outlinerFolderColorsEnabled: sel.state.outlinerFolderColorsEnabled,
+    sidePanelStyle: miscState.state.sidePanelStyle,
+    glassPanelColor: miscState.state.glassPanelColor,
+    outlinerFolderColorOpacity: miscState.state.outlinerFolderColorOpacity,
     sideNamingPerspective: miscState.state.sideNamingPerspective,
     controlPointDisplaySize: guideState.state.controlPointDisplaySize,
     viewportBackgroundColor: viewportState.state.viewportBackgroundColor,
@@ -13736,6 +13823,9 @@ function openPreferencesDialog() {
   applyCameraSmoothingPreference();
   setControlPointDisplaySize(guideState.state.controlPointDisplaySize, { persist: false });
   setViewportBackgroundColor(viewportState.state.viewportBackgroundColor, { persist: false });
+  setSidePanelStyle(miscState.state.sidePanelStyle, { persist: false });
+  setGlassPanelColor(miscState.state.glassPanelColor, { persist: false });
+  setOutlinerFolderColorOpacity(miscState.state.outlinerFolderColorOpacity, { persist: false });
   setAutosaveInterval(recovery.state.autosaveIntervalSeconds, { persist: false });
   setAutosaveEnabled(recovery.state.autosaveEnabled, { persist: false });
   preferencesBackupStatus.textContent = "";
@@ -13759,6 +13849,9 @@ function savePreferencesDialog() {
   );
   saveBooleanPreference(LAYER_COLOR_SHIFTS_PREFERENCE_KEY, sel.state.layerColorShiftsEnabled);
   saveBooleanPreference(OUTLINER_FOLDER_COLORS_PREFERENCE_KEY, sel.state.outlinerFolderColorsEnabled);
+  writeStoredPreference(window, SIDE_PANEL_STYLE_PREFERENCE_KEY, miscState.state.sidePanelStyle);
+  writeStoredPreference(window, GLASS_PANEL_COLOR_PREFERENCE_KEY, miscState.state.glassPanelColor);
+  writeStoredPreference(window, OUTLINER_FOLDER_COLOR_OPACITY_PREFERENCE_KEY, miscState.state.outlinerFolderColorOpacity);
   writeStoredPreference(window, SIDE_NAMING_PERSPECTIVE_PREFERENCE_KEY, miscState.state.sideNamingPerspective);
   writeStoredPreference(window, CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY, guideState.state.controlPointDisplaySize);
   writeStoredPreference(window, VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY, viewportState.state.viewportBackgroundColor);
@@ -13789,6 +13882,9 @@ function cancelPreferencesDialog() {
     );
     setLayerColorShiftsEnabled(ui.state.preferencesOpenSnapshot.layerColorShiftsEnabled, { persist: false });
     setOutlinerFolderColorsEnabled(ui.state.preferencesOpenSnapshot.outlinerFolderColorsEnabled, { persist: false });
+    setSidePanelStyle(ui.state.preferencesOpenSnapshot.sidePanelStyle, { persist: false });
+    setGlassPanelColor(ui.state.preferencesOpenSnapshot.glassPanelColor, { persist: false });
+    setOutlinerFolderColorOpacity(ui.state.preferencesOpenSnapshot.outlinerFolderColorOpacity, { persist: false });
     setSideNamingPerspective(ui.state.preferencesOpenSnapshot.sideNamingPerspective, { persist: false });
     setControlPointDisplaySize(ui.state.preferencesOpenSnapshot.controlPointDisplaySize, { persist: false });
     setViewportBackgroundColor(ui.state.preferencesOpenSnapshot.viewportBackgroundColor, { persist: false });
@@ -16357,6 +16453,9 @@ setViewportStatisticsEnabled(viewportState.state.viewportStatisticsEnabled, { pe
 setTwistCurveAllStrandsPreviewEnabled(hairState.state.twistCurveAllStrandsPreviewEnabled, { persist: false });
 setLayerColorShiftsEnabled(sel.state.layerColorShiftsEnabled, { persist: false });
 setOutlinerFolderColorsEnabled(sel.state.outlinerFolderColorsEnabled, { persist: false });
+setSidePanelStyle(miscState.state.sidePanelStyle, { persist: false });
+setGlassPanelColor(miscState.state.glassPanelColor, { persist: false });
+setOutlinerFolderColorOpacity(miscState.state.outlinerFolderColorOpacity, { persist: false });
 setControlPointDisplaySize(guideState.state.controlPointDisplaySize, { persist: false });
 setViewportBackgroundColor(viewportState.state.viewportBackgroundColor, { persist: false });
 setDefaultHairShader(hairState.state.defaultHairShader, { persist: false });
@@ -16612,6 +16711,18 @@ layerColorShiftsPreferenceInput.addEventListener("change", () => {
 });
 outlinerFolderColorsPreferenceInput.addEventListener("change", () => {
   setOutlinerFolderColorsEnabled(outlinerFolderColorsPreferenceInput.checked, { persist: false });
+});
+sidePanelStylePreferenceInput.addEventListener("change", () => {
+  setSidePanelStyle(sidePanelStylePreferenceInput.value, { persist: false });
+});
+glassPanelColorPreferenceInput.addEventListener("input", () => {
+  setGlassPanelColor(glassPanelColorPreferenceInput.value, { persist: false });
+});
+resetGlassPanelColorButton.addEventListener("click", () => {
+  setGlassPanelColor(DEFAULT_GLASS_PANEL_COLOR, { persist: false });
+});
+outlinerFolderColorOpacityPreferenceInput.addEventListener("input", () => {
+  setOutlinerFolderColorOpacity(outlinerFolderColorOpacityPreferenceInput.value, { persist: false });
 });
 sideNamingPerspectivePreferenceInput.addEventListener("change", () => {
   setSideNamingPerspective(sideNamingPerspectivePreferenceInput.value, { persist: false });
