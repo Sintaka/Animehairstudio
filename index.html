@@ -172,6 +172,33 @@
             <button class="camera-view-cube-face camera-view-cube-bottom" type="button" data-camera-view="bottom" title="Snap camera to bottom view" aria-label="Bottom view">Bottom</button>
           </div>
         </div>
+        <section id="strandObjectTransformPanel" class="strand-object-transform-panel hidden" aria-label="Selected strand transform">
+          <h2>Transform</h2>
+          <div class="strand-object-transform-section">
+            <div class="strand-object-transform-heading"><h3>Translation</h3></div>
+            <div class="strand-object-transform-axes">
+              <label><span>X</span><input type="number" step="0.01" value="0" data-object-transform="location" data-axis="x" aria-label="Translation X" /><button type="button" data-reset-object-transform="location" data-axis="x" title="Reset Translation X" aria-label="Reset Translation X">⟲</button></label>
+              <label><span>Y</span><input type="number" step="0.01" value="0" data-object-transform="location" data-axis="y" aria-label="Translation Y" /><button type="button" data-reset-object-transform="location" data-axis="y" title="Reset Translation Y" aria-label="Reset Translation Y">⟲</button></label>
+              <label><span>Z</span><input type="number" step="0.01" value="0" data-object-transform="location" data-axis="z" aria-label="Translation Z" /><button type="button" data-reset-object-transform="location" data-axis="z" title="Reset Translation Z" aria-label="Reset Translation Z">⟲</button></label>
+            </div>
+          </div>
+          <div class="strand-object-transform-section">
+            <div class="strand-object-transform-heading"><h3>Rotation</h3></div>
+            <div class="strand-object-transform-axes">
+              <label><span>X</span><input type="number" step="1" value="0" data-object-transform="rotation" data-axis="x" aria-label="Rotation X in degrees" /><button type="button" data-reset-object-transform="rotation" data-axis="x" title="Reset Rotation X" aria-label="Reset Rotation X">⟲</button></label>
+              <label><span>Y</span><input type="number" step="1" value="0" data-object-transform="rotation" data-axis="y" aria-label="Rotation Y in degrees" /><button type="button" data-reset-object-transform="rotation" data-axis="y" title="Reset Rotation Y" aria-label="Reset Rotation Y">⟲</button></label>
+              <label><span>Z</span><input type="number" step="1" value="0" data-object-transform="rotation" data-axis="z" aria-label="Rotation Z in degrees" /><button type="button" data-reset-object-transform="rotation" data-axis="z" title="Reset Rotation Z" aria-label="Reset Rotation Z">⟲</button></label>
+            </div>
+          </div>
+          <div class="strand-object-transform-section" title="Scale is an offset from the authored size. Zero leaves the size unchanged.">
+            <div class="strand-object-transform-heading"><h3>Scale</h3></div>
+            <div class="strand-object-transform-axes">
+              <label><span>X</span><input type="number" step="0.01" min="-0.95" value="0" data-object-transform="scale" data-axis="x" aria-label="Scale X offset" /><button type="button" data-reset-object-transform="scale" data-axis="x" title="Reset Scale X" aria-label="Reset Scale X">⟲</button></label>
+              <label><span>Y</span><input type="number" step="0.01" min="-0.95" value="0" data-object-transform="scale" data-axis="y" aria-label="Scale Y offset" /><button type="button" data-reset-object-transform="scale" data-axis="y" title="Reset Scale Y" aria-label="Reset Scale Y">⟲</button></label>
+              <label><span>Z</span><input type="number" step="0.01" min="-0.95" value="0" data-object-transform="scale" data-axis="z" aria-label="Scale Z offset" /><button type="button" data-reset-object-transform="scale" data-axis="z" title="Reset Scale Z" aria-label="Reset Scale Z">⟲</button></label>
+            </div>
+          </div>
+        </section>
         <div id="viewportReferenceImages" class="viewport-reference-images" aria-hidden="true"></div>
         <div id="referenceImageDropTarget" class="reference-image-drop-target" aria-hidden="true">
           <div class="reference-image-drop-shell">

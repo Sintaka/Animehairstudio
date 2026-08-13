@@ -452,6 +452,9 @@ const viewport = document.querySelector("#viewport");
 const viewportPanel = viewport.closest(".viewport-panel");
 const cameraViewCubeModel = document.querySelector("#cameraViewCubeModel");
 const cameraViewCubeFaces = [...document.querySelectorAll("[data-camera-view]")];
+const strandObjectTransformPanel = document.querySelector("#strandObjectTransformPanel");
+const strandObjectTransformInputs = [...document.querySelectorAll("[data-object-transform][data-axis]")];
+const strandObjectTransformResetButtons = [...document.querySelectorAll("[data-reset-object-transform]")];
 const referenceImageDropTarget = document.querySelector("#referenceImageDropTarget");
 const referenceOverlayDropMarker = document.querySelector("#referenceOverlayDropMarker");
 const selectionMarquee = document.querySelector("#selectionMarquee");
@@ -909,6 +912,7 @@ transformControls.addEventListener("objectChange", () => {
   applyUniformTransformScale(handle);
   if (handle.userData.strandObjectTransform) {
     updateStrandObjectTransform(handle);
+    syncStrandObjectTransformPanel({ preview: true });
     return;
   }
   if (handle.userData.guideObjectTransform) {
@@ -3936,6 +3940,7 @@ function refreshSelectionModeVisuals() {
   updateViewPlaneGrid();
   guideApi.updateViewportToolVisibility();
   placementApi.updatePlacementStatus();
+  syncStrandObjectTransformPanel();
 }
 
 function setViewportSelectionMode(mode) {
@@ -5295,6 +5300,171 @@ function strandObjectRoot(lock) {
   return lock?.points?.[strandObjectRootIndex(lock)] || lock?.points?.[0] || null;
 }
 
+const EMPTY_STRAND_OBJECT_TRANSFORM = Object.freeze({
+  location: Object.freeze({ x: 0, y: 0, z: 0 }),
+  rotation: Object.freeze({ x: 0, y: 0, z: 0 }),
+  scale: Object.freeze({ x: 0, y: 0, z: 0 })
+});
+
+function normalizeStrandObjectTransform(value) {
+  const normalized = {};
+  ["location", "rotation", "scale"].forEach((group) => {
+    normalized[group] = {};
+    ["x", "y", "z"].forEach((axis) => {
+      const number = Number(value?.[group]?.[axis]);
+      normalized[group][axis] = Number.isFinite(number) ? number : EMPTY_STRAND_OBJECT_TRANSFORM[group][axis];
+    });
+  });
+  ["x", "y", "z"].forEach((axis) => {
+    normalized.scale[axis] = Math.max(-0.95, normalized.scale[axis]);
+  });
+  return normalized;
+}
+
+function strandObjectTransformQuaternionFromValues(values) {
+  const rotation = normalizeStrandObjectTransform(values).rotation;
+  return new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    THREE.MathUtils.degToRad(rotation.x),
+    THREE.MathUtils.degToRad(rotation.y),
+    THREE.MathUtils.degToRad(rotation.z),
+    "XYZ"
+  ));
+}
+
+function strandObjectTransformValuesAfterHandle(baseValue, edit, handle) {
+  const base = normalizeStrandObjectTransform(baseValue);
+  const translation = handle.position.clone().sub(edit.position);
+  const deltaRotation = handle.quaternion.clone().multiply(edit.quaternion.clone().invert());
+  const nextQuaternion = deltaRotation.multiply(strandObjectTransformQuaternionFromValues(base));
+  const nextEuler = new THREE.Euler().setFromQuaternion(nextQuaternion, "XYZ");
+  const next = {
+    location: {
+      x: base.location.x + translation.x,
+      y: base.location.y + translation.y,
+      z: base.location.z + translation.z
+    },
+    rotation: {
+      x: THREE.MathUtils.radToDeg(nextEuler.x),
+      y: THREE.MathUtils.radToDeg(nextEuler.y),
+      z: THREE.MathUtils.radToDeg(nextEuler.z)
+    },
+    scale: {}
+  };
+  ["x", "y", "z"].forEach((axis) => {
+    const ratio = handle.scale[axis] / Math.max(0.0001, edit.scale[axis]);
+    next.scale[axis] = Math.max(-0.95, (1 + base.scale[axis]) * ratio - 1);
+  });
+  return normalizeStrandObjectTransform(next);
+}
+
+function mirroredStrandObjectTransform(value) {
+  const source = normalizeStrandObjectTransform(value);
+  return {
+    location: { x: -source.location.x, y: source.location.y, z: source.location.z },
+    rotation: { x: source.rotation.x, y: -source.rotation.y, z: -source.rotation.z },
+    scale: { ...source.scale }
+  };
+}
+
+function objectTransformPanelLock() {
+  if (sculptState.state.viewportEditMode !== "strand" || componentEditModeActive()) return null;
+  const selected = selectedLocksInOrder();
+  if (selected.length !== 1 || selected[0].locked) return null;
+  return selected[0];
+}
+
+function formatStrandObjectTransformValue(value) {
+  const rounded = Math.abs(Number(value)) < 0.00005 ? 0 : Number(Number(value).toFixed(4));
+  return String(rounded);
+}
+
+function syncStrandObjectTransformPanel({ preview = false } = {}) {
+  const lock = objectTransformPanelLock();
+  strandObjectTransformPanel?.classList.toggle("hidden", !lock);
+  if (!lock) return;
+  let values = normalizeStrandObjectTransform(lock.objectTransform);
+  const editTarget = preview
+    ? hairState.state.activeStrandObjectTransform?.targets?.find((target) => target.lockId === lock.id)
+    : null;
+  if (editTarget) {
+    values = strandObjectTransformValuesAfterHandle(
+      editTarget.objectTransform,
+      hairState.state.activeStrandObjectTransform,
+      strandObjectTransformHandle
+    );
+  }
+  strandObjectTransformInputs.forEach((input) => {
+    const group = input.dataset.objectTransform;
+    const axis = input.dataset.axis;
+    input.disabled = group === "location" && Boolean(lock.branchParentId);
+    if (document.activeElement !== input) input.value = formatStrandObjectTransformValue(values[group][axis]);
+  });
+  strandObjectTransformResetButtons.forEach((button) => {
+    button.disabled = button.dataset.resetObjectTransform === "location" && Boolean(lock.branchParentId);
+  });
+}
+
+function applyStrandObjectTransformPanelValues() {
+  const lock = objectTransformPanelLock();
+  const root = strandObjectRoot(lock);
+  if (!lock || !root) return;
+  const previous = normalizeStrandObjectTransform(lock.objectTransform);
+  const next = normalizeStrandObjectTransform(previous);
+  strandObjectTransformInputs.forEach((input) => {
+    const group = input.dataset.objectTransform;
+    const axis = input.dataset.axis;
+    if (group === "location" && lock.branchParentId) return;
+    const value = Number(input.value);
+    if (Number.isFinite(value)) next[group][axis] = value;
+  });
+  if (JSON.stringify(previous) === JSON.stringify(next)) {
+    syncStrandObjectTransformPanel();
+    return;
+  }
+
+  pushUndoState();
+  strandObjectTransformHandle.position.copy(root);
+  strandObjectTransformHandle.quaternion.copy(
+    sculptState.state.objectSpaceEditing ? strandObjectTransformQuaternion(lock) : new THREE.Quaternion()
+  );
+  strandObjectTransformHandle.scale.set(1, 1, 1);
+  strandObjectTransformHandle.userData.lockId = lock.id;
+  beginStrandObjectTransform(strandObjectTransformHandle);
+  const edit = hairState.state.activeStrandObjectTransform;
+  if (!edit) return;
+  edit.authoredTransformOverrides = new Map([[lock.id, next]]);
+  strandObjectTransformHandle.position.add(new THREE.Vector3(
+    next.location.x - previous.location.x,
+    next.location.y - previous.location.y,
+    next.location.z - previous.location.z
+  ));
+  const rotationDelta = strandObjectTransformQuaternionFromValues(next)
+    .multiply(strandObjectTransformQuaternionFromValues(previous).invert());
+  strandObjectTransformHandle.quaternion.premultiply(rotationDelta);
+  ["x", "y", "z"].forEach((axis) => {
+    strandObjectTransformHandle.scale[axis] *= (1 + next.scale[axis]) / Math.max(0.05, 1 + previous.scale[axis]);
+  });
+  finishStrandObjectTransform();
+  syncStrandObjectTransformPanel();
+}
+
+strandObjectTransformInputs.forEach((input) => {
+  input.addEventListener("change", applyStrandObjectTransformPanelValues);
+});
+
+strandObjectTransformResetButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const group = button.dataset.resetObjectTransform;
+    const axis = button.dataset.axis;
+    const input = strandObjectTransformInputs.find((candidate) => (
+      candidate.dataset.objectTransform === group && candidate.dataset.axis === axis
+    ));
+    if (!input) return;
+    input.value = "0";
+    applyStrandObjectTransformPanelValues();
+  });
+});
+
 function strandObjectTransformQuaternion(lock) {
   const index = strandObjectRootIndex(lock);
   return curveFrameAtPoint(lock, index)?.quaternion?.clone() || new THREE.Quaternion();
@@ -5486,7 +5656,8 @@ function strandObjectTransformSnapshot(lock, sharedPivot = null) {
     clumpGuideRestPoints: cloneOptionalVectors(lock.clumpGuideRestPoints),
     rootSurfacePoint: lock.rootSurfacePoint?.clone() || null,
     rootSurfaceNormal: lock.rootSurfaceNormal?.clone() || null,
-    placementFrame: clonePlacementFrame(lock.placementFrame)
+    placementFrame: clonePlacementFrame(lock.placementFrame),
+    objectTransform: normalizeStrandObjectTransform(lock.objectTransform)
   };
 }
 
@@ -5720,6 +5891,8 @@ function commitStrandObjectTransform(edit, handle) {
   edit.targets.forEach((target) => {
     const lock = target.lock;
     if (!lock) return;
+    lock.objectTransform = edit.authoredTransformOverrides?.get(lock.id)
+      || strandObjectTransformValuesAfterHandle(target.objectTransform, edit, handle);
     const pointTransform = lock.branchParentId ? transformPointAroundFixedPivot : transformPoint;
     const mapPoints = (points) => points?.map((point) => pointTransform(point, target.pivot)) || null;
     lock.points = mapPoints(target.points) || lock.points;
@@ -5767,6 +5940,7 @@ function finishStrandObjectTransform() {
     if (lock) updateCurveObjects(lock, { visible: false });
   });
   attachStrandObjectTransform();
+  syncStrandObjectTransformPanel();
 }
 
 function surfaceObjectAnchorPose(lock) {
@@ -8256,6 +8430,7 @@ function addLock(presetName, overrides = {}, options = {}) {
     materialId: base.materialId || DEFAULT_HAIR_MATERIAL_ID,
     outlinerVisible: base.outlinerVisible !== false,
     locked: Boolean(base.locked),
+    objectTransform: normalizeStrandObjectTransform(base.objectTransform),
     proceduralParentHidden: Boolean(base.proceduralParentHidden),
     proceduralDrawGuide: Boolean(base.proceduralDrawGuide),
     proceduralAccessory: Boolean(base.proceduralAccessory),
@@ -8707,6 +8882,7 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
     .map((split) => ({ ...split, position: -split.position }))
     .sort((a, b) => a.position - b.position);
   partner.panelSplitGap = Number(lock.panelSplitGap ?? panelCreationDefaults.panelSplitGap);
+  partner.objectTransform = mirroredStrandObjectTransform(lock.objectTransform);
   partner.splitBones = mirrorSplitBones(lock.splitBones);
   partner.bones = mirrorBones(lock.bones);
   partner.curlEnabled = Boolean(lock.curlEnabled);
@@ -8863,6 +9039,7 @@ function snapshotState() {
       name: lock.name,
       outlinerVisible: lock.outlinerVisible !== false,
       locked: Boolean(lock.locked),
+      objectTransform: normalizeStrandObjectTransform(lock.objectTransform),
       liveSurfaceGuide: Boolean(lock.liveSurfaceGuide),
       materialId: lock.materialId || DEFAULT_HAIR_MATERIAL_ID,
       x: lock.x,
@@ -9435,6 +9612,7 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     ...snapshot,
     materialId: snapshot.materialId || DEFAULT_HAIR_MATERIAL_ID,
     locked: Boolean(snapshot.locked),
+    objectTransform: normalizeStrandObjectTransform(snapshot.objectTransform),
     liveSurfaceGuide: Boolean(snapshot.liveSurfaceGuide),
     points: (snapshot.points || []).map(dataToVector),
     polyFaces: normalizePolyFaces(snapshot.points || [], snapshot.polyFaces),
@@ -11721,6 +11899,7 @@ function refreshStrandSelectionConsumers({
   }
   if (syncActiveInputs && lock) syncInputs(lock);
   if (!componentEditModeActive() && sculptState.state.viewportEditMode === "strand") attachStrandObjectTransform();
+  syncStrandObjectTransformPanel();
   return lock;
 }
 
