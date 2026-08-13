@@ -13,8 +13,8 @@
 
 ## 1. 仓库结构速览
 
-- `app.js`（≈18.4k 行，编排层）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 等业务逻辑已按子系统迁入 modules（见 `APPJS_SPLIT_GUIDE.md` §2）。
-- `modules/*.js` —— 按域分目录（core/data/geometry/io/edit/sculpt/material/branch/scalp/bones/scene，共 85 个文件）；**全局状态已收敛到 15 个 store，全局 let 只剩 camera**（见 `devlog/STATE_MANAGEMENT.md`），不要再新增 app.js 全局 let。
+- `app.js`（≈20k 行，编排层）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 等业务逻辑已按子系统迁入 modules（见 `APPJS_SPLIT_GUIDE.md` §2）。
+- `modules/*.js` —— 按域分目录（core/data/geometry/io/edit/sculpt/material/branch/scalp/bones/scene，共 94 个文件）；**全局状态已收敛到 17 个 store，全局 let 只剩 camera**（main 0.1.5 移植新增 multiCameraState/recovery，见 `devlog/STATE_MANAGEMENT.md`），不要再新增 app.js 全局 let。
 - `index.html` / `styles.css` —— UI。
 - `server.js` —— main 带来的静态文件服务；`/api/save-project` 已是**死代码**（三个 Local 选项已移除，勿再调用）。
 - `devlog/` —— 全部开发记录（本页所在）。
@@ -63,7 +63,7 @@
 | split 父退回直接生成 | 父无拓扑衔接能力时子发片从根部扫掠 | 避免无效挖洞 | 0.2.49 |
 | main 合并策略 | 桥接区**保留本地** + 按需吸收 main 预设；`createHairGeometry` 按 branchRootRegion 分流；材质双面条件合并 | 两套代码同插入点但无功能重叠（约 1000 行大冲突=误读） | main-sync-conflicts.md |
 | Local 选项移除 | 三个 Local dev 选项删除，统一快速保存/导出 | 功能等价且本地方案更优 | main-sync-conflicts.md |
-| 版本号 | `0.1.4-Sintaka.0.2.<dailybuild>`；主版本与上游对齐 | 避免与上游版本误判 | development-standards.md |
+| 版本号 | `0.1.5-Sintaka.0.2.<dailybuild>`；主版本与上游对齐 | 避免与上游版本误判 | development-standards.md |
 
 ## 4. 工作方式（省 token 且合规）
 

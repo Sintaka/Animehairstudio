@@ -1,564 +1,637 @@
 # 函数索引 / FUNCTION INDEX
 
-> 机器生成（2026-08-12），由 `node scripts/gen-function-index.js` 产出。共 **1819** 个函数。
+> 机器生成（2026-08-13），由 `node scripts/gen-function-index.js` 产出。共 **2003** 个函数。
 > 用途：agent 先 `Select-String`/`grep` 函数名定位，再跳读对应文件/行号；`calls` 列 = 整个文件内 `name(` 出现次数（hub 指标，越大越核心）。
 
-## app.js（18412 行）
+## app.js（19971 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
-| `saveLanguage` | 284 | function |  | 2 |
-| `saveBooleanPreference` | 312 | function |  | 19 |
-| `normalizeControlPointDisplaySize` | 316 | function |  | 2 |
-| `normalizeCameraSmoothingStrength` | 321 | function |  | 2 |
-| `normalizeScaleSensitivity` | 326 | function |  | 2 |
-| `normalizeViewportBackgroundColor` | 331 | function |  | 2 |
-| `normalizeSideNamingPerspective` | 336 | function |  | 2 |
-| `normalizeNavigationStyle` | 340 | function |  | 2 |
-| `setupEditableSliderControls` | 355 | function |  | 2 |
-| `syncNumberFromRange` | 406 | arrow |  | 0 |
-| `applyNumberValue` | 413 | arrow |  | 0 |
-| `copyCameraPose` | 519 | function |  | 3 |
-| `updateCameraProjectionForViewport` | 525 | function |  | 4 |
-| `syncOrthographicFramingFromDistance` | 538 | function |  | 2 |
-| `setOrthographicView` | 544 | function |  | 2 |
-| `addNegativeTransformGizmoRods` | 584 | function |  | 2 |
-| `addFullRotateGizmoAxisCircles` | 613 | function |  | 2 |
-| `removeRotateFreeAxisRing` | 639 | function |  | 2 |
-| `deflateTransformGizmoPickers` | 651 | function |  | 2 |
-| `nextStrandName` | 1046 | function |  | 2 |
-| `isPanelGeometry` | 1272 | function |  | 29 |
-| `normalizePanelSplits` | 1276 | function |  | 2 |
-| `clonePanelSplits` | 1288 | function |  | 11 |
-| `snapPanelSplitHeight` | 1292 | function |  | 3 |
-| `createQuadSphereGeometry` | 1327 | function |  | 2 |
-| `vertexIndex` | 1341 | function |  | 5 |
-| `addEdge` | 1359 | function |  | 5 |
-| `setDrawStrandBrushCursorScale` | 1588 | function |  | 4 |
-| `ensureDrawClumpPreviewCount` | 1768 | function |  | 1 |
-| `currentStrandSelectionState` | 1830 | function |  | 4 |
-| `applyStrandSelectionState` | 1834 | function |  | 5 |
-| `clearStrandSelectionState` | 1839 | function |  | 5 |
-| `normalizeHairLayer` | 3039 | function |  | 20 |
-| `layerOffsetForLock` | 3043 | function |  | 3 |
-| `layerRootOffsetFactor` | 3048 | function |  | 7 |
-| `layerOffsetWeight` | 3052 | function |  | 4 |
-| `applyLayerOffsetDeltaToPoints` | 3058 | function |  | 5 |
-| `pointsWithLayerOffset` | 3067 | function |  | 1 |
-| `layerDirectionForLock` | 3075 | function |  | 2 |
-| `applyLayerOffset` | 3086 | function |  | 5 |
-| `setLockHairLayer` | 3110 | function |  | 2 |
-| `setGroupLayerOffset` | 3125 | function |  | 2 |
-| `quadraticWeights` | 3153 | function |  | 1 |
-| `templatePlaneIntersectionSegments` | 3354 | function |  | 1 |
-| `upperContourCurve` | 3371 | function |  | 2 |
-| `hermitePoint` | 3406 | function |  | 2 |
-| `curveNetworkSection` | 3417 | function |  | 1 |
-| `pointAlongSection` | 3446 | function |  | 1 |
-| `longestStitchedContour` | 3452 | function |  | 2 |
-| `nodeForPoint` | 3460 | arrow |  | 2 |
-| `constructionCurveFromSegments` | 3517 | function |  | 1 |
-| `exitSetupEditors` | 3537 | function |  | 6 |
-| `syncAppMenuVisibility` | 3547 | function |  | 3 |
-| `closeAppMenus` | 3553 | function |  | 5 |
-| `setAppMenuOpen` | 3564 | function |  | 2 |
-| `setTurntableActive` | 3571 | function |  | 3 |
-| `setOutlinerTab` | 3610 | function |  | 7 |
-| `effectiveViewportSelectionMode` | 3628 | function |  | 4 |
-| `componentEditModeActive` | 3632 | function |  | 28 |
-| `selectionToolSupportsPicking` | 3636 | function |  | 3 |
-| `syncViewportSelectionModeControl` | 3641 | function |  | 4 |
-| `refreshSelectionModeVisuals` | 3657 | function |  | 2 |
-| `setViewportSelectionMode` | 3687 | function |  | 3 |
-| `setViewportEditMode` | 3699 | function |  | 7 |
-| `createOutlinerVisibilityToggle` | 3741 | function |  | 5 |
-| `setLocksOutlinerVisibility` | 3755 | function |  | 7 |
-| `normalizeOutlinerName` | 3769 | function |  | 3 |
-| `beginOutlinerRename` | 3774 | function |  | 2 |
-| `finish` | 3785 | arrow |  | 3 |
-| `handleOutlinerRenameClick` | 3815 | function |  | 4 |
-| `strandPassesDisplayFilters` | 3965 | function |  | 4 |
-| `strandVisibleForDisplay` | 3974 | function |  | 9 |
-| `strandAvailableForViewportInteraction` | 3979 | function |  | 3 |
-| `lockedStrandsExist` | 3983 | function |  | 1 |
-| `hiddenStrandsExist` | 3987 | function |  | 1 |
-| `hideSelectedStrands` | 3991 | function |  | 1 |
-| `unhideHiddenStrands` | 4001 | function |  | 1 |
-| `strandIsolationActive` | 4010 | function |  | 4 |
-| `setStrandIsolation` | 4014 | function |  | 3 |
-| `toggleSelectedStrandIsolation` | 4026 | function |  | 2 |
-| `syncVisibilityParent` | 4037 | function |  | 4 |
-| `syncDisplayVisibilityInputs` | 4044 | function |  | 7 |
-| `applyCharacterMeshDisplayVisibility` | 4073 | function |  | 4 |
-| `applyStrandDisplayVisibility` | 4080 | function |  | 4 |
-| `applyDisplayVisibilityFilters` | 4103 | function |  | 8 |
-| `updateGroupCurveLatticeStrands` | 4321 | function |  | 2 |
-| `updateBoundCurveLatticeStrands` | 4342 | function |  | 1 |
-| `createStrandsFromCurveLattice` | 4361 | function |  | 2 |
-| `selectedViewportFocusBounds` | 4459 | function |  | 2 |
-| `frameViewportBounds` | 4473 | function |  | 4 |
-| `centerViewportOnSelectedItem` | 4503 | function |  | 2 |
-| `fullSceneFocusBounds` | 4507 | function |  | 2 |
-| `currentViewportFrameSelectionKey` | 4522 | function |  | 3 |
-| `cycleViewportFraming` | 4531 | function |  | 2 |
-| `sculptBrushToolActive` | 4551 | function |  | 22 |
-| `sculptBrushSelectionMaskActive` | 4555 | function |  | 3 |
-| `sculptBrushSelectionAllows` | 4559 | function |  | 2 |
-| `effectiveSculptBrushTool` | 4563 | function |  | 3 |
-| `updateSculptScaleModeRow` | 4569 | function |  | 4 |
-| `syncSculptBrushToolButtons` | 4574 | function |  | 3 |
-| `setSculptBrushShiftSmoothHeld` | 4596 | function |  | 5 |
-| `setActiveTool` | 4605 | function |  | 10 |
-| `setDrawStrandMode` | 4743 | function |  | 1 |
-| `setObjectSpaceEditing` | 4753 | function |  | 5 |
-| `setHierarchyEditing` | 4769 | function |  | 4 |
-| `setProportionalEditing` | 4781 | function |  | 5 |
-| `beginProportionalSizeEdit` | 4800 | function |  | 3 |
-| `updateProportionalSizeEdit` | 4812 | function |  | 2 |
-| `endProportionalSizeEdit` | 4823 | function |  | 5 |
-| `activateProportionalHotkeyHold` | 4830 | function |  | 2 |
-| `refreshProportionalPreview` | 4838 | function |  | 4 |
-| `activeBrushSizeInput` | 4848 | function |  | 2 |
-| `refreshActiveBrushSizeCursor` | 4857 | function |  | 3 |
-| `refreshActiveBrushSizeScale` | 4869 | function |  | 2 |
-| `beginBrushSizeDrag` | 4887 | function |  | 1 |
-| `updateBrushSizeDrag` | 4914 | function |  | 1 |
-| `finishBrushSizeDrag` | 4935 | function |  | 2 |
-| `updateInteractionLocks` | 4952 | function |  | 39 |
-| `configureTransformControls` | 4963 | function |  | 11 |
-| `pullMoveActive` | 4971 | function |  | 8 |
-| `updatePullGuideVisual` | 4975 | function |  | 4 |
-| `attachTransformForCurvePoint` | 4991 | function |  | 5 |
-| `pointerHitsTransformGizmo` | 5015 | function |  | 5 |
-| `strandObjectRootIndex` | 5031 | function |  | 3 |
-| `strandObjectRoot` | 5040 | function |  | 4 |
-| `strandObjectTransformQuaternion` | 5044 | function |  | 2 |
-| `attachStrandObjectTransform` | 5049 | function |  | 6 |
-| `guideObjectPivot` | 5072 | function |  | 3 |
-| `guideObjectTransformQuaternion` | 5083 | function |  | 2 |
-| `attachGuideObjectTransform` | 5088 | function |  | 5 |
-| `guideObjectTransformSnapshot` | 5107 | function |  | 2 |
-| `beginGuideObjectTransform` | 5135 | function |  | 2 |
-| `updateLegacyGuideObjectTransform` | 5142 | function |  | 2 |
-| `updateGuideObjectTransform` | 5164 | function |  | 2 |
-| `finishGuideObjectTransform` | 5197 | function |  | 2 |
-| `clonePlacementFrame` | 5206 | function |  | 2 |
-| `cloneOptionalVectors` | 5218 | function |  | 10 |
-| `strandObjectTransformSnapshot` | 5222 | function |  | 2 |
-| `strandObjectPreviewMeshSnapshot` | 5239 | function |  | 2 |
-| `restoreStrandObjectPreviewMeshes` | 5254 | function |  | 2 |
-| `strandObjectTransformOperators` | 5270 | function |  | 4 |
-| `transformPoint` | 5278 | arrow |  | 12 |
-| `transformPointAroundFixedPivot` | 5285 | arrow |  | 0 |
-| `transformNormal` | 5291 | arrow |  | 10 |
-| `transformDirection` | 5301 | arrow |  | 1 |
-| `worldMatrixForPivot` | 5313 | arrow |  | 2 |
-| `worldMatrixForFixedPivot` | 5319 | arrow |  | 1 |
-| `applyStrandObjectPreviewMatrix` | 5335 | function |  | 6 |
-| `beginStrandObjectTransform` | 5361 | function |  | 2 |
-| `updateStrandObjectTransform` | 5399 | function |  | 2 |
-| `commitStrandObjectTransform` | 5457 | function |  | 2 |
-| `mapPoints` | 5470 | arrow |  | 4 |
-| `finishStrandObjectTransform` | 5504 | function |  | 2 |
-| `surfaceObjectAnchorPose` | 5518 | function |  | 2 |
-| `attachSurfaceObjectAnchorTransform` | 5541 | function |  | 5 |
-| `selectSurfaceObjectAnchor` | 5554 | function |  | 3 |
-| `beginSurfaceObjectTransform` | 5569 | function |  | 2 |
-| `updateSurfaceObjectTransform` | 5595 | function |  | 2 |
-| `finishSurfaceObjectTransform` | 5644 | function |  | 2 |
-| `beginHandleEdit` | 5653 | function |  | 5 |
-| `updateGroupLatticeBaseFromHandleEdit` | 5706 | function |  | 3 |
-| `multiPointHandleEditActive` | 5717 | function |  | 7 |
-| `applyMultiMove` | 5721 | function |  | 5 |
-| `applyMultiRotate` | 5727 | function |  | 2 |
-| `applyMultiScale` | 5736 | function |  | 2 |
-| `applyHierarchicalMove` | 5745 | function |  | 3 |
-| `applySingleMove` | 5757 | function |  | 5 |
-| `applySurfaceLatticeMirror` | 5761 | function |  | 3 |
-| `curveSurfaceMirroredPointIndex` | 5778 | function |  | 2 |
-| `syncUnifiedCurveSurfaceMirror` | 5787 | function |  | 3 |
-| `changed` | 5797 | arrow |  | 1 |
-| `applyPullMove` | 5839 | function |  | 3 |
-| `pullHeadCollisionContext` | 5847 | function |  | 2 |
-| `constrainPullPointsOutsideHead` | 5866 | function |  | 2 |
-| `applyProportionalMove` | 5889 | function |  | 3 |
-| `viewPlaneNormal` | 5900 | function |  | 4 |
-| `isCameraInSnappedView` | 5904 | function |  | 2 |
-| `viewPlaneMoveActiveForView` | 5912 | function |  | 9 |
-| `updateViewPlaneGrid` | 5916 | function |  | 13 |
-| `setViewPlaneMove` | 5973 | function |  | 3 |
-| `setViewPlaneMoveSnappedOnly` | 5984 | function |  | 2 |
-| `rayFromViewportEvent` | 5992 | function |  | 8 |
-| `worldUnitsPerViewportPixel` | 6000 | function |  | 4 |
-| `viewPlaneMovePointNormal` | 6010 | function |  | 2 |
-| `updateViewPlaneNormalGuide` | 6021 | function |  | 5 |
-| `rebaseViewPlaneMoveDrag` | 6034 | function |  | 3 |
-| `setViewPlaneNormalMoveHeld` | 6053 | function |  | 4 |
-| `beginViewPlaneMove` | 6060 | function |  | 3 |
-| `updateViewPlaneMove` | 6124 | function |  | 1 |
-| `endViewPlaneMove` | 6189 | function |  | 7 |
-| `applyHierarchicalRotate` | 6208 | function |  | 2 |
-| `rotateGuideNormal` | 6215 | arrow |  | 4 |
-| `applySingleRotate` | 6253 | function |  | 2 |
-| `applyProportionalRotate` | 6257 | function |  | 2 |
-| `applyHierarchicalScale` | 6277 | function |  | 2 |
-| `applySingleScale` | 6287 | function |  | 2 |
-| `applyProportionalScale` | 6291 | function |  | 2 |
-| `setPointScale` | 6307 | function |  | 6 |
-| `proportionalWeight` | 6316 | function |  | 8 |
-| `proportionalStrandVisualsActive` | 6328 | function |  | 5 |
-| `strandInfluenceColor` | 6334 | function |  | 4 |
-| `beginRelaxEdit` | 6359 | function |  | 3 |
-| `updateRelaxEdit` | 6388 | function |  | 1 |
-| `endRelaxEdit` | 6448 | function |  | 1 |
-| `disposeGuide` | 6458 | function |  | 3 |
-| `removeGuideObjects` | 6486 | function |  | 3 |
-| `strandRadiusAt` | 6500 | function |  | 5 |
-| `strandProfileTopologyAt` | 6517 | function |  | 2 |
-| `strandCurveParameters` | 6559 | function |  | 1 |
-| `widthProfileAt` | 6569 | arrow |  | 1 |
-| `braidFrameAt` | 6607 | function |  | 4 |
-| `braidFrameAtExtended` | 6617 | function |  | 2 |
-| `createBraidProfileProjector` | 6626 | function |  | 2 |
-| `project` | 6642 | arrow |  | 11 |
-| `createBraidGeometry` | 6657 | function |  | 1 |
-| `quantize` | 6690 | arrow |  | 19 |
-| `deformationAt` | 6692 | function |  | 3 |
-| `widthFor` | 6701 | arrow |  | 3 |
-| `depthFor` | 6705 | arrow |  | 3 |
-| `outputVertex` | 6737 | function |  | 7 |
-| `appendAuthoredCap` | 6845 | function |  | 3 |
-| `outputCapVertex` | 6852 | arrow |  | 6 |
-| `capBoundary` | 6943 | function |  | 3 |
-| `strandGeometryCurve` | 7005 | function |  | 6 |
-| `strandGeometryFrameAt` | 7031 | function |  | 5 |
-| `transportedStrandFrameAt` | 7094 | function |  | 4 |
-| `twistOverrideAt` | 7097 | arrow |  | 2 |
-| `createHairTopologyGeometry` | 7170 | function |  | 4 |
-| `createHairTopologyOverlay` | 7191 | function |  | 3 |
-| `groupDefaultsFor` | 7238 | function |  | 7 |
-| `creationToolActive` | 7245 | function |  | 5 |
-| `activeCreationShapeDefaults` | 7249 | function |  | 6 |
-| `curvePolylineLength` | 7256 | function |  | 2 |
-| `curvePolylineLengths` | 7264 | function |  | 3 |
-| `samplePolylineDistance` | 7272 | function |  | 2 |
-| `applyProjectedCurveLength` | 7282 | function |  | 4 |
-| `clearRegionLengthBaseline` | 7313 | function |  | 2 |
-| `ensureRegionLengthBaseline` | 7320 | function |  | 2 |
-| `setGroupLengthScale` | 7328 | function |  | 2 |
-| `applyGroupDefaultsToExistingStrands` | 7366 | function |  | 3 |
-| `requestGroupDefaultsWarning` | 7398 | function |  | 1 |
-| `activeProfileOffset` | 7410 | function |  | 3 |
-| `profileToCanvas` | 7418 | function |  | 1 |
-| `renderProfilePreview` | 7425 | function |  | 7 |
-| `renderHairCardCoveragePath` | 7444 | function |  | 2 |
-| `updateViewportStatsVisibility` | 7958 | function |  | 1 |
-| `canvasToProfile` | 7977 | function |  | 2 |
-| `addLock` | 7992 | function |  | 4 |
-| `mirroredVector` | 8204 | function |  | 12 |
-| `mirroredPlacementFrame` | 8208 | function |  | 2 |
-| `mirrorPartnerFor` | 8221 | function |  | 28 |
-| `decoupleMirrorPartner` | 8225 | function |  | 2 |
-| `createMirrorPartner` | 8233 | function |  | 3 |
-| `createMirrorPartnerForNewLock` | 8329 | function |  | 1 |
-| `syncMirrorPartnerFromLock` | 8348 | function |  | 3 |
-| `syncActiveMirror` | 8515 | function |  | 17 |
-| `setMirrorXEditing` | 8527 | function |  | 5 |
-| `snapshotState` | 8551 | function |  | 4 |
-| `pushUndoState` | 8892 | function |  | 65 |
-| `undoLastAction` | 8899 | function |  | 2 |
-| `redoLastAction` | 8916 | function |  | 2 |
-| `updateHistoryButtons` | 8933 | function |  | 5 |
-| `resetTransientInteractionsForStateRestore` | 8938 | function |  | 2 |
-| `resetEditableSceneForStateRestore` | 8958 | function |  | 2 |
-| `restoreSharedStateForStateRestore` | 8965 | function |  | 2 |
-| `restoreSceneCollectionsForStateRestore` | 9004 | function |  | 2 |
-| `validateSelectionAfterStateRestore` | 9030 | function |  | 2 |
-| `reapplySelectionAfterStateRestore` | 9062 | function |  | 2 |
-| `finalizeStateRestore` | 9103 | function |  | 2 |
-| `restoreState` | 9110 | function |  | 3 |
-| `disposeAllEditableObjects` | 9134 | function |  | 2 |
-| `restoreLock` | 9155 | function |  | 2 |
-| `restoreGuide` | 9379 | function |  | 2 |
-| `vectorToData` | 9440 | function |  | 15 |
-| `dataToVector` | 9444 | function |  | 14 |
-| `frameToData` | 9471 | function |  | 2 |
-| `frameFromData` | 9483 | function |  | 2 |
-| `average` | 9495 | function |  | 3 |
-| `fitPointAttributes` | 9499 | function |  | 5 |
-| `rebuildCurveObjects` | 9528 | function |  | 4 |
-| `createCurvePoints` | 9540 | function |  | 2 |
-| `deselectStrands` | 9644 | function |  | 9 |
-| `beginSelectionMarquee` | 9659 | function |  | 3 |
-| `beginAltOrbit` | 9683 | function |  | 1 |
-| `beginBlenderNavigation` | 9695 | function |  | 1 |
-| `endBlenderNavigation` | 9740 | function |  | 1 |
-| `prepareSelectPointerCapture` | 9748 | function |  | 1 |
-| `endSelectPointerCapture` | 9754 | function |  | 1 |
-| `applyAltClickCandidate` | 9760 | function |  | 2 |
-| `finishBrushAltClick` | 9786 | function |  | 1 |
-| `endAltOrbit` | 9799 | function |  | 2 |
-| `dollyCameraByDrag` | 9806 | function |  | 2 |
-| `fastDragMagnitude` | 9829 | function |  | 2 |
-| `beginHoudiniZoomDrag` | 9835 | function |  | 1 |
-| `updateHoudiniZoomDrag` | 9843 | function |  | 1 |
-| `endHoudiniZoomDrag` | 9860 | function |  | 1 |
-| `updateSelectionMarquee` | 9868 | function |  | 1 |
-| `pointInsideSelectionMarquee` | 9885 | function |  | 3 |
-| `selectPointsInMarquee` | 9893 | function |  | 2 |
-| `pointKey` | 9919 | arrow |  | 2 |
-| `objectSelectionScreenBounds` | 9950 | function |  | 2 |
-| `objectInsideSelectionMarquee` | 9987 | function |  | 3 |
-| `projectedPoint` | 10004 | arrow |  | 1 |
-| `selectObjectsInMarquee` | 10033 | function |  | 2 |
-| `finishSelectionMarquee` | 10078 | function |  | 2 |
-| `strandSplitProfileData` | 10102 | function |  | 2 |
-| `strandSplitControlPoint` | 10115 | function |  | 1 |
-| `panelSplitControlPoint` | 10151 | function |  | 3 |
-| `panelWidthAt` | 10168 | arrow |  | 3 |
-| `panelThicknessAt` | 10175 | arrow |  | 3 |
-| `strandControlPointRaycast` | 10208 | function |  | 1 |
-| `strandControlPointFrame` | 10243 | function |  | 4 |
-| `strandControlPointHitFromEvent` | 10275 | function |  | 3 |
-| `createCurveObjects` | 10333 | function |  | 4 |
-| `strandWidthEdgeFrameAt` | 10454 | function |  | 5 |
-| `transportedStrandWidthEdgeFrame` | 10461 | function |  | 2 |
-| `strandWidthEdgeSample` | 10470 | function |  | 3 |
-| `strandWidthEdgePoints` | 10493 | function |  | 2 |
-| `sculptBrushDebugRaycast` | 10507 | arrow |  | 0 |
-| `updateCurveObjects` | 10509 | function |  | 25 |
-| `pointUpDirection` | 10704 | function |  | 2 |
-| `curveFrameAtPoint` | 10708 | function |  | 4 |
-| `curveFrameAt` | 10729 | function |  | 3 |
-| `strandTwistAt` | 10749 | function |  | 6 |
-| `controlPointRotationAt` | 10754 | function |  | 3 |
-| `strandProfileTwistAt` | 10758 | function |  | 2 |
-| `strandFrameAt` | 10764 | function |  | 1 |
-| `curveFrameAtSnapshot` | 10770 | function |  | 3 |
-| `outwardNormalAtPoint` | 10789 | function |  | 5 |
-| `sampledSurfaceNormal` | 10852 | function |  | 2 |
-| `guidedNormalAt` | 10868 | function |  | 4 |
-| `twistFromHandle` | 10887 | function |  | 3 |
-| `signedAngleAroundAxis` | 10908 | function |  | 4 |
-| `handleColor` | 10915 | function |  | 2 |
-| `isAffectedCurvePoint` | 10938 | function |  | 2 |
-| `syncLockFromCurve` | 10944 | function |  | 14 |
-| `rebuildLockGeometry` | 10974 | function |  | 8 |
-| `flushPendingLockGeometryUpdates` | 11002 | function |  | 6 |
-| `updateLockGeometry` | 11015 | function |  | 28 |
-| `setGroupColorView` | 11036 | function |  | 2 |
-| `createUvCheckerTexture` | 11046 | function |  | 3 |
-| `ensureUvCheckerForLock` | 11082 | function |  | 3 |
-| `removeUvCheckerFromLock` | 11115 | function |  | 3 |
-| `invalidateUvInspector` | 11130 | function |  | 7 |
-| `uvInspectorRecord` | 11134 | function |  | 1 |
-| `uvInspectorRecords` | 11173 | function |  | 2 |
-| `drawUvInspectorGrid` | 11177 | function |  | 2 |
-| `renderUvInspector` | 11211 | function |  | 3 |
-| `setUvCheckerEnabled` | 11270 | function |  | 3 |
-| `strandViewportBaseColor` | 11287 | function |  | 2 |
-| `strandMirrorPartnerHighlighted` | 11322 | function |  | 3 |
-| `syncStrandSelectionOutline` | 11328 | function |  | 2 |
-| `applyLockedStrandPalette` | 11339 | function |  | 2 |
-| `syncLockedStrandWireVisual` | 11348 | function |  | 5 |
-| `setStrandSelectionVisual` | 11357 | function |  | 4 |
-| `updateStrandSelectionHighlightForLock` | 11375 | function |  | 1 |
-| `updateStrandSelectionHighlight` | 11379 | function |  | 6 |
-| `refreshStrandCurveSelectionVisuals` | 11383 | function |  | 2 |
-| `resetGuideSelectionVisuals` | 11396 | function |  | 2 |
-| `refreshStrandSelectionConsumers` | 11416 | function |  | 3 |
-| `selectLock` | 11449 | function |  | 24 |
-| `deselectStrandsForGuideEditor` | 11511 | function |  | 1 |
-| `syncGroupInputs` | 11522 | function |  | 2 |
-| `topologyStatsForLock` | 11555 | function |  | 4 |
-| `formatTopologyStats` | 11563 | function |  | 5 |
-| `updateTopologyStats` | 11567 | function |  | 15 |
-| `normalizeStrandDimensions` | 11601 | function |  | 3 |
-| `strandBaseWidth` | 11615 | function |  | 5 |
-| `strandWidthDimension` | 11619 | function |  | 5 |
-| `strandDepthDimension` | 11627 | function |  | 8 |
-| `setStrandWidthDimension` | 11635 | function |  | 2 |
-| `setStrandDepthDimension` | 11657 | function |  | 4 |
-| `syncShapeDimensionInputs` | 11673 | function |  | 4 |
-| `syncCreationShapeInputs` | 11709 | function |  | 2 |
-| `syncViewportDrawSettings` | 11747 | function |  | 4 |
-| `syncStrandSplitInputs` | 11764 | function |  | 4 |
-| `syncHairCardControls` | 11773 | function |  | 6 |
-| `updateAttributeEditorMode` | 11782 | function |  | 10 |
-| `pinActiveToolSettingsPanel` | 11932 | function |  | 2 |
-| `curveLatticeForGroup` | 11955 | function |  | 2 |
-| `filterCurveLatticesToGroup` | 11973 | function |  | 5 |
-| `createStandaloneCurveLatticeGuide` | 12018 | function |  | 2 |
-| `showCurveLatticeForGroup` | 12035 | function |  | 2 |
-| `selectStrandGroup` | 12072 | function |  | 3 |
-| `selectCurvePoint` | 12114 | function |  | 3 |
-| `updateSelectedPointLabel` | 12128 | function |  | 12 |
-| `syncInputs` | 12141 | function |  | 13 |
-| `getSelectedLock` | 12188 | function |  | 82 |
-| `selectedLocksInOrder` | 12192 | function |  | 24 |
-| `lockStrands` | 12198 | function |  | 3 |
-| `lockSelectedStrands` | 12231 | function |  | 2 |
-| `unlockStrands` | 12237 | function |  | 3 |
-| `unlockAllStrands` | 12252 | function |  | 2 |
-| `strandEditFamily` | 12256 | function |  | 7 |
-| `compatibleSelectedLocks` | 12261 | function |  | 4 |
-| `selectedEditRoots` | 12268 | function |  | 2 |
-| `editSelectedLocks` | 12281 | function |  | 15 |
-| `multiEditValuesEqual` | 12314 | function |  | 2 |
-| `setMixedControl` | 12323 | function |  | 28 |
-| `syncMultiStrandInputs` | 12340 | function |  | 16 |
-| `values` | 12356 | arrow |  | 35 |
-| `selectedRebuildableCurves` | 12436 | function |  | 5 |
-| `createCompoundStrand` | 12443 | function |  | 1 |
-| `refreshRebuildCurveDialog` | 12504 | function |  | 7 |
-| `openRebuildCurveDialog` | 12517 | function |  | 1 |
-| `rebuildSelectedCurves` | 12531 | function |  | 2 |
-| `cleanSelectionSets` | 12572 | function |  | 2 |
-| `createSelectionSetFromSelection` | 12577 | function |  | 2 |
-| `selectionSetById` | 12588 | function |  | 5 |
-| `selectionSetCanEditFromSelection` | 12592 | function |  | 4 |
-| `editSelectionSetFromSelection` | 12601 | function |  | 3 |
-| `deleteSelectionSet` | 12621 | function |  | 2 |
-| `selectSelectionSet` | 12630 | function |  | 2 |
-| `deleteSelectedStrands` | 12640 | function |  | 3 |
-| `deleteGuide` | 12648 | function |  | 3 |
-| `deleteSelectedGuide` | 12671 | function |  | 3 |
-| `hasDeletableSelection` | 12676 | function |  | 2 |
-| `deleteCurrentSelection` | 12684 | function |  | 3 |
-| `hideOutlinerContextMenu` | 12692 | function |  | 16 |
-| `outlinerLockTargets` | 12697 | function |  | 3 |
-| `showOutlinerContextMenu` | 12724 | function |  | 6 |
-| `setPullMoveEnabled` | 12804 | function |  | 2 |
-| `setNavigationTipsEnabled` | 12813 | function |  | 4 |
-| `configureNavigationMouseButtons` | 12820 | function |  | 3 |
-| `syncNavigationModifierLocks` | 12833 | function |  | 7 |
-| `setNavigationStyle` | 12838 | function |  | 4 |
-| `applyCameraSmoothingPreference` | 12854 | function |  | 4 |
-| `setCameraSmoothingEnabled` | 12869 | function |  | 4 |
-| `setCameraSmoothingStrength` | 12875 | function |  | 4 |
-| `setScaleSensitivity` | 12883 | function |  | 3 |
-| `setToolTipsEnabled` | 12891 | function |  | 4 |
-| `setCompactToolButtonsEnabled` | 12898 | function |  | 4 |
-| `setViewportStatisticsEnabled` | 12907 | function |  | 4 |
-| `setTwistCurveAllStrandsPreviewEnabled` | 12915 | function |  | 4 |
-| `setLayerColorShiftsEnabled` | 12930 | function |  | 4 |
-| `setOutlinerFolderColorsEnabled` | 12939 | function |  | 4 |
-| `sideNamingDisplayId` | 12948 | function |  | 2 |
-| `strandRegionDisplayLabel` | 12961 | function |  | 6 |
-| `updateSideNamingLabels` | 12979 | function |  | 2 |
-| `setSideNamingPerspective` | 13006 | function |  | 4 |
-| `setControlPointDisplaySize` | 13015 | function |  | 5 |
-| `scaleHexColor` | 13027 | function |  | 3 |
-| `setViewportBackgroundColor` | 13032 | function |  | 6 |
-| `setDefaultHairShader` | 13054 | function |  | 4 |
-| `setPreferenceCategory` | 13060 | function |  | 4 |
-| `openPreferencesDialog` | 13087 | function |  | 1 |
-| `savePreferencesDialog` | 13115 | function |  | 1 |
-| `cancelPreferencesDialog` | 13139 | function |  | 3 |
-| `createOutlinerStrandButton` | 13170 | function |  | 2 |
-| `createOutlinerCurveSurface` | 13256 | function |  | 2 |
-| `selectionSetMatchesCurrentSelection` | 13353 | function |  | 2 |
-| `createSelectionSetsOutlinerFolder` | 13360 | function |  | 2 |
-| `renderLockList` | 13439 | function |  | 37 |
-| `updateCount` | 13609 | function |  | 10 |
-| `captureInputUndo` | 13618 | function |  | 1 |
-| `bindUndoCapture` | 13624 | function |  | 37 |
-| `bindLockInput` | 13635 | function |  | 2 |
-| `applyValue` | 13652 | arrow |  | 2 |
-| `applyUniformTransformScale` | 13971 | function |  | 2 |
-| `applyReducedTransformScale` | 13988 | function |  | 2 |
-| `applyTransformPrecision` | 14027 | function |  | 2 |
-| `updateTransformScalePointer` | 14056 | function |  | 1 |
-| `syncDrawCurlControls` | 15091 | function |  | 5 |
-| `handleLiveSurfaceChange` | 15139 | function |  | 1 |
-| `selectedBranchChildLock` | 15430 | function |  | 4 |
-| `updateBranchBridgeSliderInputs` | 15434 | function |  | 2 |
-| `initPanelResizeHandles` | 15540 | function |  | 2 |
-| `applyWidth` | 15546 | arrow |  | 2 |
-| `restoreWidth` | 15553 | arrow |  | 2 |
-| `bindResize` | 15561 | arrow |  | 2 |
-| `onMove` | 15570 | arrow |  | 0 |
-| `onUp` | 15574 | arrow |  | 0 |
-| `updateSnappedFloatingPanels` | 15591 | function |  | 2 |
-| `initFloatingPanelControls` | 15600 | function |  | 2 |
-| `detach` | 15609 | arrow |  | 22 |
-| `endDrag` | 15647 | arrow |  | 0 |
-| `endResize` | 15679 | arrow |  | 0 |
-| `updateSculptBrushDockCompact` | 15690 | function |  | 3 |
-| `selectPatchNotesVersion` | 15824 | function |  | 3 |
-| `toggleCapsuleGuideTool` | 16055 | function |  | 1 |
-| `activateCapsuleGuideDrawTool` | 16061 | function |  | 1 |
-| `createCurveLatticeGuideFromUi` | 16068 | function |  | 1 |
-| `deleteLocks` | 16635 | function |  | 4 |
-| `disposeCurveObjects` | 16713 | function |  | 4 |
-| `resize` | 16775 | function |  | 3 |
-| `handleViewportPointerMove` | 16786 | function |  | 1 |
-| `blockProportionalSizingEvent` | 16797 | function |  | 1 |
-| `updateLightAngleFromInputs` | 16803 | function |  | 2 |
-| `startViewSnap` | 16817 | function |  | 3 |
-| `beginViewSnapFromActiveOrbit` | 16847 | function |  | 3 |
-| `trackViewportPointerDown` | 16864 | function |  | 1 |
-| `trackViewportPointerMove` | 16880 | function |  | 1 |
-| `clearViewportPointer` | 16888 | function |  | 1 |
-| `updateViewSnap` | 16893 | function |  | 1 |
-| `nearestCardinalAxis` | 16929 | function |  | 5 |
-| `cardinalAxisKey` | 16943 | function |  | 4 |
-| `steppedDragAmount` | 16947 | function |  | 3 |
-| `snapCameraToCardinalAxis` | 16953 | function |  | 4 |
-| `endViewSnap` | 16969 | function |  | 4 |
-| `activateStrandControlPoint` | 16979 | function |  | 2 |
-| `refreshStrandControlPointSelection` | 17029 | function |  | 4 |
-| `addStrandControlPointSelection` | 17056 | function |  | 2 |
-| `removeStrandControlPointSelection` | 17073 | function |  | 3 |
-| `sampleStrandPointNormal` | 17087 | function |  | 2 |
-| `sampleStrandPointVectors` | 17097 | function |  | 3 |
-| `remapStrandPointSelectionAfterRemoval` | 17103 | function |  | 2 |
-| `resampleStrandCurveData` | 17114 | function |  | 4 |
-| `resampleMatchingVectors` | 17120 | arrow |  | 3 |
-| `finishStrandCurveTopologyChange` | 17159 | function |  | 4 |
-| `removeStrandCurvePoint` | 17170 | function |  | 2 |
-| `closestStrandCurveParameter` | 17183 | function |  | 1 |
-| `insertStrandCurvePoint` | 17212 | function |  | 2 |
-| `curvePointTopologyCursorAvailable` | 17229 | function |  | 2 |
-| `selectionModifierCursorAvailable` | 17239 | function |  | 3 |
-| `clearCurvePointTopologyCursor` | 17255 | function |  | 6 |
-| `updateCurvePointTopologyCursor` | 17262 | function |  | 4 |
-| `finishCurvePointInsertion` | 17285 | function |  | 1 |
-| `finishPointRemoval` | 17300 | function |  | 1 |
-| `isHairCreateTool` | 17319 | function |  | 4 |
-| `syncStrandHoverOutline` | 17323 | function |  | 1 |
-| `pointerOverTaperEditor` | 17336 | function |  | 2 |
-| `updateStrandBrushHover` | 17343 | function |  | 1 |
-| `strandControlPointHit` | 17367 | function |  | 3 |
-| `beginStrandWidthEdgeDrag` | 17371 | function |  | 1 |
-| `updateStrandWidthEdgeDrag` | 17449 | function |  | 1 |
-| `finishStrandWidthEdgeDrag` | 17483 | function |  | 2 |
-| `setHoveredStrandWidthEdge` | 17523 | function |  | 8 |
-| `updateStrandWidthEdgeHover` | 17536 | function |  | 1 |
-| `setHoveredControlPoint` | 17575 | function |  | 7 |
-| `visibleControlPointHoverTargets` | 17588 | function |  | 2 |
-| `updateControlPointHover` | 17624 | function |  | 1 |
-| `animate` | 18241 | function |  | 2 |
-| `syncCompactSidebarLayout` | 18272 | function |  | 4 |
-| `setOutlinerPanelCollapsed` | 18291 | function |  | 5 |
-| `setAttributeEditorPanelCollapsed` | 18297 | function |  | 3 |
-| `setAttributeEditorTab` | 18303 | function |  | 6 |
+| `saveLanguage` | 296 | function |  | 2 |
+| `saveBooleanPreference` | 333 | function |  | 23 |
+| `normalizeControlPointDisplaySize` | 337 | function |  | 2 |
+| `normalizeCameraSmoothingStrength` | 342 | function |  | 2 |
+| `normalizeScaleSensitivity` | 347 | function |  | 2 |
+| `normalizeViewportBackgroundColor` | 352 | function |  | 2 |
+| `normalizeOutlinerFolderColorOpacity` | 358 | function |  | 2 |
+| `normalizeGlassPanelColor` | 363 | function |  | 2 |
+| `normalizeSidePanelStyle` | 368 | function |  | 2 |
+| `normalizeSideNamingPerspective` | 374 | function |  | 2 |
+| `normalizeNavigationStyle` | 378 | function |  | 2 |
+| `setupEditableSliderControls` | 393 | function |  | 2 |
+| `syncNumberFromRange` | 444 | arrow |  | 0 |
+| `applyNumberValue` | 451 | arrow |  | 0 |
+| `copyCameraPose` | 590 | function |  | 3 |
+| `updateCameraProjectionForViewport` | 596 | function |  | 4 |
+| `syncOrthographicFramingFromDistance` | 612 | function |  | 2 |
+| `setOrthographicView` | 618 | function |  | 3 |
+| `ensureMultiCameraPreviewRenderers` | 648 | function |  | 3 |
+| `multiCameraForView` | 661 | function |  | 3 |
+| `multiCameraViewUsesLeftPane` | 665 | function |  | 3 |
+| `multiCameraViewPaneWidth` | 669 | function |  | 5 |
+| `multiCameraViewProjectionOffsetX` | 673 | function |  | 2 |
+| `initializeMultiCameraOrthographicViews` | 679 | function |  | 2 |
+| `syncMultiCameraPreviewCameras` | 694 | function |  | 3 |
+| `multiCameraOrthographicViewActive` | 709 | function |  | 4 |
+| `prioritizeActiveMultiCameraViewport` | 713 | function |  | 3 |
+| `renderNextInactiveMultiCameraPreview` | 720 | function |  | 2 |
+| `setMultiCameraActiveView` | 736 | function |  | 3 |
+| `setMultiCameraEnabled` | 759 | function |  | 3 |
+| `setMultiCameraExperimentalEnabled` | 777 | function |  | 4 |
+| `multiCameraPaneMetrics` | 790 | function |  | 4 |
+| `applyViewportProjectionOffset` | 803 | function |  | 2 |
+| `addNegativeTransformGizmoRods` | 820 | function |  | 2 |
+| `addFullRotateGizmoAxisCircles` | 849 | function |  | 2 |
+| `removeRotateFreeAxisRing` | 875 | function |  | 2 |
+| `deflateTransformGizmoPickers` | 887 | function |  | 2 |
+| `nextStrandName` | 1288 | function |  | 2 |
+| `isPanelGeometry` | 1517 | function |  | 30 |
+| `normalizePanelSplits` | 1521 | function |  | 2 |
+| `clonePanelSplits` | 1533 | function |  | 11 |
+| `snapPanelSplitHeight` | 1537 | function |  | 3 |
+| `createQuadSphereGeometry` | 1572 | function |  | 2 |
+| `vertexIndex` | 1586 | function |  | 5 |
+| `addEdge` | 1604 | function |  | 5 |
+| `setDrawStrandBrushCursorScale` | 1833 | function |  | 4 |
+| `ensureDrawClumpPreviewCount` | 2013 | function |  | 1 |
+| `currentStrandSelectionState` | 2075 | function |  | 4 |
+| `applyStrandSelectionState` | 2079 | function |  | 5 |
+| `clearStrandSelectionState` | 2084 | function |  | 5 |
+| `cancelRecoverySchedule` | 2455 | function |  | 5 |
+| `recoveryWriteMustWait` | 2467 | function |  | 3 |
+| `scheduleRecoveryAutosave` | 2474 | function |  | 7 |
+| `markProjectChangedForRecovery` | 2486 | function |  | 4 |
+| `queueRecoveryAutosave` | 2492 | function |  | 1 |
+| `run` | 2506 | arrow |  | 1 |
+| `buildRecoveryProjectContent` | 2519 | function |  | 2 |
+| `flushRecoveryAutosave` | 2530 | function |  | 2 |
+| `clearAcknowledgedRecovery` | 2555 | function |  | 1 |
+| `setAutosaveEnabled` | 2571 | function |  | 5 |
+| `setAutosaveInterval` | 2580 | function |  | 5 |
+| `offerRecoverySnapshot` | 2590 | function |  | 2 |
+| `recoverPendingProject` | 2615 | function |  | 1 |
+| `discardPendingRecovery` | 2639 | function |  | 1 |
+| `downloadPendingRecovery` | 2651 | function |  | 1 |
+| `normalizeHairLayer` | 3591 | function |  | 20 |
+| `layerOffsetForLock` | 3595 | function |  | 3 |
+| `layerRootOffsetFactor` | 3600 | function |  | 7 |
+| `layerOffsetWeight` | 3604 | function |  | 4 |
+| `applyLayerOffsetDeltaToPoints` | 3610 | function |  | 5 |
+| `pointsWithLayerOffset` | 3619 | function |  | 1 |
+| `layerDirectionForLock` | 3627 | function |  | 2 |
+| `applyLayerOffset` | 3638 | function |  | 5 |
+| `setLockHairLayer` | 3662 | function |  | 2 |
+| `setGroupLayerOffset` | 3677 | function |  | 2 |
+| `quadraticWeights` | 3705 | function |  | 1 |
+| `templatePlaneIntersectionSegments` | 3906 | function |  | 1 |
+| `upperContourCurve` | 3923 | function |  | 2 |
+| `hermitePoint` | 3958 | function |  | 2 |
+| `curveNetworkSection` | 3969 | function |  | 1 |
+| `pointAlongSection` | 3998 | function |  | 1 |
+| `longestStitchedContour` | 4004 | function |  | 2 |
+| `nodeForPoint` | 4012 | arrow |  | 2 |
+| `constructionCurveFromSegments` | 4069 | function |  | 1 |
+| `exitSetupEditors` | 4089 | function |  | 6 |
+| `syncAppMenuVisibility` | 4099 | function |  | 3 |
+| `closeAppMenus` | 4105 | function |  | 5 |
+| `setAppMenuOpen` | 4116 | function |  | 2 |
+| `setTurntableActive` | 4123 | function |  | 3 |
+| `setOutlinerTab` | 4162 | function |  | 7 |
+| `effectiveViewportSelectionMode` | 4180 | function |  | 4 |
+| `componentEditModeActive` | 4184 | function |  | 31 |
+| `selectionToolSupportsPicking` | 4188 | function |  | 3 |
+| `syncViewportSelectionModeControl` | 4193 | function |  | 4 |
+| `refreshSelectionModeVisuals` | 4209 | function |  | 2 |
+| `setViewportSelectionMode` | 4240 | function |  | 3 |
+| `setViewportEditMode` | 4252 | function |  | 7 |
+| `createOutlinerVisibilityToggle` | 4295 | function |  | 5 |
+| `setLocksOutlinerVisibility` | 4309 | function |  | 7 |
+| `normalizeOutlinerName` | 4323 | function |  | 3 |
+| `beginOutlinerRename` | 4328 | function |  | 2 |
+| `finish` | 4339 | arrow |  | 3 |
+| `handleOutlinerRenameClick` | 4369 | function |  | 4 |
+| `strandPassesDisplayFilters` | 4519 | function |  | 4 |
+| `strandVisibleForDisplay` | 4528 | function |  | 9 |
+| `strandAvailableForViewportInteraction` | 4533 | function |  | 3 |
+| `lockedStrandsExist` | 4537 | function |  | 1 |
+| `hiddenStrandsExist` | 4541 | function |  | 1 |
+| `hideSelectedStrands` | 4545 | function |  | 1 |
+| `unhideHiddenStrands` | 4555 | function |  | 1 |
+| `strandIsolationActive` | 4564 | function |  | 4 |
+| `setStrandIsolation` | 4568 | function |  | 3 |
+| `toggleSelectedStrandIsolation` | 4580 | function |  | 2 |
+| `syncVisibilityParent` | 4591 | function |  | 4 |
+| `syncDisplayVisibilityInputs` | 4598 | function |  | 7 |
+| `applyCharacterMeshDisplayVisibility` | 4627 | function |  | 4 |
+| `applyStrandDisplayVisibility` | 4634 | function |  | 4 |
+| `applyDisplayVisibilityFilters` | 4657 | function |  | 8 |
+| `updateGroupCurveLatticeStrands` | 4875 | function |  | 2 |
+| `updateBoundCurveLatticeStrands` | 4896 | function |  | 1 |
+| `createStrandsFromCurveLattice` | 4915 | function |  | 2 |
+| `selectedViewportFocusBounds` | 5013 | function |  | 2 |
+| `frameViewportBounds` | 5027 | function |  | 4 |
+| `centerViewportOnSelectedItem` | 5058 | function |  | 2 |
+| `fullSceneFocusBounds` | 5062 | function |  | 2 |
+| `currentViewportFrameSelectionKey` | 5077 | function |  | 3 |
+| `cycleViewportFraming` | 5086 | function |  | 2 |
+| `sculptBrushToolActive` | 5106 | function |  | 22 |
+| `sculptBrushSelectionMaskActive` | 5110 | function |  | 3 |
+| `sculptBrushSelectionAllows` | 5114 | function |  | 2 |
+| `effectiveSculptBrushTool` | 5118 | function |  | 3 |
+| `updateSculptScaleModeRow` | 5124 | function |  | 4 |
+| `syncSculptBrushToolButtons` | 5129 | function |  | 3 |
+| `setSculptBrushShiftSmoothHeld` | 5151 | function |  | 5 |
+| `setActiveTool` | 5160 | function |  | 10 |
+| `setDrawStrandMode` | 5298 | function |  | 1 |
+| `setObjectSpaceEditing` | 5308 | function |  | 5 |
+| `setHierarchyEditing` | 5324 | function |  | 4 |
+| `setProportionalEditing` | 5336 | function |  | 5 |
+| `beginProportionalSizeEdit` | 5355 | function |  | 3 |
+| `updateProportionalSizeEdit` | 5367 | function |  | 2 |
+| `endProportionalSizeEdit` | 5378 | function |  | 5 |
+| `activateProportionalHotkeyHold` | 5385 | function |  | 2 |
+| `refreshProportionalPreview` | 5393 | function |  | 4 |
+| `activeBrushSizeInput` | 5403 | function |  | 2 |
+| `refreshActiveBrushSizeCursor` | 5412 | function |  | 3 |
+| `refreshActiveBrushSizeScale` | 5424 | function |  | 2 |
+| `beginBrushSizeDrag` | 5442 | function |  | 1 |
+| `updateBrushSizeDrag` | 5469 | function |  | 1 |
+| `finishBrushSizeDrag` | 5490 | function |  | 2 |
+| `updateInteractionLocks` | 5507 | function |  | 39 |
+| `configureTransformControls` | 5518 | function |  | 11 |
+| `pullMoveActive` | 5526 | function |  | 8 |
+| `updatePullGuideVisual` | 5530 | function |  | 4 |
+| `attachTransformForCurvePoint` | 5546 | function |  | 5 |
+| `pointerHitsTransformGizmo` | 5570 | function |  | 5 |
+| `strandObjectRootIndex` | 5586 | function |  | 3 |
+| `strandObjectRoot` | 5595 | function |  | 5 |
+| `normalizeStrandObjectTransform` | 5605 | function |  | 12 |
+| `strandObjectTransformQuaternionFromValues` | 5620 | function |  | 4 |
+| `strandObjectTransformValuesAfterHandle` | 5630 | function |  | 3 |
+| `mirroredStrandObjectTransform` | 5656 | function |  | 2 |
+| `objectTransformPanelLock` | 5665 | function |  | 3 |
+| `formatStrandObjectTransformValue` | 5672 | function |  | 2 |
+| `syncStrandObjectTransformPanel` | 5677 | function |  | 7 |
+| `applyStrandObjectTransformPanelValues` | 5703 | function |  | 2 |
+| `strandObjectTransformQuaternion` | 5764 | function |  | 3 |
+| `attachStrandObjectTransform` | 5769 | function |  | 6 |
+| `guideObjectPivot` | 5792 | function |  | 3 |
+| `guideObjectTransformQuaternion` | 5803 | function |  | 2 |
+| `attachGuideObjectTransform` | 5808 | function |  | 5 |
+| `guideObjectTransformSnapshot` | 5827 | function |  | 2 |
+| `beginGuideObjectTransform` | 5855 | function |  | 2 |
+| `updateLegacyGuideObjectTransform` | 5862 | function |  | 2 |
+| `updateGuideObjectTransform` | 5884 | function |  | 2 |
+| `finishGuideObjectTransform` | 5917 | function |  | 2 |
+| `clonePlacementFrame` | 5926 | function |  | 2 |
+| `cloneOptionalVectors` | 5938 | function |  | 10 |
+| `strandObjectTransformSnapshot` | 5942 | function |  | 2 |
+| `strandObjectPreviewMeshSnapshot` | 5960 | function |  | 2 |
+| `restoreStrandObjectPreviewMeshes` | 5975 | function |  | 2 |
+| `strandObjectTransformOperators` | 5991 | function |  | 4 |
+| `transformPoint` | 5999 | arrow |  | 12 |
+| `transformPointAroundFixedPivot` | 6006 | arrow |  | 0 |
+| `transformNormal` | 6012 | arrow |  | 10 |
+| `transformDirection` | 6022 | arrow |  | 1 |
+| `worldMatrixForPivot` | 6034 | arrow |  | 2 |
+| `worldMatrixForFixedPivot` | 6040 | arrow |  | 1 |
+| `applyStrandObjectPreviewMatrix` | 6056 | function |  | 6 |
+| `beginStrandObjectTransform` | 6082 | function |  | 3 |
+| `updateStrandObjectTransform` | 6120 | function |  | 2 |
+| `commitStrandObjectTransform` | 6178 | function |  | 2 |
+| `mapPoints` | 6193 | arrow |  | 4 |
+| `finishStrandObjectTransform` | 6227 | function |  | 3 |
+| `surfaceObjectAnchorPose` | 6242 | function |  | 2 |
+| `attachSurfaceObjectAnchorTransform` | 6265 | function |  | 5 |
+| `selectSurfaceObjectAnchor` | 6278 | function |  | 3 |
+| `beginSurfaceObjectTransform` | 6293 | function |  | 2 |
+| `updateSurfaceObjectTransform` | 6319 | function |  | 2 |
+| `finishSurfaceObjectTransform` | 6368 | function |  | 2 |
+| `beginHandleEdit` | 6377 | function |  | 5 |
+| `updateGroupLatticeBaseFromHandleEdit` | 6430 | function |  | 3 |
+| `multiPointHandleEditActive` | 6441 | function |  | 7 |
+| `applyMultiMove` | 6445 | function |  | 5 |
+| `applyMultiRotate` | 6451 | function |  | 2 |
+| `applyMultiScale` | 6460 | function |  | 2 |
+| `applyHierarchicalMove` | 6469 | function |  | 3 |
+| `applySingleMove` | 6481 | function |  | 5 |
+| `applySurfaceLatticeMirror` | 6485 | function |  | 3 |
+| `curveSurfaceMirroredPointIndex` | 6502 | function |  | 2 |
+| `syncUnifiedCurveSurfaceMirror` | 6511 | function |  | 3 |
+| `changed` | 6521 | arrow |  | 1 |
+| `applyPullMove` | 6563 | function |  | 3 |
+| `pullHeadCollisionContext` | 6571 | function |  | 2 |
+| `constrainPullPointsOutsideHead` | 6590 | function |  | 2 |
+| `applyProportionalMove` | 6613 | function |  | 3 |
+| `viewPlaneNormal` | 6624 | function |  | 4 |
+| `isCameraInSnappedView` | 6628 | function |  | 2 |
+| `viewPlaneMoveActiveForView` | 6636 | function |  | 9 |
+| `updateViewPlaneGrid` | 6640 | function |  | 13 |
+| `setViewPlaneMove` | 6697 | function |  | 3 |
+| `setViewPlaneMoveSnappedOnly` | 6708 | function |  | 2 |
+| `rayFromViewportEvent` | 6716 | function |  | 8 |
+| `worldUnitsPerViewportPixel` | 6724 | function |  | 4 |
+| `viewPlaneMovePointNormal` | 6734 | function |  | 2 |
+| `updateViewPlaneNormalGuide` | 6745 | function |  | 5 |
+| `rebaseViewPlaneMoveDrag` | 6758 | function |  | 3 |
+| `setViewPlaneNormalMoveHeld` | 6777 | function |  | 4 |
+| `beginViewPlaneMove` | 6784 | function |  | 3 |
+| `updateViewPlaneMove` | 6848 | function |  | 1 |
+| `endViewPlaneMove` | 6913 | function |  | 7 |
+| `applyHierarchicalRotate` | 6932 | function |  | 2 |
+| `rotateGuideNormal` | 6939 | arrow |  | 4 |
+| `applySingleRotate` | 6977 | function |  | 2 |
+| `applyProportionalRotate` | 6981 | function |  | 2 |
+| `applyHierarchicalScale` | 7001 | function |  | 2 |
+| `applySingleScale` | 7011 | function |  | 2 |
+| `applyProportionalScale` | 7015 | function |  | 2 |
+| `setPointScale` | 7031 | function |  | 6 |
+| `proportionalWeight` | 7040 | function |  | 8 |
+| `proportionalStrandVisualsActive` | 7052 | function |  | 5 |
+| `strandInfluenceColor` | 7058 | function |  | 4 |
+| `beginRelaxEdit` | 7083 | function |  | 3 |
+| `updateRelaxEdit` | 7112 | function |  | 1 |
+| `endRelaxEdit` | 7172 | function |  | 1 |
+| `disposeGuide` | 7182 | function |  | 3 |
+| `removeGuideObjects` | 7210 | function |  | 3 |
+| `strandRadiusAt` | 7224 | function |  | 5 |
+| `strandProfileTopologyAt` | 7241 | function |  | 2 |
+| `strandCurveParameters` | 7283 | function |  | 2 |
+| `widthProfileAt` | 7293 | arrow |  | 1 |
+| `braidFrameAt` | 7331 | function |  | 4 |
+| `braidFrameAtExtended` | 7341 | function |  | 2 |
+| `createBraidProfileProjector` | 7350 | function |  | 2 |
+| `project` | 7366 | arrow |  | 11 |
+| `createBraidGeometry` | 7381 | function |  | 1 |
+| `quantize` | 7414 | arrow |  | 19 |
+| `deformationAt` | 7416 | function |  | 3 |
+| `widthFor` | 7425 | arrow |  | 3 |
+| `depthFor` | 7429 | arrow |  | 3 |
+| `outputVertex` | 7461 | function |  | 7 |
+| `appendAuthoredCap` | 7569 | function |  | 3 |
+| `outputCapVertex` | 7576 | arrow |  | 6 |
+| `capBoundary` | 7667 | function |  | 3 |
+| `strandGeometryCurve` | 7729 | function |  | 8 |
+| `strandGeometryFrameAt` | 7755 | function |  | 6 |
+| `transportedStrandFrameAt` | 7818 | function |  | 4 |
+| `twistOverrideAt` | 7821 | arrow |  | 2 |
+| `createHairTopologyGeometry` | 7894 | function |  | 4 |
+| `createHairTopologyOverlay` | 7915 | function |  | 3 |
+| `groupDefaultsFor` | 7962 | function |  | 7 |
+| `creationToolActive` | 7969 | function |  | 5 |
+| `activeCreationShapeDefaults` | 7973 | function |  | 6 |
+| `curvePolylineLength` | 7980 | function |  | 2 |
+| `curvePolylineLengths` | 7988 | function |  | 3 |
+| `samplePolylineDistance` | 7996 | function |  | 2 |
+| `applyProjectedCurveLength` | 8006 | function |  | 4 |
+| `clearRegionLengthBaseline` | 8037 | function |  | 2 |
+| `ensureRegionLengthBaseline` | 8044 | function |  | 2 |
+| `setGroupLengthScale` | 8052 | function |  | 2 |
+| `applyGroupDefaultsToExistingStrands` | 8090 | function |  | 3 |
+| `requestGroupDefaultsWarning` | 8122 | function |  | 1 |
+| `activeProfileOffset` | 8134 | function |  | 3 |
+| `profileToCanvas` | 8142 | function |  | 1 |
+| `renderProfilePreview` | 8149 | function |  | 7 |
+| `renderHairCardCoveragePath` | 8168 | function |  | 2 |
+| `updateViewportStatsVisibility` | 8686 | function |  | 1 |
+| `canvasToProfile` | 8705 | function |  | 2 |
+| `addLock` | 8720 | function |  | 4 |
+| `mirroredVector` | 8942 | function |  | 12 |
+| `mirroredPlacementFrame` | 8946 | function |  | 2 |
+| `mirrorPartnerFor` | 8959 | function |  | 28 |
+| `decoupleMirrorPartner` | 8963 | function |  | 2 |
+| `createMirrorPartner` | 8971 | function |  | 3 |
+| `createMirrorPartnerForNewLock` | 9072 | function |  | 1 |
+| `syncMirrorPartnerFromLock` | 9091 | function |  | 3 |
+| `syncActiveMirror` | 9268 | function |  | 17 |
+| `setMirrorXEditing` | 9280 | function |  | 5 |
+| `snapshotState` | 9304 | function |  | 5 |
+| `pushUndoState` | 9652 | function |  | 68 |
+| `undoLastAction` | 9660 | function |  | 2 |
+| `redoLastAction` | 9679 | function |  | 2 |
+| `updateHistoryButtons` | 9698 | function |  | 5 |
+| `resetTransientInteractionsForStateRestore` | 9703 | function |  | 2 |
+| `resetEditableSceneForStateRestore` | 9723 | function |  | 2 |
+| `restoreSharedStateForStateRestore` | 9730 | function |  | 2 |
+| `restoreSceneCollectionsForStateRestore` | 9770 | function |  | 2 |
+| `validateSelectionAfterStateRestore` | 9796 | function |  | 2 |
+| `reapplySelectionAfterStateRestore` | 9828 | function |  | 2 |
+| `finalizeStateRestore` | 9869 | function |  | 2 |
+| `restoreState` | 9876 | function |  | 3 |
+| `disposeAllEditableObjects` | 9900 | function |  | 2 |
+| `restoreLock` | 9921 | function |  | 2 |
+| `restoreGuide` | 10155 | function |  | 2 |
+| `vectorToData` | 10216 | function |  | 15 |
+| `dataToVector` | 10220 | function |  | 14 |
+| `frameToData` | 10250 | function |  | 2 |
+| `frameFromData` | 10262 | function |  | 2 |
+| `average` | 10274 | function |  | 3 |
+| `fitPointAttributes` | 10278 | function |  | 5 |
+| `rebuildCurveObjects` | 10307 | function |  | 4 |
+| `createCurvePoints` | 10319 | function |  | 2 |
+| `deselectStrands` | 10423 | function |  | 9 |
+| `beginSelectionMarquee` | 10438 | function |  | 3 |
+| `beginAltOrbit` | 10462 | function |  | 1 |
+| `beginBlenderNavigation` | 10479 | function |  | 1 |
+| `endBlenderNavigation` | 10529 | function |  | 1 |
+| `prepareSelectPointerCapture` | 10537 | function |  | 1 |
+| `endSelectPointerCapture` | 10543 | function |  | 1 |
+| `applyAltClickCandidate` | 10549 | function |  | 2 |
+| `finishBrushAltClick` | 10575 | function |  | 1 |
+| `endAltOrbit` | 10588 | function |  | 2 |
+| `dollyCameraByDrag` | 10595 | function |  | 2 |
+| `fastDragMagnitude` | 10618 | function |  | 2 |
+| `beginHoudiniZoomDrag` | 10624 | function |  | 1 |
+| `updateHoudiniZoomDrag` | 10632 | function |  | 1 |
+| `endHoudiniZoomDrag` | 10649 | function |  | 1 |
+| `updateSelectionMarquee` | 10657 | function |  | 1 |
+| `pointInsideSelectionMarquee` | 10674 | function |  | 3 |
+| `selectPointsInMarquee` | 10682 | function |  | 2 |
+| `pointKey` | 10708 | arrow |  | 2 |
+| `objectSelectionScreenBounds` | 10739 | function |  | 2 |
+| `objectInsideSelectionMarquee` | 10776 | function |  | 3 |
+| `projectedPoint` | 10793 | arrow |  | 1 |
+| `selectObjectsInMarquee` | 10822 | function |  | 2 |
+| `finishSelectionMarquee` | 10867 | function |  | 2 |
+| `strandSplitProfileData` | 10891 | function |  | 2 |
+| `strandSplitControlPoint` | 10904 | function |  | 1 |
+| `panelSplitControlPoint` | 10940 | function |  | 3 |
+| `panelWidthAt` | 10957 | arrow |  | 3 |
+| `panelThicknessAt` | 10964 | arrow |  | 3 |
+| `strandControlPointRaycast` | 10997 | function |  | 1 |
+| `strandControlPointFrame` | 11032 | function |  | 4 |
+| `strandControlPointHitFromEvent` | 11064 | function |  | 3 |
+| `createCurveObjects` | 11122 | function |  | 4 |
+| `createDimensionEdgeLines` | 11151 | arrow |  | 2 |
+| `strandWidthEdgeFrameAt` | 11267 | function |  | 5 |
+| `transportedStrandWidthEdgeFrame` | 11274 | function |  | 2 |
+| `strandWidthEdgeSample` | 11283 | function |  | 3 |
+| `strandWidthEdgePoints` | 11318 | function |  | 2 |
+| `moveCurveControlsApplicable` | 11332 | function |  | 5 |
+| `moveGrabHandlesApplicable` | 11342 | function |  | 2 |
+| `moveGrabHandleVisible` | 11352 | function |  | 2 |
+| `visibleTaperMeshCurveEdits` | 11357 | function |  | 1 |
+| `syncMoveCurveControls` | 11378 | function |  | 8 |
+| `syncAuthoredCheckbox` | 11393 | arrow |  | 3 |
+| `setMoveGrabHandleVisibility` | 11413 | function |  | 4 |
+| `setMoveCurveControlVisibility` | 11421 | function |  | 4 |
+| `setSelectedMoveCurveShapeFlag` | 11430 | function |  | 4 |
+| `sculptBrushDebugRaycast` | 11444 | arrow |  | 0 |
+| `updateCurveObjects` | 11446 | function |  | 27 |
+| `pointUpDirection` | 11651 | function |  | 2 |
+| `curveFrameAtPoint` | 11655 | function |  | 4 |
+| `curveFrameAt` | 11676 | function |  | 3 |
+| `strandTwistAt` | 11696 | function |  | 6 |
+| `controlPointRotationAt` | 11701 | function |  | 3 |
+| `strandProfileTwistAt` | 11705 | function |  | 2 |
+| `strandFrameAt` | 11711 | function |  | 1 |
+| `curveFrameAtSnapshot` | 11717 | function |  | 3 |
+| `outwardNormalAtPoint` | 11736 | function |  | 5 |
+| `sampledSurfaceNormal` | 11799 | function |  | 2 |
+| `guidedNormalAt` | 11815 | function |  | 4 |
+| `twistFromHandle` | 11834 | function |  | 3 |
+| `signedAngleAroundAxis` | 11855 | function |  | 4 |
+| `handleColor` | 11862 | function |  | 2 |
+| `isAffectedCurvePoint` | 11885 | function |  | 2 |
+| `syncLockFromCurve` | 11891 | function |  | 14 |
+| `rebuildLockGeometry` | 11921 | function |  | 8 |
+| `flushPendingLockGeometryUpdates` | 11945 | function |  | 6 |
+| `updateLockGeometry` | 11958 | function |  | 28 |
+| `setGroupColorView` | 11979 | function |  | 2 |
+| `createUvCheckerTexture` | 11989 | function |  | 3 |
+| `ensureUvCheckerForLock` | 12025 | function |  | 3 |
+| `removeUvCheckerFromLock` | 12058 | function |  | 3 |
+| `invalidateUvInspector` | 12073 | function |  | 7 |
+| `uvInspectorRecord` | 12077 | function |  | 1 |
+| `uvInspectorRecords` | 12116 | function |  | 2 |
+| `drawUvInspectorGrid` | 12120 | function |  | 2 |
+| `renderUvInspector` | 12154 | function |  | 3 |
+| `setUvCheckerEnabled` | 12213 | function |  | 3 |
+| `strandViewportBaseColor` | 12230 | function |  | 2 |
+| `strandMirrorPartnerHighlighted` | 12265 | function |  | 3 |
+| `syncStrandSelectionOutline` | 12271 | function |  | 2 |
+| `applyLockedStrandPalette` | 12282 | function |  | 2 |
+| `syncLockedStrandWireVisual` | 12291 | function |  | 5 |
+| `setStrandSelectionVisual` | 12300 | function |  | 4 |
+| `updateStrandSelectionHighlightForLock` | 12318 | function |  | 1 |
+| `updateStrandSelectionHighlight` | 12322 | function |  | 6 |
+| `refreshStrandCurveSelectionVisuals` | 12326 | function |  | 2 |
+| `resetGuideSelectionVisuals` | 12339 | function |  | 2 |
+| `refreshStrandSelectionConsumers` | 12359 | function |  | 3 |
+| `selectLock` | 12394 | function |  | 24 |
+| `deselectStrandsForGuideEditor` | 12456 | function |  | 1 |
+| `syncGroupInputs` | 12467 | function |  | 2 |
+| `topologyStatsForLock` | 12500 | function |  | 4 |
+| `formatTopologyStats` | 12508 | function |  | 5 |
+| `updateTopologyStats` | 12512 | function |  | 15 |
+| `normalizeStrandDimensions` | 12546 | function |  | 3 |
+| `strandBaseWidth` | 12560 | function |  | 5 |
+| `strandWidthDimension` | 12564 | function |  | 5 |
+| `strandDepthDimension` | 12572 | function |  | 8 |
+| `setStrandWidthDimension` | 12580 | function |  | 2 |
+| `setStrandDepthDimension` | 12602 | function |  | 4 |
+| `syncShapeDimensionInputs` | 12618 | function |  | 4 |
+| `syncCreationShapeInputs` | 12654 | function |  | 2 |
+| `syncViewportDrawSettings` | 12693 | function |  | 4 |
+| `syncViewportTopControlRows` | 12708 | function |  | 6 |
+| `syncResponsiveSidebarDock` | 12728 | function |  | 2 |
+| `syncStrandSplitInputs` | 12761 | function |  | 4 |
+| `currentStrandTipChain` | 12771 | function |  | 5 |
+| `currentStrandTipLength` | 12778 | function |  | 2 |
+| `syncStrandTipInputs` | 12787 | function |  | 4 |
+| `currentStrandSplitTipChains` | 12802 | function |  | 4 |
+| `restPointAt` | 12821 | arrow |  | 0 |
+| `currentStrandSplitTipLength` | 12837 | function |  | 2 |
+| `syncStrandSplitTipInputs` | 12848 | function |  | 3 |
+| `syncHairCardControls` | 12859 | function |  | 6 |
+| `updateAttributeEditorMode` | 12868 | function |  | 10 |
+| `pinActiveToolSettingsPanel` | 13021 | function |  | 2 |
+| `curveLatticeForGroup` | 13044 | function |  | 2 |
+| `filterCurveLatticesToGroup` | 13062 | function |  | 5 |
+| `createStandaloneCurveLatticeGuide` | 13107 | function |  | 2 |
+| `showCurveLatticeForGroup` | 13124 | function |  | 2 |
+| `selectStrandGroup` | 13161 | function |  | 3 |
+| `selectCurvePoint` | 13203 | function |  | 3 |
+| `updateSelectedPointLabel` | 13217 | function |  | 12 |
+| `syncInputs` | 13230 | function |  | 13 |
+| `getSelectedLock` | 13278 | function |  | 93 |
+| `selectedLocksInOrder` | 13282 | function |  | 26 |
+| `lockStrands` | 13288 | function |  | 3 |
+| `lockSelectedStrands` | 13321 | function |  | 2 |
+| `unlockStrands` | 13327 | function |  | 3 |
+| `unlockAllStrands` | 13342 | function |  | 2 |
+| `strandEditFamily` | 13346 | function |  | 7 |
+| `compatibleSelectedLocks` | 13351 | function |  | 5 |
+| `selectedEditRoots` | 13358 | function |  | 2 |
+| `editSelectedLocks` | 13371 | function |  | 18 |
+| `multiEditValuesEqual` | 13404 | function |  | 2 |
+| `setMixedControl` | 13413 | function |  | 29 |
+| `syncMultiStrandInputs` | 13430 | function |  | 18 |
+| `values` | 13446 | arrow |  | 35 |
+| `selectedRebuildableCurves` | 13527 | function |  | 5 |
+| `createCompoundStrand` | 13534 | function |  | 1 |
+| `refreshRebuildCurveDialog` | 13595 | function |  | 7 |
+| `openRebuildCurveDialog` | 13608 | function |  | 1 |
+| `rebuildSelectedCurves` | 13622 | function |  | 2 |
+| `cleanSelectionSets` | 13663 | function |  | 2 |
+| `createSelectionSetFromSelection` | 13668 | function |  | 2 |
+| `selectionSetById` | 13679 | function |  | 5 |
+| `selectionSetCanEditFromSelection` | 13683 | function |  | 7 |
+| `editSelectionSetFromSelection` | 13692 | function |  | 4 |
+| `closeSelectionSetMembershipDialog` | 13712 | function |  | 3 |
+| `openSelectionSetMembershipDialog` | 13718 | function |  | 3 |
+| `deleteSelectionSet` | 13750 | function |  | 2 |
+| `selectSelectionSet` | 13759 | function |  | 2 |
+| `deleteSelectedStrands` | 13769 | function |  | 3 |
+| `deleteGuide` | 13777 | function |  | 3 |
+| `deleteSelectedGuide` | 13800 | function |  | 3 |
+| `hasDeletableSelection` | 13805 | function |  | 2 |
+| `deleteCurrentSelection` | 13813 | function |  | 3 |
+| `hideOutlinerContextMenu` | 13821 | function |  | 16 |
+| `outlinerLockTargets` | 13826 | function |  | 3 |
+| `showOutlinerContextMenu` | 13853 | function |  | 6 |
+| `setPullMoveEnabled` | 13950 | function |  | 2 |
+| `setNavigationTipsEnabled` | 13959 | function |  | 4 |
+| `configureNavigationMouseButtons` | 13966 | function |  | 3 |
+| `syncNavigationModifierLocks` | 13979 | function |  | 7 |
+| `setNavigationStyle` | 13984 | function |  | 4 |
+| `applyCameraSmoothingPreference` | 14000 | function |  | 4 |
+| `setCameraSmoothingEnabled` | 14015 | function |  | 4 |
+| `setCameraSmoothingStrength` | 14021 | function |  | 4 |
+| `setScaleSensitivity` | 14029 | function |  | 3 |
+| `setToolTipsEnabled` | 14037 | function |  | 4 |
+| `setCompactToolButtonsEnabled` | 14044 | function |  | 4 |
+| `setViewportStatisticsEnabled` | 14053 | function |  | 4 |
+| `setTwistCurveAllStrandsPreviewEnabled` | 14061 | function |  | 4 |
+| `setLayerColorShiftsEnabled` | 14076 | function |  | 4 |
+| `setOutlinerFolderColorsEnabled` | 14085 | function |  | 4 |
+| `setSidePanelStyle` | 14095 | function |  | 5 |
+| `setGlassPanelColor` | 14113 | function |  | 6 |
+| `setOutlinerFolderColorOpacity` | 14123 | function |  | 5 |
+| `sideNamingDisplayId` | 14140 | function |  | 2 |
+| `strandRegionDisplayLabel` | 14153 | function |  | 6 |
+| `updateSideNamingLabels` | 14171 | function |  | 2 |
+| `setSideNamingPerspective` | 14198 | function |  | 4 |
+| `setControlPointDisplaySize` | 14207 | function |  | 5 |
+| `scaleHexColor` | 14219 | function |  | 3 |
+| `setViewportBackgroundColor` | 14224 | function |  | 6 |
+| `setDefaultHairShader` | 14246 | function |  | 4 |
+| `setPreferenceCategory` | 14252 | function |  | 4 |
+| `openPreferencesDialog` | 14279 | function |  | 1 |
+| `savePreferencesDialog` | 14318 | function |  | 1 |
+| `cancelPreferencesDialog` | 14348 | function |  | 3 |
+| `createOutlinerStrandButton` | 14388 | function |  | 2 |
+| `createOutlinerCurveSurface` | 14474 | function |  | 2 |
+| `selectionSetMatchesCurrentSelection` | 14571 | function |  | 2 |
+| `createSelectionSetsOutlinerFolder` | 14578 | function |  | 2 |
+| `renderLockList` | 14657 | function |  | 37 |
+| `updateCount` | 14838 | function |  | 10 |
+| `captureInputUndo` | 14847 | function |  | 1 |
+| `bindUndoCapture` | 14853 | function |  | 41 |
+| `bindLockInput` | 14864 | function |  | 2 |
+| `applyValue` | 14881 | arrow |  | 2 |
+| `applyUniformTransformScale` | 15216 | function |  | 2 |
+| `applyReducedTransformScale` | 15233 | function |  | 2 |
+| `applyTransformPrecision` | 15272 | function |  | 2 |
+| `updateTransformScalePointer` | 15301 | function |  | 1 |
+| `syncDrawCurlControls` | 16376 | function |  | 5 |
+| `handleLiveSurfaceChange` | 16424 | function |  | 1 |
+| `applyStrandTipToTarget` | 16484 | function |  | 5 |
+| `strandTipTarget` | 16495 | function |  | 5 |
+| `strandSplitTipTarget` | 16568 | function |  | 3 |
+| `applyStrandSplitTipToTarget` | 16573 | function |  | 3 |
+| `selectedBranchChildLock` | 16865 | function |  | 4 |
+| `updateBranchBridgeSliderInputs` | 16869 | function |  | 2 |
+| `initPanelResizeHandles` | 16979 | function |  | 2 |
+| `applyWidth` | 16985 | arrow |  | 2 |
+| `restoreWidth` | 16992 | arrow |  | 2 |
+| `bindResize` | 17000 | arrow |  | 2 |
+| `onMove` | 17009 | arrow |  | 0 |
+| `onUp` | 17013 | arrow |  | 0 |
+| `updateSnappedFloatingPanels` | 17030 | function |  | 2 |
+| `initFloatingPanelControls` | 17039 | function |  | 2 |
+| `detach` | 17048 | arrow |  | 22 |
+| `endDrag` | 17086 | arrow |  | 0 |
+| `endResize` | 17118 | arrow |  | 0 |
+| `updateSculptBrushDockCompact` | 17129 | function |  | 3 |
+| `selectPatchNotesVersion` | 17288 | function |  | 3 |
+| `toggleCapsuleGuideTool` | 17519 | function |  | 1 |
+| `activateCapsuleGuideDrawTool` | 17525 | function |  | 1 |
+| `createCurveLatticeGuideFromUi` | 17532 | function |  | 1 |
+| `deleteLocks` | 18099 | function |  | 4 |
+| `disposeCurveObjects` | 18177 | function |  | 4 |
+| `activateMultiCameraView` | 18224 | arrow |  | 1 |
+| `resize` | 18256 | function |  | 6 |
+| `handleViewportPointerMove` | 18282 | function |  | 1 |
+| `blockProportionalSizingEvent` | 18293 | function |  | 1 |
+| `updateLightAngleFromInputs` | 18299 | function |  | 2 |
+| `startViewSnap` | 18313 | function |  | 3 |
+| `beginViewSnapFromActiveOrbit` | 18343 | function |  | 3 |
+| `trackViewportPointerDown` | 18360 | function |  | 1 |
+| `trackViewportPointerMove` | 18376 | function |  | 1 |
+| `clearViewportPointer` | 18384 | function |  | 1 |
+| `updateViewSnap` | 18389 | function |  | 1 |
+| `nearestCardinalAxis` | 18425 | function |  | 6 |
+| `cardinalAxisKey` | 18439 | function |  | 6 |
+| `steppedDragAmount` | 18443 | function |  | 3 |
+| `snapCameraToCardinalAxis` | 18449 | function |  | 5 |
+| `endViewSnap` | 18465 | function |  | 4 |
+| `updateCameraViewCube` | 18484 | function |  | 3 |
+| `activateView` | 18502 | function |  | 1 |
+| `activateStrandControlPoint` | 18527 | function |  | 2 |
+| `refreshStrandControlPointSelection` | 18577 | function |  | 4 |
+| `addStrandControlPointSelection` | 18604 | function |  | 2 |
+| `removeStrandControlPointSelection` | 18621 | function |  | 3 |
+| `sampleStrandPointNormal` | 18635 | function |  | 2 |
+| `sampleStrandPointVectors` | 18645 | function |  | 3 |
+| `remapStrandPointSelectionAfterRemoval` | 18651 | function |  | 2 |
+| `resampleStrandCurveData` | 18662 | function |  | 4 |
+| `resampleMatchingVectors` | 18668 | arrow |  | 3 |
+| `finishStrandCurveTopologyChange` | 18707 | function |  | 4 |
+| `removeStrandCurvePoint` | 18718 | function |  | 2 |
+| `closestStrandCurveParameter` | 18731 | function |  | 1 |
+| `insertStrandCurvePoint` | 18760 | function |  | 2 |
+| `curvePointTopologyCursorAvailable` | 18777 | function |  | 2 |
+| `selectionModifierCursorAvailable` | 18787 | function |  | 3 |
+| `clearCurvePointTopologyCursor` | 18803 | function |  | 6 |
+| `updateCurvePointTopologyCursor` | 18810 | function |  | 4 |
+| `finishCurvePointInsertion` | 18833 | function |  | 1 |
+| `finishPointRemoval` | 18848 | function |  | 1 |
+| `isHairCreateTool` | 18867 | function |  | 4 |
+| `syncStrandHoverOutline` | 18871 | function |  | 1 |
+| `pointerOverTaperEditor` | 18884 | function |  | 2 |
+| `updateStrandBrushHover` | 18891 | function |  | 1 |
+| `strandControlPointHit` | 18915 | function |  | 3 |
+| `beginStrandWidthEdgeDrag` | 18919 | function |  | 1 |
+| `updateStrandWidthEdgeDrag` | 18997 | function |  | 1 |
+| `finishStrandWidthEdgeDrag` | 19031 | function |  | 2 |
+| `setHoveredStrandWidthEdge` | 19071 | function |  | 8 |
+| `updateStrandWidthEdgeHover` | 19084 | function |  | 1 |
+| `setHoveredControlPoint` | 19123 | function |  | 7 |
+| `visibleControlPointHoverTargets` | 19136 | function |  | 2 |
+| `updateControlPointHover` | 19172 | function |  | 1 |
+| `animate` | 19791 | function |  | 2 |
+| `syncCompactSidebarLayout` | 19827 | function |  | 4 |
+| `setOutlinerPanelCollapsed` | 19846 | function |  | 5 |
+| `setAttributeEditorPanelCollapsed` | 19852 | function |  | 3 |
+| `setAttributeEditorTab` | 19858 | function |  | 6 |
 
-## modules/bones/bone-interaction.js（734 行）
+## modules/bones/bone-interaction.js（867 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
-| `createBoneInteractionApi` | 19 | function | export | 1 |
-| `beginTipSubBoneRotate` | 20 | function |  | 1 |
-| `applyTipSubBoneTransform` | 48 | function |  | 1 |
-| `beginPanelSplitHandleDrag` | 80 | function |  | 1 |
-| `updatePanelSplitHandleDrag` | 205 | function |  | 1 |
-| `endPanelSplitHandleDrag` | 426 | function |  | 3 |
-| `applySubBoneBrushSample` | 437 | function |  | 1 |
-| `updatePanelTipHover` | 582 | function |  | 1 |
-| `prepareCurvePointSelection` | 612 | function |  | 1 |
+| `createBoneInteractionApi` | 22 | function | export | 1 |
+| `beginTipSubBoneRotate` | 23 | function |  | 1 |
+| `beginTipSubBoneTranslate` | 51 | function |  | 1 |
+| `applyTipSubBoneTransform` | 80 | function |  | 1 |
+| `beginPanelSplitHandleDrag` | 143 | function |  | 1 |
+| `updatePanelSplitHandleDrag` | 291 | function |  | 1 |
+| `endPanelSplitHandleDrag` | 558 | function |  | 3 |
+| `applySubBoneBrushSample` | 569 | function |  | 1 |
+| `updatePanelTipHover` | 714 | function |  | 1 |
+| `prepareCurvePointSelection` | 744 | function |  | 1 |
 
-## modules/bones/bone-model.js（349 行）
+## modules/bones/bone-model.js（541 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -569,29 +642,42 @@
 | `splitBonesFor` | 67 | function | export | 3 |
 | `materializeSplitBones` | 83 | function | export | 1 |
 | `bonesFor` | 101 | function | export | 1 |
-| `splitBonesToData` | 172 | function | export | 1 |
-| `splitBonesFromData` | 200 | function | export | 1 |
-| `mirrorSplitBones` | 205 | function | export | 1 |
-| `normalizeBone` | 230 | function | export | 6 |
-| `curve` | 233 | arrow |  | 4 |
-| `pick` | 237 | arrow |  | 6 |
-| `normalizeBones` | 269 | function | export | 2 |
-| `bonesToData` | 276 | function | export | 2 |
-| `bonesFromData` | 307 | function | export | 1 |
-| `mirrorBones` | 313 | function | export | 1 |
-| `registryForSave` | 333 | function | export | 1 |
+| `splitBonesToData` | 211 | function | export | 1 |
+| `splitBonesFromData` | 239 | function | export | 1 |
+| `mirrorSplitBones` | 244 | function | export | 1 |
+| `normalizeStrandTip` | 266 | function | export | 6 |
+| `numPoint` | 268 | arrow |  | 0 |
+| `strandTipFor` | 277 | function | export | 2 |
+| `strandTipToData` | 281 | function | export | 1 |
+| `strandTipFromData` | 293 | function | export | 1 |
+| `mirrorStrandTip` | 297 | function | export | 1 |
+| `defaultStrandSplitSpread` | 312 | function | export | 3 |
+| `normalizeStrandSplitBone` | 318 | function |  | 3 |
+| `strandSplitBonesFor` | 330 | function | export | 3 |
+| `materializeStrandSplitBones` | 356 | function | export | 1 |
+| `strandSplitBonesToData` | 364 | function | export | 1 |
+| `strandSplitBonesFromData` | 392 | function | export | 1 |
+| `mirrorStrandSplitBones` | 399 | function | export | 1 |
+| `normalizeBone` | 422 | function | export | 7 |
+| `curve` | 425 | arrow |  | 4 |
+| `pick` | 429 | arrow |  | 6 |
+| `normalizeBones` | 461 | function | export | 2 |
+| `bonesToData` | 468 | function | export | 2 |
+| `bonesFromData` | 499 | function | export | 1 |
+| `mirrorBones` | 505 | function | export | 1 |
+| `registryForSave` | 525 | function | export | 1 |
 
-## modules/bones/bone-view-handles.js（539 行）
+## modules/bones/bone-view-handles.js（717 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
-| `createBoneViewHandlesApi` | 14 | function | export | 2 |
-| `createSplitControlHandle` | 15 | function |  | 6 |
-| `createCurveNormalIndicator` | 30 | function |  | 2 |
-| `createBoneViewHandles` | 56 | function |  | 1 |
-| `updateBoneViewHandles` | 204 | function |  | 1 |
-| `syncTipNormalArrow` | 272 | arrow |  | 4 |
-| `disposeBoneViewHandles` | 474 | function |  | 1 |
+| `createBoneViewHandlesApi` | 18 | function | export | 2 |
+| `createSplitControlHandle` | 19 | function |  | 9 |
+| `createCurveNormalIndicator` | 34 | function |  | 2 |
+| `createBoneViewHandles` | 60 | function |  | 1 |
+| `updateBoneViewHandles` | 280 | function |  | 1 |
+| `syncTipNormalArrow` | 371 | arrow |  | 4 |
+| `disposeBoneViewHandles` | 636 | function |  | 1 |
 
 ## modules/bones/segment-control.js（155 行）
 
@@ -610,7 +696,7 @@
 |---|---|---|---|---|
 | `createBranchStore` | 15 | function | export | 1 |
 
-## modules/core/app-config.js（92 行）
+## modules/core/app-config.js（97 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -627,7 +713,7 @@
 |---|---|---|---|---|
 | `createGuideStore` | 3 | function | export | 1 |
 
-## modules/core/hair-store.js（30 行）
+## modules/core/hair-store.js（32 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -644,11 +730,17 @@
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
 
-## modules/core/misc-store.js（27 行）
+## modules/core/misc-store.js（28 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
 | `createMiscStore` | 3 | function | export | 1 |
+
+## modules/core/multi-camera-store.js（26 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `createMultiCameraStore` | 11 | function | export | 1 |
 
 ## modules/core/preference-storage.js（33 行）
 
@@ -658,13 +750,13 @@
 | `readStoredBooleanPreference` | 14 | function | export | 1 |
 | `writeStoredPreference` | 25 | function | export | 1 |
 
-## modules/core/preferences-backup.js（73 行）
+## modules/core/preferences-backup.js（80 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
 | `createPreferencesBackup` | 4 | function | export | 1 |
-| `normalizePreferencesBackup` | 29 | function | export | 1 |
-| `preferencesBackupFileName` | 66 | function | export | 1 |
+| `normalizePreferencesBackup` | 33 | function | export | 1 |
+| `preferencesBackupFileName` | 73 | function | export | 1 |
 
 ## modules/core/scene-store.js（38 行）
 
@@ -672,13 +764,14 @@
 |---|---|---|---|---|
 | `createSceneStore` | 5 | function | export | 1 |
 
-## modules/core/shortcut-registry.js（54 行）
+## modules/core/shortcut-registry.js（62 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
 | `shortcutToolForKey` | 34 | function | export | 1 |
 | `workspaceForShortcutKey` | 38 | function | export | 1 |
-| `focusedControlShouldYieldToShortcut` | 42 | function | export | 1 |
+| `pointerControlShouldReturnViewportFocus` | 42 | function | export | 1 |
+| `focusedControlShouldYieldToShortcut` | 50 | function | export | 1 |
 
 ## modules/core/transform-store.js（11 行）
 
@@ -709,12 +802,12 @@
 | `normalizeClumpBrushTemplate` | 82 | function | export | 2 |
 | `createClumpBrushTemplate` | 107 | function | export | 1 |
 
-## modules/data/loc-ja.js（688 行）
+## modules/data/loc-ja.js（754 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
 
-## modules/data/loc-zh.js（675 行）
+## modules/data/loc-zh.js（740 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -810,13 +903,23 @@
 |---|---|---|---|---|
 | `createSelectionStore` | 6 | function | export | 1 |
 
-## modules/geometry/anime-hair-shaders.js（286 行）
+## modules/geometry/anime-hair-shaders.js（292 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
 | `normalizeHairShader` | 5 | function | export | 1 |
 | `normalizedHexColor` | 52 | function |  | 6 |
 | `normalizeAnimeAnisotropicSettings` | 56 | function | export | 1 |
+
+## modules/geometry/arc-hair-surface.js（86 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `finiteNumber` | 11 | function |  | 8 |
+| `clamp` | 16 | function |  | 8 |
+| `normalizeArcHairSurfaceSettings` | 20 | function | export | 2 |
+| `arcCrossSection` | 32 | function |  | 2 |
+| `createArcHairSurfaceGrid` | 57 | function | export | 1 |
 
 ## modules/geometry/branch-bridge.js（999 行）
 
@@ -870,6 +973,14 @@
 | `updateBranchChildren` | 48 | function |  | 3 |
 | `canBranchDrawFromLock` | 91 | function |  | 3 |
 | `selectedDrawBranchPoint` | 98 | function |  | 1 |
+
+## modules/geometry/branch-knife.js（42 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `clamp` | 1 | function |  | 2 |
+| `distance` | 5 | function |  | 4 |
+| `resampleClosedProfilePoints` | 9 | function | export | 1 |
 
 ## modules/geometry/branch-region-panel.js（782 行）
 
@@ -1028,7 +1139,7 @@
 | `beginProceduralAccessoryEdit` | 879 | function |  | 1 |
 | `updateSelectedProceduralAccessories` | 885 | function |  | 1 |
 
-## modules/geometry/compound-strand.js（131 行）
+## modules/geometry/compound-strand.js（159 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -1041,6 +1152,9 @@
 | `compoundBridgeParameters` | 41 | function | export | 1 |
 | `compoundBridgeArchWeight` | 47 | function | export | 1 |
 | `compoundProfileBridgePlan` | 61 | function | export | 1 |
+| `normalizeCompoundBridgeZippers` | 132 | function | export | 3 |
+| `compoundBridgeSegmentCounts` | 141 | function | export | 1 |
+| `compoundControllerWidthScales` | 149 | function | export | 1 |
 
 ## modules/geometry/curve-lattice.js（102 行）
 
@@ -1052,76 +1166,80 @@
 | `resampleCurveLatticeLineData` | 79 | function | export | 1 |
 | `curveLatticeLoopPointIndices` | 90 | function | export | 1 |
 
-## modules/geometry/curve-math.js（1172 行）
+## modules/geometry/curve-math.js（1233 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
-| `clamp` | 1 | function |  | 46 |
+| `clamp` | 1 | function |  | 53 |
 | `lerp` | 5 | function |  | 37 |
 | `clumpMemberGuideParameter` | 9 | function | export | 1 |
 | `relaxAngleValue` | 15 | function | export | 1 |
-| `angularDelta` | 17 | arrow |  | 2 |
-| `curvedRelaxPositionTarget` | 25 | function | export | 1 |
-| `axisTarget` | 37 | arrow |  | 3 |
-| `smoothstep` | 56 | function |  | 4 |
-| `legacyTaperCurve` | 61 | function | export | 2 |
-| `normalizeTaperCurve` | 74 | function | export | 3 |
-| `normalizeEnvelopeCurve` | 86 | function | export | 3 |
-| `smoothTaperTangents` | 102 | function | export | 2 |
-| `sampleTaperCurve` | 122 | function | export | 16 |
-| `remapEnvelopeCurveRange` | 146 | function | export | 1 |
-| `interpolationAt` | 158 | arrow |  | 2 |
-| `twistRateUnitsFromDegrees` | 192 | function | export | 1 |
-| `twistRateDegreesFromUnits` | 196 | function | export | 1 |
-| `sampleIntegratedEnvelopeCurve` | 200 | function | export | 1 |
-| `sampleAsymmetricTaperCurve` | 228 | function | export | 1 |
-| `profileTopologyCenterWeight` | 250 | function | export | 1 |
-| `uniformCurveParameters` | 260 | function | export | 2 |
-| `eightWayScreenDelta` | 264 | function | export | 1 |
-| `symmetricClosedCurveParameters` | 279 | function | export | 1 |
-| `wrap` | 285 | arrow |  | 4 |
-| `curveRebuildParameters` | 299 | function | export | 1 |
-| `pointDistance` | 325 | function |  | 4 |
-| `interpolatePoint` | 333 | function |  | 2 |
-| `resamplePolylinePointData` | 341 | function | export | 8 |
-| `polylineMidpointPointData` | 382 | function | export | 3 |
-| `blendRelativePolylinePointData` | 386 | function | export | 1 |
-| `normalizedPointData` | 403 | function |  | 17 |
-| `blendDirectionPointData` | 412 | function | export | 1 |
-| `rotatePointDataBetweenNormals` | 423 | function |  | 5 |
-| `tangentDirectionPointData` | 463 | function |  | 3 |
-| `rotatePointDataAroundAxis` | 477 | function |  | 3 |
-| `blendSurfaceOrientedPolylinePointData` | 495 | function | export | 1 |
-| `proximityCurveBlendAmount` | 566 | function | export | 2 |
-| `evenlySpacedInteriorAmounts` | 573 | function | export | 1 |
-| `surfaceArcBlendAmount` | 581 | function | export | 1 |
-| `direction` | 583 | arrow |  | 3 |
-| `surfaceArcPolylinePointData` | 611 | function | export | 1 |
-| `relative` | 619 | arrow |  | 2 |
-| `horizontalCircleThroughPointData` | 686 | function | export | 2 |
-| `horizontalCirclePointData` | 729 | function | export | 2 |
-| `rootCorrectionFalloff` | 740 | function | export | 1 |
-| `cylindricalArcPointData` | 749 | function | export | 2 |
-| `truncatePolylinePointDataAtY` | 756 | function |  | 3 |
-| `lowestSharedHorizontalPolylinePointData` | 801 | function | export | 2 |
-| `minimumY` | 805 | arrow |  | 2 |
-| `blendCylindricalPolylinePointData` | 823 | function | export | 1 |
-| `blendSampleArrays` | 845 | function | export | 1 |
-| `blendTaperCurves` | 861 | function | export | 1 |
-| `blendEnvelopeCurves` | 878 | function | export | 1 |
-| `curvePointRemovalPlan` | 895 | function | export | 1 |
-| `curvePointInsertionPlan` | 924 | function | export | 1 |
-| `adaptiveCurveParameters` | 945 | function | export | 1 |
-| `sampleProfile` | 968 | arrow |  | 3 |
-| `weightedParameter` | 1041 | arrow |  | 1 |
-| `twistCurveDensityDetail` | 1076 | function | export | 1 |
-| `twistCurveDisplayRange` | 1104 | function | export | 1 |
-| `twistCurveHandleDistancePerDegree` | 1113 | function | export | 1 |
-| `sampleArray` | 1119 | function | export | 3 |
-| `sampleScale` | 1128 | function | export | 1 |
-| `upperProfileArcIndices` | 1137 | function | export | 1 |
-| `cyclicPath` | 1155 | arrow |  | 2 |
-| `averageHeight` | 1166 | arrow |  | 2 |
+| `angularDelta` | 17 | arrow |  | 3 |
+| `curvedRelaxPositionTarget` | 31 | function | export | 1 |
+| `axisTarget` | 43 | arrow |  | 3 |
+| `smoothstep` | 62 | function |  | 4 |
+| `legacyTaperCurve` | 67 | function | export | 2 |
+| `normalizeTaperCurve` | 80 | function | export | 3 |
+| `normalizeEnvelopeCurve` | 92 | function | export | 3 |
+| `smoothTaperTangents` | 108 | function | export | 2 |
+| `sampleTaperCurve` | 128 | function | export | 16 |
+| `remapEnvelopeCurveRange` | 152 | function | export | 1 |
+| `interpolationAt` | 164 | arrow |  | 2 |
+| `twistRateUnitsFromDegrees` | 198 | function | export | 1 |
+| `twistRateDegreesFromUnits` | 202 | function | export | 1 |
+| `sampleIntegratedEnvelopeCurve` | 206 | function | export | 1 |
+| `sampleAsymmetricTaperCurve` | 234 | function | export | 1 |
+| `mirroredAsymmetricTaperCurves` | 256 | function | export | 1 |
+| `cloneCurve` | 257 | arrow |  | 2 |
+| `profileTopologyCenterWeight` | 266 | function | export | 1 |
+| `panelTipCurveParameter` | 276 | function | export | 1 |
+| `panelTipLoopParameters` | 295 | function | export | 1 |
+| `uniformCurveParameters` | 321 | function | export | 2 |
+| `eightWayScreenDelta` | 325 | function | export | 1 |
+| `symmetricClosedCurveParameters` | 340 | function | export | 1 |
+| `wrap` | 346 | arrow |  | 4 |
+| `curveRebuildParameters` | 360 | function | export | 1 |
+| `pointDistance` | 386 | function |  | 4 |
+| `interpolatePoint` | 394 | function |  | 2 |
+| `resamplePolylinePointData` | 402 | function | export | 8 |
+| `polylineMidpointPointData` | 443 | function | export | 3 |
+| `blendRelativePolylinePointData` | 447 | function | export | 1 |
+| `normalizedPointData` | 464 | function |  | 17 |
+| `blendDirectionPointData` | 473 | function | export | 1 |
+| `rotatePointDataBetweenNormals` | 484 | function |  | 5 |
+| `tangentDirectionPointData` | 524 | function |  | 3 |
+| `rotatePointDataAroundAxis` | 538 | function |  | 3 |
+| `blendSurfaceOrientedPolylinePointData` | 556 | function | export | 1 |
+| `proximityCurveBlendAmount` | 627 | function | export | 2 |
+| `evenlySpacedInteriorAmounts` | 634 | function | export | 1 |
+| `surfaceArcBlendAmount` | 642 | function | export | 1 |
+| `direction` | 644 | arrow |  | 3 |
+| `surfaceArcPolylinePointData` | 672 | function | export | 1 |
+| `relative` | 680 | arrow |  | 2 |
+| `horizontalCircleThroughPointData` | 747 | function | export | 2 |
+| `horizontalCirclePointData` | 790 | function | export | 2 |
+| `rootCorrectionFalloff` | 801 | function | export | 1 |
+| `cylindricalArcPointData` | 810 | function | export | 2 |
+| `truncatePolylinePointDataAtY` | 817 | function |  | 3 |
+| `lowestSharedHorizontalPolylinePointData` | 862 | function | export | 2 |
+| `minimumY` | 866 | arrow |  | 2 |
+| `blendCylindricalPolylinePointData` | 884 | function | export | 1 |
+| `blendSampleArrays` | 906 | function | export | 1 |
+| `blendTaperCurves` | 922 | function | export | 1 |
+| `blendEnvelopeCurves` | 939 | function | export | 1 |
+| `curvePointRemovalPlan` | 956 | function | export | 1 |
+| `curvePointInsertionPlan` | 985 | function | export | 1 |
+| `adaptiveCurveParameters` | 1006 | function | export | 1 |
+| `sampleProfile` | 1029 | arrow |  | 3 |
+| `weightedParameter` | 1102 | arrow |  | 1 |
+| `twistCurveDensityDetail` | 1137 | function | export | 1 |
+| `twistCurveDisplayRange` | 1165 | function | export | 1 |
+| `twistCurveHandleDistancePerDegree` | 1174 | function | export | 1 |
+| `sampleArray` | 1180 | function | export | 3 |
+| `sampleScale` | 1189 | function | export | 1 |
+| `upperProfileArcIndices` | 1198 | function | export | 1 |
+| `cyclicPath` | 1216 | arrow |  | 2 |
+| `averageHeight` | 1227 | arrow |  | 2 |
 
 ## modules/geometry/curve-surface-create.js（1226 行）
 
@@ -1406,49 +1524,81 @@
 | `syncGuideInputs` | 2716 | function |  | 2 |
 | `updateGuideGeometry` | 2759 | function |  | 1 |
 
-## modules/geometry/panel-tip-strand.js（1062 行）
+## modules/geometry/hair-shell.js（167 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
-| `createPanelTipStrandApi` | 17 | function | export | 2 |
-| `smoothCoincidentPanelNormals` | 24 | function |  | 2 |
-| `weldPanelGeometryData` | 60 | function |  | 2 |
-| `surfaceLatticeSampleVectors` | 106 | function |  | 2 |
-| `surfacePanelPoint` | 121 | function |  | 2 |
-| `splitForkT` | 144 | function |  | 1 |
-| `tipWidthSideForkT` | 156 | function |  | 8 |
-| `tipSegmentWeightAt` | 167 | function |  | 2 |
-| `tipWidthControlTs` | 186 | function |  | 4 |
-| `tipWidthCommonForkT` | 197 | function |  | 4 |
-| `tipWidthResetCurve` | 211 | function |  | 1 |
-| `addPoint` | 219 | arrow |  | 7 |
-| `tipWidthSpreadGap` | 248 | function |  | 4 |
-| `tipWidthMultiplierAt` | 265 | function |  | 8 |
-| `tipPanelWidthAt` | 304 | function |  | 6 |
-| `buildTipWidthCurve` | 310 | function |  | 5 |
-| `setTipWidthCurveValue` | 359 | function |  | 1 |
-| `tipPanelFrameAt` | 378 | function |  | 4 |
-| `tipMainSectionPoint` | 412 | function |  | 4 |
-| `tipSurfaceFrameAt` | 460 | function |  | 3 |
-| `tipChainFrameAt` | 491 | function |  | 2 |
+| `vector` | 1 | function |  | 8 |
+| `add` | 9 | function |  | 7 |
+| `subtract` | 13 | function |  | 7 |
+| `scale` | 17 | function |  | 11 |
+| `dot` | 21 | function |  | 4 |
+| `cross` | 25 | function |  | 5 |
+| `normalize` | 33 | function |  | 7 |
+| `average` | 38 | function |  | 2 |
+| `rotateBetween` | 42 | function |  | 2 |
+| `hairShellFaceCenter` | 62 | function | export | 2 |
+| `hairShellFaceNormal` | 66 | function | export | 2 |
+| `hairShellFacesShareEdge` | 73 | function | export | 2 |
+| `canExtrudeHairShellFace` | 79 | function | export | 1 |
+| `sampledCurvePoints` | 88 | function |  | 2 |
+| `buildHairShellTopology` | 112 | function | export | 1 |
+
+## modules/geometry/leaf-weights.js（33 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `leafWeightAt` | 10 | function | export | 3 |
+| `leafIndexAt` | 20 | function | export | 1 |
+| `leafWeightValueAt` | 25 | function | export | 1 |
+| `leafWeightsValid` | 30 | function | export | 1 |
+
+## modules/geometry/panel-tip-strand.js（1049 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `tipChainPointsAsVectors` | 23 | function |  | 4 |
+| `createPanelTipStrandApi` | 27 | function | export | 2 |
+| `smoothCoincidentPanelNormals` | 34 | function |  | 2 |
+| `weldPanelGeometryData` | 70 | function |  | 2 |
+| `surfaceLatticeSampleVectors` | 116 | function |  | 2 |
+| `surfacePanelPoint` | 131 | function |  | 2 |
+| `splitForkT` | 154 | function |  | 1 |
+| `tipWidthSideForkT` | 166 | function |  | 8 |
+| `tipSegmentWeightAt` | 177 | function |  | 2 |
+| `tipWidthControlTs` | 196 | function |  | 4 |
+| `tipWidthCommonForkT` | 207 | function |  | 4 |
+| `tipWidthResetCurve` | 216 | function |  | 1 |
+| `addPoint` | 221 | arrow |  | 7 |
+| `tipWidthSpreadGap` | 249 | function |  | 4 |
+| `tipWidthMultiplierAt` | 266 | function |  | 8 |
+| `tipPanelWidthAt` | 305 | function |  | 6 |
+| `buildTipWidthCurve` | 311 | function |  | 5 |
+| `setTipWidthCurveValue` | 360 | function |  | 1 |
+| `tipPanelFrameAt` | 379 | function |  | 4 |
+| `tipMainSectionPoint` | 413 | function |  | 4 |
+| `tipOffsetSampleT` | 461 | function |  | 2 |
+| `tipSurfaceFrameAt` | 473 | function |  | 3 |
+| `tipChainFrameAt` | 505 | function |  | 2 |
 | `tipWidthEdgePosition` | 522 | function |  | 3 |
 | `tipWidthEdgePoints` | 553 | function |  | 1 |
 | `tipWidthControlPlacement` | 568 | function |  | 1 |
 | `tipHighlightMaterial` | 584 | function |  | 2 |
 | `updateTipHighlight` | 606 | function |  | 1 |
-| `splitTipForSegment` | 663 | function |  | 3 |
-| `createPanelStrandGeometry` | 706 | function |  | 1 |
-| `segmentWeightAt` | 737 | arrow |  | 1 |
-| `addQuad` | 753 | arrow |  | 6 |
-| `near` | 757 | arrow |  | 6 |
-| `panelWidthAt` | 787 | arrow |  | 3 |
-| `panelThicknessAt` | 792 | arrow |  | 3 |
-| `panelFrameAt` | 801 | arrow |  | 1 |
-| `rawPanelPoint` | 819 | arrow |  | 1 |
-| `panelPoint` | 853 | arrow |  | 3 |
-| `addPatch` | 861 | arrow |  | 1 |
-| `uStart` | 992 | arrow |  | 1 |
-| `uEnd` | 995 | arrow |  | 1 |
+| `splitTipForSegment` | 664 | function |  | 3 |
+| `restPointAt` | 677 | arrow |  | 0 |
+| `createPanelStrandGeometry` | 682 | function |  | 1 |
+| `segmentWeightAt` | 719 | arrow |  | 1 |
+| `addQuad` | 735 | arrow |  | 6 |
+| `near` | 739 | arrow |  | 6 |
+| `panelWidthAt` | 769 | arrow |  | 3 |
+| `panelThicknessAt` | 774 | arrow |  | 3 |
+| `panelFrameAt` | 783 | arrow |  | 1 |
+| `rawPanelPoint` | 803 | arrow |  | 1 |
+| `panelPoint` | 837 | arrow |  | 3 |
+| `addPatch` | 847 | arrow |  | 1 |
+| `uStart` | 978 | arrow |  | 1 |
+| `uEnd` | 981 | arrow |  | 1 |
 
 ## modules/geometry/placement.js（482 行）
 
@@ -1538,7 +1688,7 @@
 | `longitudinalPoints` | 30 | arrow |  | 2 |
 | `proceduralBranchTemplateData` | 52 | function | export | 1 |
 
-## modules/geometry/procedural-duplicate.js（803 行）
+## modules/geometry/procedural-duplicate.js（805 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -1560,13 +1710,13 @@
 | `buildEvenlySpacedProceduralDuplicates` | 376 | function |  | 2 |
 | `rebuildProceduralDuplicatePreview` | 478 | function |  | 2 |
 | `confirmProceduralDuplicatePreview` | 519 | function |  | 1 |
-| `updateDuplicatePlacement` | 546 | function |  | 2 |
-| `beginDuplicatePlacement` | 610 | function |  | 2 |
-| `beginProceduralDuplicatePlacement` | 674 | function |  | 2 |
-| `confirmDuplicatePlacement` | 715 | function |  | 1 |
-| `cancelDuplicatePlacement` | 752 | function |  | 2 |
+| `updateDuplicatePlacement` | 547 | function |  | 2 |
+| `beginDuplicatePlacement` | 611 | function |  | 2 |
+| `beginProceduralDuplicatePlacement` | 675 | function |  | 2 |
+| `confirmDuplicatePlacement` | 716 | function |  | 1 |
+| `cancelDuplicatePlacement` | 754 | function |  | 2 |
 
-## modules/geometry/radial-layout.js（169 行）
+## modules/geometry/radial-layout.js（253 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -1579,49 +1729,54 @@
 | `angularDistanceFromBottom` | 108 | arrow |  | 3 |
 | `radialListCorridorContains` | 141 | function | export | 1 |
 | `partitionRadialOptions` | 153 | function | export | 1 |
+| `positiveAngleDifference` | 170 | function |  | 3 |
+| `radialOptionSector` | 175 | function | export | 1 |
+| `layoutRadialSubmenuSlots` | 208 | function | export | 1 |
+| `radialSubmenuTravelAngle` | 241 | function | export | 1 |
 
-## modules/geometry/radial-menu.js（914 行）
+## modules/geometry/radial-menu.js（1001 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
-| `createRadialMenuApi` | 21 | function | export | 2 |
-| `hideStrandRadialMenu` | 33 | function |  | 3 |
-| `ensureRadialButtonCapacity` | 44 | function |  | 3 |
-| `radialButtonDimensions` | 57 | function |  | 4 |
-| `radialMenuDimensionsForKind` | 66 | function |  | 3 |
-| `applyRadialMenuDimensions` | 76 | function |  | 3 |
-| `strandRadialSubmenuEntryDistance` | 82 | function |  | 2 |
-| `configureRadialSubmenuIndicator` | 95 | function |  | 3 |
-| `selectionSetMembershipRadialOptions` | 116 | function |  | 2 |
-| `selectionSetRadialMenuOption` | 133 | function |  | 4 |
-| `selectedMirrorRadialOptions` | 142 | function |  | 3 |
-| `strandVisibilityRadialOptions` | 164 | function |  | 5 |
-| `clumpMirrorRadialOptions` | 182 | function |  | 2 |
-| `contextualRadialOptions` | 189 | function |  | 3 |
-| `sharedRadialFrameDimensions` | 318 | function |  | 3 |
-| `layoutContextualRadialOptions` | 322 | function |  | 4 |
-| `renderRadialActionList` | 346 | function |  | 3 |
-| `radialListOptionAtPointer` | 364 | function |  | 3 |
-| `syncRadialListHighlight` | 386 | function |  | 3 |
-| `configureContextualRadialMenu` | 392 | function |  | 3 |
-| `beginStrandRadialGesture` | 452 | function |  | 1 |
-| `enterStrandRadialSubmenu` | 486 | function |  | 2 |
-| `updateStrandRadialGesture` | 532 | function |  | 1 |
-| `performStrandRadialAction` | 571 | function |  | 2 |
-| `finishStrandRadialGesture` | 674 | function |  | 1 |
-| `cancelStrandRadialGesture` | 684 | function |  | 2 |
-| `blockPointerDuringStrandRadialGesture` | 691 | function |  | 1 |
-| `toolRadialOptions` | 697 | function |  | 2 |
-| `hideToolRadialMenu` | 722 | function |  | 3 |
-| `beginToolRadialGesture` | 735 | function |  | 2 |
-| `beginToolShortcutPress` | 775 | function |  | 1 |
-| `finishToolShortcutPress` | 790 | function |  | 1 |
-| `cancelToolShortcutPress` | 799 | function |  | 2 |
-| `setRadialMenusEnabled` | 807 | function |  | 1 |
-| `updateToolRadialGesture` | 820 | function |  | 1 |
-| `performToolRadialAction` | 849 | function |  | 2 |
-| `finishToolRadialGesture` | 859 | function |  | 2 |
-| `cancelToolRadialGesture` | 868 | function |  | 3 |
+| `createRadialMenuApi` | 24 | function | export | 2 |
+| `hideStrandRadialMenu` | 38 | function |  | 3 |
+| `ensureRadialButtonCapacity` | 52 | function |  | 4 |
+| `radialButtonDimensions` | 65 | function |  | 3 |
+| `radialMenuDimensionsForKind` | 74 | function |  | 2 |
+| `applyRadialMenuDimensions` | 84 | function |  | 3 |
+| `applyRadialSectorVariables` | 90 | function |  | 4 |
+| `configureRadialSubmenuIndicator` | 123 | function |  | 3 |
+| `selectionSetMembershipRadialOptions` | 144 | function |  | 2 |
+| `selectionSetRadialMenuOption` | 161 | function |  | 4 |
+| `selectedMirrorRadialOptions` | 170 | function |  | 3 |
+| `strandVisibilityRadialOptions` | 192 | function |  | 5 |
+| `clumpMirrorRadialOptions` | 210 | function |  | 2 |
+| `contextualRadialOptions` | 217 | function |  | 3 |
+| `sharedRadialFrameDimensions` | 346 | function |  | 3 |
+| `layoutContextualRadialOptions` | 350 | function |  | 2 |
+| `renderRadialActionList` | 374 | function |  | 5 |
+| `radialListOptionAtPointer` | 392 | function |  | 3 |
+| `syncRadialListHighlight` | 414 | function |  | 3 |
+| `configureContextualRadialMenu` | 420 | function |  | 2 |
+| `beginStrandRadialGesture` | 481 | function |  | 1 |
+| `closeStrandRadialSubmenu` | 516 | function |  | 3 |
+| `openStrandRadialSubmenu` | 530 | function |  | 3 |
+| `updateStrandRadialGesture` | 594 | function |  | 1 |
+| `performStrandRadialAction` | 657 | function |  | 2 |
+| `finishStrandRadialGesture` | 760 | function |  | 1 |
+| `cancelStrandRadialGesture` | 770 | function |  | 2 |
+| `blockPointerDuringStrandRadialGesture` | 777 | function |  | 1 |
+| `toolRadialOptions` | 783 | function |  | 2 |
+| `hideToolRadialMenu` | 808 | function |  | 3 |
+| `beginToolRadialGesture` | 821 | function |  | 2 |
+| `beginToolShortcutPress` | 862 | function |  | 1 |
+| `finishToolShortcutPress` | 877 | function |  | 1 |
+| `cancelToolShortcutPress` | 886 | function |  | 2 |
+| `setRadialMenusEnabled` | 894 | function |  | 1 |
+| `updateToolRadialGesture` | 907 | function |  | 1 |
+| `performToolRadialAction` | 936 | function |  | 2 |
+| `finishToolRadialGesture` | 946 | function |  | 2 |
+| `cancelToolRadialGesture` | 955 | function |  | 3 |
 
 ## modules/geometry/sculpt-geometry.js（889 行）
 
@@ -1670,25 +1825,26 @@
 | `clamp` | 1 | function |  | 3 |
 | `solvePulledStrand` | 5 | function | export | 1 |
 
-## modules/geometry/strand-geometry.js（899 行）
+## modules/geometry/strand-geometry.js（1049 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
-| `createStrandGeometryApi` | 20 | function | export | 2 |
-| `clipStrandProfilePolygon` | 29 | function |  | 3 |
-| `inside` | 30 | arrow |  | 2 |
-| `pushOrientedTriangle` | 52 | function |  | 7 |
-| `orientedQuadFace` | 61 | function |  | 2 |
-| `createSplitStrandGeometry` | 69 | function |  | 2 |
-| `fusedIndexAt` | 226 | arrow |  | 0 |
-| `createHairCardGeometry` | 275 | function |  | 2 |
-| `createPolyGeometry` | 374 | function |  | 2 |
-| `createConnectedCurveCardGeometry` | 401 | function |  | 4 |
-| `createCompoundStrandGeometry` | 466 | function |  | 2 |
-| `vertexIndex` | 551 | arrow |  | 6 |
-| `proceduralBranchGeometryLock` | 717 | function |  | 2 |
-| `createHairGeometry` | 748 | function |  | 1 |
-| `createBaseHairGeometry` | 800 | function |  | 3 |
+| `createStrandGeometryApi` | 22 | function | export | 2 |
+| `clipStrandProfilePolygon` | 31 | function |  | 3 |
+| `inside` | 32 | arrow |  | 2 |
+| `pushOrientedTriangle` | 54 | function |  | 7 |
+| `orientedQuadFace` | 63 | function |  | 2 |
+| `createSplitStrandGeometry` | 71 | function |  | 2 |
+| `restPointAt` | 202 | arrow |  | 0 |
+| `fusedIndexAt` | 309 | arrow |  | 0 |
+| `createHairCardGeometry` | 364 | function |  | 2 |
+| `createPolyGeometry` | 463 | function |  | 2 |
+| `createConnectedCurveCardGeometry` | 490 | function |  | 4 |
+| `createCompoundStrandGeometry` | 555 | function |  | 2 |
+| `vertexIndex` | 640 | arrow |  | 6 |
+| `proceduralBranchGeometryLock` | 806 | function |  | 2 |
+| `createHairGeometry` | 837 | function |  | 1 |
+| `createBaseHairGeometry` | 889 | function |  | 3 |
 
 ## modules/geometry/strand-sweep.js（100 行）
 
@@ -1715,56 +1871,75 @@
 | `resampleSurfaceLatticePointData` | 177 | function | export | 1 |
 | `surfaceLatticeWireSegments` | 206 | function | export | 1 |
 
-## modules/geometry/taper-editor.js（1061 行）
+## modules/geometry/taper-editor.js（1060 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
 | `createTaperEditorApi` | 22 | function | export | 2 |
-| `activeStrandShapeTarget` | 36 | function |  | 2 |
-| `activeTaperTarget` | 39 | function |  | 15 |
-| `activeTaperCurve` | 66 | function |  | 10 |
-| `ensureSecondaryTaperCurve` | 76 | function |  | 5 |
-| `taperSamples` | 85 | function |  | 7 |
-| `taperCurvesActuallyDiffer` | 96 | function |  | 2 |
-| `taperDisplayAsymmetric` | 110 | function |  | 4 |
-| `ensureAsymmetricTaperPreviewElements` | 118 | function |  | 2 |
-| `renderTaperPreview` | 139 | function |  | 6 |
-| `segmentCurveTarget` | 178 | function |  | 2 |
-| `segmentCurveTargetForWrite` | 204 | function |  | 1 |
-| `shapeTargetForSelect` | 219 | function |  | 1 |
-| `taperPointToCanvas` | 224 | function |  | 4 |
-| `canvasToTaperPoint` | 240 | function |  | 1 |
-| `clearTaperMeshPoints` | 274 | function |  | 2 |
-| `taperMeshPointFrame` | 283 | function |  | 3 |
-| `taperMeshPointExtentPerValue` | 292 | function |  | 3 |
-| `updateTaperMeshPoints` | 328 | function |  | 4 |
+| `activeStrandShapeTarget` | 37 | function |  | 2 |
+| `activeTaperTarget` | 40 | function |  | 14 |
+| `activeTaperCurve` | 67 | function |  | 9 |
+| `ensureSecondaryTaperCurve` | 77 | function |  | 5 |
+| `taperSamples` | 86 | function |  | 7 |
+| `taperCurvesActuallyDiffer` | 97 | function |  | 2 |
+| `taperDisplayAsymmetric` | 111 | function |  | 4 |
+| `ensureAsymmetricTaperPreviewElements` | 119 | function |  | 2 |
+| `renderTaperPreview` | 140 | function |  | 6 |
+| `segmentCurveTarget` | 179 | function |  | 2 |
+| `segmentCurveTargetForWrite` | 205 | function |  | 1 |
+| `shapeTargetForSelect` | 220 | function |  | 1 |
+| `taperPointToCanvas` | 225 | function |  | 4 |
+| `canvasToTaperPoint` | 241 | function |  | 1 |
+| `clearTaperMeshPoints` | 275 | function |  | 2 |
+| `taperMeshPointFrame` | 284 | function |  | 3 |
+| `taperMeshPointExtentPerValue` | 293 | function |  | 3 |
+| `addTaperMeshPointsForCurve` | 329 | function |  | 2 |
+| `updateTaperMeshPoints` | 400 | function |  | 4 |
 | `setTaperMeshPointsVisible` | 406 | function |  | 3 |
 | `renderTaperCurveEditor` | 423 | function |  | 9 |
 | `tipSideForkFor` | 440 | arrow |  | 1 |
-| `updateTaperCurveEditorTargetLabel` | 518 | function |  | 4 |
-| `retargetOpenTaperCurveEditor` | 531 | function |  | 1 |
-| `retargetOpenSegmentTaperEditor` | 558 | function |  | 2 |
-| `refreshTaperCurveEditorAfterStateRestore` | 577 | function |  | 2 |
-| `scheduleTaperCurveEdit` | 607 | function |  | 2 |
-| `flushScheduledTaperCurveEdit` | 615 | function |  | 6 |
-| `cancelScheduledTaperCurveEdit` | 625 | function |  | 2 |
-| `applyTaperCurveEdit` | 632 | function |  | 5 |
-| `openTaperCurveEditor` | 765 | function |  | 2 |
-| `closeTaperCurveEditor` | 809 | function |  | 4 |
-| `retargetFloatingStrandEditors` | 821 | function |  | 1 |
-| `releaseTaperCurveEditorFieldFocus` | 835 | function |  | 2 |
-| `finishTaperCurveDrag` | 846 | function |  | 1 |
-| `beginTaperMeshPointDrag` | 853 | function |  | 1 |
-| `updateTaperMeshPointDrag` | 933 | function |  | 1 |
-| `finishTaperMeshPointDrag` | 987 | function |  | 5 |
-| `updateSelectedTaperPoint` | 1010 | function |  | 1 |
+| `updateTaperCurveEditorTargetLabel` | 517 | function |  | 4 |
+| `retargetOpenTaperCurveEditor` | 530 | function |  | 1 |
+| `retargetOpenSegmentTaperEditor` | 557 | function |  | 2 |
+| `refreshTaperCurveEditorAfterStateRestore` | 576 | function |  | 2 |
+| `scheduleTaperCurveEdit` | 606 | function |  | 2 |
+| `flushScheduledTaperCurveEdit` | 614 | function |  | 6 |
+| `cancelScheduledTaperCurveEdit` | 624 | function |  | 2 |
+| `applyTaperCurveEdit` | 631 | function |  | 5 |
+| `openTaperCurveEditor` | 764 | function |  | 2 |
+| `closeTaperCurveEditor` | 808 | function |  | 4 |
+| `retargetFloatingStrandEditors` | 820 | function |  | 1 |
+| `releaseTaperCurveEditorFieldFocus` | 834 | function |  | 2 |
+| `finishTaperCurveDrag` | 845 | function |  | 1 |
+| `beginTaperMeshPointDrag` | 852 | function |  | 1 |
+| `updateTaperMeshPointDrag` | 932 | function |  | 1 |
+| `finishTaperMeshPointDrag` | 986 | function |  | 5 |
+| `updateSelectedTaperPoint` | 1009 | function |  | 1 |
 
-## modules/geometry/topology.js（21 行）
+## modules/geometry/tip-sub-bone.js（112 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `isValidTip` | 9 | function |  | 2 |
+| `pointToData` | 13 | function |  | 5 |
+| `toVector3` | 17 | function |  | 1 |
+| `cloneTipChain` | 23 | function | export | 2 |
+| `materializeTipChain` | 37 | function | export | 1 |
+| `tipChainFrameAt` | 63 | function | export | 1 |
+| `tipWeightAt` | 87 | function | export | 1 |
+| `sampleTipPosition` | 93 | function | export | 1 |
+| `mirrorTipChain` | 103 | function | export | 1 |
+
+## modules/geometry/topology.js（90 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
 | `parseObjFaceVertexCounts` | 1 | function | export | 1 |
 | `fanTriangleEdgeMasks` | 10 | function | export | 1 |
+| `triangleAreaSquared` | 22 | function |  | 3 |
+| `quadCellTopology` | 38 | function | export | 1 |
+| `triangleEdgeMasksFromFaces` | 66 | function | export | 1 |
+| `edgeKey` | 69 | arrow |  | 4 |
 
 ## modules/geometry/uv-inspector.js（43 行）
 
@@ -1804,33 +1979,33 @@
 |---|---|---|---|---|
 | `applicationDropFileKind` | 1 | function | export | 1 |
 
-## modules/io/io-tail.js（595 行）
+## modules/io/io-tail.js（624 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
-| `createIoTailApi` | 20 | function | export | 2 |
-| `rootAttachmentFrame` | 35 | function |  | 3 |
-| `rootAttachmentLocalFrame` | 47 | function |  | 4 |
-| `resolveRootAttachment` | 65 | function |  | 4 |
-| `curvePointsToRootLocal` | 105 | function |  | 2 |
-| `curvePointsFromRootLocal` | 117 | function |  | 2 |
-| `syncRootAttachmentLocalCurves` | 125 | function |  | 2 |
-| `applyRootAttachmentLocalCurves` | 141 | function |  | 1 |
-| `createRootAttachment` | 172 | function |  | 3 |
-| `syncRootAttachmentMetadata` | 202 | function |  | 1 |
-| `rootAttachmentToData` | 229 | function |  | 1 |
-| `rootAttachmentFromData` | 257 | function |  | 1 |
-| `downloadPreferencesAndPresets` | 296 | function |  | 1 |
-| `importedBooleanPreference` | 329 | function |  | 11 |
-| `loadPreferencesAndPresets` | 333 | function |  | 2 |
-| `handlePreferencesAndPresetsFile` | 403 | function |  | 1 |
-| `openHairProjectFile` | 417 | function |  | 2 |
-| `dragContainsApplicationFile` | 475 | function |  | 1 |
-| `safelyRememberRecentProject` | 484 | function |  | 2 |
-| `renderRecentProjectsMenu` | 493 | function |  | 2 |
-| `openDroppedApplicationFilePrompt` | 525 | function |  | 2 |
-| `closeDroppedApplicationFilePrompt` | 550 | function |  | 2 |
-| `confirmDroppedApplicationFile` | 554 | function |  | 1 |
+| `createIoTailApi` | 21 | function | export | 2 |
+| `rootAttachmentFrame` | 36 | function |  | 3 |
+| `rootAttachmentLocalFrame` | 48 | function |  | 4 |
+| `resolveRootAttachment` | 66 | function |  | 4 |
+| `curvePointsToRootLocal` | 106 | function |  | 2 |
+| `curvePointsFromRootLocal` | 118 | function |  | 2 |
+| `syncRootAttachmentLocalCurves` | 126 | function |  | 2 |
+| `applyRootAttachmentLocalCurves` | 142 | function |  | 1 |
+| `createRootAttachment` | 173 | function |  | 3 |
+| `syncRootAttachmentMetadata` | 203 | function |  | 1 |
+| `rootAttachmentToData` | 230 | function |  | 1 |
+| `rootAttachmentFromData` | 258 | function |  | 1 |
+| `downloadPreferencesAndPresets` | 297 | function |  | 1 |
+| `importedBooleanPreference` | 336 | function |  | 12 |
+| `loadPreferencesAndPresets` | 340 | function |  | 2 |
+| `handlePreferencesAndPresetsFile` | 429 | function |  | 1 |
+| `openHairProjectFile` | 443 | function |  | 2 |
+| `dragContainsApplicationFile` | 504 | function |  | 1 |
+| `safelyRememberRecentProject` | 513 | function |  | 2 |
+| `renderRecentProjectsMenu` | 522 | function |  | 2 |
+| `openDroppedApplicationFilePrompt` | 554 | function |  | 2 |
+| `closeDroppedApplicationFilePrompt` | 579 | function |  | 2 |
+| `confirmDroppedApplicationFile` | 583 | function |  | 1 |
 
 ## modules/io/obj-export.js（77 行）
 
@@ -1894,26 +2069,26 @@
 | `setupCreationPresetUi` | 901 | function |  | 1 |
 | `setupPresetLibraryEvents` | 951 | function |  | 1 |
 
-## modules/io/project-files.js（566 行）
+## modules/io/project-files.js（571 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
-| `createProjectSaveApi` | 13 | function | export | 2 |
-| `downloadTextFile` | 64 | function |  | 4 |
-| `downloadProjectFile` | 76 | function |  | 2 |
-| `bufferAttributeTuples` | 80 | function |  | 6 |
-| `setProjectSaveButtonsDisabled` | 87 | function |  | 5 |
-| `buildHairProjectFile` | 93 | function |  | 4 |
-| `buildHairObj` | 109 | function |  | 3 |
-| `buildHairUsda` | 159 | function |  | 3 |
-| `openFileActionDialog` | 269 | function |  | 5 |
-| `performFileAction` | 314 | function |  | 2 |
-| `saveHairProjectFile` | 382 | function |  | 2 |
-| `saveHairProjectQuickly` | 411 | function |  | 1 |
-| `exportHairObj` | 438 | function |  | 1 |
-| `exportHairUsda` | 442 | function |  | 1 |
-| `exportHairProjectQuickly` | 446 | function |  | 1 |
-| `writeExportThroughFileSystem` | 498 | function |  | 3 |
+| `createProjectSaveApi` | 14 | function | export | 2 |
+| `downloadTextFile` | 65 | function |  | 4 |
+| `downloadProjectFile` | 77 | function |  | 2 |
+| `bufferAttributeTuples` | 81 | function |  | 6 |
+| `setProjectSaveButtonsDisabled` | 88 | function |  | 5 |
+| `buildHairProjectFile` | 94 | function |  | 4 |
+| `buildHairObj` | 110 | function |  | 3 |
+| `buildHairUsda` | 160 | function |  | 3 |
+| `openFileActionDialog` | 271 | function |  | 5 |
+| `performFileAction` | 316 | function |  | 2 |
+| `saveHairProjectFile` | 385 | function |  | 2 |
+| `saveHairProjectQuickly` | 415 | function |  | 1 |
+| `exportHairObj` | 443 | function |  | 1 |
+| `exportHairUsda` | 447 | function |  | 1 |
+| `exportHairProjectQuickly` | 451 | function |  | 1 |
+| `writeExportThroughFileSystem` | 503 | function |  | 3 |
 
 ## modules/io/project-schema.js（51 行）
 
@@ -1950,6 +2125,25 @@
 | `openRecentProjectsDatabase` | 54 | function |  | 3 |
 | `listRecentProjects` | 68 | function | export | 1 |
 | `rememberRecentProject` | 81 | function | export | 1 |
+
+## modules/io/recovery-storage.js（85 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `normalizeAutosaveInterval` | 7 | function | export | 1 |
+| `normalizeRecoveryRecord` | 14 | function | export | 3 |
+| `createRecoveryRecord` | 30 | function | export | 2 |
+| `openRecoveryDatabase` | 41 | function |  | 2 |
+| `runRecoveryTransaction` | 55 | function |  | 4 |
+| `readRecoverySnapshot` | 71 | function | export | 1 |
+| `writeRecoverySnapshot` | 76 | function | export | 1 |
+| `clearRecoverySnapshot` | 82 | function | export | 1 |
+
+## modules/io/recovery-store.js（23 行）
+
+| 函数 | 行号 | 类型 | 导出 | calls |
+|---|---|---|---|---|
+| `createRecoveryStore` | 7 | function | export | 1 |
 
 ## modules/io/shape-presets.js（125 行）
 
@@ -1988,35 +2182,65 @@
 | `jointBlock` | 160 | arrow |  | 2 |
 | `exportAnimeHairUsda` | 183 | function | export | 1 |
 
-## modules/material/material-state.js（49 行）
+## modules/material/material-state.js（115 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
-| `normalizeHairMaterialDefinition` | 22 | function | export | 2 |
-| `resolveHairMaterialDefinition` | 34 | function | export | 2 |
-| `hairMaterialUsageCounts` | 40 | function | export | 1 |
+| `normalizedGradientColor` | 24 | function |  | 3 |
+| `normalizeHairGradientStops` | 30 | function | export | 2 |
+| `normalizeHairMaterialDefinition` | 49 | function | export | 3 |
+| `resolveHairMaterialDefinition` | 66 | function | export | 2 |
+| `hairMaterialUsageCounts` | 72 | function | export | 1 |
+| `hairMaterialPresetValue` | 82 | function | export | 2 |
+| `normalizeHairMaterialPresetLibrary` | 100 | function | export | 1 |
+| `removeHairMaterialPreset` | 111 | function | export | 1 |
 
-## modules/material/material-ui.js（367 行）
+## modules/material/material-ui.js（825 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
-| `createMaterialUiApi` | 26 | function | export | 2 |
-| `hairMaterialDefinition` | 39 | function |  | 4 |
-| `materialForLock` | 43 | function |  | 7 |
-| `activeHairMaterialDefinition` | 47 | function |  | 5 |
-| `strandDisplayColor` | 53 | function |  | 4 |
-| `setAnimeHairBaseColor` | 71 | function |  | 2 |
-| `createAnimeAnisotropicMaterial` | 84 | function |  | 2 |
-| `createHairMaterial` | 124 | function |  | 2 |
-| `createStrandSelectionOutline` | 164 | function |  | 1 |
-| `strandUsesDoubleSidedMaterial` | 199 | function |  | 2 |
-| `applyMaterialDefinitionToLock` | 208 | function |  | 4 |
-| `refreshMaterialUsers` | 235 | function |  | 1 |
-| `renderHairMaterialOutliner` | 244 | function |  | 2 |
-| `renderHairMaterialOptions` | 274 | function |  | 2 |
-| `syncHairMaterialEditor` | 284 | function |  | 4 |
-| `createProjectHairMaterial` | 310 | function |  | 1 |
-| `deleteActiveHairMaterial` | 330 | function |  | 1 |
+| `createMaterialUiApi` | 34 | function | export | 2 |
+| `hairMaterialPresetLibrary` | 58 | function |  | 8 |
+| `hairMaterialDefinition` | 65 | function |  | 4 |
+| `materialForLock` | 69 | function |  | 9 |
+| `activeHairMaterialDefinition` | 73 | function |  | 16 |
+| `strandDisplayColor` | 79 | function |  | 4 |
+| `strandGradientTintColor` | 97 | function |  | 5 |
+| `hairGradientCss` | 113 | function |  | 3 |
+| `sampleHairGradientColor` | 119 | function |  | 3 |
+| `syncHairGradientTexture` | 131 | function |  | 6 |
+| `hairMaterialGradientActive` | 157 | function |  | 8 |
+| `applyHairBaseGradient` | 161 | function |  | 2 |
+| `setAnimeHairBaseColor` | 175 | function |  | 2 |
+| `createAnimeAnisotropicMaterial` | 188 | function |  | 2 |
+| `createHairMaterial` | 230 | function |  | 2 |
+| `createStrandSelectionOutline` | 272 | function |  | 1 |
+| `strandUsesDoubleSidedMaterial` | 307 | function |  | 2 |
+| `applyMaterialDefinitionToLock` | 316 | function |  | 4 |
+| `refreshMaterialUsers` | 347 | function |  | 3 |
+| `renderHairMaterialOutliner` | 356 | function |  | 6 |
+| `renderHairMaterialOptions` | 390 | function |  | 2 |
+| `syncHairMaterialEditor` | 400 | function |  | 6 |
+| `createProjectHairMaterial` | 430 | function |  | 1 |
+| `deleteActiveHairMaterial` | 451 | function |  | 1 |
+| `captureGradientInputUndo` | 470 | function |  | 3 |
+| `updateHairMaterialGradientDefinition` | 476 | function |  | 6 |
+| `syncHairMaterialGradientEditor` | 487 | function |  | 4 |
+| `openHairMaterialGradientEditor` | 520 | function |  | 1 |
+| `setActiveHairGradientStopPosition` | 526 | function |  | 4 |
+| `finishHairGradientStopDrag` | 539 | function |  | 1 |
+| `setupHairMaterialGradientUi` | 548 | function |  | 1 |
+| `loadCustomHairMaterialPresets` | 642 | function |  | 2 |
+| `saveCustomHairMaterialPresets` | 653 | function |  | 3 |
+| `populateHairMaterialPresetSelect` | 661 | function |  | 5 |
+| `markHairMaterialPresetCustom` | 678 | function |  | 12 |
+| `openSaveHairMaterialPreset` | 685 | function |  | 1 |
+| `commitHairMaterialPreset` | 699 | function |  | 2 |
+| `applyHairMaterialPreset` | 716 | function |  | 2 |
+| `openRemoveHairMaterialPreset` | 737 | function |  | 1 |
+| `commitRemoveHairMaterialPreset` | 748 | function |  | 2 |
+| `clearHairMaterialPresetPending` | 762 | function |  | 1 |
+| `setupHairMaterialPresetUi` | 767 | function |  | 1 |
 
 ## modules/scalp/scalp-builder.js（3269 行）
 

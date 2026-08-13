@@ -6,7 +6,7 @@
 
 ## 0. 一句话
 
-- 原版 app.js **39,207 行 / 1,319 顶层函数 / 237 全局 let** → 当前 **18,401 行 / ~1,000 函数 / 1 个全局 let（camera）**，净减 **−53%**。
+- 原版 app.js **39,207 行 / 1,319 顶层函数 / 237 全局 let** → 当前 **19,970 行 / 556 个 app.js 顶层函数（全库 2,003 个，见 FUNCTION_INDEX）/ 1 个全局 let（camera）**，净减 **−49%**（main 0.1.5 移植后 app.js 由 18,401 增至 19,970）。
 - 业务逻辑按子系统迁入 modules（**85 个文件**）；app.js 只保留「初始化 + store 装配 + 事件绑定 + 少量脊柱函数」。
 - 拆分方式统一为 **`createXxxApi(deps)` 依赖注入**，每批独立 commit + verify-smoke 基线回归（当前基线 10/11，唯一失败为内容相关的 branch-bridge 断言，基线同样失败）。
 
@@ -24,7 +24,7 @@
 
 ## 2. 当前架构（功能 → 文件字典）
 
-### app.js（18,401 行，编排层）
+### app.js（19,970 行，编排层；main 0.1.5 移植后由 18,401 增至 19,970）
 
 - 保留：模块 import 装配、store 创建与 deps 批填、事件绑定、render loop、启动 bootstrap。
 - 脊柱（**不拆，拆=伪模块化**）：undo/snapshot/mirror 数据管线（pushUndoState/restoreState/snapshotState/restoreLock/mirrorPartnerFor）、selection 粘合层（selectLock/getSelectedLock 等，外部调用点最多）、curve-objects 核心（createCurveObjects/updateCurveObjects/syncLockFromCurve/rebuildLockGeometry）、`__AHS_TEST_SEAM`（测试 seam，引用迁移函数处保留 api.X 重导出）。
@@ -45,7 +45,7 @@
 | branch | branch-store | 子发片状态 |
 | scalp | scalp-store、scalp-builder | 头皮状态/构建 |
 
-> 完整文件清单见 `FUNCTION_INDEX.md`（`node scripts/gen-function-index.js` 重新生成，当前 1,814 函数 / 86 文件）。
+> 完整文件清单见 `FUNCTION_INDEX.md`（`node scripts/gen-function-index.js` 重新生成，当前 2,003 函数 / 94 文件）。
 
 ## 3. 拆分模式（createXxxApi(deps)）
 
@@ -107,7 +107,7 @@
 
 > 结论：**app.js 已接近「编排层地板」；再拆主要是伪模块化**。真正可拆的只剩少量 UI 辅助函数簇，收益约 200–500 行，不值得为拆而拆，除非出现明确驱动（第二入口 / 测试 harness / 某功能需要独立复用）。
 
-实测基线（0.2.61）：app.js **18,412 行**、**494 个顶层 function**、**828 个顶层 const**（大量是 `document.querySelector` DOM 引用）、**1 个顶层 let（camera）**、**515 处 addEventListener**；`import` 83 条、约 30 个 `createXxxApi` 实例；modules 85 文件 / 30,939 行。原版 39,207 行 → 当前 18,412 行（−53%）。
+实测基线（0.2.65）：app.js **19,970 行**、**556 个顶层 function**、**918 个顶层 const**（大量是 `document.querySelector` DOM 引用）、**1 个顶层 let（camera）**、**551 处 addEventListener**；`import` 87 条、29 个 `createXxxApi` 实例；modules 94 文件 / 34,587 行。原版 39,207 行 → 当前 19,970 行（−49%）。0.2.61 基线为 18,412 行；增量来自 main 0.1.5 移植（Multi-Cam / Autosave / Material Presets / Numeric Transform / Responsive header 等约 1,560 行）。
 
 ### 8.1 剩余代码三大块与是否该拆
 
@@ -118,7 +118,7 @@
    - 这些是**跨子系统横切**：抽出去会形成模块间循环依赖，或把隐藏耦合显式化为「注入一切」的 deps 传参，收益为负——正是 §6 已判定的伪模块化。
 
 2. **编排/初始化/事件绑定（不拆）**
-   - 顶部 828 个 const 大多是 DOM 引用；deps 批填（7497/7576/7615/8812 等）+ bootstrap + animate + 515 个 addEventListener。这部分是「胶水」本身，拆到模块只是搬家，不减少耦合（绑定要引用所有 store/api），反而增加跳转成本。
+   - 顶部 918 个 const 大多是 DOM 引用；deps 批填（7497/7576/7615/8812 等）+ bootstrap + animate + 551 个 addEventListener。这部分是「胶水」本身，拆到模块只是搬家，不减少耦合（绑定要引用所有 store/api），反而增加跳转成本。
 
 3. **过小/过散单点（拆了意义不大）**
    - `setupEditableSliderControls`(355)、`updateInteractionLocks`(4952)、`configureTransformControls`(4963)、`pointerHitsTransformGizmo`(5015)、`rayFromViewportEvent`(5992)、`profileToCanvas`(7418)/`renderProfilePreview`(7425)/`renderHairCardCoveragePath`(7444)、`updateViewportStatsVisibility`(7959)、`strandControlPointHitFromEvent`(10276)、`renderLockList`(13440)、`bindUndoCapture`(13625)、`activateStrandControlPoint`(16980)/`addStrandControlPointSelection`(17057)/`closestStrandCurveParameter`(17184) 等。

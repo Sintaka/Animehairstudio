@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-08-09T19:05:27.597Z",
+  "generatedAt": "2026-08-13T13:14:24.273Z",
   "total": 1,
   "lets": [
     {
       "name": "camera",
-      "line": 485,
-      "readRefs": 62,
-      "writeRefs": 5,
-      "refs": 67,
-      "span": 35492,
+      "line": 564,
+      "readRefs": 61,
+      "writeRefs": 9,
+      "refs": 70,
+      "span": 19400,
       "bucket": "camera/viewport"
     }
   ]

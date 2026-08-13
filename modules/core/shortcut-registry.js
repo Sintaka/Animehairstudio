@@ -51,7 +51,8 @@ export function focusedControlShouldYieldToShortcut(focused, event) {
   const tag = focused?.tagName?.toLowerCase();
   const textEntry = tag === "textarea"
     || focused?.isContentEditable === true
-    || (tag === "input" && ["text", "search", "email", "password", "url", "tel"].includes(focused.type));
+    // 可键入数值的输入框（number/date/time…）按文本输入处理，不 yield 给应用快捷键
+    || (tag === "input" && ["text", "search", "email", "password", "url", "tel", "number", "date", "datetime-local", "time", "month", "week"].includes(focused.type));
   const yieldsAppShortcuts = !textEntry && (tag === "select" || tag === "input");
   if (!yieldsAppShortcuts) return false;
   const key = String(event?.key || "").toLowerCase();
