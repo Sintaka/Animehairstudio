@@ -355,10 +355,13 @@ function updateBoneViewHandles(lock, ctx) {
       delta = new THREE.Vector3().subVectors(chain.points[last], chain.restPoints[last]);
     }
     if (delta) handle.position.add(delta);
-    handle.material.opacity = deps.sculptState.panelSplitDrag?.lockId === lock.id
+    // 选中段高亮与 WidthCurve 一致（选中 0.9、拖拽中 1、未选中 0.68）。
+    const selected = deps.sculptState.panelTipSelection?.lockId === lock.id
+      && deps.sculptState.panelTipSelection.segmentIndex === segment;
+    const dragging = deps.sculptState.panelSplitDrag?.lockId === lock.id
       && deps.sculptState.panelSplitDrag.kind === "segment"
-      && deps.sculptState.panelSplitDrag.splitIndex === segment
-      ? 0.9 : 0.68;
+      && deps.sculptState.panelSplitDrag.splitIndex === segment;
+    handle.material.opacity = dragging ? 1 : (selected ? 0.9 : 0.68);
   });
   lock.curveObjects.panelTipHandles?.forEach((handle, handleIndex) => {
     const segment = handle.userData.panelTipIndex;
