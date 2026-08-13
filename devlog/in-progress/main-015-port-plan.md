@@ -64,3 +64,19 @@
 - `89c2efd` 第二波 2e：Selection Set 成员对话框（选择加入/移出的集合）；10/11。
 
 剩余第二波：Panel/Glass 风格、Move 曲线控件、Multi-Cam；第三波不变。
+
+
+## 八、剩余项处置策略（用户拍板，2026-08-13）
+
+1. **Radial pie + styles.css（Panel/Glass）**：本地基本没动过、属原版功能；作者在 0.1.5 大幅更新过，**可直接替换**（吸收 main 版本 + 本地模块化适配 + 保留本地少量增强）。
+2. **Width Curve / Move 曲线控件**：本地发尖系统曾单独抄了一份曲线控件后融合；**不替换**，把 main 相对原版 curve 系统的新功能 + bug 修复**移植到本地**。先排查本地 Width Curve。
+3. **Multi-Cam**：新功能；重点是把原版逻辑适配到本地模块化系统（本地 camera 未大改，仅拆分）。
+4. **Split Panel Tip Curvature**：与本地冲突最严重，**最后做**；先深度评估它在原版基础上改进了什么，再评估哪些可移植。
+
+## 九、本地 Width Curve 排查结论（2026-08-13）
+
+- 数据模型（基线 v0.1.4 + 本地增强）：`lock.taperCurve/taperCurveSecondary`（宽度）、`depthCurve/depthCurveSecondary`（深度）、`asymmetricWidthCurve/asymmetricDepthCurve`、`twistCurve`；发尖子骨骼每段 `bone.depthCurve`（本地 0.2.60）。
+- 视口宽度边缘线：`strandWidthEdgeSample(lock,t,side,frameOverride,curveOverride)`（app.js:10950）与 `strandWidthEdgePoints(lock,side)`（app.js:10973）——**仍是基线旧签名，没有 main v0.1.5 的 `dimension`（width/depth）参数**。
+- 曲线编辑 UI：`taperCurveEditor` DOM（app.js:3091–3106）+ `modules/geometry/taper-editor.js`（G5 拆分，1061 行）。
+- main v0.1.5 的 Move 曲线新增：`moveCurveControlsApplicable/syncMoveCurveControls/setMoveCurveControlVisibility/setMoveGrabHandleVisibility/setSelectedMoveCurveShapeFlag/moveGrabHandlesApplicable`；并把 `strandWidthEdgePoints/Sample` 加 dimension 支持 width/depth。
+- 结论：Width Curve 移植 = 给本地 `strandWidthEdgePoints/Sample` 加 `dimension` 参数 + 引入 main 的 move 曲线控件函数接到本地 taper/width-edge 视口控件；**不替换本地 taper-editor/宽度曲线 UI**。
