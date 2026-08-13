@@ -15,16 +15,17 @@ import { validateHairProject } from "./project-schema.js";
 import { applicationDropFileKind } from "./file-drop.js";
 import { polygonOnlyObjSource } from "./obj-import.js";
 import { normalizeShapePresetLibrary } from "../data/shape-presets.js";
+import { normalizeHairMaterialPresetLibrary } from "../material/material-state.js";
 import { normalizeLanguage } from "../data/localization.js";
 import { APP_VERSION } from "../core/app-config.js";
 export function createIoTailApi(deps) {
   // deps: rootAttachment group (scalpBuilder/layerOffsetForLock/layerRootOffsetFactor/
   //   normalizeHairLayer/vectorToData/dataToVector),
   // preferences group (fileApi/documentLocalizer/saveLanguage/languageSelect/braidCreationDefaults/
-  //   braidToolPresetInput/creationPresets/shapePresets + store .state proxies
+  //   braidToolPresetInput/creationPresets/shapePresets/materialApi + store .state proxies
   //   projectState/hairState/sel/ui/draw/miscState/guideState/viewportState/scalpState/head;
   //   use deps.X.y, never deps.X.state.y, except full store objects projectState/scalpState/head
-  //   which keep deps.X.state.y),
+  //   which keep deps.X.state.y; customHairMaterialPresets lives on projectState.state),
   // cross-module apis (radialMenuApi/clumpProceduralApi/presetLibraryApi/referenceHeadApi),
   // app.js spine helpers (restoreState/frameViewportBounds/closeAppMenus/updateHistoryButtons/
   //   undoHistory/redoHistory/SUPPORTED_REFERENCE_IMAGE_TYPES + the setXxx preference setters),
@@ -320,7 +321,8 @@ function downloadPreferencesAndPresets() {
       defaultShader: deps.hairState.defaultHairShader
     },
     presets: deps.projectState.state.customCreationPresets,
-    shapePresets: deps.projectState.state.customShapePresets
+    shapePresets: deps.projectState.state.customShapePresets,
+    materialPresets: deps.projectState.state.customHairMaterialPresets
   });
   deps.fileApi.downloadProjectFile(
     `${JSON.stringify(backup, null, 2)}\n`,
@@ -378,6 +380,9 @@ async function loadPreferencesAndPresets(file) {
   deps.creationPresets.saveCustomCreationPresets();
   deps.projectState.state.customShapePresets = normalizeShapePresetLibrary(backup.shapePresets);
   deps.shapePresets.saveCustomShapePresets();
+  deps.projectState.state.customHairMaterialPresets = normalizeHairMaterialPresetLibrary(backup.materialPresets);
+  deps.materialApi.saveCustomHairMaterialPresets();
+  deps.materialApi.populateHairMaterialPresetSelect();
   deps.presetLibraryApi.populateShapePresetSelects();
   deps.presetLibraryApi.populateDrawBrushPresetSelect(deps.hairState.drawStrandMode);
   deps.presetLibraryApi.populateCreationPresetSelect(

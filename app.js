@@ -279,8 +279,8 @@ import {
   createClumpBrushTemplate,
   normalizeClumpBrushTemplate
 } from "./modules/data/clump-brush-presets.js?v=20260803-3";
-import { createMaterialUiApi } from "./modules/material/material-ui.js?v=20260812-1";
-import { createIoTailApi } from "./modules/io/io-tail.js?v=20260812-1";
+import { createMaterialUiApi } from "./modules/material/material-ui.js?v=20260813-1";
+import { createIoTailApi } from "./modules/io/io-tail.js?v=20260813-1";
 
 // Material UI api (refactor batch A6): deps filled in one batch after the renderLockList
 // definition; created early so the drawFlowDeps batch can reference materialApi.* without a
@@ -2103,6 +2103,22 @@ const hairMaterialAnimeNumericControls = Object.fromEntries(
     }];
   })
 );
+const hairMaterialPresetInput = document.querySelector("#hairMaterialPreset");
+const saveHairMaterialPresetButton = document.querySelector("#saveHairMaterialPreset");
+const removeHairMaterialPresetButton = document.querySelector("#removeHairMaterialPreset");
+const hairMaterialGradientEnabledInput = document.querySelector("#hairMaterialGradientEnabled");
+const editHairMaterialGradientButton = document.querySelector("#editHairMaterialGradient");
+const hairMaterialGradientPreview = document.querySelector("#hairMaterialGradientPreview");
+const hairMaterialGradientDialog = document.querySelector("#hairMaterialGradientDialog");
+const closeHairMaterialGradientDialogButton = document.querySelector("#closeHairMaterialGradientDialog");
+const doneHairMaterialGradientButton = document.querySelector("#doneHairMaterialGradient");
+const hairMaterialGradientTrack = document.querySelector("#hairMaterialGradientTrack");
+const hairMaterialGradientStopColorInput = document.querySelector("#hairMaterialGradientStopColor");
+const hairMaterialGradientStopPositionInput = document.querySelector("#hairMaterialGradientStopPosition");
+const hairMaterialGradientStopPositionValue = document.querySelector("#hairMaterialGradientStopPositionValue");
+const addHairMaterialGradientStopButton = document.querySelector("#addHairMaterialGradientStop");
+const deleteHairMaterialGradientStopButton = document.querySelector("#deleteHairMaterialGradientStop");
+const resetHairMaterialGradientButton = document.querySelector("#resetHairMaterialGradient");
 const guideInputs = {
   x: document.querySelector("#guideX"),
   y: document.querySelector("#guideY"),
@@ -9437,6 +9453,7 @@ function restoreSharedStateForStateRestore(state, restorePlan, { preserveMirrorM
   hairState.state.activeHairMaterialId = hairMaterialDefinitions.some((material) => material.id === hairState.state.activeHairMaterialId)
     ? hairState.state.activeHairMaterialId
     : hairMaterialDefinitions[0].id;
+  materialApi.markHairMaterialPresetCustom();
   applyStrandSelectionState(restoreStrandSelection(restorePlan.strandSelection));
   sel.state.clumpViewportSelection = restorePlan.selection.clumpViewport;
   sel.state.selectedGuideId = restorePlan.selection.guideId;
@@ -9909,7 +9926,7 @@ Object.assign(ioDeps, {
   projectState, hairState: hairState.state, sel: sel.state, ui: ui.state,
   draw: draw.state, miscState: miscState.state, guideState: guideState.state,
   viewportState: viewportState.state, scalpState, head,
-  radialMenuApi, clumpProceduralApi, presetLibraryApi, referenceHeadApi,
+  radialMenuApi, clumpProceduralApi, presetLibraryApi, referenceHeadApi, materialApi,
   restoreState, undoHistory, redoHistory, updateHistoryButtons,
   frameViewportBounds, closeAppMenus, SUPPORTED_REFERENCE_IMAGE_TYPES,
   setNavigationTipsEnabled, setNavigationStyle, setCameraSmoothingEnabled, setCameraSmoothingStrength,
@@ -14150,16 +14167,27 @@ function renderLockList() {
 // and the boot-time materialApi.syncHairMaterialEditor() call.
 Object.assign(materialDeps, {
   hairMaterialDefinitions, animeAnisotropicLightDirection,
-  hairState: hairState.state, sel: sel.state, sculptState: sculptState.state,
+  hairState: hairState.state, sel: sel.state, sculptState: sculptState.state, projectState,
   STRAND_SELECTION_OUTLINE_COLOR,
   pushUndoState, getSelectedLock, editSelectedLocks, renderLockList,
   syncActiveMirror, updateStrandSelectionHighlight, updateStrandSelectionHighlightForLock,
   ensureUvCheckerForLock, strandViewportBaseColor, normalizeHairLayer, drawFlowApi,
+  sculptBrushSelectionMaskActive, sculptBrushSelectionAllows, proportionalStrandVisualsActive,
+  strandMirrorPartnerHighlighted,
   hairMaterialSelect, hairMaterialOutliner, deleteProjectHairMaterialButton,
   hairMaterialNameInput, hairMaterialShaderInput, hairMaterialColorInput,
   hairMaterialRoughnessInput, hairMaterialRoughnessValue, hairMaterialStandardControls,
   hairMaterialRoughnessControl, hairMaterialAnimeControls, hairMaterialAnimeColorInputs,
-  hairMaterialAnimeNumericControls
+  hairMaterialAnimeNumericControls,
+  hairMaterialPresetInput, saveHairMaterialPresetButton, removeHairMaterialPresetButton,
+  hairMaterialGradientEnabledInput, editHairMaterialGradientButton, hairMaterialGradientPreview,
+  hairMaterialGradientDialog, closeHairMaterialGradientDialogButton, doneHairMaterialGradientButton,
+  hairMaterialGradientTrack, hairMaterialGradientStopColorInput, hairMaterialGradientStopPositionInput,
+  hairMaterialGradientStopPositionValue, addHairMaterialGradientStopButton,
+  deleteHairMaterialGradientStopButton, resetHairMaterialGradientButton,
+  creationPresetDialog, creationPresetForm, creationPresetDialogTitle, creationPresetDescription,
+  creationPresetNameInput, removeCreationPresetDialog, removeCreationPresetDialogTitle,
+  removeCreationPresetMessage, confirmRemoveCreationPresetButton
 });
 
 function updateCount() {
@@ -14675,6 +14703,7 @@ hairMaterialOutliner.addEventListener("click", (event) => {
   const item = event.target.closest("[data-hair-material-id]");
   if (!item) return;
   hairState.state.activeHairMaterialId = item.dataset.hairMaterialId;
+  materialApi.markHairMaterialPresetCustom();
   materialApi.syncHairMaterialEditor();
   hairMaterialOutliner.querySelector(`[data-hair-material-id="${CSS.escape(item.dataset.hairMaterialId)}"]`)?.focus();
 });
@@ -14688,24 +14717,28 @@ hairMaterialOutliner.addEventListener("click", (event) => {
   ...Object.values(hairMaterialAnimeNumericControls).map((control) => control.input)
 ].forEach(bindUndoCapture);
 hairMaterialNameInput.addEventListener("input", () => {
+  materialApi.markHairMaterialPresetCustom();
   const material = materialApi.activeHairMaterialDefinition();
   material.name = hairMaterialNameInput.value || "Untitled Material";
   materialApi.renderHairMaterialOptions(getSelectedLock()?.materialId || DEFAULT_HAIR_MATERIAL_ID);
   materialApi.renderHairMaterialOutliner();
 });
 hairMaterialShaderInput.addEventListener("change", () => {
+  materialApi.markHairMaterialPresetCustom();
   const material = materialApi.activeHairMaterialDefinition();
   material.shader = normalizeHairShader(hairMaterialShaderInput.value);
   materialApi.refreshMaterialUsers(material.id);
   materialApi.syncHairMaterialEditor();
 });
 hairMaterialColorInput.addEventListener("input", () => {
+  materialApi.markHairMaterialPresetCustom();
   const material = materialApi.activeHairMaterialDefinition();
   material.color = hairMaterialColorInput.value;
   materialApi.refreshMaterialUsers(material.id);
   materialApi.renderHairMaterialOutliner();
 });
 hairMaterialRoughnessInput.addEventListener("input", () => {
+  materialApi.markHairMaterialPresetCustom();
   const material = materialApi.activeHairMaterialDefinition();
   material.roughness = Number(hairMaterialRoughnessInput.value);
   hairMaterialRoughnessValue.textContent = material.roughness.toFixed(2);
@@ -14713,6 +14746,7 @@ hairMaterialRoughnessInput.addEventListener("input", () => {
 });
 Object.entries(hairMaterialAnimeColorInputs).forEach(([key, input]) => {
   input.addEventListener("input", () => {
+    materialApi.markHairMaterialPresetCustom();
     const material = materialApi.activeHairMaterialDefinition();
     material[key] = input.value;
     materialApi.refreshMaterialUsers(material.id);
@@ -14721,6 +14755,7 @@ Object.entries(hairMaterialAnimeColorInputs).forEach(([key, input]) => {
 });
 Object.entries(hairMaterialAnimeNumericControls).forEach(([key, control]) => {
   control.input.addEventListener("input", () => {
+    materialApi.markHairMaterialPresetCustom();
     const material = materialApi.activeHairMaterialDefinition();
     const field = ANIME_ANISOTROPIC_NUMERIC_FIELDS[key];
     material[key] = THREE.MathUtils.clamp(Number(control.input.value), field.min, field.max);
@@ -14728,6 +14763,12 @@ Object.entries(hairMaterialAnimeNumericControls).forEach(([key, control]) => {
     materialApi.refreshMaterialUsers(material.id);
   });
 });
+
+// Material Presets + Base Color Gradient UI (port from main 0.1.5). Registered here after the
+// materialDeps batch and before presetLibraryApi.setupCreationPresetUi() so the shared creation
+// preset dialog submit/confirm listeners added by material-ui run first.
+materialApi.setupHairMaterialGradientUi();
+materialApi.setupHairMaterialPresetUi();
 Object.entries(groupInputs).forEach(([key, input]) => {
   input.addEventListener("pointerdown", requestGroupDefaultsWarning, { capture: true });
   bindUndoCapture(input);

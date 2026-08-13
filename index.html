@@ -617,6 +617,15 @@
             <button id="deleteProjectHairMaterial" class="compact-icon-button" type="button" title="Delete material" aria-label="Delete material">−</button>
           </div>
           <div id="hairMaterialOutliner" class="material-outliner" role="listbox" aria-label="Project materials"></div>
+          <div class="creation-preset-row material-preset-row">
+            <label class="compact-select-row" for="hairMaterialPreset"><span>Material Preset</span>
+              <select id="hairMaterialPreset">
+                <option value="">Current Material</option>
+              </select>
+            </label>
+            <button id="saveHairMaterialPreset" class="creation-preset-add" type="button" title="Save material preset" aria-label="Save material preset">+</button>
+            <button id="removeHairMaterialPreset" class="creation-preset-remove" type="button" title="Remove selected material preset" aria-label="Remove selected material preset" disabled>&times;</button>
+          </div>
           <div class="subsection-label">Material Properties</div>
           <label for="hairMaterialName">Name</label>
           <input id="hairMaterialName" type="text" value="Default Purple" />
@@ -626,6 +635,16 @@
             <option value="anime-anisotropic">Anime Anisotropic</option>
             <option value="lambert">Lambert</option>
           </select>
+          <div class="material-gradient-control">
+            <label class="toggle-row" for="hairMaterialGradientEnabled" title="Use a root-to-tip color gradient instead of one solid base color.">
+              <span>Base Color Gradient</span>
+              <input id="hairMaterialGradientEnabled" type="checkbox" />
+            </label>
+            <button id="editHairMaterialGradient" class="material-gradient-button" type="button">
+              <span id="hairMaterialGradientPreview" class="material-gradient-preview" aria-hidden="true"></span>
+              <span>Edit Gradient</span>
+            </button>
+          </div>
           <div id="hairMaterialStandardControls">
             <label for="hairMaterialColor">Color</label>
             <input id="hairMaterialColor" type="color" value="#2c223a" />
@@ -2164,6 +2183,29 @@
       </form>
     </dialog>
 
+    <dialog id="hairMaterialGradientDialog" class="creation-preset-dialog material-gradient-dialog" aria-labelledby="hairMaterialGradientDialogTitle">
+      <form method="dialog">
+        <div class="profile-dialog-head">
+          <div>
+            <h2 id="hairMaterialGradientDialogTitle">Base Color Gradient</h2>
+            <p>Blend colors from the strand root to its tip.</p>
+          </div>
+          <button id="closeHairMaterialGradientDialog" type="button" title="Close" aria-label="Close gradient editor">X</button>
+        </div>
+        <div id="hairMaterialGradientTrack" class="material-gradient-track" aria-label="Gradient stops"></div>
+        <div class="material-gradient-stop-editor">
+          <label>Color<input id="hairMaterialGradientStopColor" type="color" value="#2c223a" /></label>
+          <label>Position<input id="hairMaterialGradientStopPosition" type="range" min="0" max="1" step="0.01" value="0" /><output id="hairMaterialGradientStopPositionValue">0%</output></label>
+        </div>
+        <div class="dialog-actions">
+          <button id="deleteHairMaterialGradientStop" type="button">Delete Stop</button>
+          <button id="addHairMaterialGradientStop" type="button">Add Stop</button>
+          <button id="resetHairMaterialGradient" type="button">Reset</button>
+          <button id="doneHairMaterialGradient" type="button" class="primary-action">Done</button>
+        </div>
+      </form>
+    </dialog>
+
     <script type="importmap">
       {
         "imports": {
@@ -2172,6 +2214,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260813-1"></script>
+    <script type="module" src="./app.js?v=20260813-2"></script>
   </body>
 </html>

@@ -4018,6 +4018,100 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
   margin-top: 5px;
 }
 
+.material-gradient-control {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.material-gradient-button {
+  display: grid;
+  grid-template-columns: minmax(72px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.material-gradient-button:disabled {
+  opacity: 0.45;
+}
+
+.material-gradient-preview,
+.material-gradient-track {
+  display: block;
+  border: 1px solid #4e4854;
+  border-radius: 4px;
+  background: #2c223a;
+}
+
+.material-gradient-preview {
+  height: 18px;
+}
+
+.creation-preset-dialog.material-gradient-dialog {
+  width: min(440px, calc(100vw - 28px));
+  overflow: hidden;
+}
+
+.material-gradient-dialog .dialog-actions {
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.material-gradient-dialog .dialog-actions button {
+  flex: 1 1 92px;
+}
+
+.material-gradient-track {
+  position: relative;
+  height: 60px;
+  margin: 12px 0 18px;
+  cursor: crosshair;
+  overflow: visible;
+}
+
+.material-gradient-stop {
+  position: absolute;
+  bottom: -14px;
+  width: 18px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid #17151c;
+  border-radius: 4px 4px 9px 9px;
+  transform: translateX(-50%);
+  box-shadow: 0 0 0 1px #77707d;
+}
+
+.material-gradient-stop.active {
+  box-shadow: 0 0 0 2px #66f5ff;
+}
+
+.material-gradient-stop-editor {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.material-gradient-stop-editor label {
+  display: grid;
+  gap: 5px;
+}
+
+.material-gradient-stop-editor label:last-child {
+  grid-template-columns: minmax(0, 1fr) 48px;
+}
+
+.material-gradient-stop-editor label:last-child > span,
+.material-gradient-stop-editor label:last-child > input {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 440px) {
+  .material-gradient-stop-editor {
+    grid-template-columns: 1fr;
+  }
+}
+
 #hairMaterialAnimeControls .topology-control {
   grid-template-columns: 130px minmax(0, 1fr) 32px;
 }
