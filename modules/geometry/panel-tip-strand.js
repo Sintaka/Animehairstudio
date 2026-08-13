@@ -458,20 +458,33 @@ function tipMainSectionPoint(lock, t, u, shell, bone, segmentIndex = -1, splits 
 // 垂直于面板表面的法线（z）与位于表面切平面内的横向（x），而不是沿用主骨骼
 // 法线。rest 链与 tipChainFrameAt 共用，让发尖子骨骼跟随主发片构建曲线的表面
 // 曲率（弯曲刘海侧面与主面板法线出现明显夹角，宽度拖拽也沿表面切平面）。
+function tipOffsetSampleT(lock, t, u) {
+  const tipCurve = lock.geometryType === "surface"
+    ? 0
+    : THREE.MathUtils.clamp(Number(lock.panelTipCurve ?? 0), -1, 1);
+  const edgeTrim = THREE.MathUtils.lerp(
+    THREE.MathUtils.clamp(Number(lock.panelLeftEdgeTrim ?? 0), 0, 0.75),
+    THREE.MathUtils.clamp(Number(lock.panelRightEdgeTrim ?? 0), 0, 0.75),
+    (THREE.MathUtils.clamp(u, -1, 1) + 1) * 0.5
+  );
+  return panelTipCurveParameter(THREE.MathUtils.clamp(t, 0, 1), THREE.MathUtils.clamp(u, -1, 1), tipCurve, edgeTrim);
+}
+
 function tipSurfaceFrameAt(lock, t, centerU = null, segmentIndex = -1, splits = null) {
-  const panel = tipPanelFrameAt(lock, t);
-  const y = panel.y;
   const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
   const center = centerU == null
     ? (segmentIndex >= 0 && segmentIndex < boundaries.length - 1
       ? (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5
       : 0)
     : centerU;
+  const sampleT = tipOffsetSampleT(lock, t, center);
+  const panel = tipPanelFrameAt(lock, sampleT);
+  const y = panel.y;
   // 沿 u 差分采样面板表面点（front face）得到截面切线 dP/du；camber 会让截面
   // 切线偏离 frame.x，从而法线也相应倾斜，贴合实际面板曲面。
   const step = THREE.MathUtils.clamp((boundaries[1] - boundaries[0]) * 0.2, 0.01, 0.04);
-  const lower = tipMainSectionPoint(lock, t, THREE.MathUtils.clamp(center - step, -1, 1), 1, null, segmentIndex, splits);
-  const upper = tipMainSectionPoint(lock, t, THREE.MathUtils.clamp(center + step, -1, 1), 1, null, segmentIndex, splits);
+  const lower = tipMainSectionPoint(lock, sampleT, THREE.MathUtils.clamp(center - step, -1, 1), 1, null, segmentIndex, splits);
+  const upper = tipMainSectionPoint(lock, sampleT, THREE.MathUtils.clamp(center + step, -1, 1), 1, null, segmentIndex, splits);
   const sectionTangent = new THREE.Vector3().subVectors(upper, lower);
   if (!Number.isFinite(sectionTangent.x) || sectionTangent.lengthSq() < 1e-8) sectionTangent.copy(panel.x);
   else sectionTangent.normalize();
@@ -480,7 +493,7 @@ function tipSurfaceFrameAt(lock, t, centerU = null, segmentIndex = -1, splits = 
   if (z.lengthSq() < 0.0001) z.copy(panel.z);
   z.normalize();
   const x = new THREE.Vector3().crossVectors(y, z).normalize();
-  const point = tipMainSectionPoint(lock, t, center, 1, null, segmentIndex, splits);
+  const point = tipMainSectionPoint(lock, sampleT, center, 1, null, segmentIndex, splits);
   return { point, x, y, z };
 }
 
