@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { BoundedHistory, RestoreRefreshRegistry } from "../modules/history.js";
+import { BoundedHistory, RestoreRefreshRegistry } from "../modules/core/history.js";
 import {
   focusedControlShouldYieldToShortcut,
   pointerControlShouldReturnViewportFocus,
@@ -9,7 +9,7 @@ import {
   TOOL_SHORTCUTS,
   workspaceForShortcutKey,
   WORKSPACE_SHORTCUTS
-} from "../modules/shortcut-registry.js";
+} from "../modules/core/shortcut-registry.js";
 import {
   activateStrandSelection,
   emptyStrandSelection,
@@ -17,13 +17,13 @@ import {
   restoreStrandSelection,
   screenBoundsOverlap,
   triangleIntersectsScreenBounds
-} from "../modules/selection-state.js";
+} from "../modules/edit/selection-state.js";
 import {
   createSelectionSetRecord,
   nextSelectionSetName,
   normalizeSelectionSets,
   updateSelectionSetMembers
-} from "../modules/selection-sets.js";
+} from "../modules/edit/selection-sets.js";
 import {
   layoutRadialOptions,
   layoutRadialSubmenuSlots,
@@ -35,34 +35,34 @@ import {
   radialSubmenuTravelAngle,
   radialButtonRayExtent,
   radialMenuDimensions
-} from "../modules/radial-layout.js";
-import { solvePulledStrand } from "../modules/strand-constraints.js";
+} from "../modules/geometry/radial-layout.js";
+import { solvePulledStrand } from "../modules/geometry/strand-constraints.js";
 import {
   createArcHairSurfaceGrid,
   normalizeArcHairSurfaceSettings
-} from "../modules/arc-hair-surface.js";
-import { polygonOnlyObjSource } from "../modules/obj-import.js";
-import { mirrorSelectionTargets } from "../modules/mirror-selection.js";
+} from "../modules/geometry/arc-hair-surface.js";
+import { polygonOnlyObjSource } from "../modules/io/obj-import.js";
+import { mirrorSelectionTargets } from "../modules/edit/mirror-selection.js";
 import {
   MAX_RECENT_PROJECTS,
   normalizeRecentProjects,
   recentProjectId
-} from "../modules/recent-projects.js";
+} from "../modules/io/recent-projects.js";
 import {
   createRecoveryRecord,
   DEFAULT_AUTOSAVE_INTERVAL_SECONDS,
   normalizeAutosaveInterval,
   normalizeRecoveryRecord,
   RECOVERY_RECORD_ID
-} from "../modules/recovery-storage.js";
+} from "../modules/io/recovery-storage.js";
 import {
   proceduralAccessoryTaperScale,
   proceduralAccessoryTemplateData,
   proceduralBranchTemplateData
-} from "../modules/procedural-draw.js";
+} from "../modules/geometry/procedural-draw.js";
 import {
   resampleClosedProfilePoints
-} from "../modules/branch-knife.js";
+} from "../modules/geometry/branch-knife.js";
 import {
   compoundBridgeArchWeight,
   compoundBridgeParameters,
@@ -71,7 +71,7 @@ import {
   compoundControllerWidthScales,
   normalizeCompoundBridgeZippers,
   compoundProfileBridgePlan
-} from "../modules/compound-strand.js";
+} from "../modules/geometry/compound-strand.js";
 import {
   adaptiveCurveParameters,
   blendCylindricalPolylinePointData,
@@ -115,7 +115,7 @@ import {
   twistRateDegreesFromUnits,
   twistRateUnitsFromDegrees,
   upperProfileArcIndices
-} from "../modules/curve-math.js";
+} from "../modules/geometry/curve-math.js";
 
 test("arc hair surfaces form an open, consistently wound quad canopy", () => {
   const settings = normalizeArcHairSurfaceSettings({
@@ -827,7 +827,7 @@ import {
   DEFAULT_CURVE_LATTICE_PLANE,
   flatCurveLatticePointData,
   resampleCurveLatticePointData
-} from "../modules/curve-lattice.js";
+} from "../modules/geometry/curve-lattice.js";
 import {
   createLoftSurfaceLatticePointData,
   createSurfaceLatticePointData,
@@ -836,7 +836,7 @@ import {
   sampleSurfaceLattice,
   surfaceLatticePointIndex,
   surfaceLatticeWireSegments
-} from "../modules/surface-lattice.js";
+} from "../modules/geometry/surface-lattice.js";
 import {
   buildConnectedCurveCardGrid,
   buildCurveSurfaceGrid,
@@ -846,7 +846,7 @@ import {
   curveSurfaceLineLength,
   orientCurveSurfaceLine,
   resampleCurveSurfaceLine
-} from "../modules/curve-surface.js";
+} from "../modules/geometry/curve-surface.js";
 import {
   cameraFacingPlaneNormal,
   inflateSculptPointScale,
@@ -854,7 +854,7 @@ import {
   proportionalSculptWeights,
   sculptBrushWeight,
   smoothSculptPointDeltas
-} from "../modules/sculpt-brush.js";
+} from "../modules/sculpt/sculpt-brush.js";
 
 test("sculpt brush falloff supports hard and soft influence radii", () => {
   assert.equal(sculptBrushWeight(0, 100, 0.5), 1);
@@ -1447,51 +1447,51 @@ test("mirrored asymmetric width curves exchange their profile sides", () => {
   const symmetric = mirroredAsymmetricTaperCurves(primary, secondary, false);
   assert.deepEqual(symmetric, { primary, secondary });
 });
-import { exportHairFaces, hairFaceIndices, orderedFanBoundary } from "../modules/obj-export.js";
-import { exportAnimeHairUsda, usdIdentifier } from "../modules/usda-export.js";
+import { exportHairFaces, hairFaceIndices, orderedFanBoundary } from "../modules/io/obj-export.js";
+import { exportAnimeHairUsda, usdIdentifier } from "../modules/io/usda-export.js";
 import {
   cleanFileBaseName,
   fileNameForAction,
   normalizeExportContents
-} from "../modules/file-actions.js";
-import { applicationDropFileKind } from "../modules/file-drop.js";
-import { uvCoordinateBounds, uvViewTransform } from "../modules/uv-inspector.js";
-import { createHairProject, projectFileName, validateHairProject } from "../modules/project-schema.js";
+} from "../modules/io/file-actions.js";
+import { applicationDropFileKind } from "../modules/io/file-drop.js";
+import { uvCoordinateBounds, uvViewTransform } from "../modules/geometry/uv-inspector.js";
+import { createHairProject, projectFileName, validateHairProject } from "../modules/io/project-schema.js";
 import {
   createProjectRestorePlan,
   createProjectSelectionSnapshot,
   projectSnapshotLocks
-} from "../modules/project-state.js";
+} from "../modules/io/project-state.js";
 import {
   fanTriangleEdgeMasks,
   parseObjFaceVertexCounts,
   quadCellTopology,
   triangleEdgeMasksFromFaces
-} from "../modules/topology.js";
+} from "../modules/geometry/topology.js";
 import {
   emptyToolPresetLibrary,
   normalizeToolPresetLibrary,
   removeToolPreset
-} from "../modules/tool-presets.js";
+} from "../modules/data/tool-presets.js";
 import {
   emptyShapePresetLibrary,
   normalizeShapePresetLibrary,
   removeShapePreset
-} from "../modules/shape-presets.js";
+} from "../modules/data/shape-presets.js";
 import {
   createPreferencesBackup,
   normalizePreferencesBackup,
   preferencesBackupFileName
-} from "../modules/preferences-backup.js";
+} from "../modules/core/preferences-backup.js";
 import {
   createClumpBrushTemplate,
   normalizeClumpBrushTemplate
-} from "../modules/clump-brush-presets.js";
+} from "../modules/data/clump-brush-presets.js";
 import {
   readStoredBooleanPreference,
   readStoredPreference,
   writeStoredPreference
-} from "../modules/preference-storage.js";
+} from "../modules/core/preference-storage.js";
 import {
   appendPolyQuad,
   bridgePolyEdges,
@@ -1502,7 +1502,7 @@ import {
   polyFillCandidate,
   polyMeshBuffers,
   relaxPolyPoints
-} from "../modules/poly-topology.js";
+} from "../modules/geometry/poly-topology.js";
 import {
   ANIME_ANISOTROPIC_DEFAULTS,
   ANIME_ANISOTROPIC_SHADER,
@@ -1510,7 +1510,7 @@ import {
   normalizeAnimeAnisotropicSettings,
   normalizeHairShader,
   STANDARD_ANISOTROPIC_SHADER
-} from "../modules/anime-hair-shaders.js";
+} from "../modules/geometry/anime-hair-shaders.js";
 import {
   hairMaterialPresetValue,
   hairMaterialUsageCounts,
@@ -1520,7 +1520,7 @@ import {
   normalizeHairMaterialPresetLibrary,
   removeHairMaterialPreset,
   resolveHairMaterialDefinition
-} from "../modules/material-state.js";
+} from "../modules/material/material-state.js";
 
 test("preference storage preserves defaults, normalization, and unavailable-storage fallbacks", () => {
   const values = new Map([

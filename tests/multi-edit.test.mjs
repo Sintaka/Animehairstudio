@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { relativeEditValue } from "../modules/multi-edit.js";
+import { relativeEditValue } from "../modules/edit/multi-edit.js";
 
 test("relative multi-edit preserves differences between strand dimensions", () => {
   assert.ok(Math.abs(relativeEditValue(0.5, 0.3, 0.2) - 0.4) < 1e-9);

@@ -7,7 +7,7 @@ import {
   resamplePolyline,
   sampleCapsuleRadialProfile,
   scaleCapsuleRadialLoops
-} from "../modules/capsule-curve.js";
+} from "../modules/geometry/capsule-curve.js";
 
 test("resamples capsule centerlines uniformly while preserving endpoints", () => {
   const points = [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 1, y: 3, z: 0 }];

@@ -1,0 +1,1 @@
+{"name":"anime-hair-studio","version":"0.1.5-Sintaka.0.2.63","private":true,"license":"SEE LICENSE IN LICENSE","scripts":{"test":"node --test \"tests/*.test.mjs\""}}

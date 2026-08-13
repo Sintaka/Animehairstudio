@@ -4,7 +4,7 @@ import {
   canExtrudeHairShellFace,
   hairShellFaceCenter,
   hairShellFaceNormal
-} from "../modules/hair-shell.js";
+} from "../modules/geometry/hair-shell.js";
 
 const points = [
   { x: -1, y: 0, z: -1 },

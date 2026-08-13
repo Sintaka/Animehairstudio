@@ -25,7 +25,7 @@ test("curve surface tool exposes incremental strip controls and confirmation flo
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/project-state.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/io/project-state.js", import.meta.url), "utf8")
   ]);
   assert.doesNotMatch(html, /data-tool="curve-surface"[^>]*title="Draw Curve Surface"/);
   assert.match(html, /id="curveSurfaceToolPanel"/);
@@ -90,7 +90,7 @@ test("full body mesh import is available in File and Edit Head with seven-head s
   const [html, source, localization] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id="importFullBodyMeshMenu"[^>]*role="menuitem"[\s\S]*Import Full Body Mesh/);
@@ -144,7 +144,7 @@ test("Preview menu exposes a transient turntable with contextual speed controls"
 test("strand selection modifiers add with Shift and remove with Ctrl", async () => {
   const [source, selectionState] = await Promise.all([
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/selection-state.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/edit/selection-state.js", import.meta.url), "utf8")
   ]);
 
   assert.match(
@@ -197,7 +197,7 @@ test("strand locks persist and block viewport selection, transforms, and sculpt 
   const [html, source, registry] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/shortcut-registry.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/core/shortcut-registry.js", import.meta.url), "utf8")
   ]);
 
   assert.match(source, /function strandAvailableForViewportInteraction\(lock\) \{[\s\S]*strandVisibleForDisplay\(lock\) && !lock\.locked/);
@@ -385,7 +385,7 @@ test("standalone curve lattice guides are available while surface experiments re
   const [html, source, localization, css] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8")
   ]);
 
@@ -502,7 +502,7 @@ test("outliner items support inline renaming and guide context deletion", async 
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
   const scalpRowStart = source.indexOf("function createScalpGuideOutlinerRow()");
   const scalpRowEnd = source.indexOf("\n}\n\nfunction renderGuideOutliner", scalpRowStart) + 2;
@@ -630,7 +630,7 @@ test("clumps can be saved from the outliner as reusable draw brush presets", asy
   const [html, source, localization] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id="clumpContextMenu"[\s\S]*id="createClumpPresetAction"[\s\S]*Create preset from clump/);
@@ -654,8 +654,8 @@ test("retired clump conform and boolean compound experiments have no entry point
   const [html, source, presets, localization] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/clump-brush-presets.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/clump-brush-presets.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.doesNotMatch(html, /clumpConform|createCompoundFromSelection|compoundBoolean/i);
@@ -702,7 +702,7 @@ test("panel tool uses the supplied split-panel SVG and user-facing name", async 
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
     readFile(new URL("../assets/splitpaneltool-simplified.svg", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /data-tool=["']panel["'][^>]*title=["']Split Panel \(P\)["'][^>]*aria-label=["']Split Panel tool["'][\s\S]*?class=["']tool-icon icon-panel["']/);
@@ -728,7 +728,7 @@ test("split panels expose a persistent signed tip curve control", async () => {
   const [html, source, localization] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id=["']panelTipCurve["'][^>]*min=["']-1["'][^>]*max=["']1["'][^>]*value=["']0["']/);
@@ -744,7 +744,7 @@ test("split panels can preserve hard zipper and perimeter edges", async () => {
   const [html, source, localization] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /for=["']panelHardZipperEdges["'][\s\S]*Hard Split Edges[\s\S]*id=["']panelHardZipperEdges["']/);
@@ -765,7 +765,7 @@ test("split panels can add persistent lower-fringe topology density", async () =
   const [html, source, localization] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /Tip Loops <input id=["']panelTipLoops["'][^>]*min=["']0["'][^>]*max=["']16["'][^>]*step=["']1["']/);
@@ -782,7 +782,7 @@ test("Poly Brush authors persistent quad meshes with click, drag, bridge, and de
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/poly-topology.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/geometry/poly-topology.js", import.meta.url), "utf8")
   ]);
 
   assert.doesNotMatch(html, /data-tool=["']poly["'][^>]*(?:title|aria-label)=["']Poly Brush(?: tool)?["']/);
@@ -814,7 +814,7 @@ test("Surface experiment is hidden and guarded while its legacy project path rem
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/surface-lattice.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/geometry/surface-lattice.js", import.meta.url), "utf8")
   ]);
 
   assert.match(
@@ -924,7 +924,7 @@ test("retired lightweight strand collision has no UI or runtime entry point", as
   const [html, source, constraints] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/strand-constraints.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/geometry/strand-constraints.js", import.meta.url), "utf8")
   ]);
 
   assert.doesNotMatch(html, /strandCollisionToggle|lightweight strand collision|icon-collision|collision-button/i);
@@ -951,7 +951,7 @@ test("transform scale drags use restrained axis response and directional uniform
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id="transformToolPanel"[\s\S]*id="transformToolTitle"[\s\S]*class="transform-space-setting"[\s\S]*aria-label="Transform space"[\s\S]*id="pullMoveSetting"[\s\S]*id="scaleSensitivitySetting"[\s\S]*id="scaleSensitivity"[^>]*min="0\.05"[^>]*max="1"[^>]*value="0\.3"/);
@@ -974,7 +974,7 @@ test("Move tool exposes independent segmented viewport curve controls and compac
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id="moveCurveControlsSetting"[\s\S]*class="move-curve-viewport-options"[\s\S]*class="move-curve-dual-button"[\s\S]*<span>Width<\/span>[\s\S]*id="moveWidthCurveControls" type="checkbox"[\s\S]*id="moveAsymmetricWidthLabel">Sym[\s\S]*id="moveAsymmetricWidth" type="checkbox"[\s\S]*<span>Depth<\/span>[\s\S]*id="moveDepthCurveControls" type="checkbox"[\s\S]*id="moveAsymmetricDepthLabel">Sym[\s\S]*id="moveAsymmetricDepth" type="checkbox"[\s\S]*<span>Twist<\/span>[\s\S]*id="moveTwistCurveControls" type="checkbox"/);
@@ -1090,7 +1090,7 @@ test("Loft Surface experiment is hidden and blocked while its prototype math rem
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/surface-lattice.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/geometry/surface-lattice.js", import.meta.url), "utf8")
   ]);
 
   assert.match(
@@ -1238,7 +1238,7 @@ test("strand relax independently smooths point positions and authored rotations"
   const [html, source, localization, css] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8")
   ]);
 
@@ -1325,7 +1325,7 @@ test("hair card toggle sweeps the upper authored profile arc as an open double-s
   const [html, source, localization, css] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8")
   ]);
 
@@ -1370,7 +1370,7 @@ test("reference images support viewport overlays and transformable 3D planes wit
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id=["']referenceMenuToggle["'][\s\S]*?id=["']referenceMenu["'][\s\S]*?id=["']createViewportReferenceMenu["'][\s\S]*?Create 2D Viewport Reference[\s\S]*?id=["']createPlaneReferenceMenu["'][\s\S]*?Create 3D Plane Reference/);
@@ -1536,9 +1536,9 @@ test("dropping AHS and OBJ files uses destructive confirmation and explicit OBJ 
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/file-drop.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/recent-projects.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/io/file-drop.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/io/recent-projects.js", import.meta.url), "utf8")
   ]);
 
   assert.match(fileDrop, /function applicationDropFileKind\(file\)[\s\S]*\\\.ahs\$[\s\S]*return "project"[\s\S]*\\\.obj\$[\s\S]*return "obj"/);
@@ -1569,7 +1569,7 @@ test("viewport display controls can switch between perspective and orthographic 
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id=["']orthographicViewToggle["'][^>]*aria-pressed=["']false["']/);
@@ -1802,7 +1802,7 @@ test("display visibility filters expose every strand region, layer, character me
   const [html, source, projectState] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/project-state.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/io/project-state.js", import.meta.url), "utf8")
   ]);
   const regions = [...html.matchAll(/data-region-visibility=["']([^"']+)["']/g)].map((match) => match[1]);
   const layers = [...html.matchAll(/data-layer-visibility=["']([^"']+)["']/g)].map((match) => match[1]);
@@ -1854,7 +1854,7 @@ test("file menu exposes online downloads and de-emphasized local exports", async
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../server.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/file-actions.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/io/file-actions.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id=["']exportObj["']/);
@@ -1927,10 +1927,10 @@ test("settings menu exposes preferences, language, and app version", async () =>
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
-    readFile(new URL("../modules/app-config.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/preference-storage.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/core/app-config.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/core/preference-storage.js", import.meta.url), "utf8")
   ]);
   const packageData = JSON.parse(packageSource);
 
@@ -1952,7 +1952,7 @@ test("settings menu exposes preferences, language, and app version", async () =>
   assert.match(html, /id=["']resetViewportBackgroundColor["'][^>]*class=["']slider-reset-button["'][^>]*aria-label=["']Reset viewport background color["']/);
   assert.match(html, /id="compactToolButtonsPreference"[^>]*type="checkbox"/);
   assert.doesNotMatch(html, /id="compactToolButtonsPreference"[^>]*checked/);
-  assert.match(html, /id="sidePanelStylePreference"[\s\S]*value="default">Default panels<[\s\S]*value="transparent">No panel backgrounds<[\s\S]*value="glass">Glass Panels</);
+  assert.match(html, /id="sidePanelStylePreference"[\s\S]*value="default">Default panels<[\s\S]*value="none">No Panels<[\s\S]*value="glass">Glass Panels</);
   assert.match(html, /id="glassPanelColorPreference"[^>]*type="color"[^>]*value="#19181d"[\s\S]*id="resetGlassPanelColor"[^>]*aria-label="Reset glass panel color"/);
   assert.match(html, /id="outlinerFolderColorsPreference"[^>]*type="checkbox"[^>]*checked/);
   assert.match(html, /id="outlinerFolderColorOpacityPreference"[^>]*type="range"[^>]*min="0"[^>]*max="100"[^>]*step="1"[^>]*value="100"/);
@@ -2238,7 +2238,7 @@ test("holding Spacebar drives a release-to-confirm strand radial menu", async ()
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/radial-layout.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/geometry/radial-layout.js", import.meta.url), "utf8")
   ]);
 
   assert.match(
@@ -2400,10 +2400,10 @@ test("project materials select standard, anime anisotropic, and Lambert shaders"
   const [html, source, config, shaderModule, materialState, localization, css] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/app-config.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/anime-hair-shaders.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/material-state.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/core/app-config.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/geometry/anime-hair-shaders.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/material/material-state.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8")
   ]);
 
@@ -2488,7 +2488,7 @@ test("holding a transform shortcut opens its authoritative tool radial menu", as
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id=["']toolRadialMenu["'][\s\S]*data-tool-radial-index=["']0["'][\s\S]*data-tool-radial-index=["']3["']/);
@@ -2542,7 +2542,7 @@ test("Contextual 2D point movement uses Z as a transient control-normal modifier
 test("strand radial menus hide the selection and restore hidden strands", async () => {
   const [source, localization] = await Promise.all([
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(source, /function strandVisibilityRadialOptions[\s\S]*action: "hide-selected-strands"[\s\S]*label: "Hide"[\s\S]*action: "unhide-hidden-strands"[\s\S]*label: "Unhide Hidden"/);
@@ -2562,7 +2562,7 @@ test("strand radial menus hide the selection and restore hidden strands", async 
 test("recognized app shortcuts reclaim focus from dropdowns and range sliders", async () => {
   const [source, registry] = await Promise.all([
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/shortcut-registry.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/core/shortcut-registry.js", import.meta.url), "utf8")
   ]);
 
   assert.match(registry, /const APPLICATION_SHORTCUT_KEYS = new Set\(\[[\s\S]*"s"[\s\S]*"b"[\s\S]*"o"[\s\S]*"h"[\s\S]*"l"[\s\S]*"f"[\s\S]*"x"/);
@@ -2600,7 +2600,7 @@ test("Delete removes the current removable selection but never the scalp guide",
   const [html, source, localization] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /<kbd>Delete<\/kbd><span>Delete selected strands, guides, or references<\/span>/);
@@ -2655,7 +2655,7 @@ test("Curves menu rebuilds one or many selected strand curves", async () => {
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(
@@ -2700,7 +2700,7 @@ test("Curves menu creates a standalone three-controller compound strand mesh", a
   const [html, source, localization] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id="curvesMenu"[\s\S]*id="createCompoundStrand"[\s\S]*Create Compound Strand/);
@@ -2768,7 +2768,7 @@ test("Hair Shell creates an expanded scalp-fitted quad shell and Draw Strand ext
   const [html, source, topology] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/hair-shell.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/geometry/hair-shell.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id="curvesMenu"[\s\S]*id="createHairShell"[\s\S]*Create Hair Shell/);
@@ -2785,7 +2785,7 @@ test("Arc Hair Surface creates a persistent procedural quad canopy with contextu
   const [html, source, generator] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/arc-hair-surface.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/geometry/arc-hair-surface.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id="curvesMenu"[\s\S]*id="createArcHairSurface"[\s\S]*Create Arc Hair Surface/);
@@ -2873,7 +2873,7 @@ test("object and component edit modes share selection while object transforms pi
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id="viewportSelectionModeControl"[\s\S]*data-selection-mode="component"[^>]*aria-pressed="true"[\s\S]*data-selection-mode="object"/);
@@ -2933,7 +2933,7 @@ test("selected strands can be isolated from Ctrl+1 or the contextual radial menu
   const [html, source, localization] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /<kbd>Ctrl<\/kbd>[\s\S]*?<kbd>1<\/kbd>[\s\S]*?Isolate selected strands/);
@@ -2954,9 +2954,9 @@ test("Shift adds, Ctrl removes, and shifted topology gestures take priority over
   const [html, source, localization, selectionState, projectState] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/selection-state.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/project-state.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/edit/selection-state.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/io/project-state.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /<h3>Selection<\/h3>[\s\S]*?<kbd>Shift<\/kbd>[\s\S]*?Left click \/ drag[\s\S]*?Add control points or strands to the selection/);
@@ -3008,7 +3008,7 @@ test("multi-selected strands can become a clump or be deleted from selection act
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id="clumpContextMenu"[\s\S]*?id="createClumpFromSelectionAction"[\s\S]*?Create Clump from Selection/);
@@ -3044,8 +3044,8 @@ test("selection sets are created from contextual menus and recalled from the str
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/project-state.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/io/project-state.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id="createSelectionSetFromSelectedAction"[^>]*>Create Set from Selected</);
@@ -3083,7 +3083,7 @@ test("retired SDF fusion has no UI, runtime, preference, or localization entry p
   const [html, source, localization] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.doesNotMatch(html, /SDF|sdfStrandFusion|previewSdfFusion/);
@@ -3095,7 +3095,7 @@ test("whole-clump selection exposes clump lifecycle radial actions", async () =>
   const [source, css, localization] = await Promise.all([
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(
@@ -3189,7 +3189,7 @@ test("duplicate placement supports ordinary copies and windowed procedural batch
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/project-state.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/io/project-state.js", import.meta.url), "utf8")
   ]);
 
   assert.match(projectState, /!duplicatePlacement\?\.lockIds\?\.includes\(lock\.id\)/);
@@ -3729,7 +3729,7 @@ test("viewport draw settings expose live surface and creation layer outside setu
 test("project restore preserves authored strand and braid points while presets may remap attachments", async () => {
   const [source, projectState] = await Promise.all([
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/project-state.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/io/project-state.js", import.meta.url), "utf8")
   ]);
   const refreshStart = source.indexOf("function refreshLoadedRootAttachmentsOnAuthoredScalp()");
   const refreshEnd = source.indexOf("\n}\n\nfunction createRootAttachment", refreshStart) + 2;
@@ -3760,7 +3760,7 @@ test("strand width and depth curve editors expose draggable viewport mesh points
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(
@@ -3941,10 +3941,10 @@ test("strand shape exposes an undoable signed twist curve envelope", async () =>
   const [html, source, config, curveMath, css, localization] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/app-config.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/curve-math.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/core/app-config.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/geometry/curve-math.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id="twist"[\s\S]*id="strandTwistCurveControl"[\s\S]*data-curve-key="twistCurve"/);
@@ -4016,9 +4016,9 @@ test("dynamic density can add longitudinal loops to support twist curves", async
   const [html, source, curveMath, clumpPresets, localization] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/curve-math.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/clump-brush-presets.js", import.meta.url), "utf8"),
-    readFile(new URL("../modules/localization.js", import.meta.url), "utf8")
+    readFile(new URL("../modules/geometry/curve-math.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/data/clump-brush-presets.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/data/localization.js", import.meta.url), "utf8")
   ]);
 
   assert.match(html, /id="groupDynamicDensity"[\s\S]*Twist Density[\s\S]*id="groupTwistDensity"/);

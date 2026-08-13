@@ -1,4 +1,4 @@
-﻿import jaDictionary from "./loc-ja.js?v=20260809-1";
+import jaDictionary from "./loc-ja.js?v=20260809-1";
 import zhDictionary from "./loc-zh.js?v=20260809-1";
 
 export const SUPPORTED_LANGUAGES = Object.freeze([
@@ -27,7 +27,7 @@ export function translateUiString(value, language = DEFAULT_LANGUAGE) {
 
   const strandCount = text.match(/^(\d+) strands?$/);
   if (strandCount) {
-    if (language === "ja") return `${leading}${strandCount[1]} ?????${trailing}`;
+    if (language === "ja") return `${leading}${strandCount[1]} ストランド${trailing}`;
     if (language === "zh") return `${leading}${strandCount[1]} strands${trailing}`;
   }
   const mirrorInstanceCount = text.match(/^Decouple (\d+) Mirror Instances$/);

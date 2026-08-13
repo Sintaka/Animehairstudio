@@ -6,10 +6,10 @@ import {
   normalizeLanguage,
   SUPPORTED_LANGUAGES,
   translateUiString
-} from "../modules/localization.js";
+} from "../modules/data/localization.js";
 
 test("language support is limited to English and Japanese with an English fallback", () => {
-  assert.deepEqual(SUPPORTED_LANGUAGES.map(({ id }) => id), ["en", "ja"]);
+  assert.deepEqual(SUPPORTED_LANGUAGES.map(({ id }) => id), ["en", "ja", "zh"]);
   assert.equal(DEFAULT_LANGUAGE, "en");
   assert.equal(normalizeLanguage("ja"), "ja");
   assert.equal(normalizeLanguage("fr"), "en");
