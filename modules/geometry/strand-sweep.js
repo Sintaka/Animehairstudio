@@ -3,9 +3,9 @@
 // child-strand sweep (createBranchChildGeometry): both are "sweep a profile along a
 // curve with transported frames". Callers add caps/bridge + geometry metadata.
 import * as THREE from "three";
-import { sweepCurvatureResponse, smoothSweepChains } from "./curve-math.js?v=20260813-1";
+import { sweepCurvatureResponse, smoothSweepChains } from "./curve-math.js?v=20260813-2";
 
-export const SWEEP_OVERLAP_DEFAULTS = Object.freeze({ strength: 0.7, threshold: 0.6, edgeSmooth: 0.3 });
+export const SWEEP_OVERLAP_DEFAULTS = Object.freeze({ strength: 0.7, threshold: 0.6, edgeSmooth: 0.3, falloff: 3 });
 
 export function createStrandSweepApi(deps) {
   // deps: strandCurveParameters, strandGeometryFrameAt, strandProfileTopologyAt,
@@ -43,6 +43,7 @@ export function createStrandSweepApi(deps) {
       1
     );
     const overlapThreshold = Math.max(0.01, Number(lock.sweepOverlapThreshold ?? SWEEP_OVERLAP_DEFAULTS.threshold));
+    const overlapFalloff = Math.max(0, Math.min(8, Math.floor(Number(lock.sweepOverlapFalloff ?? SWEEP_OVERLAP_DEFAULTS.falloff) || 0)));
     const edgeSmooth = THREE.MathUtils.clamp(
       Number(lock.sweepEdgeSmooth ?? SWEEP_OVERLAP_DEFAULTS.edgeSmooth),
       0,
@@ -80,7 +81,8 @@ export function createStrandSweepApi(deps) {
     // Curvature-aware narrowing: bend rings shrink so neighboring rings stop intersecting.
     const { factors, heat } = sweepCurvatureResponse(centers, radii, {
       strength: overlapStrength,
-      safety: overlapThreshold
+      safety: overlapThreshold,
+      falloff: overlapFalloff
     });
     // Pass 2: emit geometry with the per-row narrowing factor applied to the warped ring.
     rowsData.forEach(({ guideT, point, frame, color, warped }, row) => {

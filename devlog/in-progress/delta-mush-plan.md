@@ -13,6 +13,7 @@
   - UI：`#sweepOverlapPanel`（Strength 0.7 / Threshold 0.6 / Edge Smooth 0.3），per-lock 持久化 + hairState 全局默认；默认参数导出 `SWEEP_OVERLAP_DEFAULTS`（strand-sweep.js 单源）。
   - 验证：core-math 114 pass、verify-smoke 10/11=基线、dom-contract 16/89 不变；开关置 0 逐位守恒。
 - §6 Delta Mush（可选辅助）未实现，仍按原评估保留为后续项；§3.4 源头夹角 clamp 未做（留给用户调 Threshold）。
+- 0.2.67 跟进：`sweepCurvatureResponse` 新增 `falloff`（默认 3，`SWEEP_OVERLAP_DEFAULTS.falloff`），收窄系数/heat 沿脊柱三角加权扩散、端点钉死，消除急弯处被处理环与相邻未收窄环的宽度硬跳变/缺口；UI 增加 Sweep Overlap Falloff 滑块。
 
 
 ## 1. ⚠️ 评估结论（先读）

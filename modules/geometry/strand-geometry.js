@@ -8,7 +8,7 @@ import {
   smoothSweepChains,
   sweepCurvatureResponse,
   upperProfileArcIndices
-} from "./curve-math.js?v=20260813-1";
+} from "./curve-math.js?v=20260813-2";
 import { buildConnectedCurveCardGrid, DEFAULT_CURVE_SURFACE_ROWS } from "./curve-surface.js?v=20260731-8";
 import { polyMeshBuffers } from "./poly-topology.js?v=20260728-3";
 import {
@@ -20,7 +20,7 @@ import {
 import { DEFAULT_SWEEP_PROFILE, ROUND_SWEEP_PROFILE } from "../core/app-config.js?v=20260809-2";
 import { strandSplitBonesFor, strandTipFor } from "../bones/bone-model.js?v=20260813-1";
 import { materializeTipChain, tipChainFrameAt, tipWeightAt, sampleTipPosition } from "./tip-sub-bone.js?v=20260813-1";
-import { SWEEP_OVERLAP_DEFAULTS } from "./strand-sweep.js?v=20260813-1";
+import { SWEEP_OVERLAP_DEFAULTS } from "./strand-sweep.js?v=20260813-2";
 
 export function createStrandGeometryApi(deps) {
   // deps: api objects (branchSweep/strandSweep/branchBridge/curveSurfaceCreate/panelTipStrand/
@@ -98,6 +98,7 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   const actualLengthSegments = curveParameters.length - 1;
   const strength = THREE.MathUtils.clamp(Number(lock.sweepOverlapStrength ?? SWEEP_OVERLAP_DEFAULTS.strength), 0, 1);
   const safety = Math.max(0.01, Number(lock.sweepOverlapThreshold ?? SWEEP_OVERLAP_DEFAULTS.threshold));
+  const overlapFalloff = Math.max(0, Math.min(8, Math.floor(Number(lock.sweepOverlapFalloff ?? SWEEP_OVERLAP_DEFAULTS.falloff) || 0)));
   const edgeSmooth = THREE.MathUtils.clamp(Number(lock.sweepEdgeSmooth ?? SWEEP_OVERLAP_DEFAULTS.edgeSmooth), 0, 1);
   const frames = [];
   let previousFrame = null;
@@ -159,7 +160,7 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     });
     radii.push(rowRadius);
   });
-  const { factors, heat } = sweepCurvatureResponse(centers, radii, { strength, safety });
+  const { factors, heat } = sweepCurvatureResponse(centers, radii, { strength, safety, falloff: overlapFalloff });
 
   // Sweep the two tubes (unchanged rendering), but emit ALL side faces before the
   // end caps so quadFaces occupy the front of the index stream (carve-friendly).
@@ -455,6 +456,7 @@ function createHairCardGeometry(lock, curve, profilePoints) {
   const actualLengthSegments = curveParameters.length - 1;
   const strength = THREE.MathUtils.clamp(Number(lock.sweepOverlapStrength ?? SWEEP_OVERLAP_DEFAULTS.strength), 0, 1);
   const safety = Math.max(0.01, Number(lock.sweepOverlapThreshold ?? SWEEP_OVERLAP_DEFAULTS.threshold));
+  const overlapFalloff = Math.max(0, Math.min(8, Math.floor(Number(lock.sweepOverlapFalloff ?? SWEEP_OVERLAP_DEFAULTS.falloff) || 0)));
   const edgeSmooth = THREE.MathUtils.clamp(Number(lock.sweepEdgeSmooth ?? SWEEP_OVERLAP_DEFAULTS.edgeSmooth), 0, 1);
   const vertices = [];
   const tangents = [];
@@ -481,7 +483,7 @@ function createHairCardGeometry(lock, curve, profilePoints) {
     }
     radii.push(rowRadius);
   });
-  const { factors, heat } = sweepCurvatureResponse(centers, radii, { strength, safety });
+  const { factors, heat } = sweepCurvatureResponse(centers, radii, { strength, safety, falloff: overlapFalloff });
 
   curveParameters.forEach((t, row) => {
     const point = curve.getPoint(t);

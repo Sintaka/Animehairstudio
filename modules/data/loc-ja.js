@@ -604,6 +604,7 @@ export default Object.freeze({
   "Sweep Overlap Strength": "スイープ重なり収縮強度",
   "Sweep Overlap Threshold": "スイープ重なりしきい値",
   "Sweep Edge Smooth": "スイープエッジスムーズ",
+  "Sweep Overlap Falloff": "スイープ重なり遷移範囲",
   "Horizontal Curvature": "水平カーブ",
   "Cut Roundness": "切り口の丸み",
   "Split Geometry": "形状を分割",

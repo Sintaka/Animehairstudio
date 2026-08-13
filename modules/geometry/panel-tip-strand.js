@@ -8,7 +8,7 @@ import {
   sampleArray,
   sampleAsymmetricTaperCurve,
   sampleTaperCurve
-} from "./curve-math.js?v=20260813-1";
+} from "./curve-math.js?v=20260813-2";
 import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260727-5";
 import { cloneSplitBones } from "../bones/bone-model.js?v=20260813-1";
 import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260813-1";

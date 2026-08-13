@@ -21,6 +21,15 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（0.2.67）
+
+> Sweep 收窄系数沿脊柱扩散（falloff），修复急弯过渡硬跳变/缺口（分支 codex/0.2.67-sweep-falloff，0.2.66 跟进）：
+> - **问题**：0.2.66 的曲率收窄只处理超过阈值的环，弯折处被收窄环与相邻“主曲率较平滑”的未收窄环之间宽度硬跳变 → 突兀 + 过渡 quad 可能产生新缺口。
+> - **方案（后处理传播）**：`curve-math.js` `sweepCurvatureResponse` 新增 `falloff` 选项（默认 0=旧行为；`strand-sweep.js` `SWEEP_OVERLAP_DEFAULTS.falloff=3`）。算出 factors/heat 后沿脊柱做三角加权扩散（window=min(floor(falloff), count−1)，w=1−|i−j|/(window+1)），端点钉死 factors=1 / heat=0；`falloff=0` 时输出逐位一致。
+> - **接入**：`strand-sweep.js` `sweepSide` + `strand-geometry.js` `createSplitStrandGeometry` / `createHairCardGeometry` 读取 `lock.sweepOverlapFalloff`（0–8 整数，默认 3）并传入。
+> - **UI**：`#sweepOverlapPanel` 新增第 4 个滑块 Sweep Overlap Falloff（0–8，默认 3）；hairStore 默认 + ZH/JA 各 +1 key。
+> - 回归：core-math 116 pass（+2 新单测）、verify-smoke 10/11=基线。
+
 ## 最近更新（0.2.66）
 
 > Sweep 转角过大修复：曲率感知环收窄（防自相交/穿插）+ 转角边缘平滑（分支 codex/0.2.66-sweep-corner-smooth，实施依据 devlog/in-progress/delta-mush-plan.md 主任务）：

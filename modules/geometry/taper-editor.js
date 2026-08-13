@@ -8,7 +8,7 @@ import {
   sampleTaperCurve,
   twistCurveDisplayRange,
   twistRateUnitsFromDegrees
-} from "./curve-math.js?v=20260813-1";
+} from "./curve-math.js?v=20260813-2";
 import { materializeSplitBones, splitBonesFor } from "../bones/bone-model.js?v=20260813-1";
 import {
   DEFAULT_SWEEP_PROFILE,

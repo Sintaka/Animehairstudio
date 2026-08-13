@@ -467,6 +467,7 @@ export default Object.freeze({
   "Sweep Overlap Strength": "扫掠重叠收窄强度",
   "Sweep Overlap Threshold": "扫掠重叠阈值",
   "Sweep Edge Smooth": "扫掠边缘平滑",
+  "Sweep Overlap Falloff": "扫掠重叠过渡范围",
   "Curve Step": "曲线步长",
   "Surface Normal Influence": "曲面法线影响",
   "Live Surface": "Live Surface",

@@ -1233,10 +1233,12 @@ export function upperProfileArcIndices(points) {
 }
 
 // 局部曲率半径 ρ 取相邻三点外接圆半径；折角处 ρ/r 小 → 环按曲率收窄。
+// 收窄系数沿脊柱扩散，避免急弯过渡硬跳变/缺口。
 export function sweepCurvatureResponse(centers, radii, options = {}) {
   const strength = clamp(Number(options.strength ?? 1), 0, 1);
   const safety = Number(options.safety ?? 0.6);
   const minScale = Number(options.minScale ?? 0.05);
+  const falloff = Number(options.falloff ?? 0);
   const count = centers.length;
   const factors = new Array(count).fill(1);
   const heat = new Array(count).fill(0);
@@ -1269,6 +1271,31 @@ export function sweepCurvatureResponse(centers, radii, options = {}) {
     factors[i] = r <= 1e-6
       ? 1
       : Math.max(minScale, 1 - (1 - Math.min(1, ratio)) * strength);
+  }
+  if (falloff >= 1 && count >= 3) {
+    const window = Math.min(Math.floor(falloff), count - 1);
+    const blurredFactors = new Array(count);
+    const blurredHeat = new Array(count);
+    for (let i = 0; i < count; i += 1) {
+      const start = Math.max(0, i - window);
+      const end = Math.min(count - 1, i + window);
+      let weightSum = 0;
+      let factorSum = 0;
+      let heatSum = 0;
+      for (let j = start; j <= end; j += 1) {
+        const weight = 1 - Math.abs(i - j) / (window + 1);
+        weightSum += weight;
+        factorSum += factors[j] * weight;
+        heatSum += heat[j] * weight;
+      }
+      blurredFactors[i] = factorSum / weightSum;
+      blurredHeat[i] = heatSum / weightSum;
+    }
+    blurredFactors[0] = 1;
+    blurredFactors[count - 1] = 1;
+    blurredHeat[0] = 0;
+    blurredHeat[count - 1] = 0;
+    return { factors: blurredFactors, heat: blurredHeat };
   }
   return { factors, heat };
 }

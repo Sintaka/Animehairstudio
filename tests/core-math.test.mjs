@@ -2783,6 +2783,57 @@ test("sweep curvature response narrows bent rings and stays flat on straight spi
   assert.deepEqual(disabled.factors, [1, 1, 1, 1, 1]);
 });
 
+test("sweep curvature falloff spreads narrowing along the spine and pins endpoints", () => {
+  // 90° corner on a 7-point spine: 3 straight rings, corner ring, 3 straight rings.
+  const corner = [
+    { x: -3, y: 0, z: 0 },
+    { x: -2, y: 0, z: 0 },
+    { x: -1, y: 0, z: 0 },
+    { x: 0, y: 0, z: 0 },
+    { x: 0, y: 0, z: 1 },
+    { x: 0, y: 0, z: 2 },
+    { x: 0, y: 0, z: 3 }
+  ];
+  const radii = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
+  const sharp = sweepCurvatureResponse(corner, radii);
+  assert.equal(sharp.factors[0], 1);
+  assert.equal(sharp.factors[6], 1);
+  assert.ok(sharp.factors[3] < 1, "bend ring narrows without falloff");
+  assert.equal(sharp.factors[2], 1, "bend neighbor keeps full width without falloff (hard step)");
+  assert.equal(sharp.factors[4], 1, "bend neighbor keeps full width without falloff (hard step)");
+  assert.equal(sharp.heat[1], 0);
+  assert.equal(sharp.heat[5], 0);
+
+  const diffused = sweepCurvatureResponse(corner, radii, { falloff: 2 });
+  assert.ok(diffused.factors[3] < 1, "bend ring stays narrowed after falloff");
+  assert.ok(diffused.factors[2] < 1, "falloff diffuses narrowing onto the straight neighbor");
+  assert.ok(diffused.factors[4] < 1, "falloff diffuses narrowing onto the straight neighbor");
+  assert.ok(diffused.heat[2] > 0, "falloff diffuses curvature heat onto the straight neighbor");
+  assert.ok(diffused.heat[3] > 0, "bend ring keeps positive curvature heat after falloff");
+  assert.equal(diffused.factors[0], 1, "root ring stays pinned");
+  assert.equal(diffused.factors[6], 1, "tip ring stays pinned");
+  assert.equal(diffused.heat[0], 0, "root heat stays pinned");
+  assert.equal(diffused.heat[6], 0, "tip heat stays pinned");
+  const sharpStep = Math.abs(sharp.factors[3] - sharp.factors[2]);
+  const diffuseStep = Math.abs(diffused.factors[3] - diffused.factors[2]);
+  assert.ok(diffuseStep < sharpStep, "falloff softens the width step at the bend");
+});
+
+test("sweep curvature response falloff=0 stays compatible with the default", () => {
+  const corner = [
+    { x: -2, y: 0, z: 0 },
+    { x: -1, y: 0, z: 0 },
+    { x: 0, y: 0, z: 0 },
+    { x: 0, y: 0, z: 1 },
+    { x: 0, y: 0, z: 2 }
+  ];
+  const radii = [0.5, 0.5, 0.5, 0.5, 0.5];
+  const defaults = sweepCurvatureResponse(corner, radii);
+  const withZero = sweepCurvatureResponse(corner, radii, { falloff: 0 });
+  assert.deepEqual(withZero.factors, defaults.factors);
+  assert.deepEqual(withZero.heat, defaults.heat);
+});
+
 test("sweep chain smoothing applies Jacobi averages, honors weights, and pins anchor rows", () => {
   const rowCount = 4;
   const columnCount = 3;
