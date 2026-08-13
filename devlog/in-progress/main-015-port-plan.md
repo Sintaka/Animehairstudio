@@ -1,0 +1,38 @@
+# main 0.1.5 移植计划 / main 0.1.5 port plan
+
+> 状态：**进行中**（2026-08-13，分支 0.2.63-main015-port）
+> 原则：**分析后按功能移植，不 merge**（见 development-standards.md「main 上游更新移植（不 merge）」与 main-sync-conflicts.md「Main 更新移植原则」）。
+> 基线：`d3358f6`(v0.1.4) → `69f807a`(v0.1.5)，24 文件，+14,099/−683。本地 HEAD 已按域重构，main 仍是扁平结构，故逐功能移植。
+
+## 一、分波策略
+
+| 波次 | 范围 | 处置 |
+|---|---|---|
+| 第一波（低风险） | 新增纯模块 + 纯函数并入既有模块 + 小 bug 修复 + 测试 | 直接移植/并入，不接 UI |
+| 第二波（UI） | 相机（View Cube / Multi-Cam）、浮动面板（数字变换 / 工具设置）、Autosave 调度、Material Presets / Base Gradient 编辑器、Selection Sets 扩展、Panel/Glass 风格 | 在本地架构重新接线 |
+| 第三波（单独评审） | Split Panel Tip Curvature、Branch Surface Imprints、Radial pie 子菜单 | 与本地几何模型冲突，暂缓 |
+
+## 二、第一波任务（文件不相交，可并行子智能体）
+
+- A：新增模块 `modules/io/recovery-storage.js`、`modules/geometry/arc-hair-surface.js`、`modules/geometry/branch-knife.js`、`modules/geometry/hair-shell.js`；新增 `tests/*.test.mjs`（6 个）。根 `package.json` 不引入（其 scripts 指向不存在的 verify-project.ps1，web 应用无需）。
+- B1：`modules/material/material-state.js` 并入 gradient/preset 纯函数；`modules/core/app-config.js` 加 gradient 默认值 + APP_VERSION=`0.1.5-Sintaka.0.2.63`；`modules/geometry/anime-hair-shaders.js` 加 uBaseGradient/uUseBaseGradient。
+- B2：`modules/geometry/topology.js` 并入 `quadCellTopology`/`triangleEdgeMasksFromFaces`；`modules/geometry/compound-strand.js` 并入 zipper 函数；`modules/geometry/radial-layout.js` 并入扇形函数。
+- C：`modules/geometry/curve-math.js` 并入 `panelTipCurveParameter`/`panelTipLoopParameters`/`mirroredAsymmetricTaperCurves`；修复 `relaxAngleValue`（mean-angle 跨环绕角）。
+- D：`modules/core/shortcut-registry.js` 并入 `pointerControlShouldReturnViewportFocus` + Ctrl+H（与本地 textEntry 版 `focusedControlShouldYieldToShortcut` 融合）。
+
+## 三、第二波任务（UI 接线，app.js/index.html/styles.css 共享，需分批或串行）
+
+- View Cube（`updateCameraViewCube`/`activateView` + index.html + styles.css）
+- Multi-Cam（渲染管理 + index.html + styles.css，实验性）
+- Numeric Object Transforms 浮动面板（`strandObjectTransformPanel` 系列 + `lock.objectTransform`）
+- Autosave 调度接本地保存管线（`markProjectChangedForRecovery`/`queueRecoveryAutosave`）
+- Material Presets + Base Gradient 编辑器接本地 `material-ui.js`
+- Selection Sets 扩展接本地 outliner
+- Panel styles / Glass color / 响应式头部（styles.css 融合）
+- Move 曲线控件与本地 Width Curve UI 融合
+- Relax Position/Rotation 分离
+
+## 四、决策记录
+
+- 根 package.json 不引入（scripts 引用缺失脚本；`type:module` 已在 modules/package.json）。
+- 第一波 bug 修复核对结论：`relaxAngleValue` 本地旧版 → 修复；Guide Capsule 半径保位置本地已修 → 跳过；zipper 硬边本地已用 authored edge masks → 可选收。
