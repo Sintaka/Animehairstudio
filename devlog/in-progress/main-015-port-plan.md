@@ -88,3 +88,16 @@
 - `9a16057` 2g：Panel 风格 + Glass 颜色 + outliner 透明度（响应式头部延后）；10/11。
 
 剩余：Width Curve / Move 曲线控件（融合）、Multi-Cam（模块化适配）、Split Panel Tip Curvature（最后深度评估）、Responsive viewport header（index.html 结构差异，延后）。
+
+
+## 十一、进度（2026-08-13 后续轮）
+
+- `6dc83d0` 2i：Responsive viewport header（自动 two-row + sidebar dock）；10/11。
+- `907d223` 2j：Multi-Cam View（实验性四视口 + multi-camera-store）；10/11。
+
+## 十二、Split Panel Tip Curvature 深度评估（最后，未移植）
+
+- main：`lock.panelTipCurve`(-1..1 有符号尖端曲率) + `panelTipCurveParameter`（curve-math 已并入）重映射 t 使尖部向两侧弯；`tipLoops` 额外尖端密度（`panelTipLoopParameters` 已并入）；`edgeTrim`/`protectedVertices` 开放边界硬边（weld/smooth 加 protectedVertices）。
+- 本地：panel 几何已重构为 `panel-tip-strand.js` 的 per-segment `splitBones` + tip-width/fork/zipper；weld/smooth 是旧签名（无 protectedVertices）；开放边界硬边已用 authored edge masks 解决。
+- 结论：① `panelTipCurve` 与本地 tip-width/fork 是两套尖端控制，直接套用会打架，若要可评估作为额外 t 弯折叠加到本地 tip 采样；② `tipLoops` 纯函数已并入，可独立评估是否接本地 lengthLoops；③ `protectedVertices` 与本地 authored edge masks 功能重叠，倾向不移植。
+- 建议：暂不移植，需用户拍板后再决定是否做 ①。
