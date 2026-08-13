@@ -5413,6 +5413,28 @@ input[type="range"] {
   background: rgba(8, 7, 10, 0.48);
 }
 
+.recovery-dialog {
+  width: min(430px, calc(100vw - 48px));
+}
+
+.recovery-project-details {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #3c3741;
+  border-radius: 5px;
+  background: #141318;
+}
+
+.recovery-project-details small {
+  color: #aaa3ac;
+  font-size: 11px;
+}
+
+.recovery-dialog-actions {
+  flex-wrap: wrap;
+}
+
 .rebuild-curve-dialog {
   inset: 54px 372px auto auto;
   z-index: 19;

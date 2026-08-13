@@ -1763,6 +1763,26 @@
             <section class="preferences-section hidden" role="tabpanel" data-preference-panel="backup">
               <div class="preference-download-card">
                 <span>
+                  <strong>Autosave and recovery</strong>
+                  <small>Keep one private recovery snapshot in this browser. Autosave never replaces a project file.</small>
+                </span>
+                <label class="preference-toggle" for="autosavePreference">
+                  <span><strong>Enable autosave</strong><small>Save recovery data after committed project changes.</small></span>
+                  <input id="autosavePreference" type="checkbox" checked />
+                </label>
+                <label class="preference-select" for="autosaveIntervalPreference">
+                  <span><strong>Autosave frequency</strong><small>Maximum time between recovery saves while the project is changing.</small></span>
+                  <select id="autosaveIntervalPreference">
+                    <option value="15">Every 15 seconds</option>
+                    <option value="30" selected>Every 30 seconds</option>
+                    <option value="60">Every minute</option>
+                    <option value="120">Every 2 minutes</option>
+                    <option value="300">Every 5 minutes</option>
+                  </select>
+                </label>
+              </div>
+              <div class="preference-download-card">
+                <span>
                   <strong>Preferences and presets</strong>
                   <small>Save or restore application preferences and custom Brush and Braid presets with a JSON file.</small>
                 </span>
@@ -1778,6 +1798,28 @@
         </div>
         <footer class="preferences-dialog-version"><span>Version</span><strong id="preferencesVersionLabel"></strong></footer>
       </div>
+    </dialog>
+
+    <dialog id="recoveryDialog" class="creation-preset-dialog file-action-dialog recovery-dialog" aria-labelledby="recoveryDialogTitle">
+      <form method="dialog">
+        <div class="profile-dialog-head">
+          <div>
+            <h2 id="recoveryDialogTitle">Unsaved Recovery Found</h2>
+            <p>Anime Hair Studio found project changes that were not manually saved.</p>
+          </div>
+        </div>
+        <div class="recovery-project-details">
+          <strong id="recoveryProjectName">Untitled Hair Project</strong>
+          <small id="recoveryProjectTime"></small>
+        </div>
+        <p>Recover the project, download a copy for safekeeping, or discard this recovery snapshot.</p>
+        <p id="recoveryStatus" class="preference-backup-status" aria-live="polite"></p>
+        <div class="dialog-actions recovery-dialog-actions">
+          <button id="discardRecovery" type="button">Discard</button>
+          <button id="downloadRecovery" type="button">Download .ahs</button>
+          <button id="recoverProject" type="button" class="primary-action">Recover Project</button>
+        </div>
+      </form>
     </dialog>
 
     <dialog id="groupDefaultsWarning" class="warning-dialog" aria-labelledby="groupDefaultsWarningTitle">

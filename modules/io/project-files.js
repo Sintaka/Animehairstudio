@@ -327,6 +327,7 @@ export function createProjectSaveApi(deps) {
         downloadProjectFile(content, suggestedName);
         deps.currentProjectName = baseName;
         await deps.safelyRememberRecentProject(suggestedName, content);
+        await deps.clearAcknowledgedRecovery?.();
       } catch (error) {
         if (error?.name !== "AbortError") {
           console.error(error);
@@ -401,6 +402,7 @@ export function createProjectSaveApi(deps) {
         const savedName = cleanFileBaseName(handle.name, "Untitled Hair Project");
         deps.quickSaveFileName = savedName;
         deps.currentProjectName = savedName;
+        await deps.clearAcknowledgedRecovery?.();
         return;
       } catch (error) {
         if (error?.name === "AbortError") return;
@@ -424,6 +426,7 @@ export function createProjectSaveApi(deps) {
         await writable.write(content);
         await writable.close();
         deps.currentProjectName = baseName;
+        await deps.clearAcknowledgedRecovery?.();
         return;
       } catch (error) {
         console.error("Quick Save could not overwrite the last saved file, opening Save As instead.", error);

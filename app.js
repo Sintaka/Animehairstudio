@@ -157,7 +157,17 @@ import {
 import { squareChildRing, holeBoundary, connectSide, connectBoundaryToRing } from "./modules/geometry/branch-connect.js?v=20260807-2";
 import {
   createHairProject,
+  validateHairProject
 } from "./modules/io/project-schema.js?v=20260728-2";
+import {
+  clearRecoverySnapshot,
+  createRecoveryRecord,
+  DEFAULT_AUTOSAVE_INTERVAL_SECONDS,
+  normalizeAutosaveInterval,
+  readRecoverySnapshot,
+  writeRecoverySnapshot
+} from "./modules/io/recovery-storage.js?v=20260813-1";
+import { createRecoveryStore } from "./modules/io/recovery-store.js?v=20260813-1";
 import {
   createProjectRestorePlan,
   createProjectSelectionSnapshot,
@@ -309,6 +319,9 @@ const BRANCH_BRIDGE_SMOOTH_STRENGTH_PREFERENCE_KEY = "anime-hair-studio-branch-b
 const BRANCH_BRIDGE_SMOOTH_DETAIL_PREFERENCE_KEY = "anime-hair-studio-branch-bridge-smooth-detail";
 const BRANCH_REGION_SYNC_LATERAL_PREFERENCE_KEY = "anime-hair-studio-branch-region-sync-lateral";
 const BRANCH_REGION_SYNC_VERTICAL_PREFERENCE_KEY = "anime-hair-studio-branch-region-sync-vertical";
+const AUTOSAVE_ENABLED_PREFERENCE_KEY = "anime-hair-studio-autosave-enabled";
+const AUTOSAVE_INTERVAL_PREFERENCE_KEY = "anime-hair-studio-autosave-interval";
+const AUTOSAVE_QUIET_PERIOD_MS = 5000;
 
 function saveBooleanPreference(key, enabled) {
   writeStoredPreference(window, key, Boolean(enabled));
@@ -1874,6 +1887,12 @@ const scalpBuilderContours = new Array(SCALP_BUILDER_STEPS.length).fill(null);
 const draw = createDrawStore();
 const branch = createBranchStore();
 const ui = createUiStore();
+const recovery = createRecoveryStore();
+recovery.state.autosaveEnabled = readStoredBooleanPreference(window, AUTOSAVE_ENABLED_PREFERENCE_KEY, true);
+recovery.state.autosaveIntervalSeconds = readStoredPreference(window, AUTOSAVE_INTERVAL_PREFERENCE_KEY, {
+  fallback: DEFAULT_AUTOSAVE_INTERVAL_SECONDS,
+  normalize: normalizeAutosaveInterval
+});
 viewportState.state.navigationTipsEnabled = readStoredBooleanPreference(window, NAVIGATION_TIPS_PREFERENCE_KEY, true);
 viewportState.state.navigationStyle = readStoredPreference(window, NAVIGATION_STYLE_PREFERENCE_KEY, {
   fallback: "anime-hair-studio",
@@ -2153,6 +2172,224 @@ const loadPreferencesAndPresetsButton = document.querySelector("#loadPreferences
 const downloadPreferencesAndPresetsButton = document.querySelector("#downloadPreferencesAndPresets");
 const preferencesAndPresetsFile = document.querySelector("#preferencesAndPresetsFile");
 const preferencesBackupStatus = document.querySelector("#preferencesBackupStatus");
+const autosavePreferenceInput = document.querySelector("#autosavePreference");
+const autosaveIntervalPreferenceInput = document.querySelector("#autosaveIntervalPreference");
+const recoveryDialog = document.querySelector("#recoveryDialog");
+const recoveryProjectName = document.querySelector("#recoveryProjectName");
+const recoveryProjectTime = document.querySelector("#recoveryProjectTime");
+const recoveryStatus = document.querySelector("#recoveryStatus");
+const discardRecoveryButton = document.querySelector("#discardRecovery");
+const downloadRecoveryButton = document.querySelector("#downloadRecovery");
+const recoverProjectButton = document.querySelector("#recoverProject");
+
+// ---- Autosave / crash recovery scheduling (port of main 0.1.5) ----
+// All autosave state lives in the recovery store; scheduling and recovery UI are wired here.
+function cancelRecoverySchedule() {
+  window.clearTimeout(recovery.state.recoveryQuietTimer);
+  window.clearTimeout(recovery.state.recoveryMaximumTimer);
+  recovery.state.recoveryQuietTimer = null;
+  recovery.state.recoveryMaximumTimer = null;
+  if (recovery.state.recoveryIdleHandle != null) {
+    if (typeof window.cancelIdleCallback === "function") window.cancelIdleCallback(recovery.state.recoveryIdleHandle);
+    else window.clearTimeout(recovery.state.recoveryIdleHandle);
+    recovery.state.recoveryIdleHandle = null;
+  }
+}
+
+function recoveryWriteMustWait() {
+  return undo.state.restoringHistory
+    || projectState.state.projectSaveInProgress
+    || !controls.enabled
+    || Boolean(document.querySelector("dialog[open]"));
+}
+
+function scheduleRecoveryAutosave() {
+  if (!recovery.state.autosaveEnabled || !recovery.state.recoveryDirty) return;
+  window.clearTimeout(recovery.state.recoveryQuietTimer);
+  recovery.state.recoveryQuietTimer = window.setTimeout(queueRecoveryAutosave, AUTOSAVE_QUIET_PERIOD_MS);
+  if (recovery.state.recoveryMaximumTimer == null) {
+    recovery.state.recoveryMaximumTimer = window.setTimeout(
+      queueRecoveryAutosave,
+      recovery.state.autosaveIntervalSeconds * 1000
+    );
+  }
+}
+
+function markProjectChangedForRecovery() {
+  recovery.state.recoveryChangeVersion += 1;
+  recovery.state.recoveryDirty = true;
+  scheduleRecoveryAutosave();
+}
+
+function queueRecoveryAutosave() {
+  window.clearTimeout(recovery.state.recoveryQuietTimer);
+  window.clearTimeout(recovery.state.recoveryMaximumTimer);
+  recovery.state.recoveryQuietTimer = null;
+  recovery.state.recoveryMaximumTimer = null;
+  if (!recovery.state.autosaveEnabled || !recovery.state.recoveryDirty) return;
+  if (recoveryWriteMustWait()) {
+    recovery.state.recoveryQuietTimer = window.setTimeout(queueRecoveryAutosave, 1000);
+    return;
+  }
+  if (recovery.state.recoveryWriteInProgress) {
+    recovery.state.recoveryWriteQueued = true;
+    return;
+  }
+  const run = () => {
+    recovery.state.recoveryIdleHandle = null;
+    const writePromise = flushRecoveryAutosave();
+    recovery.state.recoveryWritePromise = writePromise;
+    writePromise.finally(() => {
+      if (recovery.state.recoveryWritePromise === writePromise) recovery.state.recoveryWritePromise = null;
+    });
+  };
+  recovery.state.recoveryIdleHandle = typeof window.requestIdleCallback === "function"
+    ? window.requestIdleCallback(run, { timeout: 2000 })
+    : window.setTimeout(run, 0);
+}
+
+function buildRecoveryProjectContent() {
+  return createHairProject({
+    name: projectState.state.currentProjectName,
+    state: snapshotState(),
+    strandGroups: STRAND_GROUPS,
+    headAsset: head.state.importedHeadAsset,
+    headAssetOmitted: false,
+    scalpGuideAsset: scalpState.state.importedScalpGuideAsset
+  });
+}
+
+async function flushRecoveryAutosave() {
+  if (!recovery.state.autosaveEnabled || !recovery.state.recoveryDirty) return;
+  if (recoveryWriteMustWait()) {
+    scheduleRecoveryAutosave();
+    return;
+  }
+  const savedVersion = recovery.state.recoveryChangeVersion;
+  recovery.state.recoveryWriteInProgress = true;
+  recovery.state.recoveryWriteQueued = false;
+  try {
+    const content = `${JSON.stringify(buildRecoveryProjectContent())}\n`;
+    await writeRecoverySnapshot(createRecoveryRecord({
+      name: projectState.state.currentProjectName,
+      content,
+      appVersion: APP_VERSION
+    }));
+    if (savedVersion === recovery.state.recoveryChangeVersion) recovery.state.recoveryDirty = false;
+  } catch (error) {
+    console.warn("Could not save project recovery data", error);
+  } finally {
+    recovery.state.recoveryWriteInProgress = false;
+    if (recovery.state.recoveryWriteQueued || recovery.state.recoveryDirty) scheduleRecoveryAutosave();
+  }
+}
+
+async function clearAcknowledgedRecovery(savedVersion = recovery.state.recoveryChangeVersion) {
+  if (savedVersion !== recovery.state.recoveryChangeVersion) return;
+  cancelRecoverySchedule();
+  if (recovery.state.recoveryWritePromise) await recovery.state.recoveryWritePromise;
+  if (savedVersion !== recovery.state.recoveryChangeVersion) {
+    scheduleRecoveryAutosave();
+    return;
+  }
+  recovery.state.recoveryDirty = false;
+  try {
+    await clearRecoverySnapshot();
+  } catch (error) {
+    console.warn("Could not clear project recovery data", error);
+  }
+}
+
+function setAutosaveEnabled(enabled, { persist = true } = {}) {
+  recovery.state.autosaveEnabled = Boolean(enabled);
+  autosavePreferenceInput.checked = recovery.state.autosaveEnabled;
+  autosaveIntervalPreferenceInput.disabled = !recovery.state.autosaveEnabled;
+  if (recovery.state.autosaveEnabled) scheduleRecoveryAutosave();
+  else cancelRecoverySchedule();
+  if (persist) saveBooleanPreference(AUTOSAVE_ENABLED_PREFERENCE_KEY, recovery.state.autosaveEnabled);
+}
+
+function setAutosaveInterval(value, { persist = true } = {}) {
+  recovery.state.autosaveIntervalSeconds = normalizeAutosaveInterval(value);
+  autosaveIntervalPreferenceInput.value = String(recovery.state.autosaveIntervalSeconds);
+  if (recovery.state.autosaveEnabled && recovery.state.recoveryDirty) {
+    cancelRecoverySchedule();
+    scheduleRecoveryAutosave();
+  }
+  if (persist) writeStoredPreference(window, AUTOSAVE_INTERVAL_PREFERENCE_KEY, recovery.state.autosaveIntervalSeconds);
+}
+
+async function offerRecoverySnapshot() {
+  try {
+    const record = await readRecoverySnapshot();
+    if (!record) return;
+    recovery.state.pendingRecoveryRecord = record;
+    recoveryProjectName.textContent = record.name;
+    const timeLabel = document.createElement("span");
+    timeLabel.textContent = "Last recovery: ";
+    const timeValue = document.createElement("span");
+    timeValue.textContent = new Date(record.updatedAt).toLocaleString();
+    recoveryProjectTime.replaceChildren(timeLabel, timeValue);
+    recoveryStatus.textContent = "";
+    recoverProjectButton.disabled = false;
+    try {
+      validateHairProject(JSON.parse(record.content));
+    } catch (error) {
+      recoverProjectButton.disabled = true;
+      recoveryStatus.textContent = "This recovery snapshot cannot be opened, but you can still download or discard it.";
+    }
+    recoveryDialog.showModal();
+  } catch (error) {
+    console.warn("Could not check project recovery data", error);
+  }
+}
+
+async function recoverPendingProject() {
+  const record = recovery.state.pendingRecoveryRecord;
+  if (!record) return;
+  recoveryStatus.textContent = "Recovering project...";
+  [discardRecoveryButton, downloadRecoveryButton, recoverProjectButton].forEach((button) => {
+    button.disabled = true;
+  });
+  const recovered = await ioApi.openHairProjectFile({
+    name: `${record.name}.ahs`,
+    text: async () => record.content
+  });
+  if (recovered) {
+    cancelRecoverySchedule();
+    recovery.state.recoveryDirty = false;
+    recovery.state.pendingRecoveryRecord = null;
+    recoveryDialog.close();
+    return;
+  }
+  recoveryStatus.textContent = "The recovery snapshot could not be opened. You can download it or discard it.";
+  [discardRecoveryButton, downloadRecoveryButton].forEach((button) => {
+    button.disabled = false;
+  });
+}
+
+async function discardPendingRecovery() {
+  recoveryStatus.textContent = "Discarding recovery...";
+  try {
+    await clearRecoverySnapshot();
+    recovery.state.pendingRecoveryRecord = null;
+    recoveryDialog.close();
+  } catch (error) {
+    console.warn("Could not discard project recovery data", error);
+    recoveryStatus.textContent = "The recovery snapshot could not be discarded.";
+  }
+}
+
+function downloadPendingRecovery() {
+  const record = recovery.state.pendingRecoveryRecord;
+  if (!record) return;
+  fileApi.downloadProjectFile(
+    record.content,
+    fileNameForAction(record.name, "project", "Recovered Hair Project")
+  );
+  recoveryStatus.textContent = "Recovery copy downloaded. You can still recover or discard the stored snapshot.";
+}
+
 const radialShortcutRows = [...document.querySelectorAll(".radial-shortcut-row")];
 const openShortcutsButton = document.querySelector("#openShortcuts");
 const shortcutsDialog = document.querySelector("#shortcutsDialog");
@@ -7862,6 +8099,7 @@ Object.assign(proceduralDuplicateDeps, {
   updateCount,
   selectLock,
   updateHistoryButtons,
+  markProjectChangedForRecovery,
   updateInteractionLocks,
   syncActiveMirror
 });
@@ -8910,7 +9148,8 @@ const fileApi = createProjectSaveApi({
   strandCurveParameters,
   curveSurfaceControllerCurves: curveSurfaceCreate.curveSurfaceControllerCurves,
   bonesFor,
-  safelyRememberRecentProject: ioApi.safelyRememberRecentProject
+  safelyRememberRecentProject: ioApi.safelyRememberRecentProject,
+  clearAcknowledgedRecovery
 });
 
 
@@ -8925,6 +9164,7 @@ function pushUndoState() {
   undoHistory.push(snapshotState());
   redoHistory.clear();
   updateHistoryButtons();
+  markProjectChangedForRecovery();
 }
 
 function undoLastAction() {
@@ -8940,6 +9180,7 @@ function undoLastAction() {
   } finally {
     undo.state.restoringHistory = false;
     updateHistoryButtons();
+    markProjectChangedForRecovery();
   }
   if (taperCurveEditor.open) taperEditor.renderTaperCurveEditor();
 }
@@ -8957,6 +9198,7 @@ function redoLastAction() {
   } finally {
     undo.state.restoringHistory = false;
     updateHistoryButtons();
+    markProjectChangedForRecovery();
   }
   if (taperCurveEditor.open) taperEditor.renderTaperCurveEditor();
 }
@@ -9496,6 +9738,8 @@ Object.assign(ioDeps, {
   setToolTipsEnabled, setCompactToolButtonsEnabled, setViewportStatisticsEnabled,
   setTwistCurveAllStrandsPreviewEnabled, setLayerColorShiftsEnabled, setOutlinerFolderColorsEnabled,
   setSideNamingPerspective, setControlPointDisplaySize, setViewportBackgroundColor, setDefaultHairShader,
+  setAutosaveEnabled, setAutosaveInterval, recovery: recovery.state,
+  clearAcknowledgedRecovery,
   presetLibraryStatus, hairProjectFileInput, recentProjectsSubmenu,
   preferencesAndPresetsFile, preferencesBackupStatus,
   dropImportDialog, dropImportForm, dropImportDialogTitle, dropImportDescription,
@@ -13226,12 +13470,16 @@ function openPreferencesDialog() {
     sideNamingPerspective: miscState.state.sideNamingPerspective,
     controlPointDisplaySize: guideState.state.controlPointDisplaySize,
     viewportBackgroundColor: viewportState.state.viewportBackgroundColor,
-    defaultHairShader: hairState.state.defaultHairShader
+    defaultHairShader: hairState.state.defaultHairShader,
+    autosaveEnabled: recovery.state.autosaveEnabled,
+    autosaveIntervalSeconds: recovery.state.autosaveIntervalSeconds
   };
   defaultHairShaderPreferenceInput.value = hairState.state.defaultHairShader;
   applyCameraSmoothingPreference();
   setControlPointDisplaySize(guideState.state.controlPointDisplaySize, { persist: false });
   setViewportBackgroundColor(viewportState.state.viewportBackgroundColor, { persist: false });
+  setAutosaveInterval(recovery.state.autosaveIntervalSeconds, { persist: false });
+  setAutosaveEnabled(recovery.state.autosaveEnabled, { persist: false });
   preferencesBackupStatus.textContent = "";
   setPreferenceCategory("viewport");
   preferencesDialog.showModal();
@@ -13257,6 +13505,8 @@ function savePreferencesDialog() {
   writeStoredPreference(window, CONTROL_POINT_DISPLAY_SIZE_PREFERENCE_KEY, guideState.state.controlPointDisplaySize);
   writeStoredPreference(window, VIEWPORT_BACKGROUND_COLOR_PREFERENCE_KEY, viewportState.state.viewportBackgroundColor);
   writeStoredPreference(window, DEFAULT_HAIR_SHADER_PREFERENCE_KEY, hairState.state.defaultHairShader);
+  saveBooleanPreference(AUTOSAVE_ENABLED_PREFERENCE_KEY, recovery.state.autosaveEnabled);
+  writeStoredPreference(window, AUTOSAVE_INTERVAL_PREFERENCE_KEY, recovery.state.autosaveIntervalSeconds);
   ui.state.preferencesOpenSnapshot = null;
   preferencesDialog.close();
 }
@@ -13285,6 +13535,8 @@ function cancelPreferencesDialog() {
     setControlPointDisplaySize(ui.state.preferencesOpenSnapshot.controlPointDisplaySize, { persist: false });
     setViewportBackgroundColor(ui.state.preferencesOpenSnapshot.viewportBackgroundColor, { persist: false });
     setDefaultHairShader(ui.state.preferencesOpenSnapshot.defaultHairShader, { persist: false });
+    setAutosaveEnabled(ui.state.preferencesOpenSnapshot.autosaveEnabled, { persist: false });
+    setAutosaveInterval(ui.state.preferencesOpenSnapshot.autosaveIntervalSeconds, { persist: false });
   }
   ui.state.preferencesOpenSnapshot = null;
   preferencesDialog.close();
@@ -16005,6 +16257,16 @@ loadPreferencesAndPresetsButton.addEventListener("click", () => {
 });
 preferencesAndPresetsFile.addEventListener("change", ioApi.handlePreferencesAndPresetsFile);
 downloadPreferencesAndPresetsButton.addEventListener("click", ioApi.downloadPreferencesAndPresets);
+autosavePreferenceInput.addEventListener("change", () => {
+  setAutosaveEnabled(autosavePreferenceInput.checked, { persist: false });
+});
+autosaveIntervalPreferenceInput.addEventListener("change", () => {
+  setAutosaveInterval(autosaveIntervalPreferenceInput.value, { persist: false });
+});
+recoverProjectButton.addEventListener("click", recoverPendingProject);
+discardRecoveryButton.addEventListener("click", discardPendingRecovery);
+downloadRecoveryButton.addEventListener("click", downloadPendingRecovery);
+recoveryDialog.addEventListener("cancel", (event) => event.preventDefault());
 preferencesDialog.addEventListener("click", (event) => {
   if (event.target === preferencesDialog) cancelPreferencesDialog();
 });
@@ -18672,6 +18934,9 @@ materialApi.syncHairMaterialEditor();
 renderLockList();
 updateAttributeEditorMode();
 setSideNamingPerspective(miscState.state.sideNamingPerspective, { persist: false });
+setAutosaveInterval(recovery.state.autosaveIntervalSeconds, { persist: false });
+setAutosaveEnabled(recovery.state.autosaveEnabled, { persist: false });
+offerRecoverySnapshot();
 resize();
 animate();
 

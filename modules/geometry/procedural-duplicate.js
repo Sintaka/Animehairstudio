@@ -533,6 +533,7 @@ function confirmProceduralDuplicatePreview() {
   deps.undoHistory.push(preview.undoState);
   deps.redoHistory.clear();
   deps.updateHistoryButtons();
+  deps.markProjectChangedForRecovery?.();
   deps.sculptState.proceduralDuplicatePreview = null;
   closeProceduralDuplicateDialog({ commit: true });
   deps.selectLock(createdLocks[0].id, {
@@ -729,6 +730,7 @@ function confirmDuplicatePlacement(event) {
   deps.undoHistory.push(undoState);
   deps.redoHistory.clear();
   deps.updateHistoryButtons();
+  deps.markProjectChangedForRecovery?.();
   deps.updateInteractionLocks();
   deps.selectLock(lockId, {
     individualClumpMember: true,

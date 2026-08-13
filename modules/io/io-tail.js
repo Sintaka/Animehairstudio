@@ -315,6 +315,8 @@ function downloadPreferencesAndPresets() {
       viewportBackgroundColor: deps.viewportState.viewportBackgroundColor,
       radialMenus: deps.ui.radialMenusEnabled,
       proceduralDrawExperimental: deps.draw.proceduralDrawExperimentalEnabled,
+      autosaveEnabled: deps.recovery.autosaveEnabled,
+      autosaveIntervalSeconds: deps.recovery.autosaveIntervalSeconds,
       defaultShader: deps.hairState.defaultHairShader
     },
     presets: deps.projectState.state.customCreationPresets,
@@ -368,6 +370,10 @@ async function loadPreferencesAndPresets(file) {
     deps.saveLanguage(language);
   }
   if (preferences.defaultShader != null) deps.setDefaultHairShader(preferences.defaultShader);
+  deps.setAutosaveEnabled(importedBooleanPreference(preferences.autosaveEnabled, deps.recovery.autosaveEnabled));
+  if (preferences.autosaveIntervalSeconds != null) {
+    deps.setAutosaveInterval(preferences.autosaveIntervalSeconds);
+  }
   deps.projectState.state.customCreationPresets = deps.creationPresets.normalizeCreationPresetLibrary(backup.presets);
   deps.creationPresets.saveCustomCreationPresets();
   deps.projectState.state.customShapePresets = normalizeShapePresetLibrary(backup.shapePresets);
@@ -464,9 +470,12 @@ async function openHairProjectFile(file, { handle = null } = {}) {
     deps.undoHistory.clear(); deps.redoHistory.clear(); deps.updateHistoryButtons(); // loading is a fresh undo base, not an undoable step
     deps.presetLibraryApi.setPresetLibraryOpen(false);
     await safelyRememberRecentProject(file.name || `${project.metadata?.name || "Untitled Hair Project"}.ahs`, content);
+    await deps.clearAcknowledgedRecovery?.();
+    return true;
   } catch (error) {
     console.error(error);
     deps.presetLibraryStatus.textContent = "Could not open project file";
+    return false;
   } finally {
     deps.hairProjectFileInput.value = "";
   }
