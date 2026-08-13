@@ -49,3 +49,13 @@
 
 - 第二波 UI 剩余：Numeric Object Transform 浮动面板（用户重点关注）、Multi-Cam（实验性，需渲染循环深度接入）、Material Presets/Base Gradient 编辑器、Selection Sets 扩展、Panel/Glass 风格、Move 曲线控件、Relax 分离。
 - 第三波（单独评审）：Split Panel Tip Curvature、Branch Surface Imprints、Radial pie 子菜单。
+
+
+- `70e989b` 第二波 2c：Numeric Object Transform 浮动面板（lock.objectTransform + 面板 + 序列化/镜像/快照）；10/11。
+- `4e083f4` 第二波 2d：Material Presets + Base Color Gradient 编辑器（渐变纹理/编辑器 + 预设持久化 + 偏好备份）；10/11。
+
+## 七、进度修正（2026-08-13 二轮）
+
+- **Relax Position/Rotation 分离已在本地（基线 d3358f6 就带，非 v0.1.5 增量），无需移植**。
+- 剩余第二波：Multi-Cam、Selection Sets 扩展、Panel/Glass 风格、Move 曲线控件。
+- 第三波（单独评审）不变：Tip Curvature、Branch Imprints、Radial pie。
