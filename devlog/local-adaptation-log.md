@@ -6,6 +6,7 @@
 
 > 记录相对 main 分支（原版本）的适配改动。
 
+- [x] Sweep 转角过大修复（0.2.66，codex/0.2.66-sweep-corner-smooth）：曲率感知环收窄（`sweepCurvatureResponse`，Elber 1997 / Maekawa 1999 判据 scale=min(1,safety·ρ/r)）+ 转角边缘平滑（`smoothSweepChains` 纵向链 Laplacian，heat 加权/根环 pinned）；接入 `strand-sweep.js` sweepSide + `createSplitStrandGeometry` + `createHairCardGeometry`；branch-bridge 内联 Laplacian 抽到 `mesh-smooth.js`（`smoothMeshVertices`，逐位一致）；新增 `#sweepOverlapPanel` 3 滑块（Strength 0.7 / Threshold 0.6 / Edge Smooth 0.3）+ ZH/JA 词典各 +3 key；默认参数 `SWEEP_OVERLAP_DEFAULTS` 单源导出；关闭时逐位守恒；core-math 114 / verify-smoke 10/11=基线
 - [x] 本地运行：Python 静态服务器启动脚本（start-dev-server.cmd，自动打开浏览器）
 - [x] 文件保存：Quick Save（Ctrl+S）/ Save as（Ctrl+Shift+S）
 - [x] 拖放统一分发：任何文件拖拽接受并恢复原始浮动框视觉；drop 按类型分发（.ahs → 打开项目，图片 → 参考图，其他 → 忽略）

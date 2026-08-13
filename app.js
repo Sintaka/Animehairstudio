@@ -4,19 +4,19 @@ import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-cr
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260812-2";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260812-1";
 import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260813-2";
-import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260813-1";
+import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260813-2";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260812-1";
 import { createSegmentControlApi } from "./modules/bones/segment-control.js?v=20260812-2";
 import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260813-1";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260809-19";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260809-18";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260809-17";
-import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260809-16";
+import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260813-1";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260809-15";
 import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip, strandSplitBonesFor, materializeStrandSplitBones, strandSplitBonesToData, strandSplitBonesFromData, mirrorStrandSplitBones } from "./modules/bones/bone-model.js?v=20260813-1";
 import { materializeTipChain } from "./modules/geometry/tip-sub-bone.js?v=20260813-1";
 import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260813-1";
-import { createStrandSweepApi } from "./modules/geometry/strand-sweep.js?v=20260810-2";
+import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-1";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-15";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";
 import { createPresetLibraryApi } from "./modules/io/preset-library.js?v=20260812-1";
@@ -30,7 +30,7 @@ import { createMiscStore } from "./modules/core/misc-store.js?v=20260809-12";
 import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260809-11";
 import { createScalpStore } from "./modules/scalp/scalp-store.js?v=20260809-10";
 import { createProjectStore } from "./modules/io/project-store.js?v=20260809-9";
-import { createHairStore } from "./modules/core/hair-store.js?v=20260809-8";
+import { createHairStore } from "./modules/core/hair-store.js?v=20260813-1";
 import { createGuideStore } from "./modules/core/guide-store.js?v=20260809-8";
 import { createCameraStore } from "./modules/core/camera-store.js?v=20260809-8";
 import { createTransformStore } from "./modules/core/transform-store.js?v=20260809-7";
@@ -100,7 +100,7 @@ import {
   twistRateUnitsFromDegrees,
   upperProfileArcIndices,
   uniformCurveParameters
-} from "./modules/geometry/curve-math.js?v=20260811-1";
+} from "./modules/geometry/curve-math.js?v=20260813-1";
 import {
   curveLatticeLoopPointIndices,
   DEFAULT_CURVE_LATTICE_PLANE,
@@ -2912,6 +2912,10 @@ const branchBridgeSmoothDetailInput = document.querySelector("#branchBridgeSmoot
 const branchRegionSyncLateralInput = document.querySelector("#branchRegionSyncLateralInput");
 const branchRegionSyncVerticalInput = document.querySelector("#branchRegionSyncVerticalInput");
 const branchBridgePanel = document.querySelector("#branchBridgePanel");
+const sweepOverlapStrengthInput = document.querySelector("#sweepOverlapStrengthInput");
+const sweepOverlapThresholdInput = document.querySelector("#sweepOverlapThresholdInput");
+const sweepEdgeSmoothInput = document.querySelector("#sweepEdgeSmoothInput");
+const sweepOverlapPanel = document.querySelector("#sweepOverlapPanel");
 const transformToolPanel = document.querySelector("#transformToolPanel");
 const transformToolTitle = document.querySelector("#transformToolTitle");
 const relaxToolPanel = document.querySelector("#relaxToolPanel");
@@ -13007,6 +13011,8 @@ function updateAttributeEditorMode() {
   hierarchyPanel.classList.toggle("hidden", !editingStrand || !hierarchyToolActive || !sculptState.state.hierarchyEditing);
   branchBridgePanel.classList.toggle("hidden", !editingStrand || !getSelectedLock()?.branchParentId);
   updateBranchBridgeSliderInputs();
+  sweepOverlapPanel.classList.toggle("hidden", !editingStrand || Boolean(selectedPoly || selectedBraid || selectedSurface || selectedPanel));
+  updateSweepOverlapSliderInputs();
   strandLayerControl.classList.toggle("hidden", editingCreationShape && sel.state.activeTool === "draw");
   strandShapePanel.classList.toggle("hidden", Boolean(selectedPoly) || (!editingStrand && !editingCreationShape));
   strandShapeTitle.textContent = editingCreationShape
@@ -16905,6 +16911,63 @@ branchBridgeSmoothDetailInput.addEventListener("input", () => {
   }
   branchBridgeSmoothDetailInput.value = value;
   const n = branchBridgeSmoothDetailInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
+  if (n) n.value = value;
+});
+function updateSweepOverlapSliderInputs() {
+  const lock = getSelectedLock();
+  const strength = lock?.sweepOverlapStrength ?? hairState.state.sweepOverlapStrength;
+  const threshold = lock?.sweepOverlapThreshold ?? hairState.state.sweepOverlapThreshold;
+  const edgeSmooth = lock?.sweepEdgeSmooth ?? hairState.state.sweepEdgeSmooth;
+  sweepOverlapStrengthInput.value = strength;
+  sweepOverlapThresholdInput.value = threshold;
+  sweepEdgeSmoothInput.value = edgeSmooth;
+  const n1 = sweepOverlapStrengthInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
+  if (n1) n1.value = strength;
+  const n2 = sweepOverlapThresholdInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
+  if (n2) n2.value = threshold;
+  const n3 = sweepEdgeSmoothInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
+  if (n3) n3.value = edgeSmooth;
+}
+sweepOverlapStrengthInput.addEventListener("input", () => {
+  const value = THREE.MathUtils.clamp(Number(sweepOverlapStrengthInput.value) || 0, 0, 1);
+  const lock = getSelectedLock();
+  if (lock) {
+    lock.sweepOverlapStrength = value;
+    rebuildLockGeometry(lock);
+  } else {
+    hairState.state.sweepOverlapStrength = value;
+    locks.forEach((l) => { if (l) rebuildLockGeometry(l); });
+  }
+  sweepOverlapStrengthInput.value = value;
+  const n = sweepOverlapStrengthInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
+  if (n) n.value = value;
+});
+sweepOverlapThresholdInput.addEventListener("input", () => {
+  const value = THREE.MathUtils.clamp(Number(sweepOverlapThresholdInput.value) || 0.6, 0.1, 2);
+  const lock = getSelectedLock();
+  if (lock) {
+    lock.sweepOverlapThreshold = value;
+    rebuildLockGeometry(lock);
+  } else {
+    hairState.state.sweepOverlapThreshold = value;
+    locks.forEach((l) => { if (l) rebuildLockGeometry(l); });
+  }
+  sweepOverlapThresholdInput.value = value;
+  const n = sweepOverlapThresholdInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
+  if (n) n.value = value;
+});
+sweepEdgeSmoothInput.addEventListener("input", () => {
+  const value = THREE.MathUtils.clamp(Number(sweepEdgeSmoothInput.value) || 0.3, 0, 1);
+  const lock = getSelectedLock();
+  if (lock) {
+    lock.sweepEdgeSmooth = value;
+    rebuildLockGeometry(lock);
+  } else {
+    hairState.state.sweepEdgeSmooth = value;
+    locks.forEach((l) => { if (l) rebuildLockGeometry(l); });
+  }
+  sweepEdgeSmoothInput.value = value;
+  const n = sweepEdgeSmoothInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
   if (n) n.value = value;
 });
 branchRegionSyncLateralInput.value = branch.state.branchRegionSyncLateral;

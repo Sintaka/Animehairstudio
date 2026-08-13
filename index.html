@@ -1048,6 +1048,11 @@
           <label class="topology-control" for="branchBridgeSmoothDetailInput" title="Uniform Smooth detail: number of Laplacian passes over the bridge interior vertices. Higher = smoother; 0 = off; default 1">Bridge Smooth Detail <input id="branchBridgeSmoothDetailInput" type="range" min="0" max="8" step="1" value="1" /></label>
         </div>
 
+        <div id="sweepOverlapPanel" class="panel-section sliders hidden" data-attribute-panel="strands">
+          <label class="topology-control" for="sweepOverlapStrengthInput" title="Sweep corner overlap prevention: narrows the swept profile at sharp bends so adjacent rings stop interpenetrating. 0 = off; default 0.7">Sweep Overlap Strength <input id="sweepOverlapStrengthInput" type="range" min="0" max="1" step="0.01" value="0.7" /></label>
+          <label class="topology-control" for="sweepOverlapThresholdInput" title="Sweep overlap threshold (safety coefficient): clamps when local curvature radius < threshold × ring half-width. Lower = only sharper bends; default 0.6">Sweep Overlap Threshold <input id="sweepOverlapThresholdInput" type="range" min="0.1" max="2" step="0.01" value="0.6" /></label>
+          <label class="topology-control" for="sweepEdgeSmoothInput" title="Sweep edge smooth: relaxes the swept surface along its length at sharp bends after the overlap clamp, preserving the cross-section. 0 = off; default 0.3">Sweep Edge Smooth <input id="sweepEdgeSmoothInput" type="range" min="0" max="1" step="0.01" value="0.3" /></label>
+        </div>
         <div id="strandShapePanel" class="panel-section sliders" data-attribute-panel="strands">
           <div class="section-head">
             <span id="strandShapeTitle">Shape</span>
@@ -2319,6 +2324,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260813-3"></script>
+    <script type="module" src="./app.js?v=20260813-4"></script>
   </body>
 </html>

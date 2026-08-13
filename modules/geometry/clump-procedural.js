@@ -6,7 +6,7 @@ import {
   clumpMemberGuideParameter,
   normalizeTaperCurve,
   remapEnvelopeCurveRange
-} from "./curve-math.js?v=20260811-1";
+} from "./curve-math.js?v=20260813-1";
 import { proceduralBranchTemplateData } from "./procedural-draw.js?v=20260805-1";
 
 export function createClumpProceduralApi(deps) {

@@ -1,3 +1,4 @@
+// 曲率感知环收窄（Elber 1997 / Maekawa 1999，scale=min(1,safety·ρ/r)）
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
 }
@@ -1229,4 +1230,103 @@ export function upperProfileArcIndices(points) {
     0
   ) / indices.length;
   return averageHeight(forward) >= averageHeight(backward) ? forward : backward;
+}
+
+// 局部曲率半径 ρ 取相邻三点外接圆半径；折角处 ρ/r 小 → 环按曲率收窄。
+export function sweepCurvatureResponse(centers, radii, options = {}) {
+  const strength = clamp(Number(options.strength ?? 1), 0, 1);
+  const safety = Number(options.safety ?? 0.6);
+  const minScale = Number(options.minScale ?? 0.05);
+  const count = centers.length;
+  const factors = new Array(count).fill(1);
+  const heat = new Array(count).fill(0);
+  if (count < 3) return { factors, heat };
+  for (let i = 1; i < count - 1; i += 1) {
+    const r = Number(radii?.[i]) || 0;
+    const p0 = centers[i - 1];
+    const p1 = centers[i];
+    const p2 = centers[i + 1];
+    const abx = p1.x - p0.x;
+    const aby = p1.y - p0.y;
+    const abz = p1.z - p0.z;
+    const acx = p2.x - p0.x;
+    const acy = p2.y - p0.y;
+    const acz = p2.z - p0.z;
+    const crossMagnitude = Math.hypot(
+      aby * acz - abz * acy,
+      abz * acx - abx * acz,
+      abx * acy - aby * acx
+    );
+    const rho = crossMagnitude < 1e-12
+      ? Infinity
+      : (
+        Math.hypot(abx, aby, abz)
+        * Math.hypot(p2.x - p1.x, p2.y - p1.y, p2.z - p1.z)
+        * Math.hypot(acx, acy, acz)
+      ) / (2 * crossMagnitude);
+    const ratio = r > 0 ? safety * rho / r : Infinity;
+    heat[i] = clamp(1 - ratio, 0, 1);
+    factors[i] = r <= 1e-6
+      ? 1
+      : Math.max(minScale, 1 - (1 - Math.min(1, ratio)) * strength);
+  }
+  return { factors, heat };
+}
+
+// 沿行链（纵向）的 Jacobi 平滑：先算目标再统一应用，pinRows 锚点不动。
+export function smoothSweepChains(vertices, rowCount, columnCount, options = {}) {
+  const strength = clamp(Number(options.strength ?? 1), 0, 1);
+  const iterations = Math.max(0, Math.floor(Number(options.iterations) || 0));
+  const weights = options.weights ?? null;
+  const pinRows = options.pinRows ?? null;
+  const rowCountValue = Math.max(0, Math.floor(Number(rowCount) || 0));
+  const columnCountValue = Math.max(0, Math.floor(Number(columnCount) || 0));
+  if (!vertices?.length || rowCountValue < 2 || columnCountValue < 1 || strength <= 0 || iterations < 1) {
+    return vertices;
+  }
+  const weightAt = (row, column) => {
+    const weight = weights?.[row * columnCountValue + column];
+    return weight === undefined ? 1 : clamp(Number(weight), 0, 1);
+  };
+  for (let iter = 0; iter < iterations; iter += 1) {
+    const targets = new Array(vertices.length);
+    for (let column = 0; column < columnCountValue; column += 1) {
+      for (let row = 0; row < rowCountValue; row += 1) {
+        if (pinRows?.has(row)) continue;
+        const effective = strength * weightAt(row, column);
+        if (effective <= 0) continue;
+        const base = (row * columnCountValue + column) * 3;
+        let ax = 0;
+        let ay = 0;
+        let az = 0;
+        let neighborCount = 0;
+        if (row > 0) {
+          const index = ((row - 1) * columnCountValue + column) * 3;
+          ax += vertices[index];
+          ay += vertices[index + 1];
+          az += vertices[index + 2];
+          neighborCount += 1;
+        }
+        if (row < rowCountValue - 1) {
+          const index = ((row + 1) * columnCountValue + column) * 3;
+          ax += vertices[index];
+          ay += vertices[index + 1];
+          az += vertices[index + 2];
+          neighborCount += 1;
+        }
+        if (neighborCount === 0) continue;
+        const ox = vertices[base];
+        const oy = vertices[base + 1];
+        const oz = vertices[base + 2];
+        targets[base] = ox + (ax / neighborCount - ox) * effective;
+        targets[base + 1] = oy + (ay / neighborCount - oy) * effective;
+        targets[base + 2] = oz + (az / neighborCount - oz) * effective;
+      }
+    }
+    for (let i = 0; i < targets.length; i += 1) {
+      const value = targets[i];
+      if (value !== undefined) vertices[i] = value;
+    }
+  }
+  return vertices;
 }

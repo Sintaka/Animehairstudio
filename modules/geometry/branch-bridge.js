@@ -3,6 +3,7 @@
 import * as THREE from "three";
 import { clampRegionParam } from "./branch-region-panel.js";
 import { squareChildRing, holeBoundary, connectSide, connectBoundaryToRing } from "./branch-connect.js";
+import { smoothMeshVertices } from "./mesh-smooth.js";
 
 export function createBranchBridgeApi(deps) {
   // deps: strandCurveParameters, strandGeometryFrameAt, strandProfileTopologyAt,
@@ -523,52 +524,14 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   const smoothDetail = THREE.MathUtils.clamp(Math.round(Number(lock.branchBridgeSmoothDetail ?? deps.branchState.branchBridgeSmoothDetail ?? 0)), 0, 8);
   if (smoothStrength > 0.0001 && smoothDetail >= 1 && sideFillVerts.size) {
     const bridgeVertexCount = vertices.length / 3;
-    const positionAt = (idx) => {
+    smoothMeshVertices(vertices, quads, [...sideFillVerts], smoothStrength, smoothDetail, (idx) => {
       if (idx < bridgeVertexCount) return [vertices[idx * 3], vertices[idx * 3 + 1], vertices[idx * 3 + 2]];
       const s = idx - ringBase;
       if (s >= 0 && s < ringWorld.length) return [ringWorld[s].x, ringWorld[s].y, ringWorld[s].z];
       return null;
-    };
-    const adjacency = new Map();
-    quads.forEach((q) => {
-      for (let e = 0; e < 4; e += 1) {
-        const a = q[e];
-        const b = q[(e + 1) % 4];
-        if (!adjacency.has(a)) adjacency.set(a, []);
-        if (!adjacency.get(a).includes(b)) adjacency.get(a).push(b);
-        if (!adjacency.has(b)) adjacency.set(b, []);
-        if (!adjacency.get(b).includes(a)) adjacency.get(b).push(a);
-      }
     });
-    for (let iter = 0; iter < smoothDetail; iter += 1) {
-      const targets = new Map();
-      sideFillVerts.forEach((vi) => {
-        const neighbors = adjacency.get(vi) || [];
-        if (neighbors.length < 2) return;
-        let ax = 0; let ay = 0; let az = 0; let count = 0;
-        neighbors.forEach((ni) => {
-          const p = positionAt(ni);
-          if (!p) return;
-          ax += p[0]; ay += p[1]; az += p[2];
-          count += 1;
-        });
-        if (count < 2) return;
-        const ox = vertices[vi * 3];
-        const oy = vertices[vi * 3 + 1];
-        const oz = vertices[vi * 3 + 2];
-        targets.set(vi, [
-          ox + (ax / count - ox) * smoothStrength,
-          oy + (ay / count - oy) * smoothStrength,
-          oz + (az / count - oz) * smoothStrength
-        ]);
-      });
-      targets.forEach((t, vi) => {
-        vertices[vi * 3] = t[0];
-        vertices[vi * 3 + 1] = t[1];
-        vertices[vi * 3 + 2] = t[2];
-      });
-    }
   }
+
   return { vertices, normals, tangents, uvs, colors, indices, quads, triangles, ringBase, boundaryParentIndices };
 }
 

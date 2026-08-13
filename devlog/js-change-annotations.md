@@ -21,6 +21,17 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（0.2.66）
+
+> Sweep 转角过大修复：曲率感知环收窄（防自相交/穿插）+ 转角边缘平滑（分支 codex/0.2.66-sweep-corner-smooth，实施依据 devlog/in-progress/delta-mush-plan.md 主任务）：
+> - **曲率感知环收窄**：`modules/geometry/curve-math.js` 新增纯函数 `sweepCurvatureResponse(centers, radii, { strength, safety, minScale })`（相邻三点外接圆半径作局部曲率半径 ρ，factor = max(minScale, 1 − (1 − min(1, safety·ρ/r))·strength)，返回 `{ factors, heat }`，heat 为与 strength 无关的曲率热度）。依据 Elber 1997 / Maekawa 1999 判据（偏置距离 > 曲率半径即自相交），业界惯例 scale = min(1, safety·ρ/r)。
+> - **接入点**：`strand-sweep.js` `sweepSide`（普通发丝 + 子发片共用内核）+ `strand-geometry.js` `createSplitStrandGeometry` / `createHairCardGeometry`（独立手写环循环同步接入）。脊柱点不动，仅环剖面按曲率收窄。
+> - **边缘平滑**：`curve-math.js` 新增 `smoothSweepChains(vertices, rowCount, columnCount, { strength, iterations, weights, pinRows })`（纵向链 Jacobi Laplacian，按 heat 加权、根环 pinned）；三个 sweep 构建器顶点产出后各跑一遍（iterations=2）。
+> - **复用/抽取**：`branch-bridge.js` 内联的桥接均匀平滑（Laplacian）抽成新模块 `modules/geometry/mesh-smooth.js` 的 `smoothMeshVertices(vertices, quads, movable, strength, iterations, positionAt)`，branch-bridge 改调用（860 次随机对照逐位一致）。
+> - **UI**：新增 `#sweepOverlapPanel`（strands 组，位于 #branchBridgePanel 之后）3 个滑块：Sweep Overlap Strength（0–1，默认 0.7）/ Sweep Overlap Threshold（0.1–2，默认 0.6）/ Sweep Edge Smooth（0–1，默认 0.3）；per-lock 字段随 .ahs 自动持久化；无选中写 hairState 全局默认；ZH/JA 词典各 +3 key。
+> - **默认参数**：`SWEEP_OVERLAP_DEFAULTS` 由 `strand-sweep.js` 导出（单源），UI 与几何共用；strength/edgeSmooth 关到 0 时输出与改动前逐位一致。
+> - 回归：core-math 114 pass（+2 新单测）、verify-smoke 10/11=基线、dom-contract 16/89 不变。
+
 ## 最近更新（0.2.65）
 
 > 发尖控件 4 项修复（分支 0.2.64-panel-tip-curve，详见 [in-progress/panel-split-tip-bones.md](in-progress/panel-split-tip-bones.md) §8.29）：

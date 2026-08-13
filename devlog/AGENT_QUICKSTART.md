@@ -49,6 +49,12 @@
 - **0.2.60**：发尖（segment）宽度/深度曲线编辑统一到普通曲线 UI——右侧面板 Width/Depth Curve 预设 select + 右上角小铅笔（替代 Edit Segment Width Curve/Depth Curve 大按钮），预设作用于当前段 split bone；浮动面板随子发尖切换热刷新；浮动面板非对称显示跟随两侧曲线实际差异（默认对称、Ctrl 视口拖拽=非对称）；Reset 保持 fork 连续（zipper 端点不裂）。
 
 
+### 2.6 Sweep 转角收窄 + 边缘平滑（0.2.66）
+
+- 转角过大时 sweep 自相交（穿插）：`curve-math.js` `sweepCurvatureResponse`（局部曲率半径 ρ = 相邻三点外接圆半径，factor = max(minScale, 1−(1−min(1, safety·ρ/r))·strength)，Elber 1997 / Maekawa 1999）；接入 `strand-sweep.js` `sweepSide` + `createSplitStrandGeometry` + `createHairCardGeometry`，脊柱不动、仅剖面按曲率收窄。
+- 转角不平滑：`smoothSweepChains`（纵向链 Laplacian，heat 加权、根环 pinned）；桥接内联平滑抽到 `mesh-smooth.js` `smoothMeshVertices`（通用网格 Laplacian）。
+- UI：`#sweepOverlapPanel`（Strength / Threshold / Edge Smooth 三个滑块，strands 组），per-lock 字段随 .ahs 持久化，默认参数 `SWEEP_OVERLAP_DEFAULTS`（strand-sweep.js 导出，单源）；全部关到 0 时输出逐位守恒。
+
 ### 2.4 日常本地适配
 - ZH 语言、Houdini 导航、自定义雕刻笔刷（Slide/Scale·Cut-Extend/Push/Orient + Smooth twist）、S+左键调笔刷大小、Quick Save/Save as/Quick Export（File System Access API 直写盘）、浮动面板跟随、材质删除、Ctrl+Z 修复、`start-dev-server.cmd`。
 - `deprecated`：拖放统一分发、雕刻笔刷选择遮罩（main 0.1.4 已内置，本地实现已删除）。

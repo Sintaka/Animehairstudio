@@ -106,9 +106,11 @@ import {
   sampleAsymmetricTaperCurve,
   sampleIntegratedEnvelopeCurve,
   sampleTaperCurve,
+  smoothSweepChains,
   symmetricClosedCurveParameters,
   surfaceArcBlendAmount,
   surfaceArcPolylinePointData,
+  sweepCurvatureResponse,
   twistCurveDensityDetail,
   twistCurveDisplayRange,
   twistCurveHandleDistancePerDegree,
@@ -2751,4 +2753,82 @@ test("branch knife profile sampling preserves the closed profile proportions", (
   const width = Math.max(...loop.map((point) => point.x)) - Math.min(...loop.map((point) => point.x));
   const height = Math.max(...loop.map((point) => point.z)) - Math.min(...loop.map((point) => point.z));
   assert.ok(width > height);
+});
+
+test("sweep curvature response narrows bent rings and stays flat on straight spines", () => {
+  const straight = Array.from({ length: 5 }, (_, i) => ({ x: i, y: 0, z: 0 }));
+  const radii = [0.5, 0.5, 0.5, 0.5, 0.5];
+  const flat = sweepCurvatureResponse(straight, radii);
+  assert.deepEqual(flat.factors, [1, 1, 1, 1, 1]);
+  assert.deepEqual(flat.heat, [0, 0, 0, 0, 0]);
+
+  const corner = [
+    { x: -2, y: 0, z: 0 },
+    { x: -1, y: 0, z: 0 },
+    { x: 0, y: 0, z: 0 },
+    { x: 0, y: 0, z: 1 },
+    { x: 0, y: 0, z: 2 }
+  ];
+  const bent = sweepCurvatureResponse(corner, radii);
+  assert.equal(bent.factors[0], 1);
+  assert.equal(bent.factors[4], 1);
+  assert.equal(bent.heat[0], 0);
+  assert.equal(bent.heat[4], 0);
+  assert.ok(bent.factors[2] < 1, "middle ring narrows at the 90° bend");
+  assert.ok(bent.heat[2] > 0, "middle ring registers curvature heat");
+  assert.equal(bent.heat[1], 0);
+  assert.equal(bent.heat[3], 0);
+
+  const disabled = sweepCurvatureResponse(corner, radii, { strength: 0 });
+  assert.deepEqual(disabled.factors, [1, 1, 1, 1, 1]);
+});
+
+test("sweep chain smoothing applies Jacobi averages, honors weights, and pins anchor rows", () => {
+  const rowCount = 4;
+  const columnCount = 3;
+  const makeVertices = () => {
+    const flat = [];
+    for (let row = 0; row < rowCount; row += 1) {
+      for (let column = 0; column < columnCount; column += 1) {
+        flat.push(column, row, 0);
+      }
+    }
+    return flat;
+  };
+  const vertices = makeVertices();
+  vertices[(1 * columnCount + 1) * 3 + 1] = 5;
+  vertices[(2 * columnCount + 1) * 3 + 1] = 5;
+  const result = smoothSweepChains(vertices, rowCount, columnCount, {
+    strength: 1,
+    iterations: 1,
+    pinRows: new Set([0])
+  });
+  assert.equal(result, vertices, "returns the same array for chaining");
+  // Jacobi: row 2 blends against the pre-iteration bump (5), not the row-1 result.
+  assert.equal(vertices[(1 * columnCount + 1) * 3 + 1], 2.5);
+  assert.equal(vertices[(2 * columnCount + 1) * 3 + 1], 4);
+  // Pinned row 0 stays exactly as authored.
+  for (let column = 0; column < columnCount; column += 1) {
+    assert.equal(vertices[(0 * columnCount + column) * 3 + 1], 0);
+  }
+  // Straight chains (columns 0 and 2) are unchanged by vertical smoothing.
+  assert.equal(vertices[(2 * columnCount + 0) * 3 + 1], 2);
+  assert.equal(vertices[(2 * columnCount + 2) * 3 + 1], 2);
+
+  // A zero-weight vertex behaves like a pin: it never moves.
+  const weighted = makeVertices();
+  weighted[(1 * columnCount + 1) * 3 + 1] = 5;
+  const weights = new Array(rowCount * columnCount).fill(1);
+  weights[1 * columnCount + 1] = 0;
+  smoothSweepChains(weighted, rowCount, columnCount, {
+    strength: 1,
+    iterations: 1,
+    weights,
+    pinRows: new Set([0])
+  });
+  assert.equal(weighted[(1 * columnCount + 1) * 3 + 1], 5);
+  assert.equal(weighted[(2 * columnCount + 1) * 3 + 1], 4);
+  for (let column = 0; column < columnCount; column += 1) {
+    assert.equal(weighted[(0 * columnCount + column) * 3 + 1], 0);
+  }
 });

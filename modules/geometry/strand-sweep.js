@@ -3,6 +3,9 @@
 // child-strand sweep (createBranchChildGeometry): both are "sweep a profile along a
 // curve with transported frames". Callers add caps/bridge + geometry metadata.
 import * as THREE from "three";
+import { sweepCurvatureResponse, smoothSweepChains } from "./curve-math.js?v=20260813-1";
+
+export const SWEEP_OVERLAP_DEFAULTS = Object.freeze({ strength: 0.7, threshold: 0.6, edgeSmooth: 0.3 });
 
 export function createStrandSweepApi(deps) {
   // deps: strandCurveParameters, strandGeometryFrameAt, strandProfileTopologyAt,
@@ -34,6 +37,21 @@ export function createStrandSweepApi(deps) {
     const rootWarp = rootRelative
       ? deps.strandProfileTopologyAt(lock, startT, profilePoints, 1, 1)
       : null;
+    const overlapStrength = THREE.MathUtils.clamp(
+      Number(lock.sweepOverlapStrength ?? SWEEP_OVERLAP_DEFAULTS.strength),
+      0,
+      1
+    );
+    const overlapThreshold = Math.max(0.01, Number(lock.sweepOverlapThreshold ?? SWEEP_OVERLAP_DEFAULTS.threshold));
+    const edgeSmooth = THREE.MathUtils.clamp(
+      Number(lock.sweepEdgeSmooth ?? SWEEP_OVERLAP_DEFAULTS.edgeSmooth),
+      0,
+      1
+    );
+    // Pass 1: per-row guide/point/frame/color/warped plus curvature inputs (centers, radii).
+    const rowsData = [];
+    const centers = [];
+    const radii = [];
     let previousFrame = null;
     curveParameters.forEach((t, row) => {
       const guideT = startT + (1 - startT) * t;
@@ -55,9 +73,21 @@ export function createStrandSweepApi(deps) {
         const scaleZ = deps.sampleScale(lock.pointScales, guideT, "z");
         warped = deps.strandProfileTopologyAt(lock, guideT, profilePoints, scaleX, scaleZ);
       }
+      rowsData.push({ guideT, point, frame, color, warped });
+      centers.push({ x: point.x, y: point.y, z: point.z });
+      radii.push(warped.reduce((largest, w) => Math.max(largest, Math.abs(w.x), Math.abs(w.z)), 0));
+    });
+    // Curvature-aware narrowing: bend rings shrink so neighboring rings stop intersecting.
+    const { factors, heat } = sweepCurvatureResponse(centers, radii, {
+      strength: overlapStrength,
+      safety: overlapThreshold
+    });
+    // Pass 2: emit geometry with the per-row narrowing factor applied to the warped ring.
+    rowsData.forEach(({ guideT, point, frame, color, warped }, row) => {
+      const factor = factors[row] ?? 1;
       profilePoints.forEach((profilePoint, index) => {
         const w = warped[index];
-        const ring = frame.x.clone().multiplyScalar(w.x).addScaledVector(frame.z, w.z);
+        const ring = frame.x.clone().multiplyScalar(w.x * factor).addScaledVector(frame.z, w.z * factor);
         const v = point.clone().add(ring);
         vertices.push(v.x, v.y, v.z);
         normals.push(ring.x, ring.y, ring.z);
@@ -68,6 +98,20 @@ export function createStrandSweepApi(deps) {
         );
         colors.push(color.r, color.g, color.b);
       });
+    });
+    // Edge smoothing along longitudinal chains (heat-weighted); root ring stays pinned.
+    const smoothWeights = [];
+    for (let row = 0; row <= actualLengthSegments; row += 1) {
+      const rowHeat = heat[row] ?? 0;
+      for (let column = 0; column < profileCount; column += 1) {
+        smoothWeights[row * profileCount + column] = rowHeat;
+      }
+    }
+    smoothSweepChains(vertices, actualLengthSegments + 1, profileCount, {
+      strength: edgeSmooth,
+      iterations: 2,
+      weights: smoothWeights,
+      pinRows: new Set([0])
     });
     const edges = Array.isArray(profileEdges) && profileEdges.length
       ? profileEdges

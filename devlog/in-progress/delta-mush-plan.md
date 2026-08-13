@@ -1,8 +1,19 @@
 ﻿# 骨骼弯曲防重叠 +（可选）Delta Mush 平滑 — 实施计划
 
-> 状态：规划中（未实现）。目标版本 `0.1.4-Sintaka.0.2.60+`。
+> 状态：**主任务已实现（0.2.66，codex/0.2.66-sweep-corner-smooth）**；Delta Mush 仍为可选辅助（未实现）。原目标版本 `0.1.4-Sintaka.0.2.60+`。
 > 关联：bone-system-roadmap.md、AnimeHairStudio_Tech_Architecture_and_DCC_Reference.md。
 > 历史：本文档最初按"Delta Mush 平滑"立项；2026-08-11 经评估后**修正为以「扫掠防重叠」为主任务，Delta Mush 降级为可选的辅助平滑**，见 §1。
+
+## 0. 实施状态（0.2.66 主任务已完成）
+
+- §3 曲率感知环收窄 + 转角边缘平滑已按本节实现并合入：
+  - `curve-math.js`：`sweepCurvatureResponse`（返回 `{factors, heat}`，heat 供平滑加权）/ `smoothSweepChains`（纵向链 Jacobi Laplacian）。
+  - `strand-sweep.js` `sweepSide` + `strand-geometry.js` split/hair card 接入；脊柱不动，仅剖面按曲率收窄。
+  - `branch-bridge.js` 内联 Laplacian 抽到新模块 `mesh-smooth.js`（`smoothMeshVertices`）。
+  - UI：`#sweepOverlapPanel`（Strength 0.7 / Threshold 0.6 / Edge Smooth 0.3），per-lock 持久化 + hairState 全局默认；默认参数导出 `SWEEP_OVERLAP_DEFAULTS`（strand-sweep.js 单源）。
+  - 验证：core-math 114 pass、verify-smoke 10/11=基线、dom-contract 16/89 不变；开关置 0 逐位守恒。
+- §6 Delta Mush（可选辅助）未实现，仍按原评估保留为后续项；§3.4 源头夹角 clamp 未做（留给用户调 Threshold）。
+
 
 ## 1. ⚠️ 评估结论（先读）
 

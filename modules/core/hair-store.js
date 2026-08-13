@@ -25,7 +25,10 @@ export function createHairStore() {
     strandRadialTargetId: null,
     uvCheckerTexture: null,
     defaultHairShader: "standard-anisotropic",
-    twistCurveAllStrandsPreviewEnabled: true
+    twistCurveAllStrandsPreviewEnabled: true,
+    sweepOverlapStrength: 0.7,
+    sweepOverlapThreshold: 0.6,
+    sweepEdgeSmooth: 0.3,
   });
   return { state: store.state, snapshot: store.snapshot, restore: store.restore };
 }

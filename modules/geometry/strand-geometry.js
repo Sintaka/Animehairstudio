@@ -5,8 +5,10 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
   remapEnvelopeCurveRange,
   sampleScale,
+  smoothSweepChains,
+  sweepCurvatureResponse,
   upperProfileArcIndices
-} from "./curve-math.js?v=20260811-1";
+} from "./curve-math.js?v=20260813-1";
 import { buildConnectedCurveCardGrid, DEFAULT_CURVE_SURFACE_ROWS } from "./curve-surface.js?v=20260731-8";
 import { polyMeshBuffers } from "./poly-topology.js?v=20260728-3";
 import {
@@ -18,6 +20,7 @@ import {
 import { DEFAULT_SWEEP_PROFILE, ROUND_SWEEP_PROFILE } from "../core/app-config.js?v=20260809-2";
 import { strandSplitBonesFor, strandTipFor } from "../bones/bone-model.js?v=20260813-1";
 import { materializeTipChain, tipChainFrameAt, tipWeightAt, sampleTipPosition } from "./tip-sub-bone.js?v=20260813-1";
+import { SWEEP_OVERLAP_DEFAULTS } from "./strand-sweep.js?v=20260813-1";
 
 export function createStrandGeometryApi(deps) {
   // deps: api objects (branchSweep/strandSweep/branchBridge/curveSurfaceCreate/panelTipStrand/
@@ -93,6 +96,9 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), curlSegments), 4, 256);
   const curveParameters = deps.strandCurveParameters(lock, curve, lengthSegments);
   const actualLengthSegments = curveParameters.length - 1;
+  const strength = THREE.MathUtils.clamp(Number(lock.sweepOverlapStrength ?? SWEEP_OVERLAP_DEFAULTS.strength), 0, 1);
+  const safety = Math.max(0.01, Number(lock.sweepOverlapThreshold ?? SWEEP_OVERLAP_DEFAULTS.threshold));
+  const edgeSmooth = THREE.MathUtils.clamp(Number(lock.sweepEdgeSmooth ?? SWEEP_OVERLAP_DEFAULTS.edgeSmooth), 0, 1);
   const frames = [];
   let previousFrame = null;
   curveParameters.forEach((t) => {
@@ -135,6 +141,26 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     sectionFaceBase += actualLengthSegments * section.points.length;
   });
 
+  // Curvature-aware narrowing: per-row spine center + max profile radius feed the
+  // shared overlap response; factors narrow the warped offsets in the sweep below.
+  const centers = [];
+  const radii = [];
+  curveParameters.forEach((t) => {
+    centers.push(curve.getPoint(t));
+    const scaleX = sampleScale(lock.pointScales, t, "x");
+    const scaleZ = sampleScale(lock.pointScales, t, "z");
+    let rowRadius = 0;
+    sections.forEach((section) => {
+      const warpedSection = deps.strandProfileTopologyAt(lock, t, section.points, scaleX, scaleZ, polygon);
+      for (let column = 0; column < section.points.length; column += 1) {
+        const warped = warpedSection[column];
+        rowRadius = Math.max(rowRadius, Math.abs(warped.x), Math.abs(warped.z));
+      }
+    });
+    radii.push(rowRadius);
+  });
+  const { factors, heat } = sweepCurvatureResponse(centers, radii, { strength, safety });
+
   // Sweep the two tubes (unchanged rendering), but emit ALL side faces before the
   // end caps so quadFaces occupy the front of the index stream (carve-friendly).
   sections.forEach((section, sectionIndex) => {
@@ -162,8 +188,8 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
         : baseWidth * tubeSpread * THREE.MathUtils.smoothstep(t, splitStart, 1) * section.direction;
       section.points.forEach((profile, column) => {
         const warped = warpedSection[column];
-        const ringPoint = frame.x.clone().multiplyScalar(warped.x);
-        ringPoint.add(frame.z.clone().multiplyScalar(warped.z));
+        const ringPoint = frame.x.clone().multiplyScalar(warped.x * factors[row]);
+        ringPoint.add(frame.z.clone().multiplyScalar(warped.z * factors[row]));
         ringPoint.addScaledVector(frame.x, opening);
         vertices.push(point.x + ringPoint.x, point.y + ringPoint.y, point.z + ringPoint.z);
         tangents.push(frame.y.x, frame.y.y, frame.y.z, 1);
@@ -252,6 +278,32 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
       }
     });
   }
+  // Edge smoothing: per-tube longitudinal Laplacian over the emitted rings, using
+  // curvature heat as per-vertex weights; the root row stays pinned.
+  const sweepRows = actualLengthSegments + 1;
+  sections.forEach((section, sectionIndex) => {
+    const ringSize = section.points.length;
+    const sectionStart = sectionBases[sectionIndex].base;
+    const sectionVertexStart = sectionStart * 3;
+    const sectionVertexEnd = (sectionStart + sweepRows * ringSize) * 3;
+    const weights = new Array(sweepRows * ringSize);
+    for (let row = 0; row < sweepRows; row += 1) {
+      for (let column = 0; column < ringSize; column += 1) {
+        weights[row * ringSize + column] = heat[row];
+      }
+    }
+    const sectionVertices = vertices.slice(sectionVertexStart, sectionVertexEnd);
+    smoothSweepChains(sectionVertices, sweepRows, ringSize, {
+      strength: edgeSmooth,
+      iterations: 2,
+      weights,
+      pinRows: new Set([0])
+    });
+    for (let i = 0; i < sectionVertices.length; i += 1) {
+      vertices[sectionVertexStart + i] = sectionVertices[i];
+    }
+  });
+
   const sideFaceCount = sectionFaceBase;
   const quadFaces = [];
   sections.forEach((section, sectionIndex) => {
@@ -401,6 +453,9 @@ function createHairCardGeometry(lock, curve, profilePoints) {
   );
   const curveParameters = deps.strandCurveParameters(lock, curve, lengthSegments);
   const actualLengthSegments = curveParameters.length - 1;
+  const strength = THREE.MathUtils.clamp(Number(lock.sweepOverlapStrength ?? SWEEP_OVERLAP_DEFAULTS.strength), 0, 1);
+  const safety = Math.max(0.01, Number(lock.sweepOverlapThreshold ?? SWEEP_OVERLAP_DEFAULTS.threshold));
+  const edgeSmooth = THREE.MathUtils.clamp(Number(lock.sweepEdgeSmooth ?? SWEEP_OVERLAP_DEFAULTS.edgeSmooth), 0, 1);
   const vertices = [];
   const tangents = [];
   const uvs = [];
@@ -410,7 +465,25 @@ function createHairCardGeometry(lock, curve, profilePoints) {
   const profileSlotPoints = profileSlots.map((profileSample) => profileSample.point);
   let previousFrame = null;
 
+  // Curvature-aware narrowing: per-row spine center + max profile radius feed the
+  // shared overlap response; factors narrow the warped offsets in the sweep below.
+  const centers = [];
+  const radii = [];
   curveParameters.forEach((t) => {
+    centers.push(curve.getPoint(t));
+    const scaleX = sampleScale(lock.pointScales, t, "x");
+    const scaleZ = sampleScale(lock.pointScales, t, "z");
+    const warpedProfile = deps.strandProfileTopologyAt(lock, t, profileSlotPoints, scaleX, scaleZ);
+    let rowRadius = 0;
+    for (let index = 0; index < profileSlots.length; index += 1) {
+      const warped = warpedProfile[index];
+      rowRadius = Math.max(rowRadius, Math.abs(warped.x), Math.abs(warped.z));
+    }
+    radii.push(rowRadius);
+  });
+  const { factors, heat } = sweepCurvatureResponse(centers, radii, { strength, safety });
+
+  curveParameters.forEach((t, row) => {
     const point = curve.getPoint(t);
     const frame = deps.strandGeometryFrameAt(lock, curve, t, previousFrame);
     previousFrame = frame;
@@ -421,13 +494,29 @@ function createHairCardGeometry(lock, curve, profilePoints) {
     profileSlots.forEach((profileSample, index) => {
       const warped = warpedProfile[index];
       const vertex = point.clone()
-        .addScaledVector(frame.x, warped.x)
-        .addScaledVector(frame.z, warped.z);
+        .addScaledVector(frame.x, warped.x * factors[row])
+        .addScaledVector(frame.z, warped.z * factors[row]);
       vertices.push(vertex.x, vertex.y, vertex.z);
       tangents.push(frame.y.x, frame.y.y, frame.y.z, 1);
       uvs.push(profileSample.u, t);
       colors.push(color.r, color.g, color.b);
     });
+  });
+
+  // Edge smoothing: longitudinal Laplacian over the emitted rings, using curvature
+  // heat as per-vertex weights; the root row stays pinned.
+  const sweepRows = actualLengthSegments + 1;
+  const weights = new Array(sweepRows * profileVertexCount);
+  for (let row = 0; row < sweepRows; row += 1) {
+    for (let column = 0; column < profileVertexCount; column += 1) {
+      weights[row * profileVertexCount + column] = heat[row];
+    }
+  }
+  smoothSweepChains(vertices, sweepRows, profileVertexCount, {
+    strength: edgeSmooth,
+    iterations: 2,
+    weights,
+    pinRows: new Set([0])
   });
 
   for (let row = 0; row < actualLengthSegments; row += 1) {
