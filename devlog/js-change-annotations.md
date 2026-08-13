@@ -21,6 +21,14 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（0.2.68）
+
+> Sweep 切线后处理平滑（按曲率）+ 平滑参数镜像对称同步（分支 codex/0.2.68-sweep-tangent-mirror，0.2.66/0.2.67 跟进）：
+> - **切线后处理 smooth**：`curve-math.js` 新增 `smoothSweepFrames(frames, heat, { strength, iterations, pinRows })`——按曲率热度 heat 对每环 frame 的切线方向（y）做 Jacobi 混合（`normalize(y + strength·heat·((y_prev+y_next)/2 − y))`），再把 z 投影到垂直新切线的平面、`x = y × z` 重新正交化，环朝向在弯折处渐变（脊柱中心线不动）。接入 `strand-sweep.js` `sweepSide` + `createSplitStrandGeometry`（已有 frames 数组）+ `createHairCardGeometry`（改为先预收集 frames 再平滑，链式 previousFrame 与原循环一致）；根/尖端行 pin 住（根 cap、尖端 cap、子发片桥接锚点朝向不变）。
+> - **参数**：`lock.sweepTangentSmooth`（0–1，默认 0.3，`SWEEP_OVERLAP_DEFAULTS.tangentSmooth` 单源）；`#sweepOverlapPanel` 第 5 个滑块 Sweep Tangent Smooth + hairStore 默认 + ZH/JA 各 +1 key；`tangentSmooth=0` 时输出逐位一致。
+> - **镜像对称同步**：5 个平滑参数（sweepOverlapStrength / sweepOverlapThreshold / sweepEdgeSmooth / sweepOverlapFalloff / sweepTangentSmooth）加入镜像系统——`createMirrorPartner` 创建时透传 + `syncMirrorPartnerFromLock` 字段复制表 clamp 复制（Side Bangs Left 1 ↔ Right 1 现在会同步）；5 个滑块监听器在写 lock 后调用 `syncActiveMirror(lock, { deferGeometry: false })`（照 panelSegmentSpread 现成模式）。
+> - 回归：core-math 118 pass（+2 新单测）、verify-smoke 10/11=基线。
+
 ## 最近更新（0.2.67）
 
 > Sweep 收窄系数沿脊柱扩散（falloff），修复急弯过渡硬跳变/缺口（分支 codex/0.2.67-sweep-falloff，0.2.66 跟进）：

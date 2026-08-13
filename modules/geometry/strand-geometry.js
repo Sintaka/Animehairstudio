@@ -6,9 +6,10 @@ import {
   remapEnvelopeCurveRange,
   sampleScale,
   smoothSweepChains,
+  smoothSweepFrames,
   sweepCurvatureResponse,
   upperProfileArcIndices
-} from "./curve-math.js?v=20260813-2";
+} from "./curve-math.js?v=20260813-3";
 import { buildConnectedCurveCardGrid, DEFAULT_CURVE_SURFACE_ROWS } from "./curve-surface.js?v=20260731-8";
 import { polyMeshBuffers } from "./poly-topology.js?v=20260728-3";
 import {
@@ -20,7 +21,7 @@ import {
 import { DEFAULT_SWEEP_PROFILE, ROUND_SWEEP_PROFILE } from "../core/app-config.js?v=20260809-2";
 import { strandSplitBonesFor, strandTipFor } from "../bones/bone-model.js?v=20260813-1";
 import { materializeTipChain, tipChainFrameAt, tipWeightAt, sampleTipPosition } from "./tip-sub-bone.js?v=20260813-1";
-import { SWEEP_OVERLAP_DEFAULTS } from "./strand-sweep.js?v=20260813-2";
+import { SWEEP_OVERLAP_DEFAULTS } from "./strand-sweep.js?v=20260813-3";
 
 export function createStrandGeometryApi(deps) {
   // deps: api objects (branchSweep/strandSweep/branchBridge/curveSurfaceCreate/panelTipStrand/
@@ -100,6 +101,7 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   const safety = Math.max(0.01, Number(lock.sweepOverlapThreshold ?? SWEEP_OVERLAP_DEFAULTS.threshold));
   const overlapFalloff = Math.max(0, Math.min(8, Math.floor(Number(lock.sweepOverlapFalloff ?? SWEEP_OVERLAP_DEFAULTS.falloff) || 0)));
   const edgeSmooth = THREE.MathUtils.clamp(Number(lock.sweepEdgeSmooth ?? SWEEP_OVERLAP_DEFAULTS.edgeSmooth), 0, 1);
+  const tangentSmooth = THREE.MathUtils.clamp(Number(lock.sweepTangentSmooth ?? SWEEP_OVERLAP_DEFAULTS.tangentSmooth), 0, 1);
   const frames = [];
   let previousFrame = null;
   curveParameters.forEach((t) => {
@@ -161,6 +163,12 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     radii.push(rowRadius);
   });
   const { factors, heat } = sweepCurvatureResponse(centers, radii, { strength, safety, falloff: overlapFalloff });
+  // 切线按曲率后处理平滑：弯折处环朝向渐变，脊柱不动（根/尖端行 pin 住）。
+  smoothSweepFrames(frames, heat, {
+    strength: tangentSmooth,
+    iterations: 2,
+    pinRows: new Set([0, actualLengthSegments])
+  });
 
   // Sweep the two tubes (unchanged rendering), but emit ALL side faces before the
   // end caps so quadFaces occupy the front of the index stream (carve-friendly).
@@ -458,6 +466,7 @@ function createHairCardGeometry(lock, curve, profilePoints) {
   const safety = Math.max(0.01, Number(lock.sweepOverlapThreshold ?? SWEEP_OVERLAP_DEFAULTS.threshold));
   const overlapFalloff = Math.max(0, Math.min(8, Math.floor(Number(lock.sweepOverlapFalloff ?? SWEEP_OVERLAP_DEFAULTS.falloff) || 0)));
   const edgeSmooth = THREE.MathUtils.clamp(Number(lock.sweepEdgeSmooth ?? SWEEP_OVERLAP_DEFAULTS.edgeSmooth), 0, 1);
+  const tangentSmooth = THREE.MathUtils.clamp(Number(lock.sweepTangentSmooth ?? SWEEP_OVERLAP_DEFAULTS.tangentSmooth), 0, 1);
   const vertices = [];
   const tangents = [];
   const uvs = [];
@@ -465,7 +474,15 @@ function createHairCardGeometry(lock, curve, profilePoints) {
   const indices = [];
   const quadFaces = [];
   const profileSlotPoints = profileSlots.map((profileSample) => profileSample.point);
+  // Pre-collect per-row frames (same previousFrame chain as the vertex sweep) so the
+  // curvature heat can drive the tangent orientation post-process before vertices emit.
+  const frames = [];
   let previousFrame = null;
+  curveParameters.forEach((t) => {
+    const frame = deps.strandGeometryFrameAt(lock, curve, t, previousFrame);
+    frames.push(frame);
+    previousFrame = frame;
+  });
 
   // Curvature-aware narrowing: per-row spine center + max profile radius feed the
   // shared overlap response; factors narrow the warped offsets in the sweep below.
@@ -484,11 +501,16 @@ function createHairCardGeometry(lock, curve, profilePoints) {
     radii.push(rowRadius);
   });
   const { factors, heat } = sweepCurvatureResponse(centers, radii, { strength, safety, falloff: overlapFalloff });
+  // 切线按曲率后处理平滑：弯折处环朝向渐变，脊柱不动（根/尖端行 pin 住）。
+  smoothSweepFrames(frames, heat, {
+    strength: tangentSmooth,
+    iterations: 2,
+    pinRows: new Set([0, actualLengthSegments])
+  });
 
   curveParameters.forEach((t, row) => {
     const point = curve.getPoint(t);
-    const frame = deps.strandGeometryFrameAt(lock, curve, t, previousFrame);
-    previousFrame = frame;
+    const frame = frames[row];
     const scaleX = sampleScale(lock.pointScales, t, "x");
     const scaleZ = sampleScale(lock.pointScales, t, "z");
     const warpedProfile = deps.strandProfileTopologyAt(lock, t, profileSlotPoints, scaleX, scaleZ);

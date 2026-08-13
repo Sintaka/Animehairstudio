@@ -14,6 +14,7 @@
   - 验证：core-math 114 pass、verify-smoke 10/11=基线、dom-contract 16/89 不变；开关置 0 逐位守恒。
 - §6 Delta Mush（可选辅助）未实现，仍按原评估保留为后续项；§3.4 源头夹角 clamp 未做（留给用户调 Threshold）。
 - 0.2.67 跟进：`sweepCurvatureResponse` 新增 `falloff`（默认 3，`SWEEP_OVERLAP_DEFAULTS.falloff`），收窄系数/heat 沿脊柱三角加权扩散、端点钉死，消除急弯处被处理环与相邻未收窄环的宽度硬跳变/缺口；UI 增加 Sweep Overlap Falloff 滑块。
+- 0.2.68 跟进：新增 `smoothSweepFrames` 切线后处理平滑（按曲率热度对 frame 切线做 Jacobi 混合 + 重新正交化，脊柱不动、根/尖端 pin），参数 `sweepTangentSmooth`（默认 0.3）；5 个平滑参数接入镜像系统（创建透传 + 实时同步表 + 滑块监听器 syncActiveMirror），左右对称对象自动同步。
 
 
 ## 1. ⚠️ 评估结论（先读）

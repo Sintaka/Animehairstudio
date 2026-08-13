@@ -107,6 +107,7 @@ import {
   sampleIntegratedEnvelopeCurve,
   sampleTaperCurve,
   smoothSweepChains,
+  smoothSweepFrames,
   symmetricClosedCurveParameters,
   surfaceArcBlendAmount,
   surfaceArcPolylinePointData,
@@ -2883,3 +2884,100 @@ test("sweep chain smoothing applies Jacobi averages, honors weights, and pins an
     assert.equal(weighted[(0 * columnCount + column) * 3 + 1], 0);
   }
 });
+function setVectorComponents(nx, ny, nz) {
+  this.x = nx;
+  this.y = ny;
+  this.z = nz;
+}
+const vectorWithSet = (x, y, z) => ({
+  x, y, z,
+  set: setVectorComponents
+});
+const crossProduct = (a, b) => ({
+  x: a.y * b.z - a.z * b.y,
+  y: a.z * b.x - a.x * b.z,
+  z: a.x * b.y - a.y * b.x
+});
+const dotProduct = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+const angleBetween = (a, b) => Math.acos(Math.min(1, Math.max(-1, dotProduct(a, b) / (Math.hypot(a.x, a.y, a.z) * Math.hypot(b.x, b.y, b.z)))));
+const frameValues = (frames) => frames.flatMap((frame) => [
+  frame.x.x, frame.x.y, frame.x.z,
+  frame.y.x, frame.y.y, frame.y.z,
+  frame.z.x, frame.z.y, frame.z.z
+]);
+const bendFrames = () => [
+  { y: vectorWithSet(1, 0, 0), z: vectorWithSet(0, 1, 0) },
+  { y: vectorWithSet(1, 0, 0), z: vectorWithSet(0, 1, 0) },
+  { y: vectorWithSet(1, 0, 0), z: vectorWithSet(0, 1, 0) },
+  { y: vectorWithSet(0, 0, 1), z: vectorWithSet(0, 1, 0) },
+  { y: vectorWithSet(0, 0, 1), z: vectorWithSet(0, 1, 0) }
+].map((frame) => ({ x: vectorWithSet(...Object.values(crossProduct(frame.y, frame.z))), y: frame.y, z: frame.z }));
+const cloneFrames = (frames) => frames.map((frame) => ({
+  x: vectorWithSet(frame.x.x, frame.x.y, frame.x.z),
+  y: vectorWithSet(frame.y.x, frame.y.y, frame.y.z),
+  z: vectorWithSet(frame.z.x, frame.z.y, frame.z.z)
+}));
+
+test("sweep frame smoothing leaves straight spines bit-identical and zero strength untouched", () => {
+  const straight = Array.from({ length: 5 }, () => ({
+    x: vectorWithSet(0, 0, 1),
+    y: vectorWithSet(1, 0, 0),
+    z: vectorWithSet(0, 1, 0)
+  }));
+  const before = frameValues(straight);
+  const result = smoothSweepFrames(straight, [0, 0, 0, 0, 0], {
+    strength: 0.5,
+    iterations: 2,
+    pinRows: new Set([0, 4])
+  });
+  assert.equal(result, straight, "returns the same array for chaining");
+  assert.deepEqual(frameValues(straight), before, "zero-heat frames stay byte-identical");
+
+  const zero = bendFrames();
+  const zeroBefore = cloneFrames(zero);
+  smoothSweepFrames(zero, [0, 0, 1, 0, 0], { strength: 0, iterations: 2, pinRows: new Set([0, 4]) });
+  assert.deepEqual(zero, zeroBefore, "strength=0 leaves every frame byte-identical");
+});
+
+test("sweep frame smoothing rotates bend frames toward neighbors and keeps frames orthonormal", () => {
+  const frames = bendFrames();
+  const before = cloneFrames(frames);
+  const result = smoothSweepFrames(frames, [0, 0, 1, 0, 0], {
+    strength: 0.5,
+    iterations: 1,
+    pinRows: new Set([0, 4])
+  });
+  assert.equal(result, frames, "returns the same array for chaining");
+  for (const row of [0, 4]) {
+    assert.deepEqual(frames[row], before[row], `row ${row} stays pinned`);
+  }
+  for (const row of [1, 3]) {
+    assert.deepEqual(frames[row], before[row], `row ${row} has no heat so stays untouched`);
+  }
+  const y1 = before[1].y;
+  const y3 = before[3].y;
+  const y2 = frames[2].y;
+  const meanNeighbor = {
+    x: (y1.x + y3.x) / 2,
+    y: (y1.y + y3.y) / 2,
+    z: (y1.z + y3.z) / 2
+  };
+  assert.ok(
+    angleBetween(y2, meanNeighbor) < angleBetween(before[2].y, meanNeighbor),
+    "bend tangent moves closer to its neighbors"
+  );
+  assert.ok(
+    angleBetween(y2, y3) < angleBetween(before[2].y, y3),
+    "crease angle against the turning neighbor shrinks"
+  );
+  for (const frame of frames) {
+    for (const axis of ["x", "y", "z"]) {
+      const v = frame[axis];
+      assert.ok(Math.abs(Math.hypot(v.x, v.y, v.z) - 1) < 1e-9, `${axis} stays a unit vector`);
+    }
+    assert.ok(Math.abs(dotProduct(frame.x, frame.y)) < 1e-9, "x and y stay orthogonal");
+    assert.ok(Math.abs(dotProduct(frame.y, frame.z)) < 1e-9, "y and z stay orthogonal");
+    assert.ok(Math.abs(dotProduct(frame.x, frame.z)) < 1e-9, "x and z stay orthogonal");
+  }
+});
+

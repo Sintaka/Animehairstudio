@@ -6,6 +6,7 @@
 
 > 记录相对 main 分支（原版本）的适配改动。
 
+- [x] Sweep 切线平滑 + 镜像同步（0.2.68，codex/0.2.68-sweep-tangent-mirror）：`smoothSweepFrames` 按曲率热度后处理每环 frame 切线并重新正交化（脊柱不动、根/尖端 pin）；新增 `lock.sweepTangentSmooth`（0–1 默认 0.3）+ `#sweepOverlapPanel` 第 5 滑块 + ZH/JA +1 key；5 个平滑参数（Strength/Threshold/EdgeSmooth/Falloff/TangentSmooth）接入镜像系统（createMirrorPartner 透传 + syncMirrorPartnerFromLock clamp 复制 + 5 个滑块监听器 syncActiveMirror）；core-math 118 / verify-smoke 10/11=基线
 - [x] Sweep 收窄扩散（0.2.67，codex/0.2.67-sweep-falloff）：`sweepCurvatureResponse` 新增 `falloff` 沿脊柱三角加权扩散收窄系数/heat（端点钉死，falloff=0 逐位守恒），修复急弯处被处理环与相邻未收窄环宽度硬跳变/缺口；`#sweepOverlapPanel` 新增 Falloff 滑块（0–8 默认 3）+ ZH/JA 各 +1 key；core-math 116 / verify-smoke 10/11=基线
 - [x] Sweep 转角过大修复（0.2.66，codex/0.2.66-sweep-corner-smooth）：曲率感知环收窄（`sweepCurvatureResponse`，Elber 1997 / Maekawa 1999 判据 scale=min(1,safety·ρ/r)）+ 转角边缘平滑（`smoothSweepChains` 纵向链 Laplacian，heat 加权/根环 pinned）；接入 `strand-sweep.js` sweepSide + `createSplitStrandGeometry` + `createHairCardGeometry`；branch-bridge 内联 Laplacian 抽到 `mesh-smooth.js`（`smoothMeshVertices`，逐位一致）；新增 `#sweepOverlapPanel` 3 滑块（Strength 0.7 / Threshold 0.6 / Edge Smooth 0.3）+ ZH/JA 词典各 +3 key；默认参数 `SWEEP_OVERLAP_DEFAULTS` 单源导出；关闭时逐位守恒；core-math 114 / verify-smoke 10/11=基线
 - [x] 本地运行：Python 静态服务器启动脚本（start-dev-server.cmd，自动打开浏览器）

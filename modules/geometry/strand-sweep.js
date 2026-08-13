@@ -3,9 +3,9 @@
 // child-strand sweep (createBranchChildGeometry): both are "sweep a profile along a
 // curve with transported frames". Callers add caps/bridge + geometry metadata.
 import * as THREE from "three";
-import { sweepCurvatureResponse, smoothSweepChains } from "./curve-math.js?v=20260813-2";
+import { sweepCurvatureResponse, smoothSweepChains, smoothSweepFrames } from "./curve-math.js?v=20260813-3";
 
-export const SWEEP_OVERLAP_DEFAULTS = Object.freeze({ strength: 0.7, threshold: 0.6, edgeSmooth: 0.3, falloff: 3 });
+export const SWEEP_OVERLAP_DEFAULTS = Object.freeze({ strength: 0.7, threshold: 0.6, edgeSmooth: 0.3, falloff: 3, tangentSmooth: 0.3 });
 
 export function createStrandSweepApi(deps) {
   // deps: strandCurveParameters, strandGeometryFrameAt, strandProfileTopologyAt,
@@ -49,6 +49,11 @@ export function createStrandSweepApi(deps) {
       0,
       1
     );
+    const tangentSmooth = THREE.MathUtils.clamp(
+      Number(lock.sweepTangentSmooth ?? SWEEP_OVERLAP_DEFAULTS.tangentSmooth),
+      0,
+      1
+    );
     // Pass 1: per-row guide/point/frame/color/warped plus curvature inputs (centers, radii).
     const rowsData = [];
     const centers = [];
@@ -83,6 +88,12 @@ export function createStrandSweepApi(deps) {
       strength: overlapStrength,
       safety: overlapThreshold,
       falloff: overlapFalloff
+    });
+    // 切线按曲率后处理平滑：弯折处环朝向渐变，脊柱不动（根/尖端行 pin 住）。
+    smoothSweepFrames(rowsData.map((row) => row.frame), heat, {
+      strength: tangentSmooth,
+      iterations: 2,
+      pinRows: new Set([0, actualLengthSegments])
     });
     // Pass 2: emit geometry with the per-row narrowing factor applied to the warped ring.
     rowsData.forEach(({ guideT, point, frame, color, warped }, row) => {

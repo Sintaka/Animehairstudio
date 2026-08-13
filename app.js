@@ -4,7 +4,7 @@ import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-cr
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260812-2";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260812-1";
 import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260813-2";
-import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260813-3";
+import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260813-4";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260812-1";
 import { createSegmentControlApi } from "./modules/bones/segment-control.js?v=20260812-2";
 import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260813-1";
@@ -16,7 +16,7 @@ import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js
 import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip, strandSplitBonesFor, materializeStrandSplitBones, strandSplitBonesToData, strandSplitBonesFromData, mirrorStrandSplitBones } from "./modules/bones/bone-model.js?v=20260813-1";
 import { materializeTipChain } from "./modules/geometry/tip-sub-bone.js?v=20260813-1";
 import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260813-1";
-import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-2";
+import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-3";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260809-15";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260809-13";
 import { createPresetLibraryApi } from "./modules/io/preset-library.js?v=20260812-1";
@@ -30,7 +30,7 @@ import { createMiscStore } from "./modules/core/misc-store.js?v=20260809-12";
 import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260809-11";
 import { createScalpStore } from "./modules/scalp/scalp-store.js?v=20260809-10";
 import { createProjectStore } from "./modules/io/project-store.js?v=20260809-9";
-import { createHairStore } from "./modules/core/hair-store.js?v=20260813-2";
+import { createHairStore } from "./modules/core/hair-store.js?v=20260813-3";
 import { createGuideStore } from "./modules/core/guide-store.js?v=20260809-8";
 import { createCameraStore } from "./modules/core/camera-store.js?v=20260809-8";
 import { createTransformStore } from "./modules/core/transform-store.js?v=20260809-7";
@@ -100,7 +100,7 @@ import {
   twistRateUnitsFromDegrees,
   upperProfileArcIndices,
   uniformCurveParameters
-} from "./modules/geometry/curve-math.js?v=20260813-2";
+} from "./modules/geometry/curve-math.js?v=20260813-3";
 import {
   curveLatticeLoopPointIndices,
   DEFAULT_CURVE_LATTICE_PLANE,
@@ -2916,6 +2916,7 @@ const sweepOverlapStrengthInput = document.querySelector("#sweepOverlapStrengthI
 const sweepOverlapThresholdInput = document.querySelector("#sweepOverlapThresholdInput");
 const sweepEdgeSmoothInput = document.querySelector("#sweepEdgeSmoothInput");
 const sweepOverlapFalloffInput = document.querySelector("#sweepOverlapFalloffInput");
+const sweepTangentSmoothInput = document.querySelector("#sweepTangentSmoothInput");
 const sweepOverlapPanel = document.querySelector("#sweepOverlapPanel");
 const transformToolPanel = document.querySelector("#transformToolPanel");
 const transformToolTitle = document.querySelector("#transformToolTitle");
@@ -9061,6 +9062,11 @@ function createMirrorPartner(lock, options = {}) {
     twistDensity: lock.twistDensity,
     profileOffset: lock.profileOffset,
     sweepProfile: lock.sweepProfile.map((point) => ({ ...point })),
+    sweepOverlapStrength: lock.sweepOverlapStrength,
+    sweepOverlapThreshold: lock.sweepOverlapThreshold,
+    sweepEdgeSmooth: lock.sweepEdgeSmooth,
+    sweepOverlapFalloff: lock.sweepOverlapFalloff,
+    sweepTangentSmooth: lock.sweepTangentSmooth,
     points: lock.points.map(mirroredVector),
     groupLatticeBasePoints: lock.groupLatticeBasePoints?.map(mirroredVector) || null
   }, { deferUi: true });
@@ -9220,6 +9226,11 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   partner.asymmetricDepthCurve = Boolean(lock.asymmetricDepthCurve);
   partner.centerAsymmetricProfile = Boolean(lock.centerAsymmetricProfile);
   partner.sweepProfile = lock.sweepProfile.map((point) => ({ ...point }));
+  partner.sweepOverlapStrength = THREE.MathUtils.clamp(Number(lock.sweepOverlapStrength ?? SWEEP_OVERLAP_DEFAULTS.strength ?? 0.7), 0, 1);
+  partner.sweepOverlapThreshold = THREE.MathUtils.clamp(Number(lock.sweepOverlapThreshold ?? SWEEP_OVERLAP_DEFAULTS.threshold ?? 0.6), 0.1, 2);
+  partner.sweepEdgeSmooth = THREE.MathUtils.clamp(Number(lock.sweepEdgeSmooth ?? SWEEP_OVERLAP_DEFAULTS.edgeSmooth ?? 0.3), 0, 1);
+  partner.sweepOverlapFalloff = THREE.MathUtils.clamp(Math.round(Number(lock.sweepOverlapFalloff ?? SWEEP_OVERLAP_DEFAULTS.falloff ?? 3) || 0), 0, 8);
+  partner.sweepTangentSmooth = THREE.MathUtils.clamp(Number(lock.sweepTangentSmooth ?? SWEEP_OVERLAP_DEFAULTS.tangentSmooth ?? 0.3), 0, 1);
   partner.profileOffset = Number(lock.profileOffset || 0);
   partner.rootScalpOffset = Number(lock.rootScalpOffset || 0);
   partner.rootAttachmentEnabled = lock.rootAttachmentEnabled !== false;
@@ -16920,10 +16931,12 @@ function updateSweepOverlapSliderInputs() {
   const threshold = lock?.sweepOverlapThreshold ?? hairState.state.sweepOverlapThreshold;
   const edgeSmooth = lock?.sweepEdgeSmooth ?? hairState.state.sweepEdgeSmooth;
   const falloff = lock?.sweepOverlapFalloff ?? hairState.state.sweepOverlapFalloff;
+  const tangentSmooth = lock?.sweepTangentSmooth ?? hairState.state.sweepTangentSmooth;
   sweepOverlapStrengthInput.value = strength;
   sweepOverlapThresholdInput.value = threshold;
   sweepEdgeSmoothInput.value = edgeSmooth;
   sweepOverlapFalloffInput.value = falloff;
+  sweepTangentSmoothInput.value = tangentSmooth;
   const n1 = sweepOverlapStrengthInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
   if (n1) n1.value = strength;
   const n2 = sweepOverlapThresholdInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
@@ -16932,6 +16945,8 @@ function updateSweepOverlapSliderInputs() {
   if (n3) n3.value = edgeSmooth;
   const n4 = sweepOverlapFalloffInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
   if (n4) n4.value = falloff;
+  const n5 = sweepTangentSmoothInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
+  if (n5) n5.value = tangentSmooth;
 }
 sweepOverlapStrengthInput.addEventListener("input", () => {
   const value = THREE.MathUtils.clamp(Number(sweepOverlapStrengthInput.value) || 0, 0, 1);
@@ -16939,6 +16954,7 @@ sweepOverlapStrengthInput.addEventListener("input", () => {
   if (lock) {
     lock.sweepOverlapStrength = value;
     rebuildLockGeometry(lock);
+    syncActiveMirror(lock, { deferGeometry: false });
   } else {
     hairState.state.sweepOverlapStrength = value;
     locks.forEach((l) => { if (l) rebuildLockGeometry(l); });
@@ -16953,6 +16969,7 @@ sweepOverlapThresholdInput.addEventListener("input", () => {
   if (lock) {
     lock.sweepOverlapThreshold = value;
     rebuildLockGeometry(lock);
+    syncActiveMirror(lock, { deferGeometry: false });
   } else {
     hairState.state.sweepOverlapThreshold = value;
     locks.forEach((l) => { if (l) rebuildLockGeometry(l); });
@@ -16967,6 +16984,7 @@ sweepEdgeSmoothInput.addEventListener("input", () => {
   if (lock) {
     lock.sweepEdgeSmooth = value;
     rebuildLockGeometry(lock);
+    syncActiveMirror(lock, { deferGeometry: false });
   } else {
     hairState.state.sweepEdgeSmooth = value;
     locks.forEach((l) => { if (l) rebuildLockGeometry(l); });
@@ -16981,12 +16999,28 @@ sweepOverlapFalloffInput.addEventListener("input", () => {
   if (lock) {
     lock.sweepOverlapFalloff = value;
     rebuildLockGeometry(lock);
+    syncActiveMirror(lock, { deferGeometry: false });
   } else {
     hairState.state.sweepOverlapFalloff = value;
     locks.forEach((l) => { if (l) rebuildLockGeometry(l); });
   }
   sweepOverlapFalloffInput.value = value;
   const n = sweepOverlapFalloffInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
+  if (n) n.value = value;
+});
+sweepTangentSmoothInput.addEventListener("input", () => {
+  const value = THREE.MathUtils.clamp(Number(sweepTangentSmoothInput.value) || 0.3, 0, 1);
+  const lock = getSelectedLock();
+  if (lock) {
+    lock.sweepTangentSmooth = value;
+    rebuildLockGeometry(lock);
+    syncActiveMirror(lock, { deferGeometry: false });
+  } else {
+    hairState.state.sweepTangentSmooth = value;
+    locks.forEach((l) => { if (l) rebuildLockGeometry(l); });
+  }
+  sweepTangentSmoothInput.value = value;
+  const n = sweepTangentSmoothInput.closest(".slider-input-row")?.querySelector(".slider-number-input");
   if (n) n.value = value;
 });
 branchRegionSyncLateralInput.value = branch.state.branchRegionSyncLateral;

@@ -30,6 +30,7 @@ export function createHairStore() {
     sweepOverlapThreshold: 0.6,
     sweepEdgeSmooth: 0.3,
     sweepOverlapFalloff: 3,
+    sweepTangentSmooth: 0.3,
   });
   return { state: store.state, snapshot: store.snapshot, restore: store.restore };
 }

@@ -55,6 +55,7 @@
 - 转角不平滑：`smoothSweepChains`（纵向链 Laplacian，heat 加权、根环 pinned）；桥接内联平滑抽到 `mesh-smooth.js` `smoothMeshVertices`（通用网格 Laplacian）。
 - UI：`#sweepOverlapPanel`（Strength / Threshold / Edge Smooth 三个滑块，strands 组），per-lock 字段随 .ahs 持久化，默认参数 `SWEEP_OVERLAP_DEFAULTS`（strand-sweep.js 导出，单源）；全部关到 0 时输出逐位守恒。
 - 0.2.67：急弯过渡扩散——`sweepCurvatureResponse` 新增 `falloff`（默认 3），收窄系数沿脊柱传播（`#sweepOverlapPanel` 第 4 个滑块 Sweep Overlap Falloff 0–8），消除被处理边附近未收缩环的突兀/缺口。
+- 0.2.68：`smoothSweepFrames` 切线后处理平滑（按曲率热度，`#sweepOverlapPanel` 第 5 个滑块 Sweep Tangent Smooth，默认 0.3）；5 个平滑参数（Strength/Threshold/EdgeSmooth/Falloff/TangentSmooth）已接入镜像系统（createMirrorPartner + syncMirrorPartnerFromLock + 滑块 syncActiveMirror），左右对称对象自动同步。
 
 ### 2.4 日常本地适配
 - ZH 语言、Houdini 导航、自定义雕刻笔刷（Slide/Scale·Cut-Extend/Push/Orient + Smooth twist）、S+左键调笔刷大小、Quick Save/Save as/Quick Export（File System Access API 直写盘）、浮动面板跟随、材质删除、Ctrl+Z 修复、`start-dev-server.cmd`。

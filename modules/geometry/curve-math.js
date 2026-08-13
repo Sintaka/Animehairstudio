@@ -1357,3 +1357,71 @@ export function smoothSweepChains(vertices, rowCount, columnCount, options = {})
   }
   return vertices;
 }
+// 切线按曲率后处理平滑，弯折处环朝向渐变，脊柱不动。
+export function smoothSweepFrames(frames, heat, options = {}) {
+  const strength = clamp(Number(options.strength ?? 0.5), 0, 1);
+  const iterations = Math.max(0, Math.floor(Number(options.iterations) || 0));
+  const pinRows = options.pinRows ?? null;
+  const count = Array.isArray(frames) ? frames.length : 0;
+  if (count < 3 || strength <= 0 || iterations < 1) return frames;
+  const vectorAt = (row, axis) => {
+    const value = frames[row]?.[axis];
+    return value ? { x: Number(value.x), y: Number(value.y), z: Number(value.z) } : null;
+  };
+  const writeBack = (frame, axis, value) => {
+    const target = frame?.[axis];
+    if (!target) return;
+    if (typeof target.set === "function") target.set(value.x, value.y, value.z);
+    else {
+      target.x = value.x;
+      target.y = value.y;
+      target.z = value.z;
+    }
+  };
+  const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
+  const subtract = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+  const scale = (a, factor) => ({ x: a.x * factor, y: a.y * factor, z: a.z * factor });
+  const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+  const cross = (a, b) => ({
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x
+  });
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const tangents = new Array(count);
+    for (let i = 1; i < count - 1; i += 1) {
+      if (pinRows?.has(i)) continue;
+      const heatValue = Number(heat?.[i]) || 0;
+      if (heatValue <= 0) continue;
+      const before = vectorAt(i - 1, "y");
+      const current = vectorAt(i, "y");
+      const after = vectorAt(i + 1, "y");
+      if (!before || !current || !after) continue;
+      const target = add(current, scale(subtract(scale(add(before, after), 0.5), current), strength * heatValue));
+      const length = Math.hypot(target.x, target.y, target.z);
+      if (length < 1e-12) continue;
+      tangents[i] = { x: target.x / length, y: target.y / length, z: target.z / length };
+    }
+    for (let i = 0; i < count; i += 1) {
+      const tangent = tangents[i];
+      if (!tangent) continue;
+      const frame = frames[i];
+      const z = vectorAt(i, "z");
+      if (!z) continue;
+      const projectedZ = {
+        x: z.x - dot(z, tangent) * tangent.x,
+        y: z.y - dot(z, tangent) * tangent.y,
+        z: z.z - dot(z, tangent) * tangent.z
+      };
+      const zLength = Math.hypot(projectedZ.x, projectedZ.y, projectedZ.z);
+      const zTarget = zLength < 1e-8
+        ? z
+        : { x: projectedZ.x / zLength, y: projectedZ.y / zLength, z: projectedZ.z / zLength };
+      writeBack(frame, "y", tangent);
+      writeBack(frame, "z", zTarget);
+      writeBack(frame, "x", cross(tangent, zTarget));
+    }
+  }
+  return frames;
+}
+
