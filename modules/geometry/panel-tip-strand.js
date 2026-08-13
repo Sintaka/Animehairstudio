@@ -2,6 +2,8 @@
 // Extracted from app.js; coupling injected via createPanelTipStrandApi(deps).
 import * as THREE from "three";
 import {
+  panelTipCurveParameter,
+  panelTipLoopParameters,
   profileTopologyCenterWeight,
   sampleArray,
   sampleAsymmetricTaperCurve,
@@ -668,7 +670,10 @@ function createPanelStrandGeometry(lock) {
   lock._tipWidthFrames = null; // the width-UI frame cache depends on the rebuilt points
   const latticeControlled = lock.geometryType === "surface";
   const curve = latticeControlled ? null : deps.strandGeometryCurve(lock);
-  const lengthLoops = THREE.MathUtils.clamp(Math.round(lock.panelLengthLoops ?? 10), 3, 32);
+  const baseLengthLoops = THREE.MathUtils.clamp(Math.round(lock.panelLengthLoops ?? 10), 3, 32);
+  const tipLoops = THREE.MathUtils.clamp(Math.round(lock.panelTipLoops ?? 0), 0, 16);
+  const rowParameters = panelTipLoopParameters(baseLengthLoops, tipLoops);
+  const lengthLoops = rowParameters.length - 1;
   const widthLoops = THREE.MathUtils.clamp(
     Math.round(lock.panelWidthLoops ?? 6),
     latticeControlled ? 2 : 3,
@@ -677,6 +682,9 @@ function createPanelStrandGeometry(lock) {
   const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
   const baseThickness = Math.max(0.001, Number(lock.panelThickness ?? 0.08));
   const curvature = Number(lock.panelCurvature ?? 0.18);
+  const leftEdgeTrim = THREE.MathUtils.clamp(Number(lock.panelLeftEdgeTrim ?? 0), 0, 0.75);
+  const rightEdgeTrim = THREE.MathUtils.clamp(Number(lock.panelRightEdgeTrim ?? 0), 0, 0.75);
+  const tipCurve = latticeControlled ? 0 : THREE.MathUtils.clamp(Number(lock.panelTipCurve ?? 0), -1, 1);
   const splitEnabled = lock.panelSplitEnabled !== false;
   const splits = splitEnabled
     ? deps.normalizePanelSplits(lock.panelSplits, lock.panelSplitHeight, widthLoops - 1).filter((split) => split.height > 0.005)
@@ -700,7 +708,7 @@ function createPanelStrandGeometry(lock) {
   let previousFrame = null;
   if (!latticeControlled) {
     for (let row = 0; row <= lengthLoops; row += 1) {
-      previousFrame = deps.strandGeometryFrameAt(lock, curve, row / lengthLoops, previousFrame);
+      previousFrame = deps.strandGeometryFrameAt(lock, curve, rowParameters[row], previousFrame);
       frames.push(previousFrame);
     }
   }
@@ -760,10 +768,12 @@ function createPanelStrandGeometry(lock) {
     ));
   };
   const panelFrameAt = (t) => {
-    const scaled = THREE.MathUtils.clamp(t, 0, 1) * lengthLoops;
-    const lowerIndex = Math.min(lengthLoops, Math.floor(scaled));
-    const upperIndex = Math.min(lengthLoops, lowerIndex + 1);
-    const alpha = scaled - lowerIndex;
+    const parameter = THREE.MathUtils.clamp(t, 0, 1);
+    let upperIndex = rowParameters.findIndex((rowParameter) => rowParameter >= parameter);
+    if (upperIndex < 0) upperIndex = lengthLoops;
+    const lowerIndex = Math.max(0, upperIndex - 1);
+    const interval = Math.max(0.000001, rowParameters[upperIndex] - rowParameters[lowerIndex]);
+    const alpha = upperIndex === lowerIndex ? 0 : (parameter - rowParameters[lowerIndex]) / interval;
     const lower = frames[lowerIndex];
     const upper = frames[upperIndex];
     const point = curve.getPoint(t);
@@ -812,8 +822,10 @@ function createPanelStrandGeometry(lock) {
       );
   };
   const panelPoint = (row, u, shell, bone = null, segment = -1) => {
-    const t = row / lengthLoops;
-    return rawPanelPoint(t, u, shell, bone, segment);
+    const t = rowParameters[row];
+    const edgeTrim = THREE.MathUtils.lerp(leftEdgeTrim, rightEdgeTrim, (u + 1) * 0.5);
+    const sampleT = panelTipCurveParameter(t, u, tipCurve, edgeTrim);
+    return rawPanelPoint(sampleT, u, shell, bone, segment);
   };
   // Tip sub-bone deformation: the segment follows its guide chain CENTER. At each row t
   // below the fork, the below-zipper region translates by (authored chain point - rest
@@ -833,7 +845,7 @@ function createPanelStrandGeometry(lock) {
     const back = [];
     for (let localRow = 0; localRow <= rows; localRow += 1) {
       const row = rowStart + localRow;
-      const t = row / lengthLoops;
+      const t = rowParameters[row];
       const color = deps.strandInfluenceColor(lock, t);
       const mainJoint = mainPointCount ? Math.round(t * (mainPointCount - 1)) : -1;
       const segmentIndex = latticeControlled ? -1 : segment;
@@ -951,16 +963,16 @@ function createPanelStrandGeometry(lock) {
     // (auto-completion, no UI); only when a segment has no zipper on either side does it
     // stay at the full -1/1 boundary.
     const uStart = (row) => (leftSplit || rightSplit)
-      ? boundaries[segment] + tipWidthSpreadGap(lock, segment, splits, bone, row / lengthLoops, -1)
+      ? boundaries[segment] + tipWidthSpreadGap(lock, segment, splits, bone, rowParameters[row], -1)
       : -1;
     const uEnd = (row) => (leftSplit || rightSplit)
-      ? boundaries[segment + 1] - tipWidthSpreadGap(lock, segment, splits, bone, row / lengthLoops, 1)
+      ? boundaries[segment + 1] - tipWidthSpreadGap(lock, segment, splits, bone, rowParameters[row], 1)
       : 1;
     addPatch(0, lengthLoops, uStart, uEnd, columns, {
       capStart: true,
       capEnd: true,
-      leftWallStartRow: leftSplit ? Math.ceil((1 - leftSplit.height) * lengthLoops) : 0,
-      rightWallStartRow: rightSplit ? Math.ceil((1 - rightSplit.height) * lengthLoops) : 0
+      leftWallStartRow: leftSplit ? rowParameters.findIndex((parameter) => parameter >= 1 - leftSplit.height) : 0,
+      rightWallStartRow: rightSplit ? rowParameters.findIndex((parameter) => parameter >= 1 - rightSplit.height) : 0
     }, bone, segment);
   }
 

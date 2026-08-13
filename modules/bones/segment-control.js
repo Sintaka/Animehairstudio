@@ -59,7 +59,7 @@ function syncPanelShapeInputs(target = deps.taperEditor.activeStrandShapeTarget(
   });
   Object.entries(deps.panelShapeValues).forEach(([key, output]) => {
     const value = Number(target[key] ?? deps.panelCreationDefaults[key]);
-    output.textContent = ["panelLengthLoops", "panelWidthLoops"].includes(key)
+    output.textContent = ["panelLengthLoops", "panelWidthLoops", "panelTipLoops"].includes(key)
       ? String(Math.round(value))
       : value.toFixed(2);
   });

@@ -622,6 +622,8 @@ export default Object.freeze({
   "Edits this segment's own width/depth curve (falls back to the global curve when empty).": "このセグメント独自の幅/奥行カーブを編集します（空の場合はグローバルカーブにフォールバック）。",
   "Left Edge Trim": "左端をトリム",
   "Right Edge Trim": "右端をトリム",
+  "Tip Curve": "先端カーブ",
+  "Tip Loops": "先端ループ",
   "Transform Space": "変換空間",
   "World": "ワールド",
   "Object": "オブジェクト",

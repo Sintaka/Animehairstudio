@@ -3,7 +3,7 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260812-1";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260812-2";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260812-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260813-1";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260813-2";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260813-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260812-1";
 import { createSegmentControlApi } from "./modules/bones/segment-control.js?v=20260812-2";
@@ -1497,6 +1497,8 @@ const panelCreationDefaults = {
   panelCurvature: 0.18,
   panelLeftEdgeTrim: 0,
   panelRightEdgeTrim: 0,
+  panelTipCurve: 0,
+  panelTipLoops: 0,
   panelSplitEnabled: true,
   panelSplitSnapToLoops: true,
   panelSplitHeight: 0.3,
@@ -3232,12 +3234,17 @@ const surfaceLatticeColumnsValue = document.querySelector("#surfaceLatticeColumn
 const surfaceLatticeRowsInput = document.querySelector("#surfaceLatticeRows");
 const surfaceLatticeRowsValue = document.querySelector("#surfaceLatticeRowsValue");
 const panelCurvatureControl = document.querySelector("#panelCurvatureControl");
+const panelTipCurveControl = document.querySelector("#panelTipCurveControl");
 const panelShapeInputs = {
   width: document.querySelector("#panelWidth"),
   panelThickness: document.querySelector("#panelThickness"),
   panelLengthLoops: document.querySelector("#panelLengthLoops"),
   panelWidthLoops: document.querySelector("#panelWidthLoops"),
   panelCurvature: document.querySelector("#panelCurvature"),
+  panelLeftEdgeTrim: document.querySelector("#panelLeftEdgeTrim"),
+  panelRightEdgeTrim: document.querySelector("#panelRightEdgeTrim"),
+  panelTipCurve: document.querySelector("#panelTipCurve"),
+  panelTipLoops: document.querySelector("#panelTipLoops"),
   panelSplitEnabled: document.querySelector("#panelSplitEnabled"),
   panelSplitSnapToLoops: document.querySelector("#panelSplitSnapToLoops")
 };
@@ -3246,7 +3253,11 @@ const panelShapeValues = {
   panelThickness: document.querySelector("#panelThicknessValue"),
   panelLengthLoops: document.querySelector("#panelLengthLoopsValue"),
   panelWidthLoops: document.querySelector("#panelWidthLoopsValue"),
-  panelCurvature: document.querySelector("#panelCurvatureValue")
+  panelCurvature: document.querySelector("#panelCurvatureValue"),
+  panelLeftEdgeTrim: document.querySelector("#panelLeftEdgeTrimValue"),
+  panelRightEdgeTrim: document.querySelector("#panelRightEdgeTrimValue"),
+  panelTipCurve: document.querySelector("#panelTipCurveValue"),
+  panelTipLoops: document.querySelector("#panelTipLoopsValue")
 };
 const strandSplitInputs = {
   strandSplitEnabled: document.querySelector("#strandSplitEnabled"),
@@ -8830,6 +8841,12 @@ function addLock(presetName, overrides = {}, options = {}) {
     : Number(base.panelCurvature ?? panelCreationDefaults.panelCurvature);
   lock.panelLeftEdgeTrim = Number(base.panelLeftEdgeTrim ?? panelCreationDefaults.panelLeftEdgeTrim);
   lock.panelRightEdgeTrim = Number(base.panelRightEdgeTrim ?? panelCreationDefaults.panelRightEdgeTrim);
+  lock.panelTipCurve = lock.geometryType === "surface"
+    ? 0
+    : THREE.MathUtils.clamp(Number(base.panelTipCurve ?? panelCreationDefaults.panelTipCurve), -1, 1);
+  lock.panelTipLoops = lock.geometryType === "surface"
+    ? 0
+    : THREE.MathUtils.clamp(Math.round(Number(base.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16);
   lock.panelSplitEnabled = base.panelSplitEnabled !== false;
   lock.panelSplitSnapToLoops = base.panelSplitSnapToLoops !== false;
   lock.panelSplitHeight = Number(base.panelSplitHeight ?? panelCreationDefaults.panelSplitHeight);
@@ -8986,6 +9003,8 @@ function createMirrorPartner(lock, options = {}) {
     panelCurvature: lock.panelCurvature,
     panelLeftEdgeTrim: lock.panelLeftEdgeTrim,
     panelRightEdgeTrim: lock.panelRightEdgeTrim,
+    panelTipCurve: lock.panelTipCurve,
+    panelTipLoops: lock.panelTipLoops,
     profileTrimLeft: lock.profileTrimRight,
     profileTrimRight: lock.profileTrimLeft,
     profileTrimRoundness: lock.profileTrimRoundness,
@@ -9145,6 +9164,12 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
     : Number(lock.panelCurvature ?? panelCreationDefaults.panelCurvature);
   partner.panelLeftEdgeTrim = Number(lock.panelRightEdgeTrim ?? panelCreationDefaults.panelRightEdgeTrim);
   partner.panelRightEdgeTrim = Number(lock.panelLeftEdgeTrim ?? panelCreationDefaults.panelLeftEdgeTrim);
+  partner.panelTipCurve = lock.geometryType === "surface"
+    ? 0
+    : THREE.MathUtils.clamp(-Number(lock.panelTipCurve ?? panelCreationDefaults.panelTipCurve), -1, 1);
+  partner.panelTipLoops = lock.geometryType === "surface"
+    ? 0
+    : THREE.MathUtils.clamp(Math.round(Number(lock.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16);
   partner.profileTrimLeft = Number(lock.profileTrimRight ?? 0);
   partner.profileTrimRight = Number(lock.profileTrimLeft ?? 0);
   partner.profileTrimRoundness = Number(lock.profileTrimRoundness ?? 1);
@@ -9366,6 +9391,8 @@ function snapshotState() {
       panelCurvature: Number(lock.panelCurvature ?? panelCreationDefaults.panelCurvature),
       panelLeftEdgeTrim: Number(lock.panelLeftEdgeTrim ?? panelCreationDefaults.panelLeftEdgeTrim),
       panelRightEdgeTrim: Number(lock.panelRightEdgeTrim ?? panelCreationDefaults.panelRightEdgeTrim),
+      panelTipCurve: Number(lock.panelTipCurve ?? panelCreationDefaults.panelTipCurve),
+      panelTipLoops: Number(lock.panelTipLoops ?? panelCreationDefaults.panelTipLoops),
       profileTrimLeft: Number(lock.profileTrimLeft ?? 0),
       profileTrimRight: Number(lock.profileTrimRight ?? 0),
       profileTrimRoundness: Number(lock.profileTrimRoundness ?? 1),
@@ -9971,6 +9998,12 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
       : Number(snapshot.panelCurvature ?? panelCreationDefaults.panelCurvature),
     panelLeftEdgeTrim: Number(snapshot.panelLeftEdgeTrim ?? panelCreationDefaults.panelLeftEdgeTrim),
     panelRightEdgeTrim: Number(snapshot.panelRightEdgeTrim ?? panelCreationDefaults.panelRightEdgeTrim),
+    panelTipCurve: snapshot.geometryType === "surface"
+      ? 0
+      : THREE.MathUtils.clamp(Number(snapshot.panelTipCurve ?? panelCreationDefaults.panelTipCurve), -1, 1),
+    panelTipLoops: snapshot.geometryType === "surface"
+      ? 0
+      : THREE.MathUtils.clamp(Math.round(Number(snapshot.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16),
     panelSplitEnabled: snapshot.panelSplitEnabled !== false,
     panelSplitSnapToLoops: snapshot.panelSplitSnapToLoops !== false,
     panelSplitHeight: Number(snapshot.panelSplitHeight ?? panelCreationDefaults.panelSplitHeight),
@@ -12896,8 +12929,10 @@ function updateAttributeEditorMode() {
   );
   surfaceLatticeControls.classList.toggle("hidden", !selectedSurface);
   panelCurvatureControl.classList.toggle("hidden", Boolean(selectedSurface));
+  panelTipCurveControl.classList.toggle("hidden", Boolean(selectedSurface));
   surfaceLatticeControls.hidden = !selectedSurface;
   panelCurvatureControl.hidden = Boolean(selectedSurface);
+  panelTipCurveControl.hidden = Boolean(selectedSurface);
   compoundBridgeLoopsControl.classList.toggle("hidden", !selectedCompound);
   compoundBridgeSmoothingControl.classList.toggle("hidden", !selectedCompound);
   if (selectedSurface) {
@@ -13469,7 +13504,7 @@ function syncMultiStrandInputs(primary = getSelectedLock()) {
         input,
         panelShapeValues[key] || null,
         values((lock) => input.type === "checkbox" ? Boolean(lock[key]) : Number(lock[key])),
-        (value) => ["panelLengthLoops", "panelWidthLoops"].includes(key) ? String(Math.round(value)) : Number(value).toFixed(2)
+        (value) => ["panelLengthLoops", "panelWidthLoops", "panelTipLoops"].includes(key) ? String(Math.round(value)) : Number(value).toFixed(2)
       );
     });
   }
@@ -16647,7 +16682,7 @@ Object.entries(panelShapeInputs).forEach(([key, input]) => {
     }
     const value = input.type === "checkbox"
       ? input.checked
-      : ["panelLengthLoops", "panelWidthLoops"].includes(key)
+      : ["panelLengthLoops", "panelWidthLoops", "panelTipLoops"].includes(key)
         ? Math.round(Number(input.value))
         : Number(input.value);
     const relativeDimension = Boolean(isPanelGeometry(selected) && ["width", "panelThickness"].includes(key));

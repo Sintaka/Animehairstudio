@@ -503,6 +503,8 @@ export default Object.freeze({
   "Edits this segment's own width/depth curve (falls back to the global curve when empty).": "编辑此段自己的宽度/深度曲线（为空时回退全局曲线）。",
   "Left Edge Trim": "左边缘修剪",
   "Right Edge Trim": "右边缘修剪",
+  "Tip Curve": "尖端曲率",
+  "Tip Loops": "尖端环数",
   "Transform Space": "变换空间",
   "World": "World",
   "Object": "Object",
