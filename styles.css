@@ -823,6 +823,34 @@ button:focus-visible {
   min-width: 92px;
 }
 
+.selection-set-membership-list {
+  display: grid;
+  max-height: min(320px, 45vh);
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid #4b444e;
+  border-radius: 6px;
+  background: #151319;
+  gap: 4px;
+}
+
+.selection-set-membership-option {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: #e8e1e8;
+  gap: 9px;
+}
+
+.selection-set-membership-option:hover,
+.selection-set-membership-option:has(input:checked) {
+  border-color: rgb(240 193 90 / 65%);
+  background: rgb(240 193 90 / 10%);
+}
+
 .primary-action {
   border-color: #a8753d;
   background: #7b5128;

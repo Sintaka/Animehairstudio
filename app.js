@@ -2547,6 +2547,13 @@ const rebuildCurveSelectionNote = document.querySelector("#rebuildCurveSelection
 const closeRebuildCurveButton = document.querySelector("#closeRebuildCurve");
 const cancelRebuildCurveButton = document.querySelector("#cancelRebuildCurve");
 const confirmRebuildCurveButton = document.querySelector("#confirmRebuildCurve");
+const selectionSetMembershipDialog = document.querySelector("#selectionSetMembershipDialog");
+const selectionSetMembershipForm = document.querySelector("#selectionSetMembershipForm");
+const selectionSetMembershipDialogTitle = document.querySelector("#selectionSetMembershipDialogTitle");
+const selectionSetMembershipDialogDescription = document.querySelector("#selectionSetMembershipDialogDescription");
+const selectionSetMembershipList = document.querySelector("#selectionSetMembershipList");
+const cancelSelectionSetMembershipButton = document.querySelector("#cancelSelectionSetMembership");
+const confirmSelectionSetMembershipButton = document.querySelector("#confirmSelectionSetMembership");
 const proceduralDuplicateDialog = document.querySelector("#proceduralDuplicateDialog");
 const proceduralDuplicateForm = document.querySelector("#proceduralDuplicateForm");
 const proceduralDuplicateCountInput = document.querySelector("#proceduralDuplicateCount");
@@ -13183,6 +13190,44 @@ function editSelectionSetFromSelection(selectionSetId, mode) {
   return true;
 }
 
+function closeSelectionSetMembershipDialog() {
+  sel.state.selectionSetMembershipMode = null;
+  selectionSetMembershipList.replaceChildren();
+  if (selectionSetMembershipDialog.open) selectionSetMembershipDialog.close();
+}
+
+function openSelectionSetMembershipDialog(mode) {
+  const normalizedMode = mode === "remove" ? "remove" : "add";
+  const viableSets = selectionSets.filter((selectionSet) => (
+    selectionSetCanEditFromSelection(selectionSet, normalizedMode)
+  ));
+  if (!viableSets.length) return false;
+  sel.state.selectionSetMembershipMode = normalizedMode;
+  selectionSetMembershipDialogTitle.textContent = normalizedMode === "remove"
+    ? "Remove from Selection Set"
+    : "Add to Selection Set";
+  selectionSetMembershipDialogDescription.textContent = normalizedMode === "remove"
+    ? "Choose the selection set to remove the selected strands from."
+    : "Choose the selection set to add the selected strands to.";
+  selectionSetMembershipList.replaceChildren();
+  viableSets.forEach((selectionSet, index) => {
+    const label = document.createElement("label");
+    label.className = "selection-set-membership-option";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "selectionSetMembershipTarget";
+    input.value = selectionSet.id;
+    input.checked = index === 0;
+    const name = document.createElement("span");
+    name.textContent = selectionSet.name;
+    label.append(input, name);
+    selectionSetMembershipList.append(label);
+  });
+  confirmSelectionSetMembershipButton.disabled = false;
+  selectionSetMembershipDialog.showModal();
+  return true;
+}
+
 function deleteSelectionSet(selectionSetId) {
   const selectionSet = selectionSetById(selectionSetId);
   if (!selectionSet) return false;
@@ -13315,10 +13360,27 @@ function showOutlinerContextMenu(event, target) {
   editScalpOutlinerAction.classList.toggle("hidden", !isScalpGuide);
   createClumpFromSelectionAction.classList.toggle("hidden", !canCreateSelectionClump);
   createSelectionSetFromSelectedAction.classList.toggle("hidden", !canCreateSelectionSet);
-  addSelectedToSelectionSetAction.classList.toggle("hidden", !isSelectionSet);
-  addSelectedToSelectionSetAction.disabled = !selectionSetCanEditFromSelection(selectionSet, "add");
-  removeSelectedFromSelectionSetAction.classList.toggle("hidden", !isSelectionSet);
-  removeSelectedFromSelectionSetAction.disabled = !selectionSetCanEditFromSelection(selectionSet, "remove");
+  const selectedStrandCount = selectedLocksInOrder().length;
+  const anyAddableSelectionSet = selectionSets.some((selectionSet) => selectionSetCanEditFromSelection(selectionSet, "add"));
+  const anyRemovableSelectionSet = selectionSets.some((selectionSet) => selectionSetCanEditFromSelection(selectionSet, "remove"));
+  addSelectedToSelectionSetAction.classList.toggle(
+    "hidden",
+    !(selectedStrandCount > 0 && (isSelectionSet || anyAddableSelectionSet))
+  );
+  addSelectedToSelectionSetAction.disabled = !(
+    isSelectionSet
+      ? selectionSetCanEditFromSelection(selectionSet, "add")
+      : anyAddableSelectionSet
+  );
+  removeSelectedFromSelectionSetAction.classList.toggle(
+    "hidden",
+    !(selectedStrandCount > 0 && (isSelectionSet || anyRemovableSelectionSet))
+  );
+  removeSelectedFromSelectionSetAction.disabled = !(
+    isSelectionSet
+      ? selectionSetCanEditFromSelection(selectionSet, "remove")
+      : anyRemovableSelectionSet
+  );
   const lockTargets = outlinerLockTargets(target);
   const unlockTargets = lockTargets.length > 0 && lockTargets.every((lock) => lock.locked);
   lockOutlinerAction.classList.toggle("hidden", !strand && !isSelectionSet && !isStrandRegion && !isStrandLayer);
@@ -14426,7 +14488,22 @@ addSelectedToSelectionSetAction.addEventListener("click", () => {
     ? sel.state.outlinerContextTarget.selectionSetId
     : null;
   hideOutlinerContextMenu();
-  if (selectionSetId) editSelectionSetFromSelection(selectionSetId, "add");
+  if (selectionSetId && editSelectionSetFromSelection(selectionSetId, "add")) return;
+  openSelectionSetMembershipDialog("add");
+});
+
+cancelSelectionSetMembershipButton.addEventListener("click", closeSelectionSetMembershipDialog);
+selectionSetMembershipDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeSelectionSetMembershipDialog();
+});
+selectionSetMembershipForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const selectionSetId = new FormData(selectionSetMembershipForm).get("selectionSetMembershipTarget");
+  if (!selectionSetId || !sel.state.selectionSetMembershipMode) return;
+  if (editSelectionSetFromSelection(String(selectionSetId), sel.state.selectionSetMembershipMode)) {
+    closeSelectionSetMembershipDialog();
+  }
 });
 
 removeSelectedFromSelectionSetAction.addEventListener("click", () => {
@@ -14434,7 +14511,8 @@ removeSelectedFromSelectionSetAction.addEventListener("click", () => {
     ? sel.state.outlinerContextTarget.selectionSetId
     : null;
   hideOutlinerContextMenu();
-  if (selectionSetId) editSelectionSetFromSelection(selectionSetId, "remove");
+  if (selectionSetId && editSelectionSetFromSelection(selectionSetId, "remove")) return;
+  openSelectionSetMembershipDialog("remove");
 });
 
 lockOutlinerAction.addEventListener("click", () => {

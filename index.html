@@ -1229,6 +1229,20 @@
       <span id="toolRadialCenter" class="strand-radial-center" aria-hidden="true">Tool</span>
     </div>
 
+    <dialog id="selectionSetMembershipDialog" class="warning-dialog selection-set-membership-dialog" aria-labelledby="selectionSetMembershipDialogTitle">
+      <form id="selectionSetMembershipForm">
+        <div class="warning-dialog-body">
+          <h2 id="selectionSetMembershipDialogTitle">Add to Selection Set</h2>
+          <p id="selectionSetMembershipDialogDescription">Choose a selection set for the selected strands.</p>
+          <fieldset id="selectionSetMembershipList" class="selection-set-membership-list"></fieldset>
+          <div class="dialog-actions">
+            <button id="cancelSelectionSetMembership" type="button">Cancel</button>
+            <button id="confirmSelectionSetMembership" type="submit" class="primary-action">Confirm</button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="proceduralDuplicateDialog" class="creation-preset-dialog procedural-duplicate-dialog" aria-labelledby="proceduralDuplicateDialogTitle">
       <form id="proceduralDuplicateForm">
         <div class="profile-dialog-head">
