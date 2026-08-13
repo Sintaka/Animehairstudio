@@ -1259,7 +1259,7 @@ button:focus-visible {
   transform:
     translate(-50%, -50%)
     rotate(var(--radial-angle))
-    translateX(calc(var(--radial-radius) + var(--radial-radius-offset, 0px)))
+    translateX(var(--radial-button-radius, calc(var(--radial-radius) + var(--radial-radius-offset, 0px))))
     rotate(var(--radial-counter-angle));
   border: 1px solid rgb(255 255 255 / 13%);
   border-radius: 20px;
@@ -1308,6 +1308,152 @@ button:focus-visible {
   color: #fff7dd;
   outline: none;
   box-shadow: 0 0 0 2px rgb(240 193 90 / 18%), 0 7px 18px rgb(0 0 0 / 42%);
+}
+
+.strand-radial-menu > button:not(.radial-back) {
+  isolation: isolate;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.strand-radial-menu > button:not(.radial-back)::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: 50%;
+  width: var(--radial-sector-size, var(--radial-size));
+  height: var(--radial-sector-size, var(--radial-size));
+  transform: translate(
+    calc(-50% + var(--radial-sector-center-x)),
+    calc(-50% + var(--radial-sector-center-y))
+  );
+  border-radius: 50%;
+  background: conic-gradient(
+    from var(--radial-sector-start),
+    rgb(31 29 36 / 94%) 0 var(--radial-sector-span),
+    transparent var(--radial-sector-span) 1turn
+  );
+  -webkit-mask: radial-gradient(
+    circle,
+    transparent 0 var(--radial-sector-inner-radius, 31px),
+    #000 calc(var(--radial-sector-inner-radius, 31px) + 1px) var(--radial-sector-outer-radius, calc(50% - 2px)),
+    transparent calc(var(--radial-sector-outer-radius, calc(50% - 2px)) + 1px)
+  );
+  mask: radial-gradient(
+    circle,
+    transparent 0 var(--radial-sector-inner-radius, 31px),
+    #000 calc(var(--radial-sector-inner-radius, 31px) + 1px) var(--radial-sector-outer-radius, calc(50% - 2px)),
+    transparent calc(var(--radial-sector-outer-radius, calc(50% - 2px)) + 1px)
+  );
+}
+
+.strand-radial-menu > button.radial-submenu-option {
+  z-index: 1;
+}
+
+.strand-radial-menu > button.radial-submenu-option::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: 50%;
+  top: 50%;
+  width: var(--radial-sector-size, var(--radial-size));
+  height: var(--radial-sector-size, var(--radial-size));
+  transform: translate(
+    calc(-50% + var(--radial-sector-center-x)),
+    calc(-50% + var(--radial-sector-center-y))
+  );
+  border-radius: 50%;
+  background: conic-gradient(
+    from var(--radial-sector-divider-start),
+    rgb(255 255 255 / 20%) 0 0.45deg,
+    transparent 0.45deg calc(var(--radial-sector-span) - 0.45deg),
+    rgb(255 255 255 / 20%) calc(var(--radial-sector-span) - 0.45deg) var(--radial-sector-span),
+    transparent var(--radial-sector-span) 1turn
+  );
+  -webkit-mask: radial-gradient(
+    circle,
+    transparent 0 var(--radial-sector-inner-radius, 31px),
+    #000 calc(var(--radial-sector-inner-radius, 31px) + 1px) var(--radial-sector-outer-radius, calc(50% - 2px)),
+    transparent calc(var(--radial-sector-outer-radius, calc(50% - 2px)) + 1px)
+  );
+  mask: radial-gradient(
+    circle,
+    transparent 0 var(--radial-sector-inner-radius, 31px),
+    #000 calc(var(--radial-sector-inner-radius, 31px) + 1px) var(--radial-sector-outer-radius, calc(50% - 2px)),
+    transparent calc(var(--radial-sector-outer-radius, calc(50% - 2px)) + 1px)
+  );
+  pointer-events: none;
+}
+
+.strand-radial-menu > button:not(.radial-back):not(.radial-submenu-option)::before {
+  background: conic-gradient(
+    from var(--radial-sector-divider-start),
+    rgb(255 255 255 / 20%) 0 0.45deg,
+    transparent 0.45deg 1turn
+  );
+}
+
+.strand-radial-menu > button:not(.radial-back):hover,
+.strand-radial-menu > button:not(.radial-back):focus-visible,
+.strand-radial-menu > button:not(.radial-back).selected {
+  border-color: transparent;
+  background: transparent;
+  color: #c9fbff;
+  box-shadow: none;
+}
+
+.strand-radial-menu > button:not(.radial-back):hover::before,
+.strand-radial-menu > button:not(.radial-back):focus-visible::before,
+.strand-radial-menu > button:not(.radial-back).selected::before {
+  background: radial-gradient(
+    circle,
+    rgb(88 246 255 / 2%) var(--radial-sector-inner-radius, 31px),
+    rgb(88 246 255 / 34%) var(--radial-sector-outer-radius, calc(50% - 2px))
+  );
+  -webkit-mask:
+    radial-gradient(
+      circle,
+      transparent 0 var(--radial-sector-inner-radius, 31px),
+      #000 calc(var(--radial-sector-inner-radius, 31px) + 1px) var(--radial-sector-outer-radius, calc(50% - 2px)),
+      transparent calc(var(--radial-sector-outer-radius, calc(50% - 2px)) + 1px)
+    ),
+    conic-gradient(
+      from var(--radial-sector-start),
+      #000 0 var(--radial-sector-span),
+      transparent var(--radial-sector-span) 1turn
+    );
+  -webkit-mask-composite: source-in;
+  mask:
+    radial-gradient(
+      circle,
+      transparent 0 var(--radial-sector-inner-radius, 31px),
+      #000 calc(var(--radial-sector-inner-radius, 31px) + 1px) var(--radial-sector-outer-radius, calc(50% - 2px)),
+      transparent calc(var(--radial-sector-outer-radius, calc(50% - 2px)) + 1px)
+    ),
+    conic-gradient(
+      from var(--radial-sector-start),
+      #000 0 var(--radial-sector-span),
+      transparent var(--radial-sector-span) 1turn
+    );
+  mask-composite: intersect;
+  filter: drop-shadow(0 0 3px rgb(88 246 255 / 16%));
+}
+
+.strand-radial-menu > button:not(.radial-back):disabled {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.strand-radial-menu > button:not(.radial-back):disabled::before {
+  background: conic-gradient(
+    from var(--radial-sector-start),
+    rgb(33 31 36 / 92%) 0 var(--radial-sector-span),
+    transparent var(--radial-sector-span) 1turn
+  );
 }
 
 .strand-radial-menu button.has-submenu,
@@ -1365,7 +1511,7 @@ button:focus-visible {
   position: absolute;
   z-index: 5;
   left: 50%;
-  top: calc(100% + 8px);
+  top: calc(100% + var(--radial-action-list-offset, 8px));
   display: grid;
   width: 190px;
   max-height: 228px;

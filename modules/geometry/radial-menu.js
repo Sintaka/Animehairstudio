@@ -2,16 +2,19 @@
 // Extracted from app.js; all app.js coupling injected via createRadialMenuApi(deps).
 import {
   layoutRadialOptions,
+  layoutRadialSubmenuSlots,
   partitionRadialOptions,
-  radialButtonEntryDistance,
   radialListCorridorContains,
   radialButtonRayExtent,
-  radialMenuDimensions
+  radialMenuDimensions,
+  radialOptionSector,
+  radialSubmenuTravelAngle
 } from "./radial-layout.js?v=20260806-14";
 import { mirrorSelectionTargets } from "../edit/mirror-selection.js?v=20260805-1";
 
 const MAX_RADIAL_OPTIONS = 8;
 const MAX_RADIAL_SUBMENU_OPTIONS = 5;
+const RADIAL_SUBMENU_SLOT_COUNT = 12;
 const STANDARD_RADIAL_FRAME_DIMENSIONS = radialMenuDimensions(MAX_RADIAL_OPTIONS, {
   buttonWidth: 138,
   buttonHeight: 42,
@@ -30,11 +33,16 @@ export function createRadialMenuApi(deps) {
   // and before the bootstrap init (setRadialMenusEnabled); see
   // devlog/in-progress/radial-menu-refactor-map.md.
 
+let strandRadialSubmenuActions = [];
+
 function hideStrandRadialMenu() {
   deps.hairState.strandRadialTargetId = null;
   deps.hairState.strandRadialGesture = null;
   deps.strandRadialMenu.classList.add("hidden");
   deps.hairState.strandRadialActions.forEach((button) => button.classList.remove("selected"));
+  strandRadialSubmenuActions.forEach((button) => button.remove());
+  strandRadialSubmenuActions = [];
+  deps.strandRadialMenu.style.removeProperty("--radial-action-list-offset");
   deps.strandRadialActionList.replaceChildren();
   deps.strandRadialActionList.classList.add("hidden");
   deps.strandRadialLine.style.width = "0px";
@@ -79,17 +87,37 @@ function applyRadialMenuDimensions(menu, optionCount, fixedDimensions = null) {
   menu.style.setProperty("--radial-radius", `${fixedDimensions?.radius || dimensions.radius}px`);
 }
 
-function strandRadialSubmenuEntryDistance(option) {
-  const radius = Number.parseFloat(
-    deps.strandRadialMenu.style.getPropertyValue("--radial-radius")
-  ) || 82;
-  const buttonDimensions = radialButtonDimensions(deps.strandRadialMenu.dataset.radialKind, option);
-  return radialButtonEntryDistance(option.angle, {
-    radius,
-    radiusOffset: option.radiusOffset || 0,
-    buttonWidth: buttonDimensions.width,
-    buttonHeight: buttonDimensions.height
-  });
+function applyRadialSectorVariables(button, option, options, menu, geometry = null) {
+  const sectorAngles = geometry?.sectorAngles || options.map(({ angle }) => angle);
+  const sectorIndex = Number.isInteger(geometry?.sectorIndex)
+    ? geometry.sectorIndex
+    : options.indexOf(option);
+  const sector = radialOptionSector(
+    sectorAngles,
+    sectorIndex,
+    { gap: 0 }
+  );
+  const radius = geometry?.radius
+    || Number.parseFloat(menu.style.getPropertyValue("--radial-radius"))
+    || 82;
+  const size = geometry?.size
+    || Number.parseFloat(menu.style.getPropertyValue("--radial-size"))
+    || 220;
+  const optionRadius = radius + (option.radiusOffset || 0);
+  const labelRadius = geometry?.labelRadius || (option.action === "back-to-main"
+    ? optionRadius
+    : Math.min(optionRadius, size * 0.5 - 82));
+  button.style.setProperty("--radial-button-radius", `${labelRadius}px`);
+  button.style.setProperty("--radial-sector-size", `${size}px`);
+  if (geometry?.innerRadius) button.style.setProperty("--radial-sector-inner-radius", `${geometry.innerRadius}px`);
+  else button.style.removeProperty("--radial-sector-inner-radius");
+  if (geometry?.outerRadius) button.style.setProperty("--radial-sector-outer-radius", `${geometry.outerRadius}px`);
+  else button.style.removeProperty("--radial-sector-outer-radius");
+  button.style.setProperty("--radial-sector-start", `${(sector?.start || 0) + Math.PI * 0.5}rad`);
+  button.style.setProperty("--radial-sector-divider-start", `${(sector?.boundaryStart || 0) + Math.PI * 0.5}rad`);
+  button.style.setProperty("--radial-sector-span", `${sector?.span || Math.PI * 2}rad`);
+  button.style.setProperty("--radial-sector-center-x", `${-Math.cos(option.angle) * labelRadius}px`);
+  button.style.setProperty("--radial-sector-center-y", `${-Math.sin(option.angle) * labelRadius}px`);
 }
 
 function configureRadialSubmenuIndicator(button, option, kind) {
@@ -441,6 +469,7 @@ function configureContextualRadialMenu(kind, options, listOptions = []) {
     button.style.setProperty("--radial-angle", `${option.angle}rad`);
     button.style.setProperty("--radial-counter-angle", `${-option.angle}rad`);
     button.style.setProperty("--radial-radius-offset", `${option.radiusOffset || 0}px`);
+    applyRadialSectorVariables(button, option, options, deps.strandRadialMenu);
     configureRadialSubmenuIndicator(button, option, kind);
     button.classList.toggle(
       "danger",
@@ -470,6 +499,7 @@ function beginStrandRadialGesture() {
     kind,
     options,
     listOptions,
+    submenu: null,
     frameDimensions: sharedRadialFrameDimensions()
   };
   configureContextualRadialMenu(kind, options, listOptions);
@@ -483,49 +513,81 @@ function beginStrandRadialGesture() {
   return true;
 }
 
-function enterStrandRadialSubmenu(option, pointer) {
+function closeStrandRadialSubmenu({ suppressSource = false } = {}) {
   const gesture = deps.hairState.strandRadialGesture;
-  if (!gesture || !option?.submenu) return false;
-  const returningToParent = option.action === "back-to-main";
-  let nextMenuOptions;
-  if (returningToParent) {
-    gesture.centerX = Number.isFinite(pointer?.x) ? pointer.x : gesture.centerX;
-    gesture.centerY = Number.isFinite(pointer?.y) ? pointer.y : gesture.centerY;
-    nextMenuOptions = layoutContextualRadialOptions(option.submenu);
-  } else {
-    const previousCenterX = gesture.centerX;
-    const previousCenterY = gesture.centerY;
-    const currentRadius = Number.parseFloat(
-      deps.strandRadialMenu.style.getPropertyValue("--radial-radius")
-    ) || 82;
-    const optionRadius = currentRadius + (option.radiusOffset || 0);
-    gesture.centerX += Math.cos(option.angle) * optionRadius;
-    gesture.centerY += Math.sin(option.angle) * optionRadius;
-    const backDeltaX = previousCenterX - gesture.centerX;
-    const backDeltaY = previousCenterY - gesture.centerY;
-    const backDistance = Math.hypot(backDeltaX, backDeltaY);
-    const parentKind = gesture.kind;
-    const rawOptions = contextualRadialOptions(option.submenu);
-    const backOption = rawOptions.find(({ action }) => action === "back-to-main");
-    if (backOption) backOption.submenu = parentKind;
-    const submenuRadius = gesture.frameDimensions?.radius
-      || radialMenuDimensionsForKind(option.submenu, rawOptions.length).radius;
-    nextMenuOptions = layoutContextualRadialOptions(option.submenu, {
-      options: rawOptions,
-      backAngle: Math.atan2(backDeltaY, backDeltaX),
-      backRadiusOffset: backDistance - submenuRadius
-    });
-  }
-  gesture.kind = option.submenu;
-  gesture.options = nextMenuOptions.radialOptions;
-  gesture.listOptions = nextMenuOptions.listOptions;
+  if (!gesture?.submenu) return false;
+  const sourceAction = gesture.submenu.sourceAction;
+  strandRadialSubmenuActions.forEach((button) => button.remove());
+  strandRadialSubmenuActions = [];
+  gesture.submenu = null;
+  gesture.submenuSuppressedAction = suppressSource ? sourceAction : null;
   gesture.action = null;
-  configureContextualRadialMenu(option.submenu, gesture.options, gesture.listOptions);
-  deps.strandRadialMenu.style.left = `${gesture.centerX}px`;
-  deps.strandRadialMenu.style.top = `${gesture.centerY}px`;
-  deps.hairState.strandRadialActions.forEach((button) => button.classList.remove("selected"));
-  deps.strandRadialLine.style.width = "0px";
-  deps.strandRadialLine.style.opacity = "0";
+  deps.strandRadialMenu.style.removeProperty("--radial-action-list-offset");
+  renderRadialActionList(deps.strandRadialActionList, gesture.listOptions);
+  return true;
+}
+
+function openStrandRadialSubmenu(option) {
+  const gesture = deps.hairState.strandRadialGesture;
+  if (!gesture || !option?.submenu || gesture.submenu?.sourceAction === option.action) return false;
+  closeStrandRadialSubmenu();
+  const rawOptions = contextualRadialOptions(option.submenu)
+    .filter(({ action }) => action !== "back-to-main");
+  const partitioned = partitionRadialOptions(rawOptions, MAX_RADIAL_OPTIONS, 0);
+  const submenuLayout = layoutRadialSubmenuSlots(
+    partitioned.radialOptions,
+    radialSubmenuTravelAngle(option.angle),
+    { slotCount: RADIAL_SUBMENU_SLOT_COUNT }
+  );
+  const { options, hitOptions, slotAngles } = submenuLayout;
+  if (!options.length && !partitioned.listOptions.length) return false;
+  const parentOuterRadius = (Number.parseFloat(
+    deps.strandRadialMenu.style.getPropertyValue("--radial-size")
+  ) || 220) * 0.5;
+  const outerRadius = parentOuterRadius + 82;
+  const outerSize = outerRadius * 2;
+  const labelRadius = parentOuterRadius + 43;
+  if (partitioned.listOptions.length) {
+    deps.strandRadialMenu.style.setProperty(
+      "--radial-action-list-offset",
+      `${outerRadius - parentOuterRadius + 8}px`
+    );
+  }
+  strandRadialSubmenuActions = ensureRadialButtonCapacity(
+    deps.strandRadialMenu,
+    strandRadialSubmenuActions,
+    options.length,
+    "strandRadialSubmenuAction",
+    deps.strandRadialActionList
+  );
+  options.forEach((submenuOption, index) => {
+    const button = strandRadialSubmenuActions[index];
+    button.className = "radial-submenu-option";
+    button.textContent = submenuOption.label;
+    button.dataset.strandRadialSubmenuAction = submenuOption.action;
+    button.disabled = submenuOption.enabled === false;
+    button.style.setProperty("--radial-angle", `${submenuOption.angle}rad`);
+    button.style.setProperty("--radial-counter-angle", `${-submenuOption.angle}rad`);
+    button.style.setProperty("--radial-radius-offset", "0px");
+    applyRadialSectorVariables(button, submenuOption, options, deps.strandRadialMenu, {
+      radius: labelRadius,
+      labelRadius,
+      size: outerSize,
+      innerRadius: parentOuterRadius + 5,
+      outerRadius,
+      sectorAngles: slotAngles,
+      sectorIndex: submenuOption.radialSlotIndex
+    });
+  });
+  gesture.submenu = {
+    sourceAction: option.action,
+    kind: option.submenu,
+    options: hitOptions,
+    listOptions: partitioned.listOptions,
+    parentOuterRadius,
+    outerRadius
+  };
+  renderRadialActionList(deps.strandRadialActionList, partitioned.listOptions);
   return true;
 }
 
@@ -536,13 +598,20 @@ function updateStrandRadialGesture(event) {
   const dy = event.clientY - gesture.centerY;
   const distance = Math.hypot(dx, dy);
   const angle = Math.atan2(dy, dx);
-  const listOption = radialListOptionAtPointer(deps.strandRadialActionList, gesture.listOptions, event);
+  const activeListOptions = gesture.submenu?.listOptions || gesture.listOptions;
+  const listOption = radialListOptionAtPointer(deps.strandRadialActionList, activeListOptions, event);
+  const innerRingOuterRadius = gesture.submenu?.parentOuterRadius
+    || (Number.parseFloat(deps.strandRadialMenu.style.getPropertyValue("--radial-size")) || 220) * 0.5;
   const listCorridorReserved = !listOption
-    && gesture.listOptions.length > 0
+    && activeListOptions.length > 0
+    && distance > innerRingOuterRadius
     && radialListCorridorContains(dx, dy);
-  const closestOption = listOption || distance <= 34 || listCorridorReserved
+  const optionsAtPointer = gesture.submenu && distance > gesture.submenu.parentOuterRadius
+    ? gesture.submenu.options
+    : gesture.options;
+  const closestCandidate = listOption || distance <= 34 || listCorridorReserved
     ? null
-    : gesture.options.filter((option) => option.enabled !== false).reduce((closest, option) => {
+    : optionsAtPointer.reduce((closest, option) => {
       const difference = Math.abs(Math.atan2(
         Math.sin(angle - option.angle),
         Math.cos(angle - option.angle)
@@ -551,19 +620,36 @@ function updateStrandRadialGesture(event) {
         ? { ...option, difference }
         : closest;
     }, null);
+  const closestOption = closestCandidate?.enabled === false ? null : closestCandidate;
+  if (!gesture.submenu && closestOption?.action !== gesture.submenuSuppressedAction) {
+    gesture.submenuSuppressedAction = null;
+  }
   gesture.action = listOption?.action || closestOption?.action || null;
   deps.hairState.strandRadialActions.forEach((button) => {
     button.classList.toggle("selected", button.dataset.strandRadialAction === gesture.action);
+  });
+  strandRadialSubmenuActions.forEach((button) => {
+    button.classList.toggle("selected", button.dataset.strandRadialSubmenuAction === gesture.action);
   });
   syncRadialListHighlight(deps.strandRadialActionList, gesture.action);
   deps.strandRadialLine.style.width = `${Math.min(distance, 96)}px`;
   deps.strandRadialLine.style.transform = `translateY(-50%) rotate(${angle}rad)`;
   deps.strandRadialLine.style.opacity = !listOption && !listCorridorReserved && distance > 4 ? "1" : "0";
-  if (
-    closestOption?.submenu
-    && distance >= strandRadialSubmenuEntryDistance(closestOption)
+  if (gesture.submenu && distance <= 34) {
+    closeStrandRadialSubmenu();
+  } else if (
+    gesture.submenu
+    && distance <= gesture.submenu.parentOuterRadius
+    && closestOption?.submenu
+    && closestOption.action !== gesture.submenu.sourceAction
   ) {
-    enterStrandRadialSubmenu(closestOption, { x: event.clientX, y: event.clientY });
+    openStrandRadialSubmenu(closestOption);
+  } else if (
+    !gesture.submenu
+    && closestOption?.submenu
+    && closestOption.action !== gesture.submenuSuppressedAction
+  ) {
+    openStrandRadialSubmenu(closestOption);
   }
   event.preventDefault();
 }
@@ -754,6 +840,7 @@ function beginToolRadialGesture() {
     button.style.setProperty("--radial-angle", `${option.angle}rad`);
     button.style.setProperty("--radial-counter-angle", `${-option.angle}rad`);
     button.style.setProperty("--radial-radius-offset", `${option.radiusOffset || 0}px`);
+    applyRadialSectorVariables(button, option, options, deps.toolRadialMenu);
     button.classList.remove("hidden", "selected");
   });
   deps.miscState.toolRadialActions.slice(options.length).forEach((button) => button.classList.add("hidden"));
@@ -877,7 +964,6 @@ function cancelToolRadialGesture() {
     radialButtonDimensions,
     radialMenuDimensionsForKind,
     applyRadialMenuDimensions,
-    strandRadialSubmenuEntryDistance,
     configureRadialSubmenuIndicator,
     selectionSetMembershipRadialOptions,
     selectionSetRadialMenuOption,
@@ -892,7 +978,8 @@ function cancelToolRadialGesture() {
     syncRadialListHighlight,
     configureContextualRadialMenu,
     beginStrandRadialGesture,
-    enterStrandRadialSubmenu,
+    openStrandRadialSubmenu,
+    closeStrandRadialSubmenu,
     updateStrandRadialGesture,
     performStrandRadialAction,
     finishStrandRadialGesture,
