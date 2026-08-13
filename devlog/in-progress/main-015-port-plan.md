@@ -36,3 +36,16 @@
 
 - 根 package.json 不引入（scripts 引用缺失脚本；`type:module` 已在 modules/package.json）。
 - 第一波 bug 修复核对结论：`relaxAngleValue` 本地旧版 → 修复；Guide Capsule 半径保位置本地已修 → 跳过；zipper 硬边本地已用 authored edge masks → 可选收。
+
+
+## 五、进度记录（2026-08-13）
+
+- `f7ff7a8` Docs：移植原则 + 计划（本文件）。
+- `7af449d` 第一波完成：纯模块/纯函数并入 + relaxAngleValue 修复 + shortcut Ctrl+H + 6 tests；verify-smoke 10/11。
+- `5b8a785` 第二波 2a：Camera View Cube（复用本地 snapCameraToCardinalAxis/nearestCardinalAxis/cardinalAxisKey）；10/11。
+- `eeabd3a` 第二波 2b：Autosave / Crash Recovery（新增 recovery-store，无新顶层 let；Preferences + 恢复对话框 + 三语文案）；10/11。
+
+## 六、剩余待办（下一轮继续派发）
+
+- 第二波 UI 剩余：Numeric Object Transform 浮动面板（用户重点关注）、Multi-Cam（实验性，需渲染循环深度接入）、Material Presets/Base Gradient 编辑器、Selection Sets 扩展、Panel/Glass 风格、Move 曲线控件、Relax 分离。
+- 第三波（单独评审）：Split Panel Tip Curvature、Branch Surface Imprints、Radial pie 子菜单。
