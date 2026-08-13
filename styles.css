@@ -7441,3 +7441,169 @@ body.app-menu-open .panel-resize-handle {
 body.app-menu-open .panel-resize-handle:hover::after {
   background: transparent;
 }
+
+/* Responsive viewport header (main 0.1.5 port): .viewport-top-controls wraps the
+   display actions / draw settings / editing modes and reflows into two rows via
+   .two-row when they collide with the workspace control. The local manual
+   body.compact-tool-buttons rules are kept untouched. */
+.viewport-top-controls {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+  width: calc(100% - 24px);
+  max-width: none;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.viewport-top-controls .viewport-draw-settings {
+  position: static;
+  top: auto;
+  left: auto;
+  right: auto;
+  align-items: center;
+  gap: 4px;
+  height: 38px;
+  max-width: none;
+  transform: none;
+  pointer-events: auto;
+}
+
+.viewport-top-controls .viewport-display-actions {
+  position: static;
+  top: auto;
+  right: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 38px;
+  pointer-events: auto;
+}
+
+.viewport-top-controls .viewport-modes {
+  position: static;
+  top: auto;
+  right: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 38px;
+  pointer-events: auto;
+}
+
+.viewport-top-controls.two-row {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    "settings settings"
+    "display modes";
+  width: max-content;
+  max-width: calc(100% - 24px);
+  column-gap: 4px;
+  row-gap: 4px;
+  transform: translateX(calc(-50% + var(--viewport-top-controls-overlap-shift, 0px)));
+}
+
+.viewport-top-controls.two-row .viewport-draw-settings {
+  grid-area: settings;
+  justify-self: center;
+}
+
+.viewport-top-controls.two-row .viewport-display-actions {
+  grid-area: display;
+  justify-self: end;
+}
+
+.viewport-top-controls.two-row .viewport-modes {
+  grid-area: modes;
+  justify-self: start;
+}
+
+/* Responsive sidebar dock (main 0.1.5 port): when the top controls collide with
+   the workspace control above 860px, syncResponsiveSidebarDock adds
+   body.compact-sidebar-docked and the side panels dock as a right-hand column so
+   the viewport widens again. The existing local @media (min-width: 861px) and
+   (max-width: 1360px) compact layout is kept; these body-class rules extend the
+   same docked layout to any width where the collision is detected. */
+@media (min-width: 861px) {
+  body.compact-sidebar-docked .studio-shell {
+    grid-template-columns: minmax(0, 1fr) 360px;
+    grid-template-rows: 36px minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  body.compact-sidebar-docked .viewport-panel {
+    grid-column: 1;
+    grid-row: 2 / 4;
+  }
+
+  body.compact-sidebar-docked .tool-panel {
+    grid-column: 2;
+    grid-row: 2;
+    height: auto;
+  }
+
+  body.compact-sidebar-docked .outliner-panel {
+    grid-column: 2;
+    grid-row: 3;
+    height: auto;
+    border-top: 1px solid #312c33;
+    border-right: 0;
+    border-left: 1px solid #312c33;
+  }
+
+  body.compact-sidebar-docked .sidebar-collapse-toggle {
+    display: grid;
+  }
+
+  body.compact-sidebar-docked .outliner-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 28px;
+  }
+
+  body.compact-sidebar-docked .outliner-tabs .sidebar-collapse-toggle {
+    width: 28px;
+    min-width: 28px;
+    border-bottom-color: #3a343d;
+  }
+
+  body.compact-sidebar-docked .attribute-editor-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 28px;
+  }
+
+  body.compact-sidebar-docked .attribute-editor-tabs .sidebar-collapse-toggle {
+    width: 28px;
+    min-width: 28px;
+    border-bottom-color: #3a343d;
+  }
+
+  body.compact-sidebar-docked.compact-outliner-collapsed .studio-shell {
+    grid-template-rows: 36px minmax(0, 1fr) auto;
+  }
+
+  body.compact-sidebar-docked.compact-outliner-collapsed .outliner-panel {
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+
+  body.compact-sidebar-docked.compact-outliner-collapsed .outliner-panel .outliner-content {
+    display: none !important;
+  }
+
+  body.compact-sidebar-docked.compact-attribute-collapsed .studio-shell {
+    grid-template-rows: 36px auto minmax(0, 1fr);
+  }
+
+  body.compact-sidebar-docked.compact-attribute-collapsed .tool-panel {
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+
+  body.compact-sidebar-docked.compact-attribute-collapsed .tool-panel > :not(.attribute-editor-tabs) {
+    display: none !important;
+  }
+}

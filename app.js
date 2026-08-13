@@ -472,6 +472,10 @@ setupEditableSliderControls();
 
 const viewport = document.querySelector("#viewport");
 const viewportPanel = viewport.closest(".viewport-panel");
+const viewportTopControls = document.querySelector(".viewport-top-controls");
+const viewportDisplayActions = document.querySelector(".viewport-display-actions");
+const viewportModes = document.querySelector(".viewport-modes");
+const outlinerPanel = document.querySelector(".outliner-panel");
 const cameraViewCubeModel = document.querySelector("#cameraViewCubeModel");
 const cameraViewCubeFaces = [...document.querySelectorAll("[data-camera-view]")];
 const strandObjectTransformPanel = document.querySelector("#strandObjectTransformPanel");
@@ -12454,6 +12458,57 @@ function syncViewportDrawSettings() {
   viewportDrawSettings.setAttribute("aria-hidden", String(!drawSettingsVisible));
   drawSurfaceDynamicButton.disabled = drawFlowApi.activeStrokeSurfaceValue() === "contextual-plane";
   viewportDrawLayerInput.value = normalizeHairLayer(strandCreationDefaults.hairLayer);
+  syncViewportTopControlRows();
+}
+
+function syncViewportTopControlRows() {
+  if (!viewportTopControls || !viewportEditModeControl || !viewportPanel) return;
+  const groups = [viewportDisplayActions, viewportDrawSettings, viewportModes]
+    .filter((group) => group && !group.classList.contains("hidden"));
+  const workspaceBounds = viewportEditModeControl.getBoundingClientRect();
+  viewportTopControls.style.setProperty("--viewport-top-controls-overlap-shift", "0px");
+  viewportTopControls.classList.remove("two-row");
+  const oneRowLeft = Math.min(...groups.map((group) => group.getBoundingClientRect().left));
+  const useTwoRows = oneRowLeft - workspaceBounds.right <= 4;
+  viewportTopControls.classList.toggle("two-row", useTwoRows);
+  const liveSurfaceLeft = viewportDrawSettings.classList.contains("hidden")
+    ? Infinity
+    : viewportDrawSettings.getBoundingClientRect().left;
+  const overlapShift = useTwoRows
+    ? Math.max(0, workspaceBounds.right + 4 - liveSurfaceLeft)
+    : 0;
+  viewportTopControls.style.setProperty("--viewport-top-controls-overlap-shift", `${overlapShift}px`);
+  syncResponsiveSidebarDock();
+}
+
+function syncResponsiveSidebarDock() {
+  const viewportWidth = document.documentElement.clientWidth;
+  const docked = document.body.classList.contains("compact-sidebar-docked");
+  if (viewportWidth <= 860) {
+    document.body.classList.remove("compact-sidebar-docked");
+    miscState.state.compactSidebarDockActivationWidth = null;
+    return;
+  }
+  if (docked) {
+    if (miscState.state.compactSidebarDockActivationWidth !== null && viewportWidth > miscState.state.compactSidebarDockActivationWidth) {
+      document.body.classList.remove("compact-sidebar-docked");
+      window.requestAnimationFrame(syncViewportTopControlRows);
+    }
+    return;
+  }
+  const layerControl = viewportDrawLayerInput.closest("label");
+  if (!layerControl || viewportDrawSettings.classList.contains("hidden")) return;
+  const viewportBounds = viewportPanel.getBoundingClientRect();
+  const workspaceBounds = viewportEditModeControl.getBoundingClientRect();
+  const layerBounds = layerControl.getBoundingClientRect();
+  const floatingPanels = document.body.classList.contains("floating-side-panels");
+  const effectiveViewportLeft = viewportBounds.left + (floatingPanels ? outlinerPanel.getBoundingClientRect().width : 0);
+  const effectiveViewportRight = viewportBounds.right - (floatingPanels ? toolPanel.getBoundingClientRect().width : 0);
+  const workspaceLeftMargin = workspaceBounds.left - effectiveViewportLeft;
+  const layerRightMargin = effectiveViewportRight - layerBounds.right;
+  if (layerRightMargin > workspaceLeftMargin) return;
+  miscState.state.compactSidebarDockActivationWidth = viewportWidth + Math.max(0, workspaceLeftMargin - layerRightMargin);
+  document.body.classList.add("compact-sidebar-docked");
 }
 
 
@@ -13796,6 +13851,14 @@ function setSidePanelStyle(value, { persist = true } = {}) {
   sidePanelStylePreferenceInput.value = miscState.state.sidePanelStyle;
   document.body.classList.toggle("glass-side-panels", miscState.state.sidePanelStyle === "glass");
   document.body.classList.toggle("no-panels", miscState.state.sidePanelStyle === "none");
+  if (miscState.state.sidePanelStyle !== "default") {
+    document.body.classList.remove("compact-sidebar-docked");
+    miscState.state.compactSidebarDockActivationWidth = null;
+  }
+  window.requestAnimationFrame(() => {
+    syncViewportTopControlRows();
+    resize();
+  });
   if (persist) {
     writeStoredPreference(window, SIDE_PANEL_STYLE_PREFERENCE_KEY, miscState.state.sidePanelStyle);
   }
@@ -17929,6 +17992,7 @@ function resize() {
   referenceImages
     .filter((reference) => reference.type === "overlay")
     .forEach(referenceHeadApi.applyReferenceImageRuntime);
+  syncViewportTopControlRows();
   invalidateUvInspector();
 }
 
@@ -18847,7 +18911,9 @@ function updateControlPointHover(event) {
 }
 
 window.addEventListener("resize", resize);
+new ResizeObserver(syncViewportTopControlRows).observe(viewportPanel);
 new ResizeObserver(invalidateUvInspector).observe(uvInspectorWindow);
+syncViewportTopControlRows();
 guideApi.updateGuideControlsVisibility();
 updateHistoryButtons();
 setObjectSpaceEditing(sculptState.state.objectSpaceEditing);

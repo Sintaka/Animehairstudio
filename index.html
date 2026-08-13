@@ -288,26 +288,41 @@
             </div>
           </div>
         </div>
-        <div id="viewportDrawSettings" class="viewport-draw-settings hidden" aria-label="Draw settings">
-          <div class="viewport-live-surface-control">
-            <label class="viewport-live-surface-select" for="drawStrandSurface">
-              <span>Live Surface</span>
-              <select id="drawStrandSurface" title="Choose the surface used to guide drawing.">
-                <option value="head" selected>Head Mesh</option>
-                <option value="contextual-plane">Contextual 2D Plane</option>
+        <div class="viewport-top-controls">
+          <div class="bar-actions viewport-display-actions" aria-label="Viewport display controls">
+            <button id="presetLibraryToggle" class="tool-button preset-library-button" title="Open preset library" aria-label="Open preset library" aria-pressed="false"><span class="preset-library-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span></button>
+            <button id="orthographicViewToggle" class="orthographic-view-button" title="Switch to orthographic view" aria-label="Toggle orthographic view" aria-pressed="false"><span>O</span></button>
+            <button id="toggleWire" title="Toggle strand topology" aria-label="Toggle strand topology" aria-pressed="false"><span>W</span></button>
+            <button id="scalpGuideVisibilityToggle" class="scalp-guide-visibility-button" title="Cycle guide visibility" aria-label="Cycle guide visibility" aria-pressed="true" aria-haspopup="menu"><span class="tool-icon icon-scalp-guide" aria-hidden="true"></span></button>
+            <button id="groupColorToggle" class="group-color-button" title="Show group colors" aria-label="Show group colors" aria-pressed="false"><span class="group-color-swatches" aria-hidden="true"><i></i><i></i><i></i><i></i></span></button>
+          </div>
+          <div id="viewportDrawSettings" class="viewport-draw-settings hidden" aria-label="Draw settings">
+            <div class="viewport-live-surface-control">
+              <label class="viewport-live-surface-select" for="drawStrandSurface">
+                <span>Live Surface</span>
+                <select id="drawStrandSurface" title="Choose the surface used to guide drawing.">
+                  <option value="head" selected>Head Mesh</option>
+                  <option value="contextual-plane">Contextual 2D Plane</option>
+                </select>
+              </label>
+              <button id="drawSurfaceDynamic" class="viewport-dynamic-toggle" type="button" aria-pressed="true" data-boolean-control="true" title="Continue a stroke on a camera-facing contextual 2D plane after it leaves the selected surface.">Dynamic</button>
+            </div>
+            <label for="viewportDrawLayer">
+              <span>Layer</span>
+              <select id="viewportDrawLayer" title="Choose the layer assigned to newly drawn strands.">
+                <option value="bottom">Bottom</option>
+                <option value="mid" selected>Mid</option>
+                <option value="top">Top</option>
+                <option value="accent">Accent</option>
               </select>
             </label>
-            <button id="drawSurfaceDynamic" class="viewport-dynamic-toggle" type="button" aria-pressed="true" data-boolean-control="true" title="Continue a stroke on a camera-facing contextual 2D plane after it leaves the selected surface.">Dynamic</button>
           </div>
-          <label for="viewportDrawLayer">
-            <span>Layer</span>
-            <select id="viewportDrawLayer" title="Choose the layer assigned to newly drawn strands.">
-              <option value="bottom">Bottom</option>
-              <option value="mid" selected>Mid</option>
-              <option value="top">Top</option>
-              <option value="accent">Accent</option>
-            </select>
-          </label>
+          <div class="viewport-modes" aria-label="Editing modes">
+            <button id="mirrorXToggle" class="tool-button mirror-button" title="Mirror edits and new strands across the X axis" aria-label="Toggle X axis mirror" aria-pressed="false"><span class="tool-icon icon-mirror-x" aria-hidden="true"></span></button>
+            <button id="spaceToggle" class="tool-button space-button" title="Toggle world/object space (O)" aria-label="Toggle transform space"><span class="tool-icon icon-space" aria-hidden="true"></span><kbd>O</kbd></button>
+            <button id="hierarchyToggle" class="tool-button hierarchy-button" title="Toggle hierarchy editing (H)" aria-label="Toggle hierarchy editing"><img src="./assets/hierarchy-icon.png" alt="" /><kbd>H</kbd></button>
+            <button id="proportionalToggle" class="tool-button proportional-button" title="Toggle proportional editing (B)" aria-label="Toggle proportional editing"><span class="tool-icon icon-proportional" aria-hidden="true"></span><kbd>B</kbd></button>
+          </div>
         </div>
         <button id="exitSetupEditor" class="viewport-exit-editor hidden" type="button">
           <span class="exit-editor-icon" aria-hidden="true">&#10005;</span>
@@ -336,19 +351,6 @@
           <button id="viewportDrawCapsuleGuideTool" class="tool-button guide-toolbar-tool hidden" data-tool="draw-capsule-guide" type="button" title="Draw a capsule guide along a curve" aria-label="Draw Capsule Guide tool" aria-pressed="false"><span class="tool-icon icon-draw" aria-hidden="true"></span></button>
           <button id="viewportCapsuleGuideTool" class="tool-button guide-toolbar-tool hidden" type="button" title="Create or edit a capsule guide" aria-label="Capsule Guide tool" aria-pressed="false"><span class="tool-icon icon-surface-guide" aria-hidden="true"></span></button>
           <button id="viewportCurveLatticeGuideTool" class="tool-button guide-toolbar-tool hidden" type="button" title="Create a curve lattice guide" aria-label="Curve Lattice Guide tool" aria-pressed="false"><span class="tool-icon icon-curve-lattice-guide" aria-hidden="true"></span></button>
-        </div>
-        <div class="viewport-modes" aria-label="Editing modes">
-          <button id="mirrorXToggle" class="tool-button mirror-button" title="Mirror edits and new strands across the X axis" aria-label="Toggle X axis mirror" aria-pressed="false"><span class="tool-icon icon-mirror-x" aria-hidden="true"></span></button>
-          <button id="spaceToggle" class="tool-button space-button" title="Toggle world/object space (O)" aria-label="Toggle transform space"><span class="tool-icon icon-space" aria-hidden="true"></span><kbd>O</kbd></button>
-          <button id="hierarchyToggle" class="tool-button hierarchy-button" title="Toggle hierarchy editing (H)" aria-label="Toggle hierarchy editing"><img src="./assets/hierarchy-icon.png" alt="" /><kbd>H</kbd></button>
-          <button id="proportionalToggle" class="tool-button proportional-button" title="Toggle proportional editing (B)" aria-label="Toggle proportional editing"><span class="tool-icon icon-proportional" aria-hidden="true"></span><kbd>B</kbd></button>
-        </div>
-        <div class="bar-actions viewport-display-actions" aria-label="Viewport display controls">
-          <button id="presetLibraryToggle" class="tool-button preset-library-button" title="Open preset library" aria-label="Open preset library" aria-pressed="false"><span class="preset-library-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span></button>
-          <button id="orthographicViewToggle" class="orthographic-view-button" title="Switch to orthographic view" aria-label="Toggle orthographic view" aria-pressed="false"><span>O</span></button>
-          <button id="toggleWire" title="Toggle strand topology" aria-label="Toggle strand topology" aria-pressed="false"><span>W</span></button>
-          <button id="scalpGuideVisibilityToggle" class="scalp-guide-visibility-button" title="Cycle guide visibility" aria-label="Cycle guide visibility" aria-pressed="true" aria-haspopup="menu"><span class="tool-icon icon-scalp-guide" aria-hidden="true"></span></button>
-          <button id="groupColorToggle" class="group-color-button" title="Show group colors" aria-label="Show group colors" aria-pressed="false"><span class="group-color-swatches" aria-hidden="true"><i></i><i></i><i></i><i></i></span></button>
         </div>
         <section id="presetLibrary" class="preset-library hidden" role="dialog" aria-modal="false" aria-labelledby="presetLibraryTitle">
           <header class="preset-library-head">

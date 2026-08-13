@@ -14,6 +14,7 @@ export function createMiscStore() {
     scaleSensitivity: 0.3,
     toolTipsEnabled: true,
     compactToolButtonsEnabled: false,
+    compactSidebarDockActivationWidth: null,
     sideNamingPerspective: "viewport",
     lastHorizontalViewAxis: null,
     toolRadialActions: [],
