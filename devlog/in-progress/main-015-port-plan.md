@@ -59,3 +59,8 @@
 - **Relax Position/Rotation 分离已在本地（基线 d3358f6 就带，非 v0.1.5 增量），无需移植**。
 - 剩余第二波：Multi-Cam、Selection Sets 扩展、Panel/Glass 风格、Move 曲线控件。
 - 第三波（单独评审）不变：Tip Curvature、Branch Imprints、Radial pie。
+
+
+- `89c2efd` 第二波 2e：Selection Set 成员对话框（选择加入/移出的集合）；10/11。
+
+剩余第二波：Panel/Glass 风格、Move 曲线控件、Multi-Cam；第三波不变。
