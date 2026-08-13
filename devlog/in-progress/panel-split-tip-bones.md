@@ -450,6 +450,20 @@ splitBone.tip = {
 
 **验证**：node --check 全绿；verify-smoke 10/11（branch-bridge 基线失败，与 HEAD 一致）。verify-tip-select 契约测试因仓库内无 Sussurro_v1_0041/0042/0044 资产无法在本机运行，相关断言已按新语义改写（Reset 全 1、fork 采样=1、浮动面板公共 fork 阈值、Reset 按钮双面全 1）。
 
+### 8.29 发尖控件 4 项修复（0.2.65，分支 0.2.64-panel-tip-curve）
+
+> 本轮按用户反馈修复发尖控件 4 项（绿色 spread 手柄热同步/位置、所有段手柄显示规范化、W 移动 gizmo 上发尖骨骼 + Pull Strand 暴露区整体）：
+
+**1. 绿色 spread 手柄视口拖拽 → Main 面板热同步**：`updatePanelSplitHandleDrag` 的 `kind==="segment"` 分支（写 `bone.spread`）此前缺少右侧属性面板同步；现与 `tipWidth` 分支一致，在 `updateTopologyStats()` 后按 `panelTipSelection.lockId===lock.id || getSelectedLock().id===lock.id` 调用 `syncPanelSegmentControls(lock)`，拖拽时 `#panelSegmentSpread` 滑杆/数值实时更新。
+
+**2. 所有段绿色手柄显示 + 拖非选中段不切换（有意设计，规范化）**：只要任一子发尖被选中（tipUiActive），所有段的绿色手柄都会显示，且拖任意段手柄直接写该段 spread、不改变 `panelTipSelection`（不跳转）。此行为本就由 `panelSegmentHandles` 的 visible 条件与拖拽分支实现，本轮在 `bone-view-handles.js` 补注释明确为有意设计，防止后续误改。
+
+**3. 绿色手柄跟随 tip trim/curve + 切线偏移**：绿色手柄原用 `panelSplitControlPoint(lock,{position:handleU,height:0})`（主面板未 trim 的 t=1 尖端），会浮在 trim/curve 后的真实发尖之外。改为 `tipSurfaceFrameAt(lock, 1, handleU, segment, tipSplits)`（内部已应用 `panelTipCurve` + edge trim 的 `tipOffsetSampleT`），并沿切线（y）外推 `TIP_SEGMENT_HANDLE_TANGENT_OFFSET=0.08`，落在适配后最尖端稍前方、不与发尖子骨骼手柄重合。spread→handleU 横向映射不变。
+
+**4. W 移动 gizmo 上发尖骨骼 + Pull Strand 暴露区整体**：`beginPanelSplitHandleDrag` 的 gizmo 挂载分支由 `["rotate","scale"]` 扩为 `["move","rotate","scale"]`（W 移动也能挂 transform gizmo 精细调控）；新增 `beginTipSubBoneTranslate`（拖拽开始快照 startPosition/startPoints/restPoints）+ `applyTipSubBoneTransform` translate 分支——把 fork 以下暴露子链当整体做 Pull Strand 求解（`solvePulledStrand(exposedVecs, point-firstBelow, handle.position, 0, pullRigidity)`，根点钉在 fork），写回 `bone.tip.points`，而不是把整个主骨骼当链。app.js `dragging-changed` 同步 translate 的 begin/清理；`__ahsTest` 暴露新函数。move 工具的视平面单点拖拽改为 select 工具路径（原 kind="tip" 代码保留）。
+
+**验证**：node --check 3 文件全绿；单测与 verify-smoke 与 HEAD 基线一致（dom-contract/core-math shortcut-registry 为已知契约分叉失败；verify-smoke 8/10 因仓库无 .ahs 资产，selection/branch-bridge 两项环境性失败与基线相同）。
+
 ## 8. 待确认（实施前）
 
 - tip.points 用 2 点（base+tip）还是 3 点（base+mid+tip，可调曲率）；默认长度取多少（如 0.15×面板长度）。

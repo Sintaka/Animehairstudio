@@ -5,6 +5,7 @@ import { splitBonesFor, materializeSplitBones } from "./bone-model.js?v=20260813
 import { materializeStrandSplitBones } from "./bone-model.js?v=20260813-1";
 import { leafIndexAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { smoothSculptPointDeltas } from "../sculpt/sculpt-brush.js?v=20260806-1";
+import { solvePulledStrand } from "../geometry/strand-constraints.js?v=20260720-1";
 
 // deps: store .state proxies (sculptState/sel/guideState/scalpState) + module instances
 //   (taperEditor/panelTipStrand/sculptGeom + segmentApi.syncPanelSegmentControls for B2->B1) +
@@ -47,11 +48,71 @@ function beginTipSubBoneRotate(handle) {
   };
 }
 
+function beginTipSubBoneTranslate(handle) {
+  const lock = deps.locks.find((item) => item.id === handle?.userData?.lockId);
+  const segment = handle?.userData?.panelTipIndex;
+  const point = handle?.userData?.panelTipPoint;
+  if (!lock || segment == null || point == null) return;
+  const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+  const bones = materializeSplitBones(lock);
+  const bone = bones[segment];
+  if (!bone) return;
+  const tip = deps.panelTipStrand.splitTipForSegment(lock, segment, splits, bone);
+  if (!tip || point >= tip.points.length) return;
+  // 确保有 authored tip 状态（与 rotate 相同：points/restPoints 快照）。
+  if (!bone.tip || !Array.isArray(bone.tip.points) || bone.tip.points.length !== tip.points.length) {
+    bone.tip = {
+      points: tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+      restPoints: tip.restPoints.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+      active: true
+    };
+  }
+  deps.sculptState.tipSubBoneTranslateDrag = {
+    lockId: lock.id,
+    segmentIndex: segment,
+    tipPoint: point,
+    startPosition: handle.position.clone(),
+    startPoints: bone.tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+    restPoints: (Array.isArray(bone.tip.restPoints) ? bone.tip.restPoints : tip.restPoints).map((p) => ({ x: p.x, y: p.y, z: p.z }))
+  };
+}
+
 function applyTipSubBoneTransform(lock, handle) {
   const mode = deps.transformControls.mode;
   if (mode === "scale") {
     // scale 暂不应用：把手缩放恢复创建时的基准值，避免 gizmo 视觉累积。
     handle.scale.setScalar(0.42);
+    return;
+  }
+  if (mode === "translate") {
+    const drag = deps.sculptState.tipSubBoneTranslateDrag;
+    if (!drag || drag.lockId !== lock.id) return;
+    const segment = handle.userData.panelTipIndex;
+    const point = handle.userData.panelTipPoint;
+    if (drag.segmentIndex !== segment || drag.tipPoint !== point) return;
+    const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const bones = materializeSplitBones(lock);
+    const bone = bones[segment];
+    if (!bone || !bone.tip || !Array.isArray(bone.tip.points) || bone.tip.points.length < 2) return;
+    // fork 以下第一个暴露点：把暴露子链当整体做 Pull Strand 求解，根点钉在 fork 处。
+    const forkT = deps.panelTipStrand.splitForkT(lock, segment, splits);
+    const firstBelow = Math.min(drag.restPoints.length - 1, Math.max(1, Math.ceil(forkT * (drag.restPoints.length - 1))));
+    if (point < firstBelow) return;
+    const exposedVecs = [];
+    for (let i = firstBelow; i < bone.tip.points.length; i += 1) {
+      const src = drag.startPoints[i] || { x: 0, y: 0, z: 0 };
+      exposedVecs.push(new THREE.Vector3(src.x, src.y, src.z));
+    }
+    const solved = solvePulledStrand(exposedVecs, point - firstBelow, handle.position, 0, deps.sculptState.pullRigidity);
+    for (let i = firstBelow; i < bone.tip.points.length; i += 1) {
+      const v = solved[i - firstBelow];
+      bone.tip.points[i] = { x: v.x, y: v.y, z: v.z };
+    }
+    bone.tip.active = true;
+    deps.updateLockGeometry(lock, { immediate: true });
+    deps.updateCurveObjects(lock, { visible: true });
+    deps.syncActiveMirror(lock, { deferGeometry: false });
+    deps.updateTopologyStats();
     return;
   }
   if (mode !== "rotate") return;
@@ -110,9 +171,9 @@ function beginPanelSplitHandleDrag(event) {
   // Ctrl+drag is the tip width asymmetric edit; it must not grab zipper/segment/tip handles.
   if (event.ctrlKey && hit.object.userData.tipWidthIndex == null) return false;
   const gizmoTipIndex = hit.object.userData.panelTipIndex != null ? hit.object.userData.panelTipIndex : null;
-  if (gizmoTipIndex != null && ["rotate", "scale"].includes(deps.sel.activeTool)) {
-    // 旋转/缩放工具：tip 手柄挂到 transform gizmo（与 strand 控制点一致），不做视平面
-    // 拖拽；旋转增量在 objectChange 的 applyTipSubBoneTransform 里应用。
+  if (gizmoTipIndex != null && ["move", "rotate", "scale"].includes(deps.sel.activeTool)) {
+    // 移动/旋转/缩放工具：tip 手柄挂到 transform gizmo（与 strand 控制点一致），不做视平面
+    // 拖拽；增量在 objectChange 的 applyTipSubBoneTransform 里应用。
     deps.sculptState.panelTipSelection = { lockId: lock.id, segmentIndex: gizmoTipIndex };
     deps.sculptState.panelSegmentIndex = gizmoTipIndex;
     deps.syncPanelSegmentControls(lock);
@@ -448,6 +509,10 @@ function updatePanelSplitHandleDrag(event) {
     deps.updateCurveObjects(lock, { visible: true });
     deps.syncActiveMirror(lock, { deferGeometry: false });
     deps.updateTopologyStats();
+    // 右侧属性面板预览同步：该 lock 是当前选中/面板尖端选中时热更新。
+    if (deps.sculptState.panelTipSelection?.lockId === lock.id || deps.getSelectedLock()?.id === lock.id) {
+      deps.syncPanelSegmentControls(lock);
+    }
     event.preventDefault();
     return;
   }

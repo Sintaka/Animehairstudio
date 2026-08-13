@@ -4,6 +4,9 @@ import * as THREE from "three";
 import { splitBonesFor, strandSplitBonesFor, strandTipFor } from "./bone-model.js?v=20260813-1";
 import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260813-1";
 import { materializeTipChain, sampleTipPosition } from "../geometry/tip-sub-bone.js?v=20260813-1";
+// 绿色发段手柄沿尖端切线方向的外推距离（世界单位）：让手柄落在 trim/curve 适配后的
+// 最尖端稍前方，避免与粉色/黄色发尖子骨骼手柄重合而难以拖拽。
+const TIP_SEGMENT_HANDLE_TANGENT_OFFSET = 0.08;
 
 // deps: store .state proxies (sculptState/sel) + module instances (panelTipStrand) + shared
 //   objects (transformControls) + app.js helper functions (clonePanelSplits/isPanelGeometry/
@@ -308,7 +311,12 @@ function updateBoneViewHandles(lock, ctx) {
   });
   const segmentBoundaries = [-1, ...splits.map((split) => split.position), 1];
   const segmentSplitBones = splitBonesFor(lock);
+  // 发尖段绿色手柄需要跟随 tip trim/curve，提前算出真实 splits（与后面 tipChains 共用同一份）。
+  const tipSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
   lock.curveObjects.panelSegmentHandles?.forEach((handle, segment) => {
+    // 有意设计（请勿改动）：只要任一子发尖被选中，所有段的绿色手柄都会显示，视口里可以
+    // 同时拖任意段的手柄来调该段 spread；拖非选中段的手柄不会切换 panelTipSelection
+    // （保持当前选中的发尖段不变），与子发尖的选中/编辑互不干扰。
     const visible = tipUiActive
       && !sculptBrushHelpersSuppressed
       && !brushDebugVisible
@@ -320,13 +328,16 @@ function updateBoneViewHandles(lock, ctx) {
     const span = Math.max(0.0001, segmentBoundaries[segment + 1] - segmentBoundaries[segment]);
     const spread = bone?.spread ?? 0;
     const handleU = segmentBoundaries[segment] + (spread / 0.99) * span;
-    handle.position.copy(deps.panelSplitControlPoint(lock, { position: handleU, height: 0 }, null, null, segment));
+    // 跟随 tip trim/curve：tipSurfaceFrameAt 内部已应用 panelTipCurve + edge trim
+    // （tipOffsetSampleT），在适配后的尖端沿切线（y）再外推一点，避免与发尖子骨骼
+    // 手柄重合。spread→handleU 的横向映射保持不变。
+    const surfaceFrame = deps.panelTipStrand.tipSurfaceFrameAt(lock, 1, handleU, segment, tipSplits);
+    handle.position.copy(surfaceFrame.point).addScaledVector(surfaceFrame.y, TIP_SEGMENT_HANDLE_TANGENT_OFFSET);
     handle.material.opacity = deps.sculptState.panelSplitDrag?.lockId === lock.id
       && deps.sculptState.panelSplitDrag.kind === "segment"
       && deps.sculptState.panelSplitDrag.splitIndex === segment
       ? 0.9 : 0.68;
   });
-  const tipSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
   const tipSplitBones = splitBonesFor(lock);
   // Cache each segment's sub-bone chain once (handles + guide lines share it).
   // One sub-bone chain per SEGMENT (splits.length + 1); mapping over the splits

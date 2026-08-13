@@ -50,6 +50,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - **本地持久化功能（简体中文、Houdini 导航、Quick Save/Export 等）**：development-standards.md「持续修改功能」。
 
 ## 最近版本 / Latest
+- 发尖控件 4 项修复（0.2.65，分支 0.2.64-panel-tip-curve）：绿色 spread 手柄拖拽热同步 Main 面板 Segment Spread；所有段绿色手柄显示 + 拖非选中段不切换（有意设计，规范化注释）；绿色手柄跟随 tip trim/curve + 切线外推 0.08（不再浮在未 trim 尖端）；W 移动 gizmo 上发尖骨骼 + Pull Strand 按 fork 以下暴露区整体求解（`beginTipSubBoneTranslate`/`solvePulledStrand`）。详见 devlog/in-progress/panel-split-tip-bones.md §8.29。
 
 - 发尖收尾 + Panel Hair Cards 评估（0.2.61，分支 0.2.60-bugfix，代码已改、Hair Cards 仅评估）：Reset curve 全 1（撤销 0.2.60 fork 连续采样）、恢复绿色 spread 手柄（选中发尖时显示，视口拖拽直接写 `bone.spread`）、Width Curve 浮动面板两 zipper 之间的点可编辑（隐藏阈值改公共 fork）；Panel Hair Cards 单面模式评估结论「可行、兼容度高」（几何仅需 front 壳、材质双面已通用），详见 devlog/in-progress/panel-split-tip-bones.md §8.28。
 - 深度评估（0.2.61，无代码，仅文档）：① Panel↔普通发丝兼容性与发尖子骨骼迁移——结论「几何扫掠已统一、split/发尖是 panel 专属；迁移分两步：单发丝尖端子骨骼 → split 两管子骨骼，先抽通用 tip 原语」，详见 unified-bone-model.md §6；② app.js 是否再瘦身——结论「已接近编排层地板，再拆主要是伪模块化」，详见 APPJS_SPLIT_GUIDE.md §8。

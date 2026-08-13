@@ -1042,13 +1042,18 @@ transformControls.addEventListener("dragging-changed", (event) => {
     return;
   }
   // Tip 子骨骼手柄：rotate 拖拽开始时记录 startQuaternion/startPoints（objectChange
-  // 里按总旋转增量应用，避免累积），结束时清理；scale 工具只附着、不应用。
+  // 里按总旋转增量应用，避免累积），translate 记录 startPosition/startPoints，结束时
+  // 清理；scale 工具只附着、不应用。
   if (transformControls.object?.userData.panelTipIndex != null) {
     if (event.value && transformControls.mode === "rotate") {
       pushUndoState();
       bonesApi.beginTipSubBoneRotate(transformControls.object);
+    } else if (event.value && transformControls.mode === "translate") {
+      pushUndoState();
+      bonesApi.beginTipSubBoneTranslate(transformControls.object);
     } else if (!event.value) {
       sculptState.state.tipSubBoneRotateDrag = null;
+      sculptState.state.tipSubBoneTranslateDrag = null;
     }
     return;
   }
@@ -19923,6 +19928,7 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     updateCurveObjects,
     transformControls,
     beginTipSubBoneRotate: bonesApi.beginTipSubBoneRotate,
+    beginTipSubBoneTranslate: bonesApi.beginTipSubBoneTranslate,
     updateTipHighlight: panelTipStrand.updateTipHighlight,
     updateStrandBrushHover,
     syncStrandHoverOutline,

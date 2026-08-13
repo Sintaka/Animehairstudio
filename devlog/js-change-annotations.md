@@ -21,6 +21,14 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（0.2.65）
+
+> 发尖控件 4 项修复（分支 0.2.64-panel-tip-curve，详见 [in-progress/panel-split-tip-bones.md](in-progress/panel-split-tip-bones.md) §8.29）：
+> - ① 绿色 spread 手柄视口拖拽热同步 Main 面板 Segment Spread（`updatePanelSplitHandleDrag` segment 分支补 `syncPanelSegmentControls`）；
+> - ② 所有段绿色手柄在任一子发尖选中时显示、拖非选中段不切换选中——有意设计，`bone-view-handles.js` 补注释规范化；
+> - ③ 绿色手柄位置改跟随 tip trim/curve（`tipSurfaceFrameAt`）+ 沿切线外推 `TIP_SEGMENT_HANDLE_TANGENT_OFFSET=0.08`，不再浮在未 trim 尖端；
+> - ④ W 移动 gizmo 可挂发尖子骨骼（gizmo 挂载扩为 move/rotate/scale），translate 用 `solvePulledStrand` 按 fork 以下暴露区整体求解（`beginTipSubBoneTranslate` / `applyTipSubBoneTransform` translate 分支），app.js `dragging-changed` 支持 translate。
+
 ## 最近更新（0.2.59）
 
 > Panel split 尖端子骨骼系统已落地 + 本轮 UI/交互收尾（详细记录见 [in-progress/panel-split-tip-bones.md](in-progress/panel-split-tip-bones.md) §8.5–§8.9，权威当前状态）：
