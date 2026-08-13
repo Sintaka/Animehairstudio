@@ -37,6 +37,7 @@ import { createTransformStore } from "./modules/core/transform-store.js?v=202608
 import { createUndoStore } from "./modules/core/undo-store.js?v=20260809-7";
 import { createHeadStore } from "./modules/core/head-store.js?v=20260809-7";
 import { createUiStore } from "./modules/core/ui-store.js?v=20260809-6";
+import { createMultiCameraStore } from "./modules/core/multi-camera-store.js?v=20260813-1";
 import { createReferenceStore } from "./modules/edit/reference-store.js?v=20260809-5";
 import { createDrawStore } from "./modules/edit/draw-store.js?v=20260809-4";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260809-3";
@@ -298,6 +299,7 @@ function saveLanguage(language) {
 
 const RADIAL_MENUS_PREFERENCE_KEY = "anime-hair-studio-radial-menus";
 const PROCEDURAL_DRAW_EXPERIMENTAL_PREFERENCE_KEY = "anime-hair-studio-experimental-procedural-draw";
+const MULTI_CAMERA_EXPERIMENTAL_PREFERENCE_KEY = "anime-hair-studio-experimental-multi-camera";
 const NAVIGATION_TIPS_PREFERENCE_KEY = "anime-hair-studio-navigation-tips";
 const NAVIGATION_STYLE_PREFERENCE_KEY = "anime-hair-studio-navigation-style";
 const CAMERA_SMOOTHING_ENABLED_PREFERENCE_KEY = "anime-hair-studio-camera-smoothing-enabled";
@@ -481,6 +483,14 @@ const cameraViewCubeFaces = [...document.querySelectorAll("[data-camera-view]")]
 const strandObjectTransformPanel = document.querySelector("#strandObjectTransformPanel");
 const strandObjectTransformInputs = [...document.querySelectorAll("[data-object-transform][data-axis]")];
 const strandObjectTransformResetButtons = [...document.querySelectorAll("[data-reset-object-transform]")];
+const multiCameraViews = document.querySelector("#multiCameraViews");
+const multiCameraPreviewContainers = {
+  perspective: document.querySelector("#multiCameraPerspective"),
+  front: document.querySelector("#multiCameraFront"),
+  right: document.querySelector("#multiCameraRight"),
+  top: document.querySelector("#multiCameraTop")
+};
+const multiCameraState = createMultiCameraStore();
 const referenceImageDropTarget = document.querySelector("#referenceImageDropTarget");
 const referenceOverlayDropMarker = document.querySelector("#referenceOverlayDropMarker");
 const selectionMarquee = document.querySelector("#selectionMarquee");
@@ -546,6 +556,11 @@ scene.add(sculptBrushViabilityPlane);
 
 const perspectiveCamera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
 const orthographicCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
+const multiCameraPreviewCameras = {
+  front: new THREE.OrthographicCamera(-1, 1, 1, -1, 0.05, 200),
+  right: new THREE.OrthographicCamera(-1, 1, 1, -1, 0.05, 200),
+  top: new THREE.OrthographicCamera(-1, 1, 1, -1, 0.05, 200)
+};
 let camera = perspectiveCamera;
 const turntableAxis = new THREE.Vector3(0, 1, 0);
 const TURNTABLE_RADIANS_PER_SECOND = THREE.MathUtils.degToRad(24);
@@ -555,6 +570,17 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = false;
 controls.enableRotate = false;
 controls.target.set(0, 0.75, 0);
+const multiCameraViewTargets = {
+  perspective: controls.target.clone(),
+  front: controls.target.clone(),
+  right: controls.target.clone(),
+  top: controls.target.clone()
+};
+const MULTI_CAMERA_VIEW_AXES = Object.freeze({
+  front: new THREE.Vector3(0, 0, 1),
+  right: new THREE.Vector3(1, 0, 0),
+  top: new THREE.Vector3(0, 1, 0.0001).normalize()
+});
 
 const transformControls = new TransformControls(camera, renderer.domElement);
 transformControls.setMode("translate");
@@ -568,8 +594,11 @@ function copyCameraPose(source, target) {
 }
 
 function updateCameraProjectionForViewport() {
-  const width = Math.max(1, viewport.clientWidth);
-  const height = Math.max(1, viewport.clientHeight);
+  const paneMetrics = multiCameraPaneMetrics();
+  const width = multiCameraState.state.enabled
+    ? multiCameraViewPaneWidth("perspective", paneMetrics)
+    : Math.max(1, viewport.clientWidth);
+  const height = multiCameraState.state.enabled ? paneMetrics.height : Math.max(1, viewport.clientHeight);
   const aspect = width / height;
   perspectiveCamera.aspect = aspect;
   perspectiveCamera.updateProjectionMatrix();
@@ -615,6 +644,168 @@ function setOrthographicView(enabled) {
   controls.update();
   referenceHeadApi.updateReferencePlaneVisibility();
 }
+
+function ensureMultiCameraPreviewRenderers() {
+  if (multiCameraState.state.previewRenderers) return multiCameraState.state.previewRenderers;
+  multiCameraState.state.previewRenderers = Object.fromEntries(Object.entries(multiCameraPreviewContainers).map(([view, container]) => {
+    const previewRenderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
+    previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
+    previewRenderer.shadowMap.enabled = false;
+    previewRenderer.domElement.setAttribute("aria-label", `${view} camera preview`);
+    container.prepend(previewRenderer.domElement);
+    return [view, previewRenderer];
+  }));
+  return multiCameraState.state.previewRenderers;
+}
+
+function multiCameraForView(view) {
+  return view === "perspective" ? perspectiveCamera : multiCameraPreviewCameras[view];
+}
+
+function multiCameraViewUsesLeftPane(view) {
+  return view === "perspective" || view === "right";
+}
+
+function multiCameraViewPaneWidth(view, paneMetrics) {
+  return multiCameraViewUsesLeftPane(view) ? paneMetrics.leftWidth : paneMetrics.rightWidth;
+}
+
+function multiCameraViewProjectionOffsetX(view, paneMetrics) {
+  return multiCameraViewUsesLeftPane(view)
+    ? paneMetrics.leftProjectionOffsetX
+    : paneMetrics.rightProjectionOffsetX;
+}
+
+function initializeMultiCameraOrthographicViews() {
+  const target = controls.target.clone();
+  const distance = Math.max(0.1, perspectiveCamera.position.distanceTo(target));
+  const halfHeight = distance * Math.tan(THREE.MathUtils.degToRad(perspectiveCamera.fov * 0.5));
+  multiCameraViewTargets.perspective.copy(target);
+  Object.entries(multiCameraPreviewCameras).forEach(([view, previewCamera]) => {
+    multiCameraViewTargets[view].copy(target);
+    previewCamera.userData.multiCameraHalfHeight = halfHeight;
+    previewCamera.zoom = 1;
+    previewCamera.position.copy(target).addScaledVector(MULTI_CAMERA_VIEW_AXES[view], distance);
+    previewCamera.up.set(0, 1, 0);
+    previewCamera.lookAt(target);
+  });
+}
+
+function syncMultiCameraPreviewCameras() {
+  const paneMetrics = multiCameraPaneMetrics();
+  Object.entries(multiCameraPreviewCameras).forEach(([view, previewCamera]) => {
+    const halfHeight = Math.max(0.0001, Number(previewCamera.userData.multiCameraHalfHeight) || 1);
+    const paneWidth = multiCameraViewPaneWidth(view, paneMetrics);
+    const projectionOffsetX = multiCameraViewProjectionOffsetX(view, paneMetrics);
+    const aspect = Math.max(0.01, paneWidth / paneMetrics.height);
+    previewCamera.left = -halfHeight * aspect;
+    previewCamera.right = halfHeight * aspect;
+    previewCamera.top = halfHeight;
+    previewCamera.bottom = -halfHeight;
+    applyViewportProjectionOffset(previewCamera, paneWidth, paneMetrics.height, projectionOffsetX);
+  });
+}
+
+function multiCameraOrthographicViewActive() {
+  return multiCameraState.state.enabled && multiCameraState.state.activeView !== "perspective";
+}
+
+function prioritizeActiveMultiCameraViewport(frameCount = 1) {
+  multiCameraState.state.previewRenderPauseFrames = Math.max(
+    multiCameraState.state.previewRenderPauseFrames,
+    Math.max(0, Math.round(Number(frameCount) || 0))
+  );
+}
+
+function renderNextInactiveMultiCameraPreview() {
+  if (!multiCameraState.state.enabled || !multiCameraState.state.previewRenderers) return;
+  if (multiCameraState.state.previewRenderPauseFrames > 0) {
+    multiCameraState.state.previewRenderPauseFrames -= 1;
+    return;
+  }
+  const inactivePreviews = Object.entries(multiCameraState.state.previewRenderers)
+    .filter(([view]) => view !== multiCameraState.state.activeView);
+  if (!inactivePreviews.length) return;
+  const [view, previewRenderer] = inactivePreviews[
+    multiCameraState.state.previewRenderCursor % inactivePreviews.length
+  ];
+  multiCameraState.state.previewRenderCursor = (multiCameraState.state.previewRenderCursor + 1) % inactivePreviews.length;
+  previewRenderer.render(scene, multiCameraForView(view));
+}
+
+function setMultiCameraActiveView(view, { resizeViewport = true } = {}) {
+  if (!Object.hasOwn(multiCameraPreviewContainers, view)) return;
+  if (multiCameraViewTargets[multiCameraState.state.activeView]) {
+    multiCameraViewTargets[multiCameraState.state.activeView].copy(controls.target);
+  }
+  multiCameraState.state.activeView = view;
+  camera = multiCameraForView(view);
+  controls.object = camera;
+  controls.target.copy(multiCameraViewTargets[view]);
+  controls.enableRotate = false;
+  transformControls.camera = camera;
+  Object.entries(multiCameraPreviewContainers).forEach(([candidate, container]) => {
+    container.classList.toggle("active", candidate === view);
+    container.setAttribute("aria-pressed", String(candidate === view));
+  });
+  ["perspective", "front", "right", "top"].forEach((candidate) => {
+    viewportPanel.classList.toggle(`multi-camera-active-${candidate}`, candidate === view);
+  });
+  controls.update();
+  referenceHeadApi.updateReferencePlaneVisibility();
+  if (resizeViewport) resize();
+}
+
+function setMultiCameraEnabled(enabled) {
+  const nextEnabled = Boolean(enabled);
+  if (nextEnabled && !multiCameraState.state.experimentalEnabled) return;
+  if (nextEnabled && viewportState.state.orthographicView) setOrthographicView(false);
+  multiCameraState.state.enabled = nextEnabled;
+  viewportPanel.classList.toggle("multi-camera-view", multiCameraState.state.enabled);
+  multiCameraViews.setAttribute("aria-hidden", String(!multiCameraState.state.enabled));
+  multiCameraViewToggle.classList.toggle("active", multiCameraState.state.enabled);
+  multiCameraViewToggle.setAttribute("aria-pressed", String(multiCameraState.state.enabled));
+  orthographicViewToggle.disabled = multiCameraState.state.enabled;
+  if (multiCameraState.state.enabled) {
+    ensureMultiCameraPreviewRenderers();
+    initializeMultiCameraOrthographicViews();
+  }
+  setMultiCameraActiveView("perspective", { resizeViewport: false });
+  resize();
+}
+
+function setMultiCameraExperimentalEnabled(enabled, { persist = true } = {}) {
+  multiCameraState.state.experimentalEnabled = Boolean(enabled);
+  multiCameraExperimentalPreferenceInput.checked = multiCameraState.state.experimentalEnabled;
+  multiCameraViewToggle.hidden = !multiCameraState.state.experimentalEnabled;
+  multiCameraViewToggle.setAttribute("aria-hidden", String(!multiCameraState.state.experimentalEnabled));
+  multiCameraViewToggle.tabIndex = multiCameraState.state.experimentalEnabled ? 0 : -1;
+  if (!multiCameraState.state.experimentalEnabled && multiCameraState.state.enabled) setMultiCameraEnabled(false);
+  if (persist) {
+    saveBooleanPreference(MULTI_CAMERA_EXPERIMENTAL_PREFERENCE_KEY, multiCameraState.state.experimentalEnabled);
+  }
+  syncViewportTopControlRows();
+}
+
+function multiCameraPaneMetrics() {
+  const fullWidth = Math.max(2, viewport.clientWidth);
+  const height = Math.max(1, viewport.clientHeight * 0.5);
+  const leftWidth = THREE.MathUtils.clamp(fullWidth * 0.5, 1, fullWidth - 1);
+  return {
+    leftWidth,
+    rightWidth: fullWidth - leftWidth,
+    height,
+    leftProjectionOffsetX: 0,
+    rightProjectionOffsetX: 0
+  };
+}
+
+function applyViewportProjectionOffset(targetCamera, width, height, offsetX = 0) {
+  targetCamera.clearViewOffset();
+  if (Math.abs(offsetX) < 0.5) return;
+  targetCamera.setViewOffset(width, height, offsetX, 0, width, height);
+}
+
 const TRANSFORM_GIZMO_PICKER_DEFLATION = 0.5;
 const TRANSFORM_GIZMO_AXIS_PICKER_DEFLATION = 0.35;
 const STRAND_CONTROL_POINT_RADIUS_SCALE = 0.85;
@@ -2210,6 +2401,7 @@ const preferenceAnchorButtons = [...document.querySelectorAll("[data-preference-
 const preferencePanels = [...document.querySelectorAll("[data-preference-panel]")];
 const radialMenusPreferenceInput = document.querySelector("#radialMenusPreference");
 const proceduralDrawExperimentalPreferenceInput = document.querySelector("#proceduralDrawExperimentalPreference");
+const multiCameraExperimentalPreferenceInput = document.querySelector("#multiCameraExperimentalPreference");
 const navigationTipsPreferenceInput = document.querySelector("#navigationTipsPreference");
 const navigationStylePreferenceInput = document.querySelector("#navigationStylePreference");
 const cameraSmoothingPreferenceInput = document.querySelector("#cameraSmoothingPreference");
@@ -2528,6 +2720,7 @@ const scalpGuideVisibilityToggle = document.querySelector("#scalpGuideVisibility
 const guideViewContextMenu = document.querySelector("#guideViewContextMenu");
 const guideViewModeActions = [...guideViewContextMenu.querySelectorAll("[data-guide-view-mode]")];
 const orthographicViewToggle = document.querySelector("#orthographicViewToggle");
+const multiCameraViewToggle = document.querySelector("#multiCameraViewToggle");
 const groupColorToggle = document.querySelector("#groupColorToggle");
 const lightAzimuthInput = document.querySelector("#lightAzimuth");
 const lightElevationInput = document.querySelector("#lightElevation");
@@ -4829,9 +5022,10 @@ function frameViewportBounds(bounds) {
   viewDirection.normalize();
   ui.state.shiftSnappedViewActive = false;
   controls.target.copy(center);
-  if (viewportState.state.orthographicView) {
-    viewportState.state.orthographicHalfHeight = radius * 1.16;
-    orthographicCamera.zoom = 1;
+  if (camera.isOrthographicCamera) {
+    if (camera === orthographicCamera) viewportState.state.orthographicHalfHeight = radius * 1.16;
+    else camera.userData.multiCameraHalfHeight = radius * 1.16;
+    camera.zoom = 1;
     camera.position.copy(center).addScaledVector(viewDirection, currentDistance);
     updateCameraProjectionForViewport();
   } else {
@@ -9445,6 +9639,7 @@ function undoLastAction() {
     undo.state.restoringHistory = false;
     updateHistoryButtons();
     markProjectChangedForRecovery();
+    prioritizeActiveMultiCameraViewport(1);
   }
   if (taperCurveEditor.open) taperEditor.renderTaperCurveEditor();
 }
@@ -9463,6 +9658,7 @@ function redoLastAction() {
     undo.state.restoringHistory = false;
     updateHistoryButtons();
     markProjectChangedForRecovery();
+    prioritizeActiveMultiCameraViewport(1);
   }
   if (taperCurveEditor.open) taperEditor.renderTaperCurveEditor();
 }
@@ -10227,6 +10423,11 @@ function beginSelectionMarquee(event, surface = null, selectionMode = "replace")
 
 function beginAltOrbit(event) {
   if (!["anime-hair-studio", "houdini"].includes(viewportState.state.navigationStyle) || event.button !== 0 || !event.altKey) return;
+  if (multiCameraOrthographicViewActive()) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
   sculptState.state.altOrbitDrag = { pointerId: event.pointerId };
   controls.enableRotate = true;
   if (sculptState.state.selectionMarqueeDrag) {
@@ -10248,6 +10449,11 @@ function beginBlenderNavigation(event) {
       : event.ctrlKey
         ? "zoom"
         : "orbit";
+  if (multiCameraOrthographicViewActive() && (action === "orbit" || action === "snap")) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
   sculptState.state.blenderNavigationDrag = { pointerId: event.pointerId, action };
   viewportState.state.activeViewportPointer = {
     pointerId: event.pointerId,
@@ -14033,6 +14239,7 @@ function setPreferenceCategory(category) {
 function openPreferencesDialog() {
   ui.state.preferencesOpenSnapshot = {
     radialMenusEnabled: ui.state.radialMenusEnabled,
+    multiCameraExperimentalEnabled: multiCameraState.state.experimentalEnabled,
     proceduralDrawExperimentalEnabled: draw.state.proceduralDrawExperimentalEnabled,
     navigationTipsEnabled: viewportState.state.navigationTipsEnabled,
     navigationStyle: viewportState.state.navigationStyle,
@@ -14070,6 +14277,7 @@ function openPreferencesDialog() {
 
 function savePreferencesDialog() {
   saveBooleanPreference(RADIAL_MENUS_PREFERENCE_KEY, ui.state.radialMenusEnabled);
+  saveBooleanPreference(MULTI_CAMERA_EXPERIMENTAL_PREFERENCE_KEY, multiCameraState.state.experimentalEnabled);
   saveBooleanPreference(PROCEDURAL_DRAW_EXPERIMENTAL_PREFERENCE_KEY, draw.state.proceduralDrawExperimentalEnabled);
   saveBooleanPreference(NAVIGATION_TIPS_PREFERENCE_KEY, viewportState.state.navigationTipsEnabled);
   writeStoredPreference(window, NAVIGATION_STYLE_PREFERENCE_KEY, viewportState.state.navigationStyle);
@@ -14102,6 +14310,10 @@ function cancelPreferencesDialog() {
     radialMenuApi.setRadialMenusEnabled(ui.state.preferencesOpenSnapshot.radialMenusEnabled, { persist: false });
     clumpProceduralApi.setProceduralDrawExperimentalEnabled(
       ui.state.preferencesOpenSnapshot.proceduralDrawExperimentalEnabled,
+      { persist: false }
+    );
+    setMultiCameraExperimentalEnabled(
+      ui.state.preferencesOpenSnapshot.multiCameraExperimentalEnabled,
       { persist: false }
     );
     setNavigationTipsEnabled(ui.state.preferencesOpenSnapshot.navigationTipsEnabled, { persist: false });
@@ -16704,6 +16916,7 @@ turntableSpeedInput.addEventListener("input", () => {
 setTurntableActive(false);
 radialMenuApi.setRadialMenusEnabled(ui.state.radialMenusEnabled, { persist: false });
 clumpProceduralApi.setProceduralDrawExperimentalEnabled(draw.state.proceduralDrawExperimentalEnabled, { persist: false });
+setMultiCameraExperimentalEnabled(multiCameraState.state.experimentalEnabled, { persist: false });
 setNavigationTipsEnabled(viewportState.state.navigationTipsEnabled, { persist: false });
 setNavigationStyle(viewportState.state.navigationStyle, { persist: false });
 setCameraSmoothingEnabled(viewportState.state.cameraSmoothingEnabled, { persist: false });
@@ -16938,6 +17151,9 @@ radialMenusPreferenceInput.addEventListener("change", () => {
 });
 proceduralDrawExperimentalPreferenceInput.addEventListener("change", () => {
   clumpProceduralApi.setProceduralDrawExperimentalEnabled(proceduralDrawExperimentalPreferenceInput.checked, { persist: false });
+});
+multiCameraExperimentalPreferenceInput.addEventListener("change", () => {
+  setMultiCameraExperimentalEnabled(multiCameraExperimentalPreferenceInput.checked, { persist: false });
 });
 navigationTipsPreferenceInput.addEventListener("change", () => {
   setNavigationTipsEnabled(navigationTipsPreferenceInput.checked, { persist: false });
@@ -17963,6 +18179,19 @@ function disposeCurveObjects(lock) {
 
 
 orthographicViewToggle.addEventListener("click", () => setOrthographicView(!viewportState.state.orthographicView));
+multiCameraViewToggle.addEventListener("click", () => setMultiCameraEnabled(!multiCameraState.state.enabled));
+Object.entries(multiCameraPreviewContainers).forEach(([view, container]) => {
+  const activateMultiCameraView = (event) => {
+    if (!multiCameraState.state.enabled || view === multiCameraState.state.activeView) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setMultiCameraActiveView(view);
+  };
+  container.addEventListener("pointerdown", activateMultiCameraView);
+  container.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") activateMultiCameraView(event);
+  });
+});
 
 document.querySelector("#toggleWire").addEventListener("click", () => {
   hairState.state.hairTopologyVisible = !hairState.state.hairTopologyVisible;
@@ -17987,7 +18216,21 @@ document.querySelector("#quickExportProject").addEventListener("click", fileApi.
 function resize() {
   const { clientWidth, clientHeight } = viewport;
   updateCameraProjectionForViewport();
-  renderer.setSize(clientWidth, clientHeight, false);
+  const paneMetrics = multiCameraPaneMetrics();
+  const mainWidth = multiCameraState.state.enabled
+    ? multiCameraViewPaneWidth(multiCameraState.state.activeView, paneMetrics)
+    : clientWidth;
+  const mainHeight = multiCameraState.state.enabled ? paneMetrics.height : clientHeight;
+  renderer.setSize(Math.max(1, Math.round(mainWidth)), Math.max(1, Math.round(mainHeight)), false);
+  if (multiCameraState.state.enabled) {
+    viewportPanel.style.setProperty("--multi-camera-split-x", `${paneMetrics.leftWidth}px`);
+    const previewRenderers = ensureMultiCameraPreviewRenderers();
+    Object.entries(previewRenderers).forEach(([view, previewRenderer]) => {
+      const paneWidth = multiCameraViewPaneWidth(view, paneMetrics);
+      previewRenderer.setSize(Math.max(1, Math.round(paneWidth)), Math.max(1, Math.round(paneMetrics.height)), false);
+    });
+    syncMultiCameraPreviewCameras();
+  }
   updateSculptBrushDockCompact();
   referenceImages
     .filter((reference) => reference.type === "overlay")
@@ -18217,6 +18460,11 @@ function updateCameraViewCube() {
 }
 
 function activateView(event) {
+  if (multiCameraOrthographicViewActive()) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   const face = event.currentTarget;
   const axis = CAMERA_VIEW_AXES[face?.dataset?.cameraView];
   if (!axis) return;
@@ -19528,6 +19776,10 @@ function animate(timestamp = performance.now()) {
   updatePullGuideVisual();
   renderUvInspector(timestamp);
   renderer.render(scene, camera);
+  if (multiCameraState.state.enabled && multiCameraState.state.previewRenderers) {
+    syncMultiCameraPreviewCameras();
+    renderNextInactiveMultiCameraPreview();
+  }
   requestAnimationFrame(animate);
 }
 

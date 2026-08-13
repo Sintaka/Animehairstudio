@@ -162,6 +162,12 @@
 
       <section class="viewport-panel" aria-label="3D hair editor">
         <div id="viewport"></div>
+        <div id="multiCameraViews" class="multi-camera-views" aria-hidden="true">
+          <div id="multiCameraPerspective" class="multi-camera-preview multi-camera-perspective active" role="button" tabindex="0" aria-label="Activate perspective view"><span>Persp</span></div>
+          <div id="multiCameraFront" class="multi-camera-preview multi-camera-front" role="button" tabindex="0" aria-label="Activate front view"><span>Front</span></div>
+          <div id="multiCameraRight" class="multi-camera-preview multi-camera-right" role="button" tabindex="0" aria-label="Activate right view"><span>Right</span></div>
+          <div id="multiCameraTop" class="multi-camera-preview multi-camera-top" role="button" tabindex="0" aria-label="Activate top view"><span>Top</span></div>
+        </div>
         <div id="cameraViewCube" class="camera-view-cube" role="group" aria-label="Camera view controls">
           <div id="cameraViewCubeModel" class="camera-view-cube-model">
             <button class="camera-view-cube-face camera-view-cube-front" type="button" data-camera-view="front" title="Snap camera to front view" aria-label="Front view">Front</button>
@@ -292,6 +298,7 @@
           <div class="bar-actions viewport-display-actions" aria-label="Viewport display controls">
             <button id="presetLibraryToggle" class="tool-button preset-library-button" title="Open preset library" aria-label="Open preset library" aria-pressed="false"><span class="preset-library-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span></button>
             <button id="orthographicViewToggle" class="orthographic-view-button" title="Switch to orthographic view" aria-label="Toggle orthographic view" aria-pressed="false"><span>O</span></button>
+            <button id="multiCameraViewToggle" class="multi-camera-view-button" type="button" title="Toggle four-view camera layout" aria-label="Toggle four-view camera layout" aria-pressed="false" hidden aria-hidden="true" tabindex="-1"><span class="multi-camera-view-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i></span></button>
             <button id="toggleWire" title="Toggle strand topology" aria-label="Toggle strand topology" aria-pressed="false"><span>W</span></button>
             <button id="scalpGuideVisibilityToggle" class="scalp-guide-visibility-button" title="Cycle guide visibility" aria-label="Cycle guide visibility" aria-pressed="true" aria-haspopup="menu"><span class="tool-icon icon-scalp-guide" aria-hidden="true"></span></button>
             <button id="groupColorToggle" class="group-color-button" title="Show group colors" aria-label="Show group colors" aria-pressed="false"><span class="group-color-swatches" aria-hidden="true"><i></i><i></i><i></i><i></i></span></button>
@@ -1890,6 +1897,13 @@
                   <small>Show the experimental Procedural Draw tool in the viewport toolbar.</small>
                 </span>
                 <input id="proceduralDrawExperimentalPreference" type="checkbox" />
+              </label>
+              <label class="preference-toggle" for="multiCameraExperimentalPreference">
+                <span>
+                  <strong>Multi-cam View</strong>
+                  <small>Show the experimental four-view camera toggle in the viewport toolbar.</small>
+                </span>
+                <input id="multiCameraExperimentalPreference" type="checkbox" />
               </label>
             </section>
             <section class="preferences-section hidden" role="tabpanel" data-preference-panel="backup">

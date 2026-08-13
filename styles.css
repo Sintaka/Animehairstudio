@@ -1598,6 +1598,7 @@ button:focus-visible {
   --viewport-background-center: #2b2730;
   --viewport-background-middle: #16151a;
   --viewport-background-edge: #0c0b0f;
+  --multi-camera-split-x: 50%;
   background: radial-gradient(
     circle at 55% 36%,
     var(--viewport-background-center) 0,
@@ -7606,4 +7607,157 @@ body.app-menu-open .panel-resize-handle:hover::after {
   body.compact-sidebar-docked.compact-attribute-collapsed .tool-panel > :not(.attribute-editor-tabs) {
     display: none !important;
   }
+}
+
+/* Multi-cam View (experimental four-view layout) - ported from main v0.1.5. */
+.multi-camera-views {
+  display: none;
+}
+
+.viewport-panel.multi-camera-view .multi-camera-views {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.viewport-panel.multi-camera-view #viewport canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--multi-camera-split-x) !important;
+  height: 50% !important;
+}
+
+.viewport-panel.multi-camera-view.multi-camera-active-front #viewport canvas,
+.viewport-panel.multi-camera-view.multi-camera-active-top #viewport canvas {
+  left: var(--multi-camera-split-x);
+  width: calc(100% - var(--multi-camera-split-x)) !important;
+}
+
+.viewport-panel.multi-camera-view.multi-camera-active-right #viewport canvas,
+.viewport-panel.multi-camera-view.multi-camera-active-top #viewport canvas {
+  top: 50%;
+}
+
+.multi-camera-preview {
+  position: absolute;
+  height: 50%;
+  overflow: hidden;
+  background: radial-gradient(circle at 55% 36%, var(--viewport-background-center) 0, var(--viewport-background-middle) 42%, var(--viewport-background-edge) 100%);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.multi-camera-preview canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.multi-camera-preview.active {
+  background: transparent;
+  cursor: default;
+  pointer-events: none;
+}
+
+.multi-camera-preview.active canvas {
+  visibility: hidden;
+}
+
+.multi-camera-perspective {
+  top: 0;
+  left: 0;
+  width: var(--multi-camera-split-x);
+  border-right: 1px solid #58f6ff4a;
+  border-bottom: 1px solid #58f6ff4a;
+}
+
+.multi-camera-front {
+  top: 0;
+  right: 0;
+  width: calc(100% - var(--multi-camera-split-x));
+  border-bottom: 1px solid #58f6ff4a;
+  border-left: 1px solid #58f6ff4a;
+}
+
+.multi-camera-right {
+  bottom: 0;
+  left: 0;
+  width: var(--multi-camera-split-x);
+  border-top: 1px solid #58f6ff4a;
+  border-right: 1px solid #58f6ff4a;
+}
+
+.multi-camera-top {
+  right: 0;
+  bottom: 0;
+  width: calc(100% - var(--multi-camera-split-x));
+  border-top: 1px solid #58f6ff4a;
+  border-left: 1px solid #58f6ff4a;
+}
+
+.multi-camera-preview > span {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  z-index: 2;
+  padding: 3px 6px;
+  border: 1px solid #ffffff18;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--glass-panel-color, #19181d) 78%, transparent);
+  color: #aaa3ad;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  backdrop-filter: blur(8px);
+}
+
+.multi-camera-perspective > span {
+  top: auto;
+  left: auto;
+  right: 10px;
+  bottom: 8px;
+}
+
+.multi-camera-front > span {
+  top: auto;
+  bottom: 8px;
+}
+
+.multi-camera-right > span {
+  left: auto;
+  right: 10px;
+}
+
+.multi-camera-preview.active > span {
+  border-color: #58f6ff66;
+  color: #58f6ff;
+}
+
+.viewport-panel.multi-camera-view .camera-view-cube {
+  right: calc(50% + 18px);
+  transform: scale(0.82);
+  transform-origin: top right;
+}
+
+.multi-camera-view-glyph {
+  display: grid;
+  grid-template-columns: repeat(2, 6px);
+  grid-template-rows: repeat(2, 6px);
+  gap: 2px;
+}
+
+.multi-camera-view-glyph i {
+  border: 1px solid currentColor;
+  border-radius: 1px;
+}
+
+.multi-camera-view-button.active {
+  border-color: #58f6ff;
+  background: #17363a;
+  color: #8bfbff;
 }
