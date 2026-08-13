@@ -728,6 +728,56 @@
             <span>Snapped Views Only</span>
             <input id="viewPlaneMoveSnappedOnly" type="checkbox" />
           </label>
+          <div id="moveGrabHandlesSetting" class="move-grab-handles hidden">
+            <div class="subsection-label">Grab Handles</div>
+            <div class="move-grab-handle-options">
+              <label class="move-curve-segment" for="moveWidthGrabHandles" title="Show draggable handles that adjust strand width.">
+                <span>Width</span>
+                <input id="moveWidthGrabHandles" type="checkbox" checked />
+              </label>
+              <label class="move-curve-segment" for="moveDepthGrabHandles" title="Show draggable handles that adjust strand depth.">
+                <span>Depth</span>
+                <input id="moveDepthGrabHandles" type="checkbox" />
+              </label>
+              <label class="move-curve-segment" for="moveUniformGrabHandles" title="Show draggable handles that scale strand width and depth together.">
+                <span>Uniform</span>
+                <input id="moveUniformGrabHandles" type="checkbox" />
+              </label>
+            </div>
+          </div>
+          <div id="moveCurveControlsSetting" class="move-curve-controls hidden">
+            <div class="subsection-label">Viewport Curve Controls</div>
+            <div class="move-curve-viewport-options">
+              <div class="move-curve-dual-button">
+                <label class="move-curve-segment move-curve-control-segment" for="moveWidthCurveControls" title="Show draggable Width Curve controls directly on the selected strand.">
+                  <span>Width</span>
+                  <input id="moveWidthCurveControls" type="checkbox" />
+                </label>
+                <label class="move-curve-segment move-curve-symmetry-segment" for="moveAsymmetricWidth" title="Switch Width Curve editing between symmetrical and asymmetrical sides.">
+                  <span id="moveAsymmetricWidthLabel">Sym</span>
+                  <input id="moveAsymmetricWidth" type="checkbox" />
+                </label>
+              </div>
+              <div class="move-curve-dual-button">
+                <label class="move-curve-segment move-curve-control-segment" for="moveDepthCurveControls" title="Show draggable Depth Curve controls directly on the selected strand.">
+                  <span>Depth</span>
+                  <input id="moveDepthCurveControls" type="checkbox" />
+                </label>
+                <label class="move-curve-segment move-curve-symmetry-segment" for="moveAsymmetricDepth" title="Switch Depth Curve editing between symmetrical and asymmetrical sides.">
+                  <span id="moveAsymmetricDepthLabel">Sym</span>
+                  <input id="moveAsymmetricDepth" type="checkbox" />
+                </label>
+              </div>
+              <label class="move-curve-segment" for="moveTwistCurveControls" title="Show draggable Twist Curve controls directly on the selected strand.">
+                <span>Twist</span>
+                <input id="moveTwistCurveControls" type="checkbox" />
+              </label>
+            </div>
+            <label class="move-curve-checkbox" for="moveCenterAsymmetricProfile" title="Keep an asymmetric width or depth profile centered around the strand curve.">
+              <span>Center Asymmetric Profile</span>
+              <input id="moveCenterAsymmetricProfile" type="checkbox" />
+            </label>
+          </div>
           <div class="transform-space-setting">
             <span>Transform Space</span>
             <div class="segmented-control" role="group" aria-label="Transform space">

@@ -4869,6 +4869,8 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
 #pullMoveSetting.hidden,
 #pullRigiditySetting.hidden,
 #pullCollisionSetting.hidden,
+#moveGrabHandlesSetting.hidden,
+#moveCurveControlsSetting.hidden,
 #scaleSensitivitySetting.hidden {
   display: none !important;
 }
@@ -4881,6 +4883,156 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
 .view-plane-subsetting.disabled {
   opacity: 0.45;
 }
+
+.move-curve-controls {
+  display: grid;
+  gap: 2px;
+  padding-top: 3px;
+  border-top: 1px solid #35313a;
+}
+
+.move-curve-controls .subsection-label {
+  margin: 3px 0 1px;
+  font-size: 10px;
+}
+
+.sliders label.move-curve-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  grid-template-columns: none;
+  gap: 8px;
+  width: 100%;
+  min-height: 22px;
+  margin: 0 !important;
+  color: #c9c2ca;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sliders label.move-curve-checkbox input {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #e8a95b;
+}
+
+.move-curve-viewport-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.move-grab-handles {
+  display: grid;
+  gap: 2px;
+  padding-top: 3px;
+  border-top: 1px solid #35313a;
+}
+
+.move-grab-handle-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.sliders .move-grab-handle-options .move-curve-segment:has(input:disabled) {
+  border-color: #302c33;
+  background: #121116;
+  color: #77717a;
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.move-curve-dual-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+}
+
+.sliders .move-curve-dual-button .move-curve-control-segment {
+  border-radius: 4px 0 0 4px;
+}
+
+.sliders .move-curve-dual-button .move-curve-symmetry-segment {
+  margin-left: -1px !important;
+  border-radius: 0 4px 4px 0;
+  font-size: 10px;
+}
+
+.sliders .move-curve-segment {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  place-items: center;
+  gap: 0;
+  width: 100%;
+  min-height: 22px;
+  margin: 0 !important;
+  border: 1px solid #3a353d;
+  border-radius: 4px;
+  background: #151419;
+  color: #c9c2ca;
+  font-size: 12px;
+  line-height: 1;
+  text-align: center;
+  cursor: pointer;
+}
+
+.sliders .move-curve-segment > span {
+  width: 100%;
+  text-align: center;
+}
+
+.sliders .move-curve-segment:hover {
+  border-color: #5a525d;
+  background: #201d23;
+}
+
+.sliders .move-curve-segment:has(input:checked) {
+  border-color: #765736;
+  background: #4b3724;
+  color: #ffd18e;
+}
+
+.sliders .move-curve-dual-button:has(.move-curve-control-segment input:checked) .move-curve-symmetry-segment {
+  border-color: #28565b;
+  background: #163238;
+  color: #79eef5;
+}
+
+.sliders .move-curve-dual-button:has(.move-curve-control-segment input:checked) .move-curve-symmetry-segment:has(input:checked) {
+  border-color: #83306f;
+  background: #421b3b;
+  color: #ff7bdf;
+}
+
+.sliders .move-curve-dual-button:has(.move-curve-control-segment input:checked) .move-curve-symmetry-segment:has(input:indeterminate) {
+  border-color: #665d68;
+  background: #29252c;
+  color: #c3bac5;
+}
+
+.sliders .move-curve-dual-button:not(:has(.move-curve-control-segment input:checked)) .move-curve-symmetry-segment {
+  border-color: #3a353d;
+  background: #151419;
+  color: #c9c2ca;
+}
+
+.sliders .move-curve-segment:focus-within {
+  outline: 1px solid #6cdde5;
+  outline-offset: -1px;
+}
+
+.sliders .move-curve-segment input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 
 .slider-value {
   color: #9eeff4;

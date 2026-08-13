@@ -30,7 +30,8 @@ export function createTaperEditorApi(deps) {
   //   taperMeshPointsToggleRow/taperMeshPointsToggle/taperPointValue/taperPointPosition/taperPointInterpolation/
   //   taperPreviewPaths/segmentTaperPreview/segmentDepthPreview/strandTwistCurvePreview/
   //   proceduralBranchLengthCurvePreview/proceduralBranchShapeCurvePreview/sweepProfileEditor/sweepProfileTarget/
-  //   groupDefaultsWarning) + app.js helper functions; full list: devlog/in-progress/g5-taper-refactor-map.md
+  //   groupDefaultsWarning) + app.js helper functions (including visibleTaperMeshCurveEdits for the
+  //   Move tool viewport curve controls); full list: devlog/in-progress/g5-taper-refactor-map.md
   //   section 5. Batch-fill point in app.js: after createShapePresetsApi (all deps defined).
 
 function activeStrandShapeTarget() {
@@ -325,24 +326,10 @@ function taperMeshPointExtentPerValue(lock, position, side, axis) {
     baseDimension * dimensionScale * scale * profileExtent
   );
 }
-function updateTaperMeshPoints() {
-  clearTaperMeshPoints();
-  const lock = deps.sculptState.taperCurveEdit?.type === "strand"
-    ? deps.locks.find((item) => item.id === deps.sculptState.taperCurveEdit.id)
-    : null;
-  const target = activeTaperTarget();
-  const curvePoints = activeTaperCurve();
-  const applicable = Boolean(
-    deps.hairState.taperMeshPointsVisible
-    && ["taperCurve", "depthCurve", "twistCurve"].includes(deps.sculptState.taperCurveEdit?.curveKey)
-    && lock
-    && curvePoints?.length
-  );
-  if (!applicable) return;
-
-  const curve = deps.strandGeometryCurve(lock);
-  const editingTwist = deps.branchSweep.twistCurveEditing();
-  const axis = editingTwist ? "twist" : deps.sculptState.taperCurveEdit.curveKey === "depthCurve" ? "z" : "x";
+function addTaperMeshPointsForCurve(lock, curveKey) {
+  const target = lock;
+  const editingTwist = deps.branchSweep.twistCurveEditing(curveKey);
+  const axis = editingTwist ? "twist" : curveKey === "depthCurve" ? "z" : "x";
   const frameAxis = axis === "z" ? "z" : "x";
   const asymmetric = Boolean(
     axis === "z" ? target?.asymmetricDepthCurve : target?.asymmetricWidthCurve
@@ -350,6 +337,8 @@ function updateTaperMeshPoints() {
   const primaryCurve = editingTwist
     ? target.twistCurve
     : axis === "z" ? target.depthCurve : target.taperCurve;
+  if (!primaryCurve?.length) return;
+  const curve = deps.strandGeometryCurve(lock);
   const twistDisplayRange = editingTwist
     ? deps.sculptState.taperMeshPointDrag?.displayRange || twistCurveDisplayRange(
         primaryCurve,
@@ -363,7 +352,7 @@ function updateTaperMeshPoints() {
     ? [
         { curvePoints: primaryCurve, sides: [1], curveSide: "primary" },
         {
-          curvePoints: ensureSecondaryTaperCurve(target, deps.sculptState.taperCurveEdit.curveKey),
+          curvePoints: ensureSecondaryTaperCurve(target, curveKey),
           sides: [-1],
           curveSide: "secondary"
         }
@@ -371,9 +360,13 @@ function updateTaperMeshPoints() {
     : [{ curvePoints: primaryCurve, sides: [-1, 1], curveSide: "primary" }];
   if (editingTwist) deps.branchSweep.addTwistMeshCurvePath(lock, curve, primaryCurve, twistDisplayRange);
   curveSides.forEach(({ curvePoints: sideCurvePoints, sides, curveSide }) => sideCurvePoints.forEach((point, pointIndex) => {
-    const frame = taperMeshPointFrame(lock, curve, point.position, deps.sculptState.taperCurveEdit.curveKey);
+    const frame = taperMeshPointFrame(lock, curve, point.position, curveKey);
     sides.forEach((side) => {
-      const selected = curveSide === deps.sculptState.taperCurveEdit.side && pointIndex === deps.sculptState.taperCurveEdit.selectedIndex;
+      const selected = deps.sculptState.taperCurveEdit?.type === "strand"
+        && deps.sculptState.taperCurveEdit.id === lock.id
+        && deps.sculptState.taperCurveEdit.curveKey === curveKey
+        && curveSide === deps.sculptState.taperCurveEdit.side
+        && pointIndex === deps.sculptState.taperCurveEdit.selectedIndex;
       const handle = new THREE.Mesh(
         deps.taperMeshPointGeometry,
         selected ? deps.taperMeshPointSelectedMaterial : deps.taperMeshPointMaterial
@@ -391,6 +384,7 @@ function updateTaperMeshPoints() {
       handle.userData.pointIndex = pointIndex;
       handle.userData.side = side;
       handle.userData.curveSide = curveSide;
+      handle.userData.curveKey = curveKey;
       if (selected) {
         const center = new THREE.Mesh(deps.taperMeshPointGeometry, deps.taperMeshPointCenterMaterial);
         center.scale.setScalar(0.46);
@@ -401,7 +395,13 @@ function updateTaperMeshPoints() {
       deps.taperMeshPointsGroup.add(handle);
     });
   }));
-  deps.taperMeshPointsGroup.visible = true;
+}
+
+function updateTaperMeshPoints() {
+  clearTaperMeshPoints();
+  const edits = deps.visibleTaperMeshCurveEdits();
+  edits.forEach(({ lock, curveKey }) => addTaperMeshPointsForCurve(lock, curveKey));
+  deps.taperMeshPointsGroup.visible = edits.length > 0;
 }
 function setTaperMeshPointsVisible(visible) {
   deps.hairState.taperMeshPointsVisible = Boolean(

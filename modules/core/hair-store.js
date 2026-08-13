@@ -8,6 +8,8 @@ export function createHairStore() {
     activeHairMaterialId: DEFAULT_HAIR_MATERIAL_ID,
     uvCheckerEnabled: false,
     taperMeshPointsVisible: false,
+    moveGrabHandleVisibility: { width: true, depth: false, uniform: false },
+    moveCurveControlVisibility: { taperCurve: false, depthCurve: false, twistCurve: false },
     showGroupColors: false,
     hairTopologyVisible: false,
     activeStrandObjectTransform: null,

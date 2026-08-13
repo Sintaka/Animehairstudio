@@ -2727,6 +2727,19 @@ const pullCollisionInput = document.querySelector("#pullCollision");
 const scaleSensitivitySetting = document.querySelector("#scaleSensitivitySetting");
 const scaleSensitivityInput = document.querySelector("#scaleSensitivity");
 const scaleSensitivityValue = document.querySelector("#scaleSensitivityValue");
+const moveGrabHandlesSetting = document.querySelector("#moveGrabHandlesSetting");
+const moveWidthGrabHandlesInput = document.querySelector("#moveWidthGrabHandles");
+const moveDepthGrabHandlesInput = document.querySelector("#moveDepthGrabHandles");
+const moveUniformGrabHandlesInput = document.querySelector("#moveUniformGrabHandles");
+const moveCurveControlsSetting = document.querySelector("#moveCurveControlsSetting");
+const moveWidthCurveControlsInput = document.querySelector("#moveWidthCurveControls");
+const moveDepthCurveControlsInput = document.querySelector("#moveDepthCurveControls");
+const moveTwistCurveControlsInput = document.querySelector("#moveTwistCurveControls");
+const moveAsymmetricWidthInput = document.querySelector("#moveAsymmetricWidth");
+const moveAsymmetricDepthInput = document.querySelector("#moveAsymmetricDepth");
+const moveAsymmetricWidthLabel = document.querySelector("#moveAsymmetricWidthLabel");
+const moveAsymmetricDepthLabel = document.querySelector("#moveAsymmetricDepthLabel");
+const moveCenterAsymmetricProfileInput = document.querySelector("#moveCenterAsymmetricProfile");
 const placeStrandToolPanel = document.querySelector("#placeStrandToolPanel");
 const placeStrandScalpOffsetInput = document.querySelector("#placeStrandScalpOffset");
 const placeStrandScalpOffsetValue = document.querySelector("#placeStrandScalpOffsetValue");
@@ -4062,6 +4075,7 @@ function setViewportEditMode(mode, options = {}) {
   if (activateSelect && sel.state.activeTool !== "select") setActiveTool("select");
   guideApi.updateGuideControlsVisibility();
   updateAttributeEditorMode();
+  syncMoveCurveControls();
   placementApi.updatePlacementStatus();
 }
 
@@ -8038,6 +8052,7 @@ Object.assign(taperEditorDeps, {
   sweepProfileTarget,
   groupDefaultsWarning,
   getSelectedLock,
+  visibleTaperMeshCurveEdits,
   pushUndoState,
   editSelectedLocks,
   updateLockGeometry,
@@ -10885,6 +10900,28 @@ function createCurveObjects(lock) {
     group.add(edge);
     return edge;
   });
+  const createDimensionEdgeLines = (dimension) => [-1, 1].map((side) => {
+    const edge = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({
+        color: 0xe7a95d,
+        transparent: true,
+        opacity: 0.22,
+        depthTest: false,
+        depthWrite: false
+      })
+    );
+    edge.renderOrder = 6;
+    edge.userData.lockId = lock.id;
+    edge.userData.strandWidthEdge = true;
+    edge.userData.dimension = dimension;
+    edge.userData.side = side;
+    group.add(edge);
+    return edge;
+  });
+  widthEdgeLines.forEach((edge) => { edge.userData.dimension = "width"; });
+  const depthEdgeLines = createDimensionEdgeLines("depth");
+  const uniformEdgeLines = createDimensionEdgeLines("uniform");
 
   let surfaceObjectAnchor = null;
   let surfaceObjectAnchorHandle = null;
@@ -10973,7 +11010,9 @@ function createCurveObjects(lock) {
     surfaceObjectAnchor,
     surfaceObjectAnchorHandle,
     surfaceObjectAnchorStem,
-    widthEdgeLines
+    widthEdgeLines,
+    depthEdgeLines,
+    uniformEdgeLines
   };
 }
 
@@ -10993,41 +11032,165 @@ function transportedStrandWidthEdgeFrame(lock, curve, t) {
   return frame;
 }
 
-function strandWidthEdgeSample(lock, t, side, frameOverride = null, curveOverride = null) {
+function strandWidthEdgeSample(lock, t, side, frameOverride = null, curveOverride = null, dimension = "width") {
   if (!lock?.points?.length) return null;
-  if (isPanelGeometry(lock)) {
+  if (isPanelGeometry(lock) && dimension === "width") {
     const center = panelSplitControlPoint(lock, { position: 0, height: 1 - t }, t);
     const edge = panelSplitControlPoint(lock, { position: side, height: 1 - t }, t);
     return { center, edge };
   }
+  if (isPanelGeometry(lock)) return null;
   const curve = curveOverride || strandGeometryCurve(lock);
   const frame = frameOverride || transportedStrandWidthEdgeFrame(lock, curve, t);
-  const curveValue = sampleAsymmetricTaperCurve(
+  const widthValue = sampleAsymmetricTaperCurve(
     lock.taperCurve,
     lock.taperCurveSecondary,
     lock.asymmetricWidthCurve,
     side,
     t
   );
-  const extent = taperEditor.taperMeshPointExtentPerValue(lock, t, side, "x") * curveValue;
+  const depthValue = sampleAsymmetricTaperCurve(
+    lock.depthCurve,
+    lock.depthCurveSecondary,
+    lock.asymmetricDepthCurve,
+    side,
+    t
+  );
+  const widthExtent = taperEditor.taperMeshPointExtentPerValue(lock, t, side, "x") * widthValue;
+  const depthExtent = taperEditor.taperMeshPointExtentPerValue(lock, t, side, "z") * depthValue;
+  const offset = new THREE.Vector3();
+  if (dimension !== "depth") offset.addScaledVector(frame.x, side * widthExtent);
+  if (dimension !== "width") offset.addScaledVector(frame.z, side * depthExtent);
   return {
     center: frame.point.clone(),
-    edge: frame.point.clone().addScaledVector(frame.x, side * extent)
+    edge: frame.point.clone().add(offset)
   };
 }
 
-function strandWidthEdgePoints(lock, side) {
+function strandWidthEdgePoints(lock, side, dimension = "width") {
   const points = [];
   const curve = isPanelGeometry(lock) ? null : strandGeometryCurve(lock);
   let previousFrame = curve ? strandWidthEdgeFrameAt(lock, curve, 0) : null;
   for (let index = 0; index <= 36; index += 1) {
     const t = THREE.MathUtils.lerp(0.04, 0.96, index / 36);
     const frame = curve ? strandWidthEdgeFrameAt(lock, curve, t, previousFrame) : null;
-    const sample = strandWidthEdgeSample(lock, t, side, frame, curve);
+    const sample = strandWidthEdgeSample(lock, t, side, frame, curve, dimension);
     if (sample) points.push(sample.edge);
     if (frame) previousFrame = frame;
   }
   return points;
+}
+
+function moveCurveControlsApplicable(lock = getSelectedLock()) {
+  return Boolean(
+    sel.state.activeTool === "move"
+    && sculptState.state.viewportEditMode === "strand"
+    && componentEditModeActive()
+    && lock?.points?.length >= 2
+    && !["poly", "surface", "hair-shell"].includes(lock.geometryType)
+  );
+}
+
+function moveGrabHandlesApplicable(lock = getSelectedLock()) {
+  return Boolean(
+    sel.state.activeTool === "move"
+    && sculptState.state.viewportEditMode === "strand"
+    && componentEditModeActive()
+    && lock?.geometryType === "strand"
+    && lock.points?.length >= 2
+  );
+}
+
+function moveGrabHandleVisible(dimension) {
+  if (hairState.state.moveGrabHandleVisibility.uniform) return dimension === "uniform";
+  return dimension !== "uniform" && Boolean(hairState.state.moveGrabHandleVisibility[dimension]);
+}
+
+function visibleTaperMeshCurveEdits() {
+  const edits = [];
+  const selectedLock = getSelectedLock();
+  if (moveCurveControlsApplicable(selectedLock)) {
+    Object.entries(hairState.state.moveCurveControlVisibility).forEach(([curveKey, visible]) => {
+      if (visible) edits.push({ lock: selectedLock, curveKey });
+    });
+  }
+  if (
+    hairState.state.taperMeshPointsVisible
+    && sculptState.state.taperCurveEdit?.type === "strand"
+    && ["taperCurve", "depthCurve", "twistCurve"].includes(sculptState.state.taperCurveEdit.curveKey)
+  ) {
+    const lock = locks.find((item) => item.id === sculptState.state.taperCurveEdit.id);
+    if (lock && !edits.some((edit) => edit.lock === lock && edit.curveKey === sculptState.state.taperCurveEdit.curveKey)) {
+      edits.push({ lock, curveKey: sculptState.state.taperCurveEdit.curveKey });
+    }
+  }
+  return edits;
+}
+
+function syncMoveCurveControls(primary = getSelectedLock()) {
+  const grabHandlesApplicable = moveGrabHandlesApplicable(primary);
+  moveGrabHandlesSetting.classList.toggle("hidden", !grabHandlesApplicable);
+  moveWidthGrabHandlesInput.checked = hairState.state.moveGrabHandleVisibility.width;
+  moveDepthGrabHandlesInput.checked = hairState.state.moveGrabHandleVisibility.depth;
+  moveUniformGrabHandlesInput.checked = hairState.state.moveGrabHandleVisibility.uniform;
+  moveWidthGrabHandlesInput.disabled = hairState.state.moveGrabHandleVisibility.uniform;
+  moveDepthGrabHandlesInput.disabled = hairState.state.moveGrabHandleVisibility.uniform;
+  const applicable = moveCurveControlsApplicable(primary);
+  moveCurveControlsSetting.classList.toggle("hidden", !applicable);
+  moveWidthCurveControlsInput.checked = hairState.state.moveCurveControlVisibility.taperCurve;
+  moveDepthCurveControlsInput.checked = hairState.state.moveCurveControlVisibility.depthCurve;
+  moveTwistCurveControlsInput.checked = hairState.state.moveCurveControlVisibility.twistCurve;
+  if (!applicable) return;
+  const selection = compatibleSelectedLocks(primary);
+  const syncAuthoredCheckbox = (control, read, stateLabel = null) => {
+    const values = selection.map(read);
+    control.checked = Boolean(values[0]);
+    control.disabled = false;
+    const mixed = setMixedControl(control, null, values, Boolean);
+    if (stateLabel) stateLabel.textContent = mixed ? "Mixed" : control.checked ? "Asym" : "Sym";
+  };
+  syncAuthoredCheckbox(
+    moveAsymmetricWidthInput,
+    (lock) => lock.asymmetricWidthCurve,
+    moveAsymmetricWidthLabel
+  );
+  syncAuthoredCheckbox(
+    moveAsymmetricDepthInput,
+    (lock) => lock.asymmetricDepthCurve,
+    moveAsymmetricDepthLabel
+  );
+  syncAuthoredCheckbox(moveCenterAsymmetricProfileInput, (lock) => lock.centerAsymmetricProfile);
+}
+
+function setMoveGrabHandleVisibility(dimension, visible) {
+  if (!(dimension in hairState.state.moveGrabHandleVisibility)) return;
+  hairState.state.moveGrabHandleVisibility[dimension] = Boolean(visible);
+  syncMoveCurveControls();
+  const lock = getSelectedLock();
+  if (lock) updateCurveObjects(lock, { visible: true });
+}
+
+function setMoveCurveControlVisibility(curveKey, visible) {
+  if (!(curveKey in hairState.state.moveCurveControlVisibility)) return;
+  hairState.state.moveCurveControlVisibility[curveKey] = Boolean(visible);
+  syncMoveCurveControls();
+  taperEditor.updateTaperMeshPoints();
+  const lock = getSelectedLock();
+  if (lock) updateCurveObjects(lock, { visible: true });
+}
+
+function setSelectedMoveCurveShapeFlag(key, enabled, curveKey = null) {
+  const primary = getSelectedLock();
+  if (!moveCurveControlsApplicable(primary)) return;
+  pushUndoState();
+  editSelectedLocks((lock) => {
+    if (curveKey && enabled) taperEditor.ensureSecondaryTaperCurve(lock, curveKey);
+    lock[key] = Boolean(enabled);
+  }, { renderList: false });
+  syncMoveCurveControls(primary);
+  taperEditor.renderTaperPreview(taperPreviewPaths.strand, primary, "taperCurve");
+  taperEditor.renderTaperPreview(taperPreviewPaths.strandDepth, primary, "depthCurve");
+  taperEditor.updateTaperMeshPoints();
 }
 
 const sculptBrushDebugRaycast = () => {};
@@ -11095,13 +11258,19 @@ function updateCurveObjects(lock, options = {}) {
       sel.state.selectedSurfaceObjectAnchorId === lock.id ? 0xff4fd8 : 0xf6b75d
     );
   }
-  lock.curveObjects.widthEdgeLines?.forEach((edge) => {
+  [
+    ...(lock.curveObjects.widthEdgeLines || []),
+    ...(lock.curveObjects.depthEdgeLines || []),
+    ...(lock.curveObjects.uniformEdgeLines || [])
+  ].forEach((edge) => {
+    const dimension = edge.userData.dimension || "width";
     edge.geometry.dispose();
     edge.geometry = new THREE.BufferGeometry().setFromPoints(
-      strandWidthEdgePoints(lock, edge.userData.side)
+      strandWidthEdgePoints(lock, edge.userData.side, dimension)
     );
     const active = sculptState.state.strandWidthEdgeDrag?.lockId === lock.id
-      && sculptState.state.strandWidthEdgeDrag.side === edge.userData.side;
+      && sculptState.state.strandWidthEdgeDrag.side === edge.userData.side
+      && (sculptState.state.strandWidthEdgeDrag.dimension || "width") === dimension;
     const hovered = hairState.state.hoveredStrandWidthEdge === edge;
     edge.material.color.set(active || hovered ? 0xff42cf : 0xe7a95d);
     edge.material.opacity = active ? 0.95 : hovered ? 0.82 : 0.22;
@@ -11112,7 +11281,11 @@ function updateCurveObjects(lock, options = {}) {
       && lock.geometryType === "strand"
       && sculptState.state.viewportEditMode === "strand"
       && componentEditModeActive()
-      && !(hairState.state.taperMeshPointsVisible && branchSweep.twistCurveEditing())
+      && moveGrabHandleVisible(dimension)
+      && !(
+        (hairState.state.taperMeshPointsVisible && branchSweep.twistCurveEditing())
+        || (moveCurveControlsApplicable(lock) && hairState.state.moveCurveControlVisibility.twistCurve)
+      )
       && ["select", "move"].includes(sel.state.activeTool);
   });
   const deEmphasizeControlPoints = ["draw", "procedural-draw", "braid", "panel"].includes(sel.state.activeTool);
@@ -11514,11 +11687,7 @@ function rebuildLockGeometry(lock, options = {}) {
   lock.mesh.material.needsUpdate = true;
   clumpProceduralApi.syncProceduralParentVisibility(lock);
   if (options.updateCurveObjects !== false) updateCurveObjects(lock);
-  if (
-    hairState.state.taperMeshPointsVisible
-    && sculptState.state.taperCurveEdit?.type === "strand"
-    && sculptState.state.taperCurveEdit.id === lock.id
-  ) taperEditor.updateTaperMeshPoints();
+  if (taperMeshPointsGroup.visible && lock.id === sel.state.selectedId) taperEditor.updateTaperMeshPoints();
   if (options.updateClump !== false && !miscState.state.clumpUpdateInProgress && lock.clumpGuide) clumpProceduralApi.updateClumpMembers(lock);
   if (options.updateBranches !== false && !branch.state.branchUpdateInProgress) branchHierarchy.updateBranchChildren(lock);
   invalidateUvInspector();
@@ -11970,6 +12139,7 @@ function refreshStrandSelectionConsumers({
   if (syncActiveInputs && lock) syncInputs(lock);
   if (!componentEditModeActive() && sculptState.state.viewportEditMode === "strand") attachStrandObjectTransform();
   syncStrandObjectTransformPanel();
+  syncMoveCurveControls();
   return lock;
 }
 
@@ -12519,6 +12689,7 @@ function updateAttributeEditorMode() {
   scaleSensitivitySetting.classList.toggle("hidden", sel.state.activeTool !== "scale");
   viewPlaneMoveSetting.classList.toggle("hidden", sel.state.activeTool !== "move");
   viewPlaneMoveSnappedSetting.classList.toggle("hidden", sel.state.activeTool !== "move");
+  syncMoveCurveControls();
   placeStrandToolPanel.classList.toggle("hidden", sel.state.activeTool !== "place");
   proportionalPanel.classList.toggle(
     "hidden",
@@ -13004,6 +13175,7 @@ function syncMultiStrandInputs(primary = getSelectedLock()) {
   setMixedControl(strandDynamicDensityInput, null, values((lock) => Boolean(lock.dynamicDensity)));
   setMixedControl(inputs.densityAggression, topologyValues.strandDensityAggression, values((lock) => Number(lock.densityAggression ?? 0.5)), (value) => Number(value).toFixed(2));
   setMixedControl(inputs.twistDensity, topologyValues.strandTwistDensity, values((lock) => Number(lock.twistDensity ?? 0)), (value) => Number(value).toFixed(2));
+  syncMoveCurveControls(primary);
   if (strandEditFamily(primary) === "strand") {
     setMixedControl(
       drawStrandBrushSizeInput,
@@ -15734,6 +15906,33 @@ transformSpaceButtons.forEach((button) => {
 });
 viewPlaneMoveInput.addEventListener("change", () => setViewPlaneMove(viewPlaneMoveInput.checked));
 viewPlaneMoveSnappedOnlyInput.addEventListener("change", () => setViewPlaneMoveSnappedOnly(viewPlaneMoveSnappedOnlyInput.checked));
+moveWidthGrabHandlesInput.addEventListener("change", () => {
+  setMoveGrabHandleVisibility("width", moveWidthGrabHandlesInput.checked);
+});
+moveDepthGrabHandlesInput.addEventListener("change", () => {
+  setMoveGrabHandleVisibility("depth", moveDepthGrabHandlesInput.checked);
+});
+moveUniformGrabHandlesInput.addEventListener("change", () => {
+  setMoveGrabHandleVisibility("uniform", moveUniformGrabHandlesInput.checked);
+});
+moveWidthCurveControlsInput.addEventListener("change", () => {
+  setMoveCurveControlVisibility("taperCurve", moveWidthCurveControlsInput.checked);
+});
+moveDepthCurveControlsInput.addEventListener("change", () => {
+  setMoveCurveControlVisibility("depthCurve", moveDepthCurveControlsInput.checked);
+});
+moveTwistCurveControlsInput.addEventListener("change", () => {
+  setMoveCurveControlVisibility("twistCurve", moveTwistCurveControlsInput.checked);
+});
+moveAsymmetricWidthInput.addEventListener("change", () => {
+  setSelectedMoveCurveShapeFlag("asymmetricWidthCurve", moveAsymmetricWidthInput.checked, "taperCurve");
+});
+moveAsymmetricDepthInput.addEventListener("change", () => {
+  setSelectedMoveCurveShapeFlag("asymmetricDepthCurve", moveAsymmetricDepthInput.checked, "depthCurve");
+});
+moveCenterAsymmetricProfileInput.addEventListener("change", () => {
+  setSelectedMoveCurveShapeFlag("centerAsymmetricProfile", moveCenterAsymmetricProfileInput.checked);
+});
 pullMoveInput.addEventListener("change", () => {
   setPullMoveEnabled(pullMoveInput.checked);
 });
@@ -17679,7 +17878,11 @@ function disposeCurveObjects(lock) {
     lock.curveObjects.surfaceObjectAnchorStem.geometry.dispose();
     lock.curveObjects.surfaceObjectAnchorStem.material.dispose();
   }
-  lock.curveObjects.widthEdgeLines?.forEach((edge) => {
+  [
+    ...(lock.curveObjects.widthEdgeLines || []),
+    ...(lock.curveObjects.depthEdgeLines || []),
+    ...(lock.curveObjects.uniformEdgeLines || [])
+  ].forEach((edge) => {
     edge.geometry.dispose();
     edge.material.dispose();
   });
