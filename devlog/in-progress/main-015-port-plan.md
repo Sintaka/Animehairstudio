@@ -80,3 +80,11 @@
 - 曲线编辑 UI：`taperCurveEditor` DOM（app.js:3091–3106）+ `modules/geometry/taper-editor.js`（G5 拆分，1061 行）。
 - main v0.1.5 的 Move 曲线新增：`moveCurveControlsApplicable/syncMoveCurveControls/setMoveCurveControlVisibility/setMoveGrabHandleVisibility/setSelectedMoveCurveShapeFlag/moveGrabHandlesApplicable`；并把 `strandWidthEdgePoints/Sample` 加 dimension 支持 width/depth。
 - 结论：Width Curve 移植 = 给本地 `strandWidthEdgePoints/Sample` 加 `dimension` 参数 + 引入 main 的 move 曲线控件函数接到本地 taper/width-edge 视口控件；**不替换本地 taper-editor/宽度曲线 UI**。
+
+
+## 十、进度记录（三轮，2026-08-13）
+
+- `6269c32` 2f：Radial pie 菜单（扇区 + 外环子菜单）；10/11。
+- `9a16057` 2g：Panel 风格 + Glass 颜色 + outliner 透明度（响应式头部延后）；10/11。
+
+剩余：Width Curve / Move 曲线控件（融合）、Multi-Cam（模块化适配）、Split Panel Tip Curvature（最后深度评估）、Responsive viewport header（index.html 结构差异，延后）。
