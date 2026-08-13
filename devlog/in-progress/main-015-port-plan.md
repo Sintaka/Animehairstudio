@@ -101,3 +101,10 @@
 - 本地：panel 几何已重构为 `panel-tip-strand.js` 的 per-segment `splitBones` + tip-width/fork/zipper；weld/smooth 是旧签名（无 protectedVertices）；开放边界硬边已用 authored edge masks 解决。
 - 结论：① `panelTipCurve` 与本地 tip-width/fork 是两套尖端控制，直接套用会打架，若要可评估作为额外 t 弯折叠加到本地 tip 采样；② `tipLoops` 纯函数已并入，可独立评估是否接本地 lengthLoops；③ `protectedVertices` 与本地 authored edge masks 功能重叠，倾向不移植。
 - 建议：暂不移植，需用户拍板后再决定是否做 ①。
+
+
+## 十三、完成（2026-08-13，进入 bug 修复阶段）
+
+- `257225e` Split Panel Tip Curvature + Tip Loops + 面板 Edge Trim 融合（采样期 offset，不改 splitBones）。
+- `8584b2f` 修复发尖子骨骼 rest 链未跟随 Tip Curve/Edge Trim（tipSurfaceFrameAt 加 tipOffsetSampleT）。
+- main 0.1.5 移植收尾；后续进入新 bug 修复阶段。

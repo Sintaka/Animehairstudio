@@ -59,3 +59,15 @@
 - main 预设走 clump/compound 路径（马尾 = 12 条独立 strands 的 clump；复合发丝 = 单 lock 内 3 控制器复合几何）；子发片系统走**单发丝路径**（分叉绘制 → attachDrawnLocksAsBranches → `if (lock.branchRootRegion) createBranchChildGeometry`），假设「一个子 lock ↔ 一个父孔洞环 ↔ 一次单曲线扫掠」。
 - **直接把 main 的多发丝预设当子发片用会有 bug**：马尾是多 lock 集合、复合发丝是 lock 内多控制器，桥接不认识其 userData/顶点布局，索引与段数对不上会出错误拓扑；材质双面条件也要并入 `branchRootRegion`。
 - 合并策略：桥接区**保留本地桥接实现、按需吸收 main 预设**；C9 入口按 `branchRootRegion` 先分流；不要直接把预设挂进子发片桥接路径；若未来要让马尾/复合预设支持子发片，应在桥接层单独适配多控制器/多 lock 拓扑。
+
+
+## Main 0.1.5 移植记录（2026-08-13，分支 0.2.63-main015-port → 0.2.64-panel-tip-curve）
+
+- 结论：main 0.1.5 已**按功能移植**完成（不 merge），全程 verify-smoke 10/11、0 boot exceptions。
+- 已移植：纯模块/纯函数 + 测试、Camera View Cube、Autosave、Numeric Object Transform、Material Presets + Base Gradient、Selection Set 成员对话框、Radial pie、Panel/Glass、Move 曲线控件、Responsive viewport header、Multi-Cam、Split Panel Tip Curvature / Tip Loops / 面板 Edge Trim。
+- 关键决策：
+  - 纯 UI/独立功能照 main 移植并适配本地模块化/store；Move 曲线控件、Radial pie、Panel/Glass 采用融合/吸收，不整段替换。
+  - Width Curve：给本地 strandWidthEdgePoints/Sample 加 dimension，不替换本地 taper-editor/宽度曲线 UI。
+  - Relax Position/Rotation 分离与 Guide Capsule 半径保位置本地基线已有，未重复移植。
+  - Split Panel Tip Curvature：作为采样期 offset 融合——panelTipCurve/TipLoops/EdgeTrim 只重映射 t，不写 splitBones；发尖子骨骼 rest 链在 tipSurfaceFrameAt 用 tipOffsetSampleT 跟随（8584b2f）。
+- 遗留：dom-contract 契约测试与本地重构分叉（针对 main 源码断言，未全量修）；Multi-Cam 实验性；Responsive header 的 floating-panels 分支本地无对应布局。
