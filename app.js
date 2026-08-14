@@ -214,7 +214,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/core/app-config.js?v=20260814-12";
+} from "./modules/core/app-config.js?v=20260814-13";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/core/history.js?v=20260814-12";
 import {
   focusedControlShouldYieldToShortcut,

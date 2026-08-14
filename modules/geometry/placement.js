@@ -2,7 +2,7 @@
 // business layer (refactor batch B2-2). Extracted from app.js; all app.js coupling injected via
 // createPlacementApi(deps). updatePlacementStatus reads draw-flow surface state via deps.drawFlow.
 import * as THREE from "three";
-import { DEFAULT_HAIR_COLOR } from "../core/app-config.js?v=20260814-12";
+import { DEFAULT_HAIR_COLOR } from "../core/app-config.js?v=20260814-13";
 
 export function createPlacementApi(deps) {
   // deps: store .state proxies (sel/sculptState/scalpState/hairState/miscState; use deps.X.y, never

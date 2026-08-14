@@ -18,7 +18,7 @@ import {
   compoundConnectedSegmentCount,
   compoundProfileBridgePlan
 } from "./compound-strand.js?v=20260814-12";
-import { DEFAULT_SWEEP_PROFILE, ROUND_SWEEP_PROFILE } from "../core/app-config.js?v=20260814-12";
+import { DEFAULT_SWEEP_PROFILE, ROUND_SWEEP_PROFILE } from "../core/app-config.js?v=20260814-13";
 import { strandSplitBonesFor, strandTipFor } from "../bones/bone-model.js?v=20260813-1";
 import { materializeTipChain, tipChainFrameAt, tipWeightAt, sampleTipPosition } from "./tip-sub-bone.js?v=20260813-1";
 import { SWEEP_OVERLAP_DEFAULTS } from "./strand-sweep.js?v=20260813-3";

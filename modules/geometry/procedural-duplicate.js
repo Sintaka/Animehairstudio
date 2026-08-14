@@ -23,7 +23,7 @@ import {
   DEFAULT_TWIST_CURVE,
   ROOT_SCALP_OFFSET_DISTANCE,
   TWIST_CURVE_VALUE_MAX
-} from "../core/app-config.js?v=20260814-12";
+} from "../core/app-config.js?v=20260814-13";
 
 export function createProceduralDuplicateApi(deps) {
   // deps: store .state proxy (sculptState: duplicatePlacement/proceduralDuplicatePreview/
