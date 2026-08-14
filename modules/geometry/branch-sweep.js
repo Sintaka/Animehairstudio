@@ -1,26 +1,33 @@
 // branch-sweep.js — child sweep-profile / twist-curve editing (refactor 3d-3d-b).
 // Extracted from app.js; coupling injected via createBranchSweepApi(deps).
 import * as THREE from "three";
-import { symmetricClosedCurveParameters, twistCurveDisplayRange } from "./curve-math.js";
+import { symmetricClosedCurveParameters, twistCurveDisplayRange, sampleTaperCurve, twistCurveHandleDistancePerDegree } from "./curve-math.js";
+import { cloneShapePresetValue } from "../io/shape-presets.js";
 
 export function createBranchSweepApi(deps) {
   // deps: activeCreationShapeDefaults, activeProfileOffset, applyGroupDefaultsToExistingStrands,
   //   closeTaperCurveEditor, compatibleSelectedLocks, creationToolActive, editSelectedLocks,
   //   getSelectedLock, profileToCanvas, renderHairCardCoveragePath, renderProfilePreview,
-  //   strandRegionDisplayLabel, syncShapePresetSelects, taperMeshPointExtentPerValue,
+  //   strandGroupDefaults, strandRegionDisplayLabel, syncShapePresetSelects, taperMeshPointExtentPerValue,
   //   taperMeshPointFrame, taperSamples, updateDrawStrandPreview, updateViewportStatsVisibility,
-  //   locks, sculptState, projectState, selState, miscState (store .state proxies)
+  //   locks, sculptState, projectState, selState, miscState (store .state proxies),
+  //   taperMeshPointsGroup, twistMeshCurvePositiveFillMaterial, twistMeshCurveNegativeFillMaterial,
+  //   twistMeshCurvePositiveMaterial, twistMeshCurveNegativeMaterial, profilePreviewPaths,
+  //   sweepProfileTarget, sweepProfileCanvas, sweepProfileOriginalPath, sweepProfileTrimInputs,
+  //   sweepProfileTrimValues, sweepProfileTrimRoundness, sweepProfileTrimRoundnessValue,
+  //   sweepProfilePath, sweepProfileHairCardCoveragePath, sweepProfilePoints, sweepPointInterpolation,
+  //   sweepProfileMirrorX, sweepProfileEditor, taperCurveEditor, groupDefaultsWarning
 
 function activeSweepProfile() {
   if (!deps.sculptState.sweepProfileEdit) return null;
-  if (deps.sculptState.sweepProfileEdit.type === "group") return strandGroupDefaults[deps.sculptState.sweepProfileEdit.id]?.sweepProfile || null;
+  if (deps.sculptState.sweepProfileEdit.type === "group") return deps.strandGroupDefaults[deps.sculptState.sweepProfileEdit.id]?.sweepProfile || null;
   if (deps.sculptState.sweepProfileEdit.type === "creation") return deps.activeCreationShapeDefaults().sweepProfile;
   return deps.locks.find((lock) => lock.id === deps.sculptState.sweepProfileEdit.id)?.sweepProfile || null;
 }
 
 function activeSweepProfileTarget() {
   if (!deps.sculptState.sweepProfileEdit) return null;
-  if (deps.sculptState.sweepProfileEdit.type === "group") return strandGroupDefaults[deps.sculptState.sweepProfileEdit.id] || null;
+  if (deps.sculptState.sweepProfileEdit.type === "group") return deps.strandGroupDefaults[deps.sculptState.sweepProfileEdit.id] || null;
   if (deps.sculptState.sweepProfileEdit.type === "creation") return deps.activeCreationShapeDefaults();
   return deps.locks.find((lock) => lock.id === deps.sculptState.sweepProfileEdit.id) || null;
 }
@@ -242,8 +249,8 @@ function addTwistMeshCurvePath(lock, curve, twistCurve, displayRange) {
     appendSignedSection(endSign, zero, end);
   }
   [
-    [signedFills.positive, twistMeshCurvePositiveFillMaterial, "positive"],
-    [signedFills.negative, twistMeshCurveNegativeFillMaterial, "negative"]
+    [signedFills.positive, deps.twistMeshCurvePositiveFillMaterial, "positive"],
+    [signedFills.negative, deps.twistMeshCurveNegativeFillMaterial, "negative"]
   ].forEach(([points, material, sign]) => {
     if (!points.length) return;
     const fill = new THREE.Mesh(
@@ -253,11 +260,11 @@ function addTwistMeshCurvePath(lock, curve, twistCurve, displayRange) {
     fill.renderOrder = 33;
     fill.raycast = () => {};
     fill.userData.twistMeshCurveFill = sign;
-    taperMeshPointsGroup.add(fill);
+    deps.taperMeshPointsGroup.add(fill);
   });
   [
-    [signedSegments.positive, twistMeshCurvePositiveMaterial, "positive"],
-    [signedSegments.negative, twistMeshCurveNegativeMaterial, "negative"]
+    [signedSegments.positive, deps.twistMeshCurvePositiveMaterial, "positive"],
+    [signedSegments.negative, deps.twistMeshCurveNegativeMaterial, "negative"]
   ].forEach(([points, material, sign]) => {
     if (!points.length) return;
     const line = new THREE.LineSegments(
@@ -267,7 +274,7 @@ function addTwistMeshCurvePath(lock, curve, twistCurve, displayRange) {
     line.renderOrder = 34;
     line.raycast = () => {};
     line.userData.twistMeshCurvePath = sign;
-    taperMeshPointsGroup.add(line);
+    deps.taperMeshPointsGroup.add(line);
   });
 }
 
@@ -279,18 +286,18 @@ function renderSweepProfileEditor() {
   const originalCurve = createSmoothSweepProfileCurve(profile);
   const originalSampled = Array.from({ length: 97 }, (_, index) => sampleSweepProfile(profile, index / 96, originalCurve))
     .map((point) => deps.profileToCanvas({ x: point.x, z: point.z }));
-  sweepProfileOriginalPath.setAttribute("d", `${originalSampled.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ")} Z`);
+  deps.sweepProfileOriginalPath.setAttribute("d", `${originalSampled.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ")} Z`);
   const smoothCurve = createSmoothSweepProfileCurve(visibleProfile);
   const sampled = Array.from({ length: 97 }, (_, index) => sampleSweepProfile(visibleProfile, index / 96, smoothCurve))
     .map((point) => deps.profileToCanvas({ x: point.x, z: point.z }));
-  sweepProfilePath.setAttribute("d", `${sampled.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ")} Z`);
+  deps.sweepProfilePath.setAttribute("d", `${sampled.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ")} Z`);
   deps.renderHairCardCoveragePath(
-    sweepProfileHairCardCoveragePath,
+    deps.sweepProfileHairCardCoveragePath,
     visibleProfile,
     Boolean(target?.hairCard),
     (point) => deps.profileToCanvas({ x: point.x, z: point.z })
   );
-  sweepProfilePoints.replaceChildren();
+  deps.sweepProfilePoints.replaceChildren();
   visibleProfile.forEach((point, index) => {
     const canvasPoint = deps.profileToCanvas(point);
     const handle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
@@ -299,19 +306,19 @@ function renderSweepProfileEditor() {
     handle.setAttribute("r", index === deps.sculptState.sweepProfileEdit.selectedIndex ? 6 : 5);
     handle.setAttribute("class", `profile-point${index === deps.sculptState.sweepProfileEdit.selectedIndex ? " selected" : ""}`);
     handle.dataset.profilePoint = index;
-    sweepProfilePoints.appendChild(handle);
+    deps.sweepProfilePoints.appendChild(handle);
   });
   const selected = profile[deps.sculptState.sweepProfileEdit.selectedIndex];
-  sweepPointInterpolation.value = selected?.interpolation || "smooth";
-  sweepProfileMirrorX.setAttribute("aria-pressed", String(deps.projectState.sweepProfileMirrorEnabled));
-  Object.entries(sweepProfileTrimInputs).forEach(([key, input]) => {
+  deps.sweepPointInterpolation.value = selected?.interpolation || "smooth";
+  deps.sweepProfileMirrorX.setAttribute("aria-pressed", String(deps.projectState.sweepProfileMirrorEnabled));
+  Object.entries(deps.sweepProfileTrimInputs).forEach(([key, input]) => {
     const value = Number(target?.[key] ?? 0);
     input.value = value;
-    sweepProfileTrimValues[key].textContent = value.toFixed(2);
+    deps.sweepProfileTrimValues[key].textContent = value.toFixed(2);
   });
   const roundness = Number(target?.profileTrimRoundness ?? 1);
-  sweepProfileTrimRoundness.value = roundness;
-  sweepProfileTrimRoundnessValue.textContent = roundness.toFixed(2);
+  deps.sweepProfileTrimRoundness.value = roundness;
+  deps.sweepProfileTrimRoundnessValue.textContent = roundness.toFixed(2);
 }
 
 function applySweepProfileEdit() {
@@ -323,19 +330,19 @@ function applySweepProfileEdit() {
   } else {
     const lock = deps.locks.find((item) => item.id === deps.sculptState.sweepProfileEdit.id);
     if (lock) {
-      const profile = shapePresets.cloneShapePresetValue(lock.sweepProfile);
+      const profile = cloneShapePresetValue(lock.sweepProfile);
       const trimLeft = Number(lock.profileTrimLeft ?? 0);
       const trimRight = Number(lock.profileTrimRight ?? 0);
       const roundness = Number(lock.profileTrimRoundness ?? 1);
       deps.editSelectedLocks((item) => {
-        if (item !== lock) item.sweepProfile = shapePresets.cloneShapePresetValue(profile);
+        if (item !== lock) item.sweepProfile = cloneShapePresetValue(profile);
         item.profileTrimLeft = trimLeft;
         item.profileTrimRight = trimRight;
         item.profileTrimRoundness = roundness;
       }, { renderList: false });
     }
   }
-  const previewPath = deps.sculptState.sweepProfileEdit.type === "group" ? profilePreviewPaths.group : profilePreviewPaths.strand;
+  const previewPath = deps.sculptState.sweepProfileEdit.type === "group" ? deps.profilePreviewPaths.group : deps.profilePreviewPaths.strand;
   deps.renderProfilePreview(previewPath, activeSweepProfile(), deps.activeProfileOffset(), activeSweepProfileTarget());
   renderSweepProfileEditor();
   deps.syncShapePresetSelects();
@@ -352,13 +359,13 @@ function openSweepProfileEditor() {
     nextEdit = { type: "creation", id: "new-strand", selectedIndex: 0, dragPointerId: null };
   }
   if (!nextEdit) return;
-  if (taperCurveEditor.open) deps.closeTaperCurveEditor();
+  if (deps.taperCurveEditor.open) deps.closeTaperCurveEditor();
 
   if (nextEdit.type === "group" && !deps.miscState.groupDefaultsWarningAcknowledged) {
     const hasExistingStrands = deps.locks.some((lock) => (lock.scalpRegion || "unassigned") === nextEdit.id);
     if (hasExistingStrands) {
       deps.miscState.groupDefaultsWarningContinuation = openSweepProfileEditor;
-      groupDefaultsWarning.showModal();
+      deps.groupDefaultsWarning.showModal();
       return;
     }
   }
@@ -367,27 +374,27 @@ function openSweepProfileEditor() {
   const group = deps.STRAND_GROUPS.find((item) => item.id === nextEdit.id);
   const lock = deps.locks.find((item) => item.id === nextEdit.id);
   const multiCount = nextEdit.type === "strand" ? deps.compatibleSelectedLocks(lock).length : 0;
-  sweepProfileTarget.textContent = nextEdit.type === "creation"
+  deps.sweepProfileTarget.textContent = nextEdit.type === "creation"
     ? "New strand defaults"
     : nextEdit.type === "group" ? `${group ? deps.strandRegionDisplayLabel(group.id) : "Group"} defaults`
       : multiCount > 1 ? `${multiCount} selected strands` : lock?.name || "Selected strand";
   renderSweepProfileEditor();
-  sweepProfileEditor.show();
+  deps.sweepProfileEditor.show();
   deps.updateViewportStatsVisibility();
 }
 
 function closeSweepProfileEditor() {
-  if (deps.sculptState.sweepProfileEdit?.dragPointerId !== null && sweepProfileCanvas.hasPointerCapture?.(deps.sculptState.sweepProfileEdit.dragPointerId)) {
-    sweepProfileCanvas.releasePointerCapture(deps.sculptState.sweepProfileEdit.dragPointerId);
+  if (deps.sculptState.sweepProfileEdit?.dragPointerId !== null && deps.sweepProfileCanvas.hasPointerCapture?.(deps.sculptState.sweepProfileEdit.dragPointerId)) {
+    deps.sweepProfileCanvas.releasePointerCapture(deps.sculptState.sweepProfileEdit.dragPointerId);
   }
   deps.sculptState.sweepProfileEdit = null;
-  if (sweepProfileEditor.open) sweepProfileEditor.close();
+  if (deps.sweepProfileEditor.open) deps.sweepProfileEditor.close();
   deps.updateViewportStatsVisibility();
 }
 
 function finishSweepProfileDrag(event) {
   if (!deps.sculptState.sweepProfileEdit || deps.sculptState.sweepProfileEdit.dragPointerId !== event.pointerId) return;
-  if (sweepProfileCanvas.hasPointerCapture?.(event.pointerId)) sweepProfileCanvas.releasePointerCapture(event.pointerId);
+  if (deps.sweepProfileCanvas.hasPointerCapture?.(event.pointerId)) deps.sweepProfileCanvas.releasePointerCapture(event.pointerId);
   deps.sculptState.sweepProfileEdit.dragPointerId = null;
   deps.sculptState.sweepProfileEdit.mirrorIndex = null;
 }

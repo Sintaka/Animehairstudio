@@ -1141,6 +1141,18 @@ function createBaseHairGeometry(lock) {
   geometry.userData.gridFacesPerRow = profileTopology.edges.length;
   geometry.userData.gridSkipCol = deps.gridProfileSkipCol(profileTopology.edges, profileTopology.slots.length);
   geometry.userData.quadFaces = quadFaces;
+  // Per-vertex sweep grid indices (rows x cols, row-major); the two end-cap
+  // center vertices stay -1 so downstream exporters can rebuild the sweep
+  // topology from these (animeHairStudio:gridRow / gridCol primvars).
+  const sweptCount = (actualLengthSegments + 1) * profileVertexCount;
+  const gridRowIndices = new Float32Array(sweptCount + 2).fill(-1);
+  const gridColIndices = new Float32Array(sweptCount + 2).fill(-1);
+  for (let i = 0; i < sweptCount; i += 1) {
+    gridRowIndices[i] = Math.floor(i / profileVertexCount);
+    gridColIndices[i] = i % profileVertexCount;
+  }
+  geometry.userData.gridRowIndices = gridRowIndices;
+  geometry.userData.gridColIndices = gridColIndices;
   geometry.computeVertexNormals();
   return geometry;
 }

@@ -687,6 +687,18 @@ function createBranchChildGeometry(lock) {
       indices.push(a, b, startCenter, b, a, startCenter);
     });
   }
+  // Per-vertex sweep grid indices (rows x cols, row-major); bridge and end-cap
+  // vertices stay -1 so downstream exporters can rebuild the sweep topology from
+  // these (animeHairStudio:gridRow / gridCol primvars).
+  const totalVertices = vertices.length / 3;
+  const gridRowIndices = new Float32Array(totalVertices).fill(-1);
+  const gridColIndices = new Float32Array(totalVertices).fill(-1);
+  const sweptCount = (actualLengthSegments + 1) * ringCount;
+  for (let i = 0; i < sweptCount; i += 1) {
+    const vertexIndex = bridgeVertexCount + i;
+    gridRowIndices[vertexIndex] = Math.floor(i / ringCount);
+    gridColIndices[vertexIndex] = i % ringCount;
+  }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
   geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
@@ -701,6 +713,8 @@ function createBranchChildGeometry(lock) {
   geometry.userData.sideTriangleCount = actualLengthSegments * ringCount * 2;
   geometry.userData.triangleEdgeMasks = triangleEdgeMasks;
   geometry.userData.openSurface = false;
+  geometry.userData.gridRowIndices = gridRowIndices;
+  geometry.userData.gridColIndices = gridColIndices;
   geometry.computeVertexNormals();
   // Restore the parent's authored normals on bridge vertices that sit on the parent
   // hole boundary so the child blends into the parent's shading at the seam instead

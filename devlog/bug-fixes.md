@@ -1,4 +1,4 @@
-﻿# Bug 修复 / 已知问题
+# Bug 修复 / 已知问题
 
 <!-- 本文件由 devlog 拆分而来；入口见 README.md 索引 -->
 
@@ -48,3 +48,8 @@
    - 现象：0044 导出 USDA（勾选 Bones）后，Houdini `USD Character Import` 报 `Invalid source /obj/geo1/usdcharacterimport1/**skin**` / "Primitive does not have any Skeleton children"。
    - 根因：v1 骨骼导出只输出 `SkelRoot`（`Scope "Skeletons"` 下嵌套 `SkelJoint`），**没有任何蒙皮绑定**——Mesh 上没有 `SkelBindingAPI`（`skel:joints` / `skel:bindTransforms` / `rel skel:bindTransforms`），也没有含 Skeleton 的 `skin` prim。Houdini Character Import 要导入的是「蒙皮角色」（skin 下有 Skeleton），找不到 → 该报错。这属于计划中已推迟的 weights/binding 功能（`exportIncludeWeights` 保持禁用）。
    - 修复方向（后续）：导出时给每个 Mesh 施加 `SkelBindingAPI`——`skel:joints` = 该锁 main+split 关节序列、`skel:bindTransforms` = rest 位姿、`rel skel:bindTransforms` 指向该锁 SkelRoot；如需要变形再补权重（无权重时网格停在 bind pose，Houdini 可能仍提示缺权重）。记录在案，本轮不修（见 devlog/in-progress/bone-system-roadmap.md）。
+
+3. **Strand Profile 浮动面板打不开（0.2.69 修复，3d-3d-b 重构回归）**
+   - 问题：点击 Strand Profile 区铅笔按钮（Edit strand profile）不弹出浮动面板 `#sweepProfileEditor`。
+   - 根因：`modules/geometry/branch-sweep.js` 在 0.2.57「3d-3d-b」重构中从 app.js 抽取**不完整**——22 个 DOM/共享/THREE 变量（`taperCurveEditor`/`sweepProfileEditor`/`strandGroupDefaults`/`shapePresets` 等）既未在模块声明、未 import、也未注入 deps，ES module 严格模式下 `openSweepProfileEditor` 第一处 `if (taperCurveEditor.open)` 即抛 ReferenceError。
+   - 修复：补齐 import（curve-math 的 `sampleTaperCurve`/`twistCurveHandleDistancePerDegree` + io/shape-presets 的 `cloneShapePresetValue`；`shapePresets` 改直接 import 避开其 L8196 晚于 branchSweep L7855 的 TDZ）+ 22 个 deps 注入 + 修正 app.js 3 处 `branchSweep.branchSweep.activeSweepProfileTarget()` 双重笔误（同一复制粘贴 bug）。

@@ -4,14 +4,14 @@ import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-cr
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260812-2";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260812-1";
 import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260813-2";
-import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260813-4";
+import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260814-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260812-1";
 import { createSegmentControlApi } from "./modules/bones/segment-control.js?v=20260812-2";
 import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260813-1";
-import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260809-19";
+import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260814-1";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260809-18";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260809-17";
-import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260813-1";
+import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260814-1";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260809-15";
 import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip, strandSplitBonesFor, materializeStrandSplitBones, strandSplitBonesToData, strandSplitBonesFromData, mirrorStrandSplitBones } from "./modules/bones/bone-model.js?v=20260813-1";
 import { materializeTipChain } from "./modules/geometry/tip-sub-bone.js?v=20260813-1";
@@ -42,7 +42,7 @@ import { createReferenceStore } from "./modules/edit/reference-store.js?v=202608
 import { createDrawStore } from "./modules/edit/draw-store.js?v=20260809-4";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260809-3";
 import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
-import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260809-4";
+import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260814-1";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
@@ -137,7 +137,7 @@ import {
   scaleCapsuleRadialLoops
 } from "./modules/geometry/capsule-curve.js?v=20260804-1";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./modules/io/obj-export.js?v=20260726-1";
-import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260806-4";
+import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260814-1";
 import {
   fileActionFormat,
   fileNameForAction,
@@ -7858,6 +7858,11 @@ const branchSweep = createBranchSweepApi({
   getSelectedLock, profileToCanvas, renderHairCardCoveragePath, renderProfilePreview,
   strandRegionDisplayLabel, syncShapePresetSelects: presetLibraryApi.syncShapePresetSelects, taperMeshPointExtentPerValue: taperEditor.taperMeshPointExtentPerValue,
   taperMeshPointFrame: taperEditor.taperMeshPointFrame, taperSamples: taperEditor.taperSamples, updateDrawStrandPreview: drawFlowApi.updateDrawStrandPreview, updateViewportStatsVisibility, locks,
+  strandGroupDefaults, taperMeshPointsGroup, twistMeshCurvePositiveFillMaterial, twistMeshCurveNegativeFillMaterial,
+  twistMeshCurvePositiveMaterial, twistMeshCurveNegativeMaterial, profilePreviewPaths,
+  sweepProfileTarget, sweepProfileCanvas, sweepProfileOriginalPath, sweepProfileTrimInputs, sweepProfileTrimValues,
+  sweepProfileTrimRoundness, sweepProfileTrimRoundnessValue, sweepProfilePath, sweepProfileHairCardCoveragePath,
+  sweepProfilePoints, sweepPointInterpolation, sweepProfileMirrorX, sweepProfileEditor, taperCurveEditor, groupDefaultsWarning,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT, TWIST_CURVE_VALUE_MAX, STRAND_GROUPS,
   sculptState: sculptState.state, projectState: projectState.state, selState: sel.state, miscState: miscState.state
 });
@@ -15582,7 +15587,7 @@ sweepProfileMirrorX.addEventListener("click", () => {
 Object.entries(sweepProfileTrimInputs).forEach(([key, input]) => {
   bindUndoCapture(input);
   input.addEventListener("input", () => {
-    const target = branchSweep.branchSweep.activeSweepProfileTarget();
+    const target = branchSweep.activeSweepProfileTarget();
     if (!target) return;
     const value = THREE.MathUtils.clamp(Number(input.value), 0, 1);
     target[key] = value;
@@ -15595,7 +15600,7 @@ Object.entries(sweepProfileTrimInputs).forEach(([key, input]) => {
 });
 bindUndoCapture(sweepProfileTrimRoundness);
 sweepProfileTrimRoundness.addEventListener("input", () => {
-  const target = branchSweep.branchSweep.activeSweepProfileTarget();
+  const target = branchSweep.activeSweepProfileTarget();
   if (!target) return;
   target.profileTrimRoundness = THREE.MathUtils.clamp(Number(sweepProfileTrimRoundness.value), 0, 1);
   branchSweep.applySweepProfileEdit();
@@ -15625,7 +15630,7 @@ document.querySelector("#deleteSweepPoint").addEventListener("click", () => {
 });
 document.querySelector("#resetSweepProfile").addEventListener("click", () => {
   const profile = branchSweep.activeSweepProfile();
-  const target = branchSweep.branchSweep.activeSweepProfileTarget();
+  const target = branchSweep.activeSweepProfileTarget();
   if (!profile || !sculptState.state.sweepProfileEdit) return;
   pushUndoState();
   profile.splice(0, profile.length, ...DEFAULT_SWEEP_PROFILE.map((point) => ({ ...point })));

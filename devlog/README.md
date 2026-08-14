@@ -50,6 +50,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - **本地持久化功能（简体中文、Houdini 导航、Quick Save/Export 等）**：development-standards.md「持续修改功能」。
 
 ## 最近版本 / Latest
+- 修复 Strand Profile 浮动面板打不开 + 导出扫掠 rows/cols 编号（0.2.69，分支 0.2.69-bugfix）：① branch-sweep.js（3d-3d-b 重构）抽取不完整 → 22 个自由变量，点击铅笔按钮抛 ReferenceError、浮动面板永不弹出；补 import + 22 deps 注入 + 3 处 `branchSweep.branchSweep.activeSweepProfileTarget()` 双重笔误修复。② 几何导出带扫掠网格每顶点 rows/cols 编号（桥接除外），USDA 输出 `int[] primvars:animeHairStudio:gridRow`/`gridCol`。详见 bug-fixes.md 与 development-standards.md「持续修改功能」。
 - 文档筛查 + 快捷键修复（0.2.65，分支 0.2.65-bugfix）：数字/日期输入框不再被 1/2/3（workspace）与 q/w/e（工具）快捷键抢占（shortcut-registry 把可键入数值的 input 视为文本输入）；重新生成 FUNCTION_INDEX（2,003 函数 / 94 文件）与 GLOBAL_LET_INVENTORY（1 let），并同步更新 APPJS_SPLIT_GUIDE / AGENT_QUICKSTART / STATE_MANAGEMENT（17 store）等指引字典。
 - 发尖控件 4 项修复（0.2.65，分支 0.2.64-panel-tip-curve）：绿色 spread 手柄拖拽热同步 Main 面板 Segment Spread；所有段绿色手柄显示 + 拖非选中段不切换（有意设计，规范化注释）；绿色手柄跟随 tip trim/curve + 切线外推 0.08（不再浮在未 trim 尖端）；W 移动 gizmo 上发尖骨骼 + Pull Strand 按 fork 以下暴露区整体求解（`beginTipSubBoneTranslate`/`solvePulledStrand`）。详见 devlog/in-progress/panel-split-tip-bones.md §8.29。
 

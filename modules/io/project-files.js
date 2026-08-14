@@ -1,4 +1,4 @@
-﻿// project-files.js — Save / Export subsystem, extracted from app.js (refactor stage 2b).
+// project-files.js — Save / Export subsystem, extracted from app.js (refactor stage 2b).
 // All app.js coupling is injected through createProjectSaveApi(deps):
 //   state (get/set): currentProjectName, quickSaveFileHandle, quickSaveFileName,
 //     projectSaveInProgress, lastExport, quickExportFileHandle, quickExportInProgress, pendingFileAction
@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { leafWeightAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActionFormat } from "./file-actions.js?v=20260728-1";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260726-1";
-import { exportAnimeHairUsda } from "./usda-export.js?v=20260806-4";
+import { exportAnimeHairUsda } from "./usda-export.js?v=20260814-1";
 import { createHairProject } from "./project-schema.js?v=20260728-2";
 
 export function createProjectSaveApi(deps) {
@@ -172,6 +172,8 @@ export function createProjectSaveApi(deps) {
         const geometry = lock.mesh.geometry;
         const position = geometry.getAttribute("position");
         if (position) {
+          const gridRowIndices = geometry.userData?.gridRowIndices;
+          const gridColIndices = geometry.userData?.gridColIndices;
           const mesh = {
             name: lock.name,
             group: lock.group || "unassigned",
@@ -183,6 +185,10 @@ export function createProjectSaveApi(deps) {
             tangents: bufferAttributeTuples(geometry.getAttribute("tangent"), 4),
             faces: hairFaceIndices(geometry)
           };
+          if (gridRowIndices?.length === position.count && gridColIndices?.length === position.count) {
+            mesh.gridRowIndices = Array.from(gridRowIndices);
+            mesh.gridColIndices = Array.from(gridColIndices);
+          }
           if (includeBones && typeof deps.bonesFor === "function") {
             const bones = deps.bonesFor(lock, { locks: deps.locks })
               .filter((bone) => !bone.name.startsWith("child."));

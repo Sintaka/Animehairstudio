@@ -118,6 +118,20 @@ function meshBlock(mesh, identifier, skelId = null) {
   if (Array.isArray(mesh.tangents) && mesh.tangents.length === points.length) {
     lines.push(...primvarLines("float4", "animeHairStudio:tangent", mesh.tangents, "vertex"));
   }
+  if (Array.isArray(mesh.gridRowIndices) && mesh.gridRowIndices.length === points.length) {
+    lines.push(
+      `            int[] primvars:animeHairStudio:gridRow = ${numberArray(mesh.gridRowIndices)} (`,
+      '                interpolation = "vertex"',
+      "            )"
+    );
+  }
+  if (Array.isArray(mesh.gridColIndices) && mesh.gridColIndices.length === points.length) {
+    lines.push(
+      `            int[] primvars:animeHairStudio:gridCol = ${numberArray(mesh.gridColIndices)} (`,
+      '                interpolation = "vertex"',
+      "            )"
+    );
+  }
   lines.push(...metadataLines(mesh, "            "), "        }");
   return lines.join("\n");
 }

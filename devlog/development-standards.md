@@ -48,6 +48,7 @@
 | 状态管理 store 体系（scene-store + 15 个域 store） | 启用 | 全局 let 241→1（仅 camera）；新状态一律进对应 store（清单见 STATE_MANAGEMENT.md）；app.js 不新增全局 let；业务逻辑拆分完成（app.js 39,207→18,401 行，见 APPJS_SPLIT_GUIDE.md） |
 | 拖放统一分发 | deprecated | main 0.1.4 已有应用文件拖放确认对话框，本地实现已删除 |
 | 雕刻笔刷选择遮罩 | deprecated | main 0.1.4 已有 sculptBrushSelectionAllows，本地实现已删除 |
+| 几何导出扫掠 rows/cols 编号（桥接除外） | 启用 | 0.2.69：普通发丝前 `gridRows×gridCols` 顶点行主序写 `gridRowIndices`/`gridColIndices`；子发片桥接+端盖顶点 = -1（除外）；USDA 导出 `int[] primvars:animeHairStudio:gridRow`/`gridCol`（interpolation=vertex） |
 
 > 新增本地功能时，应同步在本表补充一行，并说明其「启用 / deprecated」状态与依赖的 main 版本。
 
