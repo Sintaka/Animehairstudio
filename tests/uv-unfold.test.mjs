@@ -649,6 +649,95 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   assert.ok(Math.abs(mesh.uvs[8] - 0.8) < EPS); // seam 副本 u = seamEndU
 }
 
+// ---- uScale 中心缩放：span ×1.1 后中心不变、宽度 ×1.1（project-files 的洞中心放大公式）----
+{
+  const geometry = closedArcGeometry(2, [[0, 0], [1, 0], [1, 1], [0, 1]]); // 单位方环，周长 4
+  const childCirc = 4;
+  const holeUMin = 0.2;
+  const holeUMax = 0.6;
+  const holeUCenter = (holeUMin + holeUMax) * 0.5; // 0.4
+  const holeUSpan = (holeUMax - holeUMin) * 1.1;   // 0.44
+  const uOffset = holeUCenter - holeUSpan * 0.5;   // 0.18
+  const uScale = holeUSpan / childCirc;            // 0.11
+  const table = gridUvTable(geometry, "child", 0, null, uOffset, uScale);
+  assert.ok(table, "child uOffset/uScale table");
+  assert.ok(Math.abs(table.colU.get(0) - uOffset) < EPS);            // 起点 u = uOffset
+  assert.ok(Math.abs(table.seamEndU - (uOffset + childCirc * uScale)) < EPS); // 终点 u = uOffset + span
+  const start = table.colU.get(0);
+  const end = table.seamEndU;
+  assert.ok(Math.abs((start + end) / 2 - holeUCenter) < EPS); // 中心不变（0.4）
+  assert.ok(Math.abs((end - start) - 0.44) < EPS);            // 宽度 ×1.1（原 0.4 → 0.44）
+}
+
+// ---- childVSweepStart：扫掠 v 起点 = childVSweepStart，桥接 v 仍用 childVStart ----
+{
+  const R = 3;
+  const C = 4;
+  const seamCol = 2;
+  const childVStart = 0.6;
+  const childVLength = 0.2;
+  const childVSweepStart = 0.3;
+
+  // 子发片环：3×4 正方形 + 1 个桥接顶点（col=-1，中线 ring=seamCol）
+  const ringXY = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  const positions = [];
+  const normals = [];
+  const uvs = [];
+  const gridRowIndices = [];
+  const gridColIndices = [];
+  for (let r = 0; r < R; r += 1) {
+    for (let c = 0; c < C; c += 1) {
+      positions.push(ringXY[c][0], ringXY[c][1], r);
+      normals.push(0, 0, 1);
+      uvs.push(0.5, 0.5);
+      gridRowIndices.push(r);
+      gridColIndices.push(c);
+    }
+  }
+  positions.push(5, 0, 1); normals.push(0, 0, 1); uvs.push(0.1, 0.2);
+  gridRowIndices.push(-1); gridColIndices.push(-1);
+  const quadFaces = [];
+  for (let r = 0; r < R - 1; r += 1) {
+    for (let c = 0; c < C; c += 1) {
+      const next = (c + 1) % C;
+      quadFaces.push([r * C + c, (r + 1) * C + c, (r + 1) * C + next, r * C + next]);
+    }
+  }
+  const geometry = {
+    userData: {
+      gridRowIndices: new Float32Array(gridRowIndices),
+      gridColIndices: new Float32Array(gridColIndices),
+      quadFaces,
+      ringWidthSegments: 4
+    },
+    getAttribute: (name) => ({
+      position: makeAttr(positions, 3),
+      normal: makeAttr(normals, 3),
+      uv: makeAttr(uvs, 2)
+    })[name]
+  };
+  // 桥接顶点 v 用 childVStart（不受 childVSweepStart 影响）
+  const mesh = unfoldHairMesh(geometry, {
+    kind: "child",
+    seamCol,
+    childVStart,
+    childVLength,
+    childVSweepStart,
+    bridgeUvAt: () => [0.2, childVStart]
+  });
+  assert.ok(mesh, "childVSweepStart unfold should succeed");
+  // 环顶点 v 起点 = childVSweepStart
+  assert.ok(Math.abs(mesh.uvs[1] - childVSweepStart) < EPS);
+  // row1 v = childVSweepStart - 1/(R-1)*childVLength
+  assert.ok(Math.abs(mesh.uvs[(C + 1) * 2 + 1] - (childVSweepStart - (1 / (R - 1)) * childVLength)) < EPS);
+  // row2 v = childVSweepStart - childVLength
+  assert.ok(Math.abs(mesh.uvs[2 * (C + 1) * 2 + 1] - (childVSweepStart - childVLength)) < EPS);
+  // 桥接顶点 v = childVStart（副本索引 = 网格顶点后 R*(C+1)）
+  const bridgeOut = R * (C + 1);
+  assert.ok(Math.abs(mesh.uvs[bridgeOut * 2 + 1] - childVStart) < EPS);
+  assert.equal(mesh.gridRows[bridgeOut], -1);
+}
+
 // ---- 回退路径：缺 grid / 缺 quadFaces / 非矩形 grid / 未知 kind / 弧长表缺失 → null ----
 {
   const noQuads = closedTorusGeometry(2, 2);

@@ -220,6 +220,9 @@ export function gridUvAt(uvTable, gridRows, gridCols, vertexIndex) {
 //   passthroughCopyCount (vertexIndex) -> int：-1 顶点副本数（默认 1）。
 //   passthroughSide (vertexIndex, face, vi) -> 0|1：-1 顶点在 face 中使用哪个副本（默认 0）。
 //   childVStart / childVLength  child kind 的 V 归一（默认 1 / 1；v = start - row/(R-1)*len）
+//   childVSweepStart  child kind 扫掠网格 V 起点（默认 = childVStart）；
+//              v = childVSweepStart - row/(R-1)*childVLength；桥接 passthrough 的 v 仍用
+//              childVStart（与扫掠起点分离，给桥接 bottom band 留空间）。
 // 返回 { positions, normals, tangents, colors, uvs, faces, gridRows, gridCols, leafWeights }；
 // positions/normals/colors 三元组、tangents 四元组、uvs 二元组平铺 number 数组，
 // faces 为 number[][]；normals/tangents/colors 在源属性缺失时为 null，
@@ -346,13 +349,17 @@ export function unfoldHairMesh(geometry, options = {}) {
   const gridRowOut = new Float32Array(totalVertexCount);
   const gridColOut = new Float32Array(totalVertexCount);
   const sourceOfNew = new Array(totalVertexCount);
-  // child：V 按主发片尺度归一（childVStart - row/(R-1)*childVLength）；其它 kind 保持
-  // 根=1 / 尖=0。childVStart=1、childVLength=1 时与旧行为一致。
+  // child：V 按主发片尺度归一（childVSweepStart - row/(R-1)*childVLength）；其它 kind 保持
+  // 根=1 / 尖=0。childVSweepStart 缺省 = childVStart（childVStart=1、childVLength=1 时与
+  // 旧行为一致）。桥接 passthrough 的 v 由 bridgeUvAt 决定（仍用 childVStart），不受此影响。
   const childVStart = Number.isFinite(Number(options.childVStart)) ? Number(options.childVStart) : 1;
   const childVLength = Number.isFinite(Number(options.childVLength)) ? Number(options.childVLength) : 1;
+  const childVSweepStart = Number.isFinite(Number(options.childVSweepStart))
+    ? Number(options.childVSweepStart)
+    : childVStart;
   const vForRow = (row) => {
-    if (R < 2) return kind === "child" ? childVStart : 0.5;
-    if (kind === "child") return childVStart - (row / (R - 1)) * childVLength;
+    if (R < 2) return kind === "child" ? childVSweepStart : 0.5;
+    if (kind === "child") return childVSweepStart - (row / (R - 1)) * childVLength;
     return 1 - row / (R - 1);
   };
 

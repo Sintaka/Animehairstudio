@@ -50,6 +50,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - **本地持久化功能（简体中文、Houdini 导航、Quick Save/Export 等）**：development-standards.md「持续修改功能」。
 
 ## 最近版本 / Latest
+- 子发片 UV 微调：U 中心缩放 1.1 + 扫掠下移 + 取消横缝（0.2.78，分支 0.2.69-bugfix）：扫掠 U 围绕洞中心放大 1.1 倍（U 布局保持「外侧顶部（背面）在中间、侧面在中间两侧、最两侧后面」）；扫掠下移给桥接 bottom band 留空间；取消十字横缝（仅保留上下竖缝，修复侧面 UV 切乱/展到下面）。
 - split 双管 U 轴排列 + 十字横缝 + 子发片 U 居中（0.2.77，分支 0.2.69-bugfix）：① 主发片 split 两管 UV 不再重叠（管 1 排在管 0 右侧，u=前管周长和+本管弧长，除以总周长）；② 十字横缝修正——底带从中心向左右各 2 条边切开（seam±1 顶点链双副本，side 判定改环向序修复切乱）；③ 子发片扫掠 U 收缩+位移（uOffset=洞中心−半宽、uScale=洞宽/子周长：中心对齐洞中心、宽度≈洞宽、外侧贴洞左右两段），seam 副本槽 u 用 seamEndU。详见 development-standards.md「持续修改功能」。
 - 修复子发片 USDA poly 缺失 + 桥接十字切开 + 洞底对齐（0.2.76，分支 0.2.69-bugfix）：wrap quad 丢弃造成几何开口（poly 缺失）→ 恢复顶点复制式切开（seam/管首/桥接中线双副本，全部 quad 保留）；扫掠 UV 顶部对齐桥洞最底端（最靠 -V 侧）再往下留一行空隙；桥接锚点加 band 标记——top/side 向洞插值（顶部与侧面顶部对齐主发片），bottom 从中线切开自然展开（不强硬对齐洞底）；U 保持主发片周长缩放。
 - 修复 split 发丝 UV 展开真实几何下整体失效（0.2.75，分支 0.2.69-bugfix）：根因——split 的 gridColIndices 用 colToSection.findIndex 匹配 fused 列，profile x=0 点（splitX=0）被 clip 进两管却只归管 0 → 管 1 每行 2 个 -1 → split 父发片弧长表整体 null → 子发片桥接 UV 接线整个关闭（没切 UV、没对齐洞）；修复：split 网格列改「管局部列 + 全局偏移」（seam=管首列、无 -1），uv-unfold split 分支删除 -1/colToSection 依赖；AHS_gridCol 语义改为管局部偏移列。

@@ -10,7 +10,7 @@ import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActi
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260726-1";
 import { exportAnimeHairUsda } from "./usda-export.js?v=20260814-2";
 import { createHairProject } from "./project-schema.js?v=20260728-2";
-import { unfoldHairMesh, gridUvTable, gridUvAt } from "./uv-unfold.js?v=20260814-9";
+import { unfoldHairMesh, gridUvTable, gridUvAt } from "./uv-unfold.js?v=20260814-10";
 
 export function createProjectSaveApi(deps) {
   // ---- dialog UI elements (document is ready when this runs; app.js loads at body end) ----
@@ -196,14 +196,27 @@ export function createProjectSaveApi(deps) {
         let uOffset = 0; let uScale = null;
         if (Number.isFinite(holeUMin) && Number.isFinite(holeUMax) && holeUMax > holeUMin && childCirc > 0) {
           const holeUCenter = (holeUMin + holeUMax) * 0.5;
-          const holeUSpan = holeUMax - holeUMin; // 宽度与洞宽对齐（外侧列贴洞左右两段）
+          const holeUSpan = (holeUMax - holeUMin) * 1.1; // 围绕洞中心横向放大 1.1 倍（span ×1.1，中心不变）。
+          // U 布局：外侧顶部（背面）poly 在中间、侧面在中间两侧、最两侧是后面（seam 双副本 0/1）。
           uOffset = holeUCenter - holeUSpan * 0.5;
           uScale = holeUSpan / childCirc;
         }
-        options = { kind, seamCol, childVStart, childVLength, uOffset, uScale };
+        // 桥接 bottom band 从环侧向下延伸（v = childVStart - t×span），独占
+        // [childVStart - bottomBandSpan, childVStart]；扫掠起点下移 bottomBandSpan 让位。
+        const bottomBandSpan = childVLength * 0.5;
+        options = {
+          kind,
+          seamCol,
+          childVStart,
+          childVLength,
+          childVSweepStart: Math.max(0, childVStart - bottomBandSpan),
+          uOffset,
+          uScale
+        };
         if (Array.isArray(anchors) && anchors.length && parentTable) {
           // 子发片桥接表：与展开输出同尺度（uOffset/uScale 收缩+位移到洞中心/洞宽），
-          // 洞侧 u = parent 弧长 u（同一尺度）。桥接底带 seam 及左右各一列双副本十字横缝切开。
+          // 洞侧 u = parent 弧长 u（同一尺度）。桥接底带仅中线（seam 列）双副本竖缝切开
+          // （横缝已取消：seam±1 不再双副本）。
           const uvTable = gridUvTable(geometry, "child", seamCol, null, uOffset, uScale);
           if (uvTable) {
             const childGridCols = geometry.userData?.gridColIndices;
@@ -219,14 +232,12 @@ export function createProjectSaveApi(deps) {
             options.passthroughCopyCount = (vertexIndex) => {
               const anchor = anchors[vertexIndex];
               if (!anchor || anchor.band !== "bottom") return 1;
-              if (!Number.isFinite(anchor.ring) || anchor.ring < 0) return 1;
-              const rPos = rPosOf(anchor.ring);
-              return (rPos === 0 || rPos === 1 || rPos === C - 1) ? 2 : 1;
+              return (anchor.ring === seamCol) ? 2 : 1; // 仅中线（seam 列）双副本竖缝
             };
             options.passthroughSide = (vertexIndex, face) => {
               const anchor = anchors[vertexIndex];
               if (!anchor || anchor.band !== "bottom") return 0;
-              if (!Number.isFinite(anchor.ring) || anchor.ring < 0) return 0;
+              if (anchor.ring !== seamCol) return 0; // 中线专用判定
               const rPos = rPosOf(anchor.ring);
               let cx = -1;
               for (const fx of face) {
@@ -264,7 +275,7 @@ export function createProjectSaveApi(deps) {
               }
               let ringU = 0;
               if (anchor.ring >= 0 && anchor.ring !== seamCol && uvTable.colU.has(anchor.ring)) {
-                ringU = uvTable.colU.get(anchor.ring); // 含 seam±1：左右副本同值，UV 连续、拓扑分离
+                ringU = uvTable.colU.get(anchor.ring); // seam±1 现为单副本（横缝已取消）
               } else if (anchor.ring === seamCol) {
                 // 中线双副本：side1=终点 u=seamEndU，side0=起点 u=colU(seamCol)。
                 ringU = side === 1 ? (uvTable.seamEndU ?? 1) : uvTable.colU.get(seamCol);
@@ -274,8 +285,7 @@ export function createProjectSaveApi(deps) {
               if (anchor.band === "bottom") {
                 // 底部桥接从中间切开自然展开：u 保持环侧（不向洞插值），v 从环侧沿 V 负方向
                 // 按条带参数延伸固定跨度（不强硬对齐洞底顶点 uv）。
-                const bandVSpan = childVLength * 0.5;
-                return [ringU, childVStart - t * bandVSpan];
+                return [ringU, childVStart - t * bottomBandSpan];
               }
               // top / side（顶部与侧面顶部对齐洞）：u/v 向洞侧插值
               return [ringU + (holeU - ringU) * t, childVStart + (holeV - childVStart) * t];
