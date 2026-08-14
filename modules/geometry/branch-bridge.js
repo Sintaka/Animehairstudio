@@ -689,7 +689,7 @@ function createBranchChildGeometry(lock) {
   }
   // Per-vertex sweep grid indices (rows x cols, row-major); bridge and end-cap
   // vertices stay -1 so downstream exporters can rebuild the sweep topology from
-  // these (animeHairStudio:gridRow / gridCol primvars).
+  // these (AHS_gridRow / AHS_gridCol primvars).
   const totalVertices = vertices.length / 3;
   const gridRowIndices = new Float32Array(totalVertices).fill(-1);
   const gridColIndices = new Float32Array(totalVertices).fill(-1);

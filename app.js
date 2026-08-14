@@ -3,15 +3,15 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260812-1";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260812-2";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260812-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260813-2";
-import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260814-1";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260814-2";
+import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260814-2";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260812-1";
 import { createSegmentControlApi } from "./modules/bones/segment-control.js?v=20260812-2";
 import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260813-1";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260814-1";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260809-18";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260809-17";
-import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260814-1";
+import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260814-2";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260809-15";
 import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip, strandSplitBonesFor, materializeStrandSplitBones, strandSplitBonesToData, strandSplitBonesFromData, mirrorStrandSplitBones } from "./modules/bones/bone-model.js?v=20260813-1";
 import { materializeTipChain } from "./modules/geometry/tip-sub-bone.js?v=20260813-1";
@@ -137,7 +137,7 @@ import {
   scaleCapsuleRadialLoops
 } from "./modules/geometry/capsule-curve.js?v=20260804-1";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./modules/io/obj-export.js?v=20260726-1";
-import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260814-1";
+import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260814-2";
 import {
   fileActionFormat,
   fileNameForAction,

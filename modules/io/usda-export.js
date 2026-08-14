@@ -120,14 +120,14 @@ function meshBlock(mesh, identifier, skelId = null) {
   }
   if (Array.isArray(mesh.gridRowIndices) && mesh.gridRowIndices.length === points.length) {
     lines.push(
-      `            int[] primvars:animeHairStudio:gridRow = ${numberArray(mesh.gridRowIndices)} (`,
+      `            int[] primvars:AHS_gridRow = ${numberArray(mesh.gridRowIndices)} (`,
       '                interpolation = "vertex"',
       "            )"
     );
   }
   if (Array.isArray(mesh.gridColIndices) && mesh.gridColIndices.length === points.length) {
     lines.push(
-      `            int[] primvars:animeHairStudio:gridCol = ${numberArray(mesh.gridColIndices)} (`,
+      `            int[] primvars:AHS_gridCol = ${numberArray(mesh.gridColIndices)} (`,
       '                interpolation = "vertex"',
       "            )"
     );

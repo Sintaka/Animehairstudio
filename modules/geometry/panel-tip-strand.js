@@ -67,7 +67,7 @@ function smoothCoincidentPanelNormals(geometry, tolerance = 0.0001) {
   normals.needsUpdate = true;
 }
 
-function weldPanelGeometryData(positions, uvs, colors, indices, quadFaces, tolerance = 0.00001, weights = null) {
+function weldPanelGeometryData(positions, uvs, colors, indices, quadFaces, tolerance = 0.00001, weights = null, gridRows = null, gridCols = null) {
   const inverseTolerance = 1 / tolerance;
   const vertexMap = new Map();
   const remap = new Array(positions.length / 3);
@@ -75,6 +75,8 @@ function weldPanelGeometryData(positions, uvs, colors, indices, quadFaces, toler
   const weldedUvs = [];
   const weldedColors = [];
   const weldedWeights = weights ? [] : null;
+  const weldedGridRows = gridRows ? [] : null;
+  const weldedGridCols = gridCols ? [] : null;
   for (let vertex = 0; vertex < remap.length; vertex += 1) {
     const positionOffset = vertex * 3;
     const uvOffset = vertex * 2;
@@ -100,6 +102,10 @@ function weldPanelGeometryData(positions, uvs, colors, indices, quadFaces, toler
         const weightOffset = vertex * 3;
         weldedWeights.push(weights[weightOffset], weights[weightOffset + 1], weights[weightOffset + 2]);
       }
+      if (weldedGridRows) {
+        weldedGridRows.push(gridRows[vertex]);
+        weldedGridCols.push(gridCols[vertex]);
+      }
     }
     remap[vertex] = weldedVertex;
   }
@@ -108,6 +114,8 @@ function weldPanelGeometryData(positions, uvs, colors, indices, quadFaces, toler
     uvs: weldedUvs,
     colors: weldedColors,
     weights: weldedWeights,
+    gridRows: weldedGridRows,
+    gridCols: weldedGridCols,
     indices: indices.map((index) => remap[index]),
     quadFaces: quadFaces.map((face) => face.map((index) => remap[index]))
   };
@@ -729,6 +737,8 @@ function createPanelStrandGeometry(lock) {
   const positions = [];
   const uvs = [];
   const colors = [];
+  const gridRowsArr = [];
+  const gridColsArr = [];
   const indices = [];
   const quadFaces = [];
   const triangleEdgeMasks = [];
@@ -846,6 +856,7 @@ function createPanelStrandGeometry(lock) {
   // Length and direction come from editing the chain's points.
   const addPatch = (rowStart, rowEnd, uStart, uEnd, columns, options = {}, bone = null, segment = -1) => {
     const rows = rowEnd - rowStart;
+    const colBase = Number(options.colBase || 0);
     const hasZipper = Boolean(splits[segment - 1] || splits[segment]);
     const tip = (!latticeControlled && segment >= 0 && hasZipper)
       ? splitTipForSegment(lock, segment, splits, bone)
@@ -911,11 +922,15 @@ function createPanelStrandGeometry(lock) {
         }
         frontRow.push(positions.length / 3);
         positions.push(frontPoint.x, frontPoint.y, frontPoint.z);
+        gridRowsArr.push(row);
+        gridColsArr.push((colBase + column) * 2 + 1);
         uvs.push((u + 1) * 0.5, t);
         colors.push(color.r, color.g, color.b);
         panelWeights.push(mainJoint, segmentIndex, weight);
         backRow.push(positions.length / 3);
         positions.push(backPoint.x, backPoint.y, backPoint.z);
+        gridRowsArr.push(row);
+        gridColsArr.push((colBase + column) * 2);
         uvs.push((u + 1) * 0.5, t);
         colors.push(color.r, color.g, color.b);
         panelWeights.push(mainJoint, segmentIndex, weight);
@@ -982,6 +997,7 @@ function createPanelStrandGeometry(lock) {
       ? boundaries[segment + 1] - tipWidthSpreadGap(lock, segment, splits, bone, rowParameters[row], 1)
       : 1;
     addPatch(0, lengthLoops, uStart, uEnd, columns, {
+      colBase: segmentColumns.slice(0, segment).reduce((sum, count) => sum + count, 0),
       capStart: true,
       capEnd: true,
       leftWallStartRow: leftSplit ? rowParameters.findIndex((parameter) => parameter >= 1 - leftSplit.height) : 0,
@@ -1001,7 +1017,7 @@ function createPanelStrandGeometry(lock) {
     triangleEdgeMasks.forEach((mask) => { [mask[1], mask[2]] = [mask[2], mask[1]]; });
   }
 
-  const welded = weldPanelGeometryData(positions, uvs, colors, indices, quadFaces, 0.00001, panelWeights);
+  const welded = weldPanelGeometryData(positions, uvs, colors, indices, quadFaces, 0.00001, panelWeights, gridRowsArr, gridColsArr);
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(welded.positions, 3));
@@ -1012,6 +1028,12 @@ function createPanelStrandGeometry(lock) {
   geometry.userData.triangleEdgeMasks = triangleEdgeMasks;
   geometry.userData.panelWeights = welded.weights;
   geometry.userData.leafWeights = welded.weights;
+  if (welded.gridRows && welded.gridCols) {
+    // Simulated sweep grid indices (AHS_gridRow / AHS_gridCol primvars): row =
+    // along-curve row, col = global column across segments (front/back adjacent).
+    geometry.userData.gridRowIndices = new Float32Array(welded.gridRows);
+    geometry.userData.gridColIndices = new Float32Array(welded.gridCols);
+  }
   geometry.computeVertexNormals();
   smoothCoincidentPanelNormals(geometry);
   geometry.computeBoundingSphere();

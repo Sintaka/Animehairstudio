@@ -417,6 +417,24 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     fusedIndexAt,
     splitStartRow
   };
+  // Per-vertex sweep grid indices (AHS_gridRow / AHS_gridCol primvars): row =
+  // along-curve row (0..actualLengthSegments); col = fused cross-section column
+  // (0..fusedCols-1) so split parents keep the same grid spec as un-carved strands.
+  const totalVertices = vertices.length / 3;
+  const gridRowIndices = new Float32Array(totalVertices).fill(-1);
+  const gridColIndices = new Float32Array(totalVertices).fill(-1);
+  for (let sectionIndex = 0; sectionIndex < sectionBases.length; sectionIndex += 1) {
+    const { base, ringSize } = sectionBases[sectionIndex];
+    const sectionVertexCount = (actualLengthSegments + 1) * ringSize;
+    for (let offset = 0; offset < sectionVertexCount; offset += 1) {
+      const vertexIndex = base + offset;
+      const fusedCol = colToSection.findIndex((entry) => entry.section === sectionIndex && entry.col === offset % ringSize);
+      gridRowIndices[vertexIndex] = Math.floor(offset / ringSize);
+      gridColIndices[vertexIndex] = fusedCol >= 0 ? fusedCol : -1;
+    }
+  }
+  geometry.userData.gridRowIndices = gridRowIndices;
+  geometry.userData.gridColIndices = gridColIndices;
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
@@ -568,6 +586,18 @@ function createHairCardGeometry(lock, curve, profilePoints) {
   geometry.userData.gridFacesPerRow = profileEdges.length;
   geometry.userData.gridSkipCol = deps.gridProfileSkipCol(profileEdges, profileVertexCount);
   geometry.userData.openSurface = true;
+  // Per-vertex sweep grid indices (AHS_gridRow / AHS_gridCol primvars): the swept
+  // card is row-major (actualLengthSegments+1 rows x profileVertexCount cols), no
+  // end caps, so every vertex belongs to the grid.
+  const totalVertices = vertices.length / 3;
+  const gridRowIndices = new Float32Array(totalVertices).fill(-1);
+  const gridColIndices = new Float32Array(totalVertices).fill(-1);
+  for (let i = 0; i < totalVertices; i += 1) {
+    gridRowIndices[i] = Math.floor(i / profileVertexCount);
+    gridColIndices[i] = i % profileVertexCount;
+  }
+  geometry.userData.gridRowIndices = gridRowIndices;
+  geometry.userData.gridColIndices = gridColIndices;
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
@@ -659,6 +689,17 @@ function createConnectedCurveCardGeometry(lock) {
   geometry.userData.openSurface = true;
   geometry.userData.curveSurfaceControllerCount = grid.controllerCurves.length;
   geometry.userData.actualLengthSegments = Math.max(0, grid.rows - 1);
+  // Per-vertex sweep grid indices (AHS_gridRow / AHS_gridCol primvars): the card
+  // grid is row-major (grid.rows x grid.columns), no end caps.
+  const totalVertices = positions.length / 3;
+  const gridRowIndices = new Float32Array(totalVertices).fill(-1);
+  const gridColIndices = new Float32Array(totalVertices).fill(-1);
+  for (let i = 0; i < totalVertices; i += 1) {
+    gridRowIndices[i] = Math.floor(i / grid.columns);
+    gridColIndices[i] = i % grid.columns;
+  }
+  geometry.userData.gridRowIndices = gridRowIndices;
+  geometry.userData.gridColIndices = gridColIndices;
   if (indices.length) geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
@@ -910,6 +951,20 @@ function createCompoundStrandGeometry(lock) {
   geometry.userData.compoundBridgeSmoothing = bridgeSmoothing;
   geometry.userData.compoundBridgeEndCapped = true;
   geometry.userData.openSurface = true;
+  // Per-vertex sweep grid indices (AHS_gridRow / AHS_gridCol primvars): the base
+  // controller grid is row-major (row, controller, profile) flattened to a single
+  // column; appended compound-bridge vertices stay -1 (no grid meaning).
+  const totalVertices = vertices.length / 3;
+  const gridRowIndices = new Float32Array(totalVertices).fill(-1);
+  const gridColIndices = new Float32Array(totalVertices).fill(-1);
+  const baseGridCount = renderRows * controllerCount * profileCount;
+  const columnsPerRow = controllerCount * profileCount;
+  for (let i = 0; i < baseGridCount; i += 1) {
+    gridRowIndices[i] = Math.floor(i / columnsPerRow);
+    gridColIndices[i] = i % columnsPerRow;
+  }
+  geometry.userData.gridRowIndices = gridRowIndices;
+  geometry.userData.gridColIndices = gridColIndices;
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
@@ -1143,7 +1198,7 @@ function createBaseHairGeometry(lock) {
   geometry.userData.quadFaces = quadFaces;
   // Per-vertex sweep grid indices (rows x cols, row-major); the two end-cap
   // center vertices stay -1 so downstream exporters can rebuild the sweep
-  // topology from these (animeHairStudio:gridRow / gridCol primvars).
+  // topology from these (AHS_gridRow / AHS_gridCol primvars).
   const sweptCount = (actualLengthSegments + 1) * profileVertexCount;
   const gridRowIndices = new Float32Array(sweptCount + 2).fill(-1);
   const gridColIndices = new Float32Array(sweptCount + 2).fill(-1);

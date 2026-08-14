@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { leafWeightAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActionFormat } from "./file-actions.js?v=20260728-1";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260726-1";
-import { exportAnimeHairUsda } from "./usda-export.js?v=20260814-1";
+import { exportAnimeHairUsda } from "./usda-export.js?v=20260814-2";
 import { createHairProject } from "./project-schema.js?v=20260728-2";
 
 export function createProjectSaveApi(deps) {
