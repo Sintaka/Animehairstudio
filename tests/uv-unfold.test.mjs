@@ -7,6 +7,7 @@ import {
   gridDimensions,
   gridUvTable,
   gridUvAt,
+  childUTopologyScale,
   unfoldHairMesh
 } from "../modules/io/uv-unfold.js";
 
@@ -763,6 +764,69 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   const missingRow0 = closedArcGeometry(2, ARC10_POINTS);
   missingRow0.userData.gridColIndices[1] = 9;
   assert.equal(unfoldHairMesh(missingRow0, { kind: "closed", seamCol: 0 }), null);
+}
+
+// ---- childUTopologyScale：环顶面弧长 ↔ 洞顶 u 跨度 → uScale/uOffset 拓扑对齐 ----
+// 6 列环：row0 位置 x=0..5（环向边宽 1），wrap 边 d(5,0)=5。top band 锚点 ring 0/1/2
+// （W=2），洞顶 parent u = 0.3/0.4/0.5 → 跨度 0.2 → uScale=0.1、uOffset=0.3−arc×0.1。
+{
+  const C = 6;
+  const positions = [];
+  const normals = [];
+  const uvs = [];
+  const gridRowIndices = [];
+  const gridColIndices = [];
+  for (let r = 0; r < 2; r += 1) {
+    for (let c = 0; c < C; c += 1) {
+      positions.push(c, 0, r);
+      normals.push(0, 0, 1);
+      uvs.push(0.5, 0.5);
+      gridRowIndices.push(r);
+      gridColIndices.push(c);
+    }
+  }
+  const geometry = {
+    userData: {
+      gridRowIndices: new Float32Array(gridRowIndices),
+      gridColIndices: new Float32Array(gridColIndices),
+      quadFaces: []
+    },
+    getAttribute: (name) => ({
+      position: makeAttr(positions, 3),
+      normal: makeAttr(normals, 3),
+      uv: makeAttr(uvs, 2)
+    }[name])
+  };
+  // top band 锚点（顶点索引 0/1/2）：ring 0/1/2，hole 指向 parent u=0.3/0.4/0.5
+  const anchors = [
+    { band: "top", ring: 0, hole: 0, t: 0.5 },
+    { band: "top", ring: 1, hole: 2, t: 0.5 },
+    { band: "top", ring: 2, hole: 4, t: 0.5 }
+  ];
+  // parent 表：2 行 3 列，colU 0.3/0.4/0.5（hole 0/2/4 → row0 col0/1/2）
+  const parentTable = { rows: 2, colU: new Map([[0, 0.3], [1, 0.4], [2, 0.5]]) };
+  const parentRows = new Float32Array([0, 1, 0, 1, 0, 1]);
+  const parentCols = new Float32Array([0, 0, 1, 1, 2, 2]);
+
+  const seamCol = 3; // arcFromSeamTo0 = d(3,4)+d(4,5)+d(5,0) = 1+1+5 = 7
+  const topo = childUTopologyScale(geometry, seamCol, parentTable, parentRows, parentCols, anchors);
+  assert.ok(topo, "childUTopologyScale should compute");
+  const arcFromSeamTo0 = 7;
+  assert.ok(Math.abs(topo.uScale - 0.1) < EPS, `uScale ${topo.uScale}`);
+  assert.ok(Math.abs(topo.uOffset - (0.3 - arcFromSeamTo0 * 0.1)) < EPS, `uOffset ${topo.uOffset}`);
+  // 环顶点 0 u = 洞顶 uMin（0.3）、环顶点 W=2 u = 洞顶 uMax（0.5）
+  assert.ok(Math.abs((topo.uOffset + arcFromSeamTo0 * topo.uScale) - 0.3) < EPS, "ring 0 u = hole uMin");
+  assert.ok(Math.abs((topo.uOffset + (arcFromSeamTo0 + 2) * topo.uScale) - 0.5) < EPS, "ring W u = hole uMax");
+  // 数据缺失 → null
+  assert.equal(childUTopologyScale(geometry, seamCol, parentTable, parentRows, parentCols, null), null);
+  assert.equal(childUTopologyScale(geometry, seamCol, parentTable, parentRows, parentCols, []), null); // 无 top 锚点
+  assert.equal(childUTopologyScale(geometry, seamCol, parentTable, parentRows, parentCols, [{ band: "side", ring: 0, hole: 0 }]), null); // 无 top band
+  assert.equal(childUTopologyScale(geometry, seamCol, parentTable, parentRows, parentCols, [{ band: "top", ring: 0, hole: 0 }]), null); // W<1
+  assert.equal(childUTopologyScale(geometry, seamCol, parentTable, parentRows, parentCols, [
+    { band: "top", ring: 0, hole: 0 },
+    { band: "top", ring: 1, hole: 0 },
+    { band: "top", ring: 2, hole: 0 }
+  ]), null); // 洞顶跨度<=0
 }
 
 console.log("uv-unfold tests passed");

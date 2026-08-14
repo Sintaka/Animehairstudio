@@ -206,6 +206,101 @@ export function gridUvAt(uvTable, gridRows, gridCols, vertexIndex) {
   return [u, v];
 }
 
+// 子发片扫掠 U 拓扑对齐缩放：缩放参考 = 环顶面（非侧面非底面，即环顶点 0..W，
+// W=ringWidthSegments）的弧长 ↔ 顶部桥接（top band）洞侧顶点的 parent u 跨度。
+// uScale = 洞顶 u 跨度 / 环顶面弧长；uOffset = 洞顶 uMin − 环顶点 0 的「从 seam 沿
+// 环向（col 递增）到顶点 0 的弧长」× uScale——环顶点 0 对齐洞顶 uMin、环顶点 W 对齐
+// 洞顶 uMax（扫掠整体自然延伸出去，≈1.1×洞宽，而非严格贴洞左右边界）。
+export function childUTopologyScale(geometry, seamCol, parentTable, parentRows, parentCols, anchors) {
+  if (!Array.isArray(anchors)) return null;
+  const userData = geometry?.userData || {};
+  const gridRows = userData.gridRowIndices;
+  const gridCols = userData.gridColIndices;
+  if (!gridRows || !gridCols) return null;
+  const positionAttr = geometry?.getAttribute?.("position");
+  if (!positionAttr) return null;
+  const dims = gridDimensions(gridRows, gridCols);
+  const C = dims.cols;
+  if (C < 1) return null;
+
+  const posOf = (index) => [
+    attributeComponent(positionAttr, index, 0),
+    attributeComponent(positionAttr, index, 1),
+    attributeComponent(positionAttr, index, 2)
+  ];
+  const dist = (a, b) => {
+    const dx = a[0] - b[0];
+    const dy = a[1] - b[1];
+    const dz = a[2] - b[2];
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  };
+
+  // (row, col) -> 原顶点索引
+  const gridIndexByRowCol = new Map();
+  const length = Math.min(gridRows.length, gridCols.length);
+  for (let i = 0; i < length; i += 1) {
+    const row = Number(gridRows[i]);
+    const col = Number(gridCols[i]);
+    if (Number.isFinite(row) && Number.isFinite(col) && row >= 0 && col >= 0) {
+      gridIndexByRowCol.set(row + ":" + col, i);
+    }
+  }
+
+  // W = 环顶面段数：band==="top" 锚点的 ring 最大值（每个顶面条带一个锚点，ring 即环顶点 0..W）。
+  let W = -1;
+  let topAnchorCount = 0;
+  for (const anchor of anchors) {
+    if (!anchor || anchor.band !== "top") continue;
+    topAnchorCount += 1;
+    const ring = Number(anchor.ring);
+    if (Number.isFinite(ring) && ring >= 0 && ring > W) W = ring;
+  }
+  if (topAnchorCount < 1 || W < 1) return null;
+
+  // row0 顶点位置（col 0..C-1；任何一列缺 → null）
+  const row0Pos = new Array(C);
+  for (let col = 0; col < C; col += 1) {
+    const source = gridIndexByRowCol.get("0:" + col);
+    if (source == null) return null;
+    row0Pos[col] = posOf(source);
+  }
+
+  // topArc = 顶点 0..W 的弧长和（dist(0,1)+…+dist(W−1,W)）
+  let topArc = 0;
+  for (let i = 0; i < W; i += 1) {
+    topArc += dist(row0Pos[i], row0Pos[i + 1]);
+  }
+  if (!(topArc > 0)) return null;
+
+  // arcFromSeamTo0 = 从 seamCol 沿环向（col 递增 mod C）到顶点 0 的弧长和
+  const sCol = Math.max(0, Math.round(Number(seamCol) || 0)) % C;
+  let arcFromSeamTo0 = 0;
+  let cursor = sCol;
+  while (cursor !== 0) {
+    const next = (cursor + 1) % C;
+    arcFromSeamTo0 += dist(row0Pos[cursor], row0Pos[next]);
+    cursor = next;
+  }
+  if (!Number.isFinite(arcFromSeamTo0)) return null;
+
+  // 洞顶 u 跨度：band==="top" 且 hole>=0 的锚点，parent u 的 min/max
+  let holeUMin = Infinity;
+  let holeUMax = -Infinity;
+  for (const anchor of anchors) {
+    if (!anchor || anchor.band !== "top") continue;
+    if (Number(anchor.hole) < 0) continue;
+    const holeUv = gridUvAt(parentTable, parentRows, parentCols, anchor.hole);
+    if (!holeUv) continue;
+    holeUMin = Math.min(holeUMin, holeUv[0]);
+    holeUMax = Math.max(holeUMax, holeUv[0]);
+  }
+  if (!(Number.isFinite(holeUMin) && Number.isFinite(holeUMax) && holeUMax - holeUMin > 0)) return null;
+
+  const uScale = (holeUMax - holeUMin) / topArc;
+  const uOffset = holeUMin - arcFromSeamTo0 * uScale;
+  return { uOffset, uScale };
+}
+
 // 把扫掠网格展开为归一化矩形 UV 的导出网格。
 // geometry 需要 position 属性 + userData.gridRowIndices/gridColIndices/quadFaces；
 // 缺 grid 或缺 quadFaces 返回 null（调用方回退原几何）。

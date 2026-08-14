@@ -10,7 +10,7 @@ import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActi
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260726-1";
 import { exportAnimeHairUsda } from "./usda-export.js?v=20260814-2";
 import { createHairProject } from "./project-schema.js?v=20260728-2";
-import { unfoldHairMesh, gridUvTable, gridUvAt } from "./uv-unfold.js?v=20260814-10";
+import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260814-11";
 
 export function createProjectSaveApi(deps) {
   // ---- dialog UI elements (document is ready when this runs; app.js loads at body end) ----
@@ -180,29 +180,18 @@ export function createProjectSaveApi(deps) {
         })();
         const rowHeight = childGridRows >= 2 ? childVLength / (childGridRows - 1) : 0;
         const childVStart = Math.min(1, Math.max(0, 1 - holeBottomU - rowHeight));
-        // 子发片扫掠 U 收缩 + 位移：中心对齐洞中心、宽度≈洞宽。
-        // 洞侧 u 范围：遍历锚点，取 hole 顶点 parent u 的 min/max（洞边界左右两段）。
-        let holeUMin = Infinity; let holeUMax = -Infinity;
-        if (Array.isArray(anchors)) {
-          for (const anchor of anchors) {
-            if (!anchor || anchor.hole < 0) continue;
-            const holeUv = gridUvAt(parentTable, parentRows, parentCols, anchor.hole);
-            if (!holeUv) continue;
-            holeUMin = Math.min(holeUMin, holeUv[0]);
-            holeUMax = Math.max(holeUMax, holeUv[0]);
-          }
-        }
-        const childCirc = (gridUvTable(geometry, "child", seamCol) || {}).circumference || 1;
+        // 子发片扫掠 U 拓扑对齐缩放：缩放参考 = 环顶面弧长 ↔ 洞顶 u 跨度
+        // （childUTopologyScale），替代刚性 1.1 倍洞宽。
+        const topoScale = (Array.isArray(anchors) && parentTable && parentRows && parentCols)
+          ? childUTopologyScale(geometry, seamCol, parentTable, parentRows, parentCols, anchors)
+          : null;
         let uOffset = 0; let uScale = null;
-        if (Number.isFinite(holeUMin) && Number.isFinite(holeUMax) && holeUMax > holeUMin && childCirc > 0) {
-          const holeUCenter = (holeUMin + holeUMax) * 0.5;
-          const holeUSpan = (holeUMax - holeUMin) * 1.1; // 围绕洞中心横向放大 1.1 倍（span ×1.1，中心不变）。
-          // U 布局：外侧顶部（背面）poly 在中间、侧面在中间两侧、最两侧是后面（seam 双副本 0/1）。
-          uOffset = holeUCenter - holeUSpan * 0.5;
-          uScale = holeUSpan / childCirc;
-        }
-        // 桥接 bottom band 从环侧向下延伸（v = childVStart - t×span），独占
-        // [childVStart - bottomBandSpan, childVStart]；扫掠起点下移 bottomBandSpan 让位。
+        if (topoScale) { uOffset = topoScale.uOffset; uScale = topoScale.uScale; }
+        // U 布局：外侧顶部（背面）poly 在中间、侧面在中间两侧、最两侧是后面（seam 双副本
+        // 0/1）；缩放参考 = 环顶面弧长 ↔ 洞顶 u 跨度（环顶点 0 对齐洞顶 uMin、环顶点 W
+        // 对齐洞顶 uMax）。
+        // bottom band 现与 top/side 相同插值（洞侧对齐 parent uv）；bottomBandSpan 仍用于
+        // childVSweepStart：扫掠起点下移 bottomBandSpan 让位，给桥接留空间。
         const bottomBandSpan = childVLength * 0.5;
         options = {
           kind,
@@ -214,9 +203,9 @@ export function createProjectSaveApi(deps) {
           uScale
         };
         if (Array.isArray(anchors) && anchors.length && parentTable) {
-          // 子发片桥接表：与展开输出同尺度（uOffset/uScale 收缩+位移到洞中心/洞宽），
-          // 洞侧 u = parent 弧长 u（同一尺度）。桥接底带仅中线（seam 列）双副本竖缝切开
-          // （横缝已取消：seam±1 不再双副本）。
+          // 子发片桥接表：与展开输出同尺度（uOffset/uScale 拓扑对齐，缩放参考 = 环顶面弧长
+          // ↔ 洞顶 u 跨度），洞侧 u = parent 弧长 u（同一尺度）。桥接底带仅中线（seam 列）
+          // 双副本竖缝切开（横缝已取消：seam±1 不再双副本）。
           const uvTable = gridUvTable(geometry, "child", seamCol, null, uOffset, uScale);
           if (uvTable) {
             const childGridCols = geometry.userData?.gridColIndices;
@@ -282,12 +271,7 @@ export function createProjectSaveApi(deps) {
               } else {
                 ringU = holeU; // ring=-1 纯洞侧顶点
               }
-              if (anchor.band === "bottom") {
-                // 底部桥接从中间切开自然展开：u 保持环侧（不向洞插值），v 从环侧沿 V 负方向
-                // 按条带参数延伸固定跨度（不强硬对齐洞底顶点 uv）。
-                return [ringU, childVStart - t * bottomBandSpan];
-              }
-              // top / side（顶部与侧面顶部对齐洞）：u/v 向洞侧插值
+              // top / side / bottom（顶部/侧面/底部统一对齐洞）：u/v 向洞侧插值
               return [ringU + (holeU - ringU) * t, childVStart + (holeV - childVStart) * t];
             };
           }
