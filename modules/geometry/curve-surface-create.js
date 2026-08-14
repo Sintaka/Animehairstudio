@@ -1,7 +1,7 @@
 // curve-surface-create.js - Curve Surface / Surface Lattice create & edit layer (refactor 3d batch G4).
 // Extracted from app.js; coupling injected via createCurveSurfaceCreateApi(deps).
 import * as THREE from "three";
-import { DEFAULT_HAIR_COLOR } from "../core/app-config.js?v=20260809-2";
+import { DEFAULT_HAIR_COLOR } from "../core/app-config.js?v=20260814-12";
 import { eightWayScreenDelta } from "./curve-math.js?v=20260813-3";
 import {
   buildConnectedCurveCardGrid,
@@ -12,7 +12,7 @@ import {
   DEFAULT_CURVE_SURFACE_ROWS,
   DEFAULT_CURVE_SURFACE_STRIP_WIDTH,
   resampleCurveSurfaceLine
-} from "./curve-surface.js?v=20260731-8";
+} from "./curve-surface.js?v=20260814-12";
 import {
   createLoftSurfaceLatticePointData,
   createSurfaceLatticePointData,
@@ -22,7 +22,7 @@ import {
   resampleSurfaceLatticePointData,
   surfaceLatticePointIndex,
   surfaceLatticeWireSegments
-} from "./surface-lattice.js?v=20260727-5";
+} from "./surface-lattice.js?v=20260814-12";
 
 
 export function createCurveSurfaceCreateApi(deps) {

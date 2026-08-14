@@ -52,6 +52,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - **本地持久化功能（简体中文、Houdini 导航、Quick Save/Export 等）**：development-standards.md「持续修改功能」。
 
 ## 最近版本 / Latest
+- 发尖宽度控制点死区修复 + 导出 panel zipper 缝被填修复（0.2.80，分支 0.2.69-bugfix）：① `tipWidthMultiplierAt` fork 守卫改段内相对符号（不跨 0 的段原先取到另一侧 zipper fork → 视口拖拽写曲线但几何永远回退全局 = 死区，「曲线动发丝不动」）；② panel grid 列号段边界重叠导致 unfold "open" 重映射把缝两侧边界链坍缩、导出缝被填——colBase 预留边界列 + weld key 加 grid cell；③ 87 条过期 import 缓存号全量刷新 20260814-12；④ 新增 headless 复现/回归 scripts/repro-0045-bugs.mjs + check-stale-cache-params.mjs + check-usda-slit.mjs。详见 js-change-annotations.md / bug-fixes.md #7/#8。
 - 桥接意外 seam 修复 + U 拓扑对齐缩放（0.2.79，分支 0.2.69-bugfix）：bottom band 与 side fill 洞侧 UV 冲突导致两道意外 seam（一块 poly 被切出去）→ bottom 改回与 top/side 相同插值，洞底整圈连续；扫掠 U 缩放改拓扑对齐（childUTopologyScale：环顶面弧长 ↔ 洞顶 u 跨度，环顶点 0/W 对齐洞顶 uMin/uMax，自然延伸约 1.1×洞宽，替代刚性 1.1）。
 - 子发片 UV 微调：U 中心缩放 1.1 + 扫掠下移 + 取消横缝（0.2.78，分支 0.2.69-bugfix）：扫掠 U 围绕洞中心放大 1.1 倍（U 布局保持「外侧顶部（背面）在中间、侧面在中间两侧、最两侧后面」）；扫掠下移给桥接 bottom band 留空间；取消十字横缝（仅保留上下竖缝，修复侧面 UV 切乱/展到下面）。
 - split 双管 U 轴排列 + 十字横缝 + 子发片 U 居中（0.2.77，分支 0.2.69-bugfix）：① 主发片 split 两管 UV 不再重叠（管 1 排在管 0 右侧，u=前管周长和+本管弧长，除以总周长）；② 十字横缝修正——底带从中心向左右各 2 条边切开（seam±1 顶点链双副本，side 判定改环向序修复切乱）；③ 子发片扫掠 U 收缩+位移（uOffset=洞中心−半宽、uScale=洞宽/子周长：中心对齐洞中心、宽度≈洞宽、外侧贴洞左右两段），seam 副本槽 u 用 seamEndU。详见 development-standards.md「持续修改功能」。

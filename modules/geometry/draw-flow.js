@@ -13,8 +13,8 @@ import {
 import {
   proceduralAccessoryTaperScale,
   proceduralAccessoryTemplateData
-} from "./procedural-draw.js?v=20260805-1";
-import { STANDARD_ANISOTROPIC_SHADER } from "./anime-hair-shaders.js?v=20260730-8";
+} from "./procedural-draw.js?v=20260814-12";
+import { STANDARD_ANISOTROPIC_SHADER } from "./anime-hair-shaders.js?v=20260814-12";
 import {
   bonesFromData,
   bonesToData,
@@ -29,7 +29,7 @@ import {
   GROUP_CURVE_FEATURE_ENABLED,
   ROOT_SCALP_OFFSET_DISTANCE,
   ROUND_SWEEP_PROFILE
-} from "../core/app-config.js?v=20260809-2";
+} from "../core/app-config.js?v=20260814-12";
 
 export function createDrawFlowApi(deps) {
   // deps: store .state proxies (sel/sculptState/hairState/draw; use deps.X.y, never deps.X.state.y),

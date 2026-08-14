@@ -69,3 +69,13 @@
    - 根因：bottom band 的「自然展开」（0.2.76：洞侧 u=环侧 u、v=childVStart−t×span）与 side fill 的「对齐洞」（洞侧 u/v=parent uv）在**洞底角共享顶点**处 UV 不连续 → 洞底两侧形成意外 seam。
    - 修复：bottom band 改回与 top/side 相同的插值（u/v 向洞侧 lerp）——洞底整圈（bottom band + side fill）洞侧统一 = parent uv，UV 连续；`bottomBandSpan` 仍保留用于 childVSweepStart（扫掠下移）。
    - 完整踩坑清单（9 条，含 wrap quad 丢弃→poly 缺失、横缝切乱取消、刚性倍率→拓扑对齐等）见 devlog/uv-unfold.md §7。
+
+7. **发尖宽度控制点拖拽「曲线动、发丝不动」死区（0.2.80 修复，0.2.59 系统自身缺陷）**
+   - 问题：Front Bangs 1 某发尖（不跨 0 的段）上两侧 zipper 高度相差、只暴露一边的绿色宽度控制点，视口拖拽后右侧曲线面板跟随变化，但发尖网格宽度纹丝不动（无论是否 Ctrl）；其它发尖正常。
+   - 根因：`tipWidthMultiplierAt` 的 fork 守卫用**绝对 u 符号**（`u < 0 ? -1 : 1`）选侧 zipper，而曲线采样用**段内相对归一化坐标**（`(u - centerU) / halfSpan`，左半段采 secondary、右半段采 primary）——不跨 0 的段整段被绝对符号判成同一侧，守卫取到另一侧 zipper 的 fork，t ∈ [本侧 fork, 另一侧 fork) 的写入被「锁定区回退全局曲线」分支挡住 → 几何永远不采样 bone 曲线。0045 实测：第 1 段（边界 [-0.8067,-0.44] 全负半轴）band t=0.69375 写 primary=2.0 后几何采样恒为全局值 1.192（死区）。
+   - 修复：centerU/halfSpan 提到 fork 判断之前，side 改段内相对符号 `(u - centerU) < 0 ? -1 : 1`。回归：函数级断言 mR 1.192→2.0（右半段生效）、mL 不变（左半段 t<0.75 保持锁定区全局值）；跨 0 的段仅段中心细条翻转。
+
+8. **USDA/OBJ 导出 panel 刘海 zipper 缝被填起来（0.2.80 修复，0.2.70 引入）**
+   - 问题：0045/0046 导出的 USDA 在 Houdini 视口里点位置正常，但几个 panel 尖端本来被 zipper 拉开的缝被面填起来；OBJ 同样连起来、没有开口；旧导出（0044，0.2.70 之前）正常。
+   - 根因：panel 网格 grid 列号 `(colBase+column)*2(+1)` 的 colBase 只累加各段列数、**不为段边界预留格子**——段 k 最后一列与段 k+1 第一列共用同一 (row,col) 格子（Front Bangs 1 实测 42 个重复 cell）；zipper 开口以下两侧边界链是独立顶点（缝），而导出 `unfoldHairMesh`（kind "open"）按格子槽位重映射面索引 → 两个顶点坍缩到同一槽位 → 面被桥接到对侧顶点、缝被填（点位置不变）。0.2.70 之前 panel 无 grid primvar，导出走原始几何回退，所以旧导出正常。
+   - 修复：① `createPanelStrandGeometry` 的 addPatch `colBase` 累加改 `sum + count + 1`（每段边界预留 1 列，C=46→54 恰为每行顶点数，格子唯一无空洞）；② `weldPanelGeometryData` 的 weld key 加入 gridRow/gridCol（fork 以上位置重合但格子不同的边界链顶点不再被焊掉）。回归：P0 dupCell=0 / unfold 重映射 1:1 / 逐面边集与视口一致；USDA 导出 918 点 822 quad。

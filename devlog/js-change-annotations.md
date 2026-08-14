@@ -22,6 +22,14 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（0.2.80）
+
+> 两个 bug 修复（分支 0.2.69-bugfix 续用，并行 Codex 子智能体 + 主管合并；headless 复现脚本 scripts/repro-0045-bugs.mjs）：
+> - **发尖宽度控制点「死区」修复**：`modules/geometry/panel-tip-strand.js` 的 `tipWidthMultiplierAt`——fork 守卫原先用绝对 u 符号（`u < 0 ? -1 : 1`）选侧 zipper，而曲线采样用段内相对归一化坐标 `(u − centerU) / halfSpan`（左半段采 secondary、右半段采 primary），两者对「段内左右半」判定不一致：不跨 0 的段（边界全在半轴一侧）整段被绝对符号判成同一侧，守卫取到另一侧 zipper 的 fork → t ∈ [本侧 fork, 另一侧 fork) 的拖拽写入了 bone 曲线但几何永远走「回退全局曲线」分支（死区）→ 用户现象「右侧曲线面板在动、发丝没动、只有这个发尖有问题」。修复：centerU/halfSpan 提到 fork 判断之前，side 改段内相对符号 `(u - centerU) < 0 ? -1 : 1`；跨 0 的段仅在段中心细条内翻转（语义更正确）。回归：函数级断言 mR 1.192→2.0（右半段采样新值）、mL 不变（左半段 t<0.75 保持锁定区全局值）。
+> - **USDA/OBJ 导出 panel zipper 缝被填**：panel 网格 grid 列号在段边界重叠（colBase 累加未预留边界列 → 相邻两段的边界列共用同一 (row,col) 格子，Front Bangs 1 实测 42 个重复 cell）→ `unfoldHairMesh`（kind "open"）按格子槽位重映射时把缝两侧的独立边界链坍缩到同一槽位 → 导出面桥接对侧顶点、缝被填（点位置不变；旧导出无 grid primvar 走原始回退所以正常）。修复：① `createPanelStrandGeometry` 的 addPatch `colBase` 累加改 `sum + count + 1`（每段边界预留 1 列，C=46→54 恰为每行顶点数，格子唯一）；② `weldPanelGeometryData` 的 weld key 加入 gridRow/gridCol（fork 以上位置重合但格子不同的顶点不再被焊掉）。回归：P0 dupCell=0 / 重映射 1:1 / 逐面边集与视口一致。
+> - **缓存号全量刷新**：87 条过期 import `?v=` 统一 bump 到 `20260814-12`（含 index.html app.js/styles.css 入口），消除浏览器旧模块缓存导致的「用户行为与当前代码不一致」类问题；新增 `scripts/check-stale-cache-params.mjs` 审计脚本。
+> - 回归：core-math 118/118、uv-unfold tests 全绿、headless repro 22/24（2 项为指针合成事件抖动、由函数级断言覆盖）、verify-smoke 11/11。
+
 ## 最近更新（0.2.79）
 
 > 导出拆 UV 收尾（分支 0.2.69-bugfix，0.2.69–0.2.79，规则/理念/踩坑全集见 [uv-unfold.md](uv-unfold.md)）：

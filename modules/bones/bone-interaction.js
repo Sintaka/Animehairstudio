@@ -4,8 +4,8 @@ import * as THREE from "three";
 import { splitBonesFor, materializeSplitBones } from "./bone-model.js?v=20260813-1";
 import { materializeStrandSplitBones } from "./bone-model.js?v=20260813-1";
 import { leafIndexAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
-import { smoothSculptPointDeltas } from "../sculpt/sculpt-brush.js?v=20260806-1";
-import { solvePulledStrand } from "../geometry/strand-constraints.js?v=20260720-1";
+import { smoothSculptPointDeltas } from "../sculpt/sculpt-brush.js?v=20260814-12";
+import { solvePulledStrand } from "../geometry/strand-constraints.js?v=20260814-12";
 
 // deps: store .state proxies (sculptState/sel/guideState/scalpState) + module instances
 //   (taperEditor/panelTipStrand/sculptGeom + segmentApi.syncPanelSegmentControls for B2->B1) +

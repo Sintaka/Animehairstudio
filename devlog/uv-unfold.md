@@ -67,6 +67,7 @@
 7. **刚性 1.1 倍缩放不对（0.2.79）**：刚性倍率不是用户本意——改为**拓扑对齐**（环顶面弧长 ↔ 洞顶 u 跨度，端点对齐），自然延伸约 1.1×洞宽。
 8. **Number(null)===0 陷阱（0.2.77）**：`uScale` 默认 null 会被 `Number.isFinite` 判真——用 `uScale != null && Number.isFinite(...)` 守卫。
 9. **U 布局正反面命名**：环 top side（z=+hd）= 面向外（正面/外侧顶部），bottom side（z=−hd）= 背面（不面向外）；切缝在背面，展开后「外侧顶部在中间、侧面在两侧、最两侧是后面」。
+10. **panel 段边界列重叠 → 导出缝被填（0.2.80）**：panel 的 grid 列号 `(colBase+column)*2(+1)` 中 colBase 只累加各段列数、不为边界预留格子——段 k 最后一列与段 k+1 第一列共用同一 (row,col) 格子；zipper 开口以下两侧边界链是独立顶点（缝），unfold "open" 重映射按格子槽位把两个顶点坍缩到同一槽位 → 导出面被接到对侧、缝被填（点位置不变，USDA/OBJ 同样中招；0.2.70 之前 panel 无 grid primvar 走原始回退所以旧导出正常）。修复：colBase 累加改 `sum + count + 1`（每段边界预留 1 列，C=2×(Σcolumns+段数) 恰为每行顶点数，格子唯一）；`weldPanelGeometryData` 的 weld key 加入 gridRow/gridCol（fork 以上位置重合但格子不同的边界链顶点不再被焊掉，避免格子空洞）。回归：headless repro Phase 0 断言 dupCell=0 / 重映射 1:1 / 逐面边集一致（见 scripts/repro-0045-bugs.mjs）。
 
 ## 8. 待办 / 后续
 

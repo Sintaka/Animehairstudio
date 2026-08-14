@@ -10,14 +10,14 @@ import {
   sculptBrushWeight,
   smoothSculptPointDeltas,
   smoothSculptTwistDeltas
-} from "../sculpt/sculpt-brush.js?v=20260806-1";
+} from "../sculpt/sculpt-brush.js?v=20260814-12";
 import { sampleArray } from "./curve-math.js?v=20260813-3";
 import {
   DEFAULT_SURFACE_LATTICE_COLUMNS,
   DEFAULT_SURFACE_LATTICE_ROWS,
   normalizeSurfaceLatticeCount,
   surfaceLatticePointIndex
-} from "./surface-lattice.js?v=20260727-5";
+} from "./surface-lattice.js?v=20260814-12";
 
 export function createSculptGeometryApi(deps) {
   // deps: store .state proxies (sculptState/sel) + shared objects (renderer/camera/locks/

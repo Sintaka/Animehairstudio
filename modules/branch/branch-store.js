@@ -2,7 +2,7 @@
 // Preference-backed fields load from localStorage via core/preference-storage.
 import * as THREE from "three";
 import { createSceneStore } from "../core/scene-store.js?v=20260809-1";
-import { readStoredPreference } from "../core/preference-storage.js?v=20260728-1";
+import { readStoredPreference } from "../core/preference-storage.js?v=20260814-12";
 
 export const BRANCH_PREFERENCE_KEYS = Object.freeze({
   rigidCurvatureBlend: "anime-hair-studio-branch-rigid-curvature-blend",

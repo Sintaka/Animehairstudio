@@ -9,8 +9,8 @@ import {
   radialMenuDimensions,
   radialOptionSector,
   radialSubmenuTravelAngle
-} from "./radial-layout.js?v=20260806-14";
-import { mirrorSelectionTargets } from "../edit/mirror-selection.js?v=20260805-1";
+} from "./radial-layout.js?v=20260814-12";
+import { mirrorSelectionTargets } from "../edit/mirror-selection.js?v=20260814-12";
 
 const MAX_RADIAL_OPTIONS = 8;
 const MAX_RADIAL_SUBMENU_OPTIONS = 5;

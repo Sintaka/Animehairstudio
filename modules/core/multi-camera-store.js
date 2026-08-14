@@ -2,7 +2,7 @@
 // Runtime-only state: nothing here is serialized into .ahs project files or the
 // preferences backup; the enabled toggle is a UI preference backed by localStorage.
 import { createSceneStore } from "./scene-store.js?v=20260809-1";
-import { readStoredBooleanPreference } from "./preference-storage.js?v=20260728-1";
+import { readStoredBooleanPreference } from "./preference-storage.js?v=20260814-12";
 
 export const MULTI_CAMERA_PREFERENCE_KEYS = Object.freeze({
   experimental: "anime-hair-studio-experimental-multi-camera"

@@ -7,8 +7,8 @@
 import * as THREE from "three";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
-import { polygonOnlyObjSource } from "../io/obj-import.js?v=20260801-1";
-import { applicationDropFileKind } from "../io/file-drop.js?v=20260803-1";
+import { polygonOnlyObjSource } from "../io/obj-import.js?v=20260814-12";
+import { applicationDropFileKind } from "../io/file-drop.js?v=20260814-12";
 
 const MIN_REFERENCE_CROP_SPAN = 0.02;
 

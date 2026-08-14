@@ -9,7 +9,7 @@ import {
   sampleAsymmetricTaperCurve,
   sampleTaperCurve
 } from "./curve-math.js?v=20260813-3";
-import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260727-5";
+import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260814-12";
 import { cloneSplitBones } from "../bones/bone-model.js?v=20260813-1";
 import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260813-1";
 import { leafWeightAt, leafWeightsValid } from "./leaf-weights.js?v=20260813-1";
@@ -82,7 +82,8 @@ function weldPanelGeometryData(positions, uvs, colors, indices, quadFaces, toler
     const uvOffset = vertex * 2;
     const key = [
       positions[positionOffset], positions[positionOffset + 1], positions[positionOffset + 2]
-    ].map((value) => Math.round(value * inverseTolerance)).join("|");
+    ].map((value) => Math.round(value * inverseTolerance)).join("|")
+      + (gridRows && gridCols ? `|${gridRows[vertex]}|${gridCols[vertex]}` : "");
     let weldedVertex = vertexMap.get(key);
     if (weldedVertex == null) {
       weldedVertex = weldedPositions.length / 3;
@@ -283,7 +284,12 @@ function tipWidthMultiplierAt(lock, t, u, bone, segmentIndex = -1, splits = null
       t
     );
   }
-  const side = u < 0 ? -1 : 1;
+  const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
+  const halfSpan = Math.max(0.0001, (boundaries[segmentIndex + 1] - boundaries[segmentIndex]) * 0.5);
+  // fork 按段内相对侧判定（u 相对段中心 centerU 的符号），与下方曲线采样
+  // ((u - centerU) / halfSpan：左半段采 secondary、右半段采 primary) 语义一致；
+  // 避免「单侧半轴段」用绝对 u 符号取到另一侧 zipper 的 fork 而产生死区。
+  const side = (u - centerU) < 0 ? -1 : 1;
   const forkT = tipWidthSideForkT(lock, segmentIndex, segSplits, side);
   // 锁定区（t < 本侧 fork，未暴露控制区）始终回退全局曲线：发尖 WidthCurve 只控制
   // 暴露区，Zipper 上半部分直接跟随主骨骼，Reset 后不会开裂。
@@ -296,8 +302,6 @@ function tipWidthMultiplierAt(lock, t, u, bone, segmentIndex = -1, splits = null
       t
     );
   }
-  const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
-  const halfSpan = Math.max(0.0001, (boundaries[segmentIndex + 1] - boundaries[segmentIndex]) * 0.5);
   return sampleAsymmetricTaperCurve(
     bone?.taperCurve || lock.taperCurve,
     bone?.taperCurveSecondary || lock.taperCurveSecondary,
@@ -997,7 +1001,7 @@ function createPanelStrandGeometry(lock) {
       ? boundaries[segment + 1] - tipWidthSpreadGap(lock, segment, splits, bone, rowParameters[row], 1)
       : 1;
     addPatch(0, lengthLoops, uStart, uEnd, columns, {
-      colBase: segmentColumns.slice(0, segment).reduce((sum, count) => sum + count, 0),
+      colBase: segmentColumns.slice(0, segment).reduce((sum, count) => sum + count + 1, 0),
       capStart: true,
       capEnd: true,
       leftWallStartRow: leftSplit ? rowParameters.findIndex((parameter) => parameter >= 1 - leftSplit.height) : 0,

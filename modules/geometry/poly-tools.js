@@ -9,7 +9,7 @@ import {
   normalizePolyFaces,
   polyFillCandidate,
   relaxPolyPoints
-} from "./poly-topology.js?v=20260728-3";
+} from "./poly-topology.js?v=20260814-12";
 
 
 export function createPolyToolsApi(deps) {

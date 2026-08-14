@@ -7,7 +7,7 @@ import {
   normalizeTaperCurve,
   remapEnvelopeCurveRange
 } from "./curve-math.js?v=20260813-3";
-import { proceduralBranchTemplateData } from "./procedural-draw.js?v=20260805-1";
+import { proceduralBranchTemplateData } from "./procedural-draw.js?v=20260814-12";
 
 export function createClumpProceduralApi(deps) {
   // deps: store .state proxies (sel/sculptState/draw/miscState; use deps.X.y, never deps.X.state.y),
