@@ -58,3 +58,8 @@
    - 问题：0.2.73 单边切缝重构后，子发片桥接 UV「回到最初的 uv 模样」——大量桥接顶点挤在一个点 (0.5, 0)。
    - 根因：`bridgeUvAt` 对无环侧锚点的桥接顶点（`sideHoleVertex`，锚点 `ring=-1` 的纯洞侧顶点，t=1）执行 `uvTable.colU.get(-1)` → undefined → `!Number.isFinite(ringU)` → return null → passthrough 退回原 uv 属性（pushBoundary 的统一原值 (0.5, 0)）；split 父发片洞边界上的管 seam 列顶点（col=-1）查 parent 弧长表同样为 null。
    - 修复：ring 无效（-1 / 不在表内）时 `ringU = 洞 u`（t=1 时即洞侧 UV 本身）；洞侧查询失败时兜底 u=0、v 按 parent 行号（不再退回 (0.5,0)）；tests 增补 ring=-1 用例（b3 断言 u=洞 u、v=1）。
+
+5. **split 父发片弧长表整体失效 → 子发片桥接 UV 接线整个关闭（0.2.75 修复，0.2.73 引入的深层根因）**
+   - 问题：真实几何（Side Left 3 的 split 父发片 Side Left 2）下桥接仍「没有切 UV、没有对齐洞」——比 #4 更根本：整个桥接 UV 接线（bridgeUvAt）都被关闭。
+   - 根因：0.2.70 给 split 写 `gridColIndices` 用 `colToSection.findIndex` 按坐标匹配 fused 列；DEFAULT_SWEEP_PROFILE 有 x=0 点且 splitX=0，x=0 点被 clip 进**两管**但 colToSection 只归管 0 → 管 1 每行 2 个 `findIndex=-1`（x=0 副本 + seam 点，实测复现：tube1 -1 count=2）→ `gridUvTable`/`unfoldHairMesh` 的 split 分支「每行每管恰好 1 个 -1」校验失败 → 返回 null → split 父发片弧长表缺失 → child 的 `bridgeUvAt` 未设置 → 桥接全退回原 uv (0.5,0)，split 父发片自身也无展开 UV。0.2.71/0.2.72 用等距 parametricGridUv 查洞（对单点 -1 容错）所以症状只在 0.2.73 起显现。
+   - 修复：split 网格列改为**管局部列 + 全局偏移**（管 g local col l → colBase+l，local col 0 = clip seam 点即管首列，无 -1）；uv-unfold 的 split 分支删除 -1/seam 扫描与 colToSection 依赖（直接读 splitSections），wrap quad 丢弃按「管尾↔管首」col 对判定；AHS_gridCol 语义随之为管局部偏移列；tests 重写（偏移列无 -1、周长、wrap 丢弃、弧长比例）。

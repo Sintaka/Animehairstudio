@@ -49,7 +49,7 @@
 | 拖放统一分发 | deprecated | main 0.1.4 已有应用文件拖放确认对话框，本地实现已删除 |
 | 雕刻笔刷选择遮罩 | deprecated | main 0.1.4 已有 sculptBrushSelectionAllows，本地实现已删除 |
 | 几何导出扫掠 rows/cols 编号（桥接除外，AHS_ primvar） | 启用 | 0.2.69–0.2.70：普通发丝行主序 + 端盖 -1；子发片桥接+端盖 -1；split 发丝 fused 列号（有子发片的主发丝按未挖洞规格）；hair card / curve-surface card 行主序；compound 多发丝基础网格 + 桥接插值 -1；panel/surface 刘海模拟（row=沿曲线、col=全局列 front/back 相邻，经 weld 重映射）；USDA 导出 `int[] primvars:AHS_gridRow`/`AHS_gridCol`（vertex）；poly/braid 预置网格不编号 |
-| 导出矩形 UV 展开（AHS grid 驱动） | 启用 | 0.2.71–0.2.73：modules/io/uv-unfold.js 按 gridRow/gridCol 生成矩形 UV（V 负方向=切线，根=1 尖=0）；**0.2.73 起闭合环单边切缝**（切缝列不复制双副本、wrap quad 丢弃、管沿切缝开口、列从切缝线性排列不回头连）；U 按每列弧长（row-0 环向边宽）累计 / 参考周长（非等间距）；子发片 U 按主发片一圈周长缩放（u 范围=子周长/主周长，noise U scale 统一）+ 桥接洞侧用 parent 弧长表（gridUvTable/gridUvAt）同一尺度、桥接中线单副本 u_ring=0；子发片 V 按主发片尺度归一（v=1−洞中心u−row/(R−1)×子长/主长）；切缝=背面（环 bottom side 中点，0.2.72 纠正）；split 双管各自 seam 点（col=-1）为管 seam、两管共享周长；USDA/OBJ 导出接线（蒙皮权重随 seam 复制）；每根发丝允许重叠不打包 |
+| 导出矩形 UV 展开（AHS grid 驱动） | 启用 | 0.2.71–0.2.75：modules/io/uv-unfold.js 按 gridRow/gridCol 生成矩形 UV（V 负方向=切线，根=1 尖=0）；**0.2.73 起闭合环单边切缝**（切缝列不复制双副本、wrap quad 丢弃、管沿切缝开口、列从切缝线性排列不回头连）；U 按每列弧长（row-0 环向边宽）累计 / 参考周长（非等间距）；子发片 U 按主发片一圈周长缩放（u 范围=子周长/主周长，noise U scale 统一）+ 桥接洞侧用 parent 弧长表（gridUvTable/gridUvAt）同一尺度、桥接中线单副本 u_ring=0；子发片 V 按主发片尺度归一（v=1−洞中心u−row/(R−1)×子长/主长）；切缝=背面（环 bottom side 中点，0.2.72 纠正）；**0.2.75**：split 网格列改「管局部列 + 全局偏移」（seam=管首列、无 -1，弃 colToSection.findIndex——x=0 共享点多 -1 曾使父表整体失效），AHS_gridCol 语义为管局部偏移列；USDA/OBJ 导出接线（蒙皮权重随 seam 复制）；每根发丝允许重叠不打包 |
 
 > 新增本地功能时，应同步在本表补充一行，并说明其「启用 / deprecated」状态与依赖的 main 版本。
 

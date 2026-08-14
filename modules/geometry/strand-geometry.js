@@ -417,21 +417,23 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     fusedIndexAt,
     splitStartRow
   };
-  // Per-vertex sweep grid indices (AHS_gridRow / AHS_gridCol primvars): row =
-  // along-curve row (0..actualLengthSegments); col = fused cross-section column
-  // (0..fusedCols-1) so split parents keep the same grid spec as un-carved strands.
+  // Per-vertex sweep grid indices（AHS_gridRow / AHS_gridCol primvars）：row=行主序；
+  // col = 管局部列 + 全局偏移（管 g 的 local col l → colBase+l，local col 0 = clip seam 点
+  // 即管首列，展开时作单边切缝）。不再用 colToSection.findIndex（x=0 共享点会产出
+  // 多余 -1 使 split 弧长表整体失效）。
   const totalVertices = vertices.length / 3;
   const gridRowIndices = new Float32Array(totalVertices).fill(-1);
   const gridColIndices = new Float32Array(totalVertices).fill(-1);
+  let gridColBase = 0;
   for (let sectionIndex = 0; sectionIndex < sectionBases.length; sectionIndex += 1) {
     const { base, ringSize } = sectionBases[sectionIndex];
     const sectionVertexCount = (actualLengthSegments + 1) * ringSize;
     for (let offset = 0; offset < sectionVertexCount; offset += 1) {
       const vertexIndex = base + offset;
-      const fusedCol = colToSection.findIndex((entry) => entry.section === sectionIndex && entry.col === offset % ringSize);
       gridRowIndices[vertexIndex] = Math.floor(offset / ringSize);
-      gridColIndices[vertexIndex] = fusedCol >= 0 ? fusedCol : -1;
+      gridColIndices[vertexIndex] = gridColBase + (offset % ringSize);
     }
+    gridColBase += ringSize;
   }
   geometry.userData.gridRowIndices = gridRowIndices;
   geometry.userData.gridColIndices = gridColIndices;

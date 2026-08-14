@@ -4,7 +4,7 @@ import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-cr
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260812-2";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260812-1";
 import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260814-2";
-import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260814-2";
+import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260814-7";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260812-1";
 import { createSegmentControlApi } from "./modules/bones/segment-control.js?v=20260812-2";
 import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260813-1";

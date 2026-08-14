@@ -248,21 +248,18 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   }
 }
 
-// ---- split：2 管 × (3 个 fused col + 1 个 col=-1 clip seam 点)，弧长 u、共享周长 ----
-// 几何布局：每管 ringSize_g 个环顶点/行（local col 0 = clip seam 点，gridCol=-1；
-// local col 1..ringSize-1 = fused col）。splitSections 描述每管 base/ringSize。
+// ---- split：2 管 × 4 顶点/行（含 clip seam 点 col=colBase 而非 -1），弧长 u、共享周长 ----
+// 几何布局：每管 ringSize_g 个环顶点/行（local col 0 = clip seam 点，即管首列）。
+// 网格列 = 管局部列 + 全局偏移（管 0：0..3，管 1：4..7），无 -1 网格顶点。
 // 管 0 边宽 1/1/1/3（sum 6）；管 1 边宽 2/2/2/6（sum 12）→ 共享 circumference=18。
 {
   const R = 2;
-  const ringSize0 = 4; // tube 0：seam + 3 个 fused col
-  const ringSize1 = 4; // tube 1：seam + 3 个 fused col
+  const ringSize0 = 4;
+  const ringSize1 = 4;
   const base0 = 0;
   const base1 = R * ringSize0;
-  // fused grid：tube0 → fused col 0..2（local col 1..3）；tube1 → fused col 3..5
-  const colToSection = [
-    { section: 0, col: 1 }, { section: 0, col: 2 }, { section: 0, col: 3 },
-    { section: 1, col: 1 }, { section: 1, col: 2 }, { section: 1, col: 3 }
-  ];
+  const colBase0 = 0;
+  const colBase1 = ringSize0;
   const splitSections = [
     { base: base0, ringSize: ringSize0, faceBase: 0 },
     { base: base1, ringSize: ringSize1, faceBase: 6 }
@@ -272,13 +269,8 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   const normals = [];
   const gridRowIndices = [];
   const gridColIndices = [];
-  const fusedColOf = (section, localCol) => {
-    for (let f = 0; f < colToSection.length; f += 1) {
-      if (colToSection[f].section === section && colToSection[f].col === localCol) return f;
-    }
-    return -1;
-  };
   const indexAt = (section, r, localCol) => splitSections[section].base + r * splitSections[section].ringSize + localCol;
+  const colBaseOf = (section) => (section === 0 ? colBase0 : colBase1);
   const scale = [1, 2]; // 管 0 边宽 1，管 1 边宽 2
   for (let s = 0; s < 2; s += 1) {
     const ringSize = s === 0 ? ringSize0 : ringSize1;
@@ -288,7 +280,7 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
         normals.push(0, 0, 1);
         uvs.push(0.11, 0.22); // 原 uv（展开后不应混入）
         gridRowIndices.push(r);
-        gridColIndices.push(k === 0 ? -1 : fusedColOf(s, k));
+        gridColIndices.push(colBaseOf(s) + k);
       }
     }
   }
@@ -314,7 +306,6 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
       gridRowIndices: new Float32Array(gridRowIndices),
       gridColIndices: new Float32Array(gridColIndices),
       quadFaces,
-      splitFusedGrid: { colToSection },
       splitSections
     },
     getAttribute: (name) => ({
@@ -323,31 +314,35 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
       uv: makeAttr(uvs, 2)
     }[name])
   };
-  // 弧长表：两管共享 circumference = 6 + 12 = 18
+  // 弧长表：两管共享 circumference = 6 + 12 = 18（含 wrap 边）
   const table = gridUvTable(geometry, "split", -1);
   assert.ok(table, "split arc table");
   assert.ok(Math.abs(table.circumference - 18) < 1e-6, `circumference ${table.circumference}`);
   assert.equal(table.rows, R);
-  assert.ok(Math.abs(table.colU.get(0) - 1 / 18) < EPS);
-  assert.ok(Math.abs(table.colU.get(1) - 2 / 18) < EPS);
-  assert.ok(Math.abs(table.colU.get(2) - 3 / 18) < EPS);
-  assert.ok(Math.abs(table.colU.get(3) - 2 / 18) < EPS); // 管 1 首 fused col 也用 18 分母
-  assert.ok(Math.abs(table.colU.get(4) - 4 / 18) < EPS);
-  assert.ok(Math.abs(table.colU.get(5) - 6 / 18) < EPS);
-  // 展开：每行 = ringSize0+ringSize1 = 8 个新顶点（无 seam 副本槽）
+  // 管 0：seam col0 u=0、col1..3 = 1/18, 2/18, 3/18
+  assert.ok(Math.abs(table.colU.get(0) - 0) < EPS);
+  assert.ok(Math.abs(table.colU.get(1) - 1 / 18) < EPS);
+  assert.ok(Math.abs(table.colU.get(2) - 2 / 18) < EPS);
+  assert.ok(Math.abs(table.colU.get(3) - 3 / 18) < EPS);
+  // 管 1：seam col4 u=0、col5..7 = 2/18, 4/18, 6/18（偏移列，共享 18 分母）
+  assert.ok(Math.abs(table.colU.get(4) - 0) < EPS);
+  assert.ok(Math.abs(table.colU.get(5) - 2 / 18) < EPS);
+  assert.ok(Math.abs(table.colU.get(6) - 4 / 18) < EPS);
+  assert.ok(Math.abs(table.colU.get(7) - 6 / 18) < EPS);
+  // 展开：每行 = ringSize0+ringSize1 = 8 个新顶点（无 seam 副本、无 -1 顶点）
   const mesh = unfoldHairMesh(geometry, { kind: "split" });
   assert.ok(mesh, "split unfold should succeed");
   assert.equal(mesh.positions.length / 3, R * 8);
   assert.equal(mesh.uvs.length / 2, R * 8);
   // 每管 (R-1)*ringSize quads 中 wrap quad 丢弃 1 个 → 3/管 → 共 6
   assert.equal(mesh.faces.length, (R - 1) * 4 * 2 - 2);
-  // 管 0（行内基 0）：pos0 = clip seam u=0、pos1..3 = fused col 弧长 u
+  // 管 0（col 0..3）：col0 = seam u=0、col1..3 = 弧长 u
   assert.equal(mesh.uvs[0], 0);      // seam u=0
   assert.equal(mesh.uvs[1], 1);      // row0 v=1
   assert.ok(Math.abs(mesh.uvs[2] - 1 / 18) < EPS);
   assert.ok(Math.abs(mesh.uvs[4] - 2 / 18) < EPS);
   assert.ok(Math.abs(mesh.uvs[6] - 3 / 18) < EPS);
-  // 管 1（行内基 4）：pos4 = seam u=0、pos5..7 = fused col 弧长 u（共享 18 分母）
+  // 管 1（col 4..7）：col4 = seam u=0、col5..7 = 弧长 u（共享 18 分母）
   assert.equal(mesh.uvs[4 * 2], 0);
   assert.ok(Math.abs(mesh.uvs[5 * 2] - 2 / 18) < EPS);
   assert.ok(Math.abs(mesh.uvs[6 * 2] - 4 / 18) < EPS);
@@ -357,12 +352,12 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
     assert.ok(mesh.uvs[i] >= 0 && mesh.uvs[i] < 1, `u in [0,1): ${mesh.uvs[i]}`);
     assert.ok(mesh.uvs[i + 1] === 0 || mesh.uvs[i + 1] === 1, `v grid ${mesh.uvs[i + 1]}`);
   }
-  // grid 属性：seam 点 row=r、col=-1；fused col 保持原 col
-  assert.deepEqual(Array.from(mesh.gridCols.slice(0, 8)), [-1, 0, 1, 2, -1, 3, 4, 5]);
+  // grid 属性：偏移列，无 -1
+  assert.deepEqual(Array.from(mesh.gridCols.slice(0, 8)), [0, 1, 2, 3, 4, 5, 6, 7]);
   assert.deepEqual(Array.from(mesh.gridRows.slice(0, 8)), [0, 0, 0, 0, 0, 0, 0, 0]);
   // row1 v=0
   assert.equal(mesh.uvs[8 * 2 + 1], 0);
-  // wrap quad 丢弃：保留 face 恰为每管 k=0..2 的 quad（不含 seam↔管尾 fused col）
+  // wrap quad 丢弃：保留 face 恰为每管 k=0..2 的 quad（不含管尾↔管首）
   const expectedFaces = [
     [0, 8, 9, 1],
     [1, 9, 10, 2],

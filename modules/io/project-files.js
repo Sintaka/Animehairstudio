@@ -10,7 +10,7 @@ import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActi
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260726-1";
 import { exportAnimeHairUsda } from "./usda-export.js?v=20260814-2";
 import { createHairProject } from "./project-schema.js?v=20260728-2";
-import { unfoldHairMesh, gridUvTable, gridUvAt } from "./uv-unfold.js?v=20260814-5";
+import { unfoldHairMesh, gridUvTable, gridUvAt } from "./uv-unfold.js?v=20260814-7";
 
 export function createProjectSaveApi(deps) {
   // ---- dialog UI elements (document is ready when this runs; app.js loads at body end) ----
