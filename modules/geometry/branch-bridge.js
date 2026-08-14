@@ -721,11 +721,16 @@ function createBranchChildGeometry(lock) {
   geometry.userData.gridColIndices = gridColIndices;
   // UV interpolation anchors for the exporter: bridge vertices in [0, bridgeVertexCount)
   // map 1:1 onto bridgeUvAnchors ({ ring, hole, t }; null = no mapping). bridgeSeamCol
-  // is the sweep ring seam column (mid of ring vertices 0..ringWidth, the back center
-  // seam) used to unwrap the child tube's rectangular UVs.
+  // is the sweep ring seam column where the child tube's rectangular UVs are cut and
+  // the mid-line vertices duplicated. It sits at the BACK center seam = the side that
+  // does NOT face outward: ring bottom side (z = -hd, vertices ringWidth+1 .. 2*ringWidth+1),
+  // column ringWidthSegments + 1 + round(ringWidthSegments/2). Correction history: the old
+  // value round(ringWidthSegments/2) pointed at the ring top side (z = +hd, vertices
+  // 0..ringWidth, which faces outward along child frame.z = parent normal) — that is the
+  // FRONT, so the seam was on the visible face; it has been corrected to the back center.
   geometry.userData.bridgeUvAnchors = bridge ? bridge.uvAnchors : null;
   geometry.userData.bridgeBoundaryParentIndices = bridge ? bridge.boundaryParentIndices : null;
-  geometry.userData.bridgeSeamCol = Math.round(ringWidthSegments / 2);
+  geometry.userData.bridgeSeamCol = ringWidthSegments + 1 + Math.round(ringWidthSegments / 2);
   geometry.computeVertexNormals();
   // Restore the parent's authored normals on bridge vertices that sit on the parent
   // hole boundary so the child blends into the parent's shading at the seam instead

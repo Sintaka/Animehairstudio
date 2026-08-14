@@ -49,7 +49,7 @@
 | 拖放统一分发 | deprecated | main 0.1.4 已有应用文件拖放确认对话框，本地实现已删除 |
 | 雕刻笔刷选择遮罩 | deprecated | main 0.1.4 已有 sculptBrushSelectionAllows，本地实现已删除 |
 | 几何导出扫掠 rows/cols 编号（桥接除外，AHS_ primvar） | 启用 | 0.2.69–0.2.70：普通发丝行主序 + 端盖 -1；子发片桥接+端盖 -1；split 发丝 fused 列号（有子发片的主发丝按未挖洞规格）；hair card / curve-surface card 行主序；compound 多发丝基础网格 + 桥接插值 -1；panel/surface 刘海模拟（row=沿曲线、col=全局列 front/back 相邻，经 weld 重映射）；USDA 导出 `int[] primvars:AHS_gridRow`/`AHS_gridCol`（vertex）；poly/braid 预置网格不编号 |
-| 导出矩形 UV 展开（AHS grid 驱动） | 启用 | 0.2.71：modules/io/uv-unfold.js 按 gridRow/gridCol 生成归一化矩形 UV（V 负方向=切线，根=1 尖=0；闭合环 seam 复制顶点，开放网格直接重映射，split 双管独立 seam）；桥接子发片从背部中间缝（round(ringWidthSegments/2)）裁切 + 桥接 UV 环侧↔父发片洞边界插值（branch-bridge.js 记录 bridgeUvAnchors/bridgeSeamCol）；USDA/OBJ 导出接线（project-files.js，蒙皮权重随 seam 复制）；每根发丝独立 0-1 tile 允许重叠不打包 |
+| 导出矩形 UV 展开（AHS grid 驱动） | 启用 | 0.2.71–0.2.72：modules/io/uv-unfold.js 按 gridRow/gridCol 生成归一化矩形 UV（V 负方向=切线，根=1 尖=0；闭合环 seam 复制顶点，开放网格直接重映射；split 双管独立 seam、clip seam 点（col=-1）作为管 seam 双副本）；桥接子发片切缝=**背面**（不面向外的一侧，环 bottom side 中点 ringWidthSegments+1+round(W/2)，0.2.72 纠正——0.2.71 误放正面 top 侧）+ 桥接底带中线切开（中线桥接顶点双副本，左右条带各自插值摊平）；子发片 V 按主发片尺度归一（v=1−洞中心u−row/(R−1)×子长/主长），U 保持独立归一化不与主发片对齐（noise U scale 统一）；USDA/OBJ 导出接线（蒙皮权重随 seam 复制）；每根发丝独立 0-1 tile 允许重叠不打包 |
 
 > 新增本地功能时，应同步在本表补充一行，并说明其「启用 / deprecated」状态与依赖的 main 版本。
 

@@ -10,7 +10,7 @@ import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActi
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260726-1";
 import { exportAnimeHairUsda } from "./usda-export.js?v=20260814-2";
 import { createHairProject } from "./project-schema.js?v=20260728-2";
-import { unfoldHairMesh, parametricGridUv, gridDimensions } from "./uv-unfold.js?v=20260814-3";
+import { unfoldHairMesh, parametricGridUv, gridDimensions } from "./uv-unfold.js?v=20260814-4";
 
 export function createProjectSaveApi(deps) {
   // ---- dialog UI elements (document is ready when this runs; app.js loads at body end) ----
@@ -148,24 +148,55 @@ export function createProjectSaveApi(deps) {
       let options = { kind };
       if (kind === "child") {
         const ringWidthSegments = Math.max(1, Math.round(Number(geometry.userData?.ringWidthSegments || 2)));
-        const seamCol = Math.round(ringWidthSegments / 2);
-        options = { kind, seamCol, bridgeUvAt: null };
+        const seamCol = Math.max(0, Math.round(Number(geometry.userData?.bridgeSeamCol ?? (ringWidthSegments + 1 + Math.round(ringWidthSegments / 2)))));
         const anchors = geometry.userData?.bridgeUvAnchors;
         const parent = deps.locks.find((item) => item.id === lock.branchParentId);
         const parentUv = parent ? uvAt.get(parent.id) : null;
+        const centerU = Number(lock.branchRootRegion?.center?.u ?? 0.5);
+        const childVStart = 1 - Math.min(1, Math.max(0, centerU));
+        const childVLength = (() => {
+          const startT = Math.min(1, Math.max(0, Number(lock.branchSweepStartT ?? 0.1)));
+          const childLen = new THREE.CatmullRomCurve3(lock.points || []).getLength() * (1 - startT);
+          const parentLen = parent?.points?.length >= 2 ? new THREE.CatmullRomCurve3(parent.points).getLength() : 0;
+          if (!(childLen > 0) || !(parentLen > 0)) return 1;
+          return childLen / parentLen;
+        })();
+        options = { kind, seamCol, childVStart, childVLength };
         if (Array.isArray(anchors) && anchors.length && parentUv) {
           const gridRows = geometry.userData.gridRowIndices;
           const gridCols = geometry.userData.gridColIndices;
           const dims = gridDimensions(gridRows, gridCols);
           const ringCount = dims.cols;
-          options.bridgeUvAt = (vertexIndex) => {
+          options.bridgeUvAt = (vertexIndex, side = 0) => {
             const anchor = anchors[vertexIndex];
             if (!anchor || ringCount < 2) return null;
-            const ringU = ((anchor.ring - seamCol) % ringCount + ringCount) % ringCount / ringCount;
             const holeUv = anchor.hole >= 0 ? parentUv(anchor.hole) : null;
             if (!holeUv) return null;
             const t = Math.min(1, Math.max(0, Number(anchor.t ?? 1)));
-            return [ringU + (holeUv[0] - ringU) * t, 1 + (holeUv[1] - 1) * t];
+            const ringU = anchor.ring === seamCol
+              ? (side === 1 ? 1 : 0)
+              : ((anchor.ring - seamCol) % ringCount + ringCount) % ringCount / ringCount;
+            return [ringU + (holeUv[0] - ringU) * t, childVStart + (holeUv[1] - childVStart) * t];
+          };
+          options.passthroughCopyCount = (vertexIndex) => {
+            const anchor = anchors[vertexIndex];
+            return anchor && anchor.ring === seamCol ? 2 : 1;
+          };
+          options.passthroughSide = (vertexIndex, face) => {
+            const anchor = anchors[vertexIndex];
+            if (!anchor || anchor.ring !== seamCol) return 0;
+            let cx = -1;
+            for (const fx of face) {
+              const fCol = Number(gridCols[fx]);
+              if (Number.isFinite(fCol) && fCol >= 0) {
+                if (fCol !== seamCol) { cx = fCol; break; }
+              } else {
+                const fAnchor = anchors[fx];
+                if (fAnchor && fAnchor.ring >= 0 && fAnchor.ring !== seamCol) { cx = fAnchor.ring; break; }
+              }
+            }
+            if (cx < 0) return 0;
+            return cx < seamCol ? 1 : 0; // 另一环顶点在中线左侧 → 中线顶点是右侧 → 用 side 1（u_ring=1）
           };
         }
       }
