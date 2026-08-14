@@ -3,18 +3,26 @@
 // 约定：
 //   - V 负方向 = 发丝切线方向：根（row=0）→ V=1，尖（row=R-1）→ V=0。
 //     tangent 与 V 负方向对齐，DCC 中头发竖直向下打直。
-//   - U 沿列：闭合环（closed/split/child）在接缝列 seam 复制顶点，u=0 / u=1 双副本；
-//     开放网格（open/compound）不复制，u = col/(C-1)（C==1 时 u=0.5）。
+//   - U 沿列：闭合环（closed/split/child）的切缝只保留一边——切缝列不复制成
+//     u=0/u=1 双副本，环从切缝列开始按列排列方向线性往前排，跨切缝的 wrap quad
+//     丢弃（管子沿切缝开口）；开放网格（open/compound）不复制，u = col/(C-1)
+//     （C==1 时 u=0.5）。
+//   - 闭合环 U 按每列平均宽度（row-0 顶点位置的弧长）调整，不是等间距：
+//     u(列) = 从切缝沿环向累计弧长 / referenceCircumference（默认自身周长）。
+//     gridUvTable 建表（colU/周长），gridUvAt 按表查 [u, v]。
+//   - child：U 按主发片尺度——子发片 u 范围 = 子发片一圈周长 / 主发片一圈周长
+//     （unfoldHairMesh options.referenceCircumference 传入主发片周长）；桥接 -1
+//     顶点单副本，uv = bridgeUvAt(vertexIndex) 或原 uv 属性；环与桥接的 wrap quad
+//     （跨越切缝的 quad）都丢弃；桥接中线顶点 u_ring=0（不再需要双副本）。
 //   - split：每管 ringSize_g 个环顶点 = 1 个 clip seam 点（local col 0，gridCol=-1）
-//     + Cg = ringSize_g-1 个 fused col（splitSections / colToSection 描述）。展开后每管
-//     Cg+2 槽：pos 0 = clip seam（u=0）、pos 1..Cg = 第 k 个 fused col（u=k/Cg）、
-//     pos Cg+1 = clip seam 副本（u=1）——clip seam 点不再带原 UV passthrough 混入矩形 UV。
-//   - child：桥接 -1 顶点支持多副本（passthroughCopyCount / passthroughSide），中线顶点
-//     双副本与环 seam（u=0/u=1）对齐；环向 V 按 childVStart / childVLength 归一。
+//     + Cg = ringSize_g-1 个 fused col（splitSections / colToSection 描述）。展开后
+//     每管 Cg+1 槽：pos 0 = clip seam（u=0）、pos 1..Cg = 第 k 个 fused col
+//     （u=管弧长/ref）；两管共享同一 circumference（= 两管边宽和）。
 //   - 每根发丝独立 0-1 UV，允许重叠，不做打包。
-//   - 顶点属性（position/normal/tangent/color/leafWeights）按映射复制，seam 副本同值。
-//   - 其它 col=-1 顶点一律作为 passthrough 保留（每个 -1 顶点按副本数占新索引，排在
-//     网格顶点之后），uv = bridgeUvAt(v, side) 或原 uv 属性；未在任何 face 中引用的也保留。
+//   - 顶点属性（position/normal/tangent/color/leafWeights）按映射复制。
+//   - 其它 col=-1 顶点一律作为 passthrough 保留（每个 -1 顶点占一个新索引，排在
+//     网格顶点之后），uv = bridgeUvAt(vertexIndex) 或原 uv 属性；未在任何 face 中
+//     引用的也保留。
 //   - 纯函数，无 THREE 依赖；geometry 仅鸭子类型访问（getAttribute / userData）。
 
 // 从两路 grid 数组推出矩形尺寸：max+1；空/无数据返回 {rows:0, cols:0}。
@@ -30,20 +38,6 @@ export function gridDimensions(gridRows, gridCols) {
     if (Number.isFinite(col) && col >= 0 && col + 1 > cols) cols = col + 1;
   }
   return { rows, cols };
-}
-
-// 无 seam 的参数化 UV（供桥接锚点查 parent）：u = col/cols、v = 1 - row/(rows-1)。
-// row/col 为 -1 或越界返回 null；rows<2 时 v=0.5 兜底。
-export function parametricGridUv(gridRows, gridCols, vertexIndex) {
-  if (!gridRows || !gridCols) return null;
-  const row = Number(gridRows[vertexIndex]);
-  const col = Number(gridCols[vertexIndex]);
-  if (!Number.isFinite(row) || !Number.isFinite(col) || row < 0 || col < 0) return null;
-  const dims = gridDimensions(gridRows, gridCols);
-  if (dims.rows < 1 || dims.cols < 1) return null;
-  const u = col / dims.cols;
-  const v = dims.rows < 2 ? 0.5 : 1 - row / (dims.rows - 1);
-  return [u, v];
 }
 
 const COMPONENT_GETTERS = ["getX", "getY", "getZ", "getW"];
@@ -62,15 +56,156 @@ function attributeComponent(attribute, index, component) {
   return typeof attribute[getter] === "function" ? attribute[getter](index) : 0;
 }
 
+// 弧长 UV 表：按 row-0 顶点的环向边宽（欧氏距离）把列映射为弧长归一 u。
+// geometry 需要 position 属性 + userData.gridRowIndices/gridColIndices；
+// split 还需要 userData.splitFusedGrid.colToSection / userData.splitSections。
+// kind: "closed" | "child" | "split"（其它返回 null，不展开/不查）。
+// seamCol: closed/child 的切缝列（split 由 colToSection 内部决定，忽略 seamCol）。
+// referenceCircumference: 归一分母（null/undefined = 自身 circumference）。
+// 返回 { colU: Map<col, u>, circumference, rows }；row-0 顶点缺失（某列缺）→ null。
+export function gridUvTable(geometry, kind, seamCol, referenceCircumference = null) {
+  const userData = geometry?.userData || {};
+  const gridRows = userData.gridRowIndices;
+  const gridCols = userData.gridColIndices;
+  if (!gridRows || !gridCols) return null;
+  const positionAttr = geometry?.getAttribute?.("position");
+  if (!positionAttr) return null;
+  const dims = gridDimensions(gridRows, gridCols);
+  const R = dims.rows;
+  const C = dims.cols;
+  if (R < 1 || C < 1) return null;
+
+  const posOf = (index) => [
+    attributeComponent(positionAttr, index, 0),
+    attributeComponent(positionAttr, index, 1),
+    attributeComponent(positionAttr, index, 2)
+  ];
+  const dist = (a, b) => {
+    const dx = a[0] - b[0];
+    const dy = a[1] - b[1];
+    const dz = a[2] - b[2];
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  };
+
+  // (row, col) -> 原顶点索引
+  const gridIndexByRowCol = new Map();
+  const length = Math.min(gridRows.length, gridCols.length);
+  for (let i = 0; i < length; i += 1) {
+    const row = Number(gridRows[i]);
+    const col = Number(gridCols[i]);
+    if (Number.isFinite(row) && Number.isFinite(col) && row >= 0 && col >= 0) {
+      gridIndexByRowCol.set(row + ":" + col, i);
+    }
+  }
+
+  // colU：节点 u = 从切缝（closed/child 的 seamCol；split 每管的 seam 点）沿环向
+  // 到该节点的累计弧长 / ref。wrap 边只计入 circumference，不归给任何节点。
+  let colU = null;
+  let circumference = 0;
+
+  if (kind === "closed" || kind === "child") {
+    const sCol = Math.max(0, Math.round(Number(seamCol) || 0)) % C;
+    const order = [];
+    for (let k = 0; k < C; k += 1) order.push((sCol + k) % C);
+    const positions = new Array(C);
+    for (let c = 0; c < C; c += 1) {
+      const source = gridIndexByRowCol.get("0:" + order[c]);
+      if (source == null) return null;
+      positions[c] = posOf(source);
+    }
+    for (let k = 0; k < C; k += 1) {
+      circumference += dist(positions[k], positions[(k + 1) % C]);
+    }
+    colU = new Map();
+    let acc = 0;
+    for (let k = 0; k < C; k += 1) {
+      colU.set(order[k], acc); // seam（order[0]）u=0；u(节点) = 到该节点的弧长
+      acc += dist(positions[k], positions[(k + 1) % C]);
+    }
+  } else if (kind === "split") {
+    const colToSection = userData.splitFusedGrid?.colToSection;
+    const splitSections = userData.splitSections;
+    if (!Array.isArray(colToSection) || colToSection.length === 0) return null;
+    if (!Array.isArray(splitSections) || splitSections.length === 0) return null;
+    const bySection = new Map();
+    for (let fusedCol = 0; fusedCol < colToSection.length; fusedCol += 1) {
+      const entry = colToSection[fusedCol];
+      if (!entry || entry.section == null) continue;
+      if (!bySection.has(entry.section)) bySection.set(entry.section, []);
+      bySection.get(entry.section).push(fusedCol);
+    }
+    const tubeOrder = [...bySection.keys()].sort((a, b) => a - b);
+    if (tubeOrder.length === 0) return null;
+    colU = new Map();
+    for (let g = 0; g < tubeOrder.length; g += 1) {
+      const section = tubeOrder[g];
+      const cols = [...new Set(bySection.get(section).sort((a, b) => a - b))];
+      const info = splitSections[section];
+      if (!info || !Number.isFinite(info.ringSize) || info.ringSize < 2
+        || !Number.isFinite(info.base) || info.base < 0
+        || cols.length !== info.ringSize - 1) return null;
+      // row-0 管 seam 点（local col 0，gridCol<0）
+      let seamIndex = -1;
+      let seamCount = 0;
+      for (let k = 0; k < info.ringSize; k += 1) {
+        const vi = info.base + k;
+        const col = Number(gridCols[vi]);
+        if (!Number.isFinite(col) || col < 0) { seamIndex = vi; seamCount += 1; }
+      }
+      if (seamCount !== 1) return null;
+      const seamPos = posOf(seamIndex);
+      // 每管各自从 seam 点起累计：seam → 管首 fused col（起边），fused col 间相邻，
+      // 管尾 fused col → seam（wrap 边，只计入 circumference）。
+      let prev = seamPos;
+      let acc = 0;
+      for (let k = 0; k < cols.length; k += 1) {
+        const source = gridIndexByRowCol.get("0:" + cols[k]);
+        if (source == null) return null;
+        const current = posOf(source);
+        const width = dist(prev, current);
+        circumference += width;
+        acc += width;
+        colU.set(cols[k], acc); // u(节点) = 到该节点的弧长（管首 fused col = 起边宽）
+        prev = current;
+      }
+      circumference += dist(prev, seamPos); // wrap 边
+    }
+  } else {
+    return null; // open / compound / 未知 kind → 无弧长表
+  }
+
+  const ref = Number.isFinite(Number(referenceCircumference)) && Number(referenceCircumference) > 0
+    ? Number(referenceCircumference)
+    : circumference;
+  if (!(ref > 0)) return null;
+  const scale = 1 / ref;
+  for (const [node, arc] of colU) colU.set(node, arc * scale);
+
+  return { colU, circumference, rows: R };
+}
+
+// 按弧长表查 UV：u = uvTable.colU.get(col)、v = 1 - row/(rows-1)（rows<2 → 0.5）。
+// row/col 为 -1、越界或不在表内返回 null（供桥接锚点查父发片）。
+export function gridUvAt(uvTable, gridRows, gridCols, vertexIndex) {
+  if (!uvTable || !gridRows || !gridCols) return null;
+  const row = Number(gridRows[vertexIndex]);
+  const col = Number(gridCols[vertexIndex]);
+  if (!Number.isFinite(row) || !Number.isFinite(col) || row < 0 || col < 0) return null;
+  const u = uvTable.colU.get(col);
+  if (!Number.isFinite(u)) return null;
+  const v = uvTable.rows < 2 ? 0.5 : 1 - row / (uvTable.rows - 1);
+  return [u, v];
+}
+
 // 把扫掠网格展开为归一化矩形 UV 的导出网格。
 // geometry 需要 position 属性 + userData.gridRowIndices/gridColIndices/quadFaces；
 // 缺 grid 或缺 quadFaces 返回 null（调用方回退原几何）。
 // options:
 //   kind       "closed" | "open" | "split" | "compound" | "child"（默认 "closed"）
-//   seamCol    closed/child 的接缝列号（默认 0）
-//   bridgeUvAt (vertexIndex, side=0) -> [u, v] | null：-1 顶点 UV 回调；null 退回原 uv。
-//   passthroughCopyCount (vertexIndex) -> 副本数（默认 1；child 桥接中线顶点返回 2）
-//   passthroughSide (vertexIndex, face, vi) -> 该顶点在该 face 中应使用的副本序号（默认 0）
+//   seamCol    closed/child 的切缝列（默认 0）
+//   referenceCircumference  弧长归一分母（默认 null = 自身 circumference；
+//              child 传入主发片周长使子发片 u 范围 = 子周长 / 主周长）
+//   bridgeUvAt (vertexIndex) -> [u, v] | null：-1 顶点 UV 回调；null 退回原 uv。
 //   childVStart / childVLength  child kind 的 V 归一（默认 1 / 1；v = start - row/(R-1)*len）
 // 返回 { positions, normals, tangents, colors, uvs, faces, gridRows, gridCols, leafWeights }；
 // positions/normals/colors 三元组、tangents 四元组、uvs 二元组平铺 number 数组，
@@ -108,7 +243,7 @@ export function unfoldHairMesh(geometry, options = {}) {
   const seamInfoOf = new Map();   // split：clip seam 顶点索引 -> { row, section }
   if (kind === "closed" || kind === "child") {
     seamCol = Math.max(0, Math.round(Number(options.seamCol) || 0)) % C;
-    rowStride = C + 1;
+    rowStride = C;               // 单边：无 seam 副本
     gridVertexCount = R * rowStride;
   } else if (kind === "open" || kind === "compound") {
     rowStride = C;
@@ -142,7 +277,7 @@ export function unfoldHairMesh(geometry, options = {}) {
         || !Number.isFinite(info.base) || info.base < 0
         || cols.length !== info.ringSize - 1) return null;
       tubeBase.set(section, base);
-      base += info.ringSize + 1; // 每管 Cg+2 槽：seam + Cg fused + seam 副本
+      base += info.ringSize; // 每管 ringSize 槽：seam + Cg fused（无副本）
     }
     rowStride = base;
     if (rowStride < 1) return null;
@@ -170,6 +305,13 @@ export function unfoldHairMesh(geometry, options = {}) {
     return null; // 未知 kind
   }
 
+  // ---- 弧长表：closed/child/split 按 row-0 弧长定 u；表缺失 → 回退原几何 ----
+  let uvTable = null;
+  if (kind === "closed" || kind === "child" || kind === "split") {
+    uvTable = gridUvTable(geometry, kind, seamCol, options.referenceCircumference ?? null);
+    if (!uvTable) return null;
+  }
+
   // ---- (row, col) -> 原顶点索引；矩形密度校验（缺格/重复 → 回退原几何）----
   const gridIndexByRowCol = new Map();
   const length = Math.min(gridRows.length, gridCols.length);
@@ -188,24 +330,17 @@ export function unfoldHairMesh(geometry, options = {}) {
   if (gridIndexByRowCol.size !== expectedGridEntries) return null;
 
   // ---- passthrough：非网格顶点保留（split 的 clip seam 点除外——它们已是网格顶点）----
-  // 每个 -1 顶点按 passthroughCopyCount 占多个新索引（child 桥接中线双副本），
-  // 唯一新索引排在网格顶点之后。
-  const passthroughOf = new Map(); // 顶点索引 -> { base, count }
+  // 每个 -1 顶点单副本，唯一新索引排在网格顶点之后。
+  const passthroughOf = new Map(); // 顶点索引 -> 新索引
   const passthroughList = [];
-  const copyCountOf = (vertexIndex) => {
-    if (typeof options.passthroughCopyCount !== "function") return 1;
-    const value = Math.round(Number(options.passthroughCopyCount(vertexIndex)));
-    return Number.isFinite(value) && value >= 1 ? value : 1;
-  };
   let passthroughTotal = 0;
   for (let i = 0; i < vertexCount; i += 1) {
     const row = Number(gridRows[i]);
     const col = Number(gridCols[i]);
     const isGrid = Number.isFinite(row) && Number.isFinite(col) && row >= 0 && col >= 0;
     if (isGrid || seamInfoOf.has(i)) continue;
-    const count = copyCountOf(i);
-    passthroughOf.set(i, { base: gridVertexCount + passthroughTotal, count });
-    passthroughTotal += count;
+    passthroughOf.set(i, gridVertexCount + passthroughTotal);
+    passthroughTotal += 1;
     passthroughList.push(i);
   }
   const totalVertexCount = gridVertexCount + passthroughTotal;
@@ -268,11 +403,11 @@ export function unfoldHairMesh(geometry, options = {}) {
     gridLoop:
     for (let row = 0; row < R; row += 1) {
       const v = vForRow(row);
-      for (let pos = 0; pos <= C; pos += 1) {
+      for (let pos = 0; pos < C; pos += 1) {
         const col = (seamCol + pos) % C;
         const source = gridIndexByRowCol.get(row + ":" + col);
         if (source == null) { fillOk = false; break gridLoop; }
-        fillVertex(row * rowStride + pos, source, pos / C, v);
+        fillVertex(row * rowStride + pos, source, uvTable.colU.get(col), v);
       }
     }
   } else if (kind === "open" || kind === "compound") {
@@ -296,114 +431,108 @@ export function unfoldHairMesh(geometry, options = {}) {
         const base = tubeBase.get(section);
         const seamSource = seamSourceOf.get(row + ":" + section);
         if (seamSource == null) { fillOk = false; break gridLoop; }
-        // pos 0 = clip seam 点（u=0）
+        // pos 0 = clip seam 点（u=0）；pos 1..Cg = fused col（u=管弧长/ref）
         fillVertex(row * rowStride + base, seamSource, 0, v);
-        // pos 1..Cg = 第 1..Cg 个 fused col（u=(k+1)/(Cg+1)，wrap quad 宽 1/(Cg+1)）
         for (let k = 0; k < Cg; k += 1) {
           const source = gridIndexByRowCol.get(row + ":" + cols[k]);
           if (source == null) { fillOk = false; break gridLoop; }
-          fillVertex(row * rowStride + base + k + 1, source, (k + 1) / (Cg + 1), v);
+          fillVertex(row * rowStride + base + k + 1, source, uvTable.colU.get(cols[k]), v);
         }
-        // pos Cg+1 = clip seam 点副本（u=1）
-        fillVertex(row * rowStride + base + Cg + 1, seamSource, 1, v);
       }
     }
   }
   if (!fillOk) return null;
 
-  // ---- passthrough 填充：uv = bridgeUvAt(v, side) 或原 uv 属性 ----
+  // ---- passthrough 填充：uv = bridgeUvAt(vertexIndex) 或原 uv 属性 ----
   const uvAttr = geometry.getAttribute("uv");
   passthroughList.forEach((source) => {
-    const { base, count } = passthroughOf.get(source);
-    for (let side = 0; side < count; side += 1) {
-      let u = attributeComponent(uvAttr, source, 0);
-      let v = attributeComponent(uvAttr, source, 1);
-      if (typeof options.bridgeUvAt === "function") {
-        const override = options.bridgeUvAt(source, side);
-        if (Array.isArray(override) && override.length >= 2
-          && Number.isFinite(override[0]) && Number.isFinite(override[1])) {
-          u = override[0];
-          v = override[1];
-        }
+    const newIndex = passthroughOf.get(source);
+    let u = attributeComponent(uvAttr, source, 0);
+    let v = attributeComponent(uvAttr, source, 1);
+    if (typeof options.bridgeUvAt === "function") {
+      const override = options.bridgeUvAt(source);
+      if (Array.isArray(override) && override.length >= 2
+        && Number.isFinite(override[0]) && Number.isFinite(override[1])) {
+        u = override[0];
+        v = override[1];
       }
-      fillVertex(base + side, source, u, v);
     }
+    fillVertex(newIndex, source, u, v);
   });
 
-  // ---- face 重映射 ----
-  // 对 face 中每个顶点 v：col=-1 → split 管 seam 槽 / passthrough 副本（side 由
-  // passthroughSide 决定）；col>=0 → 网格槽。
-  // seam 顶点（closed/child 的 seamCol、split 的管首列）按相邻不同 col 顶点的
-  // 环向序决定用 pos 0（u=0，起点）还是 pos C（u=1，终点）；非 seam 一律主 pos。
-  const differentColNeighbor = (face, vi, col) => {
-    const faceLength = face.length;
-    const candidates = [face[(vi + 1) % faceLength], face[(vi - 1 + faceLength) % faceLength]];
-    for (let k = 0; k < candidates.length; k += 1) {
-      const candidate = candidates[k];
-      const candidateCol = Number(gridCols[candidate]);
-      if (Number.isFinite(candidateCol) && candidateCol >= 0 && candidateCol !== col) return candidate;
+  // ---- face 重映射（wrap quad 丢弃 + 顶点槽位换算）----
+  // wrap quad：闭合环（closed/child）跨切缝的 quad（环向相邻列 {seamCol-1, seamCol}，
+  // 含环自身与桥接 quad）；split 含管 seam 点且 col>=0 顶点 = 管尾 fused col 的 quad。
+  // 丢弃后 faces 数组少相应 quad；顶点全部保留（开口管，顶点不删）。
+  const seamRingColSet = (kind === "closed" || kind === "child")
+    ? new Set([(seamCol - 1 + C) % C, seamCol])
+    : null;
+  const faces = [];
+  quadFaces.forEach((face) => {
+    if (kind === "closed" || kind === "child") {
+      const ringCols = new Set();
+      for (const vertex of face) {
+        const col = Number(gridCols[vertex]);
+        if (Number.isFinite(col) && col >= 0) ringCols.add(col);
+      }
+      if (ringCols.size === seamRingColSet.size) {
+        let match = true;
+        for (const c of ringCols) {
+          if (!seamRingColSet.has(c)) { match = false; break; }
+        }
+        if (match) return; // 跨切缝 wrap quad → 丢弃
+      }
+    } else if (kind === "split") {
+      let seamVertex = -1;
+      for (const vertex of face) {
+        if (seamInfoOf.has(vertex)) { seamVertex = vertex; break; }
+      }
+      if (seamVertex >= 0) {
+        const seam = seamInfoOf.get(seamVertex);
+        const cols = tubeCols.get(seam.section);
+        const lastCol = cols[cols.length - 1];
+        let wrap = true;
+        let hasRingVertex = false;
+        for (const vertex of face) {
+          const col = Number(gridCols[vertex]);
+          if (Number.isFinite(col) && col >= 0) {
+            hasRingVertex = true;
+            if (col !== lastCol) { wrap = false; break; }
+          }
+        }
+        if (hasRingVertex && wrap) return; // seam ↔ 管尾 fused col wrap quad → 丢弃
+      }
     }
-    return -1;
-  };
-  const passthroughIndexFor = (vertex, face, vi) => {
-    const entry = passthroughOf.get(vertex);
-    if (!entry) return vertex;
-    const side = typeof options.passthroughSide === "function"
-      ? Math.max(0, Math.round(Number(options.passthroughSide(vertex, face, vi))) || 0)
-      : 0;
-    return entry.base + Math.min(side, entry.count - 1);
-  };
-  const faces = quadFaces.map((face) => {
     const newFace = new Array(face.length);
     for (let vi = 0; vi < face.length; vi += 1) {
       const vertex = face[vi];
       const col = Number(gridCols[vertex]);
       if (!Number.isFinite(col) || col < 0) {
         if (kind === "split" && seamInfoOf.has(vertex)) {
-          // split：clip seam 点 → 管 seam 槽。face 中另一 col>=0 顶点 cx 的管内序号
-          // = 0（管首）→ seam 是起点 → pos 0（u=0）；= Cg-1（管尾）→ 终点 → pos Cg+1（u=1）。
+          // split：clip seam 点 → 管 seam 槽 pos 0（u=0，单边起点）
           const seam = seamInfoOf.get(vertex);
-          const cols = tubeCols.get(seam.section);
-          const Cg = cols.length;
-          let pos = 0;
-          const cx = differentColNeighbor(face, vi, -1);
-          if (cx >= 0) {
-            const cxCol = Number(gridCols[cx]);
-            const cxEntry = cxCol >= 0 ? colToSection[cxCol] : null;
-            if (cxEntry && cxEntry.section === seam.section) {
-              const cxP = cols.indexOf(cxCol);
-              if (cxP === Cg - 1) pos = Cg + 1;
-            }
-          }
-          newFace[vi] = seam.row * rowStride + tubeBase.get(seam.section) + pos;
+          newFace[vi] = seam.row * rowStride + tubeBase.get(seam.section);
           continue;
         }
-        newFace[vi] = passthroughIndexFor(vertex, face, vi);
+        const entry = passthroughOf.get(vertex);
+        newFace[vi] = entry != null ? entry : vertex;
         continue;
       }
       const row = Number(gridRows[vertex]);
       if (!Number.isFinite(row) || row < 0) {
-        newFace[vi] = passthroughIndexFor(vertex, face, vi);
+        const entry = passthroughOf.get(vertex);
+        newFace[vi] = entry != null ? entry : vertex;
         continue;
       }
       if (kind === "closed" || kind === "child") {
-        let pos = ((col - seamCol) % C + C) % C;
-        if (col === seamCol) {
-          const cx = differentColNeighbor(face, vi, col);
-          if (cx >= 0) {
-            const cxCol = Number(gridCols[cx]);
-            const cxPos = ((cxCol - seamCol) % C + C) % C;
-            if (cxPos === (pos + 1) % C) pos = 0;                 // 起点：u=0
-            else if (cxPos === (pos - 1 + C) % C) pos = C;        // 终点：u=1
-          }
-        }
-        newFace[vi] = row * rowStride + pos;
+        // 单边：col 直接映射 pos = (col - seamCol + C) % C
+        newFace[vi] = row * rowStride + ((col - seamCol) % C + C) % C;
       } else if (kind === "split") {
         const entry = colToSection[col];
         if (entry && tubeCols.has(entry.section)) {
           const cols = tubeCols.get(entry.section);
           const p = cols.indexOf(col);
-          // fused col → 管内序号 + 1（pos 0 / pos Cg+1 留给 clip seam 点）
+          // fused col → 管内序号 + 1（pos 0 留给 clip seam 点）
           newFace[vi] = row * rowStride + tubeBase.get(entry.section) + (p >= 0 ? p + 1 : 0);
         } else {
           // 密度校验已保证每个 col>=0 顶点都落在某管；此处仅为防御。
@@ -414,7 +543,7 @@ export function unfoldHairMesh(geometry, options = {}) {
         newFace[vi] = row * C + col;
       }
     }
-    return newFace;
+    faces.push(newFace);
   });
 
   // ---- leafWeights（stride 3）按映射复制 ----

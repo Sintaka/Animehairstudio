@@ -10,7 +10,7 @@ import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActi
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260726-1";
 import { exportAnimeHairUsda } from "./usda-export.js?v=20260814-2";
 import { createHairProject } from "./project-schema.js?v=20260728-2";
-import { unfoldHairMesh, parametricGridUv, gridDimensions } from "./uv-unfold.js?v=20260814-4";
+import { unfoldHairMesh, gridUvTable, gridUvAt } from "./uv-unfold.js?v=20260814-5";
 
 export function createProjectSaveApi(deps) {
   // ---- dialog UI elements (document is ready when this runs; app.js loads at body end) ----
@@ -128,18 +128,23 @@ export function createProjectSaveApi(deps) {
     return "closed";
   }
 
+  // child 切缝列：bridgeSeamCol（背面中线）优先，否则 ringWidthSegments+1+round(W/2)。
+  function childSeamCol(geometry) {
+    const ringWidthSegments = Math.max(1, Math.round(Number(geometry.userData?.ringWidthSegments || 2)));
+    return Math.max(0, Math.round(Number(geometry.userData?.bridgeSeamCol ?? (ringWidthSegments + 1 + Math.round(ringWidthSegments / 2)))));
+  }
+
   function buildUnfoldedMeshes() {
     const unfolded = new Map();
-    const uvAt = new Map();
+    const uvAt = new Map(); // lock.id -> gridUvTable 弧长表（父发片洞查询用）
     deps.locks.forEach((lock) => {
       const geometry = lock.mesh?.geometry;
       if (!geometry) return;
-      const gridRows = geometry.userData?.gridRowIndices;
-      const gridCols = geometry.userData?.gridColIndices;
-      if (!gridRows || !gridCols) return;
-      const dims = gridDimensions(gridRows, gridCols);
-      uvAt.set(lock.id, (vertexIndex) => parametricGridUv(gridRows, gridCols, vertexIndex));
-      void dims;
+      const kind = kindForLock(lock);
+      if (kind !== "closed" && kind !== "child" && kind !== "split") return;
+      const seamCol = kind === "child" ? childSeamCol(geometry) : 0; // split 由 colToSection 内部定
+      const table = gridUvTable(geometry, kind, seamCol);
+      if (table) uvAt.set(lock.id, table);
     });
     deps.locks.forEach((lock) => {
       const geometry = lock.mesh?.geometry;
@@ -147,11 +152,12 @@ export function createProjectSaveApi(deps) {
       if (!geometry || !kind) return;
       let options = { kind };
       if (kind === "child") {
-        const ringWidthSegments = Math.max(1, Math.round(Number(geometry.userData?.ringWidthSegments || 2)));
-        const seamCol = Math.max(0, Math.round(Number(geometry.userData?.bridgeSeamCol ?? (ringWidthSegments + 1 + Math.round(ringWidthSegments / 2)))));
+        const seamCol = childSeamCol(geometry);
         const anchors = geometry.userData?.bridgeUvAnchors;
         const parent = deps.locks.find((item) => item.id === lock.branchParentId);
-        const parentUv = parent ? uvAt.get(parent.id) : null;
+        const parentTable = parent ? uvAt.get(parent.id) : null;
+        // 子发片 U 按主发片尺度：u 范围 = 子发片一圈周长 / 主发片一圈周长
+        const referenceCircumference = parentTable ? parentTable.circumference : null;
         const centerU = Number(lock.branchRootRegion?.center?.u ?? 0.5);
         const childVStart = 1 - Math.min(1, Math.max(0, centerU));
         const childVLength = (() => {
@@ -162,42 +168,25 @@ export function createProjectSaveApi(deps) {
           return childLen / parentLen;
         })();
         options = { kind, seamCol, childVStart, childVLength };
-        if (Array.isArray(anchors) && anchors.length && parentUv) {
-          const gridRows = geometry.userData.gridRowIndices;
-          const gridCols = geometry.userData.gridColIndices;
-          const dims = gridDimensions(gridRows, gridCols);
-          const ringCount = dims.cols;
-          options.bridgeUvAt = (vertexIndex, side = 0) => {
-            const anchor = anchors[vertexIndex];
-            if (!anchor || ringCount < 2) return null;
-            const holeUv = anchor.hole >= 0 ? parentUv(anchor.hole) : null;
-            if (!holeUv) return null;
-            const t = Math.min(1, Math.max(0, Number(anchor.t ?? 1)));
-            const ringU = anchor.ring === seamCol
-              ? (side === 1 ? 1 : 0)
-              : ((anchor.ring - seamCol) % ringCount + ringCount) % ringCount / ringCount;
-            return [ringU + (holeUv[0] - ringU) * t, childVStart + (holeUv[1] - childVStart) * t];
-          };
-          options.passthroughCopyCount = (vertexIndex) => {
-            const anchor = anchors[vertexIndex];
-            return anchor && anchor.ring === seamCol ? 2 : 1;
-          };
-          options.passthroughSide = (vertexIndex, face) => {
-            const anchor = anchors[vertexIndex];
-            if (!anchor || anchor.ring !== seamCol) return 0;
-            let cx = -1;
-            for (const fx of face) {
-              const fCol = Number(gridCols[fx]);
-              if (Number.isFinite(fCol) && fCol >= 0) {
-                if (fCol !== seamCol) { cx = fCol; break; }
-              } else {
-                const fAnchor = anchors[fx];
-                if (fAnchor && fAnchor.ring >= 0 && fAnchor.ring !== seamCol) { cx = fAnchor.ring; break; }
-              }
-            }
-            if (cx < 0) return 0;
-            return cx < seamCol ? 1 : 0; // 另一环顶点在中线左侧 → 中线顶点是右侧 → 用 side 1（u_ring=1）
-          };
+        if (referenceCircumference != null) options.referenceCircumference = referenceCircumference;
+        if (Array.isArray(anchors) && anchors.length && parentTable) {
+          // 子发片桥接表：与展开输出同尺度（ref = 主发片周长）→ u_ring 直接插值；
+          // 洞侧 u = parent 弧长 u（同一尺度）。桥接中线顶点单副本 u_ring=0。
+          const uvTable = gridUvTable(geometry, "child", seamCol, referenceCircumference);
+          if (uvTable) {
+            const parentRows = parent?.mesh?.geometry?.userData?.gridRowIndices;
+            const parentCols = parent?.mesh?.geometry?.userData?.gridColIndices;
+            options.bridgeUvAt = (vertexIndex) => {
+              const anchor = anchors[vertexIndex];
+              if (!anchor || !parentRows || !parentCols) return null;
+              const holeUv = anchor.hole >= 0 ? gridUvAt(parentTable, parentRows, parentCols, anchor.hole) : null;
+              if (!holeUv) return null;
+              const t = Math.min(1, Math.max(0, Number(anchor.t ?? 1)));
+              const ringU = anchor.ring === seamCol ? 0 : uvTable.colU.get(anchor.ring);
+              if (!Number.isFinite(ringU)) return null;
+              return [ringU + (holeUv[0] - ringU) * t, childVStart + (holeUv[1] - childVStart) * t];
+            };
+          }
         }
       }
       const mesh = unfoldHairMesh(geometry, options);
