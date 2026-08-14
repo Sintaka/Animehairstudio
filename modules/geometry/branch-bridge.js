@@ -114,7 +114,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     if (!prev || Math.abs(v.x - prev.x) > 1e-6 || Math.abs(v.y - prev.y) > 1e-6 || Math.abs(v.z - prev.z) > 1e-6) collapsed.push(v);
   });
   let bottomBoundaryBase = collapsed.length >= 2 ? vertices.length / 3 : -1;
-  if (collapsed.length >= 2) collapsed.forEach((v, i) => pushBoundary(v, { ring: ringWidth + 1 + i, hole: v.index ?? -1, t: 1 }));
+  if (collapsed.length >= 2) collapsed.forEach((v, i) => pushBoundary(v, { ring: ringWidth + 1 + i, hole: v.index ?? -1, t: 1, band: "bottom" }));
   const bottomInfo = { holeBase: -1, midBase: -1, midCount: 0, width: 0 };
   if (collapsed.length >= 2) {
     const ringBottom = ringWorld.slice(ringWidth + 1);
@@ -127,7 +127,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       bottomNormal = deps.curveFrameAt(parent, THREE.MathUtils.clamp(surface.rowMax / Math.max(1, rows - 1), 0, 1)).z.clone();
     } catch (e) { /* keep default */ }
     bottomInfo.holeBase = vertices.length / 3;
-    collapsed.forEach((v, i) => pushBoundary(v, { ring: ringWidth + 1 + i, hole: v.index ?? -1, t: 1 }));
+    collapsed.forEach((v, i) => pushBoundary(v, { ring: ringWidth + 1 + i, hole: v.index ?? -1, t: 1, band: "bottom" }));
     bottomInfo.midBase = vertices.length / 3;
     const emitBottomMidRow = (f) => {
       ringBottom.forEach((p, i) => {
@@ -151,7 +151,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
           .normalize();
         const m1 = creaseDir.multiplyScalar(span);
         const mid = hermite(f, p0, p1, m0Out, m1);
-        pushBoundary({ x: mid.x, y: mid.y, z: mid.z }, { ring: ringWidth + 1 + i, hole: collapsed[i]?.index ?? -1, t: f });
+        pushBoundary({ x: mid.x, y: mid.y, z: mid.z }, { ring: ringWidth + 1 + i, hole: collapsed[i]?.index ?? -1, t: f, band: "bottom" });
       });
     };
     for (let j = 1; j <= bottomMidCount; j += 1) emitBottomMidRow(j / bottomSegments);
@@ -185,8 +185,8 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     const vBottom = boundaryAt(rootRow + 1, spec.col);
     if (!vTop || !vBottom) return;
     sideBases[spec.name] = vertices.length / 3;
-    pushBoundary(vTop, { ring: spec.ringTop, hole: vTop?.index ?? -1, t: 1 });
-    pushBoundary(vBottom, { ring: spec.ringBottom, hole: vBottom?.index ?? -1, t: 1 });
+    pushBoundary(vTop, { ring: spec.ringTop, hole: vTop?.index ?? -1, t: 1, band: "side" });
+    pushBoundary(vBottom, { ring: spec.ringBottom, hole: vBottom?.index ?? -1, t: 1, band: "side" });
   });
 
   // Top band: ring top (0,1,2) <-> hole top, holeHeight segments per column. Middle
@@ -226,7 +226,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       parentNormal = deps.curveFrameAt(parent, THREE.MathUtils.clamp(surface.rowMin / Math.max(1, rows - 1), 0, 1)).z.clone();
     } catch (e) { /* keep default */ }
     topInfo.holeBase = vertices.length / 3;
-    holeTop.forEach((v, i) => pushBoundary(v, { ring: i, hole: v.index ?? -1, t: 1 }));
+    holeTop.forEach((v, i) => pushBoundary(v, { ring: i, hole: v.index ?? -1, t: 1, band: "top" }));
     topInfo.midBase = vertices.length / 3;
     const emitTopMidRow = (f) => {
       ringTop.forEach((p, i) => {
@@ -244,7 +244,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
         const m1 = m0.clone().addScaledVector(parentNormal, -m0.dot(parentNormal));
         if (m1.lengthSq() < 1e-8) m1.copy(m0);
         const mid = hermite(f, p0, p1, ringTangent, m1);
-        pushBoundary({ x: mid.x, y: mid.y, z: mid.z }, { ring: i, hole: holeTop[i]?.index ?? -1, t: f });
+        pushBoundary({ x: mid.x, y: mid.y, z: mid.z }, { ring: i, hole: holeTop[i]?.index ?? -1, t: f, band: "top" });
       });
     };
     for (let j = 1; j <= midCount; j += 1) emitTopMidRow(j / topSegments);
@@ -276,7 +276,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     const v = boundaryAt(r, c);
     if (!v) return -1;
     const idx = vertices.length / 3;
-    pushBoundary(v, { ring: -1, hole: v.index ?? -1, t: 1 });
+    pushBoundary(v, { ring: -1, hole: v.index ?? -1, t: 1, band: "side" });
     sideHoleCache.set(key, idx);
     return idx;
   };

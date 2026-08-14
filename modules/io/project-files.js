@@ -10,7 +10,7 @@ import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActi
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260726-1";
 import { exportAnimeHairUsda } from "./usda-export.js?v=20260814-2";
 import { createHairProject } from "./project-schema.js?v=20260728-2";
-import { unfoldHairMesh, gridUvTable, gridUvAt } from "./uv-unfold.js?v=20260814-7";
+import { unfoldHairMesh, gridUvTable, gridUvAt } from "./uv-unfold.js?v=20260814-8";
 
 export function createProjectSaveApi(deps) {
   // ---- dialog UI elements (document is ready when this runs; app.js loads at body end) ----
@@ -158,8 +158,6 @@ export function createProjectSaveApi(deps) {
         const parentTable = parent ? uvAt.get(parent.id) : null;
         // 子发片 U 按主发片尺度：u 范围 = 子发片一圈周长 / 主发片一圈周长
         const referenceCircumference = parentTable ? parentTable.circumference : null;
-        const centerU = Number(lock.branchRootRegion?.center?.u ?? 0.5);
-        const childVStart = 1 - Math.min(1, Math.max(0, centerU));
         const childVLength = (() => {
           const startT = Math.min(1, Math.max(0, Number(lock.branchSweepStartT ?? 0.1)));
           const childLen = new THREE.CatmullRomCurve3(lock.points || []).getLength() * (1 - startT);
@@ -167,6 +165,21 @@ export function createProjectSaveApi(deps) {
           if (!(childLen > 0) || !(parentLen > 0)) return 1;
           return childLen / parentLen;
         })();
+        // 扫掠 UV 顶部对齐桥洞最底端（最靠 -V 方向，即 u 最大侧）再往下留一个扫掠行高
+        // 的空隙（poly 高度），不强硬贴洞。
+        const regionCross = lock.branchRootRegion?.cross || null;
+        const holeUpU = Number(regionCross?.up?.u ?? regionCross?.center?.u ?? lock.branchRootRegion?.center?.u ?? 0.5);
+        const holeDownU = Number(regionCross?.down?.u ?? regionCross?.center?.u ?? lock.branchRootRegion?.center?.u ?? 0.5);
+        const holeBottomU = Math.min(1, Math.max(0, Math.max(holeUpU, holeDownU)));
+        const childGridRows = (() => {
+          const gr = geometry.userData?.gridRowIndices;
+          if (!gr || !gr.length) return 0;
+          let rows = 0;
+          for (let i = 0; i < gr.length; i += 1) rows = Math.max(rows, Number(gr[i]) + 1);
+          return rows;
+        })();
+        const rowHeight = childGridRows >= 2 ? childVLength / (childGridRows - 1) : 0;
+        const childVStart = Math.min(1, Math.max(0, 1 - holeBottomU - rowHeight));
         options = { kind, seamCol, childVStart, childVLength };
         if (referenceCircumference != null) options.referenceCircumference = referenceCircumference;
         if (Array.isArray(anchors) && anchors.length && parentTable) {
@@ -176,34 +189,58 @@ export function createProjectSaveApi(deps) {
           if (uvTable) {
             const parentRows = parent?.mesh?.geometry?.userData?.gridRowIndices;
             const parentCols = parent?.mesh?.geometry?.userData?.gridColIndices;
-            options.bridgeUvAt = (vertexIndex) => {
+            const childGridCols = geometry.userData?.gridColIndices;
+            options.passthroughCopyCount = (vertexIndex) => {
+              const anchor = anchors[vertexIndex];
+              return anchor && anchor.ring === seamCol ? 2 : 1;
+            };
+            options.passthroughSide = (vertexIndex, face) => {
+              const anchor = anchors[vertexIndex];
+              if (!anchor || anchor.ring !== seamCol) return 0;
+              let cx = -1;
+              for (const fx of face) {
+                const fCol = Number(childGridCols[fx]);
+                if (Number.isFinite(fCol) && fCol >= 0) {
+                  if (fCol !== seamCol) { cx = fCol; break; }
+                } else {
+                  const fAnchor = anchors[fx];
+                  if (fAnchor && fAnchor.ring >= 0 && fAnchor.ring !== seamCol) { cx = fAnchor.ring; break; }
+                }
+              }
+              if (cx < 0) return 0;
+              return cx < seamCol ? 1 : 0; // 环顶点在中线左侧 → 中线是右侧 → side 1（u_ring=1）
+            };
+            options.bridgeUvAt = (vertexIndex, side = 0) => {
               const anchor = anchors[vertexIndex];
               if (!anchor || !parentRows || !parentCols) return null;
               const t = Math.min(1, Math.max(0, Number(anchor.t ?? 1)));
-              // 洞侧 u/v：parent 弧长表；查不到（如 split 父发片洞边界上的管 seam 列
-              // col=-1）→ u=0、v 按 parent 行号兜底，避免退回原 uv (0.5,0) 挤成一点。
               let holeU = 0;
               let holeV = childVStart;
               if (anchor.hole >= 0) {
                 const holeUv = gridUvAt(parentTable, parentRows, parentCols, anchor.hole);
-                if (holeUv) {
-                  holeU = holeUv[0];
-                  holeV = holeUv[1];
-                } else {
+                if (holeUv) { holeU = holeUv[0]; holeV = holeUv[1]; }
+                else {
                   const parentRow = Number(parentRows[anchor.hole]);
                   if (Number.isFinite(parentRow) && parentRow >= 0) {
                     holeV = parentTable.rows < 2 ? 0.5 : 1 - parentRow / (parentTable.rows - 1);
                   }
                 }
               }
-              // 环侧 u：中线单副本 u=0；有效环列用子发片弧长表；无环侧锚点
-              // （sideHoleVertex ring=-1 等纯洞侧顶点，t=1）直接用洞 u。
               let ringU = 0;
               if (anchor.ring >= 0 && anchor.ring !== seamCol && uvTable.colU.has(anchor.ring)) {
                 ringU = uvTable.colU.get(anchor.ring);
-              } else if (anchor.ring !== seamCol) {
-                ringU = holeU;
+              } else if (anchor.ring === seamCol) {
+                ringU = side === 1 ? 1 : 0; // 中线双副本：左（side1）u_ring=1 对齐环 seam 的 u=1 副本，右（side0）u_ring=0
+              } else {
+                ringU = holeU; // ring=-1 纯洞侧顶点
               }
+              if (anchor.band === "bottom") {
+                // 底部桥接从中间切开自然展开：u 保持环侧（不向洞插值），v 从环侧沿 V 负方向
+                // 按条带参数延伸固定跨度（不强硬对齐洞底顶点 uv）。
+                const bandVSpan = childVLength * 0.5;
+                return [ringU, childVStart - t * bandVSpan];
+              }
+              // top / side（顶部与侧面顶部对齐洞）：u/v 向洞侧插值
               return [ringU + (holeU - ringU) * t, childVStart + (holeV - childVStart) * t];
             };
           }

@@ -173,51 +173,59 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   assert.deepEqual(gridUvAt(table, geometry.userData.gridRowIndices, geometry.userData.gridColIndices, 0), [0, 0.5]);
 }
 
-// ---- closed：4×4 → 非等距 2×4 闭合环，弧长 u、单边切缝、wrap quad 丢弃 ----
+// ---- closed：非等距 2×4 闭合环，弧长 u、seam 双副本、wrap quad 全保留 ----
 {
   const R = 2;
   const C = 4;
   const geometry = closedArcGeometry(R, ARC10_POINTS);
   const mesh = unfoldHairMesh(geometry, { kind: "closed", seamCol: 0 });
   assert.ok(mesh, "closed unfold should succeed");
-  // 每行 C 个新顶点（无 seam 副本）
-  assert.equal(mesh.positions.length / 3, R * C);
-  assert.equal(mesh.uvs.length / 2, R * C);
-  assert.equal(mesh.faces.length, (R - 1) * (C - 1)); // wrap quad 丢弃
-  assert.equal(mesh.normals.length, R * C * 3);
+  // 每行 C+1 个新顶点（seam 列 u=0 与 u=1 双副本）
+  assert.equal(mesh.positions.length / 3, R * (C + 1));
+  assert.equal(mesh.uvs.length / 2, R * (C + 1));
+  assert.equal(mesh.faces.length, (R - 1) * C); // wrap quad 全保留
+  assert.equal(mesh.normals.length, R * (C + 1) * 3);
   assert.equal(mesh.tangents, null); // 源无 tangent 属性
-  // row0 u 按弧长：0、1/10、3/10、6/10（非等距）
+  // row0 u 按弧长：0、1/10、3/10、6/10（非等距），末尾 seam 副本 u=1
   assert.ok(Math.abs(mesh.uvs[0] - 0) < EPS);
   assert.ok(Math.abs(mesh.uvs[2] - 1 / 10) < EPS);
   assert.ok(Math.abs(mesh.uvs[4] - 3 / 10) < EPS);
   assert.ok(Math.abs(mesh.uvs[6] - 6 / 10) < EPS);
-  // row1 同 u
-  assert.ok(Math.abs(mesh.uvs[8] - 0) < EPS);
-  assert.ok(Math.abs(mesh.uvs[10] - 1 / 10) < EPS);
-  assert.ok(Math.abs(mesh.uvs[12] - 3 / 10) < EPS);
-  assert.ok(Math.abs(mesh.uvs[14] - 6 / 10) < EPS);
+  assert.ok(Math.abs(mesh.uvs[8] - 1) < EPS); // seam 副本 u=1
+  // row1 同 u（末尾 seam 副本 u=1）
+  assert.ok(Math.abs(mesh.uvs[10] - 0) < EPS);
+  assert.ok(Math.abs(mesh.uvs[12] - 1 / 10) < EPS);
+  assert.ok(Math.abs(mesh.uvs[14] - 3 / 10) < EPS);
+  assert.ok(Math.abs(mesh.uvs[16] - 6 / 10) < EPS);
+  assert.ok(Math.abs(mesh.uvs[18] - 1) < EPS); // seam 副本 u=1
   // v 根=1 尖=0
-  for (let pos = 0; pos < C; pos += 1) {
+  for (let pos = 0; pos < C + 1; pos += 1) {
     assert.equal(mesh.uvs[pos * 2 + 1], 1, "root row v=1");
-    assert.equal(mesh.uvs[(R - 1) * C * 2 + pos * 2 + 1], 0, "tip row v=0");
+    assert.equal(mesh.uvs[(R - 1) * (C + 1) * 2 + pos * 2 + 1], 0, "tip row v=0");
   }
-  // seam 列（col0）u=0 只出现一次/行；无 u=1 副本
+  // seam 列（col0）u=0 与 u=1 各一次/行；u 在 [0,1] 内
   assert.equal(mesh.uvs[0], 0);
-  assert.ok(mesh.uvs[2] > 0 && mesh.uvs[4] > 0 && mesh.uvs[6] > 0, "no other u=0 in row0");
+  assert.equal(mesh.uvs[8], 1);
+  assert.equal(mesh.uvs[10], 0);
+  assert.equal(mesh.uvs[18], 1);
   for (let i = 0; i < mesh.uvs.length; i += 2) {
-    assert.ok(mesh.uvs[i] >= 0 && mesh.uvs[i] < 1, `u in [0,1): ${mesh.uvs[i]}`);
+    assert.ok(mesh.uvs[i] >= 0 && mesh.uvs[i] <= 1, `u in [0,1]: ${mesh.uvs[i]}`);
     assert.ok(mesh.uvs[i + 1] >= 0 && mesh.uvs[i + 1] <= 1, `v range: ${mesh.uvs[i + 1]}`);
   }
-  // 单边映射：pos = (col - seamCol + C) % C；grid 属性无副本
-  assert.deepEqual(Array.from(mesh.gridCols.slice(0, C)), [0, 1, 2, 3]);
-  assert.deepEqual(Array.from(mesh.gridRows.slice(0, C)), [0, 0, 0, 0]);
-  // 保留的 face 恰为 cols (0,1)/(1,2)/(2,3)；跨切缝 (3,0) 的 wrap quad 丢弃
+  // seam 双副本映射：pos 0..3 = col 0..3（u 弧长），pos 4 = col0 副本（u=1）
+  assert.deepEqual(Array.from(mesh.gridCols.slice(0, C + 1)), [0, 1, 2, 3, 0]);
+  assert.deepEqual(Array.from(mesh.gridRows.slice(0, C + 1)), [0, 0, 0, 0, 0]);
+  // 所有 quad 全保留；wrap quad（跨切缝 col3→col0）的 seam 端用 u=1 副本
   const expectedFaces = [
-    [0, 4, 5, 1],
-    [1, 5, 6, 2],
-    [2, 6, 7, 3]
+    [0, 5, 6, 1],
+    [1, 6, 7, 2],
+    [2, 7, 8, 3],
+    [3, 8, 9, 4]
   ];
   assert.deepEqual(mesh.faces.map((f) => [...f]), expectedFaces);
+  assert.deepEqual([...mesh.faces[3]], [3, 8, 9, 4]); // wrap quad
+  assert.equal(mesh.uvs[4 * 2], 1); // wrap quad seam 端（idx4）u=1
+  assert.equal(mesh.uvs[9 * 2], 1); // wrap quad seam 端（idx9）u=1
   // faces 索引有效
   const newVertexCount = mesh.positions.length / 3;
   for (const face of mesh.faces) {
@@ -225,8 +233,8 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
       assert.ok(Number.isInteger(index) && index >= 0 && index < newVertexCount, `face index ${index}`);
     }
   }
-  // leafWeights 按映射复制：长度 = 新顶点数*3（无 seam 副本）
-  assert.equal(mesh.leafWeights.length, R * C * 3);
+  // leafWeights 按映射复制：长度 = 新顶点数*3（含 seam 副本）
+  assert.equal(mesh.leafWeights.length, R * (C + 1) * 3);
   assert.equal(mesh.leafWeights[1], 0); // source vertex 0 的 leafIndex=0
 }
 
@@ -252,6 +260,7 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
 // 几何布局：每管 ringSize_g 个环顶点/行（local col 0 = clip seam 点，即管首列）。
 // 网格列 = 管局部列 + 全局偏移（管 0：0..3，管 1：4..7），无 -1 网格顶点。
 // 管 0 边宽 1/1/1/3（sum 6）；管 1 边宽 2/2/2/6（sum 12）→ 共享 circumference=18。
+// 展开：每管 seam 双副本（管首列 u=0 + 一个副本槽 u=1），wrap quad 全保留。
 {
   const R = 2;
   const ringSize0 = 4;
@@ -329,13 +338,14 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   assert.ok(Math.abs(table.colU.get(5) - 2 / 18) < EPS);
   assert.ok(Math.abs(table.colU.get(6) - 4 / 18) < EPS);
   assert.ok(Math.abs(table.colU.get(7) - 6 / 18) < EPS);
-  // 展开：每行 = ringSize0+ringSize1 = 8 个新顶点（无 seam 副本、无 -1 顶点）
+  // 展开：每行 = 8 展开列 + 2 副本槽 = 10 个新顶点（seam 双副本、无 -1 顶点）
   const mesh = unfoldHairMesh(geometry, { kind: "split" });
   assert.ok(mesh, "split unfold should succeed");
-  assert.equal(mesh.positions.length / 3, R * 8);
-  assert.equal(mesh.uvs.length / 2, R * 8);
-  // 每管 (R-1)*ringSize quads 中 wrap quad 丢弃 1 个 → 3/管 → 共 6
-  assert.equal(mesh.faces.length, (R - 1) * 4 * 2 - 2);
+  const tubes = 2;
+  assert.equal(mesh.positions.length / 3, R * (8 + tubes));
+  assert.equal(mesh.uvs.length / 2, R * (8 + tubes));
+  // 每管 (R-1)*ringSize quads 全保留 → 4/管 → 共 8
+  assert.equal(mesh.faces.length, (R - 1) * 4 * 2);
   // 管 0（col 0..3）：col0 = seam u=0、col1..3 = 弧长 u
   assert.equal(mesh.uvs[0], 0);      // seam u=0
   assert.equal(mesh.uvs[1], 1);      // row0 v=1
@@ -347,28 +357,36 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   assert.ok(Math.abs(mesh.uvs[5 * 2] - 2 / 18) < EPS);
   assert.ok(Math.abs(mesh.uvs[6 * 2] - 4 / 18) < EPS);
   assert.ok(Math.abs(mesh.uvs[7 * 2] - 6 / 18) < EPS);
-  // seam 单边：无 u=1；所有 u 在 [0,1)
+  // seam 双副本：管 0 副本槽 u=1（idx8）、管 1 副本槽 u=1（idx9）
+  assert.equal(mesh.uvs[8 * 2], 1);
+  assert.equal(mesh.uvs[9 * 2], 1);
+  assert.equal(mesh.uvs[10 * 2], 0); // row1 管 0 seam u=0
+  assert.equal(mesh.uvs[18 * 2], 1); // row1 管 0 副本槽 u=1
+  assert.equal(mesh.uvs[19 * 2], 1); // row1 管 1 副本槽 u=1
+  // 所有 u 在 [0,1]
   for (let i = 0; i < mesh.uvs.length; i += 2) {
-    assert.ok(mesh.uvs[i] >= 0 && mesh.uvs[i] < 1, `u in [0,1): ${mesh.uvs[i]}`);
+    assert.ok(mesh.uvs[i] >= 0 && mesh.uvs[i] <= 1, `u in [0,1]: ${mesh.uvs[i]}`);
     assert.ok(mesh.uvs[i + 1] === 0 || mesh.uvs[i + 1] === 1, `v grid ${mesh.uvs[i + 1]}`);
   }
-  // grid 属性：偏移列，无 -1
-  assert.deepEqual(Array.from(mesh.gridCols.slice(0, 8)), [0, 1, 2, 3, 4, 5, 6, 7]);
-  assert.deepEqual(Array.from(mesh.gridRows.slice(0, 8)), [0, 0, 0, 0, 0, 0, 0, 0]);
+  // grid 属性：偏移列 + 副本槽（管 0 副本槽 col0、管 1 副本槽 col4）
+  assert.deepEqual(Array.from(mesh.gridCols.slice(0, 10)), [0, 1, 2, 3, 4, 5, 6, 7, 0, 4]);
+  assert.deepEqual(Array.from(mesh.gridRows.slice(0, 10)), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   // row1 v=0
-  assert.equal(mesh.uvs[8 * 2 + 1], 0);
-  // wrap quad 丢弃：保留 face 恰为每管 k=0..2 的 quad（不含管尾↔管首）
+  assert.equal(mesh.uvs[10 * 2 + 1], 0);
+  // wrap quad 全保留；管尾↔管首 quad 的管首端用 u=1 副本
   const expectedFaces = [
-    [0, 8, 9, 1],
-    [1, 9, 10, 2],
-    [2, 10, 11, 3],
-    [4, 12, 13, 5],
-    [5, 13, 14, 6],
-    [6, 14, 15, 7]
+    [0, 10, 11, 1],
+    [1, 11, 12, 2],
+    [2, 12, 13, 3],
+    [3, 13, 18, 8],
+    [4, 14, 15, 5],
+    [5, 15, 16, 6],
+    [6, 16, 17, 7],
+    [7, 17, 19, 9]
   ];
   assert.deepEqual(mesh.faces.map((f) => [...f]), expectedFaces);
   for (const face of mesh.faces) {
-    for (const index of face) assert.ok(index >= 0 && index < R * 8, `split face index ${index}`);
+    for (const index of face) assert.ok(index >= 0 && index < R * 10, `split face index ${index}`);
   }
 }
 
@@ -406,10 +424,11 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   assert.deepEqual([mesh.uvs[2], mesh.uvs[3]], [1, 1]);
 }
 
-// ---- child：主发片尺度 U（ref = 主发片周长）、桥接 wrap quad 丢弃、中线单副本 ----
-// 子发片：3×4 闭合环（正方形，周长 4）+ 3 个桥接 -1 顶点（b0 中线 ring=seamCol、
-// b1 右侧、b2 左侧）。主发片：2×4 闭合环（周长 10）。
-// child ref=10 → 子 u 范围 = 4/10 = [0, 0.4)。
+// ---- child：主发片尺度 U（ref = 主发片周长）、seam 双副本、桥接中线双副本、wrap quad 全保留 ----
+// 子发片：3×4 闭合环（正方形，周长 4）+ 4 个桥接 -1 顶点（b0 中线 ring=seamCol、
+// b1 右侧、b2 左侧、b3 纯洞侧）。主发片：2×4 闭合环（周长 10）。
+// child ref=10 → 子 u 范围 = 4/10 = [0, 0.4)。桥接中线 b0 copyCount=2：右 quad 用
+// side 0（u_ring=0），左 quad 用 side 1（u_ring=1，对齐 seam u=1 副本）。
 {
   const R = 3;
   const C = 4;
@@ -441,7 +460,7 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   childPositions.push(5, 3, 1); childNormals.push(0, 0, 1); childUvs.push(0.5, 0); childRowIndices.push(-1); childColIndices.push(-1);
   const anchors = [
     null, null, null, null, null, null, null, null, null, null, null, null,
-    { ring: seamCol, hole: 3, t: 0.5 }, // b0：中线 → u_ring=0
+    { ring: seamCol, hole: 3, t: 0.5 }, // b0：中线 → 双副本（side 0 u_ring=0 / side 1 u_ring=full）
     { ring: 3, hole: 2, t: 0.5 },       // b1：ring3（切缝右侧相邻）
     { ring: 1, hole: 6, t: 0.5 },       // b2：ring1（切缝左侧相邻）
     { ring: -1, hole: 3, t: 1 }         // b3：无环侧锚点（纯洞侧，t=1 → u=洞 u）
@@ -454,7 +473,7 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
     }
   }
   childQuads.push([10, 11, 13, 12]); // 桥接 quad（ring2/3 右侧）→ 保留
-  childQuads.push([9, 10, 12, 14]);  // 桥接 quad（ring1/2 跨切缝）→ 丢弃
+  childQuads.push([9, 10, 12, 14]);  // 桥接 quad（ring1/2 跨切缝）→ 保留
   const childGeometry = {
     userData: {
       gridRowIndices: new Float32Array(childRowIndices),
@@ -489,7 +508,9 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   const ownTable = gridUvTable(childGeometry, "child", seamCol);
   assert.ok(Math.abs(ownTable.colU.get(1) - 3 / 4) < EPS);
 
-  const bridgeUvAt = (vertexIndex) => {
+  // 桥接中线 b0（ring===seamCol）双副本：side 0 → u_ring=0、side 1 → u_ring=1
+  // （对齐环 seam 的 u=1 副本）。
+  const bridgeUvAt = (vertexIndex, side = 0) => {
     const anchor = anchors[vertexIndex];
     if (!anchor) return null;
     const t = Math.min(1, Math.max(0, Number(anchor.t ?? 1)));
@@ -508,10 +529,18 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
     let ringU = 0;
     if (anchor.ring >= 0 && anchor.ring !== seamCol && childTable.colU.has(anchor.ring)) {
       ringU = childTable.colU.get(anchor.ring);
-    } else if (anchor.ring !== seamCol) {
+    } else if (anchor.ring === seamCol) {
+      ringU = side === 1 ? 1 : 0; // 中线双副本：side 1 → u_ring=1（对齐 seam u=1 副本）
+    } else {
       ringU = holeU; // 无环侧锚点（ring=-1，t=1）：直接用洞 u
     }
     return [ringU + (holeU - ringU) * t, childVStart + (holeV - childVStart) * t];
+  };
+  const passthroughCopyCount = (vertexIndex) => (vertexIndex === 12 ? 2 : 1);
+  const passthroughSide = (vertexIndex, face) => {
+    if (vertexIndex !== 12) return 0;
+    // 右 quad 含 b1(13) → side 0（u_ring=0）；左 quad 含 b2(14) → side 1（u_ring=full）
+    return face.includes(13) ? 0 : 1;
   };
   const mesh = unfoldHairMesh(childGeometry, {
     kind: "child",
@@ -519,57 +548,69 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
     childVStart,
     childVLength,
     referenceCircumference: parentTable.circumference,
-    bridgeUvAt
+    bridgeUvAt,
+    passthroughCopyCount,
+    passthroughSide
   });
   assert.ok(mesh, "child unfold should succeed");
-  // 网格顶点 R*C = 12 + 4 个桥接单副本 = 16（中线不再双副本）
-  assert.equal(mesh.positions.length / 3, R * C + 4);
-  assert.equal(mesh.uvs.length / 2, R * C + 4);
-  // faces：环 3+3（每带 4 quad 丢 wrap 1）+ 桥接保留 1 = 7
-  assert.equal(mesh.faces.length, (R - 1) * (C - 1) + 1);
-  // 环 u 按主发片尺度：row0 pos0..3 = col2,3,0,1 → u = 0, 1/10, 2/10, 3/10
+  // 网格顶点 R*(C+1) = 15 + 桥接副本 5（b0×2 + b1 + b2 + b3）= 20
+  assert.equal(mesh.positions.length / 3, R * (C + 1) + 5);
+  assert.equal(mesh.uvs.length / 2, R * (C + 1) + 5);
+  // faces：环 8（wrap quad 全保留）+ 桥接 2（全保留）= 10
+  assert.equal(mesh.faces.length, (R - 1) * C + 2);
+  // 环 u 按主发片尺度：row0 pos0..3 = col2,3,0,1 → u = 0, 1/10, 2/10, 3/10；pos4 = seam 副本 u=1
   assert.ok(Math.abs(mesh.uvs[0] - 0) < EPS);
   assert.ok(Math.abs(mesh.uvs[2] - 1 / 10) < EPS);
   assert.ok(Math.abs(mesh.uvs[4] - 2 / 10) < EPS);
   assert.ok(Math.abs(mesh.uvs[6] - 3 / 10) < EPS);
-  // 子 u 范围 = 子周长/主周长 = 0.4：扫掠环顶点 u < 0.4（桥接顶点为环↔洞插值，可到 parent 尺度）
-  for (let i = 0; i < R * C; i += 1) {
-    assert.ok(mesh.uvs[i * 2] >= 0 && mesh.uvs[i * 2] < 0.4 + 1e-9, `child ring u in [0, 0.4): ${mesh.uvs[i * 2]}`);
+  assert.ok(Math.abs(mesh.uvs[8] - 1) < EPS); // seam 副本 u=1
+  // 扫掠环顶点 u < 0.4（除 seam 副本 u=1）；桥接顶点为环↔洞插值，可到 parent 尺度
+  for (let row = 0; row < R; row += 1) {
+    for (let pos = 0; pos < C; pos += 1) {
+      const i = row * (C + 1) + pos;
+      assert.ok(mesh.uvs[i * 2] >= 0 && mesh.uvs[i * 2] < 0.4 + 1e-9, `child ring u in [0, 0.4): ${mesh.uvs[i * 2]}`);
+    }
   }
   // 环 v = childVStart - row/(R-1)*childVLength
   assert.ok(Math.abs(mesh.uvs[1] - childVStart) < EPS);
-  assert.ok(Math.abs(mesh.uvs[(C) * 2 + 1] - (childVStart - (1 / (R - 1)) * childVLength)) < EPS);
-  assert.ok(Math.abs(mesh.uvs[2 * C * 2 + 1] - (childVStart - childVLength)) < EPS);
-  // 桥接顶点：b0 中线单副本 u_ring=0 → u = 0+(0.6-0)*0.5 = 0.3；v 用 childVStart 插值
-  assert.ok(Math.abs(mesh.uvs[12 * 2] - 0.3) < EPS);
-  assert.ok(Math.abs(mesh.uvs[12 * 2 + 1] - (childVStart + (1 - childVStart) * 0.5)) < EPS);
+  assert.ok(Math.abs(mesh.uvs[(C + 1) * 2 + 1] - (childVStart - (1 / (R - 1)) * childVLength)) < EPS);
+  assert.ok(Math.abs(mesh.uvs[2 * (C + 1) * 2 + 1] - (childVStart - childVLength)) < EPS);
+  // 桥接顶点（副本索引连续排在网格顶点后）：
+  //   idx15 = b0 side0（u_ring=0）、idx16 = b0 side1（u_ring=1）
+  //   idx17 = b1、idx18 = b2、idx19 = b3
+  // b0 side0：u = 0+(0.6-0)*0.5 = 0.3；v 用 childVStart 插值
+  assert.ok(Math.abs(mesh.uvs[15 * 2] - 0.3) < EPS);
+  assert.ok(Math.abs(mesh.uvs[15 * 2 + 1] - (childVStart + (1 - childVStart) * 0.5)) < EPS);
+  // b0 side1：u = 1+(0.6-1)*0.5 = 0.8；v 同上
+  assert.ok(Math.abs(mesh.uvs[16 * 2] - 0.8) < EPS);
+  assert.ok(Math.abs(mesh.uvs[16 * 2 + 1] - (childVStart + (1 - childVStart) * 0.5)) < EPS);
   // b1（ring3 → u_ring=1/10，hole=(0,2) u=3/10）：u = 0.1+(0.3-0.1)*0.5 = 0.2
-  assert.ok(Math.abs(mesh.uvs[13 * 2] - 0.2) < EPS);
-  assert.ok(Math.abs(mesh.uvs[13 * 2 + 1] - (childVStart + (1 - childVStart) * 0.5)) < EPS);
+  assert.ok(Math.abs(mesh.uvs[17 * 2] - 0.2) < EPS);
+  assert.ok(Math.abs(mesh.uvs[17 * 2 + 1] - (childVStart + (1 - childVStart) * 0.5)) < EPS);
   // b2（ring1 → u_ring=3/10，hole=(1,2) u=3/10 v=0）：u=0.3、v=childVStart*0.5
-  assert.ok(Math.abs(mesh.uvs[14 * 2] - 0.3) < EPS);
-  assert.ok(Math.abs(mesh.uvs[14 * 2 + 1] - childVStart * 0.5) < EPS);
+  assert.ok(Math.abs(mesh.uvs[18 * 2] - 0.3) < EPS);
+  assert.ok(Math.abs(mesh.uvs[18 * 2 + 1] - childVStart * 0.5) < EPS);
   // b3（ring=-1 纯洞侧，hole=(0,3) u=0.6 v=1，t=1）：u=洞 u、v=1（不退回原 uv 0.5,0）
-  assert.ok(Math.abs(mesh.uvs[15 * 2] - 0.6) < EPS);
-  assert.ok(Math.abs(mesh.uvs[15 * 2 + 1] - 1) < EPS);
-  // 桥接 wrap quad 丢弃：保留 face 不含 b0/b2 同现（丢弃 face 原为 [9,10,12,14]）
-  for (const face of mesh.faces) {
-    assert.ok(!(face.includes(12) && face.includes(14)), "bridge wrap quad dropped");
-  }
-  // 保留的桥接 quad [10,11,13,12] → [8,9,13,12]
-  const bridgeFace = mesh.faces.find((f) => f.includes(12));
-  assert.ok(bridgeFace, "kept bridge quad");
-  assert.deepEqual([...bridgeFace], [8, 9, 13, 12]);
-  // seam 列单边：row0 恰一个 u=0；grid 属性无副本（行内从 seamCol 起排）
+  assert.ok(Math.abs(mesh.uvs[19 * 2] - 0.6) < EPS);
+  assert.ok(Math.abs(mesh.uvs[19 * 2 + 1] - 1) < EPS);
+  // 桥接 quad 全保留：右 quad [10,11,13,12] → [10,11,17,15]（b0 side0）；左 quad
+  // [9,10,12,14] → [13,14,16,18]（b0 side1）
+  const bridgeFaces = mesh.faces.filter((f) => f.includes(15) || f.includes(16));
+  assert.equal(bridgeFaces.length, 2);
+  assert.deepEqual([...bridgeFaces.find((f) => f.includes(15))], [10, 11, 17, 15]);
+  assert.deepEqual([...bridgeFaces.find((f) => f.includes(16))], [13, 14, 16, 18]);
+  // seam 列双副本：row0 恰一个 u=0（idx0）与一个 u=1（idx4）
   assert.equal(mesh.uvs[0], 0);
+  assert.equal(mesh.uvs[8], 1);
   assert.ok(mesh.uvs[2] > 0 && mesh.uvs[4] > 0 && mesh.uvs[6] > 0, "seam u=0 once in row0");
-  assert.deepEqual(Array.from(mesh.gridCols.slice(0, C)), [2, 3, 0, 1]);
-  assert.equal(mesh.gridRows[12], -1);
+  assert.deepEqual(Array.from(mesh.gridCols.slice(0, C + 1)), [2, 3, 0, 1, 2]);
+  assert.equal(mesh.gridRows[15], -1); // b0 side0 副本仍为 -1
+  assert.equal(mesh.gridRows[16], -1); // b0 side1 副本仍为 -1
   assert.equal(mesh.colors, null); // 源无 color 属性
   assert.equal(mesh.leafWeights, null); // 源无 leafWeights
   // faces 索引有效
   for (const face of mesh.faces) {
-    for (const index of face) assert.ok(index >= 0 && index < 16, `child face index ${index}`);
+    for (const index of face) assert.ok(index >= 0 && index < 20, `child face index ${index}`);
   }
 }
 

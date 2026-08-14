@@ -50,6 +50,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - **本地持久化功能（简体中文、Houdini 导航、Quick Save/Export 等）**：development-standards.md「持续修改功能」。
 
 ## 最近版本 / Latest
+- 修复子发片 USDA poly 缺失 + 桥接十字切开 + 洞底对齐（0.2.76，分支 0.2.69-bugfix）：wrap quad 丢弃造成几何开口（poly 缺失）→ 恢复顶点复制式切开（seam/管首/桥接中线双副本，全部 quad 保留）；扫掠 UV 顶部对齐桥洞最底端（最靠 -V 侧）再往下留一行空隙；桥接锚点加 band 标记——top/side 向洞插值（顶部与侧面顶部对齐主发片），bottom 从中线切开自然展开（不强硬对齐洞底）；U 保持主发片周长缩放。
 - 修复 split 发丝 UV 展开真实几何下整体失效（0.2.75，分支 0.2.69-bugfix）：根因——split 的 gridColIndices 用 colToSection.findIndex 匹配 fused 列，profile x=0 点（splitX=0）被 clip 进两管却只归管 0 → 管 1 每行 2 个 -1 → split 父发片弧长表整体 null → 子发片桥接 UV 接线整个关闭（没切 UV、没对齐洞）；修复：split 网格列改「管局部列 + 全局偏移」（seam=管首列、无 -1），uv-unfold split 分支删除 -1/colToSection 依赖；AHS_gridCol 语义改为管局部偏移列。
 - 修复桥接 UV 挤点回归（0.2.74，分支 0.2.69-bugfix）：bridgeUvAt 对 ring=-1 纯洞侧顶点（sideHoleVertex）colU.get(-1) → null → 退回原 uv (0.5,0) 挤成一点；修复：ring 无效时 ringU=洞 u；split 父洞边界 seam 列 col=-1 查表失败兜底 u=0、v 按 parent 行。
 - UV 展开重构：单边切缝 + 弧长 U + 周长缩放（0.2.73，分支 0.2.69-bugfix）：闭合环切缝列不再复制双副本（只有一边 u=0，wrap quad 丢弃、管沿切缝开口、不转头连回）；U 按每列弧长（row-0 环向边宽）调整而非等间距；子发片 U 按主发片一圈周长缩放（u 范围=子周长/主周长，noise U scale 统一），桥接洞侧用 parent 弧长表同一尺度；删除桥接中线双副本机制。详见 development-standards.md「持续修改功能」。
