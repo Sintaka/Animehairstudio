@@ -1,6 +1,6 @@
 # 函数索引 / FUNCTION INDEX
 
-> 机器生成（2026-08-14），由 `node scripts/gen-function-index.js` 产出。共 **2033** 个函数。
+> 机器生成（2026-08-15），由 `node scripts/gen-function-index.js` 产出。共 **2033** 个函数。
 > 用途：agent 先 `Select-String`/`grep` 函数名定位，再跳读对应文件/行号；`calls` 列 = 整个文件内 `name(` 出现次数（hub 指标，越大越核心）。
 
 ## app.js（20092 行）
@@ -1570,7 +1570,7 @@
 |---|---|---|---|---|
 | `smoothMeshVertices` | 3 | function | export | 1 |
 
-## modules/geometry/panel-tip-strand.js（1071 行）
+## modules/geometry/panel-tip-strand.js（1075 行）
 
 | 函数 | 行号 | 类型 | 导出 | calls |
 |---|---|---|---|---|
@@ -1578,44 +1578,44 @@
 | `createPanelTipStrandApi` | 27 | function | export | 2 |
 | `smoothCoincidentPanelNormals` | 34 | function |  | 2 |
 | `weldPanelGeometryData` | 70 | function |  | 2 |
-| `surfaceLatticeSampleVectors` | 124 | function |  | 2 |
-| `surfacePanelPoint` | 139 | function |  | 2 |
-| `splitForkT` | 162 | function |  | 1 |
-| `tipWidthSideForkT` | 174 | function |  | 8 |
-| `tipSegmentWeightAt` | 185 | function |  | 2 |
-| `tipWidthControlTs` | 204 | function |  | 4 |
-| `tipWidthCommonForkT` | 215 | function |  | 4 |
-| `tipWidthResetCurve` | 224 | function |  | 1 |
-| `addPoint` | 229 | arrow |  | 7 |
-| `tipWidthSpreadGap` | 257 | function |  | 4 |
-| `tipWidthMultiplierAt` | 274 | function |  | 8 |
-| `tipPanelWidthAt` | 313 | function |  | 6 |
-| `buildTipWidthCurve` | 319 | function |  | 5 |
-| `setTipWidthCurveValue` | 368 | function |  | 1 |
-| `tipPanelFrameAt` | 387 | function |  | 4 |
-| `tipMainSectionPoint` | 421 | function |  | 4 |
-| `tipOffsetSampleT` | 469 | function |  | 2 |
-| `tipSurfaceFrameAt` | 481 | function |  | 3 |
-| `tipChainFrameAt` | 513 | function |  | 2 |
-| `tipWidthEdgePosition` | 530 | function |  | 3 |
-| `tipWidthEdgePoints` | 561 | function |  | 1 |
-| `tipWidthControlPlacement` | 576 | function |  | 1 |
-| `tipHighlightMaterial` | 592 | function |  | 2 |
-| `updateTipHighlight` | 614 | function |  | 1 |
-| `splitTipForSegment` | 672 | function |  | 3 |
-| `restPointAt` | 685 | arrow |  | 0 |
-| `createPanelStrandGeometry` | 690 | function |  | 1 |
-| `segmentWeightAt` | 727 | arrow |  | 1 |
-| `addQuad` | 745 | arrow |  | 6 |
-| `near` | 749 | arrow |  | 6 |
-| `panelWidthAt` | 779 | arrow |  | 3 |
-| `panelThicknessAt` | 784 | arrow |  | 3 |
-| `panelFrameAt` | 793 | arrow |  | 1 |
-| `rawPanelPoint` | 813 | arrow |  | 1 |
-| `panelPoint` | 847 | arrow |  | 3 |
-| `addPatch` | 857 | arrow |  | 1 |
-| `uStart` | 993 | arrow |  | 1 |
-| `uEnd` | 996 | arrow |  | 1 |
+| `surfaceLatticeSampleVectors` | 125 | function |  | 2 |
+| `surfacePanelPoint` | 140 | function |  | 2 |
+| `splitForkT` | 163 | function |  | 1 |
+| `tipWidthSideForkT` | 175 | function |  | 8 |
+| `tipSegmentWeightAt` | 186 | function |  | 2 |
+| `tipWidthControlTs` | 205 | function |  | 4 |
+| `tipWidthCommonForkT` | 216 | function |  | 4 |
+| `tipWidthResetCurve` | 225 | function |  | 1 |
+| `addPoint` | 230 | arrow |  | 7 |
+| `tipWidthSpreadGap` | 258 | function |  | 4 |
+| `tipWidthMultiplierAt` | 275 | function |  | 8 |
+| `tipPanelWidthAt` | 317 | function |  | 6 |
+| `buildTipWidthCurve` | 323 | function |  | 5 |
+| `setTipWidthCurveValue` | 372 | function |  | 1 |
+| `tipPanelFrameAt` | 391 | function |  | 4 |
+| `tipMainSectionPoint` | 425 | function |  | 4 |
+| `tipOffsetSampleT` | 473 | function |  | 2 |
+| `tipSurfaceFrameAt` | 485 | function |  | 3 |
+| `tipChainFrameAt` | 517 | function |  | 2 |
+| `tipWidthEdgePosition` | 534 | function |  | 3 |
+| `tipWidthEdgePoints` | 565 | function |  | 1 |
+| `tipWidthControlPlacement` | 580 | function |  | 1 |
+| `tipHighlightMaterial` | 596 | function |  | 2 |
+| `updateTipHighlight` | 618 | function |  | 1 |
+| `splitTipForSegment` | 676 | function |  | 3 |
+| `restPointAt` | 689 | arrow |  | 0 |
+| `createPanelStrandGeometry` | 694 | function |  | 1 |
+| `segmentWeightAt` | 731 | arrow |  | 1 |
+| `addQuad` | 749 | arrow |  | 6 |
+| `near` | 753 | arrow |  | 6 |
+| `panelWidthAt` | 783 | arrow |  | 3 |
+| `panelThicknessAt` | 788 | arrow |  | 3 |
+| `panelFrameAt` | 797 | arrow |  | 1 |
+| `rawPanelPoint` | 817 | arrow |  | 1 |
+| `panelPoint` | 851 | arrow |  | 3 |
+| `addPatch` | 861 | arrow |  | 1 |
+| `uStart` | 997 | arrow |  | 1 |
+| `uEnd` | 1000 | arrow |  | 1 |
 
 ## modules/geometry/placement.js（482 行）
 

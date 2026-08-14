@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-14T15:39:13.267Z",
+  "generatedAt": "2026-08-14T17:48:48.653Z",
   "totalFunctions": 2033,
   "files": [
     {
@@ -9345,7 +9345,7 @@
     },
     {
       "file": "modules/geometry/panel-tip-strand.js",
-      "lineCount": 1071,
+      "lineCount": 1075,
       "functions": [
         {
           "name": "tipChainPointsAsVectors",
@@ -9377,266 +9377,266 @@
         },
         {
           "name": "surfaceLatticeSampleVectors",
-          "line": 124,
+          "line": 125,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "surfacePanelPoint",
-          "line": 139,
+          "line": 140,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "splitForkT",
-          "line": 162,
+          "line": 163,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "tipWidthSideForkT",
-          "line": 174,
+          "line": 175,
           "kind": "function",
           "exported": false,
           "calls": 8
         },
         {
           "name": "tipSegmentWeightAt",
-          "line": 185,
+          "line": 186,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "tipWidthControlTs",
-          "line": 204,
+          "line": 205,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "tipWidthCommonForkT",
-          "line": 215,
+          "line": 216,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "tipWidthResetCurve",
-          "line": 224,
+          "line": 225,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "addPoint",
-          "line": 229,
+          "line": 230,
           "kind": "arrow",
           "exported": false,
           "calls": 7
         },
         {
           "name": "tipWidthSpreadGap",
-          "line": 257,
+          "line": 258,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "tipWidthMultiplierAt",
-          "line": 274,
+          "line": 275,
           "kind": "function",
           "exported": false,
           "calls": 8
         },
         {
           "name": "tipPanelWidthAt",
-          "line": 313,
+          "line": 317,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "buildTipWidthCurve",
-          "line": 319,
+          "line": 323,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "setTipWidthCurveValue",
-          "line": 368,
+          "line": 372,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "tipPanelFrameAt",
-          "line": 387,
+          "line": 391,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "tipMainSectionPoint",
-          "line": 421,
+          "line": 425,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "tipOffsetSampleT",
-          "line": 469,
+          "line": 473,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "tipSurfaceFrameAt",
-          "line": 481,
+          "line": 485,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "tipChainFrameAt",
-          "line": 513,
+          "line": 517,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "tipWidthEdgePosition",
-          "line": 530,
+          "line": 534,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "tipWidthEdgePoints",
-          "line": 561,
+          "line": 565,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "tipWidthControlPlacement",
-          "line": 576,
+          "line": 580,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "tipHighlightMaterial",
-          "line": 592,
+          "line": 596,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "updateTipHighlight",
-          "line": 614,
+          "line": 618,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "splitTipForSegment",
-          "line": 672,
+          "line": 676,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "restPointAt",
-          "line": 685,
+          "line": 689,
           "kind": "arrow",
           "exported": false,
           "calls": 0
         },
         {
           "name": "createPanelStrandGeometry",
-          "line": 690,
+          "line": 694,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "segmentWeightAt",
-          "line": 727,
+          "line": 731,
           "kind": "arrow",
           "exported": false,
           "calls": 1
         },
         {
           "name": "addQuad",
-          "line": 745,
-          "kind": "arrow",
-          "exported": false,
-          "calls": 6
-        },
-        {
-          "name": "near",
           "line": 749,
           "kind": "arrow",
           "exported": false,
           "calls": 6
         },
         {
+          "name": "near",
+          "line": 753,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 6
+        },
+        {
           "name": "panelWidthAt",
-          "line": 779,
+          "line": 783,
           "kind": "arrow",
           "exported": false,
           "calls": 3
         },
         {
           "name": "panelThicknessAt",
-          "line": 784,
+          "line": 788,
           "kind": "arrow",
           "exported": false,
           "calls": 3
         },
         {
           "name": "panelFrameAt",
-          "line": 793,
+          "line": 797,
           "kind": "arrow",
           "exported": false,
           "calls": 1
         },
         {
           "name": "rawPanelPoint",
-          "line": 813,
+          "line": 817,
           "kind": "arrow",
           "exported": false,
           "calls": 1
         },
         {
           "name": "panelPoint",
-          "line": 847,
+          "line": 851,
           "kind": "arrow",
           "exported": false,
           "calls": 3
         },
         {
           "name": "addPatch",
-          "line": 857,
+          "line": 861,
           "kind": "arrow",
           "exported": false,
           "calls": 1
         },
         {
           "name": "uStart",
-          "line": 993,
+          "line": 997,
           "kind": "arrow",
           "exported": false,
           "calls": 1
         },
         {
           "name": "uEnd",
-          "line": 996,
+          "line": 1000,
           "kind": "arrow",
           "exported": false,
           "calls": 1

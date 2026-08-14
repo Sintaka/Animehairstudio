@@ -52,6 +52,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - **本地持久化功能（简体中文、Houdini 导航、Quick Save/Export 等）**：development-standards.md「持续修改功能」。
 
 ## 最近版本 / Latest
+- 分支整理 + 统一 dev 分支（0.2.81，分支 DHS/develop）：新建统一开发分支 `DHS/develop`（自 upstream/main d3358f6 起线性 315 提交，承接全部本地适配；origin/main 为旧快照上传、内容分叉，不作变基目标——开发线本就基于合适的 upstream 位置）；历史分支（0.2.5x–0.2.6x、codex/*、v0.1.4-*）提交均已包含在 DHS/develop，4 个被替代的实验提交记录后随分支删除；`branch-deployment` fast-forward 至 DHS/develop 并推送 origin；分支规范改为「DHS/develop 统一开发 + 临时 feature 用后即删 + deployment 发布」（见 development-standards.md「分支管理」）。
 - 发尖宽度控制点死区修复 + 导出 panel zipper 缝被填修复（0.2.80，分支 0.2.69-bugfix）：① `tipWidthMultiplierAt` fork 守卫改段内相对符号（不跨 0 的段原先取到另一侧 zipper fork → 视口拖拽写曲线但几何永远回退全局 = 死区，「曲线动发丝不动」）；② panel grid 列号段边界重叠导致 unfold "open" 重映射把缝两侧边界链坍缩、导出缝被填——colBase 预留边界列 + weld key 加 grid cell；③ 87 条过期 import 缓存号全量刷新 20260814-12；④ 新增 headless 复现/回归 scripts/repro-0045-bugs.mjs + check-stale-cache-params.mjs + check-usda-slit.mjs。详见 js-change-annotations.md / bug-fixes.md #7/#8。
 - 桥接意外 seam 修复 + U 拓扑对齐缩放（0.2.79，分支 0.2.69-bugfix）：bottom band 与 side fill 洞侧 UV 冲突导致两道意外 seam（一块 poly 被切出去）→ bottom 改回与 top/side 相同插值，洞底整圈连续；扫掠 U 缩放改拓扑对齐（childUTopologyScale：环顶面弧长 ↔ 洞顶 u 跨度，环顶点 0/W 对齐洞顶 uMin/uMax，自然延伸约 1.1×洞宽，替代刚性 1.1）。
 - 子发片 UV 微调：U 中心缩放 1.1 + 扫掠下移 + 取消横缝（0.2.78，分支 0.2.69-bugfix）：扫掠 U 围绕洞中心放大 1.1 倍（U 布局保持「外侧顶部（背面）在中间、侧面在中间两侧、最两侧后面」）；扫掠下移给桥接 bottom band 留空间；取消十字横缝（仅保留上下竖缝，修复侧面 UV 切乱/展到下面）。

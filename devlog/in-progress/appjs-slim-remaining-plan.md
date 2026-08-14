@@ -66,4 +66,4 @@
 - 与 delta mush（0.2.60）并行：delta mush 只动已拆的 strand-sweep.js/curve-math.js，不阻塞本计划；反之亦然。
 - 与 bone roadmap 强相关：建议先拆 strand/panel/split 几何（B1），未来 lock.bones 改动落在模块内更安全。
 - 序列化/快照/镜像链路（restoreLock/snapshotState/mirrorPartnerFor）保留在 app.js，各批边界注意不要把它们卷进去。
-- 每批独立分支或按 commit 推进，verify-smoke 全量回归后再提交；大改动开独立分支（版本号-操作 命名）。
+- 每批独立提交或临时 feature 分支推进（统一 dev 分支 `DHS/develop`，用后即删），verify-smoke 全量回归后再提交。

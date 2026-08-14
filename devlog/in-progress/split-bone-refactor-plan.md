@@ -1,4 +1,4 @@
-﻿# Panel Split 骨骼化重构计划：Split Spacing / Trim → split 子骨骼（统一骨骼模型 P1）
+# Panel Split 骨骼化重构计划：Split Spacing / Trim → split 子骨骼（统一骨骼模型 P1）
 
 > 分支：0.2.58-panel-split-refactor；目标版本 `0.1.4-Sintaka.0.2.59`。本文件为 P1 **实施规范**（原 `panel-split-refactor-plan.md` 改写迁移至此）。
 > **superseded**：旧提案的 `panelSegmentCurves`（每段曲线 override 数组）被 `lock.splitBones`（每段一个完整变换骨骼：P + orient + 段曲线）取代，不再单独实现。
@@ -62,4 +62,4 @@
 - zipper 水密拓扑红线（墙/端盖/吸附/退化跳过/焊接/法线平滑）必须保留。
 - 不引入真实矩阵：旋转统一四元数；主链/子链 orient 派生不持久化。
 - lattice/surface 面板（geometryType="surface"）零改动；panel 暂不支持桥接类子骨骼（范围外）。
-- 遵循开发规范：最简化、复用 taperCurveEditor/transform gizmo、新文案 EN/JA/ZH、任务类型分支由主进程管理。
+- 遵循开发规范：最简化、复用 taperCurveEditor/transform gizmo、新文案 EN/JA/ZH、分支统一走 `DHS/develop`（临时分支用后即删）。

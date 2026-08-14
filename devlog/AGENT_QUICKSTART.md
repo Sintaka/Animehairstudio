@@ -83,7 +83,7 @@
 
 ## 4. 工作方式（省 token 且合规）
 
-- **分支**：新功能必须独立 checkout 新分支；禁止直接 merge main；合并/冲突处理由主进程负责。
+- **分支**：统一开发分支 `DHS/develop`（日常开发/修复直接提交）；大更改开临时 `feat/<描述>` 分支，merge 回 `DHS/develop` 后**立即删除**；发布时 `DHS/develop` merge 进 `branch-deployment`；禁止直接 merge main（上游镜像，更新按功能移植）；合并/冲突处理由主进程负责。
 - **查代码**：先用 `Select-String` / `git grep` 按函数名定点搜（第 2 节已列关键函数名），**不要整文件读**。
 - **记 devlog**：每 commit 一句话 + 指向详细文件；新条目追加到对应专题文件，不重复全文。
 - **验证**：`node scripts/verify-smoke.mjs assets/presets/layered-side-bun.ahs`（10/11 基线，唯一失败 branch-bridge 为内容相关）；或 Playwright headless + 静态服务器 `127.0.0.1:8080` + `D:/Downloads/Sussurro_v1_004*.ahs`（当前常用 0043）；不要用 `file://` 打开。
