@@ -333,11 +333,14 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   assert.ok(Math.abs(table.colU.get(1) - 1 / 18) < EPS);
   assert.ok(Math.abs(table.colU.get(2) - 2 / 18) < EPS);
   assert.ok(Math.abs(table.colU.get(3) - 3 / 18) < EPS);
-  // 管 1：seam col4 u=0、col5..7 = 2/18, 4/18, 6/18（偏移列，共享 18 分母）
-  assert.ok(Math.abs(table.colU.get(4) - 0) < EPS);
-  assert.ok(Math.abs(table.colU.get(5) - 2 / 18) < EPS);
-  assert.ok(Math.abs(table.colU.get(6) - 4 / 18) < EPS);
-  assert.ok(Math.abs(table.colU.get(7) - 6 / 18) < EPS);
+  // 管 1：排在管 0 右侧（+ 前管周长 6/18）→ seam col4 u=6/18、col5..7 = 8/18, 10/18, 12/18
+  assert.ok(Math.abs(table.colU.get(4) - 6 / 18) < EPS);
+  assert.ok(Math.abs(table.colU.get(5) - 8 / 18) < EPS);
+  assert.ok(Math.abs(table.colU.get(6) - 10 / 18) < EPS);
+  assert.ok(Math.abs(table.colU.get(7) - 12 / 18) < EPS);
+  // seamEndU：管 0 = 6/18（circ0/总）、管 1 = 1
+  assert.ok(Math.abs(table.seamEndU[0] - 6 / 18) < EPS);
+  assert.ok(Math.abs(table.seamEndU[1] - 1) < EPS);
   // 展开：每行 = 8 展开列 + 2 副本槽 = 10 个新顶点（seam 双副本、无 -1 顶点）
   const mesh = unfoldHairMesh(geometry, { kind: "split" });
   assert.ok(mesh, "split unfold should succeed");
@@ -352,17 +355,23 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   assert.ok(Math.abs(mesh.uvs[2] - 1 / 18) < EPS);
   assert.ok(Math.abs(mesh.uvs[4] - 2 / 18) < EPS);
   assert.ok(Math.abs(mesh.uvs[6] - 3 / 18) < EPS);
-  // 管 1（col 4..7）：col4 = seam u=0、col5..7 = 弧长 u（共享 18 分母）
-  assert.equal(mesh.uvs[4 * 2], 0);
-  assert.ok(Math.abs(mesh.uvs[5 * 2] - 2 / 18) < EPS);
-  assert.ok(Math.abs(mesh.uvs[6 * 2] - 4 / 18) < EPS);
-  assert.ok(Math.abs(mesh.uvs[7 * 2] - 6 / 18) < EPS);
-  // seam 双副本：管 0 副本槽 u=1（idx8）、管 1 副本槽 u=1（idx9）
-  assert.equal(mesh.uvs[8 * 2], 1);
+  // 管 1（col 4..7）：排在管 0 右侧（col4 = seam u=6/18、col5..7 = 8/18, 10/18, 12/18）
+  assert.ok(Math.abs(mesh.uvs[4 * 2] - 6 / 18) < EPS);
+  assert.ok(Math.abs(mesh.uvs[5 * 2] - 8 / 18) < EPS);
+  assert.ok(Math.abs(mesh.uvs[6 * 2] - 10 / 18) < EPS);
+  assert.ok(Math.abs(mesh.uvs[7 * 2] - 12 / 18) < EPS);
+  // seam 副本槽 u = 各管 seamEndU：管 0 = 6/18（idx8）、管 1 = 1（idx9）
+  assert.ok(Math.abs(mesh.uvs[8 * 2] - 6 / 18) < EPS);
   assert.equal(mesh.uvs[9 * 2], 1);
   assert.equal(mesh.uvs[10 * 2], 0); // row1 管 0 seam u=0
-  assert.equal(mesh.uvs[18 * 2], 1); // row1 管 0 副本槽 u=1
+  assert.ok(Math.abs(mesh.uvs[18 * 2] - 6 / 18) < EPS); // row1 管 0 副本槽 u=6/18
   assert.equal(mesh.uvs[19 * 2], 1); // row1 管 1 副本槽 u=1
+  // 两管 u 排列：管 0 u ∈ [0, 6/18)，管 1 u ∈ [6/18, 1)；无重叠
+  const tube0GridU = [0, 1 / 18, 2 / 18, 3 / 18];
+  const tube1GridU = [6 / 18, 8 / 18, 10 / 18, 12 / 18];
+  tube0GridU.forEach((u) => assert.ok(u >= 0 && u < 6 / 18, `tube0 u in [0, 6/18): ${u}`));
+  tube1GridU.forEach((u) => assert.ok(u >= 6 / 18 && u < 1, `tube1 u in [6/18, 1): ${u}`));
+  assert.ok(Math.min(...tube1GridU) > Math.max(...tube0GridU), "tube1 min u > tube0 max u (no overlap)");
   // 所有 u 在 [0,1]
   for (let i = 0; i < mesh.uvs.length; i += 2) {
     assert.ok(mesh.uvs[i] >= 0 && mesh.uvs[i] <= 1, `u in [0,1]: ${mesh.uvs[i]}`);
@@ -612,6 +621,32 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   for (const face of mesh.faces) {
     for (const index of face) assert.ok(index >= 0 && index < 20, `child face index ${index}`);
   }
+}
+
+// ---- uOffset / uScale：child 表 uOffset=0.4、uScale=0.1 → colU = 0.4 + 弧长×0.1、
+// seamEndU = 0.4 + circ×0.1；unfoldHairMesh seam 副本 u = seamEndU ----
+{
+  const geometry = closedArcGeometry(2, [[0, 0], [1, 0], [1, 1], [0, 1]]); // 单位方环，周长 4
+  const table = gridUvTable(geometry, "child", 0, null, 0.4, 0.1);
+  assert.ok(table, "child uOffset/uScale table");
+  assert.ok(Math.abs(table.circumference - 4) < EPS, `circumference ${table.circumference}`);
+  assert.ok(Math.abs(table.colU.get(0) - 0.4) < EPS);
+  assert.ok(Math.abs(table.colU.get(1) - 0.5) < EPS);
+  assert.ok(Math.abs(table.colU.get(2) - 0.6) < EPS);
+  assert.ok(Math.abs(table.colU.get(3) - 0.7) < EPS);
+  assert.ok(Math.abs(table.seamEndU - 0.8) < EPS); // 0.4 + 4×0.1
+  // uScale 存在时忽略 referenceCircumference：传 ref=100 不影响
+  const tableRef = gridUvTable(geometry, "child", 0, 100, 0.4, 0.1);
+  assert.ok(Math.abs(tableRef.colU.get(1) - 0.5) < EPS);
+  assert.ok(Math.abs(tableRef.seamEndU - 0.8) < EPS);
+  // unfoldHairMesh：seam 副本 u = seamEndU（不再写死 1）
+  const mesh = unfoldHairMesh(geometry, { kind: "child", seamCol: 0, uOffset: 0.4, uScale: 0.1 });
+  assert.ok(mesh, "child uOffset/uScale unfold should succeed");
+  assert.ok(Math.abs(mesh.uvs[0] - 0.4) < EPS);
+  assert.ok(Math.abs(mesh.uvs[2] - 0.5) < EPS);
+  assert.ok(Math.abs(mesh.uvs[4] - 0.6) < EPS);
+  assert.ok(Math.abs(mesh.uvs[6] - 0.7) < EPS);
+  assert.ok(Math.abs(mesh.uvs[8] - 0.8) < EPS); // seam 副本 u = seamEndU
 }
 
 // ---- 回退路径：缺 grid / 缺 quadFaces / 非矩形 grid / 未知 kind / 弧长表缺失 → null ----

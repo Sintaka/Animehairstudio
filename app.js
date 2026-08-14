@@ -42,7 +42,7 @@ import { createReferenceStore } from "./modules/edit/reference-store.js?v=202608
 import { createDrawStore } from "./modules/edit/draw-store.js?v=20260809-4";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260809-3";
 import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
-import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260814-8";
+import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260814-9";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";

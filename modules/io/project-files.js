@@ -10,7 +10,7 @@ import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActi
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260726-1";
 import { exportAnimeHairUsda } from "./usda-export.js?v=20260814-2";
 import { createHairProject } from "./project-schema.js?v=20260728-2";
-import { unfoldHairMesh, gridUvTable, gridUvAt } from "./uv-unfold.js?v=20260814-8";
+import { unfoldHairMesh, gridUvTable, gridUvAt } from "./uv-unfold.js?v=20260814-9";
 
 export function createProjectSaveApi(deps) {
   // ---- dialog UI elements (document is ready when this runs; app.js loads at body end) ----
@@ -156,8 +156,8 @@ export function createProjectSaveApi(deps) {
         const anchors = geometry.userData?.bridgeUvAnchors;
         const parent = deps.locks.find((item) => item.id === lock.branchParentId);
         const parentTable = parent ? uvAt.get(parent.id) : null;
-        // 子发片 U 按主发片尺度：u 范围 = 子发片一圈周长 / 主发片一圈周长
-        const referenceCircumference = parentTable ? parentTable.circumference : null;
+        const parentRows = parent?.mesh?.geometry?.userData?.gridRowIndices;
+        const parentCols = parent?.mesh?.geometry?.userData?.gridColIndices;
         const childVLength = (() => {
           const startT = Math.min(1, Math.max(0, Number(lock.branchSweepStartT ?? 0.1)));
           const childLen = new THREE.CatmullRomCurve3(lock.points || []).getLength() * (1 - startT);
@@ -180,35 +180,71 @@ export function createProjectSaveApi(deps) {
         })();
         const rowHeight = childGridRows >= 2 ? childVLength / (childGridRows - 1) : 0;
         const childVStart = Math.min(1, Math.max(0, 1 - holeBottomU - rowHeight));
-        options = { kind, seamCol, childVStart, childVLength };
-        if (referenceCircumference != null) options.referenceCircumference = referenceCircumference;
+        // 子发片扫掠 U 收缩 + 位移：中心对齐洞中心、宽度≈洞宽。
+        // 洞侧 u 范围：遍历锚点，取 hole 顶点 parent u 的 min/max（洞边界左右两段）。
+        let holeUMin = Infinity; let holeUMax = -Infinity;
+        if (Array.isArray(anchors)) {
+          for (const anchor of anchors) {
+            if (!anchor || anchor.hole < 0) continue;
+            const holeUv = gridUvAt(parentTable, parentRows, parentCols, anchor.hole);
+            if (!holeUv) continue;
+            holeUMin = Math.min(holeUMin, holeUv[0]);
+            holeUMax = Math.max(holeUMax, holeUv[0]);
+          }
+        }
+        const childCirc = (gridUvTable(geometry, "child", seamCol) || {}).circumference || 1;
+        let uOffset = 0; let uScale = null;
+        if (Number.isFinite(holeUMin) && Number.isFinite(holeUMax) && holeUMax > holeUMin && childCirc > 0) {
+          const holeUCenter = (holeUMin + holeUMax) * 0.5;
+          const holeUSpan = holeUMax - holeUMin; // 宽度与洞宽对齐（外侧列贴洞左右两段）
+          uOffset = holeUCenter - holeUSpan * 0.5;
+          uScale = holeUSpan / childCirc;
+        }
+        options = { kind, seamCol, childVStart, childVLength, uOffset, uScale };
         if (Array.isArray(anchors) && anchors.length && parentTable) {
-          // 子发片桥接表：与展开输出同尺度（ref = 主发片周长）→ u_ring 直接插值；
-          // 洞侧 u = parent 弧长 u（同一尺度）。桥接中线顶点单副本 u_ring=0。
-          const uvTable = gridUvTable(geometry, "child", seamCol, referenceCircumference);
+          // 子发片桥接表：与展开输出同尺度（uOffset/uScale 收缩+位移到洞中心/洞宽），
+          // 洞侧 u = parent 弧长 u（同一尺度）。桥接底带 seam 及左右各一列双副本十字横缝切开。
+          const uvTable = gridUvTable(geometry, "child", seamCol, null, uOffset, uScale);
           if (uvTable) {
-            const parentRows = parent?.mesh?.geometry?.userData?.gridRowIndices;
-            const parentCols = parent?.mesh?.geometry?.userData?.gridColIndices;
             const childGridCols = geometry.userData?.gridColIndices;
+            // 环列数 C = 子发片主扫掠网格的环向列数（gridColIndices 最大值 + 1）。
+            let C = 0;
+            if (childGridCols) {
+              for (let i = 0; i < childGridCols.length; i += 1) {
+                const col = Number(childGridCols[i]);
+                if (Number.isFinite(col) && col >= 0 && col + 1 > C) C = col + 1;
+              }
+            }
+            const rPosOf = (ring) => ((ring - seamCol) % C + C) % C;
             options.passthroughCopyCount = (vertexIndex) => {
               const anchor = anchors[vertexIndex];
-              return anchor && anchor.ring === seamCol ? 2 : 1;
+              if (!anchor || anchor.band !== "bottom") return 1;
+              if (!Number.isFinite(anchor.ring) || anchor.ring < 0) return 1;
+              const rPos = rPosOf(anchor.ring);
+              return (rPos === 0 || rPos === 1 || rPos === C - 1) ? 2 : 1;
             };
             options.passthroughSide = (vertexIndex, face) => {
               const anchor = anchors[vertexIndex];
-              if (!anchor || anchor.ring !== seamCol) return 0;
+              if (!anchor || anchor.band !== "bottom") return 0;
+              if (!Number.isFinite(anchor.ring) || anchor.ring < 0) return 0;
+              const rPos = rPosOf(anchor.ring);
               let cx = -1;
               for (const fx of face) {
                 const fCol = Number(childGridCols[fx]);
+                let ring = -1;
                 if (Number.isFinite(fCol) && fCol >= 0) {
-                  if (fCol !== seamCol) { cx = fCol; break; }
+                  ring = fCol;
                 } else {
                   const fAnchor = anchors[fx];
-                  if (fAnchor && fAnchor.ring >= 0 && fAnchor.ring !== seamCol) { cx = fAnchor.ring; break; }
+                  if (fAnchor && Number.isFinite(fAnchor.ring) && fAnchor.ring >= 0) ring = fAnchor.ring;
                 }
+                if (ring >= 0 && ring !== anchor.ring) { cx = ring; break; }
               }
               if (cx < 0) return 0;
-              return cx < seamCol ? 1 : 0; // 环顶点在中线左侧 → 中线是右侧 → side 1（u_ring=1）
+              const cxPos = rPosOf(cx);
+              if (cxPos === (rPos + 1) % C) return 0; // 本顶点是起点（环向小侧）
+              if (cxPos === (rPos - 1 + C) % C) return 1; // 本顶点是终点
+              return 0;
             };
             options.bridgeUvAt = (vertexIndex, side = 0) => {
               const anchor = anchors[vertexIndex];
@@ -228,9 +264,10 @@ export function createProjectSaveApi(deps) {
               }
               let ringU = 0;
               if (anchor.ring >= 0 && anchor.ring !== seamCol && uvTable.colU.has(anchor.ring)) {
-                ringU = uvTable.colU.get(anchor.ring);
+                ringU = uvTable.colU.get(anchor.ring); // 含 seam±1：左右副本同值，UV 连续、拓扑分离
               } else if (anchor.ring === seamCol) {
-                ringU = side === 1 ? 1 : 0; // 中线双副本：左（side1）u_ring=1 对齐环 seam 的 u=1 副本，右（side0）u_ring=0
+                // 中线双副本：side1=终点 u=seamEndU，side0=起点 u=colU(seamCol)。
+                ringU = side === 1 ? (uvTable.seamEndU ?? 1) : uvTable.colU.get(seamCol);
               } else {
                 ringU = holeU; // ring=-1 纯洞侧顶点
               }
