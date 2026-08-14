@@ -40,7 +40,10 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
   // index -> parent grid index so createBranchChildGeometry can restore the parent's
   // authored normals after computeVertexNormals (smooths the seam shading).
   const boundaryParentIndices = [];
-  const pushBoundary = (v) => {
+  // UV interpolation anchors for the exporter: { ring, hole, t } per bridge vertex
+  // (t=0 ring side, t=1 hole side). Parallel to vertices, same length; null = no mapping.
+  const uvAnchors = [];
+  const pushBoundary = (v, anchor = null) => {
     const childIndex = vertices.length / 3;
     vertices.push(v.x, v.y, v.z);
     let nx = 0; let ny = 1; let nz = 0;
@@ -56,6 +59,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     tangents.push(tx, ty, tz, 1);
     uvs.push(0.5, 0);
     colors.push(rootColor.r, rootColor.g, rootColor.b);
+    uvAnchors.push(anchor);
   };
   const indexAt = surface.gridIndexAt || ((r, c) => r * cols + c);
   const boundaryAt = (r, c) => boundary.vertices.find((v) => v.index === indexAt(r, c));
@@ -110,7 +114,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     if (!prev || Math.abs(v.x - prev.x) > 1e-6 || Math.abs(v.y - prev.y) > 1e-6 || Math.abs(v.z - prev.z) > 1e-6) collapsed.push(v);
   });
   let bottomBoundaryBase = collapsed.length >= 2 ? vertices.length / 3 : -1;
-  if (collapsed.length >= 2) collapsed.forEach(pushBoundary);
+  if (collapsed.length >= 2) collapsed.forEach((v, i) => pushBoundary(v, { ring: ringWidth + 1 + i, hole: v.index ?? -1, t: 1 }));
   const bottomInfo = { holeBase: -1, midBase: -1, midCount: 0, width: 0 };
   if (collapsed.length >= 2) {
     const ringBottom = ringWorld.slice(ringWidth + 1);
@@ -123,7 +127,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       bottomNormal = deps.curveFrameAt(parent, THREE.MathUtils.clamp(surface.rowMax / Math.max(1, rows - 1), 0, 1)).z.clone();
     } catch (e) { /* keep default */ }
     bottomInfo.holeBase = vertices.length / 3;
-    collapsed.forEach(pushBoundary);
+    collapsed.forEach((v, i) => pushBoundary(v, { ring: ringWidth + 1 + i, hole: v.index ?? -1, t: 1 }));
     bottomInfo.midBase = vertices.length / 3;
     const emitBottomMidRow = (f) => {
       ringBottom.forEach((p, i) => {
@@ -147,7 +151,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
           .normalize();
         const m1 = creaseDir.multiplyScalar(span);
         const mid = hermite(f, p0, p1, m0Out, m1);
-        pushBoundary({ x: mid.x, y: mid.y, z: mid.z });
+        pushBoundary({ x: mid.x, y: mid.y, z: mid.z }, { ring: ringWidth + 1 + i, hole: collapsed[i]?.index ?? -1, t: f });
       });
     };
     for (let j = 1; j <= bottomMidCount; j += 1) emitBottomMidRow(j / bottomSegments);
@@ -181,8 +185,8 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     const vBottom = boundaryAt(rootRow + 1, spec.col);
     if (!vTop || !vBottom) return;
     sideBases[spec.name] = vertices.length / 3;
-    pushBoundary(vTop);
-    pushBoundary(vBottom);
+    pushBoundary(vTop, { ring: spec.ringTop, hole: vTop?.index ?? -1, t: 1 });
+    pushBoundary(vBottom, { ring: spec.ringBottom, hole: vBottom?.index ?? -1, t: 1 });
   });
 
   // Top band: ring top (0,1,2) <-> hole top, holeHeight segments per column. Middle
@@ -222,7 +226,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
       parentNormal = deps.curveFrameAt(parent, THREE.MathUtils.clamp(surface.rowMin / Math.max(1, rows - 1), 0, 1)).z.clone();
     } catch (e) { /* keep default */ }
     topInfo.holeBase = vertices.length / 3;
-    holeTop.forEach(pushBoundary);
+    holeTop.forEach((v, i) => pushBoundary(v, { ring: i, hole: v.index ?? -1, t: 1 }));
     topInfo.midBase = vertices.length / 3;
     const emitTopMidRow = (f) => {
       ringTop.forEach((p, i) => {
@@ -240,7 +244,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
         const m1 = m0.clone().addScaledVector(parentNormal, -m0.dot(parentNormal));
         if (m1.lengthSq() < 1e-8) m1.copy(m0);
         const mid = hermite(f, p0, p1, ringTangent, m1);
-        pushBoundary({ x: mid.x, y: mid.y, z: mid.z });
+        pushBoundary({ x: mid.x, y: mid.y, z: mid.z }, { ring: i, hole: holeTop[i]?.index ?? -1, t: f });
       });
     };
     for (let j = 1; j <= midCount; j += 1) emitTopMidRow(j / topSegments);
@@ -272,7 +276,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     const v = boundaryAt(r, c);
     if (!v) return -1;
     const idx = vertices.length / 3;
-    pushBoundary(v);
+    pushBoundary(v, { ring: -1, hole: v.index ?? -1, t: 1 });
     sideHoleCache.set(key, idx);
     return idx;
   };
@@ -532,7 +536,7 @@ function buildBranchBridgeGeometry(lock, parent, surface, ringWorld, parentGeom)
     });
   }
 
-  return { vertices, normals, tangents, uvs, colors, indices, quads, triangles, ringBase, boundaryParentIndices };
+  return { vertices, normals, tangents, uvs, colors, indices, quads, triangles, ringBase, boundaryParentIndices, uvAnchors };
 }
 
 function createBranchChildGeometry(lock) {
@@ -715,6 +719,13 @@ function createBranchChildGeometry(lock) {
   geometry.userData.openSurface = false;
   geometry.userData.gridRowIndices = gridRowIndices;
   geometry.userData.gridColIndices = gridColIndices;
+  // UV interpolation anchors for the exporter: bridge vertices in [0, bridgeVertexCount)
+  // map 1:1 onto bridgeUvAnchors ({ ring, hole, t }; null = no mapping). bridgeSeamCol
+  // is the sweep ring seam column (mid of ring vertices 0..ringWidth, the back center
+  // seam) used to unwrap the child tube's rectangular UVs.
+  geometry.userData.bridgeUvAnchors = bridge ? bridge.uvAnchors : null;
+  geometry.userData.bridgeBoundaryParentIndices = bridge ? bridge.boundaryParentIndices : null;
+  geometry.userData.bridgeSeamCol = Math.round(ringWidthSegments / 2);
   geometry.computeVertexNormals();
   // Restore the parent's authored normals on bridge vertices that sit on the parent
   // hole boundary so the child blends into the parent's shading at the seam instead

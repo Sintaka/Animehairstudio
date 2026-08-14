@@ -10,6 +10,7 @@ import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActi
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260726-1";
 import { exportAnimeHairUsda } from "./usda-export.js?v=20260814-2";
 import { createHairProject } from "./project-schema.js?v=20260728-2";
+import { unfoldHairMesh, parametricGridUv, gridDimensions } from "./uv-unfold.js?v=20260814-3";
 
 export function createProjectSaveApi(deps) {
   // ---- dialog UI elements (document is ready when this runs; app.js loads at body end) ----
@@ -85,6 +86,15 @@ export function createProjectSaveApi(deps) {
     ));
   }
 
+  function flatTuples(flat, itemSize) {
+    if (!flat || !flat.length || !itemSize) return [];
+    const tuples = [];
+    for (let i = 0; i + itemSize <= flat.length; i += itemSize) {
+      tuples.push(flat.slice(i, i + itemSize));
+    }
+    return tuples;
+  }
+
   function setProjectSaveButtonsDisabled(disabled) {
     document.querySelector("#saveCurrentPreset").disabled = disabled;
     document.querySelector("#quickSaveProject").disabled = disabled;
@@ -107,28 +117,105 @@ export function createProjectSaveApi(deps) {
     });
   }
 
+  // ---- unfolded UV meshes（导出时把扫掠网格 UV 切成归一化矩形）----
+  function kindForLock(lock) {
+    if (lock.geometryType === "poly" || lock.geometryType === "braid") return null;
+    if (lock.branchRootRegion) return "child";
+    if (lock.geometryType === "curve-surface") return lock.curveSurfaceCompoundProfile ? "compound" : "open";
+    if (lock.geometryType === "panel" || lock.geometryType === "surface") return "open";
+    if (lock.geometryType === "strand" && lock.hairCard) return "open";
+    if (lock.geometryType === "strand" && lock.strandSplitEnabled) return "split";
+    return "closed";
+  }
+
+  function buildUnfoldedMeshes() {
+    const unfolded = new Map();
+    const uvAt = new Map();
+    deps.locks.forEach((lock) => {
+      const geometry = lock.mesh?.geometry;
+      if (!geometry) return;
+      const gridRows = geometry.userData?.gridRowIndices;
+      const gridCols = geometry.userData?.gridColIndices;
+      if (!gridRows || !gridCols) return;
+      const dims = gridDimensions(gridRows, gridCols);
+      uvAt.set(lock.id, (vertexIndex) => parametricGridUv(gridRows, gridCols, vertexIndex));
+      void dims;
+    });
+    deps.locks.forEach((lock) => {
+      const geometry = lock.mesh?.geometry;
+      const kind = geometry ? kindForLock(lock) : null;
+      if (!geometry || !kind) return;
+      let options = { kind };
+      if (kind === "child") {
+        const ringWidthSegments = Math.max(1, Math.round(Number(geometry.userData?.ringWidthSegments || 2)));
+        const seamCol = Math.round(ringWidthSegments / 2);
+        options = { kind, seamCol, bridgeUvAt: null };
+        const anchors = geometry.userData?.bridgeUvAnchors;
+        const parent = deps.locks.find((item) => item.id === lock.branchParentId);
+        const parentUv = parent ? uvAt.get(parent.id) : null;
+        if (Array.isArray(anchors) && anchors.length && parentUv) {
+          const gridRows = geometry.userData.gridRowIndices;
+          const gridCols = geometry.userData.gridColIndices;
+          const dims = gridDimensions(gridRows, gridCols);
+          const ringCount = dims.cols;
+          options.bridgeUvAt = (vertexIndex) => {
+            const anchor = anchors[vertexIndex];
+            if (!anchor || ringCount < 2) return null;
+            const ringU = ((anchor.ring - seamCol) % ringCount + ringCount) % ringCount / ringCount;
+            const holeUv = anchor.hole >= 0 ? parentUv(anchor.hole) : null;
+            if (!holeUv) return null;
+            const t = Math.min(1, Math.max(0, Number(anchor.t ?? 1)));
+            return [ringU + (holeUv[0] - ringU) * t, 1 + (holeUv[1] - 1) * t];
+          };
+        }
+      }
+      const mesh = unfoldHairMesh(geometry, options);
+      if (mesh) unfolded.set(lock.id, mesh);
+    });
+    return unfolded;
+  }
+
   function buildHairObj({ includeMesh = true, includeCurves = true } = {}) {
     let obj = "# Anime Hair Studio mesh and center-curve export\n";
     let vertexOffset = 1;
     let uvOffset = 1;
+    const unfoldedMeshes = buildUnfoldedMeshes();
     deps.locks.forEach((lock) => {
       const objectName = lock.name.replace(/[^a-zA-Z0-9_.-]+/g, "_");
       if (includeMesh) {
         obj += `o ${objectName}\n`;
         const geometry = lock.mesh.geometry;
-        const positions = geometry.getAttribute("position");
-        const uvs = geometry.getAttribute("uv");
-        for (let i = 0; i < positions.count; i += 1) {
-          obj += `v ${positions.getX(i).toFixed(5)} ${positions.getY(i).toFixed(5)} ${positions.getZ(i).toFixed(5)}\n`;
-        }
-        if (uvs) {
-          for (let i = 0; i < uvs.count; i += 1) {
-            obj += `vt ${uvs.getX(i).toFixed(6)} ${uvs.getY(i).toFixed(6)}\n`;
+        const unfolded = unfoldedMeshes.get(lock.id);
+        if (unfolded) {
+          // 展开版：归一化矩形 UV（每根发丝独立 0-1 tile）。
+          const positions = unfolded.positions;
+          const uvs = unfolded.uvs;
+          for (let i = 0; i < positions.length; i += 3) {
+            obj += `v ${positions[i].toFixed(5)} ${positions[i + 1].toFixed(5)} ${positions[i + 2].toFixed(5)}\n`;
           }
+          for (let i = 0; i < uvs.length; i += 2) {
+            obj += `vt ${uvs[i].toFixed(6)} ${uvs[i + 1].toFixed(6)}\n`;
+          }
+          unfolded.faces.forEach((face) => {
+            obj += `f ${face.map((index) => `${index + vertexOffset}/${index + uvOffset}`).join(" ")}\n`;
+          });
+          vertexOffset += positions.length / 3;
+          uvOffset += uvs.length / 2;
+        } else {
+          const positions = geometry.getAttribute("position");
+          const uvs = geometry.getAttribute("uv");
+          for (let i = 0; i < positions.count; i += 1) {
+            obj += `v ${positions.getX(i).toFixed(5)} ${positions.getY(i).toFixed(5)} ${positions.getZ(i).toFixed(5)}\n`;
+          }
+          if (uvs) {
+            for (let i = 0; i < uvs.count; i += 1) {
+              obj += `vt ${uvs.getX(i).toFixed(6)} ${uvs.getY(i).toFixed(6)}\n`;
+            }
+          }
+          obj += exportHairFaces(geometry, vertexOffset, uvOffset);
+          vertexOffset += positions.count;
+          if (uvs) uvOffset += uvs.count;
         }
-        obj += exportHairFaces(geometry, vertexOffset, uvOffset);
-        vertexOffset += positions.count;
-        if (uvs) uvOffset += uvs.count;
       }
 
       if (includeCurves) {
@@ -167,55 +254,105 @@ export function createProjectSaveApi(deps) {
     const meshes = [];
     const curves = [];
     const skeletons = [];
+    const unfoldedMeshes = buildUnfoldedMeshes();
     deps.locks.forEach((lock) => {
       if (includeMesh) {
         const geometry = lock.mesh.geometry;
         const position = geometry.getAttribute("position");
         if (position) {
-          const gridRowIndices = geometry.userData?.gridRowIndices;
-          const gridColIndices = geometry.userData?.gridColIndices;
-          const mesh = {
-            name: lock.name,
-            group: lock.group || "unassigned",
-            layer: lock.layer || "mid",
-            points: bufferAttributeTuples(position, 3),
-            normals: bufferAttributeTuples(geometry.getAttribute("normal"), 3),
-            uvs: bufferAttributeTuples(geometry.getAttribute("uv"), 2),
-            colors: bufferAttributeTuples(geometry.getAttribute("color"), 3),
-            tangents: bufferAttributeTuples(geometry.getAttribute("tangent"), 4),
-            faces: hairFaceIndices(geometry)
-          };
-          if (gridRowIndices?.length === position.count && gridColIndices?.length === position.count) {
-            mesh.gridRowIndices = Array.from(gridRowIndices);
-            mesh.gridColIndices = Array.from(gridColIndices);
-          }
-          if (includeBones && typeof deps.bonesFor === "function") {
-            const bones = deps.bonesFor(lock, { locks: deps.locks })
-              .filter((bone) => !bone.name.startsWith("child."));
-            if (bones.length >= 2) {
-              const joints = bones.map((bone) => bone.name);
-              const mainCount = joints.filter((name) => name.startsWith("main.")).length;
-              const leafWeights = geometry.userData?.leafWeights || geometry.userData?.panelWeights;
-              if (leafWeightsValid(leafWeights, position.count)) {
-                const skelIndices = [];
-                const skelWeights = [];
-                for (let vertex = 0; vertex < position.count; vertex += 1) {
-                  const w = leafWeightAt(leafWeights, vertex);
-                  const main = Math.round(w.mainJoint);
-                  const segment = Math.round(w.leafIndex);
-                  const weight = Number(w.weight) || 0;
-                  if (segment >= 0 && weight > 0.0001) {
-                    skelIndices.push([main, mainCount + segment]);
-                    skelWeights.push([1 - weight, weight]);
-                  } else {
-                    skelIndices.push([main]);
-                    skelWeights.push([1]);
+          const unfolded = unfoldedMeshes.get(lock.id);
+          let mesh;
+          if (unfolded) {
+            // 展开版：归一化矩形 UV（每根发丝独立 0-1 tile），grid primvar 照挂展开顶点。
+            mesh = {
+              name: lock.name,
+              group: lock.group || "unassigned",
+              layer: lock.layer || "mid",
+              points: flatTuples(unfolded.positions, 3),
+              normals: flatTuples(unfolded.normals, 3),
+              uvs: flatTuples(unfolded.uvs, 2),
+              colors: flatTuples(unfolded.colors, 3),
+              tangents: flatTuples(unfolded.tangents, 4),
+              faces: unfolded.faces.map((face) => [...face])
+            };
+            mesh.gridRowIndices = Array.from(unfolded.gridRows);
+            mesh.gridColIndices = Array.from(unfolded.gridCols);
+            if (includeBones && typeof deps.bonesFor === "function") {
+              const bones = deps.bonesFor(lock, { locks: deps.locks })
+                .filter((bone) => !bone.name.startsWith("child."));
+              if (bones.length >= 2) {
+                const joints = bones.map((bone) => bone.name);
+                const mainCount = joints.filter((name) => name.startsWith("main.")).length;
+                const leafWeights = unfolded.leafWeights ?? geometry.userData?.leafWeights ?? geometry.userData?.panelWeights;
+                if (leafWeightsValid(leafWeights, mesh.points.length)) {
+                  const skelIndices = [];
+                  const skelWeights = [];
+                  for (let vertex = 0; vertex < mesh.points.length; vertex += 1) {
+                    const w = leafWeightAt(leafWeights, vertex);
+                    const main = Math.round(w.mainJoint);
+                    const segment = Math.round(w.leafIndex);
+                    const weight = Number(w.weight) || 0;
+                    if (segment >= 0 && weight > 0.0001) {
+                      skelIndices.push([main, mainCount + segment]);
+                      skelWeights.push([1 - weight, weight]);
+                    } else {
+                      skelIndices.push([main]);
+                      skelWeights.push([1]);
+                    }
                   }
+                  mesh.skelRootName = (lock.name || "Hair") + " Skeleton";
+                  mesh.skelJoints = joints;
+                  mesh.skelIndices = skelIndices;
+                  mesh.skelWeights = skelWeights;
                 }
-                mesh.skelRootName = (lock.name || "Hair") + " Skeleton";
-                mesh.skelJoints = joints;
-                mesh.skelIndices = skelIndices;
-                mesh.skelWeights = skelWeights;
+              }
+            }
+          } else {
+            const gridRowIndices = geometry.userData?.gridRowIndices;
+            const gridColIndices = geometry.userData?.gridColIndices;
+            mesh = {
+              name: lock.name,
+              group: lock.group || "unassigned",
+              layer: lock.layer || "mid",
+              points: bufferAttributeTuples(position, 3),
+              normals: bufferAttributeTuples(geometry.getAttribute("normal"), 3),
+              uvs: bufferAttributeTuples(geometry.getAttribute("uv"), 2),
+              colors: bufferAttributeTuples(geometry.getAttribute("color"), 3),
+              tangents: bufferAttributeTuples(geometry.getAttribute("tangent"), 4),
+              faces: hairFaceIndices(geometry)
+            };
+            if (gridRowIndices?.length === position.count && gridColIndices?.length === position.count) {
+              mesh.gridRowIndices = Array.from(gridRowIndices);
+              mesh.gridColIndices = Array.from(gridColIndices);
+            }
+            if (includeBones && typeof deps.bonesFor === "function") {
+              const bones = deps.bonesFor(lock, { locks: deps.locks })
+                .filter((bone) => !bone.name.startsWith("child."));
+              if (bones.length >= 2) {
+                const joints = bones.map((bone) => bone.name);
+                const mainCount = joints.filter((name) => name.startsWith("main.")).length;
+                const leafWeights = geometry.userData?.leafWeights || geometry.userData?.panelWeights;
+                if (leafWeightsValid(leafWeights, position.count)) {
+                  const skelIndices = [];
+                  const skelWeights = [];
+                  for (let vertex = 0; vertex < position.count; vertex += 1) {
+                    const w = leafWeightAt(leafWeights, vertex);
+                    const main = Math.round(w.mainJoint);
+                    const segment = Math.round(w.leafIndex);
+                    const weight = Number(w.weight) || 0;
+                    if (segment >= 0 && weight > 0.0001) {
+                      skelIndices.push([main, mainCount + segment]);
+                      skelWeights.push([1 - weight, weight]);
+                    } else {
+                      skelIndices.push([main]);
+                      skelWeights.push([1]);
+                    }
+                  }
+                  mesh.skelRootName = (lock.name || "Hair") + " Skeleton";
+                  mesh.skelJoints = joints;
+                  mesh.skelIndices = skelIndices;
+                  mesh.skelWeights = skelWeights;
+                }
               }
             }
           }

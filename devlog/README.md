@@ -50,6 +50,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - **本地持久化功能（简体中文、Houdini 导航、Quick Save/Export 等）**：development-standards.md「持续修改功能」。
 
 ## 最近版本 / Latest
+- 导出矩形 UV 展开（0.2.71，分支 0.2.69-bugfix）：新增 uv-unfold.js——用 AHS grid 属性生成归一化矩形 UV（V 负方向=切线，根 V=1 尖 V=0，头发竖直向下打直；闭合环 seam 复制顶点，开放网格直接重映射，split 双管独立 seam）；桥接子发片从背部中间缝裁切、桥接 UV 在环侧（v=1）与父发片洞边界参数化 UV 之间插值顺滑连接（bridgeUvAnchors 锚点）；USDA/OBJ 均输出展开 UV（蒙皮权重随 seam 复制）；tests/uv-unfold.test.mjs 纯 node 回归。详见 development-standards.md「持续修改功能」。
 - 导出编号补全全部几何类型 + AHS_ 前缀（0.2.70，分支 0.2.69-bugfix）：split（fused 列号，有子发片的主发丝按未挖洞规格）/ hair card / curve-surface card / compound 多发丝（桥接 -1）/ panel·surface 刘海（模拟 row=沿曲线、col=全局列 front/back 相邻，weld 重映射）全部补 `gridRowIndices`/`gridColIndices`；USDA primvar 改 `AHS_gridRow`/`AHS_gridCol`；twist 类发丝为普通扫掠已覆盖；poly/braid 不编号。
 - 修复 Strand Profile 浮动面板打不开 + 导出扫掠 rows/cols 编号（0.2.69，分支 0.2.69-bugfix）：① branch-sweep.js（3d-3d-b 重构）抽取不完整 → 22 个自由变量，点击铅笔按钮抛 ReferenceError、浮动面板永不弹出；补 import + 22 deps 注入 + 3 处 `branchSweep.branchSweep.activeSweepProfileTarget()` 双重笔误修复。② 几何导出带扫掠网格每顶点 rows/cols 编号（桥接除外），USDA 输出 `int[] primvars:animeHairStudio:gridRow`/`gridCol`。详见 bug-fixes.md 与 development-standards.md「持续修改功能」。
 - 文档筛查 + 快捷键修复（0.2.65，分支 0.2.65-bugfix）：数字/日期输入框不再被 1/2/3（workspace）与 q/w/e（工具）快捷键抢占（shortcut-registry 把可键入数值的 input 视为文本输入）；重新生成 FUNCTION_INDEX（2,003 函数 / 94 文件）与 GLOBAL_LET_INVENTORY（1 let），并同步更新 APPJS_SPLIT_GUIDE / AGENT_QUICKSTART / STATE_MANAGEMENT（17 store）等指引字典。
