@@ -438,15 +438,18 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
       childColIndices.push(c);
     }
   }
-  // 桥接顶点（col=-1）：12 = b0 中线（ring===seamCol）、13 = b1 右侧、14 = b2 左侧
+  // 桥接顶点（col=-1）：12 = b0 中线（ring===seamCol）、13 = b1 右侧、14 = b2 左侧、
+  // 15 = b3 纯洞侧（ring=-1，sideHoleVertex 型，t=1）
   childPositions.push(5, 0, 1); childNormals.push(0, 0, 1); childUvs.push(0.1, 0.2); childRowIndices.push(-1); childColIndices.push(-1);
   childPositions.push(5, 1, 1); childNormals.push(0, 0, 1); childUvs.push(0.3, 0.4); childRowIndices.push(-1); childColIndices.push(-1);
   childPositions.push(5, 2, 1); childNormals.push(0, 0, 1); childUvs.push(0.5, 0.6); childRowIndices.push(-1); childColIndices.push(-1);
+  childPositions.push(5, 3, 1); childNormals.push(0, 0, 1); childUvs.push(0.5, 0); childRowIndices.push(-1); childColIndices.push(-1);
   const anchors = [
     null, null, null, null, null, null, null, null, null, null, null, null,
     { ring: seamCol, hole: 3, t: 0.5 }, // b0：中线 → u_ring=0
     { ring: 3, hole: 2, t: 0.5 },       // b1：ring3（切缝右侧相邻）
-    { ring: 1, hole: 6, t: 0.5 }        // b2：ring1（切缝左侧相邻）
+    { ring: 1, hole: 6, t: 0.5 },       // b2：ring1（切缝左侧相邻）
+    { ring: -1, hole: 3, t: 1 }         // b3：无环侧锚点（纯洞侧，t=1 → u=洞 u）
   ];
   const childQuads = [];
   for (let r = 0; r < R - 1; r += 1) {
@@ -494,12 +497,26 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   const bridgeUvAt = (vertexIndex) => {
     const anchor = anchors[vertexIndex];
     if (!anchor) return null;
-    const holeUv = anchor.hole >= 0 ? gridUvAt(parentTable, parentRows, parentCols, anchor.hole) : null;
-    if (!holeUv) return null;
     const t = Math.min(1, Math.max(0, Number(anchor.t ?? 1)));
-    const ringU = anchor.ring === seamCol ? 0 : childTable.colU.get(anchor.ring);
-    if (!Number.isFinite(ringU)) return null;
-    return [ringU + (holeUv[0] - ringU) * t, childVStart + (holeUv[1] - childVStart) * t];
+    let holeU = 0;
+    let holeV = childVStart;
+    if (anchor.hole >= 0) {
+      const holeUv = gridUvAt(parentTable, parentRows, parentCols, anchor.hole);
+      if (holeUv) { holeU = holeUv[0]; holeV = holeUv[1]; }
+      else {
+        const parentRow = Number(parentRows[anchor.hole]);
+        if (Number.isFinite(parentRow) && parentRow >= 0) {
+          holeV = parentTable.rows < 2 ? 0.5 : 1 - parentRow / (parentTable.rows - 1);
+        }
+      }
+    }
+    let ringU = 0;
+    if (anchor.ring >= 0 && anchor.ring !== seamCol && childTable.colU.has(anchor.ring)) {
+      ringU = childTable.colU.get(anchor.ring);
+    } else if (anchor.ring !== seamCol) {
+      ringU = holeU; // 无环侧锚点（ring=-1，t=1）：直接用洞 u
+    }
+    return [ringU + (holeU - ringU) * t, childVStart + (holeV - childVStart) * t];
   };
   const mesh = unfoldHairMesh(childGeometry, {
     kind: "child",
@@ -510,9 +527,9 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
     bridgeUvAt
   });
   assert.ok(mesh, "child unfold should succeed");
-  // 网格顶点 R*C = 12 + 3 个桥接单副本 = 15（中线不再双副本）
-  assert.equal(mesh.positions.length / 3, R * C + 3);
-  assert.equal(mesh.uvs.length / 2, R * C + 3);
+  // 网格顶点 R*C = 12 + 4 个桥接单副本 = 16（中线不再双副本）
+  assert.equal(mesh.positions.length / 3, R * C + 4);
+  assert.equal(mesh.uvs.length / 2, R * C + 4);
   // faces：环 3+3（每带 4 quad 丢 wrap 1）+ 桥接保留 1 = 7
   assert.equal(mesh.faces.length, (R - 1) * (C - 1) + 1);
   // 环 u 按主发片尺度：row0 pos0..3 = col2,3,0,1 → u = 0, 1/10, 2/10, 3/10
@@ -520,9 +537,9 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   assert.ok(Math.abs(mesh.uvs[2] - 1 / 10) < EPS);
   assert.ok(Math.abs(mesh.uvs[4] - 2 / 10) < EPS);
   assert.ok(Math.abs(mesh.uvs[6] - 3 / 10) < EPS);
-  // 子 u 范围 = 子周长/主周长 = 0.4：所有 u < 0.4
-  for (let i = 0; i < mesh.uvs.length; i += 2) {
-    assert.ok(mesh.uvs[i] >= 0 && mesh.uvs[i] < 0.4 + 1e-9, `child u in [0, 0.4): ${mesh.uvs[i]}`);
+  // 子 u 范围 = 子周长/主周长 = 0.4：扫掠环顶点 u < 0.4（桥接顶点为环↔洞插值，可到 parent 尺度）
+  for (let i = 0; i < R * C; i += 1) {
+    assert.ok(mesh.uvs[i * 2] >= 0 && mesh.uvs[i * 2] < 0.4 + 1e-9, `child ring u in [0, 0.4): ${mesh.uvs[i * 2]}`);
   }
   // 环 v = childVStart - row/(R-1)*childVLength
   assert.ok(Math.abs(mesh.uvs[1] - childVStart) < EPS);
@@ -537,6 +554,9 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   // b2（ring1 → u_ring=3/10，hole=(1,2) u=3/10 v=0）：u=0.3、v=childVStart*0.5
   assert.ok(Math.abs(mesh.uvs[14 * 2] - 0.3) < EPS);
   assert.ok(Math.abs(mesh.uvs[14 * 2 + 1] - childVStart * 0.5) < EPS);
+  // b3（ring=-1 纯洞侧，hole=(0,3) u=0.6 v=1，t=1）：u=洞 u、v=1（不退回原 uv 0.5,0）
+  assert.ok(Math.abs(mesh.uvs[15 * 2] - 0.6) < EPS);
+  assert.ok(Math.abs(mesh.uvs[15 * 2 + 1] - 1) < EPS);
   // 桥接 wrap quad 丢弃：保留 face 不含 b0/b2 同现（丢弃 face 原为 [9,10,12,14]）
   for (const face of mesh.faces) {
     assert.ok(!(face.includes(12) && face.includes(14)), "bridge wrap quad dropped");
@@ -554,7 +574,7 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   assert.equal(mesh.leafWeights, null); // 源无 leafWeights
   // faces 索引有效
   for (const face of mesh.faces) {
-    for (const index of face) assert.ok(index >= 0 && index < 15, `child face index ${index}`);
+    for (const index of face) assert.ok(index >= 0 && index < 16, `child face index ${index}`);
   }
 }
 

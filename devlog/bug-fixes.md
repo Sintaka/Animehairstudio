@@ -53,3 +53,8 @@
    - 问题：点击 Strand Profile 区铅笔按钮（Edit strand profile）不弹出浮动面板 `#sweepProfileEditor`。
    - 根因：`modules/geometry/branch-sweep.js` 在 0.2.57「3d-3d-b」重构中从 app.js 抽取**不完整**——22 个 DOM/共享/THREE 变量（`taperCurveEditor`/`sweepProfileEditor`/`strandGroupDefaults`/`shapePresets` 等）既未在模块声明、未 import、也未注入 deps，ES module 严格模式下 `openSweepProfileEditor` 第一处 `if (taperCurveEditor.open)` 即抛 ReferenceError。
    - 修复：补齐 import（curve-math 的 `sampleTaperCurve`/`twistCurveHandleDistancePerDegree` + io/shape-presets 的 `cloneShapePresetValue`；`shapePresets` 改直接 import 避开其 L8196 晚于 branchSweep L7855 的 TDZ）+ 22 个 deps 注入 + 修正 app.js 3 处 `branchSweep.branchSweep.activeSweepProfileTarget()` 双重笔误（同一复制粘贴 bug）。
+
+4. **桥接 UV 挤点回归（0.2.74 修复，0.2.73 引入）**
+   - 问题：0.2.73 单边切缝重构后，子发片桥接 UV「回到最初的 uv 模样」——大量桥接顶点挤在一个点 (0.5, 0)。
+   - 根因：`bridgeUvAt` 对无环侧锚点的桥接顶点（`sideHoleVertex`，锚点 `ring=-1` 的纯洞侧顶点，t=1）执行 `uvTable.colU.get(-1)` → undefined → `!Number.isFinite(ringU)` → return null → passthrough 退回原 uv 属性（pushBoundary 的统一原值 (0.5, 0)）；split 父发片洞边界上的管 seam 列顶点（col=-1）查 parent 弧长表同样为 null。
+   - 修复：ring 无效（-1 / 不在表内）时 `ringU = 洞 u`（t=1 时即洞侧 UV 本身）；洞侧查询失败时兜底 u=0、v 按 parent 行号（不再退回 (0.5,0)）；tests 增补 ring=-1 用例（b3 断言 u=洞 u、v=1）。

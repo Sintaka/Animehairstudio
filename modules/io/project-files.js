@@ -179,12 +179,32 @@ export function createProjectSaveApi(deps) {
             options.bridgeUvAt = (vertexIndex) => {
               const anchor = anchors[vertexIndex];
               if (!anchor || !parentRows || !parentCols) return null;
-              const holeUv = anchor.hole >= 0 ? gridUvAt(parentTable, parentRows, parentCols, anchor.hole) : null;
-              if (!holeUv) return null;
               const t = Math.min(1, Math.max(0, Number(anchor.t ?? 1)));
-              const ringU = anchor.ring === seamCol ? 0 : uvTable.colU.get(anchor.ring);
-              if (!Number.isFinite(ringU)) return null;
-              return [ringU + (holeUv[0] - ringU) * t, childVStart + (holeUv[1] - childVStart) * t];
+              // 洞侧 u/v：parent 弧长表；查不到（如 split 父发片洞边界上的管 seam 列
+              // col=-1）→ u=0、v 按 parent 行号兜底，避免退回原 uv (0.5,0) 挤成一点。
+              let holeU = 0;
+              let holeV = childVStart;
+              if (anchor.hole >= 0) {
+                const holeUv = gridUvAt(parentTable, parentRows, parentCols, anchor.hole);
+                if (holeUv) {
+                  holeU = holeUv[0];
+                  holeV = holeUv[1];
+                } else {
+                  const parentRow = Number(parentRows[anchor.hole]);
+                  if (Number.isFinite(parentRow) && parentRow >= 0) {
+                    holeV = parentTable.rows < 2 ? 0.5 : 1 - parentRow / (parentTable.rows - 1);
+                  }
+                }
+              }
+              // 环侧 u：中线单副本 u=0；有效环列用子发片弧长表；无环侧锚点
+              // （sideHoleVertex ring=-1 等纯洞侧顶点，t=1）直接用洞 u。
+              let ringU = 0;
+              if (anchor.ring >= 0 && anchor.ring !== seamCol && uvTable.colU.has(anchor.ring)) {
+                ringU = uvTable.colU.get(anchor.ring);
+              } else if (anchor.ring !== seamCol) {
+                ringU = holeU;
+              }
+              return [ringU + (holeU - ringU) * t, childVStart + (holeV - childVStart) * t];
             };
           }
         }
