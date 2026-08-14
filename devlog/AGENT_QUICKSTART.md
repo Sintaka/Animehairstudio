@@ -57,6 +57,14 @@
 - 0.2.67：急弯过渡扩散——`sweepCurvatureResponse` 新增 `falloff`（默认 3），收窄系数沿脊柱传播（`#sweepOverlapPanel` 第 4 个滑块 Sweep Overlap Falloff 0–8），消除被处理边附近未收缩环的突兀/缺口。
 - 0.2.68：`smoothSweepFrames` 切线后处理平滑（按曲率热度，`#sweepOverlapPanel` 第 5 个滑块 Sweep Tangent Smooth，默认 0.3）；5 个平滑参数（Strength/Threshold/EdgeSmooth/Falloff/TangentSmooth）已接入镜像系统（createMirrorPartner + syncMirrorPartnerFromLock + 滑块 syncActiveMirror），左右对称对象自动同步。
 
+### 2.7 导出拆 UV（0.2.69–0.2.79，**保留代码**）
+- `modules/io/uv-unfold.js`：导出时按 `geometry.userData.gridRowIndices/gridColIndices` 生成矩形 UV 的纯函数核心——`gridDimensions` / `gridUvTable`（弧长表：row-0 环向边宽累计 u + referenceCircumference/uOffset·uScale 两种归一 + seamEndU）/ `gridUvAt` / `childUTopologyScale`（子发片 U 拓扑对齐缩放：环顶面弧长↔洞顶 u 跨度）/ `unfoldHairMesh`（closed/split/open/compound/child 五类展开，seam 双副本不丢面、passthrough 多副本、leafWeights 复制）。
+- `modules/io/project-files.js`：`kindForLock` / `childSeamCol` / `buildUnfoldedMeshes`（两遍：父表 + 展开；child 传 seamCol/childVStart/childVLength/childVSweepStart/uOffset/uScale/bridgeUvAt/passthroughCopyCount/passthroughSide）；buildHairObj/buildHairUsda 走展开数据。
+- `modules/geometry/branch-bridge.js`：桥接 UV 锚点（每桥接顶点 `{ring,hole,t,band}`，8 处 pushBoundary）+ `userData.bridgeUvAnchors/bridgeSeamCol/bridgeBoundaryParentIndices`。
+- `modules/geometry/strand-geometry.js`：各几何类型 gridRow/gridCol 写入（split 用**管局部列+全局偏移**、无 −1；弃 colToSection.findIndex）。
+- `modules/geometry/panel-tip-strand.js`：panel 模拟 row/col（gridRowsArr/gridColsArr 经 weldPanelGeometryData 重映射）。
+- 规则/理念/踩坑全集：`devlog/uv-unfold.md`（**必读**，9 条踩坑含「wrap quad 丢弃→poly 缺失」「split x=0 共享点→父表 null」「bottom 自然展开与 side fill 冲突→意外 seam」）。
+
 ### 2.4 日常本地适配
 - ZH 语言、Houdini 导航、自定义雕刻笔刷（Slide/Scale·Cut-Extend/Push/Orient + Smooth twist）、S+左键调笔刷大小、Quick Save/Save as/Quick Export（File System Access API 直写盘）、浮动面板跟随、材质删除、Ctrl+Z 修复、`start-dev-server.cmd`。
 - `deprecated`：拖放统一分发、雕刻笔刷选择遮罩（main 0.1.4 已内置，本地实现已删除）。
@@ -84,6 +92,7 @@
 ## 5. 常见坑（吸取过的教训）
 
 - 桥接 masks 与三角形绕序必须**同步交换**，否则线框画 quad 对角线（0.2.54 / 0.2.56 两次踩坑）。
+- 拆 UV 的坑（详见 uv-unfold.md §7）：闭合环切开**必须用顶点复制（seam 双副本）而非丢 wrap quad**（丢面=USDA poly 缺失）；split 网格列不要用 colToSection.findIndex（x=0 共享点会产出多余 −1 → 父表整体 null → 桥接 UV 接线全关）；桥接底部不要用「自然展开」与 side fill 混用洞侧 UV（洞底角冲突 → 意外 seam）；子发片 U 缩放用**拓扑对齐**（环顶面弧长↔洞顶 u 跨度）而非刚性倍率。
 - 不要直接把 main 的多发丝预设（马尾/复合发丝）当子发片：索引与段数对不上会出错误拓扑；子发片目前只走单发丝默认预设。
 - 根骨骼 gizmo 热更新只作**起始基准**，用户手调 diff 必须保留（offset 记忆），否则 W 重进 / H 开关会跳变。
 - 删除子发片要**重算挖洞**（程序化流程 + 文件保存数据都要处理）；直接桥接要跟随 region 中心（rootRow=round((rowMin+rowMax)/2)）。

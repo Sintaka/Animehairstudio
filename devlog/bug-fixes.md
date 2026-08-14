@@ -63,3 +63,9 @@
    - 问题：真实几何（Side Left 3 的 split 父发片 Side Left 2）下桥接仍「没有切 UV、没有对齐洞」——比 #4 更根本：整个桥接 UV 接线（bridgeUvAt）都被关闭。
    - 根因：0.2.70 给 split 写 `gridColIndices` 用 `colToSection.findIndex` 按坐标匹配 fused 列；DEFAULT_SWEEP_PROFILE 有 x=0 点且 splitX=0，x=0 点被 clip 进**两管**但 colToSection 只归管 0 → 管 1 每行 2 个 `findIndex=-1`（x=0 副本 + seam 点，实测复现：tube1 -1 count=2）→ `gridUvTable`/`unfoldHairMesh` 的 split 分支「每行每管恰好 1 个 -1」校验失败 → 返回 null → split 父发片弧长表缺失 → child 的 `bridgeUvAt` 未设置 → 桥接全退回原 uv (0.5,0)，split 父发片自身也无展开 UV。0.2.71/0.2.72 用等距 parametricGridUv 查洞（对单点 -1 容错）所以症状只在 0.2.73 起显现。
    - 修复：split 网格列改为**管局部列 + 全局偏移**（管 g local col l → colBase+l，local col 0 = clip seam 点即管首列，无 -1）；uv-unfold 的 split 分支删除 -1/seam 扫描与 colToSection 依赖（直接读 splitSections），wrap quad 丢弃按「管尾↔管首」col 对判定；AHS_gridCol 语义随之为管局部偏移列；tests 重写（偏移列无 -1、周长、wrap 丢弃、弧长比例）。
+
+6. **桥接底部两道意外 UV seam → 一块 poly 被切出去（0.2.79 修复，0.2.76 引入）**
+   - 问题：桥接底部出现两道「不属于 uv seam 但也是 uv seam」的边，一块 poly 被单独切出去。
+   - 根因：bottom band 的「自然展开」（0.2.76：洞侧 u=环侧 u、v=childVStart−t×span）与 side fill 的「对齐洞」（洞侧 u/v=parent uv）在**洞底角共享顶点**处 UV 不连续 → 洞底两侧形成意外 seam。
+   - 修复：bottom band 改回与 top/side 相同的插值（u/v 向洞侧 lerp）——洞底整圈（bottom band + side fill）洞侧统一 = parent uv，UV 连续；`bottomBandSpan` 仍保留用于 childVSweepStart（扫掠下移）。
+   - 完整踩坑清单（9 条，含 wrap quad 丢弃→poly 缺失、横缝切乱取消、刚性倍率→拓扑对齐等）见 devlog/uv-unfold.md §7。

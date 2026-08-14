@@ -18,8 +18,16 @@
 | 刘海 / 面板线框三角面显示修复 | `createPanelStrandGeometry` / `addQuad` / `triangleEdgeMasks` / `authoredEdgeMasks` | 0.2.54–0.2.56 | [annotations-display-fixes.md](annotations-display-fixes.md) |
 | 日常适配（保存/导出、语言、导航、笔刷、拖放、材质、快捷键等） | `saveHairProjectQuickly` / `exportHairProjectQuickly` / `localization.js` / Navigation style / `sculpt-brush.js` / `server.js` | 顶部条目、v0.1.4 迁移、0.2.48 | [annotations-adapt.md](annotations-adapt.md) |
 | Panel Split 骨骼化 / 尖端子骨骼 / 统一骨骼模型 / 子发片扫掠 | `lock.splitBones` / `bonesFor` / `sweepStrandGeometry` / `createPanelStrandGeometry` / `createBranchChildGeometry` | 0.2.59 已实施（P1/P2 与 Phase A/B/C 落地；尖端子骨骼 + 修复 + 本轮 5 项见右） | [in-progress/panel-split-tip-bones.md](in-progress/panel-split-tip-bones.md)（**权威当前状态** §8.5–§8.9）+ [in-progress/bone-system-roadmap.md](in-progress/bone-system-roadmap.md) + [in-progress/split-bone-refactor-plan.md](in-progress/split-bone-refactor-plan.md) + [in-progress/unified-bone-model.md](in-progress/unified-bone-model.md) + [in-progress/child-sweep-unification.md](in-progress/child-sweep-unification.md) |
+| **导出拆 UV（0.2.69–0.2.79）** | `unfoldHairMesh` / `gridUvTable` / `gridUvAt` / `childUTopologyScale` / `buildUnfoldedMeshes` / `bridgeUvAnchors` / `bridgeSeamCol` / `gridRowIndices` | 0.2.69–0.2.79（规则/理念/9 条踩坑见右） | [uv-unfold.md](uv-unfold.md) |
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
+
+## 最近更新（0.2.79）
+
+> 导出拆 UV 收尾（分支 0.2.69-bugfix，0.2.69–0.2.79，规则/理念/踩坑全集见 [uv-unfold.md](uv-unfold.md)）：
+> - 新增 `modules/io/uv-unfold.js`（纯函数展开核心）+ `modules/io/project-files.js` 接线（`buildUnfoldedMeshes` 两遍：父弧长表 + 展开）+ `modules/geometry/branch-bridge.js` 桥接 UV 锚点（`{ring,hole,t,band}`）+ 各几何类型 `gridRowIndices/gridColIndices` 写入 + `tests/uv-unfold.test.mjs` 回归。
+> - 最终规则：普通发丝第一列切开、弧长 U、seam 双副本不丢面；split 管局部列+全局偏移、两管 U 轴排列不重叠；子发片切缝在背面、U 拓扑对齐缩放（环顶面弧长↔洞顶 u 跨度）、V 洞底对齐+扫掠下移、桥接 top/side/bottom 统一向洞插值 + 中线竖缝双副本。
+> - 9 条踩坑（wrap quad 丢弃→poly 缺失、split x=0 共享点→父表 null、横缝切乱取消、bottom 自然展开冲突→意外 seam、刚性倍率→拓扑对齐等）记录在 uv-unfold.md §7。
 
 ## 最近更新（0.2.68）
 
