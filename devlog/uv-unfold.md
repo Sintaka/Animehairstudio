@@ -111,7 +111,8 @@
 - `findMaxKAlpaca`：128 稠密采样 + 24 细化二分，找「整包 bbox 装进 [0,1]²」的最大**等比**缩放 k（= scale_to_fit）。
 - `fit-to-tile`：打包后整包相似变换（等比缩放 s=min(1/spanU,1/spanV) + 平移到 0.5 居中），较长轴填满 [0,1]、较短轴按原宽高比留边。
 - **参数/常量**：`PACK_GAP=10/4096`（岛间间距，10px@4096）、`PACK_FILL=0.8`（填充率上限）、`resolution=256`（栅格分辨率：越大越紧越慢，测试耗时随 R² 增长）、`sort`（默认 maxSide；可选 area/height/width）。
-- **特性**：panel 与普通发丝混排；整包 bbox 近似方形（U/V 双侧≈填满，方形度 0.99）；fillUsed 0.76~0.81；等比拉伸不 normalize；禁止旋转；无重叠无兜底；确定性的（无随机 seed）。
+- **特性**：panel 与普通发丝混排；整包 bbox 近似方形（U/V 双侧≈填满，方形度 0.99）；fillUsed 0.76~0.81；等比拉伸不 normalize；禁止旋转；无重叠无兜底；确定性（同 seed 恒同序列）。
+- **多起点 seed 择优（0.2.92）**：`packFamilies` 用 `SEEDS=8` 个确定性 LCG 打乱序（seed 0 = maxSide 基线，其余 Fisher-Yates 打乱）各跑一遍 `findMaxKAlpaca`，取 k 最大者（并列取基线），fillUsed 实测 +7.3%（0.677→0.727）。
 
 ### 11.2 参考文献
 

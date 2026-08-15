@@ -10,6 +10,32 @@
 export const PACK_GAP = 10 / 4096; // 10px @ 4096 分辨率 → UV 间隙
 export const PACK_FILL = 0.8;     // 目标填充率（UDIM tile 面积填充比例）
 
+// ---- 多起点 seed 择优辅助（确定性 PRNG + 打乱）----
+// LCG（与 tests/uv-pack.test.mjs 压力回归同一公式）：seed = (seed*1103515245+12345) % 2^31，
+// 返回 [0,1)。state 从传入 seed 起步 → 同 seed 恒同序列（确定性）。
+function makeLCG(seed) {
+  let state = seed;
+  return () => {
+    state = (state * 1103515245 + 12345) % 2147483648;
+    return state / 2147483648;
+  };
+}
+
+// Fisher-Yates 原地打乱（均匀随机排列；LCG 驱动，确定性）
+function shuffle(array, rand) {
+  for (let i = array.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rand() * (i + 1));
+    const tmp = array[i];
+    array[i] = array[j];
+    array[j] = tmp;
+  }
+  return array;
+}
+
+// SEEDS = 尝试的随机放置序数量（可调）：seed 0 = maxSide 基线（不 shuffle），
+// seed 1..SEEDS-1 = LCG(seed) 对「maxSide 降序后的索引」Fisher-Yates 打乱后的序。
+const SEEDS = 8;
+
 // 【已注释：alpaca 占位栅格打包（方案 2 阶段实现，现由 alpaca turbo 取代；可切回）】
 // ALPACA_RESOLUTION = 128 占位栅格分辨率（格/单位 UV）
 // export const ALPACA_RESOLUTION = 128;
@@ -466,7 +492,7 @@ export function alpacaPackTurbo(items, { gap = PACK_GAP, sort = "maxSide" } = {}
 // 岛贴「顶边+右边」铺、阶段 1 填掉 L 形缺口 → 方形 bbox + 高填充。
 // items: [{ id, island, width, height }]（width/height 为已乘 k 的 bbox 尺寸）；
 // 返回 { placements: [{id, island, x, y}], extentU: scanLine/R, extentV: scanLine/R, overflow }。
-export function alpacaPackOccupancy(items, { gap = PACK_GAP, resolution = 256, sort = "maxSide" } = {}) {
+export function alpacaPackOccupancy(items, { gap = PACK_GAP, resolution = 256, sort = "maxSide", order } = {}) {
   const cell = 1 / resolution;
   const grid = new Uint8Array(resolution * resolution); // 0=空 1=占
   const iw = resolution + 1;
@@ -499,21 +525,24 @@ export function alpacaPackOccupancy(items, { gap = PACK_GAP, resolution = 256, s
     cw: Math.max(1, Math.ceil((item.width + gap) / cell)),
     ch: Math.max(1, Math.ceil((item.height + gap) / cell))
   }));
-  // 放置顺序：按排序键降序稳定排序（并列保持输入顺序；V8 sort 稳定）
+  // 放置顺序：若显式传入 order（int 数组，items 的放置顺序索引）则直接使用（跳过内部 sort，
+  // 用于多起点 seed 择优）；否则按排序键降序稳定排序（并列保持输入顺序；V8 sort 稳定）
   const sortKey = (node) => {
     if (sort === "area") return node.width * node.height;
     if (sort === "height") return node.height;
     if (sort === "width") return node.width;
     return Math.max(node.width, node.height); // "maxSide"
   };
-  const order = nodes
-    .map((node, index) => ({ index, key: sortKey(node) }))
-    .sort((a, b) => b.key - a.key)
-    .map((entry) => entry.index);
+  const finalOrder = order !== undefined && order !== null
+    ? order
+    : nodes
+      .map((node, index) => ({ index, key: sortKey(node) }))
+      .sort((a, b) => b.key - a.key)
+      .map((entry) => entry.index);
 
   let scanLine = 0; // 当前方形边界（格数）；bbox = scanLine×scanLine
   let overflow = false;
-  for (const index of order) {
+  for (const index of finalOrder) {
     const node = nodes[index];
     const minSL = Math.max(node.cw, node.ch);
     if (minSL > resolution) {
@@ -579,7 +608,7 @@ export function alpacaPackOccupancy(items, { gap = PACK_GAP, resolution = 256, s
 // 自适应找最大无兜底 k（alpaca occupancy 版）：框架照旧（128 稠密采样 + 24 细化二分 +
 // lo*0.999999），fitsAt(k) 用 alpacaPackOccupancy 判 overflow === false（scan_line ≤ R，
 // 即 bbox 装进 [0,1]²）。
-export function findMaxKAlpaca(boxUnit, totalArea, fill, gap, resolution = 256, sort = "maxSide") {
+export function findMaxKAlpaca(boxUnit, totalArea, fill, gap, resolution = 256, sort = "maxSide", order) {
   if (!(fill > 0) || !(totalArea > 0)) return -1;
   const kMax = Math.sqrt(fill / totalArea);
   const fitsAt = (k) => {
@@ -590,7 +619,7 @@ export function findMaxKAlpaca(boxUnit, totalArea, fill, gap, resolution = 256, 
         width: box.width * k,
         height: box.height * k
       })),
-      { gap, resolution, sort }
+      { gap, resolution, sort, order }
     );
     return !r.overflow; // bbox 装进 [0,1]² 即放得下
   };
@@ -667,10 +696,11 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
   // 4) 单位尺度（k=1）UV 包围盒
   const boxUnit = valid.map(({ family, island }) => ({ family, island, ...uvBounds(family.meshes) }));
 
-  // 【方案 2 实验：alpaca occupancy（占位栅格 L 形扫描）】已屏蔽现有 MaxRects 逻辑（Smart
-  // 择优 + maxRectsPack + 验证重试 + 按 placements 平移，见下方 /* ... */ 注释块），改用
-  // alpaca occupancy（思路复刻 Blender 的 find_best_fit_for_island：occupancy + L-shape +
-  // scan_line 增长，逐格扫描填掉 L 形缺口，方形 + 高填充）；fit-to-tile 居中保留。
+  // 【方案 2 实验：alpaca occupancy（占位栅格 L 形扫描）+ 多起点 seed 择优】已屏蔽现有
+  // MaxRects 逻辑（Smart 择优 + maxRectsPack + 验证重试 + 按 placements 平移，见下方
+  // /* ... */ 注释块），改用 alpaca occupancy（思路复刻 Blender 的 find_best_fit_for_island：
+  // occupancy + L-shape + scan_line 增长，逐格扫描填掉 L 形缺口，方形 + 高填充），并用
+  // SEEDS 个确定性随机序择优取最优布局；fit-to-tile 居中保留。
   /*
   // 5) Smart 择优：多套「启发式 × 排序」各自找最大无兜底 k，取 fillUsed 最高者（右上角空档
   //    常源于单一排序/启发式的选位偏好——maxSide 把长条铺到底边、area 填平缺口、height/width
@@ -746,11 +776,32 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
   }
   */
 
-  // 1) alpaca occupancy 单套择优：占位栅格 L 形扫描天然维持方形 bbox 且填掉 L 形缺口
-  // （方形 + 高填充兼得），直接找最大无兜底 k（overflow === false 即 [0,1]² 放得下）；
-  // -1 分支仅防御（理论不可达）
-  let kFinal = findMaxKAlpaca(boxUnit, totalArea, fill, gap, 256, "maxSide");
-  if (!(kFinal > 0)) kFinal = findMaxKAlpaca(boxUnit, totalArea, fill, gap, 256, "maxSide");
+  // 1) 多起点 seed 择优：alpaca occupancy（占位栅格 L 形扫描）天然维持方形 bbox 且填掉
+  // L 形缺口（方形 + 高填充兼得），但单次 maxSide 固定放置序是确定性的、容易留阶梯形空档
+  // ——用 SEEDS 个确定性随机序各跑一遍 findMaxKAlpaca，取 k 最大者（并列取更早，seed 0
+  // 优先）：
+  //   seed 0 = 默认 maxSide 排序（不 shuffle，作基线）；
+  //   seed 1..SEEDS-1 = LCG(seed) 对「maxSide 降序后的索引」Fisher-Yates 打乱
+  //   （基于 maxSide 排序索引而非原始输入序，避免大岛最后放导致明显退化）。
+  // 同一 LCG 公式/同 seed → 每次运行结果完全一致（确定性）；SEEDS=1 时只有 seed 0 →
+  // 与旧单套行为逐位一致（无回归）。-1 分支仅防御（理论不可达）。
+  const maxSideOrder = boxUnit
+    .map((box, index) => ({ index, key: Math.max(box.width, box.height) }))
+    .sort((a, b) => b.key - a.key)
+    .map((entry) => entry.index);
+  const orders = [maxSideOrder];
+  for (let s = 1; s < SEEDS; s += 1) {
+    orders.push(shuffle(maxSideOrder.slice(), makeLCG(s)));
+  }
+  const best = { k: -1, order: null };
+  for (let s = 0; s < SEEDS; s += 1) {
+    const k = findMaxKAlpaca(boxUnit, totalArea, fill, gap, 256, "maxSide", orders[s]);
+    if (k > best.k) { // 并列取更早（seed 0 基线优先）
+      best.k = k;
+      best.order = orders[s];
+    }
+  }
+  let kFinal = best.k > 0 ? best.k : findMaxKAlpaca(boxUnit, totalArea, fill, gap, 256, "maxSide");
 
   // 2) 最终缩放 + alpacaPackOccupancy 验证重试：findMaxK 采样粒度可能让 bbox 略超 1 →
   // 缩小重试
@@ -772,10 +823,10 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
     applied = kFinal;
     // 最终包围盒（uv 已缩放，重算 uvBounds）
     boxFinal = valid.map(({ family, island }) => ({ family, island, ...uvBounds(family.meshes) }));
-    // alpaca occupancy L 形打包
+    // alpaca occupancy L 形打包（用择优的 best.order；-1 防御分支下 order=null → 内部 maxSide 排序）
     const packed2 = alpacaPackOccupancy(
       boxFinal.map((box) => ({ id: box.family.id, island: box.island, width: box.width, height: box.height })),
-      { gap, resolution: 256 }
+      { gap, resolution: 256, order: best.order || undefined }
     );
     if (!packed2.overflow) {
       placements = packed2.placements;

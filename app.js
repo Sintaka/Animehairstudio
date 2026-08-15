@@ -30,7 +30,7 @@ import { createMiscStore } from "./modules/core/misc-store.js?v=20260814-12";
 import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260814-12";
 import { createScalpStore } from "./modules/scalp/scalp-store.js?v=20260809-10";
 import { createProjectStore } from "./modules/io/project-store.js?v=20260809-9";
-import { createHairStore } from "./modules/core/hair-store.js?v=20260813-3";
+import { createHairStore } from "./modules/core/hair-store.js?v=20260816-7";
 import { createGuideStore } from "./modules/core/guide-store.js?v=20260809-8";
 import { createCameraStore } from "./modules/core/camera-store.js?v=20260809-8";
 import { createTransformStore } from "./modules/core/transform-store.js?v=20260809-7";
@@ -42,7 +42,7 @@ import { createReferenceStore } from "./modules/edit/reference-store.js?v=202608
 import { createDrawStore } from "./modules/edit/draw-store.js?v=20260814-12";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260814-12";
 import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
-import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260815-4";
+import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260816-7";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
@@ -2391,6 +2391,7 @@ const uvInspectorCanvas = document.querySelector("#uvInspectorCanvas");
 const uvInspectorStatus = document.querySelector("#uvInspectorStatus");
 const uvInspectorDragHandle = document.querySelector("#uvInspectorDragHandle");
 const closeUvInspectorButton = document.querySelector("#closeUvInspector");
+const refreshUvCheckerButton = document.querySelector("#refreshUvChecker");
 const viewportNavigationTips = document.querySelector("#viewportNavigationTips");
 const navigationStyleTipRows = [...document.querySelectorAll("[data-navigation-style-tip]")];
 const navigationStyleShortcutRows = [...document.querySelectorAll("[data-navigation-style-shortcut]")];
@@ -9919,6 +9920,7 @@ function restoreState(state, {
 }
 
 function disposeAllEditableObjects() {
+  restoreUvCheckerPreview();
   referenceHeadApi.clearReferenceImages();
   polyToolsApi.clearPolyFillPreview();
   setHoveredStrandWidthEdge(null);
@@ -11940,6 +11942,7 @@ function syncLockFromCurve(lock) {
 }
 
 function rebuildLockGeometry(lock, options = {}) {
+  restoreUvCheckerPreview(); // 几何重建前先恢复导出 UV 预览几何，构建走原几何
   const previousGeometry = lock.mesh.geometry;
   lock.mesh.geometry = strandGeometryApi.createHairGeometry(lock);
   branchBridge.applyBranchRootRegionCarving(lock, lock.mesh.geometry);
@@ -12228,7 +12231,7 @@ function renderUvInspector(timestamp = performance.now(), force = false) {
     });
   });
   const faceCount = records.reduce((sum, record) => sum + record.faces.length, 0);
-  uvInspectorStatus.textContent = `${records.length} meshes \u2022 ${faceCount} UV faces \u2022 U ${bounds.minU.toFixed(2)}\u2013${bounds.maxU.toFixed(2)} \u2022 V ${bounds.minV.toFixed(2)}\u2013${bounds.maxV.toFixed(2)}`;
+  uvInspectorStatus.textContent = `${records.length} meshes \u2022 ${faceCount} UV faces \u2022 U ${bounds.minU.toFixed(2)}\u2013${bounds.maxU.toFixed(2)} \u2022 V ${bounds.minV.toFixed(2)}\u2013${bounds.maxV.toFixed(2)}${hairState.state.uvCheckerPreview ? " \u2022 export layout" : ""}`;
 }
 
 function setUvCheckerEnabled(enabled) {
@@ -12240,12 +12243,79 @@ function setUvCheckerEnabled(enabled) {
     if (!uvInspectorWindow.open) uvInspectorWindow.show();
     renderUvInspector(performance.now(), true);
   } else {
+    restoreUvCheckerPreview();
     locks.forEach(removeUvCheckerFromLock);
     if (uvInspectorWindow.open) uvInspectorWindow.close();
   }
   toggleUvCheckerButton.classList.toggle("active", hairState.state.uvCheckerEnabled);
   toggleUvCheckerButton.setAttribute("aria-pressed", String(hairState.state.uvCheckerEnabled));
   uvCheckerMenuState.textContent = hairState.state.uvCheckerEnabled ? "On" : "Off";
+}
+
+// 导出 UV 预览：按刷新按钮时走完整导出展开流程（buildUnfoldedMeshes，与 exportHairObj/
+// exportHairUsda 同一条管线，UV 已打包进 [0,1]²），把每个 lock 视口 mesh 的几何临时替换成
+// 平铺预览几何（position + 打包 uv + quad→三角），让棋盘格按导出布局显示；2D UV Inspector
+// 因读的是 mesh.geometry 的 uv，自动画出打包后的拓扑。关闭 checker / 几何重建 / 删除时恢复
+// 原几何（lock.uvCheckerOriginalGeometry），构建流程不受预览影响。
+function buildUvCheckerPreviewGeometry(unfoldedMesh) {
+  const positions = unfoldedMesh?.positions;
+  const uvs = unfoldedMesh?.uvs;
+  const faces = unfoldedMesh?.faces;
+  if (!positions?.length || !uvs?.length || !Array.isArray(faces)) return null;
+  const triangles = [];
+  faces.forEach((face) => {
+    if (face.length === 4) triangles.push(face[0], face[1], face[2], face[0], face[2], face[3]);
+    else if (face.length === 3) triangles.push(face[0], face[1], face[2]);
+  });
+  if (!triangles.length) return null;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(triangles);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function restoreUvCheckerPreview() {
+  if (!hairState.state.uvCheckerPreview) return;
+  locks.forEach((lock) => {
+    const original = lock.uvCheckerOriginalGeometry;
+    if (!original || !lock?.mesh) return;
+    const preview = lock.mesh.geometry;
+    if (preview !== original) {
+      lock.mesh.geometry = original;
+      if (preview) preview.dispose();
+    }
+    lock.uvCheckerOriginalGeometry = null;
+  });
+  hairState.state.uvCheckerPreview = false;
+  invalidateUvInspector();
+}
+
+function applyUvCheckerPreview(unfolded) {
+  if (!unfolded || !unfolded.size) return;
+  locks.forEach((lock) => {
+    const mesh = lock?.mesh;
+    if (!mesh?.geometry) return;
+    const unfoldedMesh = unfolded.get(lock.id);
+    if (!unfoldedMesh) return;
+    const previewGeometry = buildUvCheckerPreviewGeometry(unfoldedMesh);
+    if (!previewGeometry) return;
+    lock.uvCheckerOriginalGeometry = mesh.geometry;
+    mesh.geometry = previewGeometry;
+  });
+  hairState.state.uvCheckerPreview = true;
+}
+
+function refreshUvCheckerPreview() {
+  if (!hairState.state.uvCheckerEnabled) return;
+  restoreUvCheckerPreview();
+  const unfolded = fileApi.buildUnfoldedMeshes();
+  if (!unfolded || !unfolded.size) return; // 无展开结果时静默跳过（保持原几何 + 原 UV）
+  applyUvCheckerPreview(unfolded);
+  locks.forEach(ensureUvCheckerForLock);
+  invalidateUvInspector();
+  renderUvInspector(performance.now(), true);
 }
 
 function strandViewportBaseColor(lock) {
@@ -17763,6 +17833,7 @@ bodyMeshDisplayVisibilityInput.addEventListener("change", () => {
 });
 groupColorToggle.addEventListener("click", () => setGroupColorView(!hairState.state.showGroupColors));
 toggleUvCheckerButton.addEventListener("click", () => setUvCheckerEnabled(!hairState.state.uvCheckerEnabled));
+refreshUvCheckerButton.addEventListener("click", refreshUvCheckerPreview);
 closeUvInspectorButton.addEventListener("click", () => setUvCheckerEnabled(false));
 uvInspectorDragHandle.addEventListener("pointerdown", (event) => {
   if (event.target.closest("button")) return;
@@ -18256,6 +18327,7 @@ function deleteLocks(targetLocks) {
     if (item.branchParentId) branchParentsToRebuild.add(item.branchParentId);
   });
   targets.forEach((item) => {
+    restoreUvCheckerPreview(); // 删除前先换回原几何，避免泄漏预览/原几何
     curveSurfaceOpen.delete(item.id);
     hairGroup.remove(item.mesh);
     curveGroup.remove(item.curveObjects.group);

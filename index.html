@@ -2174,7 +2174,10 @@
           <h2 id="uvInspectorTitle">UV Inspector</h2>
           <p>Mesh topology in UV space</p>
         </div>
-        <button id="closeUvInspector" type="button" title="Close UV inspector" aria-label="Close UV inspector">X</button>
+        <div class="uv-inspector-head-actions">
+          <button id="refreshUvChecker" type="button" title="Recalculate export UV layout (same pipeline as export)" aria-label="Refresh export UV layout">&#8635;</button>
+          <button id="closeUvInspector" type="button" title="Close UV inspector" aria-label="Close UV inspector">X</button>
+        </div>
       </header>
       <div class="uv-inspector-canvas-shell">
         <canvas id="uvInspectorCanvas" width="640" height="640" aria-label="Hair mesh UV layout"></canvas>
@@ -2326,6 +2329,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260816-6"></script>
+    <script type="module" src="./app.js?v=20260816-7"></script>
   </body>
 </html>

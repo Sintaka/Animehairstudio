@@ -1,4 +1,4 @@
-﻿// hair-store.js — hair strand/mesh viewport state (refactor 3c-7).
+// hair-store.js — hair strand/mesh viewport state (refactor 3c-7).
 import { createSceneStore } from "./scene-store.js?v=20260809-1";
 import { DEFAULT_HAIR_MATERIAL_ID } from "./app-config.js";
 export function createHairStore() {
@@ -24,6 +24,7 @@ export function createHairStore() {
     uvInspectorDirty: true,
     strandRadialTargetId: null,
     uvCheckerTexture: null,
+    uvCheckerPreview: false,
     defaultHairShader: "standard-anisotropic",
     twistCurveAllStrandsPreviewEnabled: true,
     sweepOverlapStrength: 0.7,

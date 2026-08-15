@@ -52,6 +52,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - **本地持久化功能（简体中文、Houdini 导航、Quick Save/Export 等）**：development-standards.md「持续修改功能」。
 
 ## 最近版本 / Latest
+- 导出 UV：多起点 seed 择优 + UV checker 刷新预览（0.2.92）：SEEDS=8 确定性随机序择优（fillUsed +7.3%）；UV checker 加 ⟳ 按钮，走完整导出展开流程显示打包布局（棋盘格 + 2D Inspector 同步）。详见 uv-unfold.md。
 - 导出 UV：占位栅格 L 形扫描（0.2.91）：参考 Blender xatlas + Nöll & Stricker 2011 论文，占位栅格 + 两阶段 L 形扫描，方形 + 高填充兼得（fillUsed 0.5→0.76、方形 0.91→0.99）；turbo/MaxRects 注释保留可切回。详见 uv-unfold.md。
 - 导出 UV：alpaca turbo L 形 zigzag（0.2.90）：读 Blender 源码确认真核心是「L 形」填充，改为顶边+右边两方向切换维持方形 bbox，整包 U/V 双侧均衡；MaxRects/占位栅格注释保留可切回。详见 uv-unfold.md。
 - 导出 UV：alpaca 填满 V 方向（0.2.89）：新增 column 列主序扫描 + Smart 改「按更方选」（6 套排序×扫描取 bbox 更方者），fit 后 V 从 ~0.6 填到 ~0.99；MaxRects 注释保留可切回。详见 uv-unfold.md。
