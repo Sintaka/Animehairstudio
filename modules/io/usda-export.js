@@ -132,6 +132,14 @@ function meshBlock(mesh, identifier, skelId = null) {
       "            )"
     );
   }
+  if (Number.isInteger(mesh.uvisland)) {
+    // UV 岛枚举：uniform = 每面一个值（Houdini prim 属性语义），DCC 可按 @uvisland==k 选岛
+    lines.push(
+      `            int[] primvars:uvisland = ${numberArray(faces.map(() => mesh.uvisland))} (`,
+      '                interpolation = "uniform"',
+      "            )"
+    );
+  }
   lines.push(...metadataLines(mesh, "            "), "        }");
   return lines.join("\n");
 }

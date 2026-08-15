@@ -8,9 +8,10 @@ import * as THREE from "three";
 import { leafWeightAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActionFormat } from "./file-actions.js?v=20260814-12";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260814-12";
-import { exportAnimeHairUsda } from "./usda-export.js?v=20260814-2";
+import { exportAnimeHairUsda } from "./usda-export.js?v=20260815-1";
 import { createHairProject } from "./project-schema.js?v=20260814-12";
-import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260814-11";
+import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260815-1";
+import { packFamilies } from "./uv-pack.js?v=20260815-1";
 
 export function createProjectSaveApi(deps) {
   // ---- dialog UI elements (document is ready when this runs; app.js loads at body end) ----
@@ -117,7 +118,7 @@ export function createProjectSaveApi(deps) {
     });
   }
 
-  // ---- unfolded UV meshes（导出时把扫掠网格 UV 切成归一化矩形）----
+  // ---- unfolded UV meshes（导出时把扫掠网格 UV 展开，再统一纹素密度缩放 + 打包进 UDIM 1001）----
   function kindForLock(lock) {
     if (lock.geometryType === "poly" || lock.geometryType === "braid") return null;
     if (lock.branchRootRegion) return "child";
@@ -280,7 +281,34 @@ export function createProjectSaveApi(deps) {
       const mesh = unfoldHairMesh(geometry, options);
       if (mesh) unfolded.set(lock.id, mesh);
     });
+    packUnfoldedUv(unfolded, deps.locks, uvAt);
     return unfolded;
+  }
+
+  // 导出时 UV 打包：主发片（closed/split）+ 子发片按真实 3D 尺寸统一缩放（统一纹素密度）
+  // 后 shelf-pack 进 UDIM 1001（[0,1]²）。原地修改 buildUnfoldedMeshes 产物（unfolded.uvs）。
+  function packUnfoldedUv(unfolded, locks, uvAt) {
+    const parentOf = new Map(); // child id -> parent id（branchParentId）
+    locks.forEach((lock) => {
+      if (lock.branchParentId) parentOf.set(lock.id, lock.branchParentId);
+    });
+    const families = [];
+    locks.forEach((lock) => {
+      const kind = kindForLock(lock);
+      if (kind !== "closed" && kind !== "split") return;
+      const meshes = [];
+      const mainMesh = unfolded.get(lock.id);
+      if (mainMesh) meshes.push(mainMesh);
+      locks.forEach((candidate) => {
+        if (parentOf.get(candidate.id) !== lock.id) return;
+        const childMesh = unfolded.get(candidate.id);
+        if (childMesh) meshes.push(childMesh);
+      });
+      const length = lock.points?.length >= 2 ? new THREE.CatmullRomCurve3(lock.points).getLength() : 0;
+      const circumference = uvAt.get(lock.id)?.circumference || 0;
+      families.push({ id: lock.id, meshes, length, circumference });
+    });
+    packFamilies(families); // 返回值可忽略：uvs 原地修改
   }
 
   function buildHairObj({ includeMesh = true, includeCurves = true } = {}) {
@@ -295,7 +323,7 @@ export function createProjectSaveApi(deps) {
         const geometry = lock.mesh.geometry;
         const unfolded = unfoldedMeshes.get(lock.id);
         if (unfolded) {
-          // 展开版：归一化矩形 UV（每根发丝独立 0-1 tile）。
+          // 展开版：矩形 UV（已统一纹素密度缩放 + 打包进 UDIM 1001）。
           const positions = unfolded.positions;
           const uvs = unfolded.uvs;
           for (let i = 0; i < positions.length; i += 3) {
@@ -371,7 +399,7 @@ export function createProjectSaveApi(deps) {
           const unfolded = unfoldedMeshes.get(lock.id);
           let mesh;
           if (unfolded) {
-            // 展开版：归一化矩形 UV（每根发丝独立 0-1 tile），grid primvar 照挂展开顶点。
+            // 展开版：矩形 UV（已打包进 UDIM 1001），grid primvar 照挂展开顶点。
             mesh = {
               name: lock.name,
               group: lock.group || "unassigned",
@@ -385,6 +413,7 @@ export function createProjectSaveApi(deps) {
             };
             mesh.gridRowIndices = Array.from(unfolded.gridRows);
             mesh.gridColIndices = Array.from(unfolded.gridCols);
+            if (Number.isInteger(unfolded.uvisland)) mesh.uvisland = unfolded.uvisland;
             if (includeBones && typeof deps.bonesFor === "function") {
               const bones = deps.bonesFor(lock, { locks: deps.locks })
                 .filter((bone) => !bone.name.startsWith("child."));

@@ -42,7 +42,7 @@ import { createReferenceStore } from "./modules/edit/reference-store.js?v=202608
 import { createDrawStore } from "./modules/edit/draw-store.js?v=20260814-12";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260814-12";
 import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
-import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260814-12";
+import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260815-1";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
@@ -137,7 +137,7 @@ import {
   scaleCapsuleRadialLoops
 } from "./modules/geometry/capsule-curve.js?v=20260814-12";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./modules/io/obj-export.js?v=20260814-12";
-import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260814-2";
+import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260815-1";
 import {
   fileActionFormat,
   fileNameForAction,
@@ -214,7 +214,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/core/app-config.js?v=20260814-13";
+} from "./modules/core/app-config.js?v=20260815-1";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/core/history.js?v=20260814-12";
 import {
   focusedControlShouldYieldToShortcut,

@@ -86,3 +86,12 @@
 | `modules/geometry/strand-geometry.js` | 各几何类型的 gridRowIndices/gridColIndices 写入（含 split 偏移列） |
 | `modules/geometry/panel-tip-strand.js` | panel 模拟 row/col（经 weld 重映射） |
 | `tests/uv-unfold.test.mjs` | 纯 node 回归（closed/split/open/compound/child/回退/childUTopologyScale） |
+
+## 10. 导出后打包（0.2.82，modules/io/uv-pack.js + `primvars:uvisland`）
+
+- `unfoldHairMesh` 仍输出每根发丝独立（或子发片对齐主发片）的矩形 UV；**导出最后一步**新增打包：把每个「主发片 + 其子发片」family 按真实 3D 尺度统一缩放后 shelf-pack 进 UDIM 1001（[0,1]²）——§1「允许重叠、不做打包」只在 unfold 层成立，导出层已打包。
+- **统一纹素密度·面积归一**：全局 `k = sqrt(PACK_FILL / Σ 世界表面积)`（PACK_FILL=0.8）；每 family U 宽 = k×周长（`gridUvTable.circumference`）、V 高 = k×曲线长（CatmullRom）——保持真实宽高比、UV 面积∝世界面积、纹理密度全局一致，**不再强制 U/V 归一到 0-1**。
+- **布局**：按 family 缩放后的 UV bbox（子发片可略外露，直接包进 bbox）shelf-pack，间隙 `PACK_GAP = 5/4096`；**不旋转、只位移**，bbox 为最小单位整体平移、不动内部 UV 结构。
+- **`primvars:uvisland`**：每个 bbox（family）一个稳定岛编号 0..N-1（有效 family 密集编号、sort 前固定），USDA 以 `int[] primvars:uvisland` + `interpolation="uniform"`（每面一个值）输出，DCC 按 `@uvisland==k` 选岛；OBJ 无 primvar 机制不输出。
+- **范围**：closed/split 主发片 + 其子发片（child）；panel/haircard 等 open 类本轮不纳入打包。
+- **关键函数**：`packFamilies(families, {gap, fill})`（uv-pack.js，纯函数零依赖，返回 `{k, totalArea, packed:[{id,island,x,y,width,height}]}`）；接线 project-files.js `packUnfoldedUv`；`tests/uv-pack.test.mjs` 纯 node 回归。

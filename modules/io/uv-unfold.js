@@ -298,7 +298,12 @@ export function childUTopologyScale(geometry, seamCol, parentTable, parentRows, 
 
   const uScale = (holeUMax - holeUMin) / topArc;
   const uOffset = holeUMin - arcFromSeamTo0 * uScale;
-  return { uOffset, uScale };
+  // U 方向中心缩放 0.9（硬编码，无条件）：span 围绕中心缩到 0.9，中心不变。
+  const ringCenterArc = arcFromSeamTo0 + topArc * 0.5;
+  const uCenter = uOffset + ringCenterArc * uScale;
+  const uScaleScaled = uScale * 0.9;
+  const uOffsetScaled = uCenter - ringCenterArc * uScaleScaled;
+  return { uOffset: uOffsetScaled, uScale: uScaleScaled };
 }
 
 // 把扫掠网格展开为归一化矩形 UV 的导出网格。

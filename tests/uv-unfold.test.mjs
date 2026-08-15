@@ -812,11 +812,16 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   const topo = childUTopologyScale(geometry, seamCol, parentTable, parentRows, parentCols, anchors);
   assert.ok(topo, "childUTopologyScale should compute");
   const arcFromSeamTo0 = 7;
-  assert.ok(Math.abs(topo.uScale - 0.1) < EPS, `uScale ${topo.uScale}`);
-  assert.ok(Math.abs(topo.uOffset - (0.3 - arcFromSeamTo0 * 0.1)) < EPS, `uOffset ${topo.uOffset}`);
-  // 环顶点 0 u = 洞顶 uMin（0.3）、环顶点 W=2 u = 洞顶 uMax（0.5）
-  assert.ok(Math.abs((topo.uOffset + arcFromSeamTo0 * topo.uScale) - 0.3) < EPS, "ring 0 u = hole uMin");
-  assert.ok(Math.abs((topo.uOffset + (arcFromSeamTo0 + 2) * topo.uScale) - 0.5) < EPS, "ring W u = hole uMax");
+  // 中心缩放 0.9：uScale 0.1→0.09；中心弧长位置 8 处 u = 0.4 不变，uOffset = 0.4 - 8*0.09 = -0.32
+  const uCenter = 0.4;
+  const uScaleScaled = 0.1 * 0.9;
+  const uOffsetScaled = uCenter - (arcFromSeamTo0 + 1) * uScaleScaled;
+  assert.ok(Math.abs(topo.uScale - uScaleScaled) < EPS, `uScale ${topo.uScale}`);
+  assert.ok(Math.abs(topo.uOffset - uOffsetScaled) < EPS, `uOffset ${topo.uOffset}`);
+  // 中心弧长位置 8 的 u 保持 0.4 不变；环0 u=0.31、环W u=0.49
+  assert.ok(Math.abs((topo.uOffset + (arcFromSeamTo0 + 1) * topo.uScale) - uCenter) < EPS, "ring center u = hole center");
+  assert.ok(Math.abs((topo.uOffset + arcFromSeamTo0 * topo.uScale) - 0.31) < EPS, "ring 0 u = 0.31");
+  assert.ok(Math.abs((topo.uOffset + (arcFromSeamTo0 + 2) * topo.uScale) - 0.49) < EPS, "ring W u = 0.49");
   // 数据缺失 → null
   assert.equal(childUTopologyScale(geometry, seamCol, parentTable, parentRows, parentCols, null), null);
   assert.equal(childUTopologyScale(geometry, seamCol, parentTable, parentRows, parentCols, []), null); // 无 top 锚点
