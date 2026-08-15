@@ -19,15 +19,16 @@ This repository is a local adaptation of the original project. My own code chang
 - **Floating editors follow selection** — Strand Profile / Width-Depth Curve panels retarget to the newly selected strand; "show points on mesh" markers follow sculpting/moving.
 - **Viewport navigation modes** — Default and Houdini (default). Houdini: Alt+Left = rotate, Alt+Middle = pan, Alt+Right = zoom (drag, normalized), scroll wheel = zoom.
 - **Simplified Chinese (zh) UI** — full Simplified Chinese dictionary in Settings → Language (3D terms kept in English), on top of the original English/Japanese.
-- **Low-poly child strands** — draw branch strands off a parent and connect them through a carved parent region + watertight low-poly bridge (root ring, top/bottom bands, side quads) with uniform smoothing; child root-bone gizmo/twist/H-mode workflow; falls back to direct sweep when the parent doesn't use topology connect. UV layout is not solved yet.
+- **Low-poly child strands** — draw branch strands off a parent and connect them through a carved parent region + watertight low-poly bridge (root ring, top/bottom bands, side quads) with uniform smoothing; child root-bone gizmo/twist/H-mode workflow; falls back to direct sweep when the parent doesn't use topology connect. UV layout is solved (export-time unwrap + island packing into UDIM 1001).
 - **Panel split tip sub-bones (发尖子骨骼 tip sub-bone)** — each split segment gets a full transform sub-bone (P / orient quaternion / per-segment spread + per-segment Width/Depth curves); viewport tip chain handles + highlight + normal arrows; rotate (E) / scale (R) attach to the transform gizmo; per-side tip WidthCurve (green control points, zipper-truncated, Segment Spread 0–0.99, Reset to all-1); per-vertex skin weights [mainJoint, segment, weight] with USDA SkelBindingAPI skinning.
 - **Local dev server** — `start-dev-server.cmd` runs `python -m http.server 8080 --bind 127.0.0.1` and opens the default browser. Don't open `index.html` via `file://` (browser security blocks it).
+- **Export UV auto-layout + UV Checker preview** — on export, islands (each "parent + child" family / panel sheet) are scaled to uniform texel density and packed into UDIM 1001 via an alpaca occupancy-grid L-shape scan (square bbox, no overlap, uniform-scale no normalize, no rotation), with `primvars:uvisland` written to USDA; the **⟳ button at the top of the UV Checker window** runs the same export unwrap pipeline to preview the final packed layout in the viewport checker + 2D UV Inspector — no need to import into a DCC.
 
 ## Low-poly child strands — base mesh
 
 ![Low-poly child strand base mesh](devlog/assets/lowpoly-child-strand-basemesh.png)
 
-> Base-mesh close-up of a low-poly child strand in this fork: the parent hair is carved open and the child is joined by a low-poly watertight bridge (parent-hole boundary → child root ring → top/bottom bands + side quads). This fork supports the low-poly child-strand topology; **UV layout is not solved yet**.
+> Base-mesh close-up of a low-poly child strand in this fork: the parent hair is carved open and the child is joined by a low-poly watertight bridge (parent-hole boundary → child root ring → top/bottom bands + side quads). This fork supports the low-poly child-strand topology; **UV layout is solved** (export-time unwrap + island packing into UDIM 1001).
 
 - Parent-surface region selection (2D u/v panel + 3D markers), direct/indirect bridge, uniform smoothing (Strength/Detail).
 - Child root-bone workflow: gizmo-carried twist, Hierarchy (H) rigid move with curvature swing, region-anchored center.
@@ -69,7 +70,7 @@ Ctrl = reverse on all brushes: Scale defaults to growing, Ctrl shrinks; Cut·Ext
 
 ## Known limitations
 
-- **UV**: UV layout for child strands / bridge regions is not solved yet (not unwrapped); UVs can also be suboptimal under some panel structures.
+- **UV**: export UV is unwrapped and packed into UDIM 1001; the packer is greedy (alpaca occupancy-grid L-shape + multi-start seed selection), fill ~0.76–0.81, no rotation (keeps the strand anisotropy direction); hairCard / curve-surface and other open/compound types are not packed yet.
 - **Export**: USDA export is currently centered on NURBS curves (BasisCurves); **full USD skeletons are not exported yet (Skeleton / SkelBindingAPI skin binding)** — bone/skin data is not yet exported as a usable skeleton.
 
 ## Local deployment
