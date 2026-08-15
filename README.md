@@ -70,6 +70,8 @@ Ctrl=反向说明：所有笔刷按住 Ctrl 为反向——Scale 笔刷默认放
 
 ## 导出 UV 布局（拆 UV）
 
+![UV Checker 预览（导出打包布局）](devlog/assets/uv-checker.png)
+
 导出（OBJ/USDA）时按扫掠网格的 `gridRow/gridCol` 属性生成矩形 UV（V 负方向 = 发丝切线，头发竖直向下打直），再把每个「主发片 + 子发片 / panel 整片」作为岛（`uvisland` 岛编号）统一纹素密度缩放后，用 **alpaca 占位栅格 L 形扫描** 打包进 UDIM 1001（[0,1]²）：
 
 - **算法**：tile 栅格化（256 格/单位 UV）+ 积分图 O(1) 判空；`scanLine` 逐岛增长维持「方形边界」，两阶段放置（先沿「顶边 + 右边」L 形扫描填内部空隙、再无空位才外扩边界）；打包后整包等比缩放 + 居中（fit-to-tile：保持宽高比、不 normalize、不旋转）。

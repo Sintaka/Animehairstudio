@@ -70,6 +70,8 @@ Ctrl = reverse on all brushes: Scale defaults to growing, Ctrl shrinks; Cut·Ext
 
 ## Export UV layout (unwrapping)
 
+![UV Checker preview (export packed layout)](devlog/assets/uv-checker.png)
+
 On export (OBJ/USDA), rectangular UVs are generated from the sweep grid (`gridRow/gridCol`; V-negative = hair tangent, so hair runs straight down), then each "parent + child / panel sheet" is packed as an island (`uvisland`) at uniform texel density into UDIM 1001 ([0,1]²) via an **alpaca occupancy-grid L-shape scan**:
 
 - **Algorithm**: rasterize the tile (256 cells/UV unit) + integral-image O(1) occupancy test; a growing `scanLine` keeps a square frontier, with two-phase placement (first an L-shape scan along the top + right edges to fill interior gaps, then expand the frontier); then fit-to-tile (uniform scale + center, preserving aspect ratio, no normalize, no rotation).
