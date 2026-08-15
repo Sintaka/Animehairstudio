@@ -52,6 +52,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - **本地持久化功能（简体中文、Houdini 导航、Quick Save/Export 等）**：development-standards.md「持续修改功能」。
 
 ## 最近版本 / Latest
+- 导出 UV：alpaca turbo L 形 zigzag（0.2.90）：读 Blender 源码确认真核心是「L 形」填充，改为顶边+右边两方向切换维持方形 bbox，整包 U/V 双侧均衡；MaxRects/占位栅格注释保留可切回。详见 uv-unfold.md。
 - 导出 UV：alpaca 填满 V 方向（0.2.89）：新增 column 列主序扫描 + Smart 改「按更方选」（6 套排序×扫描取 bbox 更方者），fit 后 V 从 ~0.6 填到 ~0.99；MaxRects 注释保留可切回。详见 uv-unfold.md。
 - 导出 UV：alpaca 占位栅格打包（0.2.88）：最后 UV 排列从 MaxRects 换成占位栅格打包（思路复刻 Blender alpaca，栅格化+空位扫描+scale_to_fit，4 套排序×扫描 Smart 择优），panel 与发丝混排、右上角不再空；MaxRects 注释保留可切回。详见 uv-unfold.md。
 - 导出 UV：fit-to-tile 整包填满（0.2.87）：MaxRects 紧排后整包均匀缩放 + 居中（较长轴填满 [0,1]、较短轴居中），不新增 gap——替代 0.2.86 增 gap 散布（缝隙太大）。详见 uv-unfold.md。

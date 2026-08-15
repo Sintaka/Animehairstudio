@@ -1,17 +1,18 @@
 // uv-pack.js — 导出时 UV 打包：把展开后的 family（主发片 + 子发片 / panel 整片）按真实 3D
 // 尺寸统一缩放（统一纹素密度·面积归一），再打包进 UDIM 1001（[0,1]²）。
-// 当前打包器（方案 2 实验）：alpaca 占位栅格打包（思路复刻 Blender alpaca——栅格化 + 空位
-// 扫描 + scale_to_fit，配合 6 套「排序 × 扫描(scanline/column/spiral)」Smart 择优按「更方」
-// （bbox 宽高比最接近 1）选最佳布局）；原 MaxRects 实现（Smart 多策略择优 + maxRectsPack）
-// 已注释保留在 packFamilies 内。
+// 当前打包器（方案 2 实验）：alpaca turbo（L 形 zigzag，AABB 版，思路复刻 Blender alpaca
+// 的 L-packer——填「L」形：顶边水平条带 + 右边竖直条带，用 nextU1 < nextV1 在两端间切换，
+// 主动把整包 bbox 维持在方形）；原占位栅格实现（alpacaPack：integral/scanline/column/spiral）
+// 与 MaxRects 实现均已注释保留在文件内。
 // 打包后再整包均匀缩放 + 居中（fit-to-tile：较长轴填满 [0,1]、较短轴居中）。
 // 纯函数、零依赖；原地修改各 mesh.uvs（u/v 平铺 number 数组）。
 
 export const PACK_GAP = 10 / 4096; // 10px @ 4096 分辨率 → UV 间隙
 export const PACK_FILL = 0.8;     // 目标填充率（UDIM tile 面积填充比例）
 
-// alpaca 占位栅格打包（方案 2 实验，思路复刻 Blender alpaca：栅格化 + 空位扫描 + scale_to_fit）
-export const ALPACA_RESOLUTION = 128; // 占位栅格分辨率（格/单位 UV；256 下测试超 10s 已降 128）
+// 【已注释：alpaca 占位栅格打包（方案 2 阶段实现，现由 alpaca turbo 取代；可切回）】
+// ALPACA_RESOLUTION = 128 占位栅格分辨率（格/单位 UV）
+// export const ALPACA_RESOLUTION = 128;
 
 // 扇三角 (v0, vi, vi+1) 面积：0.5 * |cross(b-a, c-a)|
 function triangleArea(a, b, c) {
@@ -254,7 +255,10 @@ export function findMaxK(boxUnit, totalArea, fill, gap, heuristic = "contactPoin
   return lo * 0.999999; // 留极小余量，防浮点贴边兜底
 }
 
-// ---- alpaca 占位栅格打包（方案 2 实验，思路复刻 Blender alpaca，非 GPL 源码）----
+// 【已注释：alpaca 占位栅格打包（方案 2 阶段实现，现由 alpaca turbo 取代；可切回）——
+// 栅格化 + 空位扫描 + scale_to_fit；scanline 行主序 / column 列主序 / spiral 中心向外螺旋】
+/*
+// ---- alpaca 占位栅格打包（思路复刻 Blender alpaca，非 GPL 源码）----
 // 思路：把 tile 栅格化（resolution×resolution 占位格），每个岛占 (ceil((w+gap)/cell),
 // ceil((h+gap)/cell)) 格；按 sort 降序稳定排序后，逐个在空位栅格上「空位扫描」找第一个
 // 能放下的左上角格点，放不下则兜底 (0,0) 并 overflowCount++（同 maxRectsPack 语义）。
@@ -391,23 +395,76 @@ export function alpacaPack(items, { gap = PACK_GAP, resolution = ALPACA_RESOLUTI
     overflowCount
   };
 }
+*/
 
-// 自适应找最大无兜底 k（alpaca 版）：框架完全照 findMaxK（128 稠密采样 + 24 细化二分 +
-// lo*0.999999），但 fitsAt(k) 改用 alpacaPack（栅格化 + 空位扫描）判 overflowCount === 0。
-export function findMaxKAlpaca(boxUnit, totalArea, fill, gap, resolution, sort = "maxSide", scan = "scanline") {
+// ---- alpaca turbo（L 形 zigzag，AABB 版；思路复刻 Blender alpaca 的 L-packer）----
+// 核心：不预先栅格化，直接填「L」形——顶边水平条带（从左往右）+ 右边竖直条带（从下往上），
+// 用 zigzag = nextU1 < nextV1 在两方向间切换，主动把整包 bbox 维持在方形（aspect≈1）。
+// 永远无重叠（每个岛放全新位置）、永远不溢出（bbox 自然外扩）；岛间间距 = gap（占位含 gap）。
+// items: [{ id, island, width, height }]（width/height 为已乘 k 的 bbox 尺寸）；
+// 返回 { placements: [{id, island, x, y}], extentU, extentV }（extent 为整包 bbox 尺寸）。
+export function alpacaPackTurbo(items, { gap = PACK_GAP, sort = "maxSide" } = {}) {
+  // 放置顺序：按排序键降序稳定排序（并列保持输入顺序；V8 sort 稳定）
+  const sortKey = (it) => {
+    if (sort === "area") return it.width * it.height;
+    if (sort === "height") return it.height;
+    if (sort === "width") return it.width;
+    return Math.max(it.width, it.height); // "maxSide"
+  };
+  const order = items
+    .map((it, index) => ({ index, key: sortKey(it) }))
+    .sort((a, b) => b.key - a.key)
+    .map((entry) => entry.index);
+
+  let nextU1 = 0;     // 当前右边界
+  let nextV1 = 0;     // 当前上边界
+  let zigzag = false; // false=水平条带（沿顶边从左往右），true=竖直条带（沿右边从下往上）
+  let u0 = 0;
+  let v0 = 0;
+  const placements = [];
+  for (const index of order) {
+    const it = items[index];
+    const w = it.width + gap; // 占位尺寸含 gap（岛间间距）
+    const h = it.height + gap;
+    // 当前条带放不下这个岛 → 之字形转折换方向
+    const restart = zigzag ? (nextV1 < v0 + h) : (nextU1 < u0 + w);
+    if (restart) {
+      zigzag = nextU1 < nextV1; // bbox 太高 → 填水平加宽；太宽 → 填竖直加高（保持方形）
+      u0 = zigzag ? nextU1 : 0;
+      v0 = zigzag ? 0 : nextV1;
+    }
+    placements.push({ id: it.id, island: it.island, x: u0, y: v0 }); // 左上角
+    if (zigzag) {
+      // 竖直条带（沿右边 u0=nextU1 从下往上铺）
+      v0 += h;
+      nextU1 = Math.max(nextU1, u0 + w);
+      nextV1 = Math.max(nextV1, v0);
+    } else {
+      // 水平条带（沿顶边 v0=nextV1 从左往右铺）
+      u0 += w;
+      nextV1 = Math.max(nextV1, v0 + h);
+      nextU1 = Math.max(nextU1, u0);
+    }
+  }
+  return { placements, extentU: nextU1, extentV: nextV1 };
+}
+
+// 自适应找最大无兜底 k（alpaca turbo 版）：框架照旧（128 稠密采样 + 24 细化二分 +
+// lo*0.999999），fitsAt(k) 用 alpacaPackTurbo 判整包 bbox（extentU/extentV）装进 [0,1]²。
+export function findMaxKAlpaca(boxUnit, totalArea, fill, gap, sort = "maxSide") {
   if (!(fill > 0) || !(totalArea > 0)) return -1;
   const kMax = Math.sqrt(fill / totalArea);
   const fitsAt = (k) => {
-    const { overflowCount } = alpacaPack(
+    const r = alpacaPackTurbo(
       boxUnit.map((box) => ({
         id: box.id !== undefined ? box.id : box.family.id,
         island: box.island,
         width: box.width * k,
         height: box.height * k
       })),
-      { gap, resolution, sort, scan }
+      { gap, sort }
     );
-    return overflowCount === 0;
+    return r.extentU <= 1 && r.extentV <= 1; // bbox 装进 [0,1]² 即放得下
   };
   const SAMPLES = 128;
   let bestK = 0;
@@ -434,12 +491,11 @@ export function findMaxKAlpaca(boxUnit, totalArea, fill, gap, resolution, sort =
 //       2) 单位缩放（k=1）：uv × (width, length)，写 uvisland →
 //       3) boxUnit = 单位尺度 UV 包围盒 →
 //       4) kMax = sqrt(fill/totalArea)（作上限）→
-//       5) alpaca Smart 择优（方案 2 实验）：6 套「排序（maxSide/area）× 扫描（scanline/
-//          column/spiral）」各自 findMaxKAlpaca（128 稠密采样 + 24 细化二分逼近最大
-//          「alpacaPack 无兜底」k），再用该 k 跑 alpacaPack 算整包 bbox，按「更方」
-//          （spanU/spanV 比值最接近 1）取最佳（原 MaxRects Smart 择优已注释保留）→
-//       6) 最终缩放 uv × kFinal + alpacaPack 验证重试（overflow 则 kFinal *= 0.999，
-//          k→0 必无兜底保证终止，实际 1~3 次收敛）→
+//       5) alpaca turbo 单套择优（方案 2 实验）：findMaxKAlpaca（128 稠密采样 + 24 细化
+//          二分逼近最大「alpacaPackTurbo extentU/extentV ≤ 1」k）；L 形 zigzag 天然把 bbox
+//          维持在方形，无需多策略按更方选（原 MaxRects Smart 择优已注释保留）→
+//       6) 最终缩放 uv × kFinal + alpacaPackTurbo 验证重试（extent 略超 1 则 kFinal *= 0.999，
+//          k→0 必能装下保证终止，实际 1~3 次收敛）→
 //       7) boxFinal = 重算 UV 包围盒 → 8) 按 placements 平移 → 9) fit-to-tile：整包
 //          均匀缩放 + 居中（较长轴填满 [0,1]、较短轴居中，相似变换不改岛间布局）
 // 返回 { k: kFinal, totalArea, fillUsed: kFinal²*totalArea, packed: [...], gap }（gap
@@ -483,9 +539,10 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
   // 4) 单位尺度（k=1）UV 包围盒
   const boxUnit = valid.map(({ family, island }) => ({ family, island, ...uvBounds(family.meshes) }));
 
-  // 【方案 2 实验：alpaca 占位栅格打包】已屏蔽现有 MaxRects 逻辑（Smart 择优 + maxRectsPack
-  // + 验证重试 + 按 placements 平移，见下方 /* ... */ 注释块），改用 alpaca 占位栅格打包器
-  // （思路复刻 Blender alpaca：栅格化 + 空位扫描 + scale_to_fit）；fit-to-tile 居中保留。
+  // 【方案 2 实验：alpaca turbo（L 形 zigzag）】已屏蔽现有 MaxRects 逻辑（Smart 择优 +
+  // maxRectsPack + 验证重试 + 按 placements 平移，见下方 /* ... */ 注释块），改用 alpaca
+  // turbo（思路复刻 Blender alpaca 的 L-packer：顶边水平条带 + 右边竖直条带 zigzag 切换，
+  // 维持整包 bbox 方形）；fit-to-tile 居中保留。
   /*
   // 5) Smart 择优：多套「启发式 × 排序」各自找最大无兜底 k，取 fillUsed 最高者（右上角空档
   //    常源于单一排序/启发式的选位偏好——maxSide 把长条铺到底边、area 填平缺口、height/width
@@ -561,66 +618,12 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
   }
   */
 
-  // 1) alpaca Smart 择优：6 套「排序 × 扫描」各 findMaxKAlpaca 求最大无兜底 k，再用该 k
-  // 跑一次 alpacaPack 拿整包 bbox，按「更方」（bbox 宽高比 min/max 越接近 1 越好）选 best：
-  // scanline 行主序把岛排成宽扁带子（V 留空）、column 列主序先填 V、spiral 从中心向外；
-  // 岛偏高瘦时 column 能给出更方 bbox，fit-to-tile 等比缩放后 V 更满
-  const ALPACA_STRATEGIES = [
-    ["maxSide", "scanline"], ["area", "scanline"],
-    ["maxSide", "column"], ["area", "column"],
-    ["maxSide", "spiral"], ["area", "spiral"]
-  ];
-  const kMax = Math.sqrt(fill / totalArea); // 理论最大 k（= sqrt(fill/totalArea)）
-  const best = { k: -1, score: -1, sort: "maxSide", scan: "scanline" };
-  for (const [sort, scan] of ALPACA_STRATEGIES) {
-    const k = findMaxKAlpaca(boxUnit, totalArea, fill, gap, ALPACA_RESOLUTION, sort, scan);
-    if (!(k > 0)) continue;
-    // 防 spiral 中心聚拢：尺寸严重缩水的「更方」布局（k < 0.9*kMax，fillUsed < 0.81*fill）
-    // 不参与更方竞争，否则小方块会以低填充率胜出（fillUsed 崩盘）
-    if (k < kMax * 0.9) continue;
-    const packed2 = alpacaPack(
-      boxUnit.map((box) => ({
-        id: box.id !== undefined ? box.id : box.family.id,
-        island: box.island,
-        width: box.width * k,
-        height: box.height * k
-      })),
-      { gap, resolution: ALPACA_RESOLUTION, sort, scan }
-    );
-    if (packed2.overflowCount !== 0) continue; // 异常兜底不算有效布局
-    // 从 placements + 各 box 尺寸算整包 bbox 跨度（spanU/spanV），score = 短轴/长轴
-    const dims = new Map(boxUnit.map((box) => [
-      box.id !== undefined ? box.id : box.family.id,
-      { width: box.width * k, height: box.height * k }
-    ]));
-    let minU = Infinity;
-    let minV = Infinity;
-    let maxU = -Infinity;
-    let maxV = -Infinity;
-    for (const p of packed2.placements) {
-      const d = dims.get(p.id);
-      if (!d) continue;
-      minU = Math.min(minU, p.x);
-      minV = Math.min(minV, p.y);
-      maxU = Math.max(maxU, p.x + d.width);
-      maxV = Math.max(maxV, p.y + d.height);
-    }
-    if (!(minU < maxU && minV < maxV)) continue; // 防御：bbox 退化为 0
-    const spanU = maxU - minU;
-    const spanV = maxV - minV;
-    const score = Math.min(spanU, spanV) / Math.max(spanU, spanV); // 越接近 1 越方
-    if (score > best.score) { // 并列取更早（严格大于）
-      best.k = k;
-      best.score = score;
-      best.sort = sort;
-      best.scan = scan;
-    }
-  }
-  // maxSide+scanline 必成功 → 至少一套 score 有效 → best.k 恒 > 0；-1 分支仅防御（理论不可达）
-  let kFinal = best.k > 0 ? best.k
-    : findMaxKAlpaca(boxUnit, totalArea, fill, gap, ALPACA_RESOLUTION, "maxSide", "scanline");
+  // 1) alpaca turbo 单套择优：L 形 zigzag 天然把整包 bbox 维持在方形，直接找最大无兜底 k
+  // （extentU/extentV ≤ 1 即 [0,1]² 放得下）；-1 分支仅防御（理论不可达）
+  let kFinal = findMaxKAlpaca(boxUnit, totalArea, fill, gap, "maxSide");
+  if (!(kFinal > 0)) kFinal = findMaxKAlpaca(boxUnit, totalArea, fill, gap);
 
-  // 2) 最终缩放 + alpacaPack 验证重试（同原 for(;;) 结构：overflow 则 kFinal *= 0.999）
+  // 2) 最终缩放 + alpacaPackTurbo 验证重试：findMaxK 采样粒度可能让 bbox 略超 1 → 缩小重试
   let boxFinal = null;
   let placements = null;
   let applied = 1; // uvs 当前累计缩放（相对单位尺度；重试时按比例重缩放）
@@ -639,12 +642,12 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
     applied = kFinal;
     // 最终包围盒（uv 已缩放，重算 uvBounds）
     boxFinal = valid.map(({ family, island }) => ({ family, island, ...uvBounds(family.meshes) }));
-    // alpaca 占位栅格打包（择优策略的 sort+scan）
-    const packed2 = alpacaPack(
+    // alpaca turbo L 形打包
+    const packed2 = alpacaPackTurbo(
       boxFinal.map((box) => ({ id: box.family.id, island: box.island, width: box.width, height: box.height })),
-      { gap, resolution: ALPACA_RESOLUTION, sort: best.sort, scan: best.scan }
+      { gap }
     );
-    if (packed2.overflowCount === 0) {
+    if (packed2.extentU <= 1 && packed2.extentV <= 1) {
       placements = packed2.placements;
       break;
     }
@@ -656,7 +659,7 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
   const packed = [];
   for (const box of boxFinal) {
     const pos = placedBy.get(box.family.id);
-    if (!pos) continue; // alpacaPack 返回与输入同 id 集，理论不可达
+    if (!pos) continue; // alpacaPackTurbo 返回与输入同 id 集，理论不可达
     const dx = pos.x - box.minU;
     const dy = pos.y - box.minV;
     for (const mesh of box.family.meshes || []) {

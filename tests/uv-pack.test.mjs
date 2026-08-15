@@ -1,9 +1,9 @@
 // tests/uv-pack.test.mjs — 纯 node 测试（不 import three）：
-// 验证 modules/io/uv-pack.js 的 packFamilies（面积归一缩放 + alpaca 占位栅格打包 +
+// 验证 modules/io/uv-pack.js 的 packFamilies（面积归一缩放 + alpaca turbo L 形打包 +
 // fit-to-tile 整包均匀缩放居中）。运行：node tests/uv-pack.test.mjs
 
 import assert from "node:assert/strict";
-import { packFamilies, PACK_GAP, findMaxKAlpaca, alpacaPack, ALPACA_RESOLUTION } from "../modules/io/uv-pack.js";
+import { packFamilies, PACK_GAP, findMaxKAlpaca, alpacaPackTurbo } from "../modules/io/uv-pack.js";
 
 const EPS = 1e-9;
 
@@ -54,8 +54,9 @@ function rectQuad(w, h) {
 }
 
 // ---- 2) 缩放：length=2、width=1、fill=1 单 1×1 quad（面积 1）→ 自适应 k ----
-// 单位缩放 uScale=1、vScale=2 → bbox 1×2；kMax=sqrt(1/1)=1，但高 2 > 1，alpaca 栅格量化
-// （ceil(2k/cell)*cell ≤ 1）把 k 降到 ≈0.5（最大无兜底 k）。uScale=kFinal*width、vScale=kFinal*length。
+// 单位缩放 uScale=1、vScale=2 → bbox 1×2；kMax=sqrt(1/1)=1，但高 2k+gap > 1，alpaca turbo
+// 的 extentV = 2k+gap ≤ 1 约束把 k 降到 ≈0.5（最大能装进 [0,1]² 的 k）。uScale=kFinal*width、
+// vScale=kFinal*length。
 // 单岛打包后 fit-to-tile：整包 bbox = 该岛 bbox（spanU=k、spanV=2k，较长轴 V 填满 [0,1]）
 {
   const mesh = quad1x1();
@@ -65,7 +66,7 @@ function rectQuad(w, h) {
   );
   const k = result.k;
   assert.ok(Number.isFinite(k) && k > 0 && k < 1, `自适应 k ∈ (0,1) (got ${k})`);
-  assert.ok(k * 2 <= 1 + EPS, `高度 2k 放得下 (alpaca 栅格量化后 2k≈0.998, got ${k * 2})`);
+  assert.ok(k * 2 <= 1 + EPS, `高度 2k 放得下 (extentV=2k+gap≈0.998, got ${k * 2})`);
   assert.equal(result.packed.length, 1, "one packed entry");
   const entry = result.packed[0];
   // fit 是均匀缩放（相似变换）：宽高比 1:2 保持；较长轴（v，span=2k）填满 [0,1] → height=1
@@ -108,8 +109,9 @@ function rectQuad(w, h) {
 }
 
 // ---- 3) 布局：只平移/不重叠/在 [0,1] 内（3 个 1×1 quad，fill=0.2 → 项较小可全放一行）----
-// alpaca 栅格（128）下 kMax = sqrt(0.2/3) 本身放得下（3 格 × 34 = 102 ≤ 128）→
-// kFinal = kMax*0.999999（只比 kMax 小 ~1e-6；fit-to-tile 只整体等比缩放 + 居中，不改 k）
+// alpaca turbo：3 个 1×1 quad 排成 L 形（p1(0,0)、p2(0,h)、p3(w,0)），extent = 2(k+gap) ≤ 1
+// 时 kMax = sqrt(0.2/3) 本身放得下 → kFinal = kMax*0.999999（只比 kMax 小 ~1e-6；
+// fit-to-tile 只整体等比缩放 + 居中，不改 k）
 {
   const families = ["p1", "p2", "p3"].map((id) => ({
     id,
@@ -119,7 +121,6 @@ function rectQuad(w, h) {
   }));
   const result = packFamilies(families, { fill: 0.2 });
   const kMax = Math.sqrt(0.2 / 3);
-  // Smart 按「更方」选可能选 spiral（3 个 quad 放中心更方，k 略降），k 仍有 0.9*kMax 下限
   assert.ok(result.k > kMax * 0.9, `k 不低于 0.9*kMax (got ${result.k}, kMax=${kMax})`);
   assert.equal(result.packed.length, 3, "three packed entries");
 
@@ -208,8 +209,9 @@ function rectQuad(w, h) {
 }
 
 // ---- 5) 压力回归：固定种子 LCG 随机矩形，自适应填充无兜底、不重叠、fillUsed ≤ fill ----
-// alpaca 二分在 PACK_FILL 上限内找最大无兜底 k → 40 个随机混合宽高比矩形（含 ~15:1
-// 极端长条）在 fill=0.9 下也全部放得下（实测 fillUsed≈0.845，占位栅格分辨率 256 浪费较少）。
+// alpaca turbo 二分在 PACK_FILL 上限内找最大能装进 [0,1]² 的 k → 40 个随机混合宽高比矩形
+// （含 ~15:1 极端长条）在 fill=0.9 下也全部放得下（实测 fillUsed≈0.65——L 形 zigzag 每转折
+// 留 L 形缺口，填充率比 MaxRects 低，只卡 > 0.5 的合理下限）。
 {
   const COUNT = 40;
   let seed = 12345;
@@ -226,14 +228,14 @@ function rectQuad(w, h) {
   const result = packFamilies(families, { fill: 0.9 });
   assert.equal(result.packed.length, COUNT, `packed.length === ${COUNT} (got ${result.packed.length})`);
 
-  // 无兜底：自适应二分保证 alpacaPack 无 overflow → 全部落在 [0,1] 内
+  // 无兜底：自适应二分保证 alpacaPackTurbo extent ≤ 1 → 全部落在 [0,1] 内
   for (const entry of result.packed) {
     assert.ok(entry.x >= -EPS && entry.y >= -EPS
       && entry.x + entry.width <= 1 + EPS && entry.y + entry.height <= 1 + EPS,
       `${entry.id} 在 [0,1] 内 (x=${entry.x}, y=${entry.y}, w=${entry.width}, h=${entry.height})`);
   }
 
-  // 两两 bbox 不相交：x 或 y 方向间距 ≥ gap（fit 等比放大间距，仍 >= PACK_GAP）
+  // 两两 bbox 不相交：x 或 y 方向间距 ≥ gap（turbo 相邻岛间距恰 = gap；fit 等比放大仍 >= gap）
   for (let i = 0; i < result.packed.length; i += 1) {
     for (let j = i + 1; j < result.packed.length; j += 1) {
       const a = result.packed[i];
@@ -245,16 +247,12 @@ function rectQuad(w, h) {
     }
   }
 
-  // fillUsed 不超过 fill，且确实尽量铺满（alpaca Smart 择优填充率接近 fill，sanity 卡 > 0.65）
+  // fillUsed 不超过 fill，且确实有大量岛放进去（L 形 zigzag 填充率略低，sanity 卡 > 0.5）
   assert.ok(result.fillUsed <= 0.9 + 1e-9, `fillUsed <= 0.9 (got ${result.fillUsed})`);
-  assert.ok(result.fillUsed > 0.65, `fillUsed 尽量铺满 (got ${result.fillUsed})`);
+  assert.ok(result.fillUsed > 0.5, `fillUsed 不至于过小 (got ${result.fillUsed})`);
 }
 
-// ---- 6) alpaca Smart ≥ 单套 sanity：同一组随机矩形，packFamilies（6 套「排序 × 扫描」
-// Smart 择优）的 fillUsed 不低于「只 (maxSide, scanline)」单套结果的 0.81 倍（复用
-// findMaxKAlpaca 对同单位尺度 boxUnit 求单套 k；Smart 按「更方」选、不保证选 scanline，
-// 但更方竞争要求 k ≥ 0.9*kMax → Smart fillUsed ≥ 0.81*fill ≥ 0.81*singleFill；
-// fit-to-tile 不改 k/fillUsed，只整包等比缩放居中）----
+// ---- 6) findMaxKAlpaca sanity：turbo 单套择优对同一组随机矩形能求出有效 k（> 0）----
 {
   const COUNT = 40;
   let seed = 98765;
@@ -262,21 +260,17 @@ function rectQuad(w, h) {
     seed = (seed * 1103515245 + 12345) % 2147483648;
     return seed / 2147483648;
   };
-  const families = [];
   const boxUnit = [];
   let totalArea = 0;
   for (let i = 0; i < COUNT; i += 1) {
     const w = 0.02 + next() * 0.48; // 0.02 ~ 0.5（与压力回归同分布）
     const h = 0.02 + next() * 0.48;
-    families.push({ id: `s${i}`, meshes: [rectQuad(w, h)], length: h, width: w });
     boxUnit.push({ id: `s${i}`, island: i, width: w, height: h }); // 单位尺度 bbox = w×h
     totalArea += w * h;
   }
-  const result = packFamilies(families, { fill: 0.9 });
-  const singleK = findMaxKAlpaca(boxUnit, totalArea, 0.9, PACK_GAP, ALPACA_RESOLUTION, "maxSide", "scanline");
-  const singleFill = singleK * singleK * totalArea;
-  assert.ok(result.fillUsed >= singleFill * 0.81 - 1e-6,
-    `alpaca Smart fillUsed ${result.fillUsed} >= 单套 (maxSide,scanline) fillUsed*0.81 ${singleFill * 0.81}`);
+  const k = findMaxKAlpaca(boxUnit, totalArea, 0.9, PACK_GAP, "maxSide");
+  assert.ok(Number.isFinite(k) && k > 0, `findMaxKAlpaca k > 0 (got ${k})`);
+  assert.ok(k * k * totalArea <= 0.9 + 1e-9, `fillUsed ≤ fill (got ${k * k * totalArea})`);
 }
 
 // ---- 7) fit-to-tile：打包后整包均匀缩放 + 居中，较长轴填满 [0,1] ----
@@ -341,75 +335,42 @@ function rectQuad(w, h) {
   }
 }
 
-// ---- 8) 更方择优：多高瘦发丝 + 少量宽扁 panel 时，column 列主序比 scanline 行主序更方，
-// Smart 能选出更方布局，fit-to-tile 等比缩放后 V 填得更满（不旋转、fillUsed 不缩水）----
+// ---- 8) alpaca turbo L 形：混合宽扁 panel + 高瘦发丝的整包 bbox 近似方形、无重叠 ----
+// zigzag（nextU1 < nextV1 切换）主动维持 bbox 方形：min/max 比值 ≥ 0.8；相邻岛间距恰 = gap。
 {
   // 12 个高瘦发丝（0.06×0.4）+ 2 个宽扁 panel
   const sizes = [
     ...Array.from({ length: 12 }, () => [0.06, 0.4]),
     [0.4, 0.08], [0.38, 0.1]
   ];
-  const families = sizes.map(([w, h], i) => ({
-    id: `f${i}`,
-    meshes: [rectQuad(w, h)],
-    length: h,
-    width: w
-  }));
   const boxUnit = sizes.map(([w, h], i) => ({ id: `f${i}`, island: i, width: w, height: h }));
   const totalArea = sizes.reduce((sum, [w, h]) => sum + w * h, 0);
 
-  // 单套布局基准：findMaxKAlpaca 求 k → alpacaPack 拿 placements → 整包 bbox 跨度
-  const layoutBB = (sort, scan) => {
-    const k = findMaxKAlpaca(boxUnit, totalArea, 0.6, PACK_GAP, ALPACA_RESOLUTION, sort, scan);
-    assert.ok(k > 0, `${sort}/${scan} k > 0`);
-    const dims = new Map(boxUnit.map((b) => [b.id, { width: b.width * k, height: b.height * k }]));
-    const pk = alpacaPack(
-      boxUnit.map((b) => ({ id: b.id, island: b.island, width: b.width * k, height: b.height * k })),
-      { gap: PACK_GAP, resolution: ALPACA_RESOLUTION, sort, scan }
-    );
-    assert.equal(pk.overflowCount, 0, `${sort}/${scan} 无兜底`);
-    let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
-    for (const p of pk.placements) {
-      const d = dims.get(p.id);
-      if (!d) continue;
-      minU = Math.min(minU, p.x);
-      minV = Math.min(minV, p.y);
-      maxU = Math.max(maxU, p.x + d.width);
-      maxV = Math.max(maxV, p.y + d.height);
+  const k = findMaxKAlpaca(boxUnit, totalArea, 0.6, PACK_GAP, "maxSide");
+  assert.ok(Number.isFinite(k) && k > 0, `findMaxKAlpaca k > 0 (got ${k})`);
+  const r = alpacaPackTurbo(
+    boxUnit.map((b) => ({ id: b.id, island: b.island, width: b.width * k, height: b.height * k })),
+    { gap: PACK_GAP }
+  );
+  assert.equal(r.placements.length, sizes.length, "placements 数量");
+  assert.ok(r.extentU <= 1 + EPS && r.extentV <= 1 + EPS, `bbox 装进 [0,1]² (extentU=${r.extentU}, extentV=${r.extentV})`);
+  // 近似方形：短轴/长轴 ≥ 0.8（zigzag 维持 aspect≈1）
+  const ratio = Math.min(r.extentU, r.extentV) / Math.max(r.extentU, r.extentV);
+  assert.ok(ratio >= 0.8, `整包近似方形 (min/max=${ratio.toFixed(4)})`);
+  // 无重叠：两两 bbox 间距 ≥ gap（占位尺寸含 gap，相邻岛间距恰 = gap）
+  const dims = new Map(boxUnit.map((b) => [b.id, { width: b.width * k, height: b.height * k }]));
+  for (let i = 0; i < r.placements.length; i += 1) {
+    for (let j = i + 1; j < r.placements.length; j += 1) {
+      const a = r.placements[i];
+      const b = r.placements[j];
+      const da = dims.get(a.id);
+      const db = dims.get(b.id);
+      const sepX = Math.max(a.x - (b.x + db.width), b.x - (a.x + da.width));
+      const sepY = Math.max(a.y - (b.y + db.height), b.y - (a.y + da.height));
+      assert.ok(Math.max(sepX, sepY) >= PACK_GAP - EPS,
+        `${a.id}/${b.id} 间距 >= gap (sepX=${sepX}, sepY=${sepY})`);
     }
-    const spanU = maxU - minU;
-    const spanV = maxV - minV;
-    return { k, spanU, spanV, ratio: Math.min(spanU, spanV) / Math.max(spanU, spanV) };
-  };
-  const scanlineBB = layoutBB("maxSide", "scanline");
-  const columnBB = layoutBB("maxSide", "column");
-  // column 列主序（先填 V）在高瘦发丝场景下 bbox 更方
-  assert.ok(columnBB.ratio > scanlineBB.ratio,
-    `column 更方 (${columnBB.ratio.toFixed(4)} > ${scanlineBB.ratio.toFixed(4)})`);
-
-  // Smart（packFamilies）选出的布局不比方基准更差；fit 后较长轴 ≈ 1、较短轴（V）≥ scanline 的
-  const result = packFamilies(families, { fill: 0.6 });
-  assert.equal(result.packed.length, sizes.length, "packed 数量");
-  let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
-  for (const e of result.packed) {
-    minU = Math.min(minU, e.x);
-    minV = Math.min(minV, e.y);
-    maxU = Math.max(maxU, e.x + e.width);
-    maxV = Math.max(maxV, e.y + e.height);
   }
-  const spanU = maxU - minU;
-  const spanV = maxV - minV;
-  const longSpan = Math.max(spanU, spanV);
-  const shortSpan = Math.min(spanU, spanV);
-  const smartRatio = shortSpan / longSpan;
-  assert.ok(Math.abs(longSpan - 1) < 1e-6, `fit 后较长轴 ≈ 1 (got ${longSpan})`);
-  assert.ok(smartRatio >= scanlineBB.ratio - 1e-6,
-    `Smart 更方不下降 (${smartRatio.toFixed(4)} >= ${scanlineBB.ratio.toFixed(4)})`);
-  // fit 后较短轴 = Smart 布局的短轴（长轴=1），不低于 scanline 单套 fit 后的较短轴（= 其 ratio）
-  assert.ok(shortSpan >= scanlineBB.ratio - 1e-6,
-    `较短轴（V）≥ scanline 的较短轴 (${shortSpan.toFixed(4)} >= ${scanlineBB.ratio.toFixed(4)})`);
-  // fillUsed 不缩水：Smart 的 k 不低于 0.9*kMax → fillUsed ≥ 0.81*fill
-  assert.ok(result.fillUsed >= 0.6 * 0.81 - 1e-6, `fillUsed 不缩水 (got ${result.fillUsed})`);
 }
 
 console.log("uv-pack tests passed");
