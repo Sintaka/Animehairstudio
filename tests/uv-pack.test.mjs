@@ -1,9 +1,9 @@
 // tests/uv-pack.test.mjs — 纯 node 测试（不 import three）：
-// 验证 modules/io/uv-pack.js 的 packFamilies（面积归一缩放 + alpaca turbo L 形打包 +
+// 验证 modules/io/uv-pack.js 的 packFamilies（面积归一缩放 + alpaca occupancy L 形打包 +
 // fit-to-tile 整包均匀缩放居中）。运行：node tests/uv-pack.test.mjs
 
 import assert from "node:assert/strict";
-import { packFamilies, PACK_GAP, findMaxKAlpaca, alpacaPackTurbo } from "../modules/io/uv-pack.js";
+import { packFamilies, PACK_GAP, findMaxKAlpaca, alpacaPackOccupancy } from "../modules/io/uv-pack.js";
 
 const EPS = 1e-9;
 
@@ -54,9 +54,9 @@ function rectQuad(w, h) {
 }
 
 // ---- 2) 缩放：length=2、width=1、fill=1 单 1×1 quad（面积 1）→ 自适应 k ----
-// 单位缩放 uScale=1、vScale=2 → bbox 1×2；kMax=sqrt(1/1)=1，但高 2k+gap > 1，alpaca turbo
-// 的 extentV = 2k+gap ≤ 1 约束把 k 降到 ≈0.5（最大能装进 [0,1]² 的 k）。uScale=kFinal*width、
-// vScale=kFinal*length。
+// 单位缩放 uScale=1、vScale=2 → bbox 1×2；kMax=sqrt(1/1)=1，但高 2k+gap > 1，alpaca
+// occupancy 的 extentV = 2k+gap ≤ 1 约束把 k 降到 ≈0.5（最大能装进 [0,1]² 的 k）。
+// uScale=kFinal*width、vScale=kFinal*length。
 // 单岛打包后 fit-to-tile：整包 bbox = 该岛 bbox（spanU=k、spanV=2k，较长轴 V 填满 [0,1]）
 {
   const mesh = quad1x1();
@@ -109,7 +109,7 @@ function rectQuad(w, h) {
 }
 
 // ---- 3) 布局：只平移/不重叠/在 [0,1] 内（3 个 1×1 quad，fill=0.2 → 项较小可全放一行）----
-// alpaca turbo：3 个 1×1 quad 排成 L 形（p1(0,0)、p2(0,h)、p3(w,0)），extent = 2(k+gap) ≤ 1
+// alpaca occupancy：3 个 1×1 quad 排成 L 形（p1(0,0)、p2(0,h)、p3(w,0)），extent = 2(k+gap) ≤ 1
 // 时 kMax = sqrt(0.2/3) 本身放得下 → kFinal = kMax*0.999999（只比 kMax 小 ~1e-6；
 // fit-to-tile 只整体等比缩放 + 居中，不改 k）
 {
@@ -209,9 +209,9 @@ function rectQuad(w, h) {
 }
 
 // ---- 5) 压力回归：固定种子 LCG 随机矩形，自适应填充无兜底、不重叠、fillUsed ≤ fill ----
-// alpaca turbo 二分在 PACK_FILL 上限内找最大能装进 [0,1]² 的 k → 40 个随机混合宽高比矩形
-// （含 ~15:1 极端长条）在 fill=0.9 下也全部放得下（实测 fillUsed≈0.65——L 形 zigzag 每转折
-// 留 L 形缺口，填充率比 MaxRects 低，只卡 > 0.5 的合理下限）。
+// alpaca occupancy 二分在 PACK_FILL 上限内找最大能装进 [0,1]² 的 k → 40 个随机混合宽高比
+// 矩形（含 ~15:1 极端长条）在 fill=0.9 下也全部放得下（实测 fillUsed≈0.81——L 形扫描填掉
+// 缺口，填充率明显高于 turbo 的 0.5，卡 > 0.6 下限）。
 {
   const COUNT = 40;
   let seed = 12345;
@@ -228,14 +228,14 @@ function rectQuad(w, h) {
   const result = packFamilies(families, { fill: 0.9 });
   assert.equal(result.packed.length, COUNT, `packed.length === ${COUNT} (got ${result.packed.length})`);
 
-  // 无兜底：自适应二分保证 alpacaPackTurbo extent ≤ 1 → 全部落在 [0,1] 内
+  // 无兜底：自适应二分保证 alpacaPackOccupancy 不溢出 → 全部落在 [0,1] 内
   for (const entry of result.packed) {
     assert.ok(entry.x >= -EPS && entry.y >= -EPS
       && entry.x + entry.width <= 1 + EPS && entry.y + entry.height <= 1 + EPS,
       `${entry.id} 在 [0,1] 内 (x=${entry.x}, y=${entry.y}, w=${entry.width}, h=${entry.height})`);
   }
 
-  // 两两 bbox 不相交：x 或 y 方向间距 ≥ gap（turbo 相邻岛间距恰 = gap；fit 等比放大仍 >= gap）
+  // 两两 bbox 不相交：x 或 y 方向间距 ≥ gap（occupancy 逐格判空保证间距 ≥ gap；fit 等比放大）
   for (let i = 0; i < result.packed.length; i += 1) {
     for (let j = i + 1; j < result.packed.length; j += 1) {
       const a = result.packed[i];
@@ -247,12 +247,12 @@ function rectQuad(w, h) {
     }
   }
 
-  // fillUsed 不超过 fill，且确实有大量岛放进去（L 形 zigzag 填充率略低，sanity 卡 > 0.5）
+  // fillUsed 不超过 fill，且填充率明显高于 turbo（L 形扫描填掉缺口，sanity 卡 > 0.6）
   assert.ok(result.fillUsed <= 0.9 + 1e-9, `fillUsed <= 0.9 (got ${result.fillUsed})`);
-  assert.ok(result.fillUsed > 0.5, `fillUsed 不至于过小 (got ${result.fillUsed})`);
+  assert.ok(result.fillUsed > 0.6, `fillUsed 不至于过小 (got ${result.fillUsed})`);
 }
 
-// ---- 6) findMaxKAlpaca sanity：turbo 单套择优对同一组随机矩形能求出有效 k（> 0）----
+// ---- 6) findMaxKAlpaca sanity：occupancy 单套择优对同一组随机矩形能求出有效 k（> 0）----
 {
   const COUNT = 40;
   let seed = 98765;
@@ -268,7 +268,7 @@ function rectQuad(w, h) {
     boxUnit.push({ id: `s${i}`, island: i, width: w, height: h }); // 单位尺度 bbox = w×h
     totalArea += w * h;
   }
-  const k = findMaxKAlpaca(boxUnit, totalArea, 0.9, PACK_GAP, "maxSide");
+  const k = findMaxKAlpaca(boxUnit, totalArea, 0.9, PACK_GAP, 256, "maxSide");
   assert.ok(Number.isFinite(k) && k > 0, `findMaxKAlpaca k > 0 (got ${k})`);
   assert.ok(k * k * totalArea <= 0.9 + 1e-9, `fillUsed ≤ fill (got ${k * k * totalArea})`);
 }
@@ -335,8 +335,10 @@ function rectQuad(w, h) {
   }
 }
 
-// ---- 8) alpaca turbo L 形：混合宽扁 panel + 高瘦发丝的整包 bbox 近似方形、无重叠 ----
-// zigzag（nextU1 < nextV1 切换）主动维持 bbox 方形：min/max 比值 ≥ 0.8；相邻岛间距恰 = gap。
+// ---- 8) alpaca occupancy L 形：混合宽扁 panel + 高瘦发丝的整包 bbox 近似方形、无重叠、
+// 高填充 ----
+// scanLine 方形边界 + L 形扫描填掉缺口：① min/max ≥ 0.85；② extent ≤ 1；③ 无重叠
+// （间距 ≥ PACK_GAP）；④ fillUsed > 0.6。
 {
   // 12 个高瘦发丝（0.06×0.4）+ 2 个宽扁 panel
   const sizes = [
@@ -346,18 +348,23 @@ function rectQuad(w, h) {
   const boxUnit = sizes.map(([w, h], i) => ({ id: `f${i}`, island: i, width: w, height: h }));
   const totalArea = sizes.reduce((sum, [w, h]) => sum + w * h, 0);
 
-  const k = findMaxKAlpaca(boxUnit, totalArea, 0.6, PACK_GAP, "maxSide");
+  const k = findMaxKAlpaca(boxUnit, totalArea, 0.6, PACK_GAP, 256, "maxSide");
   assert.ok(Number.isFinite(k) && k > 0, `findMaxKAlpaca k > 0 (got ${k})`);
-  const r = alpacaPackTurbo(
+  const r = alpacaPackOccupancy(
     boxUnit.map((b) => ({ id: b.id, island: b.island, width: b.width * k, height: b.height * k })),
-    { gap: PACK_GAP }
+    { gap: PACK_GAP, resolution: 256 }
   );
   assert.equal(r.placements.length, sizes.length, "placements 数量");
+  assert.equal(r.overflow, false, "不溢出");
+  // ② extent ≤ 1（bbox 装进 [0,1]²）
   assert.ok(r.extentU <= 1 + EPS && r.extentV <= 1 + EPS, `bbox 装进 [0,1]² (extentU=${r.extentU}, extentV=${r.extentV})`);
-  // 近似方形：短轴/长轴 ≥ 0.8（zigzag 维持 aspect≈1）
+  // ① 近似方形：短轴/长轴 ≥ 0.85（scanLine 方形边界维持 aspect≈1）
   const ratio = Math.min(r.extentU, r.extentV) / Math.max(r.extentU, r.extentV);
-  assert.ok(ratio >= 0.8, `整包近似方形 (min/max=${ratio.toFixed(4)})`);
-  // 无重叠：两两 bbox 间距 ≥ gap（占位尺寸含 gap，相邻岛间距恰 = gap）
+  assert.ok(ratio >= 0.85, `整包近似方形 (min/max=${ratio.toFixed(4)})`);
+  // ④ fillUsed 接近 fill 上限（> 0.6，留 0.999999 因子容差；L 形扫描填掉缺口，明显高于
+  // turbo 的 0.5）
+  assert.ok(k * k * totalArea > 0.6 - 1e-3, `fillUsed > 0.6 (got ${(k * k * totalArea).toFixed(4)})`);
+  // ③ 无重叠：两两 bbox 间距 ≥ gap（逐格判空保证间距 ≥ gap）
   const dims = new Map(boxUnit.map((b) => [b.id, { width: b.width * k, height: b.height * k }]));
   for (let i = 0; i < r.placements.length; i += 1) {
     for (let j = i + 1; j < r.placements.length; j += 1) {

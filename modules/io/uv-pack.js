@@ -1,9 +1,9 @@
 // uv-pack.js — 导出时 UV 打包：把展开后的 family（主发片 + 子发片 / panel 整片）按真实 3D
 // 尺寸统一缩放（统一纹素密度·面积归一），再打包进 UDIM 1001（[0,1]²）。
-// 当前打包器（方案 2 实验）：alpaca turbo（L 形 zigzag，AABB 版，思路复刻 Blender alpaca
-// 的 L-packer——填「L」形：顶边水平条带 + 右边竖直条带，用 nextU1 < nextV1 在两端间切换，
-// 主动把整包 bbox 维持在方形）；原占位栅格实现（alpacaPack：integral/scanline/column/spiral）
-// 与 MaxRects 实现均已注释保留在文件内。
+// 当前打包器（方案 2 实验）：alpaca occupancy（占位栅格 L 形扫描，思路复刻 Blender 的
+// find_best_fit_for_island，参考 Nöll & Stricker 2011——occupancy + L-shape + scan_line
+// 增长，逐格扫描填掉 L 形缺口，方形 bbox + 高填充兼得）；原 alpaca turbo（L 形 zigzag）、
+// 占位栅格 scanline/column/spiral、MaxRects 实现均已注释保留在文件内。
 // 打包后再整包均匀缩放 + 居中（fit-to-tile：较长轴填满 [0,1]、较短轴居中）。
 // 纯函数、零依赖；原地修改各 mesh.uvs（u/v 平铺 number 数组）。
 
@@ -397,6 +397,10 @@ export function alpacaPack(items, { gap = PACK_GAP, resolution = ALPACA_RESOLUTI
 }
 */
 
+// 【已注释：alpaca turbo（L 形 zigzag shelf，方案 2 阶段实现，现由 alpaca occupancy 取代；
+// 可切回）——不预先栅格化，直接填 L 形条带，zigzag 切换维持 bbox 方形，但 L 形缺口多、
+// fillUsed 偏低】
+/*
 // ---- alpaca turbo（L 形 zigzag，AABB 版；思路复刻 Blender alpaca 的 L-packer）----
 // 核心：不预先栅格化，直接填「L」形——顶边水平条带（从左往右）+ 右边竖直条带（从下往上），
 // 用 zigzag = nextU1 < nextV1 在两方向间切换，主动把整包 bbox 维持在方形（aspect≈1）。
@@ -448,23 +452,147 @@ export function alpacaPackTurbo(items, { gap = PACK_GAP, sort = "maxSide" } = {}
   }
   return { placements, extentU: nextU1, extentV: nextV1 };
 }
+*/
 
-// 自适应找最大无兜底 k（alpaca turbo 版）：框架照旧（128 稠密采样 + 24 细化二分 +
-// lo*0.999999），fitsAt(k) 用 alpacaPackTurbo 判整包 bbox（extentU/extentV）装进 [0,1]²。
-export function findMaxKAlpaca(boxUnit, totalArea, fill, gap, sort = "maxSide") {
+// ---- alpaca occupancy（占位栅格 L 形扫描；思路复刻 Blender 的 find_best_fit_for_island，
+// 参考 Nöll & Stricker 2011 论文的 occupancy + L-shape + scan_line 增长）----
+// 核心：R×R 占位栅格 + 积分图判空；scanLine 从 0 逐岛增长，代表当前「方形边界」
+// （bbox = scanLine×scanLine）。每个岛两阶段放置：
+//   阶段 1 —— sl ∈ [minSL, scanLine]：L 形扫描（先顶边 y=sl-ch、x 0→sl-cw，再右边
+//     x=sl-cw、y 0→sl-ch），用积分图 O(1) 判 [x,x+cw)×[y,y+ch) 全空，找到即放置
+//     （need = max(x+cw, y+ch) ≤ scanLine → 填内部空隙，不增长边界）；
+//   阶段 2 —— 无内部空位：sl 从 scanLine+1 逐步增长，第一个可行位置即 need 最小，
+//     放置后 scanLine = max(scanLine, sl)（方形边界外扩，维持 aspect≈1）。
+// 岛贴「顶边+右边」铺、阶段 1 填掉 L 形缺口 → 方形 bbox + 高填充。
+// items: [{ id, island, width, height }]（width/height 为已乘 k 的 bbox 尺寸）；
+// 返回 { placements: [{id, island, x, y}], extentU: scanLine/R, extentV: scanLine/R, overflow }。
+export function alpacaPackOccupancy(items, { gap = PACK_GAP, resolution = 256, sort = "maxSide" } = {}) {
+  const cell = 1 / resolution;
+  const grid = new Uint8Array(resolution * resolution); // 0=空 1=占
+  const iw = resolution + 1;
+  const integral = new Int32Array(iw * iw);
+  const rebuildIntegral = () => {
+    for (let y = 0; y < resolution; y += 1) {
+      let row = 0;
+      const gy = y * resolution;
+      const iy = y * iw;
+      const iy1 = (y + 1) * iw;
+      for (let x = 0; x < resolution; x += 1) {
+        row += grid[gy + x];
+        integral[iy1 + x + 1] = integral[iy + x + 1] + row;
+      }
+    }
+  };
+  // O(1) 判断 [cx, cx+cw) × [cy, cy+ch) 区域全空（积分图区域和 == 0）
+  const regionEmpty = (cx, cy, cw, ch) => {
+    const x1 = cx; const y1 = cy; const x2 = cx + cw; const y2 = cy + ch;
+    return integral[y2 * iw + x2] - integral[y1 * iw + x2] - integral[y2 * iw + x1] + integral[y1 * iw + x1] === 0;
+  };
+  const markOccupied = (cx, cy, cw, ch) => {
+    for (let y = cy; y < cy + ch; y += 1) grid.fill(1, y * resolution + cx, y * resolution + cx + cw);
+    rebuildIntegral();
+  };
+
+  const nodes = items.map((item) => ({
+    id: item.id, island: item.island,
+    width: item.width, height: item.height,
+    cw: Math.max(1, Math.ceil((item.width + gap) / cell)),
+    ch: Math.max(1, Math.ceil((item.height + gap) / cell))
+  }));
+  // 放置顺序：按排序键降序稳定排序（并列保持输入顺序；V8 sort 稳定）
+  const sortKey = (node) => {
+    if (sort === "area") return node.width * node.height;
+    if (sort === "height") return node.height;
+    if (sort === "width") return node.width;
+    return Math.max(node.width, node.height); // "maxSide"
+  };
+  const order = nodes
+    .map((node, index) => ({ index, key: sortKey(node) }))
+    .sort((a, b) => b.key - a.key)
+    .map((entry) => entry.index);
+
+  let scanLine = 0; // 当前方形边界（格数）；bbox = scanLine×scanLine
+  let overflow = false;
+  for (const index of order) {
+    const node = nodes[index];
+    const minSL = Math.max(node.cw, node.ch);
+    if (minSL > resolution) {
+      overflow = true;
+      node.x = 0;
+      node.y = 0;
+      continue;
+    }
+    let px = 0;
+    let py = 0;
+    // L 形扫描（先顶边水平再右边竖直）辅助：sl 为当前候选 scan_line
+    const tryTop = (sl) => {
+      const topY = sl - node.ch;
+      const maxX = Math.min(sl - node.cw, resolution - node.cw);
+      for (let cx = 0; cx <= maxX; cx += 1) {
+        if (!regionEmpty(cx, topY, node.cw, node.ch)) continue;
+        markOccupied(cx, topY, node.cw, node.ch);
+        px = cx * cell;
+        py = topY * cell;
+        return true;
+      }
+      return false;
+    };
+    const tryRight = (sl) => {
+      const rightX = sl - node.cw;
+      const maxY = Math.min(sl - node.ch, resolution - node.ch);
+      for (let cy = 0; cy <= maxY; cy += 1) {
+        if (!regionEmpty(rightX, cy, node.cw, node.ch)) continue;
+        markOccupied(rightX, cy, node.cw, node.ch);
+        px = rightX * cell;
+        py = cy * cell;
+        return true;
+      }
+      return false;
+    };
+    let found = false;
+    // 阶段 1：sl ∈ [minSL, scanLine] —— L 形扫描填内部空隙（need ≤ scanLine，不增长边界）
+    for (let sl = minSL; sl <= scanLine && !found; sl += 1) {
+      found = tryTop(sl) || tryRight(sl);
+    }
+    // 阶段 2：无内部空位 → sl 从 scanLine+1 逐步增长，第一个可行位置即 need 最小，边界增长
+    for (let sl = Math.max(scanLine + 1, minSL); sl <= resolution && !found; sl += 1) {
+      found = tryTop(sl) || tryRight(sl);
+      if (found) scanLine = Math.max(scanLine, sl); // 该岛需边界到 sl（need = sl）
+    }
+    if (!found) {
+      overflow = true; // bbox 超 [0,1]
+      node.x = 0;
+      node.y = 0;
+    } else {
+      node.x = px;
+      node.y = py;
+    }
+  }
+  return {
+    placements: nodes.map((node) => ({ id: node.id, island: node.island, x: node.x, y: node.y })),
+    extentU: scanLine / resolution,
+    extentV: scanLine / resolution,
+    overflow
+  };
+}
+
+// 自适应找最大无兜底 k（alpaca occupancy 版）：框架照旧（128 稠密采样 + 24 细化二分 +
+// lo*0.999999），fitsAt(k) 用 alpacaPackOccupancy 判 overflow === false（scan_line ≤ R，
+// 即 bbox 装进 [0,1]²）。
+export function findMaxKAlpaca(boxUnit, totalArea, fill, gap, resolution = 256, sort = "maxSide") {
   if (!(fill > 0) || !(totalArea > 0)) return -1;
   const kMax = Math.sqrt(fill / totalArea);
   const fitsAt = (k) => {
-    const r = alpacaPackTurbo(
+    const r = alpacaPackOccupancy(
       boxUnit.map((box) => ({
         id: box.id !== undefined ? box.id : box.family.id,
         island: box.island,
         width: box.width * k,
         height: box.height * k
       })),
-      { gap, sort }
+      { gap, resolution, sort }
     );
-    return r.extentU <= 1 && r.extentV <= 1; // bbox 装进 [0,1]² 即放得下
+    return !r.overflow; // bbox 装进 [0,1]² 即放得下
   };
   const SAMPLES = 128;
   let bestK = 0;
@@ -491,10 +619,10 @@ export function findMaxKAlpaca(boxUnit, totalArea, fill, gap, sort = "maxSide") 
 //       2) 单位缩放（k=1）：uv × (width, length)，写 uvisland →
 //       3) boxUnit = 单位尺度 UV 包围盒 →
 //       4) kMax = sqrt(fill/totalArea)（作上限）→
-//       5) alpaca turbo 单套择优（方案 2 实验）：findMaxKAlpaca（128 稠密采样 + 24 细化
-//          二分逼近最大「alpacaPackTurbo extentU/extentV ≤ 1」k）；L 形 zigzag 天然把 bbox
-//          维持在方形，无需多策略按更方选（原 MaxRects Smart 择优已注释保留）→
-//       6) 最终缩放 uv × kFinal + alpacaPackTurbo 验证重试（extent 略超 1 则 kFinal *= 0.999，
+//       5) alpaca occupancy 单套择优（方案 2 实验）：findMaxKAlpaca（128 稠密采样 + 24 细化
+//          二分逼近最大「alpacaPackOccupancy 不溢出」k）；占位栅格 L 形扫描天然维持方形 bbox
+//          且填掉 L 形缺口（原 MaxRects Smart 择优已注释保留）→
+//       6) 最终缩放 uv × kFinal + alpacaPackOccupancy 验证重试（overflow 则 kFinal *= 0.999，
 //          k→0 必能装下保证终止，实际 1~3 次收敛）→
 //       7) boxFinal = 重算 UV 包围盒 → 8) 按 placements 平移 → 9) fit-to-tile：整包
 //          均匀缩放 + 居中（较长轴填满 [0,1]、较短轴居中，相似变换不改岛间布局）
@@ -539,10 +667,10 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
   // 4) 单位尺度（k=1）UV 包围盒
   const boxUnit = valid.map(({ family, island }) => ({ family, island, ...uvBounds(family.meshes) }));
 
-  // 【方案 2 实验：alpaca turbo（L 形 zigzag）】已屏蔽现有 MaxRects 逻辑（Smart 择优 +
-  // maxRectsPack + 验证重试 + 按 placements 平移，见下方 /* ... */ 注释块），改用 alpaca
-  // turbo（思路复刻 Blender alpaca 的 L-packer：顶边水平条带 + 右边竖直条带 zigzag 切换，
-  // 维持整包 bbox 方形）；fit-to-tile 居中保留。
+  // 【方案 2 实验：alpaca occupancy（占位栅格 L 形扫描）】已屏蔽现有 MaxRects 逻辑（Smart
+  // 择优 + maxRectsPack + 验证重试 + 按 placements 平移，见下方 /* ... */ 注释块），改用
+  // alpaca occupancy（思路复刻 Blender 的 find_best_fit_for_island：occupancy + L-shape +
+  // scan_line 增长，逐格扫描填掉 L 形缺口，方形 + 高填充）；fit-to-tile 居中保留。
   /*
   // 5) Smart 择优：多套「启发式 × 排序」各自找最大无兜底 k，取 fillUsed 最高者（右上角空档
   //    常源于单一排序/启发式的选位偏好——maxSide 把长条铺到底边、area 填平缺口、height/width
@@ -618,12 +746,14 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
   }
   */
 
-  // 1) alpaca turbo 单套择优：L 形 zigzag 天然把整包 bbox 维持在方形，直接找最大无兜底 k
-  // （extentU/extentV ≤ 1 即 [0,1]² 放得下）；-1 分支仅防御（理论不可达）
-  let kFinal = findMaxKAlpaca(boxUnit, totalArea, fill, gap, "maxSide");
-  if (!(kFinal > 0)) kFinal = findMaxKAlpaca(boxUnit, totalArea, fill, gap);
+  // 1) alpaca occupancy 单套择优：占位栅格 L 形扫描天然维持方形 bbox 且填掉 L 形缺口
+  // （方形 + 高填充兼得），直接找最大无兜底 k（overflow === false 即 [0,1]² 放得下）；
+  // -1 分支仅防御（理论不可达）
+  let kFinal = findMaxKAlpaca(boxUnit, totalArea, fill, gap, 256, "maxSide");
+  if (!(kFinal > 0)) kFinal = findMaxKAlpaca(boxUnit, totalArea, fill, gap, 256, "maxSide");
 
-  // 2) 最终缩放 + alpacaPackTurbo 验证重试：findMaxK 采样粒度可能让 bbox 略超 1 → 缩小重试
+  // 2) 最终缩放 + alpacaPackOccupancy 验证重试：findMaxK 采样粒度可能让 bbox 略超 1 →
+  // 缩小重试
   let boxFinal = null;
   let placements = null;
   let applied = 1; // uvs 当前累计缩放（相对单位尺度；重试时按比例重缩放）
@@ -642,12 +772,12 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
     applied = kFinal;
     // 最终包围盒（uv 已缩放，重算 uvBounds）
     boxFinal = valid.map(({ family, island }) => ({ family, island, ...uvBounds(family.meshes) }));
-    // alpaca turbo L 形打包
-    const packed2 = alpacaPackTurbo(
+    // alpaca occupancy L 形打包
+    const packed2 = alpacaPackOccupancy(
       boxFinal.map((box) => ({ id: box.family.id, island: box.island, width: box.width, height: box.height })),
-      { gap }
+      { gap, resolution: 256 }
     );
-    if (packed2.extentU <= 1 && packed2.extentV <= 1) {
+    if (!packed2.overflow) {
       placements = packed2.placements;
       break;
     }
@@ -659,7 +789,7 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
   const packed = [];
   for (const box of boxFinal) {
     const pos = placedBy.get(box.family.id);
-    if (!pos) continue; // alpacaPackTurbo 返回与输入同 id 集，理论不可达
+    if (!pos) continue; // alpacaPackOccupancy 返回与输入同 id 集，理论不可达
     const dx = pos.x - box.minU;
     const dy = pos.y - box.minV;
     for (const mesh of box.family.meshes || []) {
