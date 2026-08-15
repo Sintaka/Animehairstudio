@@ -1,7 +1,7 @@
 // guide-system.js - curve / guide subsystem (refactor 3d batch 5).
 // Extracted from app.js; coupling injected via createGuideSystemApi(deps).
 import * as THREE from "three";
-import { CURVE_LATTICE_FEATURE_ENABLED, GROUP_CURVE_FEATURE_ENABLED, SCALP_REGIONS, STRAND_GROUPS } from "../core/app-config.js?v=20260815-3";
+import { CURVE_LATTICE_FEATURE_ENABLED, GROUP_CURVE_FEATURE_ENABLED, SCALP_REGIONS, STRAND_GROUPS } from "../core/app-config.js?v=20260815-4";
 import { curveLatticeLoopPointIndices, DEFAULT_CURVE_LATTICE_PLANE, flatCurveLatticePointData, resampleCurveLatticeLineData, resampleCurveLatticePointData } from "./curve-lattice.js?v=20260814-12";
 import { curveDeformedCapsulePoints, polylineLength, sampleCapsuleRadialProfile } from "./capsule-curve.js?v=20260814-12";
 

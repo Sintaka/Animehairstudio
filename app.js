@@ -3,7 +3,7 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260814-12";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260814-12";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260814-2";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260815-4";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260814-12";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
 import { createSegmentControlApi } from "./modules/bones/segment-control.js?v=20260814-12";
@@ -42,7 +42,7 @@ import { createReferenceStore } from "./modules/edit/reference-store.js?v=202608
 import { createDrawStore } from "./modules/edit/draw-store.js?v=20260814-12";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260814-12";
 import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
-import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260815-3";
+import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260815-4";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
@@ -214,7 +214,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "./modules/core/app-config.js?v=20260815-3";
+} from "./modules/core/app-config.js?v=20260815-4";
 import { BoundedHistory, RestoreRefreshRegistry } from "./modules/core/history.js?v=20260814-12";
 import {
   focusedControlShouldYieldToShortcut,

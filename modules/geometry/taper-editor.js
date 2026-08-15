@@ -16,7 +16,7 @@ import {
   TAPER_VALUE_MAX,
   TWIST_CURVE_DISPLAY_RANGE_DEFAULT,
   TWIST_CURVE_VALUE_MAX
-} from "../core/app-config.js?v=20260815-3";
+} from "../core/app-config.js?v=20260815-4";
 
 
 export function createTaperEditorApi(deps) {

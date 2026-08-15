@@ -914,6 +914,8 @@ function createPanelStrandGeometry(lock) {
       const backRow = [];
       for (let column = 0; column <= columns; column += 1) {
         const u = THREE.MathUtils.lerp(uStart(row), uEnd(row), column / columns);
+        // 平直 uv：发尖只切缝不位移——几何位置仍用含 tip 收窄的 u，uv 用 boundaries 平直 u（u 与 row 无关）
+        const uFlat = THREE.MathUtils.lerp(boundaries[segment], boundaries[segment + 1], column / columns);
         const weight = segmentWeightAt(segment, t, u);
         const frontPoint = panelPoint(row, u, 1, bone, segment);
         const backPoint = panelPoint(row, u, -1, bone, segment);
@@ -928,14 +930,14 @@ function createPanelStrandGeometry(lock) {
         positions.push(frontPoint.x, frontPoint.y, frontPoint.z);
         gridRowsArr.push(row);
         gridColsArr.push((colBase + column) * 2 + 1);
-        uvs.push((u + 1) * 0.5, t);
+        uvs.push((uFlat + 1) * 0.5, t);
         colors.push(color.r, color.g, color.b);
         panelWeights.push(mainJoint, segmentIndex, weight);
         backRow.push(positions.length / 3);
         positions.push(backPoint.x, backPoint.y, backPoint.z);
         gridRowsArr.push(row);
         gridColsArr.push((colBase + column) * 2);
-        uvs.push((u + 1) * 0.5, t);
+        uvs.push((uFlat + 1) * 0.5, t);
         colors.push(color.r, color.g, color.b);
         panelWeights.push(mainJoint, segmentIndex, weight);
       }

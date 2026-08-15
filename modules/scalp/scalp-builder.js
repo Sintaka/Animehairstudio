@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { normalizeTaperCurve } from "../geometry/curve-math.js?v=20260813-3";
-import { DEFAULT_LAYER_OFFSETS, DEFAULT_SWEEP_PROFILE, ROOT_SCALP_OFFSET_DISTANCE, SCALP_REGIONS } from "../core/app-config.js?v=20260815-3";
+import { DEFAULT_LAYER_OFFSETS, DEFAULT_SWEEP_PROFILE, ROOT_SCALP_OFFSET_DISTANCE, SCALP_REGIONS } from "../core/app-config.js?v=20260815-4";
 
 
 export function createScalpBuilderApi(deps) {

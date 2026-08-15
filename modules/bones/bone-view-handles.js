@@ -2,7 +2,7 @@
 // Extracted from app.js; coupling injected via createBoneViewHandlesApi(deps).
 import * as THREE from "three";
 import { splitBonesFor, strandSplitBonesFor, strandTipFor } from "./bone-model.js?v=20260813-1";
-import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260814-12";
+import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260815-4";
 import { materializeTipChain, sampleTipPosition } from "../geometry/tip-sub-bone.js?v=20260813-1";
 // 绿色发段手柄沿尖端切线方向的外推距离（世界单位）：让手柄落在 trim/curve 适配后的
 // 最尖端稍前方，避免与粉色/黄色发尖子骨骼手柄重合而难以拖拽。

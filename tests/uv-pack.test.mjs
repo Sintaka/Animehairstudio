@@ -3,7 +3,7 @@
 // 运行：node tests/uv-pack.test.mjs
 
 import assert from "node:assert/strict";
-import { packFamilies, PACK_GAP } from "../modules/io/uv-pack.js";
+import { packFamilies, PACK_GAP, findMaxK } from "../modules/io/uv-pack.js";
 
 const EPS = 1e-9;
 
@@ -227,9 +227,35 @@ function rectQuad(w, h) {
     }
   }
 
-  // fillUsed 不超过 fill，且确实尽量铺满（CP 填充显著高于 BSSF，sanity 卡 > 0.6）
+  // fillUsed 不超过 fill，且确实尽量铺满（Smart 择优显著高于单策略，sanity 卡 > 0.65）
   assert.ok(result.fillUsed <= 0.9 + 1e-9, `fillUsed <= 0.9 (got ${result.fillUsed})`);
-  assert.ok(result.fillUsed > 0.6, `fillUsed 尽量铺满 (got ${result.fillUsed})`);
+  assert.ok(result.fillUsed > 0.65, `fillUsed 尽量铺满 (got ${result.fillUsed})`);
+}
+
+// ---- 6) Smart ≥ 单 CP sanity：同一组随机矩形，packFamilies（Smart 多策略择优）的 fillUsed
+// 不低于「只 CP + maxSide」策略的结果（复用 findMaxK 对同单位尺度 boxUnit 求单策略 k）----
+{
+  const COUNT = 40;
+  let seed = 98765;
+  const next = () => { // LCG：seed = (seed*1103515245+12345) % 2147483648，返回 [0,1)
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
+  const families = [];
+  const boxUnit = [];
+  let totalArea = 0;
+  for (let i = 0; i < COUNT; i += 1) {
+    const w = 0.02 + next() * 0.48; // 0.02 ~ 0.5（与压力回归同分布）
+    const h = 0.02 + next() * 0.48;
+    families.push({ id: `s${i}`, meshes: [rectQuad(w, h)], length: h, width: w });
+    boxUnit.push({ id: `s${i}`, island: i, width: w, height: h }); // 单位尺度 bbox = w×h
+    totalArea += w * h;
+  }
+  const result = packFamilies(families, { fill: 0.9 });
+  const singleK = findMaxK(boxUnit, totalArea, 0.9, PACK_GAP, "contactPoint", "maxSide");
+  const singleFill = singleK * singleK * totalArea;
+  assert.ok(result.fillUsed >= singleFill - 1e-6,
+    `Smart fillUsed ${result.fillUsed} >= 单 CP+maxSide fillUsed ${singleFill}`);
 }
 
 console.log("uv-pack tests passed");
