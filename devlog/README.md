@@ -52,6 +52,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - **本地持久化功能（简体中文、Houdini 导航、Quick Save/Export 等）**：development-standards.md「持续修改功能」。
 
 ## 最近版本 / Latest
+- 导出 UV：Spread Islands to All Available Space 散布（0.2.86）：packFamilies 在 Smart 择优后增 gap 二分（SPREAD_KEEP=0.9、SPREAD_GAP_MAX=0.1），把打包后右上角空档均摊成岛间间隙、UV 岛散布填满 UDIM 1001（不再堆左下角）；返回加 gap 字段；单岛/`spread:false` 跳过（紧排不变）。详见 uv-unfold.md。
 - 导出 UV：panel 发尖平直 + 打包 Smart 多策略择优（0.2.85）：① panel 发尖 uv 只切缝不位移（uv 用平直 u、几何不变）；② 打包 6 策略（CP/BSSF × 4 排序）择优，fillUsed 均值 +2.9%、填平右上角。详见 uv-unfold.md。
 - 导出 UV 打包优化：panel 原版 UV + CP 启发式 + gap 10px（0.2.84）：① panel/surface 用原始几何 uv（flatPanelMesh），不再 open 展开切中间；② 启发式 BSSF→Contact Point Rule（CP，BSSF 屏蔽保留），填充率均值 0.848→0.863、下限 +6.5%；③ 自适应填充改稠密采样+局部细化；④ 间隙 5px→10px。详见 uv-unfold.md。
 - 导出 UV 打包换 MaxRects + panel 刘海纳入 + 自适应填充（0.2.83）：① `uv-pack.js` 从 shelf 换规范 MaxRects（不旋转、BSSF、gap）；② panel/surface（刘海）整片=一个原子 bbox 纳入打包（width 按 area/length 推导），与发丝按真实宽高统一排列；③ 自适应填充：k 在 PACK_FILL 上限内二分 + 验证重试，保证无兜底无重叠、尽量铺满 UDIM 1001（新增 fillUsed）；④ 修复初版 MaxRects 缺 SAT 早退导致自由矩形污染 → 重叠（压力测试 14229 处，已修）。详见 uv-unfold.md。
