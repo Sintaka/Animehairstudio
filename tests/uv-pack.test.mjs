@@ -227,9 +227,9 @@ function rectQuad(w, h) {
     }
   }
 
-  // fillUsed 不超过 fill，且确实尽量铺满（显著高于零）
+  // fillUsed 不超过 fill，且确实尽量铺满（CP 填充显著高于 BSSF，sanity 卡 > 0.6）
   assert.ok(result.fillUsed <= 0.9 + 1e-9, `fillUsed <= 0.9 (got ${result.fillUsed})`);
-  assert.ok(result.fillUsed > 0.5, `fillUsed 尽量铺满 (got ${result.fillUsed})`);
+  assert.ok(result.fillUsed > 0.6, `fillUsed 尽量铺满 (got ${result.fillUsed})`);
 }
 
 console.log("uv-pack tests passed");

@@ -52,6 +52,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - **本地持久化功能（简体中文、Houdini 导航、Quick Save/Export 等）**：development-standards.md「持续修改功能」。
 
 ## 最近版本 / Latest
+- 导出 UV 打包优化：panel 原版 UV + CP 启发式 + gap 10px（0.2.84）：① panel/surface 用原始几何 uv（flatPanelMesh），不再 open 展开切中间；② 启发式 BSSF→Contact Point Rule（CP，BSSF 屏蔽保留），填充率均值 0.848→0.863、下限 +6.5%；③ 自适应填充改稠密采样+局部细化；④ 间隙 5px→10px。详见 uv-unfold.md。
 - 导出 UV 打包换 MaxRects + panel 刘海纳入 + 自适应填充（0.2.83）：① `uv-pack.js` 从 shelf 换规范 MaxRects（不旋转、BSSF、gap）；② panel/surface（刘海）整片=一个原子 bbox 纳入打包（width 按 area/length 推导），与发丝按真实宽高统一排列；③ 自适应填充：k 在 PACK_FILL 上限内二分 + 验证重试，保证无兜底无重叠、尽量铺满 UDIM 1001（新增 fillUsed）；④ 修复初版 MaxRects 缺 SAT 早退导致自由矩形污染 → 重叠（压力测试 14229 处，已修）。详见 uv-unfold.md。
 - 导出 UV 统一缩放 + 打包进 UDIM 1001 + uvisland 岛编号（0.2.82）：① `childUTopologyScale` U 方向中心缩放 0.9（硬编码、中心不变）；② 新增 `modules/io/uv-pack.js` `packFamilies`——每个「主发片+子发片」family 按真实 3D 尺度统一缩放（统一纹素密度·面积归一，k=sqrt(填充率/Σ世界面积)，U 宽=k×周长、V 高=k×长度，不再强制 0-1）后 shelf-pack 进 UDIM 1001（间隙 5px@4096、不旋转只位移、bbox 最小单位）；③ USDA 新增 `primvars:uvisland`（int/uniform）每 bbox 一个岛编号供 DCC 选岛；④ 接线 buildUnfoldedMeshes→packUnfoldedUv（closed/split + 子发片分组）；panel/haircard 本轮不纳入。详见 uv-unfold.md。
 - 分支整理 + 统一 dev 分支（0.2.81，分支 DHS/develop）：新建统一开发分支 `DHS/develop`（自 upstream/main d3358f6 起线性 315 提交，承接全部本地适配；origin/main 为旧快照上传、内容分叉，不作变基目标——开发线本就基于合适的 upstream 位置）；历史分支（0.2.5x–0.2.6x、codex/*、v0.1.4-*）提交均已包含在 DHS/develop，4 个被替代的实验提交记录后随分支删除；`branch-deployment` fast-forward 至 DHS/develop 并推送 origin；分支规范改为「DHS/develop 统一开发 + 临时 feature 用后即删 + deployment 发布」（见 development-standards.md「分支管理」）。

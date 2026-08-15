@@ -11,7 +11,7 @@ import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-exp
 import { exportAnimeHairUsda } from "./usda-export.js?v=20260815-1";
 import { createHairProject } from "./project-schema.js?v=20260814-12";
 import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260815-1";
-import { packFamilies } from "./uv-pack.js?v=20260815-2";
+import { packFamilies } from "./uv-pack.js?v=20260815-3";
 
 export function createProjectSaveApi(deps) {
   // ---- dialog UI elements (document is ready when this runs; app.js loads at body end) ----
@@ -135,6 +135,43 @@ export function createProjectSaveApi(deps) {
     return Math.max(0, Math.round(Number(geometry.userData?.bridgeSeamCol ?? (ringWidthSegments + 1 + Math.round(ringWidthSegments / 2)))));
   }
 
+  // panel/surface 用原始几何（含原始 uv）拼成与 unfoldHairMesh 同构的平铺 mesh：
+  // 不重算 UV（open 展开会把 panel 中间切开），只做 bbox/缩放/layout 后处理。
+  function flatPanelMesh(geometry) {
+    const position = geometry.getAttribute("position");
+    const uv = geometry.getAttribute("uv");
+    const normal = geometry.getAttribute("normal");
+    const color = geometry.getAttribute("color");
+    const tangent = geometry.getAttribute("tangent");
+    const count = position ? position.count : 0;
+    const positions = new Array(count * 3);
+    const uvs = new Array(count * 2);
+    const normals = normal ? new Array(count * 3) : null;
+    const colors = color ? new Array(count * 3) : null;
+    const tangents = tangent ? new Array(count * 4) : null;
+    for (let i = 0; i < count; i += 1) {
+      positions[i * 3] = position.getX(i);
+      positions[i * 3 + 1] = position.getY(i);
+      positions[i * 3 + 2] = position.getZ(i);
+      uvs[i * 2] = uv ? uv.getX(i) : 0;
+      uvs[i * 2 + 1] = uv ? uv.getY(i) : 0;
+      if (normals) { normals[i * 3] = normal.getX(i); normals[i * 3 + 1] = normal.getY(i); normals[i * 3 + 2] = normal.getZ(i); }
+      if (colors) { colors[i * 3] = color.getX(i); colors[i * 3 + 1] = color.getY(i); colors[i * 3 + 2] = color.getZ(i); }
+      if (tangents) { tangents[i * 4] = tangent.getX(i); tangents[i * 4 + 1] = tangent.getY(i); tangents[i * 4 + 2] = tangent.getZ(i); tangents[i * 4 + 3] = tangent.getW(i); }
+    }
+    return {
+      positions,
+      uvs,
+      faces: (geometry.userData?.quadFaces || []).map((face) => [...face]),
+      normals,
+      colors,
+      tangents,
+      gridRows: geometry.userData?.gridRowIndices || null,
+      gridCols: geometry.userData?.gridColIndices || null,
+      leafWeights: null
+    };
+  }
+
   function buildUnfoldedMeshes() {
     const unfolded = new Map();
     const uvAt = new Map(); // lock.id -> gridUvTable 弧长表（父发片洞查询用）
@@ -151,6 +188,13 @@ export function createProjectSaveApi(deps) {
       const geometry = lock.mesh?.geometry;
       const kind = geometry ? kindForLock(lock) : null;
       if (!geometry || !kind) return;
+      // panel/surface 用原始 uv 进 unfolded（不重算 UV，避免 open 展开把 panel 中间切开），
+      // 后续 packUnfoldedUv 打包、buildHairObj/buildHairUsda 导出都走这条平铺 mesh。
+      if (kind === "open" && (lock.geometryType === "panel" || lock.geometryType === "surface")) {
+        const mesh = flatPanelMesh(geometry);
+        if (mesh && mesh.positions.length) unfolded.set(lock.id, mesh);
+        return;
+      }
       let options = { kind };
       if (kind === "child") {
         const seamCol = childSeamCol(geometry);
@@ -419,8 +463,10 @@ export function createProjectSaveApi(deps) {
               tangents: flatTuples(unfolded.tangents, 4),
               faces: unfolded.faces.map((face) => [...face])
             };
-            mesh.gridRowIndices = Array.from(unfolded.gridRows);
-            mesh.gridColIndices = Array.from(unfolded.gridCols);
+            if (unfolded.gridRows && unfolded.gridCols) {
+              mesh.gridRowIndices = Array.from(unfolded.gridRows);
+              mesh.gridColIndices = Array.from(unfolded.gridCols);
+            }
             if (Number.isInteger(unfolded.uvisland)) mesh.uvisland = unfolded.uvisland;
             if (includeBones && typeof deps.bonesFor === "function") {
               const bones = deps.bonesFor(lock, { locks: deps.locks })

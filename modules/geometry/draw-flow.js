@@ -29,7 +29,7 @@ import {
   GROUP_CURVE_FEATURE_ENABLED,
   ROOT_SCALP_OFFSET_DISTANCE,
   ROUND_SWEEP_PROFILE
-} from "../core/app-config.js?v=20260815-2";
+} from "../core/app-config.js?v=20260815-3";
 
 export function createDrawFlowApi(deps) {
   // deps: store .state proxies (sel/sculptState/hairState/draw; use deps.X.y, never deps.X.state.y),

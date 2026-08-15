@@ -1,9 +1,10 @@
 // uv-pack.js — 导出时 UV 打包：把展开后的 family（主发片 + 子发片 / panel 整片）按真实 3D
 // 尺寸统一缩放（统一纹素密度·面积归一），再 MaxRects（不旋转、带间隙）打包进 UDIM 1001
-// （[0,1]²）。填充率自适应：在 PACK_FILL 上限内二分最大的 k，保证所有 bbox 放得下
-// （无兜底、无重叠），尽量铺满。纯函数、零依赖；原地修改各 mesh.uvs（u/v 平铺 number 数组）。
+// （[0,1]²）。填充率自适应：在 PACK_FILL 上限内稠密采样 + 局部细化逼近最大的 k，保证
+// 所有 bbox 放得下（无兜底、无重叠），尽量铺满。纯函数、零依赖；原地修改各 mesh.uvs
+// （u/v 平铺 number 数组）。
 
-export const PACK_GAP = 5 / 4096; // 5px @ 4096 分辨率 → UV 间隙
+export const PACK_GAP = 10 / 4096; // 10px @ 4096 分辨率 → UV 间隙
 export const PACK_FILL = 0.8;     // 目标填充率（UDIM tile 面积填充比例）
 
 // 扇三角 (v0, vi, vi+1) 面积：0.5 * |cross(b-a, c-a)|
@@ -119,26 +120,58 @@ function maxRectsPack(items, { binW = 1, binH = 1, gap = 0 } = {}) {
     }
   };
 
+  // 两区间 [a1,a2] 与 [b1,b2] 的公共长度（共边接触长度）
+  const commonIntervalLength = (a1, a2, b1, b2) => Math.max(0, Math.min(a2, b2) - Math.max(a1, b1));
+
+  // Contact Point Rule 评分：贴 bin 边加分，与已放置项共边按公共边长加分——接触越多越好
+  const contactScore = (x, y, w, h) => {
+    let score = 0;
+    if (Math.abs(x - gap) < EPS || Math.abs(x + w - (binW - gap)) < EPS) score += h;   // 贴左/右边
+    if (Math.abs(y - gap) < EPS || Math.abs(y + h - (binH - gap)) < EPS) score += w;   // 贴上/下边
+    for (const u of usedRects) {
+      if (Math.abs(u.x - (x + w)) < EPS || Math.abs(u.x + u.w - x) < EPS)
+        score += commonIntervalLength(u.y, u.y + u.h, y, y + h);
+      if (Math.abs(u.y - (y + h)) < EPS || Math.abs(u.y + u.h - y) < EPS)
+        score += commonIntervalLength(u.x, u.x + u.w, x, x + w);
+    }
+    return score;
+  };
+
   let overflowCount = 0;
+  const usedRects = []; // 已放置项的占位尺寸矩形（w/h = item.width+gap），CP 评分用
   for (const index of order) {
     const node = nodes[index];
-    // Best Short Side Fit：shortSide 最小，并列取 longSide 最小
+    // Contact Point Rule 选位：每个放得下的自由矩形算接触分，取分最高者（并列取更早）
     let best = -1;
-    let bestShort = Infinity;
-    let bestLong = Infinity;
+    let bestScore = -1;
     for (let i = 0; i < free.length; i += 1) {
       const rect = free[i];
       if (rect.w < node.w - EPS || rect.h < node.h - EPS) continue;
-      const leftoverHoriz = rect.w - node.w;
-      const leftoverVert = rect.h - node.h;
-      const shortSide = Math.min(leftoverHoriz, leftoverVert);
-      const longSide = Math.max(leftoverHoriz, leftoverVert);
-      if (shortSide < bestShort || (shortSide === bestShort && longSide < bestLong)) {
+      const score = contactScore(rect.x, rect.y, node.w, node.h);
+      if (score > bestScore) { // 严格大于 → 并列时保留更早的自由矩形
         best = i;
-        bestShort = shortSide;
-        bestLong = longSide;
+        bestScore = score;
       }
     }
+    /* 已屏蔽：BSSF（Best Short Side Fit）——shortSide 最小、并列取 longSide 最小。
+     * 如需回退 BSSF，改这里：用下面这段选择循环替换上面的 CP 评分循环即可。
+     * let best = -1;
+     * let bestShort = Infinity;
+     * let bestLong = Infinity;
+     * for (let i = 0; i < free.length; i += 1) {
+     *   const rect = free[i];
+     *   if (rect.w < node.w - EPS || rect.h < node.h - EPS) continue;
+     *   const leftoverHoriz = rect.w - node.w;
+     *   const leftoverVert = rect.h - node.h;
+     *   const shortSide = Math.min(leftoverHoriz, leftoverVert);
+     *   const longSide = Math.max(leftoverHoriz, leftoverVert);
+     *   if (shortSide < bestShort || (shortSide === bestShort && longSide < bestLong)) {
+     *     best = i;
+     *     bestShort = shortSide;
+     *     bestLong = longSide;
+     *   }
+     * }
+     */
     let used;
     if (best >= 0) {
       used = { x: free[best].x, y: free[best].y, w: node.w, h: node.h };
@@ -157,6 +190,7 @@ function maxRectsPack(items, { binW = 1, binH = 1, gap = 0 } = {}) {
       used = { x: gap, y: gap, w: node.w, h: node.h };
       overflowCount += 1;
     }
+    usedRects.push({ x: used.x, y: used.y, w: node.w, h: node.h }); // 成功放置与兜底分支都记录
     node.x = used.x;
     node.y = used.y;
     pruneFreeList();
@@ -175,9 +209,9 @@ function maxRectsPack(items, { binW = 1, binH = 1, gap = 0 } = {}) {
 //       2) 单位缩放（k=1）：uv × (width, length)，写 uvisland →
 //       3) boxUnit = 单位尺度 UV 包围盒 →
 //       4) kMax = sqrt(fill/totalArea)（作上限）→
-//       5) 二分 k ∈ [0, kMax]：最大「maxRectsPack 无兜底」的 k（≈40 次，kFinal = lo*0.999999
-//          留极小余量防浮点贴边兜底）→
-//       6) 最终缩放 uv × kFinal + 打包验证（BSSF 贪心对 k 非单调：lo 邻域可能有「拟合岛/
+//       5) 稠密采样 128 点 + 局部细化 24 次二分 k ∈ [0, kMax]：逼近最大「maxRectsPack 无兜底」
+//          的 k（fitsAt 对 k 非单调，kFinal = lo*0.999999 留极小余量防浮点贴边兜底）→
+//       6) 最终缩放 uv × kFinal + 打包验证（CP 贪心对 k 非单调：lo 邻域可能有「拟合岛/
 //          失败带」交错，kFinal 落失败带会兜底 → 验证 overflowCount，非零则缩小 k 重试，
 //          k→0 必无兜底保证终止，实际 1~3 次收敛）→
 //       7) boxFinal = 重算 UV 包围盒 → 8) 按 placements 平移 → 9) 返回
@@ -221,8 +255,9 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
   // 4) 单位尺度（k=1）UV 包围盒
   const boxUnit = valid.map(({ family, island }) => ({ family, island, ...uvBounds(family.meshes) }));
 
-  // 5) 自适应二分：kMax 作上限，找最大「maxRectsPack 无兜底」的 k（只缩放 width/height
-  //    喂给 maxRectsPack，不反复动 uv）
+  // 5) 自适应填充：fitsAt 对 k 非单调（贪心小尺度「拟合岛/失败带」交错），纯二分会停在失败带
+  //    前；稠密采样 128 点先找「最大能放下」的采样 k，再在相邻区间局部细化二分 24 次逼近真
+  //    最大值（只缩放 width/height 喂给 maxRectsPack，不反复动 uv）
   const kMax = Math.sqrt(fill / totalArea);
   const fitsAt = (k) => {
     const { overflowCount } = maxRectsPack(
@@ -231,16 +266,24 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
     );
     return overflowCount === 0;
   };
-  let lo = 0;
-  let hi = kMax;
-  for (let i = 0; i < 40; i += 1) {
+  // 稠密采样 128 点：找「最大能放下」的采样 k（非单调也能覆盖大部分）
+  const SAMPLES = 128;
+  let bestK = 0;
+  for (let i = 1; i <= SAMPLES; i += 1) {
+    const k = kMax * i / SAMPLES;
+    if (fitsAt(k)) bestK = k;
+  }
+  // 局部细化：在 [bestK, bestK + kMax/SAMPLES] 二分 24 次
+  let lo = bestK;
+  let hi = Math.min(kMax, bestK + kMax / SAMPLES);
+  for (let i = 0; i < 24; i += 1) {
     const mid = (lo + hi) / 2;
     if (fitsAt(mid)) lo = mid;
     else hi = mid;
   }
   let kFinal = lo * 0.999999; // 留极小余量，防浮点贴边兜底
 
-  // 6) 最终缩放 + 打包验证：fitsAt 对 k 非单调（BSSF 贪心，lo 邻域「拟合岛/失败带」交错，
+  // 6) 最终缩放 + 打包验证：fitsAt 对 k 非单调（CP 贪心，lo 邻域「拟合岛/失败带」交错，
   //    kFinal 可能恰落失败带 → 兜底重叠），故用真实 uvBounds 打包并验证 overflowCount，
   //    非零则缩小 k 重试（k→0 必无兜底，保证终止；实际 1~3 次收敛）
   let boxFinal = null;

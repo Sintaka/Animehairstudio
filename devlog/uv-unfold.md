@@ -87,12 +87,12 @@
 | `modules/geometry/panel-tip-strand.js` | panel 模拟 row/col（经 weld 重映射） |
 | `tests/uv-unfold.test.mjs` | 纯 node 回归（closed/split/open/compound/child/回退/childUTopologyScale） |
 
-## 10. 导出后打包（0.2.82–0.2.83，modules/io/uv-pack.js + `primvars:uvisland`）
+## 10. 导出后打包（0.2.82–0.2.84，modules/io/uv-pack.js + `primvars:uvisland`）
 
 - `unfoldHairMesh` 仍输出每根发丝独立（或子发片对齐主发片）的矩形 UV；**导出最后一步**新增打包：把每个「主发片 + 其子发片 / panel 整片」family 按真实 3D 尺度统一缩放后 **MaxRects** 打包进 UDIM 1001（[0,1]²）——§1「允许重叠、不做打包」只在 unfold 层成立，导出层已打包。
 - **统一纹素密度·面积归一**：每 family U 宽 = k×横向宽度、V 高 = k×曲线长（CatmullRom）——strand 的横向宽度=环周长（`gridUvTable.circumference`），panel/surface 的横向宽度按 `area / length` 推导（width 不传）；保持真实宽高比、UV 面积∝世界面积、纹理密度全局一致，**不再强制 U/V 归一到 0-1**。
-- **自适应填充（0.2.83）**：k 在 `PACK_FILL=0.8` 上限（`kMax=sqrt(fill/totalArea)`）内二分（约 40 次）找「所有 bbox 放得下」的最大值，再「真实打包验证 + overflow 缩小重试」（BSSF 贪心对 k 非单调，lo 邻域有「拟合岛/失败带」交错）——保证最终**无兜底、无重叠**、尽量铺满 UDIM 1001；返回 `fillUsed = k²·totalArea`（≤ fill）。
-- **布局（MaxRects，0.2.83 起）**：规范 MaxRects（Jukka Jylänki MaxRectsBinPack，不旋转、BSSF 选位、SplitFreeNode SAT 交叠早退 + PruneFreeList），按 family 缩放后 UV bbox（子发片可略外露，直接包进 bbox）打包，间隙 `PACK_GAP = 5/4096`；**不旋转、只位移**，bbox 为最小单位整体平移、不动内部 UV 结构。panel 整片 = 一个原子 bbox，内部 open 展开不切缝、无 5px 约束。
+- **自适应填充（0.2.83–0.2.84）**：k 在 `PACK_FILL=0.8` 上限（`kMax=sqrt(fill/totalArea)`）内找「所有 bbox 放得下」的最大值，再「真实打包验证 + overflow 缩小重试」（贪心对 k 非单调，lo 邻域有「拟合岛/失败带」交错）——保证最终**无兜底、无重叠**、尽量铺满 UDIM 1001；返回 `fillUsed = k²·totalArea`（≤ fill）。0.2.84 起纯二分改**128 点稠密采样 + 邻区间二分局部细化**（非单调下更接近真最大值，下限提升 +6.5%）。
+- **布局（MaxRects，0.2.83 起；启发式 0.2.84 换 CP）**：规范 MaxRects（Jukka Jylänki MaxRectsBinPack，不旋转、SplitFreeNode SAT 交叠早退 + PruneFreeList），启发式 **Contact Point Rule (CP)**（接触越多越好，BSSF 注释屏蔽保留），按 family 缩放后 UV bbox（子发片可略外露，直接包进 bbox）打包，间隙 `PACK_GAP = 10/4096`（0.2.84 起 5→10px）；**不旋转、只位移**，bbox 为最小单位整体平移、不动内部 UV 结构。panel 整片 = 一个原子 bbox。
 - **`primvars:uvisland`**：每个 bbox（family）一个稳定岛编号 0..N-1（有效 family 密集编号、sort 前固定），USDA 以 `int[] primvars:uvisland` + `interpolation="uniform"`（每面一个值）输出，DCC 按 `@uvisland==k` 选岛；OBJ 无 primvar 机制不输出。
-- **范围**：closed/split 主发片 + 其子发片（child）+ panel/surface（刘海）；hairCard / curve-surface 等其它 open/compound 本轮不纳入打包。
+- **范围**：closed/split 主发片 + 其子发片（child）+ panel/surface（刘海）；hairCard / curve-surface 等其它 open/compound 本轮不纳入打包。**0.2.84**：panel/surface 改用**原始几何 uv**（`flatPanelMesh` 直接拷贝 position/uv/quadFaces，不再走 unfoldHairMesh 的 open 展开 → 中间不再被切开），bbox/缩放/layout 后处理保留。
 - **关键函数**：`packFamilies(families, {gap, fill})`（uv-pack.js，纯函数零依赖，返回 `{k, totalArea, fillUsed, packed:[{id,island,x,y,width,height}]}`）；接线 project-files.js `packUnfoldedUv`；`tests/uv-pack.test.mjs` 纯 node 回归（含确定性压力回归）。
