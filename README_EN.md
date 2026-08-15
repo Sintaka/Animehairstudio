@@ -68,6 +68,22 @@ Four custom sculpt brushes:
 
 Ctrl = reverse on all brushes: Scale defaults to growing, Ctrl shrinks; Cut·Extend defaults to extending, Ctrl cuts.
 
+## Export UV layout (unwrapping)
+
+On export (OBJ/USDA), rectangular UVs are generated from the sweep grid (`gridRow/gridCol`; V-negative = hair tangent, so hair runs straight down), then each "parent + child / panel sheet" is packed as an island (`uvisland`) at uniform texel density into UDIM 1001 ([0,1]²) via an **alpaca occupancy-grid L-shape scan**:
+
+- **Algorithm**: rasterize the tile (256 cells/UV unit) + integral-image O(1) occupancy test; a growing `scanLine` keeps a square frontier, with two-phase placement (first an L-shape scan along the top + right edges to fill interior gaps, then expand the frontier); then fit-to-tile (uniform scale + center, preserving aspect ratio, no normalize, no rotation).
+- **Multi-start selection**: 8 deterministic shuffled orders, pick the best (≈+7% fill vs a single greedy pass).
+- **Result**: panels and strands packed together, near-square bbox (U/V both nearly full), no overlap/fallback, ~0.76–0.81 fill.
+- **Preview**: the ⟳ button at the top of the UV Checker window runs the same export pipeline to preview the final layout in the viewport checker + 2D UV Inspector.
+
+References:
+
+- Nöll, T., Stricker, D. (2011). *Efficient Packing of Arbitrary Shaped Charts for Automatic Texture Atlas Generation*. Eurographics. <https://www.semanticscholar.org/paper/Efficient-Packing-of-Arbitrary-Shaped-Charts-for-N%C3%B6ll-Stricker/643267eb8be94784f005a48c9ce1bdb716d1008f>
+- TABI (2026). *Tight and Balanced Interactive Atlas Packing*. UBC/NVIDIA. <https://www.cs.ubc.ca/labs/imager/tr/2026/tabi/>
+- Jylänki, J. *A Thousand Ways to Pack the Bin — A Practical Approach to Two-Dimensional Rectangle Bin Packing*. <http://clb.demon.fi/projects/more-rectangle-bin-packing>
+- jpcy/xatlas — UV atlas library. <https://github.com/jpcy/xatlas>
+
 ## Known limitations
 
 - **UV**: export UV is unwrapped and packed into UDIM 1001; the packer is greedy (alpaca occupancy-grid L-shape + multi-start seed selection), fill ~0.76–0.81, no rotation (keeps the strand anisotropy direction); hairCard / curve-surface and other open/compound types are not packed yet.

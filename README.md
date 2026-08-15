@@ -68,6 +68,22 @@ Ctrl=反向说明：所有笔刷按住 Ctrl 为反向——Scale 笔刷默认放
 
 父发片被挖洞打开，子发片通过低模水密桥接（父洞边界 → 子发片根环 → 顶/底带 + 侧边四边形）连接；父表面 Region 选区（2D u/v 面板 + 3D 标记）、直接/间接桥接、均匀平滑（Strength/Detail）；子发片根骨骼工作流（gizmo 携带 twist、H 层级刚性移动、Region 锚定中心）；父发片不使用拓扑连接（如 Split Geometry）时回退直接生成（从根部扫掠）；**UV 布局已解决**（导出时展开 + 按岛打包进 UDIM 1001，见上「导出 UV 自动布局」）。
 
+## 导出 UV 布局（拆 UV）
+
+导出（OBJ/USDA）时按扫掠网格的 `gridRow/gridCol` 属性生成矩形 UV（V 负方向 = 发丝切线，头发竖直向下打直），再把每个「主发片 + 子发片 / panel 整片」作为岛（`uvisland` 岛编号）统一纹素密度缩放后，用 **alpaca 占位栅格 L 形扫描** 打包进 UDIM 1001（[0,1]²）：
+
+- **算法**：tile 栅格化（256 格/单位 UV）+ 积分图 O(1) 判空；`scanLine` 逐岛增长维持「方形边界」，两阶段放置（先沿「顶边 + 右边」L 形扫描填内部空隙、再无空位才外扩边界）；打包后整包等比缩放 + 居中（fit-to-tile：保持宽高比、不 normalize、不旋转）。
+- **多起点择优**：8 个确定性随机序各跑一遍取最优（比单次贪心填充率约 +7%）。
+- **效果**：panel 与普通发丝混排、整包近似方形（U/V 双侧≈填满）、无重叠无兜底、填充率约 0.76~0.81。
+- **预览**：UV Checker 窗口顶部 ⟳ 按钮走同一导出流程，在视口棋盘格 + 2D UV Inspector 里预览最终布局，无需导入 DCC。
+
+参考文献：
+
+- Nöll, T., Stricker, D. (2011). *Efficient Packing of Arbitrary Shaped Charts for Automatic Texture Atlas Generation*. Eurographics. <https://www.semanticscholar.org/paper/Efficient-Packing-of-Arbitrary-Shaped-Charts-for-N%C3%B6ll-Stricker/643267eb8be94784f005a48c9ce1bdb716d1008f>
+- TABI (2026). *Tight and Balanced Interactive Atlas Packing*. UBC/NVIDIA. <https://www.cs.ubc.ca/labs/imager/tr/2026/tabi/>
+- Jylänki, J. *A Thousand Ways to Pack the Bin — A Practical Approach to Two-Dimensional Rectangle Bin Packing*. <http://clb.demon.fi/projects/more-rectangle-bin-packing>
+- jpcy/xatlas — UV atlas library. <https://github.com/jpcy/xatlas>
+
 ## 已知限制
 
 - **UV**：导出 UV 已展开并打包进 UDIM 1001；当前打包器为贪心（alpaca 占位栅格 L 形扫描 + 多起点 seed 择优），填充率约 0.76~0.81，不旋转（保持发丝各向异性方向）；hairCard / curve-surface 等其它 open/compound 类型本轮不纳入打包。
