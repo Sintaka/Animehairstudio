@@ -99,4 +99,24 @@
 - **Smart 多策略择优（0.2.85）**：`maxRectsPack` 参数化 `heuristic`（contactPoint/bssf）× `sort`（maxSide/area/height/width）；`packFamilies` 对 6 套策略各自适应找最大 k，取 `fillUsed` 最高者（随机压力均值 0.8525→0.8769，area/width 排序填平右上角）。
 - **fit-to-tile 整包填满（0.2.87）**：`packFamilies` 在 MaxRects 紧排（gap=PACK_GAP）后做**整包均匀缩放 + 居中**（绕整包 bbox 中心等比缩放 `s=min(1/spanU,1/spanV)` 再平移到 tile 中心 0.5）——较长轴填满 [0,1]、较短轴居中；不新增岛间 gap、不改岛间相对布局（相似变换）。替代 0.2.86 的「增 gap 散布」（缝隙太大已回退）。**等比拉伸**：s 为单值均匀缩放（保持长宽比），**不强行非等比 normalize**——较长轴填满 [0,1]，较短轴按原宽高比留边（非撑满）。
 - **alpaca 占位栅格打包（0.2.88，方案 2 实验）**：`packFamilies` 的最后 UV 排列从 MaxRects 换成**占位栅格打包**（思路复刻 Blender alpaca，非 GPL 源码）——`alpacaPack`（`ALPACA_RESOLUTION=128` 栅格 + 积分图 O(1) 空位判断 + scanline/spiral 空位扫描）+ `findMaxKAlpaca`（128 采样 + 24 细化二分找最大无兜底 k = scale_to_fit），Smart 择优改 4 套「排序(maxSide/area)×扫描(scanline/spiral)」；原 MaxRects 三块（Smart 择优 + maxRectsPack + 平移）**注释保留不删**，可随时切回；fit-to-tile 居中保留。效果：panel 与普通发丝混排、右上角不再空（见 §8 待办）。**0.2.89**：新增 `scan:"column"`（列主序，先填 V）+ Smart 择优改「按更方选」（6 套 sort×scan，各算整包 bbox 取 `min(spanU,spanV)/max(...)` 最大者，加 `k≥0.9×kMax` 过滤防 spiral 低填充胜出）——fit 后 V 从 ~0.6 填到 ~0.99（spanV 0.9878、fillUsed 0.8）。**0.2.90**：读 Blender 源码确认 alpaca=L-packer，改为 `alpacaPackTurbo`（L 形 zigzag：顶边水平条带 + 右边竖直条带，`zigzag = nextU1 < nextV1` 切换方向维持方形 bbox）——整包 bbox 双侧均衡（U/V 都接近 1），代价是 L 形缺口使 fillUsed 降到 ~0.5。**0.2.91**：改 `alpacaPackOccupancy`（占位栅格 + scanLine 方形边界 + 两阶段 L 形扫描填缺口）——「方形 + 高填充」兼得（fillUsed 0.50→0.76、方形度 0.91→0.99）。
-- **关键函数**：`packFamilies(families, {gap, fill})`（uv-pack.js，纯函数零依赖，返回 `{k, totalArea, fillUsed, packed:[{id,island,x,y,width,height}], gap}`）；接线 project-files.js `packUnfoldedUv`；`tests/uv-pack.test.mjs` 纯 node 回归（含确定性压力回归 + fit-to-tile）。
+- **关键函数**：`packFamilies(families, {gap, fill})`（uv-pack.js，纯函数零依赖，返回 `{k, totalArea, fillUsed, packed:[{id,island,x,y,width,height}], gap}`）；当前打包器 `alpacaPackOccupancy` + `findMaxKAlpaca`；注释保留的旧实现 `maxRectsPack`/`findMaxK`/`alpacaPackTurbo`/`alpacaPack`；接线 project-files.js `packUnfoldedUv`；`tests/uv-pack.test.mjs` 纯 node 回归（含确定性压力回归 + fit-to-tile + 方形断言）。
+
+## 11. 最终 UV 布局实现（0.2.91）+ 参考文献
+
+### 11.1 最终算法（alpaca 占位栅格 L 形扫描）
+
+- `alpacaPackOccupancy`（uv-pack.js）：把 UDIM 1001（[0,1]²）栅格化（`resolution=256` 格/单位 UV），用**积分图 O(1) 判空**；`scanLine` 逐岛增长代表「方形边界」（bbox = scanLine×scanLine），两阶段放置：
+  - **阶段 1**（填内部空隙）：L 形扫描——先沿顶边水平（y=sl-ch、x 0→sl-cw）、再沿右边竖直（x=sl-cw、y 0→sl-ch），扫 `[minSL, scanLine]` 全部候选，`need ≤ scanLine` 即不增长边界；
+  - **阶段 2**（外扩）：无内部空位才 `scanLine` 逐格增长，第一个可行位置放置。
+- `findMaxKAlpaca`：128 稠密采样 + 24 细化二分，找「整包 bbox 装进 [0,1]²」的最大**等比**缩放 k（= scale_to_fit）。
+- `fit-to-tile`：打包后整包相似变换（等比缩放 s=min(1/spanU,1/spanV) + 平移到 0.5 居中），较长轴填满 [0,1]、较短轴按原宽高比留边。
+- **参数/常量**：`PACK_GAP=10/4096`（岛间间距，10px@4096）、`PACK_FILL=0.8`（填充率上限）、`resolution=256`（栅格分辨率：越大越紧越慢，测试耗时随 R² 增长）、`sort`（默认 maxSide；可选 area/height/width）。
+- **特性**：panel 与普通发丝混排；整包 bbox 近似方形（U/V 双侧≈填满，方形度 0.99）；fillUsed 0.76~0.81；等比拉伸不 normalize；禁止旋转；无重叠无兜底；确定性的（无随机 seed）。
+
+### 11.2 参考文献
+
+- **Nöll, T., Stricker, D. (2011). "Efficient Packing of Arbitrary Shaped Charts for Automatic Texture Atlas Generation." Eurographics (Computer Graphics Forum).** —— 「栅格化岛 + 扫描空位 + 缩放」的原始出处；Houdini UV Layout SOP / Blender / xatlas 的算法源头。
+- **TABI (2026). "Tight and Balanced Interactive Atlas Packing."** —— 「紧 + 方形均衡」目标（即本实现追求的方形 bbox + 高填充）。
+- **Jukka Jylänki. "A Thousand Ways to Pack the Bin — A Practical Approach to Two-Dimensional Rectangle Bin Packing."** —— MaxRects（当前注释保留的旧打包器）。
+- **Blender 源码 `source/blender/geometry/intern/uv_pack.cc`（`GEO_uv_pack.hh`）** —— `pack_islands_alpaca_turbo`（L-packer）、`find_best_fit_for_island` / `pack_island_xatlas`（占位 L 形扫描）的实现参考。
+- **jpcy/xatlas（https://github.com/jpcy/xatlas）** —— UV atlas 库（chart 打包）。

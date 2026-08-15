@@ -59,7 +59,7 @@
 
 ### 2.7 导出拆 UV（0.2.69–0.2.79，**保留代码**）
 - `modules/io/uv-unfold.js`：导出时按 `geometry.userData.gridRowIndices/gridColIndices` 生成矩形 UV 的纯函数核心——`gridDimensions` / `gridUvTable`（弧长表：row-0 环向边宽累计 u + referenceCircumference/uOffset·uScale 两种归一 + seamEndU）/ `gridUvAt` / `childUTopologyScale`（子发片 U 拓扑对齐缩放：环顶面弧长↔洞顶 u 跨度）/ `unfoldHairMesh`（closed/split/open/compound/child 五类展开，seam 双副本不丢面、passthrough 多副本、leafWeights 复制）。
-- `modules/io/uv-pack.js`（0.2.82 起）：`packFamilies(families,{gap,fill})` 纯函数——每个「主发片+子发片」family 统一纹素密度缩放（k=sqrt(PACK_FILL/Σ世界面积)）+ shelf-pack 进 UDIM 1001（PACK_GAP=5/4096、不旋转只位移），并给 mesh 打 `uvisland` 岛编号。
+- `modules/io/uv-pack.js`（0.2.82 起；**0.2.91 起用 `alpacaPackOccupancy` 占位栅格 L 形扫描**）：`packFamilies(families,{gap,fill})` 纯函数——每个「主发片+子发片」family 统一纹素密度缩放 + 打包进 UDIM 1001（`PACK_GAP=10/4096`、不旋转只位移、等比不 normalize），并给 mesh 打 `uvisland` 岛编号。当前打包器 `alpacaPackOccupancy`（占位栅格 + 积分图 + scanLine 方形边界 + 两阶段 L 形扫描 → 方形 + 高填充）；旧实现 `maxRectsPack`/`alpacaPackTurbo`/`alpacaPack` 注释保留可切回。算法细节与参考文献见 `uv-unfold.md` §10–§11。
 - `modules/io/project-files.js`：`kindForLock` / `childSeamCol` / `buildUnfoldedMeshes`（两遍：父表 + 展开；child 传 seamCol/childVStart/childVLength/childVSweepStart/uOffset/uScale/bridgeUvAt/passthroughCopyCount/passthroughSide；末尾 `packUnfoldedUv` 打包）；buildHairObj/buildHairUsda 走展开数据；USDA 输出 `primvars:uvisland`（usda-export.js）。
 - `modules/geometry/branch-bridge.js`：桥接 UV 锚点（每桥接顶点 `{ring,hole,t,band}`，8 处 pushBoundary）+ `userData.bridgeUvAnchors/bridgeSeamCol/bridgeBoundaryParentIndices`。
 - `modules/geometry/strand-geometry.js`：各几何类型 gridRow/gridCol 写入（split 用**管局部列+全局偏移**、无 −1；弃 colToSection.findIndex）。
