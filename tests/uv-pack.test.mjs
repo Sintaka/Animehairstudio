@@ -1,9 +1,9 @@
 // tests/uv-pack.test.mjs — 纯 node 测试（不 import three）：
-// 验证 modules/io/uv-pack.js 的 packFamilies（面积归一缩放 + 自适应填充 MaxRects 布局 +
+// 验证 modules/io/uv-pack.js 的 packFamilies（面积归一缩放 + alpaca 占位栅格打包 +
 // fit-to-tile 整包均匀缩放居中）。运行：node tests/uv-pack.test.mjs
 
 import assert from "node:assert/strict";
-import { packFamilies, PACK_GAP, findMaxK } from "../modules/io/uv-pack.js";
+import { packFamilies, PACK_GAP, findMaxKAlpaca, ALPACA_RESOLUTION } from "../modules/io/uv-pack.js";
 
 const EPS = 1e-9;
 
@@ -54,8 +54,8 @@ function rectQuad(w, h) {
 }
 
 // ---- 2) 缩放：length=2、width=1、fill=1 单 1×1 quad（面积 1）→ 自适应 k ----
-// 单位缩放 uScale=1、vScale=2 → bbox 1×2；kMax=sqrt(1/1)=1，但高 2 > 1-2gap，二分把 k 降到
-// ≈(1-3gap)/2≈0.5（最大无兜底 k）。uScale=kFinal*width、vScale=kFinal*length。
+// 单位缩放 uScale=1、vScale=2 → bbox 1×2；kMax=sqrt(1/1)=1，但高 2 > 1，alpaca 栅格量化
+// （ceil(2k/cell)*cell ≤ 1）把 k 降到 ≈0.5（最大无兜底 k）。uScale=kFinal*width、vScale=kFinal*length。
 // 单岛打包后 fit-to-tile：整包 bbox = 该岛 bbox（spanU=k、spanV=2k，较长轴 V 填满 [0,1]）
 {
   const mesh = quad1x1();
@@ -65,7 +65,7 @@ function rectQuad(w, h) {
   );
   const k = result.k;
   assert.ok(Number.isFinite(k) && k > 0 && k < 1, `自适应 k ∈ (0,1) (got ${k})`);
-  assert.ok(k * 2 + PACK_GAP <= 1 - 2 * PACK_GAP + EPS, `高度 2k+gap 放得下 (got ${k * 2 + PACK_GAP})`);
+  assert.ok(k * 2 <= 1 + EPS, `高度 2k 放得下 (alpaca 栅格量化后 2k≈0.998, got ${k * 2})`);
   assert.equal(result.packed.length, 1, "one packed entry");
   const entry = result.packed[0];
   // fit 是均匀缩放（相似变换）：宽高比 1:2 保持；较长轴（v，span=2k）填满 [0,1] → height=1
@@ -108,8 +108,8 @@ function rectQuad(w, h) {
 }
 
 // ---- 3) 布局：只平移/不重叠/在 [0,1] 内（3 个 1×1 quad，fill=0.2 → 项较小可全放一行）----
-// 紧排：kMax = sqrt(0.2/3) 本身放得下 → kFinal = kMax*0.999999（只比 kMax 小 ~1e-6；
-// fit-to-tile 只整体等比缩放 + 居中，不改 k 与岛间相对布局、不新增 gap）
+// alpaca 栅格（128）下 kMax = sqrt(0.2/3) 本身放得下（3 格 × 34 = 102 ≤ 128）→
+// kFinal = kMax*0.999999（只比 kMax 小 ~1e-6；fit-to-tile 只整体等比缩放 + 居中，不改 k）
 {
   const families = ["p1", "p2", "p3"].map((id) => ({
     id,
@@ -159,7 +159,7 @@ function rectQuad(w, h) {
     `所有 uv 在 [0,1] 内 (u:${minU}..${maxU}, v:${minV}..${maxV})`);
 
   // (d) uvisland：packed 每条有 island（0/1/2 各一次）；mesh.uvisland 与对应 island 一致
-  // （MaxRects 排序后放置顺序 ≠ island 输入顺序，故按 id 找 entry，不依赖 packed 序号）
+  // （alpaca 排序后放置顺序 ≠ island 输入顺序，故按 id 找 entry，不依赖 packed 序号）
   const islands = result.packed.map((entry) => entry.island).sort((a, b) => a - b);
   assert.deepEqual(islands, [0, 1, 2], "island 编号 0/1/2 各一次");
   for (const family of families) {
@@ -207,8 +207,8 @@ function rectQuad(w, h) {
 }
 
 // ---- 5) 压力回归：固定种子 LCG 随机矩形，自适应填充无兜底、不重叠、fillUsed ≤ fill ----
-// 自适应二分在 PACK_FILL 上限内找最大无兜底 k → 40 个随机混合宽高比矩形（含 ~15:1
-// 极端长条）在 fill=0.9 下也全部放得下（固定 k=sqrt(0.9/totalArea) 时该种子会兜底重叠）。
+// alpaca 二分在 PACK_FILL 上限内找最大无兜底 k → 40 个随机混合宽高比矩形（含 ~15:1
+// 极端长条）在 fill=0.9 下也全部放得下（实测 fillUsed≈0.845，占位栅格分辨率 256 浪费较少）。
 {
   const COUNT = 40;
   let seed = 12345;
@@ -225,7 +225,7 @@ function rectQuad(w, h) {
   const result = packFamilies(families, { fill: 0.9 });
   assert.equal(result.packed.length, COUNT, `packed.length === ${COUNT} (got ${result.packed.length})`);
 
-  // 无兜底：自适应二分保证 maxRectsPack 无 overflow → 全部落在 [0,1] 内
+  // 无兜底：自适应二分保证 alpacaPack 无 overflow → 全部落在 [0,1] 内
   for (const entry of result.packed) {
     assert.ok(entry.x >= -EPS && entry.y >= -EPS
       && entry.x + entry.width <= 1 + EPS && entry.y + entry.height <= 1 + EPS,
@@ -244,14 +244,14 @@ function rectQuad(w, h) {
     }
   }
 
-  // fillUsed 不超过 fill，且确实尽量铺满（Smart 择优显著高于单策略，sanity 卡 > 0.65）
+  // fillUsed 不超过 fill，且确实尽量铺满（alpaca Smart 择优填充率接近 fill，sanity 卡 > 0.65）
   assert.ok(result.fillUsed <= 0.9 + 1e-9, `fillUsed <= 0.9 (got ${result.fillUsed})`);
   assert.ok(result.fillUsed > 0.65, `fillUsed 尽量铺满 (got ${result.fillUsed})`);
 }
 
-// ---- 6) Smart ≥ 单 CP sanity：同一组随机矩形，packFamilies（Smart 多策略择优）的 fillUsed
-// 不低于「只 CP + maxSide」策略的结果（复用 findMaxK 对同单位尺度 boxUnit 求单策略 k；
-// fit-to-tile 不改 k/fillUsed，只整包等比缩放居中）----
+// ---- 6) alpaca Smart ≥ 单套 sanity：同一组随机矩形，packFamilies（4 套「排序 × 扫描」
+// Smart 择优）的 fillUsed 不低于「只 (maxSide, scanline)」单套的结果（复用 findMaxKAlpaca
+// 对同单位尺度 boxUnit 求单套 k；fit-to-tile 不改 k/fillUsed，只整包等比缩放居中）----
 {
   const COUNT = 40;
   let seed = 98765;
@@ -270,10 +270,10 @@ function rectQuad(w, h) {
     totalArea += w * h;
   }
   const result = packFamilies(families, { fill: 0.9 });
-  const singleK = findMaxK(boxUnit, totalArea, 0.9, PACK_GAP, "contactPoint", "maxSide");
+  const singleK = findMaxKAlpaca(boxUnit, totalArea, 0.9, PACK_GAP, ALPACA_RESOLUTION, "maxSide", "scanline");
   const singleFill = singleK * singleK * totalArea;
   assert.ok(result.fillUsed >= singleFill - 1e-6,
-    `Smart fillUsed ${result.fillUsed} >= 单 CP+maxSide fillUsed ${singleFill}`);
+    `alpaca Smart fillUsed ${result.fillUsed} >= 单套 (maxSide,scanline) fillUsed ${singleFill}`);
 }
 
 // ---- 7) fit-to-tile：打包后整包均匀缩放 + 居中，较长轴填满 [0,1] ----

@@ -75,7 +75,7 @@
 - 桥接 UV 平滑操作（用户曾提「直接平滑 uv，不是几何体」）。
 - 十字横缝（左右各 2 条边）按新理解重新设计（如需）。
 - split 父发片的 AHS_gridCol 语义从 fused 列改为管局部偏移列（已在 devlog 记录，下游如需旧语义另议）。
-- **panel 与普通发丝混排**（0.2.87 记录，待实现）：当前 MaxRects 按 sort（maxSide 优先）先排大宽扁 panel（底部横排）、再排高瘦普通发丝（左侧竖排），右上角留空；目标是让 panel 与发丝按 island 混排填满 [0,1]²（保持等比拉伸 + 位移）。候选开源算法见 §10 调研（Blender pack_islands/alpaca 占位栅格、MaxRects 变体、xatlas）。
+- **panel 与普通发丝混排**（0.2.87 记录，**0.2.88 已用 alpaca 占位栅格尝试**）：原 MaxRects 按 sort（maxSide 优先）先排大宽扁 panel（底部横排）、再排高瘦普通发丝（左侧竖排），右上角留空；0.2.88 换成 alpaca 占位栅格（scanline/spiral 空位扫描）后 panel 与发丝混排、右上角已填上（23 岛 bbox u[0,1]×v[0.013,0.987]）。占位栅格分辨率 128 较粗（gap 10px 被量化到约 1 格），后续可提分辨率或加「非 AABB 形状/更优扫描序」进一步压实填充率。
 
 ## 9. 关键文件
 
@@ -98,4 +98,5 @@
 - **范围**：closed/split 主发片 + 其子发片（child）+ panel/surface（刘海）；hairCard / curve-surface 等其它 open/compound 本轮不纳入打包。**0.2.84**：panel/surface 改用**原始几何 uv**（`flatPanelMesh` 直接拷贝 position/uv/quadFaces，不再走 unfoldHairMesh 的 open 展开 → 中间不再被切开），bbox/缩放/layout 后处理保留。**0.2.85**：panel 发尖 uv **平直**——`createPanelStrandGeometry` 的 uv 用 `boundaries` 平直 u（不含 `tipWidthSpreadGap` 收窄，只切缝不位移），几何位置仍含收窄（只改 uv 不改几何）。
 - **Smart 多策略择优（0.2.85）**：`maxRectsPack` 参数化 `heuristic`（contactPoint/bssf）× `sort`（maxSide/area/height/width）；`packFamilies` 对 6 套策略各自适应找最大 k，取 `fillUsed` 最高者（随机压力均值 0.8525→0.8769，area/width 排序填平右上角）。
 - **fit-to-tile 整包填满（0.2.87）**：`packFamilies` 在 MaxRects 紧排（gap=PACK_GAP）后做**整包均匀缩放 + 居中**（绕整包 bbox 中心等比缩放 `s=min(1/spanU,1/spanV)` 再平移到 tile 中心 0.5）——较长轴填满 [0,1]、较短轴居中；不新增岛间 gap、不改岛间相对布局（相似变换）。替代 0.2.86 的「增 gap 散布」（缝隙太大已回退）。**等比拉伸**：s 为单值均匀缩放（保持长宽比），**不强行非等比 normalize**——较长轴填满 [0,1]，较短轴按原宽高比留边（非撑满）。
+- **alpaca 占位栅格打包（0.2.88，方案 2 实验）**：`packFamilies` 的最后 UV 排列从 MaxRects 换成**占位栅格打包**（思路复刻 Blender alpaca，非 GPL 源码）——`alpacaPack`（`ALPACA_RESOLUTION=128` 栅格 + 积分图 O(1) 空位判断 + scanline/spiral 空位扫描）+ `findMaxKAlpaca`（128 采样 + 24 细化二分找最大无兜底 k = scale_to_fit），Smart 择优改 4 套「排序(maxSide/area)×扫描(scanline/spiral)」；原 MaxRects 三块（Smart 择优 + maxRectsPack + 平移）**注释保留不删**，可随时切回；fit-to-tile 居中保留。效果：panel 与普通发丝混排、右上角不再空（见 §8 待办）。
 - **关键函数**：`packFamilies(families, {gap, fill})`（uv-pack.js，纯函数零依赖，返回 `{k, totalArea, fillUsed, packed:[{id,island,x,y,width,height}], gap}`）；接线 project-files.js `packUnfoldedUv`；`tests/uv-pack.test.mjs` 纯 node 回归（含确定性压力回归 + fit-to-tile）。
