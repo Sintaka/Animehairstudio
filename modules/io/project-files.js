@@ -11,7 +11,7 @@ import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-exp
 import { exportAnimeHairUsda } from "./usda-export.js?v=20260815-1";
 import { createHairProject } from "./project-schema.js?v=20260814-12";
 import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260815-1";
-import { packFamilies } from "./uv-pack.js?v=20260815-1";
+import { packFamilies } from "./uv-pack.js?v=20260815-2";
 
 export function createProjectSaveApi(deps) {
   // ---- dialog UI elements (document is ready when this runs; app.js loads at body end) ----
@@ -285,8 +285,9 @@ export function createProjectSaveApi(deps) {
     return unfolded;
   }
 
-  // 导出时 UV 打包：主发片（closed/split）+ 子发片按真实 3D 尺寸统一缩放（统一纹素密度）
-  // 后 shelf-pack 进 UDIM 1001（[0,1]²）。原地修改 buildUnfoldedMeshes 产物（unfolded.uvs）。
+  // 导出时 UV 打包：主发片（closed/split）+ 子发片 + panel/surface（刘海）整片按真实 3D
+  // 尺寸统一缩放（统一纹素密度）后 MaxRects 打包进 UDIM 1001（[0,1]²）。原地修改
+  // buildUnfoldedMeshes 产物（unfolded.uvs）。
   function packUnfoldedUv(unfolded, locks, uvAt) {
     const parentOf = new Map(); // child id -> parent id（branchParentId）
     locks.forEach((lock) => {
@@ -295,18 +296,25 @@ export function createProjectSaveApi(deps) {
     const families = [];
     locks.forEach((lock) => {
       const kind = kindForLock(lock);
-      if (kind !== "closed" && kind !== "split") return;
-      const meshes = [];
-      const mainMesh = unfolded.get(lock.id);
-      if (mainMesh) meshes.push(mainMesh);
-      locks.forEach((candidate) => {
-        if (parentOf.get(candidate.id) !== lock.id) return;
-        const childMesh = unfolded.get(candidate.id);
-        if (childMesh) meshes.push(childMesh);
-      });
-      const length = lock.points?.length >= 2 ? new THREE.CatmullRomCurve3(lock.points).getLength() : 0;
-      const circumference = uvAt.get(lock.id)?.circumference || 0;
-      families.push({ id: lock.id, meshes, length, circumference });
+      if (kind === "closed" || kind === "split") {
+        const meshes = [];
+        const mainMesh = unfolded.get(lock.id);
+        if (mainMesh) meshes.push(mainMesh);
+        locks.forEach((candidate) => {
+          if (parentOf.get(candidate.id) !== lock.id) return;
+          const childMesh = unfolded.get(candidate.id);
+          if (childMesh) meshes.push(childMesh);
+        });
+        const length = lock.points?.length >= 2 ? new THREE.CatmullRomCurve3(lock.points).getLength() : 0;
+        const width = uvAt.get(lock.id)?.circumference || 0;
+        families.push({ id: lock.id, meshes, length, width });
+      } else if (kind === "open" && (lock.geometryType === "panel" || lock.geometryType === "surface")) {
+        // panel/surface（刘海）：整片 = 一个原子 bbox（内部 UV 整体展开，不切缝、无 5px 约束），
+        // 按真实宽高与其它发丝统一缩放排列；width 不传，由 packFamilies 按 area/length 推导。
+        // panel 无子发片，不分组。hairCard / curve-surface 等其它 open/compound 本轮仍不纳入。
+        const length = lock.points?.length >= 2 ? new THREE.CatmullRomCurve3(lock.points).getLength() : 0;
+        families.push({ id: lock.id, meshes: [unfolded.get(lock.id)].filter(Boolean), length, width: undefined });
+      }
     });
     packFamilies(families); // 返回值可忽略：uvs 原地修改
   }
