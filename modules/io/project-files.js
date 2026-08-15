@@ -11,7 +11,7 @@ import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-exp
 import { exportAnimeHairUsda } from "./usda-export.js?v=20260815-1";
 import { createHairProject } from "./project-schema.js?v=20260814-12";
 import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260815-1";
-import { packFamilies } from "./uv-pack.js?v=20260816-3";
+import { packFamilies } from "./uv-pack.js?v=20260816-4";
 
 export function createProjectSaveApi(deps) {
   // ---- dialog UI elements (document is ready when this runs; app.js loads at body end) ----

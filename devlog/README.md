@@ -52,6 +52,7 @@ python -m http.server 8080 --bind 127.0.0.1
 - **本地持久化功能（简体中文、Houdini 导航、Quick Save/Export 等）**：development-standards.md「持续修改功能」。
 
 ## 最近版本 / Latest
+- 导出 UV：alpaca 填满 V 方向（0.2.89）：新增 column 列主序扫描 + Smart 改「按更方选」（6 套排序×扫描取 bbox 更方者），fit 后 V 从 ~0.6 填到 ~0.99；MaxRects 注释保留可切回。详见 uv-unfold.md。
 - 导出 UV：alpaca 占位栅格打包（0.2.88）：最后 UV 排列从 MaxRects 换成占位栅格打包（思路复刻 Blender alpaca，栅格化+空位扫描+scale_to_fit，4 套排序×扫描 Smart 择优），panel 与发丝混排、右上角不再空；MaxRects 注释保留可切回。详见 uv-unfold.md。
 - 导出 UV：fit-to-tile 整包填满（0.2.87）：MaxRects 紧排后整包均匀缩放 + 居中（较长轴填满 [0,1]、较短轴居中），不新增 gap——替代 0.2.86 增 gap 散布（缝隙太大）。详见 uv-unfold.md。
 - 导出 UV：panel 发尖平直 + 打包 Smart 多策略择优（0.2.85）：① panel 发尖 uv 只切缝不位移（uv 用平直 u、几何不变）；② 打包 6 策略（CP/BSSF × 4 排序）择优，fillUsed 均值 +2.9%、填平右上角。详见 uv-unfold.md。
