@@ -3,15 +3,11 @@
 // （[0,1]²）。填充率自适应：Smart 多策略择优——多套「启发式（CP 贴边评分 / BSSF 短边余量）×
 // 排序（maxSide/area/height/width）」各自在 PACK_FILL 上限内稠密采样 + 局部细化逼近最大无兜底
 // k，取 fillUsed 最高者，保证所有 bbox 放得下（无兜底、无重叠），尽量铺满（尤其填掉右上角
-// 空档）。纯函数、零依赖；原地修改各 mesh.uvs（u/v 平铺 number 数组）。
+// 空档）；打包后再整包均匀缩放 + 居中（fit-to-tile：较长轴填满 [0,1]、较短轴居中）。
+// 纯函数、零依赖；原地修改各 mesh.uvs（u/v 平铺 number 数组）。
 
 export const PACK_GAP = 10 / 4096; // 10px @ 4096 分辨率 → UV 间隙
 export const PACK_FILL = 0.8;     // 目标填充率（UDIM tile 面积填充比例）
-
-// Spread Islands to All Available Space（模仿 Houdini UV Layout 的 expand padding）：
-// 打包完成后逐步增大岛间 gap，使岛散布填满整个 tile，而不是堆在左下角、右上角空着。
-export const SPREAD_KEEP = 0.9;    // 散布后岛保留的线性尺寸比例（k 下限 = best.k * SPREAD_KEEP）
-export const SPREAD_GAP_MAX = 0.1; // 增 gap 的二分上界（UV 单位，足够大不束缚结果即可）
 
 // 扇三角 (v0, vi, vi+1) 面积：0.5 * |cross(b-a, c-a)|
 function triangleArea(a, b, c) {
@@ -266,19 +262,17 @@ export function findMaxK(boxUnit, totalArea, fill, gap, heuristic = "contactPoin
 //          稠密采样 128 点 + 局部细化 24 次二分 k ∈ [0, kMax] 逼近最大「maxRectsPack 无兜底」
 //          的 k，取 fillUsed（= k²·totalArea）最高者（fitsAt 对 k 非单调，
 //          kFinal = lo*0.999999 留极小余量防浮点贴边兜底）→
-//       5b) spread 增 gap（默认开）：二分 [gap, SPREAD_GAP_MAX] 找最大 gap，使该 gap 下
-//          findMaxK 仍 >= kFloor = best.k*SPREAD_KEEP（岛保留 ≥90% 线性尺寸），把右上角
-//          空档均摊成岛间间隙（单岛或 spread=false 跳过）→
 //       6) 最终缩放 uv × kFinal + 打包验证（贪心对 k 非单调：lo 邻域可能有「拟合岛/
 //          失败带」交错，kFinal 落失败带会兜底 → 验证 overflowCount，非零则缩小 k 重试，
 //          k→0 必无兜底保证终止，实际 1~3 次收敛）→
-//       7) boxFinal = 重算 UV 包围盒 → 8) 按 placements 平移 → 9) 返回
-// 返回 { k: kFinal, totalArea, fillUsed: kFinal²*totalArea, packed: [...], gap: gapFinal
-// （spread 后实际用的 gap，非 spread 时为传入 gap）}；守卫返回
+//       7) boxFinal = 重算 UV 包围盒 → 8) 按 placements 平移 → 9) fit-to-tile：整包
+//          均匀缩放 + 居中（较长轴填满 [0,1]、较短轴居中，相似变换不改岛间布局）
+// 返回 { k: kFinal, totalArea, fillUsed: kFinal²*totalArea, packed: [...], gap }（gap
+// 恒为传入 gap = PACK_GAP）；守卫返回
 // { k: null, totalArea: 0, fillUsed: 0, packed: [] } 且不修改任何 uvs。
 // length<=0 / area<=0 /（推导后）width<=0 的 family 跳过（原样不动、不缩放、不打包、不写
 // uvisland）。island 按有效 family 密集编号 0..N-1、输入顺序（sort 前固定）。
-export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL, spread = true } = {}) {
+export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}) {
   // 1) 面积 / width（显式或推导）/ island
   const valid = [];
   let totalArea = 0;
@@ -334,30 +328,6 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL, sprea
   // CP+maxSide 必成功 → best.k 恒 > 0；-1 分支仅防御（理论不可达）
   let kFinal = best.k > 0 ? best.k : findMaxK(boxUnit, totalArea, fill, gap);
 
-  // spread 增 gap（模仿 Houdini UV Layout 的 Spread Islands to All Available Space）：
-  // 在 [gap, SPREAD_GAP_MAX] 内二分找最大 gap，使该 gap 下 findMaxK 仍 >= kFloor
-  // （岛保留 >= SPREAD_KEEP 的线性尺寸），把右上角空档均摊成岛间间隙；单岛或
-  // spread=false 跳过（gapFinal 保持 gap，kFinal 保持 best.k）
-  let gapFinal = gap;
-  if (spread && valid.length >= 2) {
-    const kFloor = kFinal * SPREAD_KEEP;
-    let lo = gap;
-    let hi = SPREAD_GAP_MAX;
-    for (let i = 0; i < 40; i += 1) {
-      const mid = (lo + hi) / 2;
-      const kMid = findMaxK(boxUnit, totalArea, fill, mid, best.heuristic, best.sort);
-      if (kMid > 0 && kMid >= kFloor) lo = mid;
-      else hi = mid;
-    }
-    gapFinal = lo;
-    kFinal = findMaxK(boxUnit, totalArea, fill, gapFinal, best.heuristic, best.sort);
-    if (!(kFinal > 0)) {
-      // 守卫：gapFinal 下异常放不下 → 回退原逻辑
-      gapFinal = gap;
-      kFinal = best.k > 0 ? best.k : findMaxK(boxUnit, totalArea, fill, gap);
-    }
-  }
-
   // 6) 最终缩放 + 打包验证：fitsAt 对 k 非单调（贪心，lo 邻域「拟合岛/失败带」交错，
   //    kFinal 可能恰落失败带 → 兜底重叠），故用真实 uvBounds 按择优策略（best.heuristic/
   //    best.sort）打包并验证 overflowCount，非零则缩小 k 重试（k→0 必无兜底，保证终止；
@@ -380,10 +350,10 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL, sprea
     applied = kFinal;
     // 7) 最终包围盒（uv 已缩放，重算 uvBounds）
     boxFinal = valid.map(({ family, island }) => ({ family, island, ...uvBounds(family.meshes) }));
-    // 8) MaxRects 打包（择优策略的 heuristic+sort；gap 用 spread 后的 gapFinal）
+    // 8) MaxRects 打包（择优策略的 heuristic+sort）
     const packed2 = maxRectsPack(
       boxFinal.map((box) => ({ id: box.family.id, island: box.island, width: box.width, height: box.height })),
-      { gap: gapFinal, heuristic: best.heuristic, sort: best.sort }
+      { gap, heuristic: best.heuristic, sort: best.sort }
     );
     if (packed2.overflowCount === 0) {
       placements = packed2.placements;
@@ -410,6 +380,41 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL, sprea
     }
     packed.push({ id: box.family.id, island: box.island, x: pos.x, y: pos.y, width: box.width, height: box.height });
   }
+  // 9b) fit-to-tile：整包均匀缩放 + 居中（相似变换：绕整包 bbox 中心缩放 s，再平移到 tile
+  // 中心 0.5）——较长轴填满 [0,1]、较短轴居中；不新增岛间 gap、不改岛间相对布局
+  let bMinU = Infinity;
+  let bMinV = Infinity;
+  let bMaxU = -Infinity;
+  let bMaxV = -Infinity;
+  for (const entry of packed) {
+    bMinU = Math.min(bMinU, entry.x);
+    bMinV = Math.min(bMinV, entry.y);
+    bMaxU = Math.max(bMaxU, entry.x + entry.width);
+    bMaxV = Math.max(bMaxV, entry.y + entry.height);
+  }
+  if (bMaxU > bMinU && bMaxV > bMinV) {
+    const spanU = bMaxU - bMinU;
+    const spanV = bMaxV - bMinV;
+    const s = Math.min(1 / spanU, 1 / spanV); // 均匀缩放，保持宽高比，填满较长轴（s >= 1）
+    const centerU = (bMinU + bMaxU) / 2;
+    const centerV = (bMinV + bMaxV) / 2;
+    for (const { family } of valid) {
+      for (const mesh of family.meshes || []) {
+        const uvs = mesh && mesh.uvs;
+        if (!uvs) continue;
+        for (let i = 0; i + 1 < uvs.length; i += 2) {
+          uvs[i] = (uvs[i] - centerU) * s + 0.5;
+          uvs[i + 1] = (uvs[i + 1] - centerV) * s + 0.5;
+        }
+      }
+    }
+    for (const entry of packed) {
+      entry.x = (entry.x - centerU) * s + 0.5;
+      entry.y = (entry.y - centerV) * s + 0.5;
+      entry.width *= s;
+      entry.height *= s;
+    }
+  }
   // 10) 返回
-  return { k: kFinal, totalArea, fillUsed: kFinal * kFinal * totalArea, packed, gap: gapFinal };
+  return { k: kFinal, totalArea, fillUsed: kFinal * kFinal * totalArea, packed, gap };
 }
