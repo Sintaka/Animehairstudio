@@ -7,12 +7,12 @@ export const FILE_ACTION_FORMATS = Object.freeze({
   obj: Object.freeze({
     extension: ".obj",
     label: "OBJ",
-    exportContents: Object.freeze(["mesh", "curves"])
+    exportContents: Object.freeze(["mesh"])
   }),
   usda: Object.freeze({
     extension: ".usda",
     label: "USDA",
-    exportContents: Object.freeze(["mesh", "curves", "bones", "weights"])
+    exportContents: Object.freeze(["mesh", "curves", "bones"])
   })
 });
 
@@ -39,7 +39,7 @@ export function fileNameForAction(value, format, fallback = "anime-hair") {
 
 export function normalizeExportContents(format, requested = {}, available = {}) {
   const supported = new Set(fileActionFormat(format).exportContents);
-  return Object.fromEntries(["mesh", "curves", "bones", "weights"].map((key) => [
+  return Object.fromEntries(["mesh", "curves", "bones"].map((key) => [
     key,
     supported.has(key) && available[key] !== false && requested[key] !== false
   ]));

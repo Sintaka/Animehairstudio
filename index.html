@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anime Hair Studio</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=20260814-12" />
+    <link rel="stylesheet" href="./styles.css?v=20260816-21" />
   </head>
   <body>
     <main class="studio-shell">
@@ -2212,10 +2212,7 @@
           <label class="file-export-option" data-export-content="bones">
             <input id="exportIncludeBones" type="checkbox" />
             <span><strong>Bones</strong><small>Available when the scene contains an authored skeleton</small></span>
-          </label>
-          <label class="file-export-option" data-export-content="weights">
-            <input id="exportIncludeWeights" type="checkbox" />
-            <span><strong>Weights</strong><small>Available when mesh skin weights have been authored</small></span>
+            <input id="exportPathPrefix" type="text" placeholder="Path prefix" autocomplete="off" />
           </label>
         </fieldset>
         <fieldset id="projectSaveContents" class="file-export-contents hidden">
@@ -2329,6 +2326,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260816-7"></script>
+    <script type="module" src="./app.js?v=20260816-21"></script>
   </body>
 </html>

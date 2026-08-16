@@ -1873,7 +1873,7 @@ test("file menu exposes online downloads and de-emphasized local exports", async
   assert.match(html, /id=["']hairProjectFile["'][^>]*accept=["'][^"']*\.ahs[^"']*\.animehair\.json[^"']*\.json/);
   assert.match(html, /id=["']fileActionExtension["'][^>]*>\.ahs</);
   assert.match(fileActions, /extension:\s*"\.ahs"/);
-  assert.match(html, /id=["']fileExportContents["'][\s\S]*?id=["']exportIncludeMesh["'][\s\S]*?id=["']exportIncludeCurves["'][\s\S]*?id=["']exportIncludeBones["'][\s\S]*?id=["']exportIncludeWeights["']/);
+  assert.match(html, /id=["']fileExportContents["'][\s\S]*?id=["']exportIncludeMesh["'][\s\S]*?id=["']exportIncludeCurves["'][\s\S]*?id=["']exportIncludeBones["']/);
   assert.match(html, /id=["']projectSaveContents["'][\s\S]*?Project Contents[\s\S]*?id=["']projectIncludeHeadAsset["'][^>]*checked[\s\S]*?Head \/ Body Mesh[\s\S]*?id=["']projectIncludeReferences["'][^>]*checked[\s\S]*?References/);
   assert.match(source, /function openFileActionDialog\([\s\S]*fileActionFormat\(format\)[\s\S]*fileExportAvailability[\s\S]*fileActionDialog\.showModal\(\)/);
   assert.match(source, /projectSaveContents\.classList\.toggle\("hidden", isExport\)[\s\S]*projectIncludeHeadAssetInput\.checked = true[\s\S]*projectIncludeHeadAssetInput\.disabled = !importedHeadAsset[\s\S]*projectIncludeReferencesInput\.checked = true[\s\S]*projectIncludeReferencesInput\.disabled = referenceImages\.length === 0/);
@@ -1883,7 +1883,6 @@ test("file menu exposes online downloads and de-emphasized local exports", async
   assert.match(source, /function performFileAction\(action, baseName, contents\)[\s\S]*buildHairProjectFile\(baseName, \{[\s\S]*includeHeadAsset: contents\.headAsset[\s\S]*includeReferences: contents\.references/);
   assert.match(source, /fileActionForm\.addEventListener\("submit"[\s\S]*action\.format === "project"[\s\S]*headAsset: projectIncludeHeadAssetInput\.checked && !projectIncludeHeadAssetInput\.disabled[\s\S]*references: projectIncludeReferencesInput\.checked && !projectIncludeReferencesInput\.disabled/);
   assert.match(source, /row\.classList\.remove\("hidden"\)[\s\S]*Not supported in \$\{definition\.label\}\. Use USDA to export\./);
-  assert.match(source, /const objPolyline = format === "obj" && key === "curves"[\s\S]*Export Curve as Polyline[\s\S]*Not supported in Maya\./);
   assert.match(source, /fileActionForm\.addEventListener\("submit"[\s\S]*normalizeExportContents[\s\S]*performFileAction/);
   assert.match(source, /function buildHairObj\(\{\s*includeMesh = true,\s*includeCurves = true\s*\} = \{\}\)[\s\S]*if \(includeMesh\)[\s\S]*if \(includeCurves\)/);
   assert.match(source, /function buildHairUsda\(\{[\s\S]*includeMesh = true[\s\S]*includeCurves = true[\s\S]*includeBones = false[\s\S]*includeWeights = false/);

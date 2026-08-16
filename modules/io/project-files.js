@@ -6,9 +6,9 @@
 //   functions: snapshotState, strandCurveParameters, curveSurfaceControllerCurves, safelyRememberRecentProject
 import * as THREE from "three";
 import { leafWeightAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
-import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActionFormat } from "./file-actions.js?v=20260814-12";
+import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActionFormat } from "./file-actions.js?v=20260816-13";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260814-12";
-import { exportAnimeHairUsda } from "./usda-export.js?v=20260815-1";
+import { exportAnimeHairUsda, usdIdentifier, quatToMat3, axesToMat3, splitBoneLayout, bridgeRootParentName } from "./usda-export.js?v=20260816-17";
 import { createHairProject } from "./project-schema.js?v=20260814-12";
 import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260815-1";
 import { packFamilies } from "./uv-pack.js?v=20260816-7";
@@ -32,9 +32,9 @@ export function createProjectSaveApi(deps) {
   const exportContentInputs = {
     mesh: document.querySelector("#exportIncludeMesh"),
     curves: document.querySelector("#exportIncludeCurves"),
-    bones: document.querySelector("#exportIncludeBones"),
-    weights: document.querySelector("#exportIncludeWeights")
+    bones: document.querySelector("#exportIncludeBones")
   };
+  const exportPathPrefixInput = document.querySelector("#exportPathPrefix");
 
   const fileExportAvailability = Object.freeze({
     mesh: true,
@@ -47,20 +47,17 @@ export function createProjectSaveApi(deps) {
         || (Array.isArray(lock.bones) && lock.bones.length > 0)
         || deps.locks.some((candidate) => candidate.branchParentId === lock.id)
       ));
-    },
-    weights: false
+    }
   });
   const fileExportDescriptions = Object.freeze({
     mesh: "Rendered strand and panel geometry",
     curves: "Editable strand center curves",
-    bones: "Available when the scene contains an authored skeleton",
-    weights: "Available when mesh skin weights have been authored"
+    bones: "Skeleton and captured skin mesh"
   });
   const fileExportLabels = Object.freeze({
     mesh: "Mesh",
     curves: "Curves",
-    bones: "Bones",
-    weights: "Weights"
+    bones: "Bones & Capture Mesh"
   });
 
   // ---- pure helpers ----
@@ -443,6 +440,239 @@ export function createProjectSaveApi(deps) {
     const curves = [];
     const skeletons = [];
     const unfoldedMeshes = buildUnfoldedMeshes();
+    // 内部骨骼名（main./split.，来自 bonesFor）→ 发丝名前缀导出关节名：
+    //   main.${i}        → ${sanitized}_${i}
+    //   split.${k}       → ${sanitized}_split_${k}
+    //   split.${k}.tip.${j} → ${sanitized}_split_${k}_tip_${j}
+    //   registry custom 骨骼（不以 main./split. 开头）保持原名。
+    const jointNameOf = (lock, name) => {
+      const sanitized = lockPrefix.get(lock.id);
+      if (typeof name === "string" && name.startsWith("main.")) return `${sanitized}_${name.slice(5)}`;
+      if (typeof name === "string" && name.startsWith("split.")) return `${sanitized}_${name.replaceAll(".", "_")}`;
+      return name;
+    };
+    // 同名 lock 去重：为每个 lock 生成唯一关节名前缀（同名依次 _2/_3），
+    // 合并成一个 Skeleton 后同名 lock 的关节名（${sanitized}_0 等）不再冲突。
+    const lockPrefix = new Map();
+    const usedPrefixes = new Set();
+    deps.locks.forEach((lock) => {
+      const base = usdIdentifier(lock.name);
+      let prefix = base;
+      let suffix = 2;
+      while (usedPrefixes.has(prefix)) {
+        prefix = `${base}_${suffix}`;
+        suffix += 1;
+      }
+      usedPrefixes.add(prefix);
+      lockPrefix.set(lock.id, prefix);
+    });
+    // 统一 Skeleton：单个 Skeleton "Hair_Skel" + 空关节 "Hair_Root"（x=0 正中线，
+    // y/z 取所有发根平均）作为所有发丝的根，main.0 全部 parent 到 Hair_Root。
+    const SKEL_NAME = "Hair_Skel";
+    const HAIR_ROOT_NAME = "Hair_Root";
+    // 收集所有发丝的骨骼（bonesFor 输出，过滤 child.*），存映射后的关节名。
+    const lockBoneData = [];
+    let allJoints = [{ name: HAIR_ROOT_NAME, parent: null, p: [0, 0, 0], orient: null }];
+    if (typeof deps.bonesFor === "function") {
+      deps.locks.forEach((lock) => {
+        let bones;
+        try {
+          bones = deps.bonesFor(lock, { locks: deps.locks })
+            .filter((bone) => !bone.name.startsWith("child."));
+        } catch (error) {
+          console.error("bonesFor 失败（跳过该发丝）:", lock.name, error);
+          return;
+        }
+        if (!Array.isArray(bones) || bones.length < 2) return;
+        const firstMain = bones.find((bone) => bone.name.startsWith("main."));
+        lockBoneData.push({
+          lock,
+          bones,
+          nameMap: new Map(bones.map((bone) => [bone.name, jointNameOf(lock, bone.name)])),
+          firstMainName: firstMain ? jointNameOf(lock, firstMain.name) : null
+        });
+      });
+      // Hair_Root 空关节：x=0 正中线，y/z 取所有发根（main.0）平均。
+      let rootY = 0;
+      let rootZ = 0;
+      let rootCount = 0;
+      lockBoneData.forEach(({ bones }) => {
+        const root = bones.find((bone) => bone.name.startsWith("main."));
+        if (root && root.p) { rootY += root.p.y; rootZ += root.p.z; rootCount += 1; }
+      });
+      allJoints = [{
+        name: HAIR_ROOT_NAME,
+        parent: null,
+        p: rootCount > 0 ? [0, rootY / rootCount, rootZ / rootCount] : [0, 0, 0],
+        orient: null
+      }];
+      // 每个发丝的 main/split/tip 关节，main.0 parent 到 Hair_Root。
+      lockBoneData.forEach(({ lock, bones, nameMap, firstMainName }) => {
+        // main 链骨骼 orient 由发丝 frame 派生（bonesFor 里 main.0..N 的 orient 是 null，
+        // 注释 "geometry-derived by the caller"；这里在导出层从 strandGeometryFrameAt 派生）。
+        // 目标轴约定（row-vector，行 = 基向量，scale 恒 1）：z = tangent（向前）、y = up、
+        // x = up × tangent（右手系）；split/tip 骨骼用 p 差分 tangent + 父级 up 继承。
+        const curve = Array.isArray(lock.points) && lock.points.length >= 2
+          ? new THREE.CatmullRomCurve3(lock.points)
+          : null;
+        const mainCount = bones.filter((bone) => bone.name.startsWith("main.")).length;
+        bones.forEach((bone) => {
+          const isSplitBone = bone.name.startsWith("split.") && !bone.name.includes(".tip.");
+          let parent = null;
+          let derivedP = null;
+          if (isSplitBone) {
+            // split 骨骼：fork parent（暴露部分根部对应的主骨骼）+ 派生位置（段尖/管尖）。
+            const layout = splitBoneLayout(lock, bone, {
+              mainCount,
+              curve,
+              strandGeometryFrameAt: deps.strandGeometryFrameAt,
+              splitTipForSegment: deps.splitTipForSegment
+            });
+            if (layout) {
+              parent = jointNameOf(lock, `main.${layout.parentMainIndex}`);
+              derivedP = layout.p || null;
+            }
+          }
+          if (!parent && bone.name === "main.0" && lock.branchParentId) {
+            // 桥接子发片根骨骼：parent 到父发片对应骨骼点（branchParentParameter），不再直接挂 Hair_Root。
+            const parentEntry = lockBoneData.find((entry) => entry.lock.id === lock.branchParentId);
+            const internalParent = bridgeRootParentName(lock, deps.locks, jointNameOf);
+            if (internalParent && parentEntry?.nameMap.has(internalParent)) {
+              parent = parentEntry.nameMap.get(internalParent);
+            }
+          }
+          if (!parent) {
+            if (bone.parent === "main") parent = firstMainName;      // split 骨骼 parent 到发根 main.0（兜底）
+            else if (bone.parent) parent = nameMap.get(bone.parent) ?? bone.parent;
+            else parent = HAIR_ROOT_NAME;                            // main.0 parent 到 Hair_Root
+          }
+          const boneP = bone.p ? [bone.p.x, bone.p.y, bone.p.z] : null;
+          if (!boneP && derivedP) boneP = derivedP; // 未创作的 split 骨骼用派生位置（段尖/管尖）
+          let orient = bone.orient
+            ? quatToMat3([bone.orient.w, bone.orient.x, bone.orient.y, bone.orient.z])
+            : null;
+          if (!orient) {
+            if (bone.name.startsWith("main.") && curve && typeof deps.strandGeometryFrameAt === "function") {
+              // main 链：frame.y = tangent（向前，z 轴）、frame.z = up（向上，y 轴），
+              // x = up × tangent = -frame.x（frame.x = tangent × up）。
+              try {
+                const index = Number.parseInt(bone.name.slice(5), 10) || 0;
+                const t = mainCount > 1 ? THREE.MathUtils.clamp(index / (mainCount - 1), 0, 1) : 0;
+                const frame = deps.strandGeometryFrameAt(lock, curve, t);
+                if (frame && frame.y && frame.z) {
+                  const tangent = frame.y;
+                  const up = frame.z;
+                  orient = axesToMat3(
+                    {
+                      x: up.y * tangent.z - up.z * tangent.y,
+                      y: up.z * tangent.x - up.x * tangent.z,
+                      z: up.x * tangent.y - up.y * tangent.x
+                    },
+                    up,
+                    tangent
+                  );
+                }
+              } catch (error) {
+                // strandGeometryFrameAt 对某些 lock（如 compound/curve-surface）可能抛异常，
+                // 派生失败时跳过（orient 保持 identity），不让整个导出失败。
+                console.error("骨骼 orient 派生失败（跳过）:", lock.name, error);
+              }
+            } else {
+              // split/tip/其他：p - parent.p 差分 tangent（normalize），up 优先继承父级
+              // orient 的 y 轴（9 值矩阵行 1，即 orient[3..5]），父级 orient 为 null 时用
+              // 世界 up (0,1,0)；up 投影到 tangent 平面再 normalize（退化时改用 (0,0,1)
+              // 投影），保证输出是正交旋转矩阵；x = up × tangent。父级先 push，按导出的
+              // parent 名在 allJoints 里查（parent 名在上面已算出）。
+              const parentJoint = parent ? allJoints.find((joint) => joint.name === parent) : null;
+              const parentP = parentJoint && parentJoint.p ? parentJoint.p : null;
+              if (boneP && parentP) {
+                const dx = boneP[0] - parentP[0];
+                const dy = boneP[1] - parentP[1];
+                const dz = boneP[2] - parentP[2];
+                const tangentLength = Math.hypot(dx, dy, dz);
+                if (tangentLength >= 1e-9) {
+                  const tangent = { x: dx / tangentLength, y: dy / tangentLength, z: dz / tangentLength };
+                  // up 候选：父级 orient 行 1（y 轴），否则世界 up (0,1,0)。
+                  let upX = 0;
+                  let upY = 1;
+                  let upZ = 0;
+                  const parentOrient = parentJoint && parentJoint.orient ? parentJoint.orient : null;
+                  if (parentOrient) {
+                    upX = parentOrient[3];
+                    upY = parentOrient[4];
+                    upZ = parentOrient[5];
+                  }
+                  // 投影到 tangent 平面并 normalize；退化（up ∥ tangent，长度 < 1e-9）
+                  // 时改用 (0,0,1) 投影。
+                  let projX = upX - (upX * tangent.x + upY * tangent.y + upZ * tangent.z) * tangent.x;
+                  let projY = upY - (upX * tangent.x + upY * tangent.y + upZ * tangent.z) * tangent.y;
+                  let projZ = upZ - (upX * tangent.x + upY * tangent.y + upZ * tangent.z) * tangent.z;
+                  let projLength = Math.hypot(projX, projY, projZ);
+                  if (projLength < 1e-9) {
+                    const dotZ = tangent.z; // 世界 up (0,1,0) 与 tangent 平行（罕见）
+                    projX = -dotZ * tangent.x;
+                    projY = -dotZ * tangent.y;
+                    projZ = 1 - dotZ * tangent.z;
+                    projLength = Math.hypot(projX, projY, projZ);
+                  }
+                  if (projLength >= 1e-9) {
+                    const up = { x: projX / projLength, y: projY / projLength, z: projZ / projLength };
+                    orient = axesToMat3(
+                      {
+                        x: up.y * tangent.z - up.z * tangent.y,
+                        y: up.z * tangent.x - up.x * tangent.z,
+                        z: up.x * tangent.y - up.y * tangent.x
+                      },
+                      up,
+                      tangent
+                    );
+                  }
+                }
+              }
+              // 退化（无父级 p / p 差分 < 1e-9 / up 投影失败）→ orient 保持 null（identity 兜底）。
+            }
+          }
+          allJoints.push({
+            name: nameMap.get(bone.name),
+            parent,
+            p: boneP,
+            orient
+          });
+        });
+      });
+    }
+    const globalJointIndex = new Map(allJoints.map((joint, index) => [joint.name, index]));
+    // 普通发丝/权重缺失兜底蒙皮：按扫掠行号绑定 main 关节（单影响 [main, 0 权重]）。
+    // 无 leafWeights 的普通发丝、或面板 leafWeights 缺失/截断时不再整片放弃蒙皮——
+    // 每个顶点都拿到有效 boneCapture，mesh 才能进 Character SkelRoot（usda-export.js
+    // 按 hasSkinData 分流）。
+    const bindBySweepRow = (mesh, lock, bones, pointCount, gridRowIndices, gridRows) => {
+      const mainCount = bones.filter((bone) => bone.name.startsWith("main.")).length;
+      let rows = Number(gridRows) || 0;
+      if (rows < 2 && gridRowIndices) {
+        let maxRow = -1;
+        for (let i = 0; i < gridRowIndices.length; i += 1) {
+          const row = Number(gridRowIndices[i]);
+          if (Number.isFinite(row) && row > maxRow) maxRow = row;
+        }
+        rows = maxRow + 1; // 面板等无 gridRows 数时退回 gridRowIndices 最大值 + 1
+      }
+      const skelIndices = [];
+      const skelWeights = [];
+      for (let vertex = 0; vertex < pointCount; vertex += 1) {
+        const row = Math.max(0, gridRowIndices ? Number(gridRowIndices[vertex]) : 0);
+        const t = rows >= 2 ? row / (rows - 1) : 0;
+        const mainJoint = mainCount > 0
+          ? Math.min(mainCount - 1, Math.round(t * (mainCount - 1)))
+          : 0;
+        const mainIdx = globalJointIndex.get(jointNameOf(lock, `main.${mainJoint}`)) ?? 0;
+        skelIndices.push([mainIdx, mainIdx]);
+        skelWeights.push([1, 0]);
+      }
+      mesh.skelRootName = SKEL_NAME;
+      mesh.skelIndices = skelIndices;
+      mesh.skelWeights = skelWeights;
+    };
     deps.locks.forEach((lock) => {
       if (includeMesh) {
         const geometry = lock.mesh.geometry;
@@ -472,8 +702,7 @@ export function createProjectSaveApi(deps) {
               const bones = deps.bonesFor(lock, { locks: deps.locks })
                 .filter((bone) => !bone.name.startsWith("child."));
               if (bones.length >= 2) {
-                const joints = bones.map((bone) => bone.name);
-                const mainCount = joints.filter((name) => name.startsWith("main.")).length;
+                const splitBones = bones.filter((bone) => bone.kind === "split");
                 const leafWeights = unfolded.leafWeights ?? geometry.userData?.leafWeights ?? geometry.userData?.panelWeights;
                 if (leafWeightsValid(leafWeights, mesh.points.length)) {
                   const skelIndices = [];
@@ -483,18 +712,25 @@ export function createProjectSaveApi(deps) {
                     const main = Math.round(w.mainJoint);
                     const segment = Math.round(w.leafIndex);
                     const weight = Number(w.weight) || 0;
-                    if (segment >= 0 && weight > 0.0001) {
-                      skelIndices.push([main, mainCount + segment]);
+                    // 按名字查全局关节索引：split 之后还有 split.*.tip.* 尖端子骨骼，
+                    // 不能用 mainCount + segment 算术定位（名字已映射为发丝名前缀）。
+                    const mainIdx = globalJointIndex.get(jointNameOf(lock, `main.${main}`)) ?? 0;
+                    const splitName = splitBones[segment] ? jointNameOf(lock, splitBones[segment].name) : null;
+                    const splitIdx = splitName ? (globalJointIndex.get(splitName) ?? mainIdx) : mainIdx;
+                    if (segment >= 0 && splitName && weight > 0.0001) {
+                      skelIndices.push([mainIdx, splitIdx]);
                       skelWeights.push([1 - weight, weight]);
                     } else {
-                      skelIndices.push([main]);
-                      skelWeights.push([1]);
+                      skelIndices.push([mainIdx, mainIdx]); // 统一 2 影响，多余权重为 0
+                      skelWeights.push([1, 0]);
                     }
                   }
-                  mesh.skelRootName = (lock.name || "Hair") + " Skeleton";
-                  mesh.skelJoints = joints;
+                  mesh.skelRootName = SKEL_NAME;
                   mesh.skelIndices = skelIndices;
                   mesh.skelWeights = skelWeights;
+                } else {
+                  // 面板/发丝权重缺失或截断：按扫掠行号兜底绑定 main 关节，不放弃蒙皮。
+                  bindBySweepRow(mesh, lock, bones, mesh.points.length, mesh.gridRowIndices, geometry.userData?.gridRows);
                 }
               }
             }
@@ -520,8 +756,7 @@ export function createProjectSaveApi(deps) {
               const bones = deps.bonesFor(lock, { locks: deps.locks })
                 .filter((bone) => !bone.name.startsWith("child."));
               if (bones.length >= 2) {
-                const joints = bones.map((bone) => bone.name);
-                const mainCount = joints.filter((name) => name.startsWith("main.")).length;
+                const splitBones = bones.filter((bone) => bone.kind === "split");
                 const leafWeights = geometry.userData?.leafWeights || geometry.userData?.panelWeights;
                 if (leafWeightsValid(leafWeights, position.count)) {
                   const skelIndices = [];
@@ -531,18 +766,25 @@ export function createProjectSaveApi(deps) {
                     const main = Math.round(w.mainJoint);
                     const segment = Math.round(w.leafIndex);
                     const weight = Number(w.weight) || 0;
-                    if (segment >= 0 && weight > 0.0001) {
-                      skelIndices.push([main, mainCount + segment]);
+                    // 按名字查全局关节索引：split 之后还有 split.*.tip.* 尖端子骨骼，
+                    // 不能用 mainCount + segment 算术定位（名字已映射为发丝名前缀）。
+                    const mainIdx = globalJointIndex.get(jointNameOf(lock, `main.${main}`)) ?? 0;
+                    const splitName = splitBones[segment] ? jointNameOf(lock, splitBones[segment].name) : null;
+                    const splitIdx = splitName ? (globalJointIndex.get(splitName) ?? mainIdx) : mainIdx;
+                    if (segment >= 0 && splitName && weight > 0.0001) {
+                      skelIndices.push([mainIdx, splitIdx]);
                       skelWeights.push([1 - weight, weight]);
                     } else {
-                      skelIndices.push([main]);
-                      skelWeights.push([1]);
+                      skelIndices.push([mainIdx, mainIdx]); // 统一 2 影响，多余权重为 0
+                      skelWeights.push([1, 0]);
                     }
                   }
-                  mesh.skelRootName = (lock.name || "Hair") + " Skeleton";
-                  mesh.skelJoints = joints;
+                  mesh.skelRootName = SKEL_NAME;
                   mesh.skelIndices = skelIndices;
                   mesh.skelWeights = skelWeights;
+                } else {
+                  // 面板/发丝权重缺失或截断：按扫掠行号兜底绑定 main 关节，不放弃蒙皮。
+                  bindBySweepRow(mesh, lock, bones, position.count, gridRowIndices, geometry.userData?.gridRows);
                 }
               }
             }
@@ -573,24 +815,11 @@ export function createProjectSaveApi(deps) {
         });
       }
     });
-    if (includeBones && typeof deps.bonesFor === "function") {
-      // One SkelRoot per lock: the lock's own main chain + split sub-bones (child
-      // strands export their own skeleton as separate locks).
-      deps.locks.forEach((lock) => {
-        const bones = deps.bonesFor(lock, { locks: deps.locks })
-          .filter((bone) => !bone.name.startsWith("child."));
-        if (bones.length < 2) return;
-        const firstMain = bones.find((bone) => bone.name.startsWith("main."));
-        skeletons.push({
-          name: (lock.name || "Hair") + " Skeleton",
-          joints: bones.map((bone) => ({
-            name: bone.name,
-            parent: bone.parent === "main" && firstMain ? firstMain.name : bone.parent,
-            p: bone.p ? [bone.p.x, bone.p.y, bone.p.z] : null,
-            orient: bone.orient ? [bone.orient.w, bone.orient.x, bone.orient.y, bone.orient.z] : null
-          }))
-        });
-      });
+    if (includeBones && typeof deps.bonesFor === "function" && allJoints.length > 1) {
+      // 统一 Skeleton：所有发丝的关节（main 链 + split.* + Hair_Root 根）合成一棵
+      // 连通骨骼树（Hair_Root 为唯一根，所有 main.0 parent 到它），导出进单个
+      // SkelRoot "Character"，Houdini 导入后是一棵完整骨架而非散的 root 树。
+      skeletons.push({ name: SKEL_NAME, joints: allJoints });
     }
     void includeWeights;
     return exportAnimeHairUsda({
@@ -612,6 +841,11 @@ export function createProjectSaveApi(deps) {
       deps.currentProjectName,
       isExport ? "anime-hair" : "Untitled Hair Project"
     );
+    if (exportPathPrefixInput) {
+      // 前缀留空时显示灰色 placeholder（= 文件名），输入后隐藏；上次导出有自定义前缀则回填。
+      exportPathPrefixInput.value = deps.lastExport?.rootName || "";
+      exportPathPrefixInput.placeholder = cleanFileBaseName(deps.currentProjectName, "anime-hair");
+    }
     fileActionExtension.textContent = definition.extension;
     fileExportContents.classList.toggle("hidden", !isExport);
     projectSaveContents.classList.toggle("hidden", isExport);
@@ -629,16 +863,21 @@ export function createProjectSaveApi(deps) {
       const description = row.querySelector("small");
       row.classList.remove("hidden");
       input.disabled = !supported || fileExportAvailability[key] === false;
-      input.checked = supported && fileExportAvailability[key] !== false && (key === "mesh" || key === "curves");
-      const objPolyline = format === "obj" && key === "curves";
-      label.textContent = objPolyline ? "Export Curve as Polyline" : fileExportLabels[key];
-      description.textContent = objPolyline
-        ? "Not supported in Maya."
-        : supported
-          ? fileExportDescriptions[key]
-          : `Not supported in ${definition.label}. Use USDA to export.`;
+      input.checked = supported && fileExportAvailability[key] !== false && (key === "mesh" || key === "curves" || key === "bones");
+      label.textContent = fileExportLabels[key];
+      description.textContent = supported
+        ? fileExportDescriptions[key]
+        : `Not supported in ${definition.label}. Use USDA to export.`;
       row.title = input.disabled ? description.textContent : "";
     });
+    // "Bones & Capture Mesh" 勾选时 Mesh 灰掉（蒙皮已含捕获网格，避免重复导出）：
+    // 上次导出勾选过 bones（且本格式支持）时恢复勾选态，并同步初始禁用 Mesh。
+    const bonesInput = exportContentInputs.bones;
+    if (bonesInput.checked || (!bonesInput.disabled && deps.lastExport?.contents?.bones)) {
+      bonesInput.checked = true;
+      exportContentInputs.mesh.disabled = true;
+      exportContentInputs.mesh.checked = false;
+    }
 
     fileActionDialog.showModal();
     requestAnimationFrame(() => {
@@ -675,42 +914,46 @@ export function createProjectSaveApi(deps) {
     }
 
     const suggestedName = fileNameForAction(baseName, action.format);
-    const content = action.format === "obj"
-      ? buildHairObj({ includeMesh: contents.mesh, includeCurves: contents.curves })
-      : buildHairUsda({
-        includeMesh: contents.mesh,
-        includeCurves: contents.curves,
-        includeBones: contents.bones,
-        includeWeights: contents.weights,
-        rootName: baseName
-      });
+    // rootName = SkelRoot path 前缀（可自定义，默认 = 文件名）。
+    const rootName = cleanFileBaseName(exportPathPrefixInput?.value || baseName, baseName);
     try {
+      const content = action.format === "obj"
+        ? buildHairObj({ includeMesh: contents.mesh, includeCurves: contents.curves })
+        : buildHairUsda({
+          // Bones & Capture Mesh 隐含包含 mesh（勾 Bones 时 Mesh 复选框灰掉但仍导出）。
+          includeMesh: contents.mesh || contents.bones,
+          includeCurves: contents.curves,
+          includeBones: contents.bones,
+          rootName
+        });
       let savedName = suggestedName;
-      const handle = await writeExportThroughFileSystem(content, suggestedName, action.format);
-      if (handle) {
-        deps.quickExportFileHandle = handle;
-        savedName = fileNameForAction(handle.name, action.format);
-      } else {
+      const result = await writeExportThroughFileSystem(content, suggestedName, action.format);
+      if (result.handle) {
+        deps.quickExportFileHandle = result.handle;
+        savedName = fileNameForAction(result.handle.name, action.format);
+      } else if (!result.cancelled) {
         downloadTextFile(
           content,
           suggestedName,
           action.format === "usda" ? "model/vnd.usda;charset=utf-8" : "text/plain;charset=utf-8"
         );
+      } else {
+        return; // 用户取消导出：不下载、不更新 lastExport
       }
       deps.lastExport = {
         format: action.format,
         fileName: savedName,
+        rootName,
         contents: {
           mesh: contents.mesh,
           curves: contents.curves,
-          bones: contents.bones,
-          weights: contents.weights
+          bones: contents.bones
         }
       };
     } catch (error) {
       if (error?.name !== "AbortError") {
         console.error(error);
-        window.alert(`The ${action.format.toUpperCase()} export could not be written. Please try again.`);
+        window.alert(`The ${action.format.toUpperCase()} export failed: ${error?.message || error}`);
       }
     }
   }
@@ -775,7 +1018,12 @@ export function createProjectSaveApi(deps) {
   }
 
   function exportHairObj() {
-    openFileActionDialog({ format: "obj" });
+    // OBJ 只导出 Mesh：不打开对话框，直接用当前项目名走一次导出。
+    performFileAction(
+      { format: "obj" },
+      cleanFileBaseName(deps.currentProjectName, "anime-hair"),
+      { mesh: true, curves: false }
+    );
   }
 
   function exportHairUsda() {
@@ -784,12 +1032,13 @@ export function createProjectSaveApi(deps) {
 
   async function exportHairProjectQuickly() {
     if (!deps.lastExport) {
-      openFileActionDialog({ format: "obj" });
+      openFileActionDialog({ format: "usda" });
       return;
     }
     if (deps.quickExportInProgress) return;
     const format = deps.lastExport.format;
     const baseName = cleanFileBaseName(deps.currentProjectName, "anime-hair");
+    const rootName = deps.lastExport.rootName || baseName;
     const suggestedName = deps.lastExport.fileName || fileNameForAction(baseName, format);
     const contents = deps.lastExport.contents || Object.fromEntries(
       Object.entries(exportContentInputs).map(([key, input]) => [key, input.checked])
@@ -797,11 +1046,10 @@ export function createProjectSaveApi(deps) {
     const content = format === "obj"
       ? buildHairObj({ includeMesh: contents.mesh, includeCurves: contents.curves })
       : buildHairUsda({
-        includeMesh: contents.mesh,
+        includeMesh: contents.mesh || contents.bones,
         includeCurves: contents.curves,
         includeBones: contents.bones,
-        includeWeights: contents.weights,
-        rootName: baseName
+        rootName
       });
     if (deps.quickExportFileHandle) {
       deps.quickExportInProgress = true;
@@ -817,25 +1065,28 @@ export function createProjectSaveApi(deps) {
         deps.quickExportInProgress = false;
       }
     }
-    const handle = await writeExportThroughFileSystem(content, suggestedName, format);
-    if (handle) {
-      deps.quickExportFileHandle = handle;
+    const result = await writeExportThroughFileSystem(content, suggestedName, format);
+    if (result.handle) {
+      deps.quickExportFileHandle = result.handle;
       deps.lastExport = {
         format,
-        fileName: fileNameForAction(handle.name, format),
+        fileName: fileNameForAction(result.handle.name, format),
+        rootName,
         contents
       };
       return;
     }
-    downloadTextFile(
-      content,
-      suggestedName,
-      format === "usda" ? "model/vnd.usda;charset=utf-8" : "text/plain;charset=utf-8"
-    );
+    if (!result.cancelled) {
+      downloadTextFile(
+        content,
+        suggestedName,
+        format === "usda" ? "model/vnd.usda;charset=utf-8" : "text/plain;charset=utf-8"
+      );
+    }
   }
 
   async function writeExportThroughFileSystem(content, suggestedName, format) {
-    if (!window.showSaveFilePicker) return null;
+    if (!window.showSaveFilePicker) return { handle: null, cancelled: false };
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName,
@@ -847,11 +1098,12 @@ export function createProjectSaveApi(deps) {
       const writable = await handle.createWritable();
       await writable.write(content);
       await writable.close();
-      return handle;
+      return { handle, cancelled: false };
     } catch (error) {
-      if (error?.name === "AbortError") return null;
+      // 用户取消（AbortError）：cancelled=true，调用方不再 fallback 下载。
+      if (error?.name === "AbortError") return { handle: null, cancelled: true };
       console.error("Export could not write to the chosen file, falling back to download.", error);
-      return null;
+      return { handle: null, cancelled: false };
     }
   }
 
@@ -884,6 +1136,19 @@ export function createProjectSaveApi(deps) {
 
   [closeFileActionDialogButton, cancelFileActionButton].forEach((button) => {
     button.addEventListener("click", () => fileActionDialog.close());
+  });
+  // "Bones & Capture Mesh" 勾选时 Mesh 自动灰掉（一次性绑定；勾选保留到下次打开，
+  // openFileActionDialog 里的初始同步处理跨对话框状态）。
+  exportContentInputs.bones.addEventListener("change", () => {
+    const bonesInput = exportContentInputs.bones;
+    const meshInput = exportContentInputs.mesh;
+    if (bonesInput.checked) {
+      meshInput.disabled = true;
+      meshInput.checked = false;
+    } else {
+      meshInput.disabled = false;
+      meshInput.checked = true; // 取消勾选后恢复 Mesh 可用并默认勾选
+    }
   });
   fileActionDialog.addEventListener("close", () => {
     deps.pendingFileAction = null;

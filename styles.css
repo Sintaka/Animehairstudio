@@ -6113,6 +6113,39 @@ input[type="range"] {
   display: none;
 }
 
+.file-export-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 3px 8px;
+  padding: 7px 8px;
+  border-radius: 4px;
+  background: #151319;
+}
+
+.file-export-option > input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+}
+
+.file-export-option > input[type="text"] {
+  grid-column: 1 / -1;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  margin-top: 3px;
+  background: #121116;
+  border: 1px solid #4a444f;
+  border-radius: 4px;
+  color: #e7e0e7;
+  font-size: 12px;
+}
+
+.file-export-option > input[type="text"]::placeholder {
+  color: #85808a;
+}
+
 .file-export-contents legend {
   padding: 0 5px;
   color: #aaa3ac;
@@ -6131,7 +6164,7 @@ input[type="range"] {
   background: #151319;
 }
 
-.creation-preset-dialog .file-export-option input {
+.creation-preset-dialog .file-export-option input[type="checkbox"] {
   width: 16px;
   height: 16px;
   margin: 1px 0 0;

@@ -50,6 +50,26 @@ function numberArray(values) {
   return `[${values.map((value) => Math.trunc(finiteNumber(value))).join(", ")}]`;
 }
 
+// 展平 int 对 [[a,b],[c,d]] → [a,b,c,d]（primvar 数组文本，供 int[]）。
+function flatIntArray(pairs) {
+  const values = [];
+  (Array.isArray(pairs) ? pairs : []).forEach((pair) => {
+    if (Array.isArray(pair)) pair.forEach((value) => values.push(Math.trunc(finiteNumber(value))));
+    else values.push(Math.trunc(finiteNumber(pair)));
+  });
+  return `[${values.join(", ")}]`;
+}
+
+// 平铺 float 列表（支持嵌套对），逐项 formatNumber → "a, b, c, d"（供 float[]）。
+function floatArray(values) {
+  const flat = [];
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    if (Array.isArray(value)) value.forEach((v) => flat.push(v));
+    else flat.push(value);
+  });
+  return `[${flat.map(formatNumber).join(", ")}]`;
+}
+
 function metadataLines(item, indent) {
   const lines = [`${indent}custom string animeHairStudio:sourceName = ${quoteString(item.name)}`];
   if (item.group) lines.push(`${indent}custom string animeHairStudio:group = ${quoteString(item.group)}`);
@@ -57,90 +77,104 @@ function metadataLines(item, indent) {
   return lines;
 }
 
-function primvarLines(type, name, values, interpolation, indices = null) {
+function primvarLines(type, name, values, interpolation, indices = null, indent = 12) {
+  const pad = " ".repeat(indent);
+  const pad2 = " ".repeat(indent + 4);
   const lines = [
-    `            ${type}[] primvars:${name} = ${tupleArray(values)} (`,
-    `                interpolation = "${interpolation}"`,
-    "            )"
+    `${pad}${type}[] primvars:${name} = ${tupleArray(values)} (`,
+    `${pad2}interpolation = "${interpolation}"`,
+    `${pad})`
   ];
   if (Array.isArray(indices) && indices.length) {
-    lines.push(`            int[] primvars:${name}:indices = ${numberArray(indices)}`);
+    lines.push(`${pad}int[] primvars:${name}:indices = ${numberArray(indices)}`);
   }
   return lines;
 }
 
-function meshBlock(mesh, identifier, skelId = null) {
+// 蒙皮数据是否完整（每点一个影响列表，与 meshBlock 的 hasSkin 判定一致）。
+function hasSkinData(mesh) {
+  const points = Array.isArray(mesh?.points) ? mesh.points : [];
+  return Array.isArray(mesh?.skelIndices) && mesh.skelIndices.length === points.length
+    && Array.isArray(mesh?.skelWeights) && mesh.skelWeights.length === points.length;
+}
+
+// indent 为基础缩进（def Mesh 所在列），属性在 indent+4。
+function meshBlock(mesh, identifier, skelPath = null, indent = 8) {
+  const pad = " ".repeat(indent);
+  const pad2 = " ".repeat(indent + 4);
+  const pad3 = " ".repeat(indent + 8);
   const points = Array.isArray(mesh.points) ? mesh.points : [];
   const faces = (Array.isArray(mesh.faces) ? mesh.faces : [])
     .filter((face) => Array.isArray(face) && face.length >= 3);
   const faceVertexCounts = faces.map((face) => face.length);
   const faceVertexIndices = faces.flat();
-  const hasSkin = skelId
-    && Array.isArray(mesh.skelJoints) && mesh.skelJoints.length
-    && Array.isArray(mesh.skelIndices) && mesh.skelIndices.length === points.length
-    && Array.isArray(mesh.skelWeights) && mesh.skelWeights.length === points.length;
+  const hasSkin = skelPath && hasSkinData(mesh);
   const header = hasSkin
-    ? `        def Mesh "${identifier}" (` + "\n" + '            prepend apiSchemas = ["SkelBindingAPI"]' + "\n" + "        )"
-    : `        def Mesh "${identifier}"`;
+    ? `${pad}def Mesh "${identifier}" (` + "\n" + `${pad2}prepend apiSchemas = ["SkelBindingAPI"]` + "\n" + `${pad})`
+    : `${pad}def Mesh "${identifier}"`;
   const lines = [
     header,
-    "        {",
-    `            point3f[] points = ${tupleArray(points)}`,
-    `            int[] faceVertexCounts = ${numberArray(faceVertexCounts)}`,
-    `            int[] faceVertexIndices = ${numberArray(faceVertexIndices)}`,
-    '            uniform token subdivisionScheme = "none"'
+    `${pad}{`,
+    `${pad2}point3f[] points = ${tupleArray(points)}`,
+    `${pad2}int[] faceVertexCounts = ${numberArray(faceVertexCounts)}`,
+    `${pad2}int[] faceVertexIndices = ${numberArray(faceVertexIndices)}`,
+    `${pad2}uniform token subdivisionScheme = "none"`
   ];
 
   if (hasSkin) {
+    // SkelBindingAPI：rel skel:skeleton 指向 Skeleton prim；蒙皮用
+    // jointIndices/jointWeights（elementSize = 每顶点影响数）。
+    const elementSize = Array.isArray(mesh.skelIndices[0]) ? mesh.skelIndices[0].length : 2;
     lines.push(
-      `            rel skel:bindTransforms = </${skelId}>`,
-      `            uniform token[] skel:joints = [${mesh.skelJoints.map((name) => `"${usdIdentifier(name, "Joint")}"`).join(", ")}]`,
-      `            int2[] primvars:skel:joints = ${tupleArray(mesh.skelIndices)} (`,
-      '                interpolation = "vertex"',
-      "            )",
-      `            float2[] primvars:skel:weights = ${tupleArray(mesh.skelWeights)} (`,
-      '                interpolation = "vertex"',
-      "            )"
+      `${pad2}rel skel:skeleton = </${skelPath}>`,
+      `${pad2}int[] primvars:skel:jointIndices = ${flatIntArray(mesh.skelIndices)} (`,
+      `${pad3}elementSize = ${elementSize}`,
+      `${pad3}interpolation = "vertex"`,
+      `${pad2})`,
+      `${pad2}float[] primvars:skel:jointWeights = ${floatArray(mesh.skelWeights)} (`,
+      `${pad3}elementSize = ${elementSize}`,
+      `${pad3}interpolation = "vertex"`,
+      `${pad2})`
     );
   }
   if (Array.isArray(mesh.normals) && mesh.normals.length === points.length) {
     lines.push(
-      `            normal3f[] normals = ${tupleArray(mesh.normals)}`,
-      '            uniform token normals:interpolation = "vertex"'
+      `${pad2}normal3f[] normals = ${tupleArray(mesh.normals)}`,
+      `${pad2}uniform token normals:interpolation = "vertex"`
     );
   }
   if (Array.isArray(mesh.uvs) && mesh.uvs.length === points.length) {
-    lines.push(...primvarLines("texCoord2f", "st", mesh.uvs, "faceVarying", faceVertexIndices));
+    lines.push(...primvarLines("texCoord2f", "st", mesh.uvs, "faceVarying", faceVertexIndices, indent + 4));
   }
   if (Array.isArray(mesh.colors) && mesh.colors.length === points.length) {
-    lines.push(...primvarLines("color3f", "displayColor", mesh.colors, "vertex"));
+    lines.push(...primvarLines("color3f", "displayColor", mesh.colors, "vertex", null, indent + 4));
   }
   if (Array.isArray(mesh.tangents) && mesh.tangents.length === points.length) {
-    lines.push(...primvarLines("float4", "animeHairStudio:tangent", mesh.tangents, "vertex"));
+    lines.push(...primvarLines("float4", "animeHairStudio:tangent", mesh.tangents, "vertex", null, indent + 4));
   }
   if (Array.isArray(mesh.gridRowIndices) && mesh.gridRowIndices.length === points.length) {
     lines.push(
-      `            int[] primvars:AHS_gridRow = ${numberArray(mesh.gridRowIndices)} (`,
-      '                interpolation = "vertex"',
-      "            )"
+      `${pad2}int[] primvars:AHS_gridRow = ${numberArray(mesh.gridRowIndices)} (`,
+      `${pad3}interpolation = "vertex"`,
+      `${pad2})`
     );
   }
   if (Array.isArray(mesh.gridColIndices) && mesh.gridColIndices.length === points.length) {
     lines.push(
-      `            int[] primvars:AHS_gridCol = ${numberArray(mesh.gridColIndices)} (`,
-      '                interpolation = "vertex"',
-      "            )"
+      `${pad2}int[] primvars:AHS_gridCol = ${numberArray(mesh.gridColIndices)} (`,
+      `${pad3}interpolation = "vertex"`,
+      `${pad2})`
     );
   }
   if (Number.isInteger(mesh.uvisland)) {
     // UV 岛枚举：uniform = 每面一个值（Houdini prim 属性语义），DCC 可按 @uvisland==k 选岛
     lines.push(
-      `            int[] primvars:uvisland = ${numberArray(faces.map(() => mesh.uvisland))} (`,
-      '                interpolation = "uniform"',
-      "            )"
+      `${pad2}int[] primvars:uvisland = ${numberArray(faces.map(() => mesh.uvisland))} (`,
+      `${pad3}interpolation = "uniform"`,
+      `${pad2})`
     );
   }
-  lines.push(...metadataLines(mesh, "            "), "        }");
+  lines.push(...metadataLines(mesh, pad2), `${pad}}`);
   return lines.join("\n");
 }
 
@@ -162,44 +196,199 @@ function curveBlock(curve, identifier) {
   ].join("\n");
 }
 
-function quatTuple(orient) {
-  return `(${formatNumber(orient?.[0] ?? 1)}, ${formatNumber(orient?.[1] ?? 0)}, ${formatNumber(orient?.[2] ?? 0)}, ${formatNumber(orient?.[3] ?? 0)})`;
-}
-
 function pointTuple(p) {
   return `(${formatNumber(p?.[0] ?? 0)}, ${formatNumber(p?.[1] ?? 0)}, ${formatNumber(p?.[2] ?? 0)})`;
 }
 
-// Emit a SkelRoot with nested SkelJoint prims (hierarchy = prim nesting). Each joint
-// carries a translate (P) and an orient quaternion; parent linkage via nesting.
-function skeletonBlock(skeleton, usedNames) {
-  const identifier = uniqueIdentifier(`${skeleton?.name || "Hair"}_Skel`, usedNames, "HairSkel");
+// orient 为 [w,x,y,z]（null 视为单位四元数）→ 3x3 旋转矩阵（9 值，row-vector 约定，
+// scale 默认 1）。导出给 project-files.js 用：数据流里骨骼旋转统一用 3x3 矩阵表示。
+export function quatToMat3(orient) {
+  const w = finiteNumber(orient?.[0] ?? 1);
+  const x = finiteNumber(orient?.[1] ?? 0);
+  const y = finiteNumber(orient?.[2] ?? 0);
+  const z = finiteNumber(orient?.[3] ?? 0);
+  // row-vector 约定（USD v' = v·M）：旋转矩阵是 column-vector 版本的转置。
+  return [
+    1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y),
+    2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x),
+    2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)
+  ];
+}
+
+// 由三个正交轴向量直接构造 3x3 旋转矩阵（9 值，row-vector 约定，行 = 基向量，scale 恒 1）。
+// 输入 xAxis/yAxis/zAxis 为 {x,y,z} 或 [x,y,z]；分量经 finiteNumber 保护（缺失/非有限 → 0）。
+export function axesToMat3(xAxis, yAxis, zAxis) {
+  // 兼容 {x,y,z} 对象与 [x,y,z] 数组两种输入。
+  const component = (axis, index) => {
+    const key = ["x", "y", "z"][index];
+    return finiteNumber(Array.isArray(axis) ? axis[index] : axis?.[key]);
+  };
+  return [
+    component(xAxis, 0), component(xAxis, 1), component(xAxis, 2),
+    component(yAxis, 0), component(yAxis, 1), component(yAxis, 2),
+    component(zAxis, 0), component(zAxis, 1), component(zAxis, 2)
+  ];
+}
+
+// 3x3 旋转矩阵（9 值，scale=1）→ 4x4（左上角嵌入，平移 0）；null → identity。
+function mat3ToMat4(orient) {
+  const m = Array.isArray(orient) && orient.length >= 9 ? orient : null;
+  return [
+    m ? m[0] : 1, m ? m[1] : 0, m ? m[2] : 0, 0,
+    m ? m[3] : 0, m ? m[4] : 1, m ? m[5] : 0, 0,
+    m ? m[6] : 0, m ? m[7] : 0, m ? m[8] : 1, 0,
+    0, 0, 0, 1
+  ];
+}
+
+// 平移矩阵（p 为 null 视为 (0,0,0)）；row-vector 约定：平移分量在最后一行。
+function translationMatrix(p) {
+  return [
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    finiteNumber(p?.[0] ?? 0), finiteNumber(p?.[1] ?? 0), finiteNumber(p?.[2] ?? 0), 1
+  ];
+}
+
+// 行主序 4x4 矩阵乘法 a·b。
+function matrixMultiply(a, b) {
+  const out = new Array(16);
+  for (let row = 0; row < 4; row += 1) {
+    for (let col = 0; col < 4; col += 1) {
+      out[row * 4 + col] = (
+        a[row * 4] * b[col]
+        + a[row * 4 + 1] * b[4 + col]
+        + a[row * 4 + 2] * b[8 + col]
+        + a[row * 4 + 3] * b[12 + col]
+      );
+    }
+  }
+  return out;
+}
+
+// 3x3 转置（旋转矩阵的逆 = 转置；9 值，row-vector）；null → identity。
+function mat3Transpose(m) {
+  const s = Array.isArray(m) && m.length >= 9 ? m : [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  return [s[0], s[3], s[6], s[1], s[4], s[7], s[2], s[5], s[8]];
+}
+
+// 3x3 矩阵乘法 a·b（9 值，行主序，out[r*3+c] = Σ a[r*3+k]·b[k*3+c]）；null → identity。
+function mat3Multiply(a, b) {
+  const ma = Array.isArray(a) && a.length >= 9 ? a : [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const mb = Array.isArray(b) && b.length >= 9 ? b : [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const out = new Array(9);
+  for (let row = 0; row < 3; row += 1) {
+    for (let col = 0; col < 3; col += 1) {
+      out[row * 3 + col] = (
+        ma[row * 3] * mb[col]
+        + ma[row * 3 + 1] * mb[3 + col]
+        + ma[row * 3 + 2] * mb[6 + col]
+      );
+    }
+  }
+  return out;
+}
+
+// 行向量 v（3 值）· 3x3 矩阵 m（9 值，row-vector）→ 3 值行向量：
+// [v0*m0+v1*m3+v2*m6, v0*m1+v1*m4+v2*m7, v0*m2+v1*m5+v2*m8]；null → identity。
+function rowVecTimesMat3(v, m) {
+  const mv = Array.isArray(v) && v.length >= 3 ? v : [0, 0, 0];
+  const mm = Array.isArray(m) && m.length >= 9 ? m : [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  return [
+    mv[0] * mm[0] + mv[1] * mm[3] + mv[2] * mm[6],
+    mv[0] * mm[1] + mv[1] * mm[4] + mv[2] * mm[7],
+    mv[0] * mm[2] + mv[1] * mm[5] + mv[2] * mm[8]
+  ];
+}
+
+// 关节 orient 为世界旋转 3x3（9 值，row-vector）；缺失/非数组 → identity。
+function orientOf(joint) {
+  return Array.isArray(joint?.orient) && joint.orient.length >= 9 ? joint.orient : [1, 0, 0, 0, 1, 0, 0, 0, 1];
+}
+
+// 行主序 4x4 矩阵的 USD matrix4d 文本（4 个 4 元组）。
+function matrixTuple(m) {
+  const rows = [];
+  for (let row = 0; row < 16; row += 4) {
+    rows.push(`(${formatNumber(m[row])}, ${formatNumber(m[row + 1])}, ${formatNumber(m[row + 2])}, ${formatNumber(m[row + 3])})`);
+  }
+  return `(${rows.join(", ")})`;
+}
+
+// Emit one Skeleton prim (USD SkelBindingAPI), to live inside the shared
+// def SkelRoot "Character" — all per-strand Skeletons and their skinned meshes
+// go into that single SkelRoot, so Houdini usdcharacterimport imports the whole
+// rig in one go (skelrootpath = /<Root>/Character).
+// SkelRoot/Skeleton 是类型化 schema（def 即设类型），不再写 prepend apiSchemas。
+// Skeleton 属性名不带 skel: 前缀（joints/bindTransforms/restTransforms），
+// 只有 mesh 上的 SkelBindingAPI 属性带 skel: 前缀。
+// joints token 是相对 stage root 的完整 prim 路径（无前导斜杠）：
+// `${rootName}/${characterSkelRootName}/${identifier}/${...}`，父链用 / 拼接；
+// orient 是世界旋转（发丝 frame 派生的世界坐标方向）、p 是世界位置：
+// bindTransforms 是各关节世界矩阵（R_world · T(p)，平移恒 = p，不受父级旋转
+// 影响），restTransforms 是局部矩阵（满足 bind[i] = rest[i] · bind[parent]）。
+// identifier 为去重后的 Skeleton prim 名（project-files.js 的 `${sanitized}_Skel`），
+// skinnedMeshBlocks（缩进 12 的 meshBlock 输出）与 Skeleton 同级。
+function skeletonBlock(skeleton, identifier, skinnedMeshBlocks = [], rootName, characterSkelRootName) {
   const joints = Array.isArray(skeleton?.joints) ? skeleton.joints : [];
   if (!joints.length) return "";
-  const names = new Set(joints.map((joint) => joint.name));
-  const roots = joints.filter((joint) => !joint.parent || !names.has(joint.parent));
-  const childrenOf = (parentName) => joints.filter((joint) => joint.parent === parentName);
-  const jointBlock = (joint, depth) => {
-    const indent = "    ".repeat(depth + 1);
-    const childLines = childrenOf(joint.name).map((child) => jointBlock(child, depth + 1));
-    return [
-      `${indent}def SkelJoint "${usdIdentifier(joint.name, "Joint")}"`,
-      `${indent}{`,
-      `${indent}    quatf orient = ${quatTuple(joint.orient)}`,
-      `${indent}    point3f xformOp:translate = ${pointTuple(joint.p)}`,
-      `${indent}    uniform token[] xformOpOrder = ["xformOp:translate"]`,
-      ...childLines,
-      `${indent}}`
-    ].join("\n");
+  const byName = new Map(joints.map((joint) => [joint.name, joint]));
+  const jointId = (name) => usdIdentifier(name, "Joint");
+  const pathCache = new Map();
+  // joint token 相对 stage root：Character SkelRoot / Skeleton prim 名为前缀。
+  const prefix = `${rootName}/${characterSkelRootName}/${identifier}`;
+  const fullPathOf = (joint) => {
+    if (pathCache.has(joint.name)) return pathCache.get(joint.name);
+    const parent = joint.parent && byName.get(joint.parent);
+    const path = parent ? `${fullPathOf(parent)}/${jointId(joint.name)}` : `${prefix}/${jointId(joint.name)}`;
+    pathCache.set(joint.name, path);
+    return path;
   };
-  const block = [
-    `def SkelRoot "${identifier}"`,
-    "{",
-    ...roots.map((root) => jointBlock(root, 1)),
-    "}"
+  // orient 是世界旋转、p 是世界位置。世界矩阵 = R_world · T(p)：平移恒 = 自身 p，
+  // 不再随父级旋转带偏（父级旋转只体现在世界旋转里）。p 为 null 时继承父级世界
+  // 平移（递归 worldOf(parent)，取结果矩阵第 12/13/14 个分量；无父级 → (0,0,0)）。
+  const worldOf = (joint) => {
+    const rotation = mat3ToMat4(orientOf(joint));
+    const parent = joint.parent ? byName.get(joint.parent) : null;
+    let p = joint.p;
+    if (!Array.isArray(joint.p)) {
+      p = parent ? [worldOf(parent)[12], worldOf(parent)[13], worldOf(parent)[14]] : [0, 0, 0];
+    }
+    return matrixMultiply(rotation, translationMatrix(p));
+  };
+  // 局部矩阵（restTransforms），满足 USD Skel 规范 bind[i] = rest[i] · bind[parent]：
+  // rest = bind[i] · bind[parent]⁻¹，即 R_local = R_i · R_parentᵀ（旋转矩阵的逆 =
+  // 转置）、t_local = (p_i - p_parent) · R_parentᵀ（局部偏移转回父级局部空间）。
+  // 根关节（无 parent）或 p / parent.p 任一缺失时 rest = bind（worldOf 结果）。
+  const localOf = (joint) => {
+    const parent = joint.parent ? byName.get(joint.parent) : null;
+    if (!parent || !Array.isArray(joint.p) || !Array.isArray(parent.p)) {
+      return worldOf(joint);
+    }
+    const rParentInv = mat3Transpose(orientOf(parent));
+    const rLocal = mat3Multiply(orientOf(joint), rParentInv);
+    const delta = [
+      finiteNumber(joint.p[0]) - finiteNumber(parent.p[0]),
+      finiteNumber(joint.p[1]) - finiteNumber(parent.p[1]),
+      finiteNumber(joint.p[2]) - finiteNumber(parent.p[2])
+    ];
+    const tLocal = rowVecTimesMat3(delta, rParentInv);
+    return matrixMultiply(mat3ToMat4(rLocal), translationMatrix(tLocal));
+  };
+  const jointPaths = joints.map((joint) => fullPathOf(joint));
+  const bindTransforms = joints.map((joint) => matrixTuple(worldOf(joint)));
+  const restTransforms = joints.map((joint) => matrixTuple(localOf(joint)));
+  // Character SkelRoot 内（12 空格）；Skeleton 与蒙皮 mesh 同级。
+  return [
+    `        def Skeleton "${identifier}"`,
+    "        {",
+    `            uniform token[] joints = [${jointPaths.map((path) => `"${path}"`).join(", ")}]`,
+    `            uniform matrix4d[] bindTransforms = [${bindTransforms.join(", ")}]`,
+    `            uniform matrix4d[] restTransforms = [${restTransforms.join(", ")}]`,
+    "        }",
+    ...skinnedMeshBlocks
   ].join("\n");
-  // Indent to sit inside the Skeletons Scope (8 spaces like mesh/curve prims).
-  return block.split("\n").map((line) => `        ${line}`).join("\n");
 }
 
 export function exportAnimeHairUsda({
@@ -211,31 +400,53 @@ export function exportAnimeHairUsda({
   const usedMeshNames = new Set();
   const usedCurveNames = new Set();
   const rootIdentifier = usdIdentifier(rootName, "AnimeHairStudio");
+  // 单个 SkelRoot 固定名 "Character"：所有发丝的 Skeleton + 蒙皮 mesh 都在里面，
+  // Houdini usdcharacterimport 只需填一个 skelrootpath（/<Root>/Character）。
+  const characterSkelRootName = "Character";
+  // Skeleton prim 标识符 = skeleton.name 本身（project-files.js 已产出去重后的
+  // `${usdIdentifier(lock.name)}_Skel`）；这里按 name 原样存，只做防御性去重
+  // （同名依次 _2/_3），保证 rel skel:skeleton 与 Skeleton prim 名一致。
   const usedSkeletonNames = new Set();
   const skeletonNameToId = new Map();
-  skeletons
-    .filter((skeleton) => Array.isArray(skeleton?.joints) && skeleton.joints.length)
-    .forEach((skeleton) => {
-      skeletonNameToId.set(
-        skeleton.name,
-        uniqueIdentifier(`${skeleton?.name || "Hair"}_Skel`, usedSkeletonNames, "HairSkel")
-      );
-    });
-  const meshBlocks = meshes
+  const validSkeletons = skeletons
+    .filter((skeleton) => Array.isArray(skeleton?.joints) && skeleton.joints.length);
+  validSkeletons.forEach((skeleton) => {
+    skeletonNameToId.set(
+      skeleton.name,
+      uniqueIdentifier(skeleton?.name || "HairSkel", usedSkeletonNames, "HairSkel")
+    );
+  });
+  // mesh 一次性保留 identifier；蒙皮 mesh（skelRootName 匹配有效 skeleton 且蒙皮数据完整）
+  // 嵌入 Character SkelRoot，其余留在 "Meshes" scope（未蒙皮）。
+  const meshRecords = meshes
     .filter((mesh) => Array.isArray(mesh?.points) && mesh.points.length && Array.isArray(mesh?.faces) && mesh.faces.length)
     .map((mesh) => {
       const identifier = uniqueIdentifier(mesh.name, usedMeshNames, "HairMesh");
       const skelId = mesh.skelRootName ? skeletonNameToId.get(mesh.skelRootName) : null;
-      const skelPath = skelId ? `${rootIdentifier}/Skeletons/${skelId}` : null;
-      return meshBlock(mesh, identifier, skelPath);
+      return { mesh, identifier, skelId, skinned: Boolean(skelId) && hasSkinData(mesh) };
     });
+  const skinnedBySkelId = new Map();
+  const unskinnedMeshBlocks = [];
+  meshRecords.forEach(({ mesh, identifier, skelId, skinned }) => {
+    const block = skinned
+      ? meshBlock(mesh, identifier, `${rootIdentifier}/${characterSkelRootName}/${skelId}`, 8)
+      : meshBlock(mesh, identifier, null, 8);
+    if (skinned) {
+      if (!skinnedBySkelId.has(skelId)) skinnedBySkelId.set(skelId, []);
+      skinnedBySkelId.get(skelId).push(block);
+    } else {
+      unskinnedMeshBlocks.push(block);
+    }
+  });
+  const skeletonBlocks = validSkeletons
+    .map((skeleton) => {
+      const identifier = skeletonNameToId.get(skeleton.name);
+      return skeletonBlock(skeleton, identifier, skinnedBySkelId.get(identifier) || [], rootIdentifier, characterSkelRootName);
+    })
+    .filter(Boolean);
   const curveBlocks = curves
     .filter((curve) => Array.isArray(curve?.points) && curve.points.length >= 4)
     .map((curve) => curveBlock(curve, uniqueIdentifier(`${curve.name || "Hair"}_Curve`, usedCurveNames, "HairCurve")));
-  const skeletonBlocks = skeletons
-    .filter((skeleton) => Array.isArray(skeleton?.joints) && skeleton.joints.length)
-    .map((skeleton) => skeletonBlock(skeleton, usedSkeletonNames))
-    .filter(Boolean);
 
   return [
     "#usda 1.0",
@@ -249,7 +460,7 @@ export function exportAnimeHairUsda({
     "{",
     '    def Scope "Meshes"',
     "    {",
-    meshBlocks.join("\n\n"),
+    unskinnedMeshBlocks.join("\n\n"),
     "    }",
     "",
     '    def Scope "CenterCurves"',
@@ -257,11 +468,101 @@ export function exportAnimeHairUsda({
     curveBlocks.join("\n\n"),
     "    }",
     "",
-    '    def Scope "Skeletons"',
+    // 单个 SkelRoot "Character"：所有 Skeleton 与蒙皮 mesh 同级（12/16 空格）。
+    `    def SkelRoot "${characterSkelRootName}"`,
     "    {",
     skeletonBlocks.join("\n\n"),
     "    }",
     "}",
     ""
   ].join("\n");
+}
+
+// ---- splitBoneLayout / bridgeRootParentName：split 骨骼的 fork 父索引与派生位置 ----
+// split 骨骼（split.N，暴露段）在数据流里 authored p 为 null、父级是根骨骼，导出时
+// 按此解析：fork 参数（暴露段起始处的主链位置）→ 父主骨骼索引 parentMainIndex，以及
+// 派生世界位置 p（面板/表面取 splitTipForSegment 的 tip 链末点，回退曲线末端；发丝取
+// 曲线末端 + 发丝宽度 × spread 沿 frame.x 方向偏移）。不适用时返回 null。
+export function splitBoneLayout(lock, bone, options = {}) {
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  if (!lock || !bone || typeof bone.name !== "string") return null;
+  // 仅 split.N 主骨骼参与；tip 链关节（split.N.tip.M）排除。
+  if (!bone.name.startsWith("split.") || bone.name.includes(".tip.")) return null;
+  const k = Number.parseInt(bone.name.slice(6), 10);
+  if (!Number.isFinite(k) || k < 0) return null;
+  const { mainCount = 0, curve = null, strandGeometryFrameAt = null, splitTipForSegment = null } = options;
+  if (mainCount < 1) return null;
+
+  let forkT = null;
+  let p = null;
+
+  if (lock.geometryType === "panel" || lock.geometryType === "surface") {
+    // 面板/表面分支：forkT = 1 - max(相邻段高)；无 panelSplits 时该 split 无意义。
+    if (!Array.isArray(lock.panelSplits) || !lock.panelSplits.length) return null;
+    const heights = [lock.panelSplits[k - 1]?.height, lock.panelSplits[k]?.height]
+      .filter((h) => h != null)
+      .map(Number);
+    forkT = heights.length ? 1 - Math.max(...heights) : 1;
+    if (typeof splitTipForSegment === "function") {
+      try {
+        const tip = splitTipForSegment(lock, k, lock.panelSplits, bone);
+        const last = tip?.points?.at(-1);
+        if (last && Number.isFinite(Number(last.x))) {
+          p = [Number(last.x), Number(last.y), Number(last.z)];
+        }
+      } catch {
+        // tip 链解析失败 → 回退到曲线末端
+      }
+    }
+    if (p === null && curve && typeof curve.getPoint === "function") {
+      const tip = curve.getPoint(1);
+      if (Number.isFinite(tip?.x)) p = [tip.x, tip.y, tip.z];
+    }
+  } else if (lock.geometryType === "strand" && lock.strandSplitEnabled) {
+    // 发丝分支：forkT = 1 - splitHeight；p = 曲线末端 + 宽度 × spread 侧向偏移。
+    const splitHeight = clamp(Number(lock.strandSplitHeight ?? 0.3), 0.02, 0.8);
+    forkT = 1 - splitHeight;
+    try {
+      if (curve && typeof strandGeometryFrameAt === "function") {
+        const frame = strandGeometryFrameAt(lock, curve, 1);
+        const tip = curve.getPoint(1);
+        if (frame?.x && tip && Number.isFinite(tip.x)) {
+          const baseWidth = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1);
+          const spread = clamp(Number(bone.spread ?? lock.strandSplitGap ?? 0.12), 0, 0.99);
+          const direction = k === 0 ? -1 : 1;
+          const offset = baseWidth * spread * direction;
+          p = [tip.x + frame.x.x * offset, tip.y + frame.x.y * offset, tip.z + frame.x.z * offset];
+        }
+      }
+    } catch {
+      // frame 派生失败 → 回退到曲线末端
+    }
+    if (p === null && curve && typeof curve.getPoint === "function") {
+      const tip = curve.getPoint(1);
+      if (Number.isFinite(tip?.x)) p = [tip.x, tip.y, tip.z];
+    }
+  } else {
+    // 发丝但未启用 split（或未知类型）→ 不适用。
+    return null;
+  }
+
+  if (forkT == null) return null;
+  const parentMainIndex = mainCount > 1 ? Math.round(clamp(forkT, 0, 1) * (mainCount - 1)) : 0;
+  return { parentMainIndex, p };
+}
+
+// bridgeRootParentName：桥接子锁根关节的父骨骼内部名。子锁通过
+// branchParentId/branchParentParameter 记录挂在哪个父锁主链的哪个位置，
+// t → k = round(clamp(t)·(parentCount-1)) 得 main.k，再经 jointNameOf 映射为
+// 导出关节名（调用方校验父锁确实导出该骨骼）。不适用 → null。
+export function bridgeRootParentName(lock, locks = [], jointNameOf = null) {
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  if (!lock?.branchParentId) return null;
+  const parent = locks.find((item) => item?.id === lock.branchParentId);
+  if (!parent) return null;
+  const parentCount = Array.isArray(parent.points) ? parent.points.length : 0;
+  if (parentCount < 2 || typeof jointNameOf !== "function") return null;
+  const t = clamp(Number(lock.branchParentParameter ?? 0), 0, 1);
+  const k = Math.round(t * (parentCount - 1));
+  return jointNameOf(parent, "main." + k);
 }

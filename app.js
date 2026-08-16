@@ -42,7 +42,7 @@ import { createReferenceStore } from "./modules/edit/reference-store.js?v=202608
 import { createDrawStore } from "./modules/edit/draw-store.js?v=20260814-12";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260814-12";
 import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
-import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260816-7";
+import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260816-19";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
@@ -137,12 +137,12 @@ import {
   scaleCapsuleRadialLoops
 } from "./modules/geometry/capsule-curve.js?v=20260814-12";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./modules/io/obj-export.js?v=20260814-12";
-import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260815-1";
+import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260816-17";
 import {
   fileActionFormat,
   fileNameForAction,
   normalizeExportContents
-} from "./modules/io/file-actions.js?v=20260814-12";
+} from "./modules/io/file-actions.js?v=20260816-13";
 import { applicationDropFileKind } from "./modules/io/file-drop.js?v=20260814-12";
 import { mirrorSelectionTargets } from "./modules/edit/mirror-selection.js?v=20260814-12";
 import { uvCoordinateBounds, uvViewTransform } from "./modules/geometry/uv-inspector.js?v=20260814-12";
@@ -3159,8 +3159,7 @@ const confirmFileActionButton = document.querySelector("#confirmFileAction");
 const exportContentInputs = {
   mesh: document.querySelector("#exportIncludeMesh"),
   curves: document.querySelector("#exportIncludeCurves"),
-  bones: document.querySelector("#exportIncludeBones"),
-  weights: document.querySelector("#exportIncludeWeights")
+  bones: document.querySelector("#exportIncludeBones")
 };
 const braidMeshPresetInput = document.querySelector("#braidMeshPreset");
 const braidToolSizeInput = document.querySelector("#braidToolSize");
@@ -9660,6 +9659,8 @@ const fileApi = createProjectSaveApi({
   strandCurveParameters,
   curveSurfaceControllerCurves: curveSurfaceCreate.curveSurfaceControllerCurves,
   bonesFor,
+  strandGeometryFrameAt,
+  splitTipForSegment: panelTipStrand.splitTipForSegment,
   safelyRememberRecentProject: ioApi.safelyRememberRecentProject,
   clearAcknowledgedRecovery
 });

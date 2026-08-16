@@ -2558,18 +2558,18 @@ test("file actions sanitize names and expose only supported available export con
   assert.deepEqual(
     normalizeExportContents(
       "obj",
-      { mesh: true, curves: false, bones: true, weights: true },
-      { mesh: true, curves: true, bones: true, weights: true }
+      { mesh: true, curves: false, bones: true },
+      { mesh: true, curves: true, bones: true }
     ),
-    { mesh: true, curves: false, bones: false, weights: false }
+    { mesh: true, curves: false, bones: false }
   );
   assert.deepEqual(
     normalizeExportContents(
       "usda",
-      { mesh: true, curves: true, bones: true, weights: true },
-      { mesh: true, curves: true, bones: false, weights: false }
+      { mesh: true, curves: true, bones: true },
+      { mesh: true, curves: true, bones: false }
     ),
-    { mesh: true, curves: true, bones: false, weights: false }
+    { mesh: true, curves: true, bones: false }
   );
 });
 
