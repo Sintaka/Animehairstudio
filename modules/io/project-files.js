@@ -546,7 +546,7 @@ export function createProjectSaveApi(deps) {
             else if (bone.parent) parent = nameMap.get(bone.parent) ?? bone.parent;
             else parent = HAIR_ROOT_NAME;                            // main.0 parent 到 Hair_Root
           }
-          const boneP = bone.p ? [bone.p.x, bone.p.y, bone.p.z] : null;
+          let boneP = bone.p ? [bone.p.x, bone.p.y, bone.p.z] : null;
           if (!boneP && derivedP) boneP = derivedP; // 未创作的 split 骨骼用派生位置（段尖/管尖）
           let orient = bone.orient
             ? quatToMat3([bone.orient.w, bone.orient.x, bone.orient.y, bone.orient.z])
