@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { leafWeightAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActionFormat } from "./file-actions.js?v=20260816-13";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260814-12";
-import { exportAnimeHairUsda, usdIdentifier, quatToMat3, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName, smoothMainPair } from "./usda-export.js?v=20260816-19";
+import { exportAnimeHairUsda, usdIdentifier, quatToMat3, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName, smoothMainPair, tipChainNearestIndex } from "./usda-export.js?v=20260816-20";
 import { materializeTipChain, tipChainFrameAt as strandTipChainFrameAt } from "../geometry/tip-sub-bone.js?v=20260813-1";
 import { createHairProject } from "./project-schema.js?v=20260814-12";
 import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260815-1";
@@ -701,6 +701,27 @@ export function createProjectSaveApi(deps) {
       const nextIdx = globalJointIndex.get(jointNameOf(lock, `main.${pair.next}`)) ?? mainIdx;
       return { indices: [mainIdx, nextIdx], weights: [1 - pair.frac, pair.frac] };
     };
+    // 发尖链最近关节索引 → 导出关节名：index === i0 时就是 split 骨骼自身（链根），
+    // 否则是 split.${segment}.tip.${index}（0.2.109：暴露区绑最近发尖链关节，
+    // 不再全部绑到最根部的 split 骨骼；末端绑到最后一个 tip 关节）。
+    const tipIdxFor = (lock, segment, vertex, gridRowIndices, rows, mainCount, splitName) => {
+      const isPanel = ["panel", "surface"].includes(lock.geometryType);
+      const splits = Array.isArray(lock.panelSplits) ? lock.panelSplits : [];
+      let forkT;
+      if (isPanel) {
+        if (!splits.length || lock.panelSplitEnabled === false) return null;
+        const heights = [splits[segment - 1]?.height, splits[segment]?.height]
+          .filter((h) => h != null).map(Number);
+        forkT = heights.length ? 1 - Math.max(...heights) : 1;
+      } else {
+        if (!lock.strandSplitEnabled) return null;
+        forkT = 1 - THREE.MathUtils.clamp(Number(lock.strandSplitHeight ?? 0.3), 0.02, 0.8);
+      }
+      const t = rowTAt(vertex, gridRowIndices, rows);
+      const { index, i0 } = tipChainNearestIndex(t, mainCount, forkT);
+      const name = index === i0 ? splitName : jointNameOf(lock, `split.${segment}.tip.${index}`);
+      return globalJointIndex.get(name) ?? null;
+    };
     const bindBySweepRow = (mesh, lock, bones, pointCount, gridRowIndices, gridRows) => {
       const mainCount = bones.filter((bone) => bone.name.startsWith("main.")).length;
       const rows = rowsFor(gridRowIndices, gridRows);
@@ -763,8 +784,21 @@ export function createProjectSaveApi(deps) {
                     const splitName = splitBones[segment] ? jointNameOf(lock, splitBones[segment].name) : null;
                     const splitIdx = splitName ? (globalJointIndex.get(splitName) ?? mainIdx) : mainIdx;
                     if (segment >= 0 && splitName && weight > 0.0001) {
-                      skelIndices.push([mainIdx, splitIdx]);
-                      skelWeights.push([1 - weight, weight]);
+                      // 暴露区：tip 侧 = 最近发尖链关节（链根 split 或 split.tip.<i>），
+                      // 按权重降序排列（末端主导影响是发尖骨骼而非主骨骼）。
+                      const tipIdx = tipIdxFor(lock, segment, vertex, mesh.gridRowIndices, rows, mainCount, splitName);
+                      if (tipIdx != null) {
+                        if (weight >= 0.5) {
+                          skelIndices.push([tipIdx, mainIdx]);
+                          skelWeights.push([weight, 1 - weight]);
+                        } else {
+                          skelIndices.push([mainIdx, tipIdx]);
+                          skelWeights.push([1 - weight, weight]);
+                        }
+                      } else {
+                        skelIndices.push([mainIdx, splitIdx]);
+                        skelWeights.push([1 - weight, weight]);
+                      }
                     } else {
                       // 视口权重为 0（fork 以上主骨骼驱动）→ 用平滑主链双影响，
                       // 避免 [j,j]×[1,0] 单影响（Houdini 导入成 (-1,-1) 填充）。
@@ -823,8 +857,21 @@ export function createProjectSaveApi(deps) {
                     const splitName = splitBones[segment] ? jointNameOf(lock, splitBones[segment].name) : null;
                     const splitIdx = splitName ? (globalJointIndex.get(splitName) ?? mainIdx) : mainIdx;
                     if (segment >= 0 && splitName && weight > 0.0001) {
-                      skelIndices.push([mainIdx, splitIdx]);
-                      skelWeights.push([1 - weight, weight]);
+                      // 暴露区：tip 侧 = 最近发尖链关节（链根 split 或 split.tip.<i>），
+                      // 按权重降序排列（末端主导影响是发尖骨骼而非主骨骼）。
+                      const tipIdx = tipIdxFor(lock, segment, vertex, mesh.gridRowIndices, rows, mainCount, splitName);
+                      if (tipIdx != null) {
+                        if (weight >= 0.5) {
+                          skelIndices.push([tipIdx, mainIdx]);
+                          skelWeights.push([weight, 1 - weight]);
+                        } else {
+                          skelIndices.push([mainIdx, tipIdx]);
+                          skelWeights.push([1 - weight, weight]);
+                        }
+                      } else {
+                        skelIndices.push([mainIdx, splitIdx]);
+                        skelWeights.push([1 - weight, weight]);
+                      }
                     } else {
                       // 视口权重为 0（fork 以上主骨骼驱动）→ 用平滑主链双影响，
                       // 避免 [j,j]×[1,0] 单影响（Houdini 导入成 (-1,-1) 填充）。

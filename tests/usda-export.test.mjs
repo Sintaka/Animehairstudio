@@ -7,7 +7,7 @@
 // 运行：node tests/usda-export.test.mjs
 
 import assert from "node:assert/strict";
-import { exportAnimeHairUsda, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName, smoothMainPair } from "../modules/io/usda-export.js";
+import { exportAnimeHairUsda, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName, smoothMainPair, tipChainNearestIndex } from "../modules/io/usda-export.js";
 
 // project-files.js 已把内部骨骼名（main./split.）映射为发丝名前缀（jointNameOf），
 // 且 skeleton.name 已是去重后的 `${usdIdentifier(lock.name)}_Skel`；这里直接喂
@@ -713,5 +713,29 @@ assert.ok(Math.abs(pair099.frac - 0.95) < 1e-9, `t=0.99 → frac 应约等于 0.
 assert.deepEqual(smoothMainPair(2, 6), { main: 5, next: 5, frac: 0 }, "t=2 应钳到 1");
 assert.deepEqual(smoothMainPair(-1, 6), { main: 0, next: 1, frac: 0 }, "t=-1 应钳到 0");
 assert.deepEqual(smoothMainPair(0.5, 1), { main: 0, next: 0, frac: 0 }, "mainCount=1 → n-1=0 → x=0");
+
+// ---- tipChainNearestIndex：暴露区最近发尖链关节 ----
+// 链点 i 的主链参数 t_i = i/(mainCount-1)，暴露区 = t_i > forkT（视口规则）；
+// 返回暴露区内最接近参数 t 的链索引（无暴露 → 末点）与暴露起点 i0。
+// mainCount 6 → last = 5；forkT 0.75 → i0 = floor(0.75·5)+1 = 4。
+assert.deepEqual(tipChainNearestIndex(1, 6, 0.75), { index: 5, i0: 4 }, "t=1 → 末点 5（i0=4）");
+assert.deepEqual(tipChainNearestIndex(0.8, 6, 0.75), { index: 4, i0: 4 }, "t=0.8 → ci=4.0 → round 4 = i0（split 根自身）");
+assert.deepEqual(tipChainNearestIndex(0.99, 6, 0.75), { index: 5, i0: 4 }, "t=0.99 → ci=4.95 → 末点 5");
+// forkT 0.5625 → i0 = floor(0.5625·5)+1 = 3。
+assert.deepEqual(tipChainNearestIndex(0.6, 6, 0.5625), { index: 3, i0: 3 }, "t=0.6 → ci=3.0 → 3 = i0");
+assert.deepEqual(tipChainNearestIndex(0.9, 6, 0.5625), { index: 5, i0: 3 }, "t=0.9 → ci=4.5 → JS round 4.5 = 5");
+assert.deepEqual(tipChainNearestIndex(1, 6, 0.5625), { index: 5, i0: 3 }, "t=1 → 末点 5");
+// forkT 1 → 仅末点暴露（单暴露点）。
+assert.deepEqual(tipChainNearestIndex(1, 6, 1), { index: 5, i0: 5 }, "forkT=1 → 仅末点 5 暴露");
+// t 越界钳到 [0,1]：t=2 同 t=1；t=-1 → ci=0 → 钳到 i0。
+assert.deepEqual(tipChainNearestIndex(2, 6, 0.75), { index: 5, i0: 4 }, "t=2 → 同 t=1");
+assert.deepEqual(tipChainNearestIndex(-1, 6, 0.75), { index: 4, i0: 4 }, "t=-1 → ci=0 → index=4=i0");
+// mainCount 2 → last = 1；forkT 0.5 → i0 = floor(0.5)+1 = 1。
+assert.deepEqual(tipChainNearestIndex(1, 2, 0.5), { index: 1, i0: 1 }, "mainCount=2 → 单暴露点 1");
+// 与 smoothMainPair 边界一致性：暴露区内取点，index 永不小于 i0（整型比较，无容差）。
+for (const t of [0, 0.5, 0.75, 0.99, 1]) {
+  const nearest = tipChainNearestIndex(t, 6, 0.5625);
+  assert.ok(nearest.index >= nearest.i0, `forkT=0.5625/mainCount=6 时 t=${t} → index=${nearest.index} 应 >= i0=${nearest.i0}`);
+}
 
 console.log("usda-export.test.mjs: all assertions passed");

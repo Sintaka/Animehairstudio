@@ -39,22 +39,28 @@
 - 根因：① `bindBySweepRow`（普通发丝/权重缺失兜底）整体写 `[round, round] × [1,0]` 单影响；
   ② leafWeights 路径对 weight=0（fork 以上主骨骼驱动区）写 `[main, main] × [1,0]`。
 
-## 3. 修复：每顶点真双影响（0.2.108）
+## 3. 修复：每顶点真双影响（0.2.108）+ 暴露区绑最近发尖链关节（0.2.109）
 
 统一规则（与视口一致的"主链参数化 + 暴露区分叉"语义）：
 
-1. **暴露区（leafWeights 有效且 weight > 0.0001）**：`[mainIdx, splitIdx] × [1-w, w]`——原样保留
-   （这就是视口算法，面板段 / 发丝管都走这里）。
+1. **暴露区（leafWeights 有效且 weight > 0.0001）**：tip 侧 = **最近发尖链关节**
+   （0.2.109，`tipChainNearestIndex(t, mainCount, forkT)`：顶点行 t → 链位置
+   `ci = t·(mainCount-1)` → 暴露区（`t_i > forkT`）内最近索引；`index===i0` 即链根
+   `split.${k}` 自身，否则 `split.${k}.tip.${index}`）——`[tip, main]×[w, 1-w]`
+   按权重降序排列（主导影响第一槽）。末端行 = 最后一个 tip 关节（0.2.108 前是
+   `[main, split.${k}]×[1-w, w]`——全部绑在 fork 处的链根，发尖链关节 0 引用）。
 2. **其余（普通发丝、fork 以上主骨骼驱动区、权重缺失）**：`smoothMainPair(t, mainCount)`——
    `x = clamp(t,0,1)·(mainCount-1)`、`main = floor(x)`、`next = min(mainCount-1, main+1)`、
    `frac = x - main` → `[mainIdx, nextIdx] × [1-frac, frac]`：**相邻主骨骼线性混合**，从根到尖
    权重连续过渡，任意顶点都有两个真实影响（链末端 main===next 自然退化为单，属正确语义）。
    - t 来源：顶点 `gridRowIndices[vertex]` → `t = max(0,row)/(rows-1)`（端盖 -1 行 → 根）。
 3. 效果：Houdini 中每个顶点 boneCapture 都有两个有效 (index, weight) 对；拖动任意主骨骼，
-   其影响带沿链平滑衰减（不再「一个点控制」）。
+   其影响带沿链平滑衰减（不再「一个点控制」）；拖动发尖链关节能直接驱动对应暴露区顶点
+   （0.2.109，实测 1450 顶点绑定发尖链关节、末端行 `[tip_5@1, main@0]`）。
 
 ## 4. 验证
 
-- tests/usda-export.test.mjs：smoothMainPair 数值断言（0/0.5/0.25/1/0.99/clamp/mainCount=1）。
+- tests/usda-export.test.mjs：smoothMainPair 数值断言（0/0.5/0.25/1/0.99/clamp/mainCount=1）；
+  tipChainNearestIndex 断言（forkT 0.75/0.5625/1、clamp、mainCount=2）。
 - 重新导出后 Houdini usdskinimport 复查：假双影响 `(-1,-1)` 槽位消失，真双影响占比 100%
-  （除链末端/根行的自然退化行）。
+  （除链末端/根行的自然退化行）；发尖链关节被引用（0057：1450 顶点）。

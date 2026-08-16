@@ -403,6 +403,18 @@ export function smoothMainPair(t, mainCount) {
   return { main, next, frac: x - main };
 }
 
+// 发尖链最近关节：链点 i 的主链参数 t_i = i/(mainCount-1)；暴露区 = t_i > forkT
+// （视口规则）。返回暴露区内最接近参数 t 的链索引（无暴露 → 末点）与暴露起点 i0。
+export function tipChainNearestIndex(t, mainCount, forkT) {
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const n = Math.max(2, Math.floor(Number(mainCount) || 0));
+  const last = n - 1;
+  const fork = clamp(Number(forkT) || 0, 0, 1);
+  const i0 = Math.min(last, Math.floor(fork * last) + 1);
+  const ci = clamp(Number(t) || 0, 0, 1) * last;
+  return { index: Math.min(last, Math.max(i0, Math.round(ci))), i0 };
+}
+
 export function exportAnimeHairUsda({
   meshes = [],
   curves = [],
