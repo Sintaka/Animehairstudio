@@ -112,6 +112,59 @@ for (const f of splitFindings) {
   check(`parent exists in main chain: ${f.lock} split.${f.k} -> main.${f.index}`, exists, `mainCount=${mainCount}`);
 }
 
+// ---- ④ 发尖暴露链数量（0.2.107）：暴露链点 = 链参数 t > forkT 的点；split.${k} = 链根，
+//     后续暴露点为 tip 关节。数量 = (N-1) - floor(forkT*(N-1))，最少 1（仅发尖点）。----
+const chainFindings = [];
+const forkTFor = (lock, k) => {
+  if (["panel", "surface"].includes(lock.geometryType) && Array.isArray(lock.panelSplits) && lock.panelSplits.length) {
+    const heights = [lock.panelSplits[k - 1]?.height, lock.panelSplits[k]?.height]
+      .filter((h) => h != null).map(Number);
+    return heights.length ? 1 - Math.max(...heights) : 1;
+  }
+  if (lock.geometryType === "strand" && lock.strandSplitEnabled) {
+    return 1 - Math.min(0.8, Math.max(0.02, Number(lock.strandSplitHeight ?? 0.3)));
+  }
+  return null;
+};
+for (const lock of locks) {
+  const mainCount = mainCountOf(lock);
+  if (["panel", "surface"].includes(lock.geometryType) && Array.isArray(lock.panelSplits)) {
+    for (let k = 0; k < lock.panelSplits.length + 1; k += 1) {
+      const forkT = forkTFor(lock, k);
+      if (forkT == null) continue;
+      const exposed = Math.max(1, (mainCount - 1) - Math.floor(forkT * (mainCount - 1)));
+      chainFindings.push({ lock: lock.name, k, exposed });
+    }
+  } else if (lock.geometryType === "strand" && lock.strandSplitEnabled) {
+    for (let k = 0; k < 2; k += 1) {
+      const forkT = forkTFor(lock, k);
+      if (forkT == null) continue;
+      const exposed = Math.max(1, (mainCount - 1) - Math.floor(forkT * (mainCount - 1)));
+      chainFindings.push({ lock: lock.name, k, exposed });
+    }
+  }
+}
+for (const f of chainFindings) {
+  check(
+    `exposed chain count: ${f.lock} split.${f.k} -> ${f.exposed} joints (root + tip chain)`,
+    Number.isInteger(f.exposed) && f.exposed >= 1 && f.exposed <= mainCountOf(locks.find((l) => l.name === f.lock)),
+    ""
+  );
+}
+// 已知值（与视口暴露规则一致）：Front Bangs 1 seg0=2 / seg1-4=3；Side Bangs Left 1 每管=4。
+const fb1 = locks.find((l) => l.name === "Front Bangs 1");
+if (fb1) {
+  const e0 = chainFindings.find((f) => f.lock === "Front Bangs 1" && f.k === 0)?.exposed;
+  const e1 = chainFindings.find((f) => f.lock === "Front Bangs 1" && f.k === 1)?.exposed;
+  check("Front Bangs 1 seg0 exposes 2", e0 === 2, `got ${e0}`);
+  check("Front Bangs 1 seg1 exposes 3", e1 === 3, `got ${e1}`);
+}
+const sbl1 = locks.find((l) => l.name === "Side Bangs Left 1");
+if (sbl1) {
+  const e0 = chainFindings.find((f) => f.lock === "Side Bangs Left 1" && f.k === 0)?.exposed;
+  check("Side Bangs Left 1 tube0 exposes 4", e0 === 4, `got ${e0}`);
+}
+
 const failed = results.filter((r) => !r.ok);
 console.log(`\n=== ${results.length - failed.length}/${results.length} checks passed (${splitFindings.length} split bones, ${children.length} bridge children) ===`);
 process.exit(failed.length ? 1 : 0);

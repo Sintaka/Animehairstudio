@@ -7,7 +7,7 @@
 // 运行：node tests/usda-export.test.mjs
 
 import assert from "node:assert/strict";
-import { exportAnimeHairUsda, axesToMat3, splitBoneLayout, bridgeRootParentName } from "../modules/io/usda-export.js";
+import { exportAnimeHairUsda, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName } from "../modules/io/usda-export.js";
 
 // project-files.js 已把内部骨骼名（main./split.）映射为发丝名前缀（jointNameOf），
 // 且 skeleton.name 已是去重后的 `${usdIdentifier(lock.name)}_Skel`；这里直接喂
@@ -523,5 +523,149 @@ assert.equal(
 
 // ---- 非 split 骨骼 ----
 assert.equal(splitBoneLayout(panelLock, { name: "main.3" }, { mainCount: 6 }), null, "main 骨骼应返回 null");
+
+// ---- splitChainLayout：发尖暴露链导出（split 骨骼 = 链根 + tip 关节链式）----
+// split 骨骼是暴露段 tip 链的链根：位置/旋转直接采样 tip 链，其后的暴露点成为
+// split.N.tip.M 关节并 root→tip 链式 parent；fork 参数决定父主骨骼索引。
+const tipChainLock = {
+  geometryType: "panel",
+  panelSplitEnabled: true,
+  panelSplits: [
+    { position: -0.8066666666666668, height: 0.25 },
+    { position: -0.44, height: 0.4375 },
+    { position: 0.32999999999999996, height: 0.1875 },
+    { position: 0.6966666666666667, height: 0.4375 }
+  ],
+  points: Array.from({ length: 6 }, (_, i) => ({ x: 0, y: 1.7 - i * 0.25, z: 0 }))
+};
+const tipChainStub = (l, k, splits, b) => ({
+  points: Array.from({ length: 6 }, (_, i) => ({ x: i, y: 10 + i, z: 20 + i })),
+  restPoints: Array.from({ length: 6 }, (_, i) => ({ x: i, y: 10 + i, z: 20 + i })),
+  twists: [],
+  active: true
+});
+// y=tangent=(0,0,1)、z=up=(0,1,0) → cross(z,y)=(1,0,0) → identity。
+const identityTipFrame = () => ({ x: { x: 0, y: 0, z: 1 }, y: { x: 0, y: 0, z: 1 }, z: { x: 0, y: 1, z: 0 } });
+// split.0：forkT = 1-0.25 = 0.75 → 暴露 t_4=0.8 / t_5=1.0 → 2 关节。
+const chain0 = splitChainLayout(tipChainLock, { name: "split.0" }, {
+  mainCount: 6,
+  splitTipForSegment: tipChainStub,
+  panelTipChainFrameAt: identityTipFrame
+});
+assert.equal(chain0.joints.length, 2, "split.0 应有 2 个暴露关节");
+assert.equal(chain0.joints[0].name, "split.0", "链根关节名应为 split.0");
+assert.equal(chain0.joints[0].parent, "main.4", "split.0 父级应为 main.4");
+assert.deepEqual(chain0.joints[0].p, [4, 14, 24], "split.0 位置应直接采样 tip 链点 4");
+assert.deepEqual(chain0.joints[0].orient, [1, 0, 0, 0, 1, 0, 0, 0, 1], "身份 frame 应得到 identity orient");
+assert.equal(chain0.joints[1].name, "split.0.tip.5", "第二关节名应为 split.0.tip.5");
+assert.equal(chain0.joints[1].parent, "split.0", "tip.5 应链到 split.0");
+assert.deepEqual(chain0.joints[1].p, [5, 15, 25], "tip.5 位置应直接采样 tip 链点 5");
+// split.1：forkT = 1-max(0.25,0.4375) = 0.5625 → 暴露 t_3/t_4/t_5 → 3 关节链式。
+const chain1 = splitChainLayout(tipChainLock, { name: "split.1" }, {
+  mainCount: 6,
+  splitTipForSegment: tipChainStub,
+  panelTipChainFrameAt: identityTipFrame
+});
+assert.equal(chain1.joints.length, 3, "split.1 应有 3 个暴露关节");
+assert.equal(chain1.joints[0].name, "split.1", "链根关节名应为 split.1");
+assert.equal(chain1.joints[0].parent, "main.3", "split.1 父级应为 main.3");
+assert.equal(chain1.joints[1].name, "split.1.tip.4", "第二关节名应为 split.1.tip.4");
+assert.equal(chain1.joints[1].parent, "split.1", "tip.4 应链到 split.1");
+assert.equal(chain1.joints[2].name, "split.1.tip.5", "第三关节名应为 split.1.tip.5");
+assert.equal(chain1.joints[2].parent, "split.1.tip.4", "tip.5 应链到 tip.4");
+// 非身份 frame：y=(0,1,0)、z=(0,0,1) → cross(z,y)=(-1,0,0) → 非对角矩阵。
+const nonIdentityTipFrame = () => ({ x: { x: 0, y: 0, z: 1 }, y: { x: 0, y: 1, z: 0 }, z: { x: 0, y: 0, z: 1 } });
+const chainRot = splitChainLayout(tipChainLock, { name: "split.0" }, {
+  mainCount: 6,
+  splitTipForSegment: tipChainStub,
+  panelTipChainFrameAt: nonIdentityTipFrame
+});
+assert.deepEqual(chainRot.joints[0].orient, [-1, 0, 0, 0, 0, 1, 0, 1, 0], "非身份 frame 应正确构造旋转矩阵");
+// 抛错 frame → 每个关节 orient 均为 null。
+const chainThrowing = splitChainLayout(tipChainLock, { name: "split.0" }, {
+  mainCount: 6,
+  splitTipForSegment: tipChainStub,
+  panelTipChainFrameAt: () => { throw new Error("boom"); }
+});
+assert.ok(chainThrowing.joints.every((j) => j.orient === null), "抛错 frame 时所有关节 orient 应为 null");
+// splitTipForSegment 返回 null → 无 tip 链 → 整体 null。
+assert.equal(
+  splitChainLayout(tipChainLock, { name: "split.0" }, { mainCount: 6, splitTipForSegment: () => null, panelTipChainFrameAt: identityTipFrame }),
+  null,
+  "splitTipForSegment 返回 null 时整体应返回 null"
+);
+// 非 split 骨骼 / tip 链关节 → null。
+assert.equal(splitChainLayout(tipChainLock, { name: "main.3" }, { mainCount: 6 }), null, "main 骨骼应返回 null");
+assert.equal(splitChainLayout(tipChainLock, { name: "split.0.tip.5" }, { mainCount: 6 }), null, "tip 链关节应返回 null");
+
+// ---- 发丝分支：tip 链 = 主链曲线 + 宽度 × spread 侧向偏移（smoothstep 展开）----
+const strandChainLock = {
+  geometryType: "strand",
+  strandSplitEnabled: true,
+  strandSplitHeight: 0.36125,
+  strandSplitGap: 0.19,
+  baseWidth: 0.16,
+  points: Array.from({ length: 11 }, (_, i) => ({ x: 0, y: 1.7 - i * 0.12, z: 0 }))
+};
+const strandChainCurve = { getPoint: (t) => ({ x: 0, y: 1 - t, z: 0 }) };
+const strandChainFrame = () => ({ x: { x: 0, y: 0, z: 1 }, y: { x: 0, y: 0, z: 1 }, z: { x: 0, y: 1, z: 0 } });
+const strandMaterializeStub = (authored, restPointAt, count) => ({
+  points: Array.from({ length: count }, (_, i) => restPointAt(i / Math.max(1, count - 1))),
+  restPoints: [],
+  twists: [],
+  active: true
+});
+const strandChain = splitChainLayout(strandChainLock, { name: "split.0" }, {
+  mainCount: 11,
+  curve: strandChainCurve,
+  strandGeometryFrameAt: strandChainFrame,
+  materializeTipChain: strandMaterializeStub,
+  strandTipChainFrameAt: strandChainFrame
+});
+// forkT = 1-0.36125 = 0.63875；t>0.63875 → 7/8/9/10 → 4 关节。
+assert.equal(strandChain.joints.length, 4, "发丝 split.0 应有 4 个暴露关节（t>0.63875 → 7/8/9/10）");
+assert.equal(strandChain.joints[0].name, "split.0", "发丝链根应为 split.0");
+assert.equal(strandChain.joints[0].parent, "main.6", "发丝 split.0 父级应为 main.6");
+assert.equal(strandChain.joints[1].name, "split.0.tip.8", "第二关节名应为 split.0.tip.8");
+assert.equal(strandChain.joints[2].name, "split.0.tip.9", "第三关节名应为 split.0.tip.9");
+assert.equal(strandChain.joints[3].name, "split.0.tip.10", "第四关节名应为 split.0.tip.10");
+assert.equal(strandChain.joints[1].parent, "split.0", "tip.8 应链到 split.0");
+assert.equal(strandChain.joints[2].parent, "split.0.tip.8", "tip.9 应链到 tip.8");
+assert.equal(strandChain.joints[3].parent, "split.0.tip.9", "tip.10 应链到 tip.9");
+// p：restPointAt(0.7) = curve(0.7) + frame.x·opening；opening 用同一公式重算（1e-9 容差）。
+const t7 = 7 / 10;
+const strandSplitStart = 1 - 0.36125;
+const u7 = (t7 - strandSplitStart) / Math.max(0.0001, 1 - strandSplitStart);
+const ss7 = u7 * u7 * (3 - 2 * u7);
+const expectedOpening = 0.16 * 0.19 * ss7 * (-1);
+assert.ok(
+  Math.abs(strandChain.joints[0].p[2] - (0 + 1 * expectedOpening)) < 1e-9,
+  `发丝 split.0 位置 z 应约等于 ${expectedOpening}（实测 ${strandChain.joints[0].p[2]}）`
+);
+assert.deepEqual(strandChain.joints[0].orient, [1, 0, 0, 0, 1, 0, 0, 0, 1], "发丝身份 frame 应得到 identity orient");
+
+// ---- 无暴露段：forkT=1 → 回退末点，单关节 ----
+const singleSplitLock = {
+  geometryType: "panel",
+  panelSplitEnabled: true,
+  panelSplits: [{ position: 0, height: 0 }],
+  points: Array.from({ length: 6 }, (_, i) => ({ x: 0, y: 1.7 - i * 0.25, z: 0 }))
+};
+const noExposure = splitChainLayout(singleSplitLock, { name: "split.0" }, {
+  mainCount: 6,
+  splitTipForSegment: tipChainStub,
+  panelTipChainFrameAt: identityTipFrame
+});
+assert.equal(noExposure.joints.length, 1, "无暴露段时应回退为单关节");
+assert.equal(noExposure.joints[0].name, "split.0", "回退关节名应为 split.0");
+assert.equal(noExposure.joints[0].parent, "main.5", "forkT=1 → parentMainIndex 应为 main.5");
+assert.deepEqual(noExposure.joints[0].p, [5, 15, 25], "回退关节位置应为 tip 链末点 [5,15,25]");
+
+// mainCount 1 → null（无 tip 链可导出：发丝分支缺 materializeTipChain）。
+assert.equal(
+  splitChainLayout(strandChainLock, { name: "split.0" }, { mainCount: 1, curve: strandChainCurve, strandGeometryFrameAt: strandChainFrame }),
+  null,
+  "mainCount 1 且无 materializeTipChain → null"
+);
 
 console.log("usda-export.test.mjs: all assertions passed");

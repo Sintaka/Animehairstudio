@@ -551,6 +551,137 @@ export function splitBoneLayout(lock, bone, options = {}) {
   return { parentMainIndex, p };
 }
 
+// ---- splitChainLayout：split 骨骼 = 发尖暴露链根，tip 关节链式导出 ----
+// split 骨骼（split.N）的暴露段 tip 链：第一个暴露链点就是 split 骨骼自身（位置/
+// 旋转直接采样 tip 链，不再重算），其后的每个暴露点成为 split.N.tip.M 关节，
+// root→tip 链式 parent。fork 参数（暴露段起始处的主链位置）决定父主骨骼索引
+// parentMainIndex。不适用（无 split、无 tip 链、链过短）时返回 null；
+// splitBoneLayout 仍是调用方的回退。
+export function splitChainLayout(lock, bone, options = {}) {
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  if (!lock || !bone || typeof bone.name !== "string") return null;
+  // 仅 split.N 主骨骼参与；tip 链关节（split.N.tip.M）排除。
+  if (!bone.name.startsWith("split.") || bone.name.includes(".tip.")) return null;
+  const k = Number.parseInt(bone.name.slice(6), 10);
+  if (!Number.isFinite(k) || k < 0) return null;
+  const {
+    mainCount = 0,
+    curve = null,
+    strandGeometryFrameAt = null,
+    splitTipForSegment = null,
+    panelTipChainFrameAt = null,
+    strandTipChainFrameAt = null,
+    materializeTipChain = null
+  } = options;
+
+  let forkT = null;
+  let chain = null;
+
+  if (lock.geometryType === "panel" || lock.geometryType === "surface") {
+    // 面板/表面分支：forkT = 1 - max(相邻段高)；tip 链由 splitTipForSegment 提供。
+    if (!Array.isArray(lock.panelSplits) || !lock.panelSplits.length) return null;
+    const heights = [lock.panelSplits[k - 1]?.height, lock.panelSplits[k]?.height]
+      .filter((h) => h != null)
+      .map(Number);
+    forkT = heights.length ? 1 - Math.max(...heights) : 1;
+    if (typeof splitTipForSegment === "function") {
+      try {
+        chain = splitTipForSegment(lock, k, lock.panelSplits, bone);
+      } catch {
+        chain = null;
+      }
+    }
+  } else if (lock.geometryType === "strand" && lock.strandSplitEnabled) {
+    // 发丝分支：forkT = 1 - splitHeight；tip 链 = 主链曲线 + 宽度 × spread 沿
+    // frame.x 侧向偏移（k=0 向左，其余向右），smoothstep 从 fork 平滑展开。
+    forkT = 1 - clamp(Number(lock.strandSplitHeight ?? 0.3), 0.02, 0.8);
+    try {
+      if (curve && typeof curve.getPoint === "function"
+        && typeof strandGeometryFrameAt === "function"
+        && typeof materializeTipChain === "function") {
+        const splitStart = forkT;
+        const baseWidth = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1);
+        const spread = clamp(Number(bone.spread ?? lock.strandSplitGap ?? 0.12), 0, 0.99);
+        const direction = k === 0 ? -1 : 1;
+        const smoothstep = (x, min, max) => {
+          const t = clamp((x - min) / Math.max(0.0001, max - min), 0, 1);
+          return t * t * (3 - 2 * t);
+        };
+        const restPointAt = (t) => {
+          const frame = strandGeometryFrameAt(lock, curve, t);
+          const point = curve.getPoint(t);
+          const opening = t <= splitStart ? 0 : baseWidth * spread * smoothstep(t, splitStart, 1) * direction;
+          return {
+            x: point.x + frame.x.x * opening,
+            y: point.y + frame.x.y * opening,
+            z: point.z + frame.x.z * opening
+          };
+        };
+        chain = materializeTipChain(bone?.tip || null, restPointAt, Math.max(2, mainCount));
+      }
+    } catch {
+      chain = null;
+    }
+  } else {
+    // 发丝但未启用 split（或未知类型）→ 不适用。
+    return null;
+  }
+
+  if (!chain || !Array.isArray(chain.points) || chain.points.length < 2) return null;
+
+  // 暴露段索引（视口规则：t 严格大于 forkT；无暴露 → 至少末点，即单骨情形）。
+  const n = chain.points.length;
+  const indices = [];
+  for (let i = 0; i < n; i += 1) {
+    const t = i / Math.max(1, n - 1);
+    if (t > forkT) indices.push(i);
+  }
+  if (!indices.length) indices.push(n - 1);
+
+  const parentMainIndex = mainCount > 1 ? Math.round(clamp(forkT, 0, 1) * (mainCount - 1)) : 0;
+  const cross = (a, b) => ({
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x
+  });
+  const joints = [];
+  indices.forEach((i, slot) => {
+    const t = i / Math.max(1, n - 1);
+    const point = chain.points[i];
+    const p = point ? [Number(point.x), Number(point.y), Number(point.z)] : null;
+    let orient = null;
+    if (lock.geometryType === "panel" || lock.geometryType === "surface") {
+      if (typeof panelTipChainFrameAt === "function") {
+        try {
+          const frame = panelTipChainFrameAt(lock, chain, chain, t, k, lock.panelSplits);
+          if (frame && frame.y && frame.z) orient = axesToMat3(cross(frame.z, frame.y), frame.z, frame.y);
+        } catch {
+          orient = null;
+        }
+      }
+    } else if (lock.geometryType === "strand" && lock.strandSplitEnabled) {
+      try {
+        if (curve && typeof strandGeometryFrameAt === "function" && typeof strandTipChainFrameAt === "function") {
+          const referenceZ = strandGeometryFrameAt(lock, curve, t).z;
+          const frame = strandTipChainFrameAt(chain, chain, t, referenceZ);
+          if (frame && frame.y && frame.z) orient = axesToMat3(cross(frame.z, frame.y), frame.z, frame.y);
+        }
+      } catch {
+        orient = null;
+      }
+    }
+    joints.push({
+      name: slot === 0 ? "split." + k : "split." + k + ".tip." + i,
+      parent: null,
+      p,
+      orient
+    });
+  });
+  joints[0].parent = "main." + parentMainIndex;
+  for (let j = 1; j < joints.length; j += 1) joints[j].parent = joints[j - 1].name;
+  return { parentMainIndex, joints };
+}
+
 // bridgeRootParentName：桥接子锁根关节的父骨骼内部名。子锁通过
 // branchParentId/branchParentParameter 记录挂在哪个父锁主链的哪个位置，
 // t → k = round(clamp(t)·(parentCount-1)) 得 main.k，再经 jointNameOf 映射为

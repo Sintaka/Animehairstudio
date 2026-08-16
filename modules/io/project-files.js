@@ -8,7 +8,8 @@ import * as THREE from "three";
 import { leafWeightAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActionFormat } from "./file-actions.js?v=20260816-13";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260814-12";
-import { exportAnimeHairUsda, usdIdentifier, quatToMat3, axesToMat3, splitBoneLayout, bridgeRootParentName } from "./usda-export.js?v=20260816-17";
+import { exportAnimeHairUsda, usdIdentifier, quatToMat3, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName } from "./usda-export.js?v=20260816-18";
+import { materializeTipChain, tipChainFrameAt as strandTipChainFrameAt } from "../geometry/tip-sub-bone.js?v=20260813-1";
 import { createHairProject } from "./project-schema.js?v=20260814-12";
 import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260815-1";
 import { packFamilies } from "./uv-pack.js?v=20260816-7";
@@ -478,7 +479,7 @@ export function createProjectSaveApi(deps) {
         let bones;
         try {
           bones = deps.bonesFor(lock, { locks: deps.locks })
-            .filter((bone) => !bone.name.startsWith("child."));
+            .filter((bone) => !bone.name.startsWith("child.") && !(bone.name.startsWith("split.") && bone.name.includes(".tip.")));
         } catch (error) {
           console.error("bonesFor 失败（跳过该发丝）:", lock.name, error);
           return;
@@ -518,6 +519,33 @@ export function createProjectSaveApi(deps) {
         const mainCount = bones.filter((bone) => bone.name.startsWith("main.")).length;
         bones.forEach((bone) => {
           const isSplitBone = bone.name.startsWith("split.") && !bone.name.includes(".tip.");
+          if (isSplitBone) {
+            // 发尖暴露链：split 骨骼 = 链根（第一个暴露链点），tip 关节链式挂到发尖。
+            // 位置/旋转一律从完整 tip 链采样（含 authored delta），不再单骨骼现算。
+            const chainLayout = splitChainLayout(lock, bone, {
+              mainCount,
+              curve,
+              strandGeometryFrameAt: deps.strandGeometryFrameAt,
+              splitTipForSegment: deps.splitTipForSegment,
+              panelTipChainFrameAt: deps.tipChainFrameAt,
+              strandTipChainFrameAt,
+              materializeTipChain
+            });
+            if (chainLayout && Array.isArray(chainLayout.joints) && chainLayout.joints.length) {
+              chainLayout.joints.forEach((joint, slot) => {
+                const exportedParent = slot === 0
+                  ? jointNameOf(lock, joint.parent)
+                  : jointNameOf(lock, chainLayout.joints[slot - 1].name);
+                allJoints.push({
+                  name: jointNameOf(lock, joint.name),
+                  parent: exportedParent,
+                  p: joint.p,
+                  orient: joint.orient
+                });
+              });
+              return; // 链布局成功：本骨骼不再走单骨骼路径
+            }
+          }
           let parent = null;
           let derivedP = null;
           if (isSplitBone) {
@@ -837,10 +865,12 @@ export function createProjectSaveApi(deps) {
     deps.pendingFileAction = { format };
     fileActionDialogTitle.textContent = isExport ? `Export ${definition.label}` : "Save Project";
     fileActionDescription.textContent = "Choose the file name and location for the export.";
-    fileActionNameInput.value = cleanFileBaseName(
-      deps.currentProjectName,
-      isExport ? "anime-hair" : "Untitled Hair Project"
-    );
+    fileActionNameInput.value = (isExport && deps.lastExport?.fileName)
+      ? cleanFileBaseName(deps.lastExport.fileName, deps.currentProjectName)
+      : cleanFileBaseName(
+        deps.currentProjectName,
+        isExport ? "anime-hair" : "Untitled Hair Project"
+      );
     if (exportPathPrefixInput) {
       // 前缀留空时显示灰色 placeholder（= 文件名），输入后隐藏；上次导出有自定义前缀则回填。
       exportPathPrefixInput.value = deps.lastExport?.rootName || "";

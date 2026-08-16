@@ -268,16 +268,34 @@ USD `Gf.Matrix4d` 是 **row-vector 约定（v' = v·M）**：
   - `bridgeRootParentName(lock, locks, jointNameOf)`：桥接子发片根骨骼的父内部名——
     `k = round(clamp(branchParentParameter)·(parentMainCount-1))` → `jointNameOf(parent, "main.${k}")`；
     无 `branchParentId` / 父锁缺失 / 父锁 <2 点 → null。
-- **project-files.js 接线（buildHairUsda）**：split 骨骼先走 `splitBoneLayout`（fork parent +
-  派生位置），桥接子发片 `main.0` 走 `bridgeRootParentName`（并校验父锁确实导出该关节，
-  否则回退 Hair_Root），其余保持旧规则；`deps.splitTipForSegment` 由 app.js 注入
-  （`panelTipStrand.splitTipForSegment`）。
+- **project-files.js 接线（buildHairUsda）**：split 骨骼先走 `splitChainLayout`（0.2.107，
+  发尖暴露链，见 §9.1），失败回退 `splitBoneLayout`（fork parent + 派生位置）；桥接子发片
+  `main.0` 走 `bridgeRootParentName`（并校验父锁确实导出该关节，否则回退 Hair_Root）；
+  其余保持旧规则；`deps.splitTipForSegment`/`deps.tipChainFrameAt` 由 app.js 注入
+  （`panelTipStrand.splitTipForSegment` / `panelTipStrand.tipChainFrameAt`）。
 - **实测目标值（.ahs 全锁扫描 55/55 + Houdini 对照）**：Front Bangs 1 五段 → `_4/_3/_3/_3/_3`；
   Side Bangs Left 1 两管 → `_6`；Side Left 2 两管 → `_2`；桥接子发片
   Side Bangs Left 6→`Side_Bangs_Left_3_5`、Side Bangs Left 5→`Side_Bangs_Left_1_5`、
   Side Left 3→`Side_Left_2_2`（与其根点实际位置一致）。
 
-## 版本历程速览（0.2.93 → 0.2.106）
+### §9.1 发尖暴露链导出（0.2.107，splitChainLayout）
+
+- 每段/每管不再只导出 split 单骨骼：**split.${k} = 暴露链根**（第一个暴露链点，
+  视口规则 `t > forkT`，Front Bangs 1 各段 2~3 个），其后的暴露链点导出为
+  `split.${k}.tip.${i}`（i = 链索引）关节，**root→tip 链式 parent**（根挂 `main.${forkIdx}`）。
+- **位置与旋转一律从完整 tip 链采样**（含 authored delta），不再现算：
+  - panel/surface：链 = `splitTipForSegment(lock, k, panelSplits, bone)`；帧 =
+    `tipChainFrameAt(lock, chain, chain, t, k, splits)`（y=链切线、z=面板表面法线参考）。
+  - 发丝管：链 = `materializeTipChain(bone.tip, restPointAt, mainCount)`，
+    `restPointAt(t) = curve.getPoint(t) + frame(t).x·(baseWidth·spread·smoothstep(t, forkT, 1)·direction)`
+    （精确 t 采样 frame，与 strand-geometry 的管中心线同式）；帧 = tip-sub-bone
+    `tipChainFrameAt(chain, chain, t, strandFrame(t).z)`。
+  - orient = `axesToMat3(cross(frame.z, frame.y), frame.z, frame.y)`（x=up×tangent、y=up、z=tangent）。
+- 无暴露（forkT≥1）回退末点：单骨骼也遵守链采样旋转（"不要 parent 直指唯一发尖骨骼"）。
+- `split.*.tip.*` 从 bonesFor 收集过滤（链布局取代，避免重复关节）；`splitBoneLayout`
+  保留为链构建失败时的回退（仍单骨骼）。
+
+## 版本历程速览（0.2.93 → 0.2.107）
 
 | 版本 | 要点 |
 |---|---|
@@ -295,3 +313,4 @@ USD `Gf.Matrix4d` 是 **row-vector 约定（v' = v·M）**：
 | 0.2.104 | orient 轴约定改 z 前（tangent）/ y 上（up）/ x=up×tangent；新增 `axesToMat3`；split/tip 骨骼 orient 从 p 差分 + 父级 up 继承派生（修 transform 全单位矩阵） |
 | 0.2.105 | 修位置偏移：bind = `orient·T(p)`（平移恒 = 世界 p，不再被父级旋转带偏）、rest = 局部（`R_local = orient·orient_parent⁻¹`、`t_local = (p−parent.p)·orient_parent⁻¹`）；新增 `mat3Transpose`/`mat3Multiply`/`rowVecTimesMat3` |
 | 0.2.106 | split 骨骼布局修复：新增 `splitBoneLayout`/`bridgeRootParentName` 纯函数——split 骨骼 parent 改 `main.${forkIdx}`（不再挂 main.0）+ 未创作时派生位置（panel 段尖 = tip 链末点 / 发丝管尖 = 曲线末端 + spread 侧向偏移）；桥接子发片 `main.0` parent 到父发片 `main.${k}`（不再挂 Hair_Root）；app.js 注入 `splitTipForSegment`；新增 scripts/verify-skeleton-layout.mjs 真实数据回归 |
+| 0.2.107 | 发尖暴露链导出（`splitChainLayout`）：split 骨骼 = 暴露链根，后续暴露链点导出 `split.${k}.tip.${i}` 关节（root→tip 链式 parent），位置/旋转从完整 tip 链采样（panel：splitTipForSegment + tipChainFrameAt；发丝管：materializeTipChain + tip-sub-bone 帧），`split.*.tip.*` 从 bonesFor 过滤；导出对话框 File Name 恢复上次导出名（lastExport.fileName）；app.js 注入 `tipChainFrameAt` |
