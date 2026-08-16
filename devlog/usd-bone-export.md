@@ -295,7 +295,7 @@ USD `Gf.Matrix4d` 是 **row-vector 约定（v' = v·M）**：
 - `split.*.tip.*` 从 bonesFor 收集过滤（链布局取代，避免重复关节）；`splitBoneLayout`
   保留为链构建失败时的回退（仍单骨骼）。
 
-## 版本历程速览（0.2.93 → 0.2.107）
+## 版本历程速览（0.2.93 → 0.2.108）
 
 | 版本 | 要点 |
 |---|---|
@@ -314,3 +314,4 @@ USD `Gf.Matrix4d` 是 **row-vector 约定（v' = v·M）**：
 | 0.2.105 | 修位置偏移：bind = `orient·T(p)`（平移恒 = 世界 p，不再被父级旋转带偏）、rest = 局部（`R_local = orient·orient_parent⁻¹`、`t_local = (p−parent.p)·orient_parent⁻¹`）；新增 `mat3Transpose`/`mat3Multiply`/`rowVecTimesMat3` |
 | 0.2.106 | split 骨骼布局修复：新增 `splitBoneLayout`/`bridgeRootParentName` 纯函数——split 骨骼 parent 改 `main.${forkIdx}`（不再挂 main.0）+ 未创作时派生位置（panel 段尖 = tip 链末点 / 发丝管尖 = 曲线末端 + spread 侧向偏移）；桥接子发片 `main.0` parent 到父发片 `main.${k}`（不再挂 Hair_Root）；app.js 注入 `splitTipForSegment`；新增 scripts/verify-skeleton-layout.mjs 真实数据回归 |
 | 0.2.107 | 发尖暴露链导出（`splitChainLayout`）：split 骨骼 = 暴露链根，后续暴露链点导出 `split.${k}.tip.${i}` 关节（root→tip 链式 parent），位置/旋转从完整 tip 链采样（panel：splitTipForSegment + tipChainFrameAt；发丝管：materializeTipChain + tip-sub-bone 帧），`split.*.tip.*` 从 bonesFor 过滤；导出对话框 File Name 恢复上次导出名（lastExport.fileName）；app.js 注入 `tipChainFrameAt` |
+| 0.2.108 | 空容器修复 + 蒙皮平滑双影响：`def Scope "Meshes"`/`CenterCurves`/`SkelRoot` 只在对应块非空时输出（不再残留空 Scope）；boneCapture 假双影响（`[j,j]×[1,0]` → Houdini `(-1,-1)` 填充，实测 8855/10489）→ 新增 `smoothMainPair` 平滑主链双影响 `[floor, floor+1]×[1-frac, frac]`（暴露区仍用视口 `[main, split]` 算法），实测 0 假双影响、10489/10489 真双影响；浏览器真实导出脚本 scripts/export-verify.mjs + 加载性能对比 scripts/measure-boot.mjs |

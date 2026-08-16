@@ -391,6 +391,18 @@ function skeletonBlock(skeleton, identifier, skinnedMeshBlocks = [], rootName, c
   ].join("\n");
 }
 
+// 平滑主链蒙皮绑定混合（smooth main-chain skinning blends）：按行参数 t 在相邻
+// 主链骨骼间线性混合 —— [mainIdx, nextIdx] × [1-frac, frac]。t=1（链尾）时
+// main === next（frac 0）；调用方用它替代单骨骼绑定作为平滑回退。
+export function smoothMainPair(t, mainCount) {
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const n = Math.max(1, Math.floor(Number(mainCount) || 0));
+  const x = clamp(Number(t) || 0, 0, 1) * (n - 1);
+  const main = Math.min(n - 1, Math.floor(x));
+  const next = Math.min(n - 1, main + 1);
+  return { main, next, frac: x - main };
+}
+
 export function exportAnimeHairUsda({
   meshes = [],
   curves = [],
@@ -448,7 +460,7 @@ export function exportAnimeHairUsda({
     .filter((curve) => Array.isArray(curve?.points) && curve.points.length >= 4)
     .map((curve) => curveBlock(curve, uniqueIdentifier(`${curve.name || "Hair"}_Curve`, usedCurveNames, "HairCurve")));
 
-  return [
+  const parts = [
     "#usda 1.0",
     "(",
     `    defaultPrim = "${rootIdentifier}"`,
@@ -457,25 +469,19 @@ export function exportAnimeHairUsda({
     ")",
     "",
     `def Xform "${rootIdentifier}"`,
-    "{",
-    '    def Scope "Meshes"',
-    "    {",
-    unskinnedMeshBlocks.join("\n\n"),
-    "    }",
-    "",
-    '    def Scope "CenterCurves"',
-    "    {",
-    curveBlocks.join("\n\n"),
-    "    }",
-    "",
-    // 单个 SkelRoot "Character"：所有 Skeleton 与蒙皮 mesh 同级（12/16 空格）。
-    `    def SkelRoot "${characterSkelRootName}"`,
-    "    {",
-    skeletonBlocks.join("\n\n"),
-    "    }",
-    "}",
-    ""
-  ].join("\n");
+    "{"
+  ];
+  if (unskinnedMeshBlocks.length) {
+    parts.push('    def Scope "Meshes"', "    {", unskinnedMeshBlocks.join("\n\n"), "    }", "");
+  }
+  if (curveBlocks.length) {
+    parts.push('    def Scope "CenterCurves"', "    {", curveBlocks.join("\n\n"), "    }", "");
+  }
+  if (skeletonBlocks.length) {
+    parts.push(`    def SkelRoot "${characterSkelRootName}"`, "    {", skeletonBlocks.join("\n\n"), "    }");
+  }
+  parts.push("}", "");
+  return parts.join("\n");
 }
 
 // ---- splitBoneLayout / bridgeRootParentName：split 骨骼的 fork 父索引与派生位置 ----

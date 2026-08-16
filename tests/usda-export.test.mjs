@@ -7,7 +7,7 @@
 // 运行：node tests/usda-export.test.mjs
 
 import assert from "node:assert/strict";
-import { exportAnimeHairUsda, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName } from "../modules/io/usda-export.js";
+import { exportAnimeHairUsda, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName, smoothMainPair } from "../modules/io/usda-export.js";
 
 // project-files.js 已把内部骨骼名（main./split.）映射为发丝名前缀（jointNameOf），
 // 且 skeleton.name 已是去重后的 `${usdIdentifier(lock.name)}_Skel`；这里直接喂
@@ -180,6 +180,7 @@ const mixed = exportAnimeHairUsda({
     mesh,
     { name: "Cap", points: [[0, 0, 0], [1, 0, 0], [0, 1, 0]], faces: [[0, 1, 2]] }
   ],
+  curves: [{ name: "C", points: [[0, 0, 0], [0, 1, 0], [0, 2, 0], [0, 3, 0]], widths: [1] }],
   skeletons: [skeleton],
   rootName: "Test"
 });
@@ -667,5 +668,50 @@ assert.equal(
   null,
   "mainCount 1 且无 materializeTipChain → null"
 );
+
+// ---- 空容器省略：无内容时不再输出空的 Scope/SkelRoot ----
+// 全部蒙皮（现有 usda fixture：mesh+skeleton 均 skinned）→ Meshes/CenterCurves
+// 省略，仍保留 Character SkelRoot。
+assert.ok(!usda.includes('def Scope "Meshes"'), "全部蒙皮时应省略 def Scope \"Meshes\"");
+assert.ok(!usda.includes('def Scope "CenterCurves"'), "未传 curves 时应省略 def Scope \"CenterCurves\"");
+assert.ok(usda.includes('def SkelRoot "Character"'), "全部蒙皮时仍应输出 Character SkelRoot");
+
+// 仅曲线：CenterCurves 存在，Meshes/SkelRoot 省略。
+const curvesOnly = exportAnimeHairUsda({
+  curves: [{ name: "C", points: [[0, 0, 0], [0, 1, 0], [0, 2, 0], [0, 3, 0]], widths: [1] }],
+  rootName: "Test"
+});
+assert.ok(curvesOnly.includes('def Scope "CenterCurves"'), "仅曲线时应输出 CenterCurves Scope");
+assert.ok(!curvesOnly.includes('def Scope "Meshes"'), "仅曲线时不应输出 Meshes Scope");
+assert.ok(!curvesOnly.includes("def SkelRoot"), "仅曲线时不应输出 SkelRoot");
+
+// 什么都不导出：仅 Xform 根（合法 USDA）。
+const nothing = exportAnimeHairUsda({ rootName: "Test" });
+assert.ok(nothing.includes('def Xform "Test"'), "空导出仍应含 def Xform");
+assert.ok(!nothing.includes('def Scope "Meshes"'), "空导出不应有 Meshes Scope");
+assert.ok(!nothing.includes('def Scope "CenterCurves"'), "空导出不应有 CenterCurves Scope");
+assert.ok(!nothing.includes("def SkelRoot"), "空导出不应有 SkelRoot");
+
+// 仅未蒙皮 mesh（无 skelRootName）：Meshes 存在，无 CenterCurves/SkelRoot。
+const unskinnedOnly = exportAnimeHairUsda({
+  meshes: [{ name: "Cap", points: [[0, 0, 0], [1, 0, 0], [0, 1, 0]], faces: [[0, 1, 2]] }]
+});
+assert.ok(unskinnedOnly.includes('def Scope "Meshes"'), "未蒙皮 mesh 时应输出 Meshes Scope");
+assert.ok(unskinnedOnly.includes('def Mesh "Cap"'), "未蒙皮 mesh 应留在 Meshes Scope");
+assert.ok(!unskinnedOnly.includes('def Scope "CenterCurves"'), "无曲线时不应输出 CenterCurves Scope");
+assert.ok(!unskinnedOnly.includes("def SkelRoot"), "无骨架时不应输出 SkelRoot");
+
+// ---- smoothMainPair：平滑主链蒙皮绑定混合（[mainIdx, nextIdx] × [1-frac, frac]）----
+assert.deepEqual(smoothMainPair(0, 6), { main: 0, next: 1, frac: 0 }, "t=0 → main 0/next 1/frac 0");
+assert.deepEqual(smoothMainPair(0.5, 6), { main: 2, next: 3, frac: 0.5 }, "t=0.5 → x=2.5 → main 2/next 3/frac 0.5");
+assert.deepEqual(smoothMainPair(0.25, 6), { main: 1, next: 2, frac: 0.25 }, "t=0.25 → x=1.25 → main 1/next 2/frac 0.25");
+assert.deepEqual(smoothMainPair(1, 6), { main: 5, next: 5, frac: 0 }, "t=1 → 链尾 main===next");
+// 0.99·5 = 4.9500000000000002（IEEE-754 下 0.99 不精确）→ main/next 精确、frac 容差比较。
+const pair099 = smoothMainPair(0.99, 6);
+assert.deepEqual({ main: pair099.main, next: pair099.next }, { main: 4, next: 5 }, "t=0.99 → main 4/next 5");
+assert.ok(Math.abs(pair099.frac - 0.95) < 1e-9, `t=0.99 → frac 应约等于 0.95（实测 ${pair099.frac}）`);
+assert.deepEqual(smoothMainPair(2, 6), { main: 5, next: 5, frac: 0 }, "t=2 应钳到 1");
+assert.deepEqual(smoothMainPair(-1, 6), { main: 0, next: 1, frac: 0 }, "t=-1 应钳到 0");
+assert.deepEqual(smoothMainPair(0.5, 1), { main: 0, next: 0, frac: 0 }, "mainCount=1 → n-1=0 → x=0");
 
 console.log("usda-export.test.mjs: all assertions passed");

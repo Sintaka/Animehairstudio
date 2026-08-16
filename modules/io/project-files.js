@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { leafWeightAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActionFormat } from "./file-actions.js?v=20260816-13";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260814-12";
-import { exportAnimeHairUsda, usdIdentifier, quatToMat3, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName } from "./usda-export.js?v=20260816-18";
+import { exportAnimeHairUsda, usdIdentifier, quatToMat3, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName, smoothMainPair } from "./usda-export.js?v=20260816-19";
 import { materializeTipChain, tipChainFrameAt as strandTipChainFrameAt } from "../geometry/tip-sub-bone.js?v=20260813-1";
 import { createHairProject } from "./project-schema.js?v=20260814-12";
 import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260815-1";
@@ -670,12 +670,14 @@ export function createProjectSaveApi(deps) {
       });
     }
     const globalJointIndex = new Map(allJoints.map((joint, index) => [joint.name, index]));
-    // 普通发丝/权重缺失兜底蒙皮：按扫掠行号绑定 main 关节（单影响 [main, 0 权重]）。
+    // 普通发丝/权重缺失兜底蒙皮：按扫掠行号绑定 main 关节（平滑主链双影响
+    // [floor, floor+1] × [1-frac, frac]）。
     // 无 leafWeights 的普通发丝、或面板 leafWeights 缺失/截断时不再整片放弃蒙皮——
     // 每个顶点都拿到有效 boneCapture，mesh 才能进 Character SkelRoot（usda-export.js
-    // 按 hasSkinData 分流）。
-    const bindBySweepRow = (mesh, lock, bones, pointCount, gridRowIndices, gridRows) => {
-      const mainCount = bones.filter((bone) => bone.name.startsWith("main.")).length;
+    // 按 hasSkinData 分流）。0.2.108：单影响 [j,j]×[1,0] 在 Houdini 里被导入成
+    // (-1,-1) 填充（boneCapture 只有一个点控制）→ 改为平滑主链真双影响。
+    // 行数：优先 gridRows（几何行数），否则从 gridRowIndices 最大值推（面板等）。
+    const rowsFor = (gridRowIndices, gridRows) => {
       let rows = Number(gridRows) || 0;
       if (rows < 2 && gridRowIndices) {
         let maxRow = -1;
@@ -683,19 +685,32 @@ export function createProjectSaveApi(deps) {
           const row = Number(gridRowIndices[i]);
           if (Number.isFinite(row) && row > maxRow) maxRow = row;
         }
-        rows = maxRow + 1; // 面板等无 gridRows 数时退回 gridRowIndices 最大值 + 1
+        rows = maxRow + 1;
       }
+      return rows;
+    };
+    // 顶点行参数 t（端盖 -1 行 → 0）。
+    const rowTAt = (vertex, gridRowIndices, rows) => {
+      const row = Math.max(0, gridRowIndices ? Number(gridRowIndices[vertex]) : 0);
+      return rows >= 2 ? row / (rows - 1) : 0;
+    };
+    // 平滑主链双影响：[floor, floor+1] × [1-frac, frac]（链末端 main===next 自然退化）。
+    const smoothMainPairIndices = (lock, t, mainCount) => {
+      const pair = smoothMainPair(t, mainCount);
+      const mainIdx = globalJointIndex.get(jointNameOf(lock, `main.${pair.main}`)) ?? 0;
+      const nextIdx = globalJointIndex.get(jointNameOf(lock, `main.${pair.next}`)) ?? mainIdx;
+      return { indices: [mainIdx, nextIdx], weights: [1 - pair.frac, pair.frac] };
+    };
+    const bindBySweepRow = (mesh, lock, bones, pointCount, gridRowIndices, gridRows) => {
+      const mainCount = bones.filter((bone) => bone.name.startsWith("main.")).length;
+      const rows = rowsFor(gridRowIndices, gridRows);
       const skelIndices = [];
       const skelWeights = [];
       for (let vertex = 0; vertex < pointCount; vertex += 1) {
-        const row = Math.max(0, gridRowIndices ? Number(gridRowIndices[vertex]) : 0);
-        const t = rows >= 2 ? row / (rows - 1) : 0;
-        const mainJoint = mainCount > 0
-          ? Math.min(mainCount - 1, Math.round(t * (mainCount - 1)))
-          : 0;
-        const mainIdx = globalJointIndex.get(jointNameOf(lock, `main.${mainJoint}`)) ?? 0;
-        skelIndices.push([mainIdx, mainIdx]);
-        skelWeights.push([1, 0]);
+        const t = rowTAt(vertex, gridRowIndices, rows);
+        const pair = smoothMainPairIndices(lock, t, mainCount);
+        skelIndices.push(pair.indices);
+        skelWeights.push(pair.weights);
       }
       mesh.skelRootName = SKEL_NAME;
       mesh.skelIndices = skelIndices;
@@ -735,6 +750,8 @@ export function createProjectSaveApi(deps) {
                 if (leafWeightsValid(leafWeights, mesh.points.length)) {
                   const skelIndices = [];
                   const skelWeights = [];
+                  const rows = rowsFor(mesh.gridRowIndices, geometry.userData?.gridRows);
+                  const mainCount = bones.filter((bone) => bone.name.startsWith("main.")).length;
                   for (let vertex = 0; vertex < mesh.points.length; vertex += 1) {
                     const w = leafWeightAt(leafWeights, vertex);
                     const main = Math.round(w.mainJoint);
@@ -749,8 +766,12 @@ export function createProjectSaveApi(deps) {
                       skelIndices.push([mainIdx, splitIdx]);
                       skelWeights.push([1 - weight, weight]);
                     } else {
-                      skelIndices.push([mainIdx, mainIdx]); // 统一 2 影响，多余权重为 0
-                      skelWeights.push([1, 0]);
+                      // 视口权重为 0（fork 以上主骨骼驱动）→ 用平滑主链双影响，
+                      // 避免 [j,j]×[1,0] 单影响（Houdini 导入成 (-1,-1) 填充）。
+                      const t = rowTAt(vertex, mesh.gridRowIndices, rows);
+                      const pair = smoothMainPairIndices(lock, t, mainCount);
+                      skelIndices.push(pair.indices);
+                      skelWeights.push(pair.weights);
                     }
                   }
                   mesh.skelRootName = SKEL_NAME;
@@ -789,6 +810,8 @@ export function createProjectSaveApi(deps) {
                 if (leafWeightsValid(leafWeights, position.count)) {
                   const skelIndices = [];
                   const skelWeights = [];
+                  const rows = rowsFor(mesh.gridRowIndices, geometry.userData?.gridRows);
+                  const mainCount = bones.filter((bone) => bone.name.startsWith("main.")).length;
                   for (let vertex = 0; vertex < position.count; vertex += 1) {
                     const w = leafWeightAt(leafWeights, vertex);
                     const main = Math.round(w.mainJoint);
@@ -803,8 +826,12 @@ export function createProjectSaveApi(deps) {
                       skelIndices.push([mainIdx, splitIdx]);
                       skelWeights.push([1 - weight, weight]);
                     } else {
-                      skelIndices.push([mainIdx, mainIdx]); // 统一 2 影响，多余权重为 0
-                      skelWeights.push([1, 0]);
+                      // 视口权重为 0（fork 以上主骨骼驱动）→ 用平滑主链双影响，
+                      // 避免 [j,j]×[1,0] 单影响（Houdini 导入成 (-1,-1) 填充）。
+                      const t = rowTAt(vertex, mesh.gridRowIndices, rows);
+                      const pair = smoothMainPairIndices(lock, t, mainCount);
+                      skelIndices.push(pair.indices);
+                      skelWeights.push(pair.weights);
                     }
                   }
                   mesh.skelRootName = SKEL_NAME;

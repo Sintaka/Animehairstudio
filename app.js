@@ -137,7 +137,7 @@ import {
   scaleCapsuleRadialLoops
 } from "./modules/geometry/capsule-curve.js?v=20260814-12";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./modules/io/obj-export.js?v=20260814-12";
-import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260816-18";
+import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260816-19";
 import {
   fileActionFormat,
   fileNameForAction,
