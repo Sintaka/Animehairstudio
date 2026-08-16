@@ -100,3 +100,4 @@
    - 根因②：导出循环对每个 lock 的 `main.0` 一律 `parent = HAIR_ROOT_NAME`，不看 `branchParentId`。
    - 修复②（`bridgeRootParentName`）：按 `branchParentParameter` 映射父发片 main 索引 `k = round(t·(parentMainCount-1))`，`main.0` parent 到父发片 `main.${k}`（父发片无导出骨骼时回退 Hair_Root）。实测目标值：Side Bangs Left 6→`Side_Bangs_Left_3_5`、Side Bangs Left 5→`Side_Bangs_Left_1_5`、Side Left 3→`Side_Left_2_2`。
    - 验证：tests/usda-export.test.mjs 新增 27 断言（fork 索引 4/3、tip 链末点 p、抛异常回退曲线末端、tip 链排除、发丝管 p ±0.0304、bridge 三档映射 + null 兜底）；scripts/verify-skeleton-layout.mjs 用真实 .ahs 全锁扫描 55/55（24 split 骨骼越界/挂 main.0 检查 + 桥接根 parent 已知值 + parent 存在于 main 链）。
+   - 补充（0.2.106 热修复，commit 5731b1a）：接线时 `const boneP` 后紧跟 `boneP = derivedP` 赋值 → 勾 Bones 导出直接报 "Assignment to constant variable"（浏览器运行时错误）；改 `let boneP` 一行修复，导出恢复正常。
