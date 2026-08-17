@@ -22,6 +22,14 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（2026-08-17）
+
+> 桥接 USDA family 融合、split capture 与 Wind Preview 间距收尾：
+> - `modules/io/bridge-export.js` + `project-files.js`：UV 展开后按 `sourceIndices`/`bridgeBoundaryParentIndices` 融合完整父→子→孙 family 的同位 bridge boundary position；UV 维持 faceVarying 独立 indices。洞边界严格继承父 capture，桥内部用固定端点调和/Laplacian 权重场，固定四影响并归一；不对 fused position 额外做 Uniform Smooth。桥接子 `main.0` parent 到父对应 `main.k`。
+> - `modules/geometry/panel-tip-strand.js` / `strand-geometry.js` / `tip-sub-bone.js`：panel 与普通 split fork 以下 capture 严格归 tip/split、主链为 0；渲染几何保留连续过渡。普通 split 的 rest chain/视口 handle 改同源于实际 swept tube center，保存的 tip delta 重映射保留。
+> - `styles.css`：Wind Preview 浮窗滑杆 label 间距与主 `.sliders` 对齐。
+> - 回归：`bridge-export.test.mjs`、`split-tip-geometry.test.mjs`、既有 USDA/UV 测试；Node 全量 261/261 通过。
+
 ## 最近更新（0.2.113）
 
 > 吹风预览 UI 浮动窗口化 + seed/StrandRandom 卡死 bug 修复（分支 DHS/develop，3 子智能体并行 + 主进程 merge；详见 annotations-adapt.md 吹风条目 + bug-fixes.md #11 + wind-preview-plan.md §0.2）：

@@ -1,9 +1,17 @@
 # 桥接子发片 geo 合并评估（焊接共享边界 + 权重平滑过渡）
 
-- 状态：**评估完成，未实施**（2026-08-21）
+## 2026-08-17 实施更新
+
+- 已在 **USDA 导出路径**实施 family 级位置融合：UV 展开后保留每个输出点的 `sourceIndices`，按完整父→子→孙 bridge family 的 `bridgeBoundaryParentIndices` 合并同位 bridge boundary 点。融合只作用于 position/face 索引；`st` 仍是 faceVarying，UV 顶点及其独立 indices 不焊接，故原有 seam/UV 岛流程保持兼容。
+- 已实施递归 bridge capture：洞边界严格继承已解析的父 capture；桥内部以洞侧=0、子根侧=1 为固定端点，在桥接图上求仅权重域的调和/Laplacian 过渡，并归一到固定四影响。子发片 `main.0` 仍 parent 到父发片对应的 `main.k`；USDA 输出 `elementSize = 4`。
+- 本轮**没有**在融合后对 position 额外执行 Uniform Smooth。位置平滑仍是生成期 branch bridge 的锚定 Uniform Smooth；导出期的 uniform/Laplacian 仅计算 capture 权重，不改几何位置。
+- 实机导出：`D:\Downloads\Sussurro_v1_0059.usda` 已验证 46 个 `elementSize = 4` skin prim、0 个 `elementSize = 2`、23 组 `primvars:st:indices`，并确认 `Side_Left_3_0` 挂在 `Side_Left_2_2`。首轮实测发现 family 首点仍为双槽 capture 会把全 mesh arity 写成 2，已在 `mergeBranchFamilyMeshes()` 中统一补齐四槽（见 bug-fixes.md #12）。
+- 验证：`bridge-export.test.mjs`、既有 `usda-export.test.mjs` 与 `uv-unfold.test.mjs` 覆盖同位点融合、层级 boundary 继承、四影响、faceVarying UV indices；完整 Node 测试共 261 项通过。
+
+- 状态：**导出路径已部分实施（2026-08-17）**：family 级 position 融合 + bridge capture 已落地；视口每 lock 独立 mesh 与生成期桥接拓扑保持不变。
 - 目标：评估「能否在 geo 层面把子发片与主发片对应点合并（焊接共享顶点），并平滑绑定权重（边界环附近从父骨骼权重平滑过渡到子骨骼权重），且必须兼容 UV 生成流程」。
 - 结论速览：**有条件可以，但必须分两层**——① 位置同步 + 导出权重 blend（低风险，建议先做）；② 真顶点焊接（单一 BufferGeometry），需要动 UV/导出/打包全链路，建议作为独立后续。详见 §2/§3。
-- 本文件只评估，未改任何代码。
+- 下方正文保留为实施前评估；2026-08-17 的实际导出实现与验证见本页顶部更新及 bug-fixes.md #12。
 
 ---
 

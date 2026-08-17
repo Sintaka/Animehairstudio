@@ -14,7 +14,7 @@ import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260814-8";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260814-12";
 import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip, strandSplitBonesFor, materializeStrandSplitBones, strandSplitBonesToData, strandSplitBonesFromData, mirrorStrandSplitBones } from "./modules/bones/bone-model.js?v=20260813-1";
-import { materializeTipChain } from "./modules/geometry/tip-sub-bone.js?v=20260813-1";
+import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260813-1";
 import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260814-12";
 import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-3";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260814-12";
@@ -12071,7 +12071,8 @@ Object.assign(boneViewHandlesDeps, {
   strandSplitControlPoint,
   strandSplitProfileData,
   strandGeometryCurve,
-  strandGeometryFrameAt
+  strandGeometryFrameAt,
+  currentStrandSplitTipChains
 });
 
 function sampledSurfaceNormal(lock, t) {
@@ -13178,6 +13179,20 @@ function currentStrandSplitTipChains(lock) {
     previousFrame = strandGeometryFrameAt(lock, curve, t, previousFrame);
     frames.push(previousFrame);
   }
+  const storedRestCenters = lock.mesh?.geometry?.userData?.strandSplitRestCenters;
+  const tubeRestCenters = Array.isArray(storedRestCenters)
+    && storedRestCenters.length === bones.length
+    && storedRestCenters.every((centers) => (
+      Array.isArray(centers)
+      && centers.length === parameters.length
+      && centers.every((point) => (
+        Number.isFinite(Number(point?.x))
+        && Number.isFinite(Number(point?.y))
+        && Number.isFinite(Number(point?.z))
+      ))
+    ))
+    ? storedRestCenters
+    : null;
   const baseWidth = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1);
   const splitStart = 1 - THREE.MathUtils.clamp(Number(lock.strandSplitHeight ?? 0.3), 0.02, 0.8);
   const defaultSpread = THREE.MathUtils.clamp(Number(lock.strandSplitGap ?? 0.12), 0, 0.99);
@@ -13185,6 +13200,10 @@ function currentStrandSplitTipChains(lock) {
     const spread = bone.spread ?? defaultSpread;
     const direction = tubeIndex === 0 ? -1 : 1;
     const restPointAt = (t) => {
+      if (tubeRestCenters) {
+        const center = sampleCenterlinePoint(tubeRestCenters[tubeIndex], parameters, t);
+        if (center) return new THREE.Vector3(center.x, center.y, center.z);
+      }
       let row = 0;
       let bestDistance = Infinity;
       for (let r = 0; r < parameters.length; r += 1) {

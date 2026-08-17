@@ -64,3 +64,10 @@
   tipChainNearestIndex 断言（forkT 0.75/0.5625/1、clamp、mainCount=2）。
 - 重新导出后 Houdini usdskinimport 复查：假双影响 `(-1,-1)` 槽位消失，真双影响占比 100%
   （除链末端/根行的自然退化行）；发尖链关节被引用（0057：1450 顶点）。
+
+## 5. 2026-08-17：split 严格归属与桥接 family capture
+
+- panel 发尖与普通 split 发丝在 fork 以下的导出 capture 改为二值归属：暴露顶点 100% 绑定 tip/split 子骨骼、主骨骼权重为 0；精确 fork 行仍归主链。视口渲染几何继续使用独立的连续过渡权重，避免 fork 处视觉跳变。
+- 普通 split 的 tip rest chain 与视口 handle 统一采样实际 swept tube center；已有 tip 的保存 delta 会重映射回新的 rest chain，不丢失用户编辑。
+- 桥接子发片导出在 UV 展开后计算父→子→孙 family capture：洞边界严格继承父点 capture，桥内部以固定端点的调和/Laplacian 权重场混合父 capture 与子根 capture，并固定输出四影响、归一化。此处 uniform 仅平滑权重，不对 fused position 做二次平滑。
+- 回归：`split-tip-geometry.test.mjs`、`bridge-export.test.mjs` 及既有 USDA/UV 测试；完整 Node 测试 261 项通过。真实导出另确认 family 内父/子所有点都统一为四槽 capture，避免首父点把整 mesh arity 写为 2（bug-fixes.md #12）。

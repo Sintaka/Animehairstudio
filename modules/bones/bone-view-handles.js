@@ -11,7 +11,7 @@ const TIP_SEGMENT_HANDLE_TANGENT_OFFSET = 0.08;
 // deps: store .state proxies (sculptState/sel) + module instances (panelTipStrand) + shared
 //   objects (transformControls) + app.js helper functions (clonePanelSplits/isPanelGeometry/
 //   panelSplitControlPoint/strandSplitControlPoint/strandSplitProfileData/strandGeometryCurve/
-//   strandGeometryFrameAt).
+//   strandGeometryFrameAt/currentStrandSplitTipChains).
 // ctx passed by the spine updateCurveObjects: { brushDebugVisible, sculptBrushHelpersSuppressed,
 //   tipUiActive, brushBonesOnly } (computed in the spine, not recomputed here).
 // Batch-fill point in app.js: after the strandGeometryDeps batch (all deps defined).
@@ -565,6 +565,9 @@ function updateBoneViewHandles(lock, ctx) {
     && Boolean(strandSplitBones);
   const strandSplitTipHandles = lock.curveObjects.strandSplitTipHandles;
   const strandSplitTipLines = lock.curveObjects.strandSplitTipLines;
+  const strandSplitTipChains = typeof deps.currentStrandSplitTipChains === "function"
+    ? deps.currentStrandSplitTipChains(lock)
+    : null;
   if (Array.isArray(strandSplitTipHandles)) {
     for (let tubeIndex = 0; tubeIndex < 2; tubeIndex += 1) {
       const handle = strandSplitTipHandles[tubeIndex];
@@ -574,7 +577,7 @@ function updateBoneViewHandles(lock, ctx) {
       if (line) line.visible = splitTipVisible;
       if (!splitTipVisible) continue;
       const bone = strandSplitBones[tubeIndex] || null;
-      const tipChain = materializeTipChain(
+      const tipChain = strandSplitTipChains?.[tubeIndex] || materializeTipChain(
         bone?.tip || null,
         (t) => deps.strandGeometryCurve(lock).getPoint(t),
         Math.max(2, Array.isArray(lock.points) ? lock.points.length : 2)

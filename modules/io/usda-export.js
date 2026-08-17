@@ -143,8 +143,21 @@ function meshBlock(mesh, identifier, skelPath = null, indent = 8) {
       `${pad2}uniform token normals:interpolation = "vertex"`
     );
   }
-  if (Array.isArray(mesh.uvs) && mesh.uvs.length === points.length) {
-    lines.push(...primvarLines("texCoord2f", "st", mesh.uvs, "faceVarying", faceVertexIndices, indent + 4));
+  if (Array.isArray(mesh.uvs) && mesh.uvs.length) {
+    const indexedUvs = Array.isArray(mesh.uvIndices)
+      && mesh.uvIndices.length === faceVertexIndices.length
+      && mesh.uvIndices.every((index) => Number.isInteger(index) && index >= 0 && index < mesh.uvs.length);
+    const directUvs = mesh.uvs.length === points.length;
+    if (indexedUvs || directUvs) {
+      lines.push(...primvarLines(
+        "texCoord2f",
+        "st",
+        mesh.uvs,
+        "faceVarying",
+        indexedUvs ? mesh.uvIndices : faceVertexIndices,
+        indent + 4
+      ));
+    }
   }
   if (Array.isArray(mesh.colors) && mesh.colors.length === points.length) {
     lines.push(...primvarLines("color3f", "displayColor", mesh.colors, "vertex", null, indent + 4));
@@ -166,10 +179,12 @@ function meshBlock(mesh, identifier, skelPath = null, indent = 8) {
       `${pad2})`
     );
   }
-  if (Number.isInteger(mesh.uvisland)) {
+  const uvislandValues = Array.isArray(mesh.uvislandValues) && mesh.uvislandValues.length === faces.length
+    ? mesh.uvislandValues : (Number.isInteger(mesh.uvisland) ? faces.map(() => mesh.uvisland) : null);
+  if (uvislandValues) {
     // UV 岛枚举：uniform = 每面一个值（Houdini prim 属性语义），DCC 可按 @uvisland==k 选岛
     lines.push(
-      `${pad2}int[] primvars:uvisland = ${numberArray(faces.map(() => mesh.uvisland))} (`,
+      `${pad2}int[] primvars:uvisland = ${numberArray(uvislandValues)} (`,
       `${pad3}interpolation = "uniform"`,
       `${pad2})`
     );
@@ -710,8 +725,9 @@ export function bridgeRootParentName(lock, locks = [], jointNameOf = null) {
   const parent = locks.find((item) => item?.id === lock.branchParentId);
   if (!parent) return null;
   const parentCount = Array.isArray(parent.points) ? parent.points.length : 0;
-  if (parentCount < 2 || typeof jointNameOf !== "function") return null;
+  if (parentCount < 2) return null;
   const t = clamp(Number(lock.branchParentParameter ?? 0), 0, 1);
   const k = Math.round(t * (parentCount - 1));
-  return jointNameOf(parent, "main." + k);
+  const internalName = "main." + k;
+  return typeof jointNameOf === "function" ? jointNameOf(parent, internalName) : internalName;
 }

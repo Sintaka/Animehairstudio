@@ -116,3 +116,9 @@
    - 根因：滑杆 input 处理器（app.js ~17438-17443）在 windSeed/windStrandRandom 变更且预览激活时只执行 `windPreviewCache.delete(lock)`——缓存删了但**从不重建**（`buildWindPreviewCache` 只在 `setWindPreviewActive(true)` 调用）。后果链：① tick 取不到缓存 → 动画冻结；② 网格停留在上次变形状态、永不恢复（关闭时的逐位恢复因缓存已删成为无操作）；③ 再次开启时 rest 快照从"已弯曲"的几何上重建 → 新快照把弯曲当 rest → 继续弯曲（用户观察到的"进一步弯曲"）。
    - 修复：该分支改为「**先逐位恢复 → 删缓存 → 重建（新参数）→ `windPreviewTick(0)` 立即变形一帧**」——恢复保证重建快照的 rest 是真实 rest（非上次变形残留），tick(0) 消除"冻结感"，重建保证新 perStrand/noise 立即生效（seed 变更仍保留 `windNoiseCache` 失效重建）。
    - 验证：scripts/verify-wind-preview.mjs 新增 3 条回归断言（改 seed 后预览**仍激活**、几何**立即变形非冻结**、改回原值后**逐位还原**）——端到端 15/15（headless Chrome + CDP，Sussurro_v1_0046.ahs）。
+
+12. **USDA bridge family 融合：四影响 capture 被首个父顶点降为双影响（0.2.114 修复，2026-08-17 真实导出）**
+   - 现象：首次导出 `Sussurro_v1_0059.usda` 虽然已有 family 融合、`Character` SkelRoot、faceVarying UV 与正确 bridge root parent，但所有 skin prim 的 `elementSize` 仍为 2；桥接带内四影响数组因此与 primvar arity 不一致。
+   - 根因：`mergeBranchFamilyMeshes()` 直接复制父网格的既有双槽 capture；`meshBlock()` 以合并 mesh 的**第一个顶点**决定 `elementSize`，首点通常来自父发片，故写成 2。
+   - 修复：family 合并写入点 capture 前统一经 `normalizedCapture(..., arity=4)` 归一并补齐四槽；父侧保持其原有权重，桥带仍保留父/子混合的四影响。
+   - 验证：真实浏览器导出 `D:\Downloads\Sussurro_v1_0059.usda`，2,376,424 bytes；`def SkelRoot "Character"` 存在、`elementSize = 4` 共 46 个、`elementSize = 2` 为 0、`primvars:st:indices` 共 23 组，且 `Side_Left_3_0` parent 为 `Side_Left_2_2`。`tests/bridge-export.test.mjs` 通过。

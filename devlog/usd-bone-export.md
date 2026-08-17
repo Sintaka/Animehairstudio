@@ -295,6 +295,15 @@ USD `Gf.Matrix4d` 是 **row-vector 约定（v' = v·M）**：
 - `split.*.tip.*` 从 bonesFor 收集过滤（链布局取代，避免重复关节）；`splitBoneLayout`
   保留为链构建失败时的回退（仍单骨骼）。
 
+## 10. 桥接 family 融合与四影响 capture（2026-08-17）
+
+- `buildHairUsda()` 在 UV 展开后保留输出点到原始几何点的 `sourceIndices`，按完整父→子→孙 bridge family 合并对应的 bridge boundary 同位 position，并重建 face indices。融合只影响几何点；UV 仍单独保留并以 `primvars:st` 的 faceVarying indices 输出，因此 UV seam 与各发片 UV 岛不会被焊接。
+- capture 先按层级解析：洞边界点严格复制父 mesh 对应点的 capture；桥内部在 bridge 图上以洞侧/子根侧为固定端点做调和/Laplacian 过渡，混合后裁为固定四影响并归一化。多层子发片读取已经解析过的父 capture。
+- 桥接子发片的 `main.0` parent 仍由 `bridgeRootParentName()` 指向父发片对应 `main.k`，不回退为直接挂 `Hair_Root`（父关节不可用时才回退）。
+- 融合完成后不再对 position 施加导出期 Uniform Smooth；生成期 bridge 的锚定 Uniform Smooth 保持原职责，导出期 Laplacian 只用于权重场。桥接 family mesh 的 USDA `skel:jointIndices` / `skel:jointWeights` 均输出 `elementSize = 4`。
+
+验证：`bridge-export.test.mjs` 覆盖层级 capture、边界继承、融合后 face/UV indices 与 `elementSize = 4`；既有 USDA/UV 测试同过，完整 Node 测试 261 项通过。真实 `Sussurro_v1_0059.usda` 再验证：family 首父点也统一补齐四槽，46 个 `elementSize = 4`、0 个 `elementSize = 2`、23 组 faceVarying `primvars:st:indices`，且 `Side_Left_3_0` 层级为 `Side_Left_2_2/Side_Left_3_0`（bug-fixes.md #12）。
+
 ## 版本历程速览（0.2.93 → 0.2.108）
 
 | 版本 | 要点 |

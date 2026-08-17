@@ -7271,7 +7271,11 @@ body.no-panels .tool-panel {
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
+}
+
+.wind-preview-body > label.topology-control {
+  margin: 6px 0 3px;
 }
 
 @media (max-width: 860px) {

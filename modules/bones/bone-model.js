@@ -315,9 +315,20 @@ export function defaultStrandSplitSpread(lock) {
   return THREE.MathUtils.clamp(Number(lock?.strandSplitGap ?? 0.12), 0, SPREAD_MAX);
 }
 
+export function strandSplitForkT(lock) {
+  const height = THREE.MathUtils.clamp(Number(lock?.strandSplitHeight ?? 0.3), 0.02, 0.8);
+  return 1 - height;
+}
+
 function normalizeStrandSplitBone(bone, lock, index) {
   const normalized = normalizeBone(bone, null, lock);
   normalized.name = bone?.name || `split.${index}`;
+  normalized.parent = bone?.parent || "main";
+  normalized.parentParam = THREE.MathUtils.clamp(
+    Number(bone?.parentParam ?? strandSplitForkT(lock)),
+    0,
+    1
+  );
   if (bone?.spread == null) normalized.spread = defaultStrandSplitSpread(lock);
   normalized.tip = normalizeStrandTip(bone?.tip);
   normalized.kind = "split";
@@ -337,7 +348,7 @@ export function strandSplitBonesFor(lock) {
   return [0, 1].map((k) => ({
     name: `split.${k}`,
     parent: "main",
-    parentParam: 1,
+    parentParam: strandSplitForkT(lock),
     p: null,
     orient: null,
     tip: null,

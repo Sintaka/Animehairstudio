@@ -659,6 +659,7 @@ export function unfoldHairMesh(geometry, options = {}) {
     faces,
     gridRows: gridRowOut,
     gridCols: gridColOut,
+    sourceIndices: Array.from(sourceOfNew),
     leafWeights
   };
 }

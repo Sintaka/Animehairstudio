@@ -83,9 +83,61 @@ export function tipChainFrameAt(restTip, tip, t, referenceFrame) {
   return { x, y, z };
 }
 
-// t-only tip weight: 0 before tipStart, ramping linearly to 1 at the strand end.
+// t-only geometry blend: 0 before tipStart, ramping linearly to 1 at the strand end.
+// This is intentionally separate from capture ownership: the render mesh may blend
+// through the fork while the exported skin binding is already fully owned by the tip.
 export function tipWeightAt(t, tipStart) {
   return clamp((Number(t) - Number(tipStart)) / Math.max(0.0001, 1 - Number(tipStart)), 0, 1);
+}
+
+// Tip capture ownership: fork-adjacent vertices stay on the main chain, while every
+// exposed vertex is fully owned by its tip/split child chain. Keep the strict boundary
+// convention aligned with splitChainLayout (t > fork).
+export function tipCaptureWeightAt(t, tipStart) {
+  return Number(t) > Number(tipStart) + 0.000001 ? 1 : 0;
+}
+
+// Arithmetic centers of swept tube rings. The geometry layer uses these exact centers
+// as split-tip rest positions, so control chains follow the tube they actually drive
+// rather than an approximate offset from the unsplit main curve.
+export function sweepRingCentroids(vertices, sections, rowCount) {
+  if (!Array.isArray(vertices) || !Array.isArray(sections) || rowCount < 1) return [];
+  return sections.map((section) => {
+    const base = Math.max(0, Math.floor(Number(section?.base) || 0));
+    const ringSize = Math.max(0, Math.floor(Number(section?.ringSize) || 0));
+    if (!ringSize) return [];
+    return Array.from({ length: rowCount }, (_, row) => {
+      const center = new THREE.Vector3();
+      for (let column = 0; column < ringSize; column += 1) {
+        const offset = (base + row * ringSize + column) * 3;
+        center.x += Number(vertices[offset] || 0);
+        center.y += Number(vertices[offset + 1] || 0);
+        center.z += Number(vertices[offset + 2] || 0);
+      }
+      return pointToData(center.multiplyScalar(1 / ringSize));
+    });
+  });
+}
+
+// Sample a centerline authored at arbitrary sweep parameters. The split sweep can use
+// adaptive curve parameters, so index-based sampling would drift controls off the mesh.
+export function sampleCenterlinePoint(points, parameters, t) {
+  if (!Array.isArray(points) || !points.length) return null;
+  if (points.length === 1 || !Array.isArray(parameters) || parameters.length !== points.length) {
+    return pointToData(points[0]);
+  }
+  const parameter = clamp(Number(t), 0, 1);
+  if (parameter <= Number(parameters[0])) return pointToData(points[0]);
+  const last = points.length - 1;
+  if (parameter >= Number(parameters[last])) return pointToData(points[last]);
+  for (let index = 1; index < points.length; index += 1) {
+    const upper = Number(parameters[index]);
+    if (parameter > upper) continue;
+    const lower = Number(parameters[index - 1]);
+    const alpha = clamp((parameter - lower) / Math.max(0.000001, upper - lower), 0, 1);
+    return pointToData(toVector3(points[index - 1]).lerp(toVector3(points[index]), alpha));
+  }
+  return pointToData(points[last]);
 }
 
 // Sample the tip chain at t (clamped); returns the first point when the chain is too

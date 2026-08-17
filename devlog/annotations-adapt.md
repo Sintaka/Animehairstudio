@@ -6,6 +6,8 @@
 
 > 说明：条目按子系统归类，同一开发阶段（2.x / Phase 2.15 等）的条目可能分散到多个文件，请按关键词跳读。
 
+- **Wind Preview 浮窗 slider 间距对齐（2026-08-17）**：`.wind-preview-body` 不再叠加容器 `gap` 与全局 label margin；其直接 `.topology-control` label 使用与主 `.sliders` 相同的 `6px 0 3px` 紧凑间距。既有 `104px / 1fr / 24px` slider 栅格、读数列和窄屏规则不变。
+
 - **吹风预览系统（0.2.112，js 改动标注）**：
   - `modules/geometry/wind-preview.js`（新，纯函数零依赖）：`mulberry32` / `perStrandWind(seed, strandId, intensity)` / `fbm4` / `windAngleAt` / `windAxis` / `windRowQuats` / `slerpQuat` / `rotateVec3` / `deformVertexData`（原地改 positions/normals/tangents，row=−1 passthrough）。
   - `js/vendor/simplex-noise.js`（新）：simplex-noise 4.0.3 MIT ESM 单文件（`createNoise4D`，mulberry32 播种）。

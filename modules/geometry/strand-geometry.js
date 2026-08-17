@@ -20,7 +20,15 @@ import {
 } from "./compound-strand.js?v=20260814-12";
 import { DEFAULT_SWEEP_PROFILE, ROUND_SWEEP_PROFILE } from "../core/app-config.js?v=20260815-4";
 import { strandSplitBonesFor, strandTipFor } from "../bones/bone-model.js?v=20260813-1";
-import { materializeTipChain, tipChainFrameAt, tipWeightAt, sampleTipPosition } from "./tip-sub-bone.js?v=20260813-1";
+import {
+  materializeTipChain,
+  sampleCenterlinePoint,
+  sampleTipPosition,
+  sweepRingCentroids,
+  tipCaptureWeightAt,
+  tipChainFrameAt,
+  tipWeightAt
+} from "./tip-sub-bone.js?v=20260813-1";
 import { SWEEP_OVERLAP_DEFAULTS } from "./strand-sweep.js?v=20260813-3";
 
 export function createStrandGeometryApi(deps) {
@@ -205,7 +213,9 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
         uvs.push(column / ringSize, t);
         colors.push(color.r, color.g, color.b);
         const mainJoint = mainPointCount ? Math.round(t * (mainPointCount - 1)) : -1;
-        if (strandSplitWeights) strandSplitWeights.push(mainJoint, sectionIndex, tipWeightAt(t, splitStart));
+        if (strandSplitWeights) {
+          strandSplitWeights.push(mainJoint, sectionIndex, tipCaptureWeightAt(t, splitStart));
+        }
       });
     });
 
@@ -223,39 +233,52 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     }
   });
 
-  // Route 2: per-tube tip sub-bones (strand split). Each tube's rest chain follows its
-  // own center line (curve + frame.x * spread opening); authored bone.tip deltas are
-  // re-applied by materializeTipChain, then each swept ring blends toward the tip
-  // chain's own frame by the t-only tip weight (0 before splitStart, 1 at the strand
-  // end). Vertex indices/faces are unchanged (only positions move).
+  const sweepRows = actualLengthSegments + 1;
+  const smoothTubeVertices = (targetVertices) => {
+    sections.forEach((section, sectionIndex) => {
+      const ringSize = section.points.length;
+      const sectionStart = sectionBases[sectionIndex].base;
+      const sectionVertexStart = sectionStart * 3;
+      const sectionVertexEnd = (sectionStart + sweepRows * ringSize) * 3;
+      const weights = new Array(sweepRows * ringSize);
+      for (let row = 0; row < sweepRows; row += 1) {
+        for (let column = 0; column < ringSize; column += 1) {
+          weights[row * ringSize + column] = heat[row];
+        }
+      }
+      const sectionVertices = targetVertices.slice(sectionVertexStart, sectionVertexEnd);
+      smoothSweepChains(sectionVertices, sweepRows, ringSize, {
+        strength: edgeSmooth,
+        iterations: 2,
+        weights,
+        pinRows: new Set([0])
+      });
+      for (let i = 0; i < sectionVertices.length; i += 1) {
+        targetVertices[sectionVertexStart + i] = sectionVertices[i];
+      }
+    });
+  };
+
+  // Establish the rest pose after all base sweep smoothing. The tube centroid is the
+  // only stable source of truth for both geometry and future viewport controls.
+  smoothTubeVertices(vertices);
+  const splitRestCenters = sweepRingCentroids(vertices, sectionBases, sweepRows);
+
+  // Route 2: per-tube tip sub-bones (strand split). Each rest chain now samples the
+  // actual smoothed tube centerline. Geometry keeps its smooth visual transition via
+  // tipWeightAt, while strandSplitWeights above records strict capture ownership.
   let tipChains = null;
   if (splitBones) {
     tipChains = sections.map((section, sectionIndex) => {
       const bone = splitBones[sectionIndex] || null;
-      const tubeSpread = bone?.spread ?? defaultSplitSpread;
-      const direction = section.direction;
-      const restPointAt = (t) => {
-        let row = 0;
-        let bestDistance = Infinity;
-        for (let r = 0; r < curveParameters.length; r += 1) {
-          const distance = Math.abs(curveParameters[r] - t);
-          if (distance < bestDistance) {
-            bestDistance = distance;
-            row = r;
-          }
-        }
-        const frame = frames[row];
-        const point = curve.getPoint(t);
-        const opening = t <= splitStart
-          ? 0
-          : baseWidth * tubeSpread * THREE.MathUtils.smoothstep(t, splitStart, 1) * direction;
-        return point.addScaledVector(frame.x, opening);
-      };
+      if (!bone?.tip || bone.tip.active === false) return null;
+      const restPointAt = (t) => sampleCenterlinePoint(splitRestCenters[sectionIndex], curveParameters, t);
       const tipCount = Math.max(2, Array.isArray(lock.points) ? lock.points.length : 2);
       return materializeTipChain(bone?.tip || null, restPointAt, tipCount);
     });
     sections.forEach((section, sectionIndex) => {
       const tipChain = tipChains[sectionIndex];
+      if (!tipChain) return;
       const ringSize = section.points.length;
       const sectionStart = sectionBases[sectionIndex].base;
       for (let row = 0; row <= actualLengthSegments; row += 1) {
@@ -265,9 +288,7 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
         const referenceZ = frames[row].z.clone();
         const tipFrame = tipChainFrameAt(tipChain, tipChain, t, referenceZ);
         const tipCenter = sampleTipPosition(tipChain, t);
-        const scaleX = sampleScale(lock.pointScales, t, "x");
-        const scaleZ = sampleScale(lock.pointScales, t, "z");
-        const warpedSection = deps.strandProfileTopologyAt(lock, t, section.points, scaleX, scaleZ, polygon);
+        const restCenter = sampleCenterlinePoint(splitRestCenters[sectionIndex], curveParameters, t);
         for (let column = 0; column < ringSize; column += 1) {
           const idx = sectionStart + row * ringSize + column;
           const original = new THREE.Vector3(
@@ -275,10 +296,12 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
             vertices[idx * 3 + 1],
             vertices[idx * 3 + 2]
           );
-          const warped = warpedSection[column];
+          const offset = original.clone().sub(new THREE.Vector3(restCenter.x, restCenter.y, restCenter.z));
+          const lateral = offset.dot(frames[row].x);
+          const depth = offset.dot(frames[row].z);
           const target = new THREE.Vector3(tipCenter.x, tipCenter.y, tipCenter.z)
-            .addScaledVector(tipFrame.x, warped.x)
-            .addScaledVector(tipFrame.z, warped.z);
+            .addScaledVector(tipFrame.x, lateral)
+            .addScaledVector(tipFrame.z, depth);
           const final = original.clone().lerp(target, w);
           vertices[idx * 3] = final.x;
           vertices[idx * 3 + 1] = final.y;
@@ -287,32 +310,6 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
       }
     });
   }
-  // Edge smoothing: per-tube longitudinal Laplacian over the emitted rings, using
-  // curvature heat as per-vertex weights; the root row stays pinned.
-  const sweepRows = actualLengthSegments + 1;
-  sections.forEach((section, sectionIndex) => {
-    const ringSize = section.points.length;
-    const sectionStart = sectionBases[sectionIndex].base;
-    const sectionVertexStart = sectionStart * 3;
-    const sectionVertexEnd = (sectionStart + sweepRows * ringSize) * 3;
-    const weights = new Array(sweepRows * ringSize);
-    for (let row = 0; row < sweepRows; row += 1) {
-      for (let column = 0; column < ringSize; column += 1) {
-        weights[row * ringSize + column] = heat[row];
-      }
-    }
-    const sectionVertices = vertices.slice(sectionVertexStart, sectionVertexEnd);
-    smoothSweepChains(sectionVertices, sweepRows, ringSize, {
-      strength: edgeSmooth,
-      iterations: 2,
-      weights,
-      pinRows: new Set([0])
-    });
-    for (let i = 0; i < sectionVertices.length; i += 1) {
-      vertices[sectionVertexStart + i] = sectionVertices[i];
-    }
-  });
-
   const sideFaceCount = sectionFaceBase;
   const quadFaces = [];
   sections.forEach((section, sectionIndex) => {
@@ -410,6 +407,9 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   geometry.userData.gridFacesPerRow = fusedCols;
   geometry.userData.gridSkipCol = -1;
   geometry.userData.splitSections = sectionBases;
+  geometry.userData.strandSplitRestCenters = splitRestCenters.map((centers) => (
+    centers.map((center) => ({ ...center }))
+  ));
   geometry.userData.splitFusedGrid = {
     cols: fusedCols,
     colToSection,

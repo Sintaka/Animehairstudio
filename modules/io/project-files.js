@@ -8,10 +8,11 @@ import * as THREE from "three";
 import { leafWeightAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActionFormat } from "./file-actions.js?v=20260816-13";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260814-12";
-import { exportAnimeHairUsda, usdIdentifier, quatToMat3, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName, smoothMainPair, tipChainNearestIndex } from "./usda-export.js?v=20260816-20";
+import { exportAnimeHairUsda, usdIdentifier, quatToMat3, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName, smoothMainPair, tipChainNearestIndex } from "./usda-export.js?v=20260817-1";
 import { materializeTipChain, tipChainFrameAt as strandTipChainFrameAt } from "../geometry/tip-sub-bone.js?v=20260813-1";
 import { createHairProject } from "./project-schema.js?v=20260814-12";
-import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260815-1";
+import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260817-1";
+import { applyBridgeBoneCapture, mergeBranchFamilyMeshes } from "./bridge-export.js?v=20260817-2";
 import { packFamiliesAsync } from "./uv-pack-async.js?v=20260817-1";
 
 export function createProjectSaveApi(deps) {
@@ -166,6 +167,7 @@ export function createProjectSaveApi(deps) {
       tangents,
       gridRows: geometry.userData?.gridRowIndices || null,
       gridCols: geometry.userData?.gridColIndices || null,
+      sourceIndices: Array.from({ length: count }, (_, index) => index),
       leafWeights: null
     };
   }
@@ -331,10 +333,26 @@ export function createProjectSaveApi(deps) {
   // 尺寸统一缩放（统一纹素密度）后 MaxRects 打包进 UDIM 1001（[0,1]²）。原地修改
   // buildUnfoldedMeshes 产物（unfolded.uvs）。
   async function packUnfoldedUv(unfolded, locks, uvAt) {
-    const parentOf = new Map(); // child id -> parent id（branchParentId）
+    const childrenByParent = new Map();
     locks.forEach((lock) => {
-      if (lock.branchParentId) parentOf.set(lock.id, lock.branchParentId);
+      if (!lock.branchParentId) return;
+      if (!childrenByParent.has(lock.branchParentId)) childrenByParent.set(lock.branchParentId, []);
+      childrenByParent.get(lock.branchParentId).push(lock);
     });
+    const descendantsOf = (rootId) => {
+      const descendants = [];
+      const visited = new Set();
+      const visit = (parentId) => {
+        (childrenByParent.get(parentId) || []).forEach((child) => {
+          if (visited.has(child.id)) return;
+          visited.add(child.id);
+          descendants.push(child);
+          visit(child.id);
+        });
+      };
+      visit(rootId);
+      return descendants;
+    };
     const families = [];
     locks.forEach((lock) => {
       const kind = kindForLock(lock);
@@ -342,8 +360,7 @@ export function createProjectSaveApi(deps) {
         const meshes = [];
         const mainMesh = unfolded.get(lock.id);
         if (mainMesh) meshes.push(mainMesh);
-        locks.forEach((candidate) => {
-          if (parentOf.get(candidate.id) !== lock.id) return;
+        descendantsOf(lock.id).forEach((candidate) => {
           const childMesh = unfolded.get(candidate.id);
           if (childMesh) meshes.push(childMesh);
         });
@@ -438,6 +455,7 @@ export function createProjectSaveApi(deps) {
     rootName = deps.currentProjectName
   } = {}) {
     const meshes = [];
+    const meshRecords = [];
     const curves = [];
     const skeletons = [];
     const unfoldedMeshes = await buildUnfoldedMeshes();
@@ -564,7 +582,7 @@ export function createProjectSaveApi(deps) {
           if (!parent && bone.name === "main.0" && lock.branchParentId) {
             // 桥接子发片根骨骼：parent 到父发片对应骨骼点（branchParentParameter），不再直接挂 Hair_Root。
             const parentEntry = lockBoneData.find((entry) => entry.lock.id === lock.branchParentId);
-            const internalParent = bridgeRootParentName(lock, deps.locks, jointNameOf);
+            const internalParent = bridgeRootParentName(lock, deps.locks);
             if (internalParent && parentEntry?.nameMap.has(internalParent)) {
               parent = parentEntry.nameMap.get(internalParent);
             }
@@ -755,7 +773,10 @@ export function createProjectSaveApi(deps) {
               uvs: flatTuples(unfolded.uvs, 2),
               colors: flatTuples(unfolded.colors, 3),
               tangents: flatTuples(unfolded.tangents, 4),
-              faces: unfolded.faces.map((face) => [...face])
+              faces: unfolded.faces.map((face) => [...face]),
+              sourceIndices: unfolded.sourceIndices?.length === (unfolded.positions.length / 3)
+                ? Array.from(unfolded.sourceIndices, Number)
+                : Array.from({ length: unfolded.positions.length / 3 }, (_, index) => index)
             };
             if (unfolded.gridRows && unfolded.gridCols) {
               mesh.gridRowIndices = Array.from(unfolded.gridRows);
@@ -829,7 +850,8 @@ export function createProjectSaveApi(deps) {
               uvs: bufferAttributeTuples(geometry.getAttribute("uv"), 2),
               colors: bufferAttributeTuples(geometry.getAttribute("color"), 3),
               tangents: bufferAttributeTuples(geometry.getAttribute("tangent"), 4),
-              faces: hairFaceIndices(geometry)
+              faces: hairFaceIndices(geometry),
+              sourceIndices: Array.from({ length: position.count }, (_, index) => index)
             };
             if (gridRowIndices?.length === position.count && gridColIndices?.length === position.count) {
               mesh.gridRowIndices = Array.from(gridRowIndices);
@@ -891,7 +913,19 @@ export function createProjectSaveApi(deps) {
               }
             }
           }
-          meshes.push(mesh);
+          const childMainIndex = globalJointIndex.get(jointNameOf(lock, "main.0"));
+          const childSecondMainIndex = globalJointIndex.get(jointNameOf(lock, "main.1")) ?? childMainIndex;
+          meshRecords.push({
+            id: lock.id,
+            parentId: lock.branchParentId || null,
+            mesh,
+            bridgeBoundaryParentIndices: geometry.userData?.bridgeBoundaryParentIndices || null,
+            bridgeUvAnchors: geometry.userData?.bridgeUvAnchors || null,
+            childMainIndex,
+            childRootCapture: Number.isInteger(childMainIndex)
+              ? { indices: [childMainIndex, childSecondMainIndex], weights: [1, 0] }
+              : null
+          });
         }
       }
       if (includeCurves && lock.geometryType !== "poly") {
@@ -917,6 +951,12 @@ export function createProjectSaveApi(deps) {
         });
       }
     });
+    if (includeMesh) {
+      // Bridge capture must be resolved while parent/child still expose their source-index maps;
+      // merge afterwards turns the paired hole/ring vertices into one geometric point.
+      applyBridgeBoneCapture(meshRecords);
+      meshes.push(...mergeBranchFamilyMeshes(meshRecords));
+    }
     if (includeBones && typeof deps.bonesFor === "function" && allJoints.length > 1) {
       // 统一 Skeleton：所有发丝的关节（main 链 + split.* + Hair_Root 根）合成一棵
       // 连通骨骼树（Hair_Root 为唯一根，所有 main.0 parent 到它），导出进单个

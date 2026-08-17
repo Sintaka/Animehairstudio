@@ -180,22 +180,33 @@ function tipWidthSideForkT(lock, segmentIndex, splits, side) {
   return rightZipper != null ? 1 - rightZipper : segmentForkT;
 }
 
-// 发尖子骨骼蒙皮权重：每侧以自己 zipper 顶（1-height）为 0 边界，段内按 u 线性
-// 插值成斜线，斜线上方（靠根）权重 0（主骨骼 100%），下方线性爬到 1。边缘段
-// 只一侧有 zipper 时另一侧镜像同一 fork。
-function tipSegmentWeightAt(lock, segmentIndex, splits, t, u, lengthLoops) {
+function tipSegmentForkAt(segmentIndex, splits, u) {
   const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
-  if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return 0;
+  if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return null;
   const leftSplit = splits[segmentIndex - 1] || null;
   const rightSplit = splits[segmentIndex] || null;
   const fallback = leftSplit || rightSplit;
-  if (!fallback) return 0;
+  if (!fallback) return null;
   const leftFork = leftSplit ? 1 - Number(leftSplit.height ?? 0) : 1 - Number(fallback.height ?? 0);
   const rightFork = rightSplit ? 1 - Number(rightSplit.height ?? 0) : 1 - Number(fallback.height ?? 0);
   const b0 = boundaries[segmentIndex];
   const b1 = boundaries[segmentIndex + 1];
   const localU = THREE.MathUtils.clamp((u - b0) / Math.max(0.0001, b1 - b0), 0, 1);
-  const forkT = THREE.MathUtils.lerp(leftFork, rightFork, localU);
+  return THREE.MathUtils.lerp(leftFork, rightFork, localU);
+}
+
+// Capture ownership is intentionally binary. Each exposed panel-tip vertex belongs
+// entirely to its segment chain, while the exact fork row remains on the main chain.
+function tipSegmentWeightAt(lock, segmentIndex, splits, t, u) {
+  const forkT = tipSegmentForkAt(segmentIndex, splits, u);
+  return forkT != null && t > forkT + 0.000001 ? 1 : 0;
+}
+
+// Viewport deformation keeps a short continuous blend at the same slanted fork. This
+// prevents the render mesh from popping while keeping capture weights export-correct.
+function tipSegmentBlendAt(lock, segmentIndex, splits, t, u, lengthLoops) {
+  const forkT = tipSegmentForkAt(segmentIndex, splits, u);
+  if (forkT == null) return 0;
   const start = forkT + Math.max(1 / Math.max(1, lengthLoops || 10), 0.02);
   if (forkT >= 1 || t <= start) return 0;
   return THREE.MathUtils.clamp((t - start) / Math.max(0.0001, 1 - start), 0, 1);
@@ -719,16 +730,12 @@ function createPanelStrandGeometry(lock) {
   // (spread) that replaces the old absolute panelSplitGap displacement.
   const splitBones = splits.length ? cloneSplitBones(lock.splitBones, splits, lock) : [];
   const boundaries = [-1, ...splits.map((split) => split.position), 1];
-  // Procedural per-vertex weight framework (S1): each vertex carries
-  // [mainJointIndex, segmentIndex, weight]. The zipper boundaries decide the control
-  // region (segment assignment = hard by u); weight ramps smoothly from 0 at the
-  // segment's fork (deeper bounding zipper) to 1 at the tip. One tip = one sub-bone.
-  // 发尖子骨骼蒙皮权重：每侧以自己 zipper 顶（1-height）为 0 边界，段内按 u 线性
-  // 插值成斜线，斜线上方（靠根）权重 0（主骨骼 100%），下方线性爬到 1。边缘段
-  // 只一侧有 zipper 时另一侧镜像同一 fork。
+  // Per-vertex leaf weights are strict capture ownership, not a viewport blend:
+  // [mainJointIndex, segmentIndex, 0|1]. Render deformation uses segmentBlendAt.
   const panelWeights = [];
   const mainPointCount = latticeControlled ? 0 : lock.points.length;
-  const segmentWeightAt = (segment, t, u) => tipSegmentWeightAt(lock, segment, splits, t, u, lengthLoops);
+  const segmentWeightAt = (segment, t, u) => tipSegmentWeightAt(lock, segment, splits, t, u);
+  const segmentBlendAt = (segment, t, u) => tipSegmentBlendAt(lock, segment, splits, t, u, lengthLoops);
   const frames = [];
   let previousFrame = null;
   if (!latticeControlled) {
@@ -917,14 +924,15 @@ function createPanelStrandGeometry(lock) {
         // 平直 uv：发尖只切缝不位移——几何位置仍用含 tip 收窄的 u，uv 用 boundaries 平直 u（u 与 row 无关）
         const uFlat = THREE.MathUtils.lerp(boundaries[segment], boundaries[segment + 1], column / columns);
         const weight = segmentWeightAt(segment, t, u);
+        const blend = segmentBlendAt(segment, t, u);
         const frontPoint = panelPoint(row, u, 1, bone, segment);
         const backPoint = panelPoint(row, u, -1, bone, segment);
-        if (tipTransform && weight > 0) {
+        if (tipTransform && blend > 0) {
           const reference = sectionCenter || tipTransform.restCenter;
           const transformedFront = frontPoint.clone().sub(reference).applyQuaternion(tipTransform.dq).add(tipTransform.authoredCenter);
-          frontPoint.lerp(transformedFront, weight);
+          frontPoint.lerp(transformedFront, blend);
           const transformedBack = backPoint.clone().sub(reference).applyQuaternion(tipTransform.dq).add(tipTransform.authoredCenter);
-          backPoint.lerp(transformedBack, weight);
+          backPoint.lerp(transformedBack, blend);
         }
         frontRow.push(positions.length / 3);
         positions.push(frontPoint.x, frontPoint.y, frontPoint.z);
@@ -1053,6 +1061,7 @@ function createPanelStrandGeometry(lock) {
     splitForkT,
     tipWidthSideForkT,
     tipSegmentWeightAt,
+    tipSegmentBlendAt,
     tipWidthCommonForkT,
     tipWidthControlTs,
     tipWidthSpreadGap,
