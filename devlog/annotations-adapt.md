@@ -15,6 +15,11 @@
   - `modules/data/loc-zh.js` / `loc-ja.js`：各 +13 key。
   - `tests/wind-preview.test.mjs`（新）：12 用例（确定性/值域/根少动尖多动/intensity 缩放/−1 passthrough）。
   - `scripts/verify-wind-preview.mjs`（新）：headless Chrome + CDP 真实工程端到端（含 unpkg three 离线 vendor 拦截）。
+- **吹风预览 UI 浮动窗口化 + seed/StrandRandom 卡死修复（0.2.113，js 改动标注；bug 详见 bug-fixes.md #11）**：
+  - `index.html`：`#toggleWindPreview` 改**非 toggle 普通按钮**（去 aria-pressed 与 `#windPreviewMenuState`）；**删除** strands 组 `#windPreviewPanel`；**新增**浮动窗口 `<dialog id="windPreviewWindow" class="wind-preview-window">`（`#windPreviewDragHandle` 头部：标题 + `#windPreviewEnableButton`（aria-pressed + `<span>Wind Preview</span><span id="windPreviewEnableState" class="app-menu-state">Off</span>`）+ `#windPlayPauseButton` + `#windPreviewCloseButton`(X)；body 10 滑杆 id 与旧面板逐字一致）。
+  - `styles.css`：新增 `.wind-preview-window`（uvInspectorWindow 同款 fixed/z-index 30/resize both/`[open]` grid 两行）/`.wind-preview-head`（cursor move）/`.wind-preview-head-actions`（按钮 + `[aria-pressed="true"] .app-menu-state` 青色）/`.wind-preview-body`（overflow-y auto，滑杆复用 `.topology-control`/`.slider-value`）。
+  - `app.js`：DOM 查询换 `windPreviewWindow`/`windPreviewEnableButton`/`windPreviewEnableState`/`windPreviewDragHandle`；`setWindPreviewActive` UI 同步改启用按钮（active/aria-pressed/On-Off）+ 启用时自动 `windPreviewWindow.show()`；菜单按钮=窗口开关（关窗=停预览）；启用/关闭按钮接线；窗口拖拽（模块级 `windPreviewDrag`，uvInspector 同款，不入 store）；菜单点击排除只保留 `#toggleTurntable`；**bug 修复**：seed/strandRandom 变更且预览激活时改「先逐位恢复 → 删缓存 → 重建 → `windPreviewTick(0)`」（原只删缓存不重建 → 冻结/不恢复/再开进一步弯曲）。
+  - `scripts/verify-wind-preview.mjs`：UI 段重写（菜单开窗不自动启用 → 启用开关 → seed 回归 3 断言 → 关闭逐位恢复），15/15。
 
 - **UV 打包多线程化（0.2.110，js 改动标注）**：
   - `modules/io/uv-pack.js`：新增导出 `preparePack` / `sampleMaxK` / `refineMaxK` / `applyPackResult`（两段式拆解，同步 `packFamilies` 输出逐位不变，冻结回归 fixtures/uv-pack-reference.json）；`alpacaPackOccupancy` 内部「Uint8Array 栅格 + 积分图 + 每岛 O(R²) 重建」→「行区间表」（每行二分判空 + 插入合并，逐格等价；fitsAt 跨调用复用 rows；旧实现注释保留可切回）。

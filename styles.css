@@ -4820,7 +4820,8 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
 }
 
 #groupSettingsPanel > .topology-control,
-.sliders .topology-control {
+.sliders .topology-control,
+.wind-preview-body .topology-control {
   grid-template-columns: 104px minmax(0, 1fr) 24px;
 }
 
@@ -6196,7 +6197,8 @@ input[type="range"] {
   color: #ffaaa6 !important;
 }
 
-.sliders label {
+.sliders label,
+.wind-preview-body label {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr);
   align-items: center;
@@ -7192,6 +7194,84 @@ body.no-panels .tool-panel {
   line-height: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.wind-preview-window {
+  position: fixed;
+  top: 78px;
+  left: calc(50vw - 240px);
+  width: min(480px, calc(100vw - 32px));
+  height: min(520px, calc(100vh - 104px));
+  min-width: 320px;
+  min-height: 260px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  resize: both;
+  z-index: 30;
+  border: 1px solid #4a444f;
+  border-radius: 8px;
+  background: #201c23;
+  color: #ddd7e0;
+  box-shadow: 0 18px 48px #08060abf;
+}
+
+.wind-preview-window[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.wind-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  cursor: move;
+  user-select: none;
+  border-bottom: 1px solid #3c3640;
+  background: #262129;
+}
+
+.wind-preview-head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.wind-preview-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wind-preview-head-actions button {
+  min-height: 28px;
+  padding: 0 10px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wind-preview-head-actions #windPreviewCloseButton {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+}
+
+.wind-preview-head-actions #windPreviewEnableButton[aria-pressed="true"] .app-menu-state {
+  color: #83f7fc;
+}
+
+.wind-preview-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 @media (max-width: 860px) {

@@ -110,3 +110,9 @@
    - 根因②：`bindBySweepRow`（普通发丝/权重缺失兜底）整体写同索引对；leafWeights 路径对 weight=0（fork 以上主骨骼驱动区）也写同索引对。
    - 修复②（`smoothMainPair` 纯函数 + 三处接线）：每顶点真双影响——暴露区保持视口算法 `[main, split]×[1-w,w]`；其余改**平滑主链双影响** `[floor, floor+1]×[1-frac, frac]`（`frac = frac(t·(mainCount-1))`，t 由顶点 gridRow 推算，端盖 -1 行 → 根；链末端 main===next 自然退化）。实测 0056：**假双影响 0、真双影响 10489/10489、负槽位 1245**（仅 frac=0 行的 0 权重第二影响被 Houdini 压缩，语义正确——该行本来就该由该主骨骼驱动）、权重全部归一。算法分析见 devlog/weight-algorithm.md。
    - 补充（0.2.109，Houdini 实测 0057）：**暴露区蒙皮绑最近发尖链关节**——问题：0 个顶点引用 `split.${k}.tip.${i}` 关节（发尖链关节"没有权重"），暴露区全部绑在最根部的 `split.${k}`（位于 fork），末端行是 `[main@0, split_k@1]`（主骨骼占第一槽）。修复：新增 `tipChainNearestIndex(t, mainCount, forkT)` 纯函数——顶点行 t → 链位置 `ci = t·(mainCount-1)` → 暴露区（`t_i > forkT`）内最近链索引（`index===i0` 即链根 split 自身，否则 `split.${segment}.tip.${index}`），并按权重降序排列（主导影响放第一槽）。实测 0057：**1450 顶点绑定发尖链关节、996 顶点主导影响是发尖链关节**（原 0），末端行 `[split_0_tip_5@1, main@0]`、gridRow 15 `[tip_5@0.67, main_5@0.33]`；fork 邻接行仍绑链根（28/12/8 顶点），主驱动区不变（平滑主链混合）。
+
+11. **吹风预览：改 windSeed/windStrandRandom 后预览"卡死/不恢复"，再次开启进一步弯曲（0.2.113 修复）**
+   - 问题（0.2.112 引入）：预览激活时拖动 Seed 或 Strand Random 滑杆，动画冻结（"卡死"）；预览关闭后头发不恢复原样；再次开启预览头发**进一步弯曲**。
+   - 根因：滑杆 input 处理器（app.js ~17438-17443）在 windSeed/windStrandRandom 变更且预览激活时只执行 `windPreviewCache.delete(lock)`——缓存删了但**从不重建**（`buildWindPreviewCache` 只在 `setWindPreviewActive(true)` 调用）。后果链：① tick 取不到缓存 → 动画冻结；② 网格停留在上次变形状态、永不恢复（关闭时的逐位恢复因缓存已删成为无操作）；③ 再次开启时 rest 快照从"已弯曲"的几何上重建 → 新快照把弯曲当 rest → 继续弯曲（用户观察到的"进一步弯曲"）。
+   - 修复：该分支改为「**先逐位恢复 → 删缓存 → 重建（新参数）→ `windPreviewTick(0)` 立即变形一帧**」——恢复保证重建快照的 rest 是真实 rest（非上次变形残留），tick(0) 消除"冻结感"，重建保证新 perStrand/noise 立即生效（seed 变更仍保留 `windNoiseCache` 失效重建）。
+   - 验证：scripts/verify-wind-preview.mjs 新增 3 条回归断言（改 seed 后预览**仍激活**、几何**立即变形非冻结**、改回原值后**逐位还原**）——端到端 15/15（headless Chrome + CDP，Sussurro_v1_0046.ahs）。

@@ -2390,10 +2390,13 @@ const turntablePanel = document.querySelector("#turntablePanel");
 const turntableSpeedInput = document.querySelector("#turntableSpeed");
 const turntableSpeedValue = document.querySelector("#turntableSpeedValue");
 // Wind preview DOM (built by the parallel index.html work; queried defensively — every
-// element may be null until merge).
+// element may be null until merge). #toggleWindPreview is a plain menu button that opens
+// the floating #windPreviewWindow dialog; the enable toggle lives inside the window.
 const toggleWindPreviewButton = document.querySelector("#toggleWindPreview");
-const windPreviewMenuState = document.querySelector("#windPreviewMenuState");
-const windPreviewPanel = document.querySelector("#windPreviewPanel");
+const windPreviewWindow = document.querySelector("#windPreviewWindow");
+const windPreviewEnableButton = document.querySelector("#windPreviewEnableButton");
+const windPreviewEnableState = document.querySelector("#windPreviewEnableState");
+const windPreviewDragHandle = document.querySelector("#windPreviewDragHandle");
 const windPlayPauseButton = document.querySelector("#windPlayPauseButton");
 const windPreviewCloseButton = document.querySelector("#windPreviewCloseButton");
 const windSliderDefs = [
@@ -4171,7 +4174,7 @@ function setTurntableActive(enabled) {
 // and bitwise-restored from the rest snapshots when the preview is turned off.
 const windPreviewCache = new WeakMap();
 // Noise is rebuilt lazily whenever windSeed changes (noise is stable per seed).
-let windNoiseCache = { seed: null, noise: null };
+const windNoiseCache = { seed: null, noise: null };
 
 const WIND_VALUE_FORMATS = {
   windDirection: (value) => `${Math.round(Number(value))}°`,
@@ -4241,7 +4244,8 @@ function windParamsFromState(state) {
 function windNoiseForSeed(seed) {
   if (!windNoiseCache.noise || windNoiseCache.seed !== seed) {
     // createNoise4D is re-exported by wind-preview for callers (vendored simplex noise).
-    windNoiseCache = { seed, noise: windPreview.createNoise4D(windPreview.mulberry32(seed)) };
+    windNoiseCache.seed = seed;
+    windNoiseCache.noise = windPreview.createNoise4D(windPreview.mulberry32(seed));
   }
   return windNoiseCache.noise;
 }
@@ -4368,13 +4372,13 @@ function setWindPreviewActive(active) {
     // windPlaying is intentionally NOT reset: like the Turntable (active = moving), the
     // preview resumes the last play state on reactivation (store default is playing).
   }
-  if (toggleWindPreviewButton) {
-    toggleWindPreviewButton.classList.toggle("active", active);
-    toggleWindPreviewButton.setAttribute("aria-pressed", String(active));
+  if (windPreviewEnableButton) {
+    windPreviewEnableButton.classList.toggle("active", active);
+    windPreviewEnableButton.setAttribute("aria-pressed", String(active));
   }
-  if (windPreviewMenuState) windPreviewMenuState.textContent = active ? "On" : "Off";
-  if (windPreviewPanel) windPreviewPanel.classList.toggle("hidden", !active);
+  if (windPreviewEnableState) windPreviewEnableState.textContent = active ? "On" : "Off";
   if (windPlayPauseButton) windPlayPauseButton.textContent = state.windPlaying ? "Pause" : "Play";
+  if (active && windPreviewWindow && !windPreviewWindow.open) windPreviewWindow.show();
   if (active) windPreviewTick(0);
 }
 
@@ -17407,7 +17411,7 @@ recentProjectsMenu.addEventListener("click", async (event) => {
 });
 appMenuDropdowns.forEach((menu) => {
   menu.addEventListener("click", (event) => {
-    if (event.target.closest("button") && !event.target.closest("#toggleTurntable") && !event.target.closest("#toggleWindPreview")) closeAppMenus();
+    if (event.target.closest("button") && !event.target.closest("#toggleTurntable")) closeAppMenus();
   });
 });
 toggleTurntableButton.addEventListener("click", () => setTurntableActive(!viewportState.state.turntableActive));
@@ -17416,12 +17420,25 @@ turntableSpeedInput.addEventListener("input", () => {
   turntableSpeedValue.textContent = `${viewportState.state.turntableSpeed.toFixed(1)}x`;
 });
 setTurntableActive(false);
-// --- Wind preview wiring (mirrors the Turntable wiring above) ---
+// --- Wind preview wiring (floating window; enabling is a separate toggle inside it) ---
 if (toggleWindPreviewButton) {
-  toggleWindPreviewButton.addEventListener("click", () => setWindPreviewActive(!windStore.state.windPreviewActive));
+  toggleWindPreviewButton.addEventListener("click", () => {
+    if (windPreviewWindow && windPreviewWindow.open) {
+      setWindPreviewActive(false);
+      windPreviewWindow.close();
+    } else if (windPreviewWindow) {
+      windPreviewWindow.show();
+    }
+  });
+}
+if (windPreviewEnableButton) {
+  windPreviewEnableButton.addEventListener("click", () => setWindPreviewActive(!windStore.state.windPreviewActive));
 }
 if (windPreviewCloseButton) {
-  windPreviewCloseButton.addEventListener("click", () => setWindPreviewActive(false));
+  windPreviewCloseButton.addEventListener("click", () => {
+    setWindPreviewActive(false);
+    if (windPreviewWindow) windPreviewWindow.close();
+  });
 }
 if (windPlayPauseButton) {
   windPlayPauseButton.addEventListener("click", () => {
@@ -17434,16 +17451,28 @@ windSliders.forEach(({ key, input, value }) => {
   input.addEventListener("input", () => {
     windStore.state[key] = Number(input.value);
     if (value) value.textContent = (WIND_VALUE_FORMATS[key] || ((v) => String(Math.round(Number(v) * 100) / 100)))(windStore.state[key]);
-    if (key === "windSeed") windNoiseCache = { seed: null, noise: null }; // seed change → rebuild noise lazily
+    if (key === "windSeed") { windNoiseCache.seed = null; windNoiseCache.noise = null; } // seed change → rebuild noise lazily
     if (key === "windSeed" || key === "windStrandRandom") {
-      // per-strand values are baked into the cache → rebuild all caches on next tick
+      // Restore → delete → rebuild → tick. The cache bakes in windSeed/windStrandRandom,
+      // so a bare delete froze the preview and left the mesh deformed (the next enable
+      // then re-snapshotted rest from the deformed pose, compounding the bend). Restoring
+      // first guarantees the rebuilt rest snapshot is the true rest, not last frame's
+      // deformed buffer.
       if (windStore.state.windPreviewActive) {
-        for (const lock of locks) windPreviewCache.delete(lock);
+        locks.forEach((lock) => {
+          const cache = windPreviewCache.get(lock);
+          if (cache) windRestoreLockGeometry(lock, cache);
+        });
+        locks.forEach((lock) => windPreviewCache.delete(lock));
+        locks.forEach((lock) => {
+          if (lock?.mesh?.geometry) buildWindPreviewCache(lock);
+        });
+        windPreviewTick(0); // deform one frame with the new parameters
       }
     }
   });
 });
-setWindPreviewActive(false); // normalize panel/menu state at startup (no-op restore)
+setWindPreviewActive(false); // normalize window/enable state at startup (no-op restore)
 radialMenuApi.setRadialMenusEnabled(ui.state.radialMenusEnabled, { persist: false });
 clumpProceduralApi.setProceduralDrawExperimentalEnabled(draw.state.proceduralDrawExperimentalEnabled, { persist: false });
 setMultiCameraExperimentalEnabled(multiCameraState.state.experimentalEnabled, { persist: false });
@@ -18163,6 +18192,40 @@ uvInspectorDragHandle.addEventListener("pointerup", (event) => {
 uvInspectorDragHandle.addEventListener("pointercancel", () => {
   sculptState.state.uvInspectorDrag = null;
 });
+// Wind preview window drag — same pattern as the UV inspector above; drag state lives in
+// sculptState (runtime field, never serialized) so app.js gains no new global `let`.
+if (windPreviewDragHandle && windPreviewWindow) {
+  windPreviewDragHandle.addEventListener("pointerdown", (event) => {
+    if (event.target.closest("button")) return;
+    const bounds = windPreviewWindow.getBoundingClientRect();
+    sculptState.state.windPreviewDrag = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      left: bounds.left,
+      top: bounds.top
+    };
+    windPreviewDragHandle.setPointerCapture(event.pointerId);
+  });
+  windPreviewDragHandle.addEventListener("pointermove", (event) => {
+    const drag = sculptState.state.windPreviewDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const maxLeft = Math.max(8, window.innerWidth - windPreviewWindow.offsetWidth - 8);
+    const maxTop = Math.max(8, window.innerHeight - windPreviewWindow.offsetHeight - 8);
+    const left = THREE.MathUtils.clamp(drag.left + event.clientX - drag.x, 8, maxLeft);
+    const top = THREE.MathUtils.clamp(drag.top + event.clientY - drag.y, 8, maxTop);
+    windPreviewWindow.style.left = `${left}px`;
+    windPreviewWindow.style.top = `${top}px`;
+  });
+  windPreviewDragHandle.addEventListener("pointerup", (event) => {
+    if (sculptState.state.windPreviewDrag?.pointerId !== event.pointerId) return;
+    windPreviewDragHandle.releasePointerCapture(event.pointerId);
+    sculptState.state.windPreviewDrag = null;
+  });
+  windPreviewDragHandle.addEventListener("pointercancel", () => {
+    sculptState.state.windPreviewDrag = null;
+  });
+}
 [lightAzimuthInput, lightElevationInput].forEach((input) => {
   input.addEventListener("input", updateLightAngleFromInputs);
 });

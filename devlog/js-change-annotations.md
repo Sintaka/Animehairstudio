@@ -22,6 +22,14 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（0.2.113）
+
+> 吹风预览 UI 浮动窗口化 + seed/StrandRandom 卡死 bug 修复（分支 DHS/develop，3 子智能体并行 + 主进程 merge；详见 annotations-adapt.md 吹风条目 + bug-fixes.md #11 + wind-preview-plan.md §0.2）：
+> - **UI**：`index.html`——Preview 菜单 `#toggleWindPreview` 改非 toggle 普通按钮（去 aria-pressed 与 `#windPreviewMenuState` span）；删除 strands 组 `#windPreviewPanel`；新增浮动窗口 `<dialog id="windPreviewWindow">`（`#windPreviewDragHandle` 头部 + `#windPreviewEnableButton`（aria-pressed + `#windPreviewEnableState`）+ `#windPlayPauseButton` + `#windPreviewCloseButton` + 10 滑杆（id 不变））。`styles.css` 新增 `.wind-preview-window`/`.wind-preview-head`/`.wind-preview-head-actions`/`.wind-preview-body`（uvInspectorWindow 模式，滑杆复用 `.topology-control`/`.slider-value`）。词典无新增 key（全复用既有）。
+> - **app.js**：DOM 查询换新元素；`setWindPreviewActive` 同步启用按钮 + 启用时自动 `windPreviewWindow.show()`；菜单按钮=窗口开关（关闭窗口=停预览）；启用/关闭按钮接线；窗口拖拽（模块级 `windPreviewDrag`，uvInspector 同款，不入 store）；菜单点击排除只保留 `#toggleTurntable`；**bug 修复**（滑杆 input 处理器）：seed/strandRandom 变更且预览激活时改「先逐位恢复 → 删缓存 → 重建 → `windPreviewTick(0)`」（原只删缓存不重建 → 冻结/不恢复/再次开启进一步弯曲）。
+> - **scripts/verify-wind-preview.mjs**：UI 段重写（菜单开窗不自动启用 → 启用开关 → seed 回归 3 断言 → 关闭逐位恢复 rest）。
+> - 回归：单测 257/257（dom-contract 105/105；缓存号 `20260821-1` 与 APP_VERSION 0.2.113 冻结断言同步）、端到端 15/15。
+
 ## 最近更新（0.2.80）
 
 > 两个 bug 修复（分支 0.2.69-bugfix 续用，并行 Codex 子智能体 + 主管合并；headless 复现脚本 scripts/repro-0045-bugs.mjs）：

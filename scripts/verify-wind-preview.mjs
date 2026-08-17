@@ -3,7 +3,9 @@
 //   1) seam 启用预览 → 断言网格位置发生变形、尖部位移 > 根部位移（根少动尖多动）；
 //   2) 确定性：同 windTime 下两次变形结果逐位一致；
 //   3) 关闭预览 → 位置/法线/切线逐位恢复（非破坏）；
-//   4) UI 路径：#toggleWindPreview 菜单按钮切换 + #windPreviewPanel 显示/隐藏。
+//   4) UI 路径：菜单按钮开窗（不自动启用预览）→ 窗口内启用开关 → seed 滑杆回归
+//      （改 seed 预览不卡死/不关闭、改回原值后逐位还原 → bug 修复验证）→
+//      关闭按钮 → 窗口关闭 + 预览停 + 位置逐位恢复 rest。
 // Run: node scripts/verify-wind-preview.mjs [--port 8080] [--cdp-port 9224] [--ahs ...]
 import http from "node:http";
 import fs from "node:fs";
@@ -199,28 +201,89 @@ try {
     check("restore bit-exact", suite.restoredExact === true);
   }
 
-  // UI 路径：菜单按钮
+  // UI 路径：菜单按钮开窗（不自动启用）→ 窗口内启用开关 → seed 滑杆回归（bug 修复）→ 关闭恢复
   const ui = await evalJS(cdp, `(async () => {
     try {
-      const btn = document.querySelector('#toggleWindPreview');
-      if (!btn) return { ok: false, errors: ['#toggleWindPreview missing'] };
-      const panel = document.querySelector('#windPreviewPanel');
-      if (!panel) return { ok: false, errors: ['#windPreviewPanel missing'] };
-      btn.click();
+      const out = {};
+      const menuBtn = document.querySelector('#toggleWindPreview');
+      const win = document.querySelector('#windPreviewWindow');
+      const enableBtn = document.querySelector('#windPreviewEnableButton');
+      const enableState = document.querySelector('#windPreviewEnableState');
+      const closeBtn = document.querySelector('#windPreviewCloseButton');
+      const seedInput = document.querySelector('#windSeedInput');
+      const { windPreviewApi, windState, locks } = window.__ahsTest;
+      if (!menuBtn || !win || !enableBtn || !enableState || !closeBtn || !seedInput || !windPreviewApi || !windState || !locks) {
+        return { ok: false, errors: ['wind UI element or seam missing'] };
+      }
+      const meshes = locks.filter(l => l.mesh && l.mesh.geometry && l.mesh.geometry.attributes && l.mesh.geometry.attributes.position && l.mesh.geometry.userData && l.mesh.geometry.userData.gridRowIndices).map(l => l.mesh);
+      if (!meshes.length) return { ok: false, errors: ['no meshes with gridRowIndices'] };
+      const snap = (ms) => ms.map(m => m.geometry.attributes.position.array.slice());
+      const posEq = (a, b) => { for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 1e-9) return false; return true; };
+      // 起始状态归一：前面的 seam 套件启用过预览（启用会自动开窗），这里重置为
+      // 「预览关 + 窗口关」，保证菜单开窗断言不受前置状态影响。
+      if (windState.windPreviewActive) windPreviewApi.setWindPreviewActive(false);
+      if (win.open) win.close();
+      // 初始 rest（此时预览未激活，几何为真实 rest）
+      const restP = snap(meshes);
+      // 1) 菜单按钮 → 打开浮动窗口；打开不自动启用预览
+      menuBtn.click();
       await new Promise(r => setTimeout(r, 300));
-      const state = document.querySelector('#windPreviewMenuState')?.textContent || '';
-      const shown = !panel.classList.contains('hidden');
-      const pressed = btn.getAttribute('aria-pressed');
-      btn.click(); // 关闭
+      out.windowOpened = win.open;
+      out.autoEnabled = windState.windPreviewActive;
+      if (!win.open) return { ok: false, errors: ['window not open after menu click'] };
+      if (windState.windPreviewActive) return { ok: false, errors: ['preview auto-enabled on window open'] };
+      // 2) 窗口内启用开关
+      enableBtn.click();
       await new Promise(r => setTimeout(r, 300));
-      const shownAfter = !panel.classList.contains('hidden');
-      return { ok: true, state, pressed, shown, shownAfter };
+      out.active = windState.windPreviewActive;
+      out.pressed = enableBtn.getAttribute('aria-pressed');
+      out.stateText = enableState.textContent;
+      if (!windState.windPreviewActive || out.pressed !== 'true' || out.stateText !== 'On') {
+        return { ok: false, errors: ['enable failed: active=' + out.active + ' pressed=' + out.pressed + ' state=' + out.stateText] };
+      }
+      // 冻结时间，保证回归断言逐位可比
+      windState.windPlaying = false;
+      windPreviewApi.tickOnce();
+      const snapA = snap(meshes);
+      // 3) 回归（bug：预览激活时改 seed → 缓存被删不重建 → 卡死/不恢复/再次开启进一步弯曲）
+      const origSeed = seedInput.value;
+      seedInput.value = '999';
+      seedInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 200));
+      out.stillActive = windState.windPreviewActive;
+      const snapB = snap(meshes);
+      out.shapeChanged = snapB.some((p, i) => !posEq(p, snapA[i]));
+      // 改回原值 → 无残留累积，逐位回到 A
+      seedInput.value = origSeed;
+      seedInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 200));
+      const snapC = snap(meshes);
+      out.backToA = snapC.every((p, i) => posEq(p, snapA[i]));
+      if (!out.stillActive) return { ok: false, errors: ['preview deactivated on seed change (bug regression)'] };
+      if (!out.shapeChanged) return { ok: false, errors: ['geometry frozen on seed change (bug regression)'] };
+      if (!out.backToA) return { ok: false, errors: ['residual deformation after seed round-trip (bug regression)'] };
+      // 4) 关闭按钮 → 窗口关闭 + 预览停 + 位置逐位恢复 rest
+      closeBtn.click();
+      await new Promise(r => setTimeout(r, 300));
+      out.windowClosed = !win.open;
+      out.inactive = !windState.windPreviewActive;
+      const afterClose = snap(meshes);
+      out.restored = afterClose.every((p, i) => posEq(p, restP[i]));
+      if (!out.windowClosed || !out.inactive || !out.restored) {
+        return { ok: false, errors: ['close failed: closed=' + out.windowClosed + ' inactive=' + out.inactive + ' restored=' + out.restored] };
+      }
+      out.ok = true;
+      return out;
     } catch (e) { return { ok: false, errors: [String(e && e.message || e)] }; }
   })()`);
-  check("Preview menu toggle ok", ui.ok, ui.errors ? ui.errors.join(";") : `state=${ui.state} pressed=${ui.pressed} shown=${ui.shown}->${ui.shownAfter}`);
+  check("wind UI flow ok", ui.ok, ui.errors ? ui.errors.join(";") : `window ${ui.windowOpened}->${ui.windowClosed} active=${ui.active}->${ui.inactive} restored=${ui.restored}`);
   if (ui.ok) {
-    check("menu shows On when active", ui.state === "On" && ui.pressed === "true" && ui.shown === true);
-    check("menu shows Off when closed", ui.shownAfter === false);
+    check("menu opens window without enabling", ui.windowOpened === true && ui.autoEnabled === false);
+    check("enable toggle turns preview on", ui.active === true && ui.pressed === "true" && ui.stateText === "On");
+    check("seed change keeps preview active (regression)", ui.stillActive === true);
+    check("seed change deforms, not frozen (regression)", ui.shapeChanged === true);
+    check("seed round-trip restores bit-exact (regression)", ui.backToA === true);
+    check("close restores rest bit-exact", ui.restored === true);
   }
 
   const exceptions = cdp.events.filter((e) => e.method === "Runtime.exceptionThrown").length;

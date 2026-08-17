@@ -1,9 +1,9 @@
-﻿// sculpt-edit-store.js — sculpt / edit / drag / tool interaction state (refactor 3c-final).
+// sculpt-edit-store.js — sculpt / edit / drag / tool interaction state (refactor 3c-final).
 import { createSceneStore } from "../core/scene-store.js?v=20260809-1";
 export function createSculptEditStore() {
   const store = createSceneStore({
     uniformScaleDrag: null, transformScaleDrag: null, transformPrecisionDrag: null, selectionRemoveHeld: false,
-    uvInspectorDrag: null, referenceScaleDrag: null, referenceOverlayDrag: null, referenceCropDrag: null,
+    uvInspectorDrag: null, windPreviewDrag: null, referenceScaleDrag: null, referenceOverlayDrag: null, referenceCropDrag: null,
     sculptMoveStroke: null, sculptBrushShiftSmoothHeld: false, activeHandleEdit: null, activeLatticeMultiEdit: null,
     transformDragging: false, sculptBrushGeometryFrame: null, objectSpaceEditing: true, hierarchyEditing: false,
     mirrorXEditing: false, proportionalEditing: false, proportionalRootLocked: false, headSetupEditing: false,

@@ -1,13 +1,12 @@
 # 吹风预览系统计划(程序化快速预览 + 后续碰撞路线图)
 
-> 状态:**已实施(0.2.112,见 §0.1 实施记录)**;碰撞路线图(§8)未实施。
+> 状态:**已实施(0.2.112,见 §0.1 实施记录);UI 浮动窗口化 + seed 卡死修复(0.2.113,见 §0.2)**;碰撞路线图(§8)未实施。
 > 版本基准:DHS/develop @ 0.2.112。复查更新:开关入 **Preview 菜单**(§6),依赖 dom-contract 清理先行(0.2.111)。
 > 目标:AnimeHairStudio 内实现「根少动、发尖多动」的程序化吹风预览——非物理模拟、非导出动画,
 > 纯视口显示层变形;后续碰撞效果另立路线图(见 §8)。
 > 调研:子智能体并行调研(噪波/Unity 低成本实现 + 碰撞代理论文/Blender 源码),结论已并入本文。
 
 ## 0.1 实施记录(0.2.112,已落地)
-
 - **交付**(3 子智能体并行 + 主进程 merge):
   - `modules/geometry/wind-preview.js`(新):纯函数核心——mulberry32 / perStrandWind(含 intensity=windStrandRandom 缩放,0=全发丝一致)/ fbm4 / windAngleAt / windAxis / windRowQuats(根到尖累积四元数)/ slerpQuat / rotateVec3 / deformVertexData(原地变形,row=−1 顶点 passthrough);
   - `js/vendor/simplex-noise.js`(新):simplex-noise 4.0.3 MIT 单文件 ESM vendor(createNoise4D(mulberry32(seed)) 确定性);**注意 npm 侧 open-simplex-noise 是 CJS 不适用,且 --no-save 安装会剪掉 node_modules 里未声明的 three(踩坑,已重装 three@0.165.0)**;
@@ -19,6 +18,18 @@
 - **实测**:Sussurro_v1_0046.ahs 26 locks/9685 顶点,启用后 9091 顶点变形、**根行位移 0、尖部主导**(totalDisp 573 vs root 0);暂停时逐位确定;关闭逐位恢复;菜单/面板切换正常;0 页面异常 — **11/11**。
 - **参数**:方向/强度/频率/湍流/湍流尺度/阵风强度/阵风频率/根部指数/发丝随机/种子(默认见 §5)。
 - **踩坑**:① 主进程 PowerShell 数组拍平 bug(`@(@('a','b'))` 单元素嵌套被展开成字符串对,`$p[0]` 取到 `.` → 全文件 `.`→`/` 替换,index.html 被毁一次,已从 HEAD 恢复并重放改动)——**写文件用 `$t.Replace` 时逐对验证,勿用数组下标取对**;② `npm install --no-save` 会剪除未声明依赖(three);③ unpkg 在部分时段 DNS 不可达 → 验收脚本本地 vendor three(Fetch 拦截)。
+
+## 0.2 实施记录(0.2.113,UI 浮动窗口化 + seed/StrandRandom 卡死修复)
+
+- **背景**:0.2.112 交付后用户反馈——① Preview 菜单 toggle 与 strands 组参数面板"污染"非预览工作区,要求改为非 toggle 按钮 + 全部放进浮动面板;② 修改 Strand Random / Seed 后预览"卡死或直接关闭"、头发不恢复,再次点击进一步弯曲。
+- **交付**(3 子智能体并行 + 主进程 merge,文件不相交):
+  - `index.html`(子智能体):`#toggleWindPreview` 改非 toggle 普通按钮;删除 `#windPreviewPanel`;新增浮动窗口 `<dialog id="windPreviewWindow">`(头部 `#windPreviewDragHandle` + 启用开关 `#windPreviewEnableButton`/`#windPreviewEnableState` + Pause/Close;body 10 滑杆 id 不变);
+  - `styles.css`(子智能体):`.wind-preview-window`(uvInspectorWindow 同款)/`.wind-preview-head`/`.wind-preview-head-actions`/`.wind-preview-body`,滑杆复用 `.topology-control`/`.slider-value`;
+  - `app.js`(子智能体):新 DOM 接线、菜单按钮=窗口开关(关窗=停预览)、启用/关闭按钮、窗口拖拽(模块级变量不入 store)、菜单点击排除只留 Turntable;**bug 修复**(滑杆 input):seed/strandRandom 变更且激活时改「先逐位恢复 → 删缓存 → 重建 → tick(0)」(原只删不建 → 冻结/不恢复/再开从变形态建快照继续弯曲);
+  - `scripts/verify-wind-preview.mjs`(子智能体):UI 段重写 + 3 条 seed 回归断言。
+- **实测**:Sussurro_v1_0046.ahs 端到端 **15/15**——菜单开窗不自动启用、启用开关正常、**改 seed 预览仍激活/立即变形非冻结/改回原值逐位还原**、关闭逐位恢复 rest、0 页面异常;单测 257/257(dom-contract 105/105,缓存号/版本号冻结断言同步)。
+- **版本**:0.2.113;入口缓存号 20260821-1。
+- **踩坑**:dom-contract 测试冻结旧缓存号(`?v=20260816-21`/`?v=20260817-2`)与 APP_VERSION(0.2.112)断言,bump 时必须同步测试(共 5 处),否则测试红——「?v= 定点刷新」教训的测试侧延伸。
 
 ## 0. 复查记录(0.2.111,未执行)
 
