@@ -1,10 +1,20 @@
-﻿# 日常适配（保存/导出、语言、导航、笔刷、拖放、材质、快捷键等）
+# 日常适配（保存/导出、语言、导航、笔刷、拖放、材质、快捷键等）
 
 > 由 devlog/js-change-annotations.md 拆分而来；入口见 devlog/README.md。
 
 > 相关函数/关键词：saveHairProjectQuickly、exportHairProjectQuickly、File System Access API、localization.js、Navigation style、sculpt-brush.js、server.js、快捷键
 
 > 说明：条目按子系统归类，同一开发阶段（2.x / Phase 2.15 等）的条目可能分散到多个文件，请按关键词跳读。
+
+- **UV 打包多线程化（0.2.110，js 改动标注）**：
+  - `modules/io/uv-pack.js`：新增导出 `preparePack` / `sampleMaxK` / `refineMaxK` / `applyPackResult`（两段式拆解，同步 `packFamilies` 输出逐位不变，冻结回归 fixtures/uv-pack-reference.json）；`alpacaPackOccupancy` 内部「Uint8Array 栅格 + 积分图 + 每岛 O(R²) 重建」→「行区间表」（每行二分判空 + 插入合并，逐格等价；fitsAt 跨调用复用 rows；旧实现注释保留可切回）。
+  - `modules/io/uv-pack-async.js`（新）：`createPackAsync({createWorker, workers, timeoutMs})` → `{packFamiliesAsync, dispose}` + 懒建单例 `packFamiliesAsync`——阶段 1 64 个 sample 任务（8 seed × 8 块 × 16 采样索引）+ 阶段 2 8 个 refine 任务经 Worker 池分发，确定性合并（每 seed 块 max → 全局 k 最大、seed 并列取早）与同步逐位一致；boxes 用 Float64Array（Float32 会在栅格 ceil 边界翻转 fitsAt）；克隆工作副本成功才拷回（失败零污染）；无 Worker/池失败回退同步；任务异常 reject + dispose。
+  - `modules/io/uv-pack-worker.js`（新）：module worker（浏览器 self / node worker_threads parentPort 双环境），零依赖 import ./uv-pack.js（无 ?v=，node 兼容），sample/refine 消息协议。
+  - `modules/io/project-files.js`：import 换 `packFamiliesAsync`（?v=20260817-1）；`packUnfoldedUv` / `buildUnfoldedMeshes` / `buildHairObj` / `buildHairUsda` 改 async，4 处调用点 await。
+  - `app.js`：`refreshUvCheckerPreview` 改 async（await buildUnfoldedMeshes，按钮 disabled + 「Packing…」+ finally 恢复，异常/空结果恢复状态文本）；`?ahstest=1` 测试 seam 暴露 `fileApi`；project-files.js import 缓存号 20260817-1。
+  - `index.html`：app.js 引用缓存号 20260817-1。
+  - `tests/uv-pack.test.mjs`：+冻结回归（fixture 逐位）+ sampleMaxK/refineMaxK 与 findMaxKAlpaca 一致性；`tests/uv-pack-async.test.mjs`（新）：worker_threads 真实池逐位一致 / 回退 / dispose 共 8 用例。
+  - `scripts/`：bench-uv-pack.mjs 追加同步 vs 异步对照；新增 check-uv-bitidentity.mjs / diff-occupancy.mjs / smoke-async-contract.mjs / verify-uv-pack-real.mjs（headless Chrome + CDP 真实工程端到端）。
 
 - **app.js**
 

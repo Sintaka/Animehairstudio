@@ -482,41 +482,122 @@ export function alpacaPackTurbo(items, { gap = PACK_GAP, sort = "maxSide" } = {}
 
 // ---- alpaca occupancy（占位栅格 L 形扫描；思路复刻 Blender 的 find_best_fit_for_island，
 // 参考 Nöll & Stricker 2011 论文的 occupancy + L-shape + scan_line 增长）----
-// 核心：R×R 占位栅格 + 积分图判空；scanLine 从 0 逐岛增长，代表当前「方形边界」
-// （bbox = scanLine×scanLine）。每个岛两阶段放置：
+// 核心：R×R 占位栅格 + 行区间表判空（每行一个已占 x-闭开区间 [start,end) 的升序不重叠表，
+// 替代原 Uint8Array 栅格 + 积分图 + 每次放置后全量重建积分图 O(R²) 的做法：判空
+// O(ch·logR)（每行二分查与 [cx, cx+cw) 的重叠）、标记 O(ch·区间合并)——扫描顺序（行主序
+// L 形：先顶边 y=sl-ch、x 0→sl-cw 再右边 x=sl-cw、y 0→sl-ch）、first-fit、overflow 语义、
+// cw/ch = ceil((w+gap)/cell) 量化与旧实现逐格等价 → 放置结果逐位一致。旧实现（栅格+积分图）
+// 注释保留在下方。scanLine 从 0 逐岛增长，代表当前「方形边界」（bbox = scanLine×scanLine）。
+// 每个岛两阶段放置：
 //   阶段 1 —— sl ∈ [minSL, scanLine]：L 形扫描（先顶边 y=sl-ch、x 0→sl-cw，再右边
-//     x=sl-cw、y 0→sl-ch），用积分图 O(1) 判 [x,x+cw)×[y,y+ch) 全空，找到即放置
+//     x=sl-cw、y 0→sl-ch），用行区间表判 [x,x+cw)×[y,y+ch) 全空，找到即放置
 //     （need = max(x+cw, y+ch) ≤ scanLine → 填内部空隙，不增长边界）；
 //   阶段 2 —— 无内部空位：sl 从 scanLine+1 逐步增长，第一个可行位置即 need 最小，
 //     放置后 scanLine = max(scanLine, sl)（方形边界外扩，维持 aspect≈1）。
 // 岛贴「顶边+右边」铺、阶段 1 填掉 L 形缺口 → 方形 bbox + 高填充。
 // items: [{ id, island, width, height }]（width/height 为已乘 k 的 bbox 尺寸）；
 // 返回 { placements: [{id, island, x, y}], extentU: scanLine/R, extentV: scanLine/R, overflow }。
-export function alpacaPackOccupancy(items, { gap = PACK_GAP, resolution = 256, sort = "maxSide", order } = {}) {
-  const cell = 1 / resolution;
-  const grid = new Uint8Array(resolution * resolution); // 0=空 1=占
-  const iw = resolution + 1;
-  const integral = new Int32Array(iw * iw);
-  const rebuildIntegral = () => {
-    for (let y = 0; y < resolution; y += 1) {
-      let row = 0;
-      const gy = y * resolution;
-      const iy = y * iw;
-      const iy1 = (y + 1) * iw;
-      for (let x = 0; x < resolution; x += 1) {
-        row += grid[gy + x];
-        integral[iy1 + x + 1] = integral[iy + x + 1] + row;
-      }
+
+// 【已注释：旧占位栅格实现（Uint8Array 栅格 + 积分图 + 每次放置后全量重建积分图 O(R²)；
+// 现由行区间表取代，判空/标记逐格等价，可切回）】
+/*
+const cell = 1 / resolution;
+const grid = new Uint8Array(resolution * resolution); // 0=空 1=占
+const iw = resolution + 1;
+const integral = new Int32Array(iw * iw);
+const rebuildIntegral = () => {
+  for (let y = 0; y < resolution; y += 1) {
+    let row = 0;
+    const gy = y * resolution;
+    const iy = y * iw;
+    const iy1 = (y + 1) * iw;
+    for (let x = 0; x < resolution; x += 1) {
+      row += grid[gy + x];
+      integral[iy1 + x + 1] = integral[iy + x + 1] + row;
     }
-  };
-  // O(1) 判断 [cx, cx+cw) × [cy, cy+ch) 区域全空（积分图区域和 == 0）
+  }
+};
+// O(1) 判断 [cx, cx+cw) × [cy, cy+ch) 区域全空（积分图区域和 == 0）
+const regionEmpty = (cx, cy, cw, ch) => {
+  const x1 = cx; const y1 = cy; const x2 = cx + cw; const y2 = cy + ch;
+  return integral[y2 * iw + x2] - integral[y1 * iw + x2] - integral[y2 * iw + x1] + integral[y1 * iw + x1] === 0;
+};
+const markOccupied = (cx, cy, cw, ch) => {
+  for (let y = cy; y < cy + ch; y += 1) grid.fill(1, y * resolution + cx, y * resolution + cx + cw);
+  rebuildIntegral();
+};
+*/
+
+// 行区间表工具：rows = 每行一个扁平升序不重叠闭开区间表 [s0,e0, s1,e1, ...]
+function makeRows(resolution) {
+  const rows = new Array(resolution);
+  for (let r = 0; r < resolution; r += 1) rows[r] = [];
+  return rows;
+}
+
+// 该行是否有区间与 [cx, cx+cw) 重叠（闭开区间）：区间按 start 升序且互不重叠（end 亦单调
+// 不减）→ 二分找第一个 start >= cx+cw 的区间（lower_bound），其前一个区间若存在且
+// end > cx 即重叠（更早区间都在它之前结束，无需再查）
+function rowOverlaps(row, cx, cw) {
+  const limit = cx + cw;
+  let lo = 0;
+  let hi = row.length >> 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (row[mid << 1] < limit) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo > 0 && row[(lo << 1) - 1] > cx;
+}
+
+// 往行区间表插入闭开区间 [s,e)，与重叠/相邻（end==s 或 start==e）区间合并，保持升序不重叠
+function insertRowInterval(row, s, e) {
+  let lo = 0;
+  let hi = row.length >> 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (row[mid << 1] < s) lo = mid + 1;
+    else hi = mid;
+  }
+  let from = lo; // 第一个 start >= s 的区间
+  if (from > 0 && row[(from << 1) - 1] >= s) {
+    from -= 1; // 与前一区间重叠/相邻 → 合并区从它开始
+    s = row[from << 1];
+    if (row[(from << 1) + 1] > e) e = row[(from << 1) + 1]; // 左侧区间的 end 也要并入
+  }
+  // 从 from 起向后吞并所有 start <= e 的区间（含相邻 start == e；from 自身也要检查——
+  // 无左合并时新区间可能与 from 区间重叠/相邻）
+  let count = 0;
+  let idx = from << 1;
+  const n = row.length >> 1;
+  while (from + count < n && row[idx] <= e) {
+    if (row[idx + 1] > e) e = row[idx + 1];
+    count += 1;
+    idx += 2;
+  }
+  row.splice(from << 1, count << 1, s, e);
+}
+
+// 内部核心：rows 可传入外部行区间表复用（findMaxKAlpaca / sampleMaxK / refineMaxK 的 fitsAt
+// 跨调用共享同一 rows，避免每次 new——每调用开始统一清空，状态与新建完全一致 → 结果逐位
+// 相同）；不传则内部新建。其余逻辑（nodes/finalOrder/L 形两阶段扫描）与旧实现逐行一致。
+function alpacaPackOccupancyCore(items, { gap = PACK_GAP, resolution = 256, sort = "maxSide", order } = {}, rows) {
+  const cell = 1 / resolution;
+  if (!rows) {
+    rows = makeRows(resolution);
+  } else {
+    for (let r = 0; r < resolution; r += 1) rows[r].length = 0;
+  }
+  // O(ch·log) 判断 [cx, cx+cw) × [cy, cy+ch) 区域全空（逐行二分查重叠；与积分图逐格等价）
   const regionEmpty = (cx, cy, cw, ch) => {
-    const x1 = cx; const y1 = cy; const x2 = cx + cw; const y2 = cy + ch;
-    return integral[y2 * iw + x2] - integral[y1 * iw + x2] - integral[y2 * iw + x1] + integral[y1 * iw + x1] === 0;
+    for (let y = cy; y < cy + ch; y += 1) {
+      if (rowOverlaps(rows[y], cx, cw)) return false;
+    }
+    return true;
   };
   const markOccupied = (cx, cy, cw, ch) => {
-    for (let y = cy; y < cy + ch; y += 1) grid.fill(1, y * resolution + cx, y * resolution + cx + cw);
-    rebuildIntegral();
+    const e = cx + cw;
+    for (let y = cy; y < cy + ch; y += 1) insertRowInterval(rows[y], cx, e);
   };
 
   const nodes = items.map((item) => ({
@@ -605,21 +686,29 @@ export function alpacaPackOccupancy(items, { gap = PACK_GAP, resolution = 256, s
   };
 }
 
+// 公开入口：每次新建行区间表（独立无状态；签名与旧实现完全一致）
+export function alpacaPackOccupancy(items, { gap = PACK_GAP, resolution = 256, sort = "maxSide", order } = {}) {
+  return alpacaPackOccupancyCore(items, { gap, resolution, sort, order }, null);
+}
+
 // 自适应找最大无兜底 k（alpaca occupancy 版）：框架照旧（128 稠密采样 + 24 细化二分 +
-// lo*0.999999），fitsAt(k) 用 alpacaPackOccupancy 判 overflow === false（scan_line ≤ R，
-// 即 bbox 装进 [0,1]²）。
+// lo*0.999999），fitsAt(k) 用 alpacaPackOccupancyCore 判 overflow === false（scan_line ≤ R，
+// 即 bbox 装进 [0,1]²）。行区间表跨 fitsAt 调用复用（同一 rows 每次调用前清空，状态与新建
+// 完全一致 → 结果逐位相同）。
 export function findMaxKAlpaca(boxUnit, totalArea, fill, gap, resolution = 256, sort = "maxSide", order) {
   if (!(fill > 0) || !(totalArea > 0)) return -1;
   const kMax = Math.sqrt(fill / totalArea);
+  const rows = makeRows(resolution);
   const fitsAt = (k) => {
-    const r = alpacaPackOccupancy(
+    const r = alpacaPackOccupancyCore(
       boxUnit.map((box) => ({
         id: box.id !== undefined ? box.id : box.family.id,
         island: box.island,
         width: box.width * k,
         height: box.height * k
       })),
-      { gap, resolution, sort, order }
+      { gap, resolution, sort, order },
+      rows
     );
     return !r.overflow; // bbox 装进 [0,1]² 即放得下
   };
@@ -637,30 +726,66 @@ export function findMaxKAlpaca(boxUnit, totalArea, fill, gap, resolution = 256, 
     else hi = mid;
   }
   if (!(lo > 0)) return -1;
-  return lo * 0.999999;
+  return lo * 0.999999; // 留极小余量，防浮点贴边兜底
 }
 
-// families: [{ id, meshes, length, width }]
-//   - meshes: 展开网格 [{ uvs, positions, faces }]（family = 主发片 + 子发片 / panel 整片）
-//   - length: 世界纵向长度（曲线长）；width: 世界横向宽度，可为 undefined/null——
-//     此时按统一纹素密度推导 width = area / length（area 为该 family 所有 meshes 的 3D 表面积）
-// 步骤：1) 面积/width/island（totalArea = Σ，守卫 totalArea<=0 无操作）→
-//       2) 单位缩放（k=1）：uv × (width, length)，写 uvisland →
-//       3) boxUnit = 单位尺度 UV 包围盒 →
-//       4) kMax = sqrt(fill/totalArea)（作上限）→
-//       5) alpaca occupancy 单套择优（方案 2 实验）：findMaxKAlpaca（128 稠密采样 + 24 细化
-//          二分逼近最大「alpacaPackOccupancy 不溢出」k）；占位栅格 L 形扫描天然维持方形 bbox
-//          且填掉 L 形缺口（原 MaxRects Smart 择优已注释保留）→
-//       6) 最终缩放 uv × kFinal + alpacaPackOccupancy 验证重试（overflow 则 kFinal *= 0.999，
-//          k→0 必能装下保证终止，实际 1~3 次收敛）→
-//       7) boxFinal = 重算 UV 包围盒 → 8) 按 placements 平移 → 9) fit-to-tile：整包
-//          均匀缩放 + 居中（较长轴填满 [0,1]、较短轴居中，相似变换不改岛间布局）
-// 返回 { k: kFinal, totalArea, fillUsed: kFinal²*totalArea, packed: [...], gap }（gap
-// 恒为传入 gap = PACK_GAP）；守卫返回
-// { k: null, totalArea: 0, fillUsed: 0, packed: [] } 且不修改任何 uvs。
-// length<=0 / area<=0 /（推导后）width<=0 的 family 跳过（原样不动、不缩放、不打包、不写
-// uvisland）。island 按有效 family 密集编号 0..N-1、输入顺序（sort 前固定）。
-export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}) {
+// ---- prepare/apply 两段式（供并行 agent 拆分 / 并行化 packFamilies 用）----
+// 采样点数（与 findMaxKAlpaca 内部 SAMPLES 同值；sampleMaxK/refineMaxK 共用）
+const SAMPLES = 128;
+
+// 单个采样 k 的 fitsAt（sort 固定 "maxSide"，与 findMaxKAlpaca 内部 fitsAt 逐行同语义：
+// item 构造 boxUnit.map(...) 原样保留；rows 跨调用复用）
+function alpacaFitsAt(boxUnit, k, gap, resolution, order, rows) {
+  const r = alpacaPackOccupancyCore(
+    boxUnit.map((box) => ({
+      id: box.id !== undefined ? box.id : box.family.id,
+      island: box.island,
+      width: box.width * k,
+      height: box.height * k
+    })),
+    { gap, resolution, sort: "maxSide", order },
+    rows
+  );
+  return !r.overflow; // bbox 装进 [0,1]² 即放得下
+}
+
+// sampleMaxK：对采样索引 i ∈ [kFrom, kTo]（1-based，闭区间）逐个跑 fitsAt(k = kMax*i/128，
+// kMax = sqrt(fill/totalArea)），返回最后一个放得下的 k（没有则 0）——与 findMaxKAlpaca
+// 内部 128 采样循环完全一致。order 为放置序（null/undefined → alpaca 内部 maxSide 排序）。
+export function sampleMaxK(boxUnit, totalArea, fill, gap, resolution, order, kFrom, kTo) {
+  const kMax = Math.sqrt(fill / totalArea);
+  const rows = makeRows(resolution);
+  let bestK = 0;
+  for (let i = kFrom; i <= kTo; i += 1) {
+    const k = kMax * i / SAMPLES;
+    if (alpacaFitsAt(boxUnit, k, gap, resolution, order, rows)) bestK = k;
+  }
+  return bestK;
+}
+
+// refineMaxK：把 findMaxKAlpaca 的「lo=bestK, hi=min(kMax, bestK+kMax/128)，24 次二分，
+// lo*0.999999，lo<=0 返回 -1」原样搬出（对 sampleMaxK 的 bestK 做局部细化二分逼近真最大值）。
+export function refineMaxK(boxUnit, totalArea, fill, gap, resolution, order, bestK) {
+  const kMax = Math.sqrt(fill / totalArea);
+  const rows = makeRows(resolution);
+  let lo = bestK;
+  let hi = Math.min(kMax, bestK + kMax / SAMPLES);
+  for (let i = 0; i < 24; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (alpacaFitsAt(boxUnit, mid, gap, resolution, order, rows)) lo = mid;
+    else hi = mid;
+  }
+  if (!(lo > 0)) return -1;
+  return lo * 0.999999; // 留极小余量，防浮点贴边兜底
+}
+
+// preparePack：packFamilies 步骤 1-4 原样搬出——valid 列表（面积 / width 显式或推导 / island
+// 密集编号）+ 单位缩放（uv × (width, length)，写 uvisland）+ boxUnit（单位尺度 UV 包围盒）
+// + orders 预计算（seed 0 = maxSide 降序索引；seed 1..SEEDS-1 = LCG(seed) 对 maxSide 索引
+// Fisher-Yates 打乱，LCG 公式与 seed 序列一字不改）。返回
+// { valid, totalArea, boxUnit, orders, kMax }，kMax = sqrt(fill/totalArea)；
+// 守卫（totalArea<=0，此时 valid 为空、未修改任何 uvs）照旧由调用方处理。
+export function preparePack(families, { gap = PACK_GAP, fill = PACK_FILL } = {}) {
   // 1) 面积 / width（显式或推导）/ island
   const valid = [];
   let totalArea = 0;
@@ -678,10 +803,7 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
     valid.push({ family, area, width, length, island: valid.length }); // island = 有效 family 密集编号 0..N-1
     totalArea += area;
   }
-  // 2) 守卫：总面积 <= 0 → 无操作
-  if (!(totalArea > 0)) return { k: null, totalArea: 0, fillUsed: 0, packed: [] };
-
-  // 3) 单位缩放（k=1）：uv × (width, length)，保持真实宽高比；写 uvisland
+  // 2) 单位缩放（k=1）：uv × (width, length)，保持真实宽高比；写 uvisland
   for (const { family, width, length, island } of valid) {
     for (const mesh of family.meshes || []) {
       mesh.uvisland = island; // UV 岛编号（sort 前已固定，稳定 0..N-1）
@@ -693,8 +815,140 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
       }
     }
   }
-  // 4) 单位尺度（k=1）UV 包围盒
+  // 3) 单位尺度（k=1）UV 包围盒
   const boxUnit = valid.map(({ family, island }) => ({ family, island, ...uvBounds(family.meshes) }));
+  // 4) orders 预计算：seed 0 = 默认 maxSide 排序（不 shuffle，作基线）；
+  //    seed 1..SEEDS-1 = LCG(seed) 对「maxSide 降序后的索引」Fisher-Yates 打乱
+  //    （基于 maxSide 排序索引而非原始输入序，避免大岛最后放导致明显退化）。
+  const maxSideOrder = boxUnit
+    .map((box, index) => ({ index, key: Math.max(box.width, box.height) }))
+    .sort((a, b) => b.key - a.key)
+    .map((entry) => entry.index);
+  const orders = [maxSideOrder];
+  for (let s = 1; s < SEEDS; s += 1) {
+    orders.push(shuffle(maxSideOrder.slice(), makeLCG(s)));
+  }
+  return { valid, totalArea, boxUnit, orders, kMax: Math.sqrt(fill / totalArea) };
+}
+
+// applyPackResult：packFamilies 尾部原样搬出——最终缩放（applied 累计因子写法）+ 
+// alpacaPackOccupancy 验证重试（kFinal *= 0.999 循环至 overflow 为 false，k→0 必能装下
+// 保证终止，实际 1~3 次收敛；用传入 order，null/undefined → alpaca 内部 maxSide 排序）+
+// 按 placements 平移 + fit-to-tile + 返回。totalArea 由 valid 重算（与 preparePack 同序
+// 累加 → 逐位相等）。
+export function applyPackResult(families, valid, kFinal, order, gap = PACK_GAP) {
+  // 最终缩放 + alpacaPackOccupancy 验证重试
+  let boxFinal = null;
+  let placements = null;
+  let applied = 1; // uvs 当前累计缩放（相对单位尺度；重试时按比例重缩放）
+  for (;;) {
+    const factor = kFinal / applied;
+    for (const { family } of valid) {
+      for (const mesh of family.meshes || []) {
+        const uvs = mesh && mesh.uvs;
+        if (!uvs) continue;
+        for (let i = 0; i + 1 < uvs.length; i += 2) {
+          uvs[i] *= factor;
+          uvs[i + 1] *= factor;
+        }
+      }
+    }
+    applied = kFinal;
+    // 最终包围盒（uv 已缩放，重算 uvBounds）
+    boxFinal = valid.map(({ family, island }) => ({ family, island, ...uvBounds(family.meshes) }));
+    // alpaca occupancy L 形打包（用传入的 order；null/undefined → 内部 maxSide 排序）
+    const packed2 = alpacaPackOccupancy(
+      boxFinal.map((box) => ({ id: box.family.id, island: box.island, width: box.width, height: box.height })),
+      { gap, resolution: 256, order: order || undefined }
+    );
+    if (!packed2.overflow) {
+      placements = packed2.placements;
+      break;
+    }
+    kFinal *= 0.999; // 缩小重试
+  }
+
+  // 按 placements 平移：拿到放置坐标后把 family 所有 uv 平移到位
+  const placedBy = new Map(placements.map((entry) => [entry.id, entry]));
+  const packed = [];
+  for (const box of boxFinal) {
+    const pos = placedBy.get(box.family.id);
+    if (!pos) continue; // alpacaPackOccupancy 返回与输入同 id 集，理论不可达
+    const dx = pos.x - box.minU;
+    const dy = pos.y - box.minV;
+    for (const mesh of box.family.meshes || []) {
+      const uvs = mesh && mesh.uvs;
+      if (!uvs) continue;
+      for (let i = 0; i + 1 < uvs.length; i += 2) {
+        uvs[i] += dx;
+        uvs[i + 1] += dy;
+      }
+    }
+    packed.push({ id: box.family.id, island: box.island, x: pos.x, y: pos.y, width: box.width, height: box.height });
+  }
+  // fit-to-tile：整包均匀缩放 + 居中（相似变换：绕整包 bbox 中心缩放 s，再平移到 tile
+  // 中心 0.5）——较长轴填满 [0,1]、较短轴居中；不新增岛间 gap、不改岛间相对布局
+  let bMinU = Infinity;
+  let bMinV = Infinity;
+  let bMaxU = -Infinity;
+  let bMaxV = -Infinity;
+  for (const entry of packed) {
+    bMinU = Math.min(bMinU, entry.x);
+    bMinV = Math.min(bMinV, entry.y);
+    bMaxU = Math.max(bMaxU, entry.x + entry.width);
+    bMaxV = Math.max(bMaxV, entry.y + entry.height);
+  }
+  if (bMaxU > bMinU && bMaxV > bMinV) {
+    const spanU = bMaxU - bMinU;
+    const spanV = bMaxV - bMinV;
+    const s = Math.min(1 / spanU, 1 / spanV); // 均匀缩放，保持宽高比，填满较长轴（s >= 1）
+    const centerU = (bMinU + bMaxU) / 2;
+    const centerV = (bMinV + bMaxV) / 2;
+    for (const { family } of valid) {
+      for (const mesh of family.meshes || []) {
+        const uvs = mesh && mesh.uvs;
+        if (!uvs) continue;
+        for (let i = 0; i + 1 < uvs.length; i += 2) {
+          uvs[i] = (uvs[i] - centerU) * s + 0.5;
+          uvs[i + 1] = (uvs[i + 1] - centerV) * s + 0.5;
+        }
+      }
+    }
+    for (const entry of packed) {
+      entry.x = (entry.x - centerU) * s + 0.5;
+      entry.y = (entry.y - centerV) * s + 0.5;
+      entry.width *= s;
+      entry.height *= s;
+    }
+  }
+  // 返回
+  const totalArea = valid.reduce((sum, v) => sum + v.area, 0); // 与 preparePack 同序累加 → 逐位相等
+  return { k: kFinal, totalArea, fillUsed: kFinal * kFinal * totalArea, packed, gap };
+}
+
+// families: [{ id, meshes, length, width }]
+//   - meshes: 展开网格 [{ uvs, positions, faces }]（family = 主发片 + 子发片 / panel 整片）
+//   - length: 世界纵向长度（曲线长）；width: 世界横向宽度，可为 undefined/null——
+//     此时按统一纹素密度推导 width = area / length（area 为该 family 所有 meshes 的 3D 表面积）
+// 步骤（两段式，供并行 agent 拆分/并行化）：preparePack（1-4：valid 列表/面积/width 推导/
+// island 密集编号 + 单位缩放 uv×(width,length) 写 uvisland + boxUnit 单位尺度包围盒 +
+// orders/kMax 预计算）→ 每 seed 依次 sampleMaxK(1,128) + refineMaxK 取 k 最大者（并列取
+// 更早，seed 0 基线优先；与 findMaxKAlpaca 逐位同语义）→ applyPackResult（5-10：最终缩放 +
+// alpacaPackOccupancy 验证重试 kFinal*=0.999 + 按 placements 平移 + fit-to-tile 整包均匀
+// 缩放居中）。原 MaxRects Smart 择优（findMaxK + maxRectsPack）已注释保留在函数内。
+// 返回 { k: kFinal, totalArea, fillUsed: kFinal²*totalArea, packed: [...], gap }（gap
+// 恒为传入 gap = PACK_GAP）；守卫返回
+// { k: null, totalArea: 0, fillUsed: 0, packed: [] } 且不修改任何 uvs。
+// length<=0 / area<=0 /（推导后）width<=0 的 family 跳过（原样不动、不缩放、不打包、不写
+// uvisland）。island 按有效 family 密集编号 0..N-1、输入顺序（sort 前固定）。
+export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}) {
+  // 1-4) preparePack：valid 列表（面积/width 显式或推导/island）+ 单位缩放（uv × (width,length)、
+  // 写 uvisland）+ boxUnit（单位尺度包围盒）+ orders 预计算（seed 0 = maxSide 基线 + SEEDS-1
+  // 个 LCG Fisher-Yates 打乱，公式与 seed 序列一字不改）+ kMax
+  const prepared = preparePack(families, { gap, fill });
+  const { valid, totalArea, boxUnit, orders } = prepared;
+  // 2) 守卫：总面积 <= 0 → 无操作（preparePack 在 totalArea<=0 时 valid 为空 → 未改任何 uvs）
+  if (!(totalArea > 0)) return { k: null, totalArea: 0, fillUsed: 0, packed: [] };
 
   // 【方案 2 实验：alpaca occupancy（占位栅格 L 形扫描）+ 多起点 seed 择优】已屏蔽现有
   // MaxRects 逻辑（Smart 择优 + maxRectsPack + 验证重试 + 按 placements 平移，见下方
@@ -776,118 +1030,30 @@ export function packFamilies(families, { gap = PACK_GAP, fill = PACK_FILL } = {}
   }
   */
 
-  // 1) 多起点 seed 择优：alpaca occupancy（占位栅格 L 形扫描）天然维持方形 bbox 且填掉
+  // 5) 多起点 seed 择优：alpaca occupancy（占位栅格 L 形扫描）天然维持方形 bbox 且填掉
   // L 形缺口（方形 + 高填充兼得），但单次 maxSide 固定放置序是确定性的、容易留阶梯形空档
-  // ——用 SEEDS 个确定性随机序各跑一遍 findMaxKAlpaca，取 k 最大者（并列取更早，seed 0
-  // 优先）：
+  // ——用 SEEDS 个确定性随机序各跑一遍「sampleMaxK(1,128) + refineMaxK」（与 findMaxKAlpaca
+  // 逐位同语义），取 k 最大者（并列取更早，seed 0 优先）：
   //   seed 0 = 默认 maxSide 排序（不 shuffle，作基线）；
-  //   seed 1..SEEDS-1 = LCG(seed) 对「maxSide 降序后的索引」Fisher-Yates 打乱
-  //   （基于 maxSide 排序索引而非原始输入序，避免大岛最后放导致明显退化）。
+  //   seed 1..SEEDS-1 = LCG(seed) 对「maxSide 降序后的索引」Fisher-Yates 打乱（preparePack
+  //   已按原公式/原 seed 序列预计算）。
   // 同一 LCG 公式/同 seed → 每次运行结果完全一致（确定性）；SEEDS=1 时只有 seed 0 →
   // 与旧单套行为逐位一致（无回归）。-1 分支仅防御（理论不可达）。
-  const maxSideOrder = boxUnit
-    .map((box, index) => ({ index, key: Math.max(box.width, box.height) }))
-    .sort((a, b) => b.key - a.key)
-    .map((entry) => entry.index);
-  const orders = [maxSideOrder];
-  for (let s = 1; s < SEEDS; s += 1) {
-    orders.push(shuffle(maxSideOrder.slice(), makeLCG(s)));
-  }
   const best = { k: -1, order: null };
   for (let s = 0; s < SEEDS; s += 1) {
-    const k = findMaxKAlpaca(boxUnit, totalArea, fill, gap, 256, "maxSide", orders[s]);
+    const k = refineMaxK(boxUnit, totalArea, fill, gap, 256, orders[s],
+      sampleMaxK(boxUnit, totalArea, fill, gap, 256, orders[s], 1, SAMPLES));
     if (k > best.k) { // 并列取更早（seed 0 基线优先）
       best.k = k;
       best.order = orders[s];
     }
   }
-  let kFinal = best.k > 0 ? best.k : findMaxKAlpaca(boxUnit, totalArea, fill, gap, 256, "maxSide");
+  // -1 防御分支（理论不可达）：回退到无 order（alpaca 内部 maxSide 排序）
+  let kFinal = best.k > 0 ? best.k : refineMaxK(boxUnit, totalArea, fill, gap, 256, null,
+    sampleMaxK(boxUnit, totalArea, fill, gap, 256, null, 1, SAMPLES));
 
-  // 2) 最终缩放 + alpacaPackOccupancy 验证重试：findMaxK 采样粒度可能让 bbox 略超 1 →
-  // 缩小重试
-  let boxFinal = null;
-  let placements = null;
-  let applied = 1; // uvs 当前累计缩放（相对单位尺度；重试时按比例重缩放）
-  for (;;) {
-    const factor = kFinal / applied;
-    for (const { family } of valid) {
-      for (const mesh of family.meshes || []) {
-        const uvs = mesh && mesh.uvs;
-        if (!uvs) continue;
-        for (let i = 0; i + 1 < uvs.length; i += 2) {
-          uvs[i] *= factor;
-          uvs[i + 1] *= factor;
-        }
-      }
-    }
-    applied = kFinal;
-    // 最终包围盒（uv 已缩放，重算 uvBounds）
-    boxFinal = valid.map(({ family, island }) => ({ family, island, ...uvBounds(family.meshes) }));
-    // alpaca occupancy L 形打包（用择优的 best.order；-1 防御分支下 order=null → 内部 maxSide 排序）
-    const packed2 = alpacaPackOccupancy(
-      boxFinal.map((box) => ({ id: box.family.id, island: box.island, width: box.width, height: box.height })),
-      { gap, resolution: 256, order: best.order || undefined }
-    );
-    if (!packed2.overflow) {
-      placements = packed2.placements;
-      break;
-    }
-    kFinal *= 0.999; // 缩小重试
-  }
-
-  // 3) 按 placements 平移：拿到放置坐标后把 family 所有 uv 平移到位
-  const placedBy = new Map(placements.map((entry) => [entry.id, entry]));
-  const packed = [];
-  for (const box of boxFinal) {
-    const pos = placedBy.get(box.family.id);
-    if (!pos) continue; // alpacaPackOccupancy 返回与输入同 id 集，理论不可达
-    const dx = pos.x - box.minU;
-    const dy = pos.y - box.minV;
-    for (const mesh of box.family.meshes || []) {
-      const uvs = mesh && mesh.uvs;
-      if (!uvs) continue;
-      for (let i = 0; i + 1 < uvs.length; i += 2) {
-        uvs[i] += dx;
-        uvs[i + 1] += dy;
-      }
-    }
-    packed.push({ id: box.family.id, island: box.island, x: pos.x, y: pos.y, width: box.width, height: box.height });
-  }
-  // 9b) fit-to-tile：整包均匀缩放 + 居中（相似变换：绕整包 bbox 中心缩放 s，再平移到 tile
-  // 中心 0.5）——较长轴填满 [0,1]、较短轴居中；不新增岛间 gap、不改岛间相对布局
-  let bMinU = Infinity;
-  let bMinV = Infinity;
-  let bMaxU = -Infinity;
-  let bMaxV = -Infinity;
-  for (const entry of packed) {
-    bMinU = Math.min(bMinU, entry.x);
-    bMinV = Math.min(bMinV, entry.y);
-    bMaxU = Math.max(bMaxU, entry.x + entry.width);
-    bMaxV = Math.max(bMaxV, entry.y + entry.height);
-  }
-  if (bMaxU > bMinU && bMaxV > bMinV) {
-    const spanU = bMaxU - bMinU;
-    const spanV = bMaxV - bMinV;
-    const s = Math.min(1 / spanU, 1 / spanV); // 均匀缩放，保持宽高比，填满较长轴（s >= 1）
-    const centerU = (bMinU + bMaxU) / 2;
-    const centerV = (bMinV + bMaxV) / 2;
-    for (const { family } of valid) {
-      for (const mesh of family.meshes || []) {
-        const uvs = mesh && mesh.uvs;
-        if (!uvs) continue;
-        for (let i = 0; i + 1 < uvs.length; i += 2) {
-          uvs[i] = (uvs[i] - centerU) * s + 0.5;
-          uvs[i + 1] = (uvs[i + 1] - centerV) * s + 0.5;
-        }
-      }
-    }
-    for (const entry of packed) {
-      entry.x = (entry.x - centerU) * s + 0.5;
-      entry.y = (entry.y - centerV) * s + 0.5;
-      entry.width *= s;
-      entry.height *= s;
-    }
-  }
-  // 10) 返回
-  return { k: kFinal, totalArea, fillUsed: kFinal * kFinal * totalArea, packed, gap };
+  // 6-10) applyPackResult：最终缩放（applied 累计因子写法）+ alpacaPackOccupancy 验证重试
+  //（overflow 则 kFinal *= 0.999 循环，用传入 best.order；-1 防御分支下 order=null → 内部
+  // maxSide 排序）+ 按 placements 平移 + fit-to-tile 整包均匀缩放居中 + 返回（原尾部逐行搬出）
+  return applyPackResult(families, valid, kFinal, best.order, gap);
 }

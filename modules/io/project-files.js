@@ -12,7 +12,7 @@ import { exportAnimeHairUsda, usdIdentifier, quatToMat3, axesToMat3, splitBoneLa
 import { materializeTipChain, tipChainFrameAt as strandTipChainFrameAt } from "../geometry/tip-sub-bone.js?v=20260813-1";
 import { createHairProject } from "./project-schema.js?v=20260814-12";
 import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260815-1";
-import { packFamilies } from "./uv-pack.js?v=20260816-7";
+import { packFamiliesAsync } from "./uv-pack-async.js?v=20260817-1";
 
 export function createProjectSaveApi(deps) {
   // ---- dialog UI elements (document is ready when this runs; app.js loads at body end) ----
@@ -170,7 +170,7 @@ export function createProjectSaveApi(deps) {
     };
   }
 
-  function buildUnfoldedMeshes() {
+  async function buildUnfoldedMeshes() {
     const unfolded = new Map();
     const uvAt = new Map(); // lock.id -> gridUvTable 弧长表（父发片洞查询用）
     deps.locks.forEach((lock) => {
@@ -323,14 +323,14 @@ export function createProjectSaveApi(deps) {
       const mesh = unfoldHairMesh(geometry, options);
       if (mesh) unfolded.set(lock.id, mesh);
     });
-    packUnfoldedUv(unfolded, deps.locks, uvAt);
+    await packUnfoldedUv(unfolded, deps.locks, uvAt);
     return unfolded;
   }
 
   // 导出时 UV 打包：主发片（closed/split）+ 子发片 + panel/surface（刘海）整片按真实 3D
   // 尺寸统一缩放（统一纹素密度）后 MaxRects 打包进 UDIM 1001（[0,1]²）。原地修改
   // buildUnfoldedMeshes 产物（unfolded.uvs）。
-  function packUnfoldedUv(unfolded, locks, uvAt) {
+  async function packUnfoldedUv(unfolded, locks, uvAt) {
     const parentOf = new Map(); // child id -> parent id（branchParentId）
     locks.forEach((lock) => {
       if (lock.branchParentId) parentOf.set(lock.id, lock.branchParentId);
@@ -358,14 +358,14 @@ export function createProjectSaveApi(deps) {
         families.push({ id: lock.id, meshes: [unfolded.get(lock.id)].filter(Boolean), length, width: undefined });
       }
     });
-    packFamilies(families); // 返回值可忽略：uvs 原地修改
+    await packFamiliesAsync(families); // 返回值可忽略：uvs 原地修改
   }
 
-  function buildHairObj({ includeMesh = true, includeCurves = true } = {}) {
+  async function buildHairObj({ includeMesh = true, includeCurves = true } = {}) {
     let obj = "# Anime Hair Studio mesh and center-curve export\n";
     let vertexOffset = 1;
     let uvOffset = 1;
-    const unfoldedMeshes = buildUnfoldedMeshes();
+    const unfoldedMeshes = await buildUnfoldedMeshes();
     deps.locks.forEach((lock) => {
       const objectName = lock.name.replace(/[^a-zA-Z0-9_.-]+/g, "_");
       if (includeMesh) {
@@ -430,7 +430,7 @@ export function createProjectSaveApi(deps) {
     return obj;
   }
 
-  function buildHairUsda({
+  async function buildHairUsda({
     includeMesh = true,
     includeCurves = true,
     includeBones = false,
@@ -440,7 +440,7 @@ export function createProjectSaveApi(deps) {
     const meshes = [];
     const curves = [];
     const skeletons = [];
-    const unfoldedMeshes = buildUnfoldedMeshes();
+    const unfoldedMeshes = await buildUnfoldedMeshes();
     // 内部骨骼名（main./split.，来自 bonesFor）→ 发丝名前缀导出关节名：
     //   main.${i}        → ${sanitized}_${i}
     //   split.${k}       → ${sanitized}_split_${k}
@@ -1022,8 +1022,8 @@ export function createProjectSaveApi(deps) {
     const rootName = cleanFileBaseName(exportPathPrefixInput?.value || baseName, baseName);
     try {
       const content = action.format === "obj"
-        ? buildHairObj({ includeMesh: contents.mesh, includeCurves: contents.curves })
-        : buildHairUsda({
+        ? await buildHairObj({ includeMesh: contents.mesh, includeCurves: contents.curves })
+        : await buildHairUsda({
           // Bones & Capture Mesh 隐含包含 mesh（勾 Bones 时 Mesh 复选框灰掉但仍导出）。
           includeMesh: contents.mesh || contents.bones,
           includeCurves: contents.curves,
@@ -1148,8 +1148,8 @@ export function createProjectSaveApi(deps) {
       Object.entries(exportContentInputs).map(([key, input]) => [key, input.checked])
     );
     const content = format === "obj"
-      ? buildHairObj({ includeMesh: contents.mesh, includeCurves: contents.curves })
-      : buildHairUsda({
+      ? await buildHairObj({ includeMesh: contents.mesh, includeCurves: contents.curves })
+      : await buildHairUsda({
         includeMesh: contents.mesh || contents.bones,
         includeCurves: contents.curves,
         includeBones: contents.bones,

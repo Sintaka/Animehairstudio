@@ -42,7 +42,7 @@ import { createReferenceStore } from "./modules/edit/reference-store.js?v=202608
 import { createDrawStore } from "./modules/edit/draw-store.js?v=20260814-12";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260814-12";
 import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
-import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260816-20";
+import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260817-1";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
@@ -12309,15 +12309,32 @@ function applyUvCheckerPreview(unfolded) {
   hairState.state.uvCheckerPreview = true;
 }
 
-function refreshUvCheckerPreview() {
+async function refreshUvCheckerPreview() {
   if (!hairState.state.uvCheckerEnabled) return;
-  restoreUvCheckerPreview();
-  const unfolded = fileApi.buildUnfoldedMeshes();
-  if (!unfolded || !unfolded.size) return; // 无展开结果时静默跳过（保持原几何 + 原 UV）
-  applyUvCheckerPreview(unfolded);
-  locks.forEach(ensureUvCheckerForLock);
-  invalidateUvInspector();
-  renderUvInspector(performance.now(), true);
+  const originalButtonText = refreshUvCheckerButton.textContent;
+  const originalButtonTitle = refreshUvCheckerButton.getAttribute("title");
+  const originalStatusText = uvInspectorStatus.textContent;
+  refreshUvCheckerButton.disabled = true;
+  refreshUvCheckerButton.textContent = "Packing…";
+  uvInspectorStatus.textContent = "Packing export UV layout…";
+  let rendered = false;
+  try {
+    restoreUvCheckerPreview();
+    const unfolded = await fileApi.buildUnfoldedMeshes();
+    if (!unfolded || !unfolded.size) return; // 无展开结果时静默跳过（保持原几何 + 原 UV）
+    applyUvCheckerPreview(unfolded);
+    locks.forEach(ensureUvCheckerForLock);
+    invalidateUvInspector();
+    renderUvInspector(performance.now(), true);
+    rendered = true;
+  } finally {
+    refreshUvCheckerButton.disabled = false;
+    refreshUvCheckerButton.textContent = originalButtonText;
+    if (originalButtonTitle !== null) refreshUvCheckerButton.setAttribute("title", originalButtonTitle);
+    else refreshUvCheckerButton.removeAttribute("title");
+    // 异常或空结果路径未走到 renderUvInspector，恢复原状态文本。
+    if (!rendered) uvInspectorStatus.textContent = originalStatusText;
+  }
 }
 
 function strandViewportBaseColor(lock) {
@@ -20109,6 +20126,7 @@ animate();
 if (new URLSearchParams(location.search).has("ahstest")) {
   window.__ahsTest = {
     sculptState,
+    fileApi,
     THREE,
     locks,
     scene,

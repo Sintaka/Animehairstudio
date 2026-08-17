@@ -3,7 +3,11 @@
 // fit-to-tile 整包均匀缩放居中）。运行：node tests/uv-pack.test.mjs
 
 import assert from "node:assert/strict";
-import { packFamilies, PACK_GAP, findMaxKAlpaca, alpacaPackOccupancy } from "../modules/io/uv-pack.js";
+import { readFile } from "node:fs/promises";
+import {
+  packFamilies, PACK_GAP, findMaxKAlpaca, alpacaPackOccupancy,
+  preparePack, sampleMaxK, refineMaxK
+} from "../modules/io/uv-pack.js";
 
 const EPS = 1e-9;
 
@@ -38,6 +42,42 @@ function rectQuad(w, h) {
     [[0, 1, 2, 3]]
   );
 }
+
+// 确定性 LCG（与 uv-pack.js / scripts/bench-uv-pack.mjs 同公式）
+function makeLCG(seed) {
+  let state = seed;
+  return () => {
+    state = (state * 1103515245 + 12345) % 2147483648;
+    return state / 2147483648;
+  };
+}
+
+// 生成 n 个 family：约 70% 闭合发丝（细长），30% panel（宽扁）——
+// 与 scripts/bench-uv-pack.mjs 的 makeFamilies 逐行一致（冻结 fixture 的输入重建方式）
+function makeFixtureFamilies(n, rand) {
+  const families = [];
+  for (let i = 0; i < n; i += 1) {
+    const isPanel = rand() < 0.3;
+    const length = isPanel
+      ? 0.15 + rand() * 0.25           // panel: 0.15–0.4
+      : 0.25 + rand() * 0.95;          // strand: 0.25–1.2
+    const width = isPanel
+      ? 0.10 + rand() * 0.20           // panel: 0.10–0.30
+      : 0.02 + rand() * 0.13;          // strand: 0.02–0.15
+    families.push({
+      id: `s${i}`,
+      meshes: [rectQuad(width, length)],
+      length,
+      width
+    });
+  }
+  return families;
+}
+
+// 冻结回归参考输出（23 岛合成数据，LCG seed 20260817，fill=0.8，gap=PACK_GAP）
+const fixture = JSON.parse(
+  await readFile(new URL("./fixtures/uv-pack-reference.json", import.meta.url), "utf8")
+);
 
 // ---- 1) 面积：1×1 quad（1）+ 1×2 矩形（2）→ totalArea=3；fillUsed = k²*totalArea ≤ fill ----
 // k 现在是自适应值（最大无兜底 k），不直接等于 sqrt(fill/totalArea)，只断言 totalArea/fillUsed
@@ -378,6 +418,62 @@ function rectQuad(w, h) {
         `${a.id}/${b.id} 间距 >= gap (sepX=${sepX}, sepY=${sepY})`);
     }
   }
+}
+
+// ---- 9) 冻结回归：packFamilies 输出与 fixtures/uv-pack-reference.json 逐位一致 ----
+// 输入用与 fixture 相同的方式重建（makeFixtureFamilies + LCG seed 20260817，fill=0.8）。
+// 行区间表重构后判空/标记与旧积分图逐格等价 → k/fillUsed/packed 严格相等、每 family uvs
+// 逐元素相等（1e-12 容差内）。
+{
+  const families = makeFixtureFamilies(23, makeLCG(20260817));
+  const result = packFamilies(families, { fill: 0.8 });
+  // k / totalArea / fillUsed：严格相等（fixture 由同一实现生成，JSON round-trip 无损）
+  assert.equal(result.k, fixture.k, `k 与 fixture 逐位一致 (got ${result.k})`);
+  assert.equal(result.totalArea, fixture.totalArea, `totalArea 与 fixture 逐位一致 (got ${result.totalArea})`);
+  assert.equal(result.fillUsed, fixture.fillUsed, `fillUsed 与 fixture 逐位一致 (got ${result.fillUsed})`);
+  assert.equal(result.gap, PACK_GAP, "gap = PACK_GAP");
+  // packed：数量 + 逐字段严格相等（按 id 匹配，不依赖 packed 顺序）
+  assert.equal(result.packed.length, fixture.packed.length, "packed 数量一致");
+  for (const ref of fixture.packed) {
+    const entry = result.packed.find((e) => e.id === ref.id);
+    assert.ok(entry, `${ref.id} 在结果 packed 中`);
+    assert.equal(entry.island, ref.island, `${ref.id} island 一致`);
+    assert.equal(entry.x, ref.x, `${ref.id} x 逐位一致 (got ${entry.x})`);
+    assert.equal(entry.y, ref.y, `${ref.id} y 逐位一致 (got ${entry.y})`);
+    assert.equal(entry.width, ref.width, `${ref.id} width 逐位一致 (got ${entry.width})`);
+    assert.equal(entry.height, ref.height, `${ref.id} height 逐位一致 (got ${entry.height})`);
+  }
+  // 每 family 的 uvs 数组与 fixture 逐元素相等（1e-12 容差内）
+  for (const ref of fixture.uvs) {
+    const family = families.find((f) => f.id === ref.id);
+    assert.ok(family, `${ref.id} family 存在`);
+    const uvs = family.meshes[0].uvs;
+    assert.equal(uvs.length, ref.uvs.length, `${ref.id} uvs 长度一致`);
+    for (let i = 0; i < uvs.length; i += 1) {
+      assert.ok(Math.abs(uvs[i] - ref.uvs[i]) <= 1e-12,
+        `${ref.id} uvs[${i}] 与 fixture 一致 (got ${uvs[i]}, ref ${ref.uvs[i]})`);
+    }
+  }
+}
+
+// ---- 10) sampleMaxK/refineMaxK 一致性：对同一输入，sampleMaxK(1,128)+refineMaxK 的结果
+// === findMaxKAlpaca 的结果（严格相等；覆盖全部 SEEDS 个 order 及无 order 内部排序路径）----
+{
+  const families = makeFixtureFamilies(23, makeLCG(20260817));
+  const p = preparePack(families, { fill: 0.8 }); // 单位缩放 + boxUnit + orders（会改 uvs，无妨）
+  for (let s = 0; s < p.orders.length; s += 1) {
+    const viaSplit = refineMaxK(p.boxUnit, p.totalArea, 0.8, PACK_GAP, 256, p.orders[s],
+      sampleMaxK(p.boxUnit, p.totalArea, 0.8, PACK_GAP, 256, p.orders[s], 1, 128));
+    const viaFull = findMaxKAlpaca(p.boxUnit, p.totalArea, 0.8, PACK_GAP, 256, "maxSide", p.orders[s]);
+    assert.equal(viaSplit, viaFull,
+      `seed ${s}：sampleMaxK(1,128)+refineMaxK === findMaxKAlpaca（严格相等, got ${viaSplit} vs ${viaFull}）`);
+  }
+  // 无 order（alpaca 内部 maxSide 排序）路径
+  const viaSplit = refineMaxK(p.boxUnit, p.totalArea, 0.8, PACK_GAP, 256, null,
+    sampleMaxK(p.boxUnit, p.totalArea, 0.8, PACK_GAP, 256, null, 1, 128));
+  const viaFull = findMaxKAlpaca(p.boxUnit, p.totalArea, 0.8, PACK_GAP, 256, "maxSide");
+  assert.equal(viaSplit, viaFull,
+    `无 order：sampleMaxK(1,128)+refineMaxK === findMaxKAlpaca（严格相等, got ${viaSplit} vs ${viaFull}）`);
 }
 
 console.log("uv-pack tests passed");
