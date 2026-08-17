@@ -43,6 +43,10 @@ import { createDrawStore } from "./modules/edit/draw-store.js?v=20260814-12";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260814-12";
 import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
 import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260817-1";
+// Wind preview wiring: store + pure wind math (both modules are built in parallel; until
+// they land these imports 404 — expected, coordinated at merge).
+import { createWindStore } from "./modules/core/wind-store.js?v=20260817-2";
+import * as windPreview from "./modules/geometry/wind-preview.js?v=20260817-2";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
@@ -2070,6 +2074,7 @@ const GUIDE_VIEW_MODES = [
 ];
 const miscState = createMiscStore();
 const sel = createSelectionStore();
+const windStore = createWindStore();
 
 
 function currentStrandSelectionState() {
@@ -2384,6 +2389,30 @@ const turntableMenuState = document.querySelector("#turntableMenuState");
 const turntablePanel = document.querySelector("#turntablePanel");
 const turntableSpeedInput = document.querySelector("#turntableSpeed");
 const turntableSpeedValue = document.querySelector("#turntableSpeedValue");
+// Wind preview DOM (built by the parallel index.html work; queried defensively — every
+// element may be null until merge).
+const toggleWindPreviewButton = document.querySelector("#toggleWindPreview");
+const windPreviewMenuState = document.querySelector("#windPreviewMenuState");
+const windPreviewPanel = document.querySelector("#windPreviewPanel");
+const windPlayPauseButton = document.querySelector("#windPlayPauseButton");
+const windPreviewCloseButton = document.querySelector("#windPreviewCloseButton");
+const windSliderDefs = [
+  { key: "windDirection", id: "windDirection" },
+  { key: "windStrength", id: "windStrength" },
+  { key: "windFrequency", id: "windFrequency" },
+  { key: "windTurbulence", id: "windTurbulence" },
+  { key: "windTurbulenceScale", id: "windTurbulenceScale" },
+  { key: "windGustStrength", id: "windGustStrength" },
+  { key: "windGustFreq", id: "windGustFreq" },
+  { key: "windRootExponent", id: "windRootExponent" },
+  { key: "windStrandRandom", id: "windStrandRandom" },
+  { key: "windSeed", id: "windSeed" }
+];
+const windSliders = windSliderDefs.map(({ key, id }) => ({
+  key,
+  input: document.querySelector(`#${id}Input`),
+  value: document.querySelector(`#${id}InputValue`)
+}));
 const toggleUvCheckerButton = document.querySelector("#toggleUvChecker");
 const uvCheckerMenuState = document.querySelector("#uvCheckerMenuState");
 const uvInspectorWindow = document.querySelector("#uvInspectorWindow");
@@ -4133,6 +4162,220 @@ function setTurntableActive(enabled) {
   turntableMenuState.textContent = viewportState.state.turntableActive ? "On" : "Off";
   turntablePanel.classList.toggle("hidden", !viewportState.state.turntableActive);
   if (viewportState.state.turntableActive) setAttributeEditorTab("main");
+}
+
+// ===== Wind preview (procedural viewport preview, non-destructive) =====
+// Per-lock caches live in a module-level WeakMap keyed by the lock OBJECT — never on the
+// lock itself, so no new field can leak into the .ahs snapshot/serialize format (hard
+// requirement: the file format must not change). Geometry is deformed in place per frame
+// and bitwise-restored from the rest snapshots when the preview is turned off.
+const windPreviewCache = new WeakMap();
+// Noise is rebuilt lazily whenever windSeed changes (noise is stable per seed).
+let windNoiseCache = { seed: null, noise: null };
+
+const WIND_VALUE_FORMATS = {
+  windDirection: (value) => `${Math.round(Number(value))}°`,
+  windStrength: (value) => Number(value).toFixed(1),
+  windFrequency: (value) => Number(value).toFixed(2),
+  windTurbulence: (value) => Number(value).toFixed(2),
+  windTurbulenceScale: (value) => Number(value).toFixed(1),
+  windGustStrength: (value) => Number(value).toFixed(1),
+  windGustFreq: (value) => Number(value).toFixed(2),
+  windRootExponent: (value) => Number(value).toFixed(2),
+  windStrandRandom: (value) => Number(value).toFixed(2),
+  windSeed: (value) => String(Math.round(Number(value)))
+};
+
+// Deterministic 32-bit FNV-1a hash of lock.id → a lock's per-strand wind values are stable
+// across sessions regardless of locks[] order (strandIndex falls back to the array index;
+// both documented per contract).
+function windStrandSeedFor(lock) {
+  let hash = 0x811c9dc5;
+  const text = String(lock.id || "");
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+function windStrandIndexFor(lock) {
+  return locks.indexOf(lock);
+}
+
+// Rest chain points (rows * 3): sampled from the same CatmullRomCurve3(lock.points) that
+// curveFrameAt uses internally (curveFrameAt itself does not expose its point), with
+// t = i / (rows - 1) per contract.
+function windChainPointsFor(lock, rows) {
+  const curve = new THREE.CatmullRomCurve3(lock.points);
+  const chain = new Float32Array(rows * 3);
+  for (let index = 0; index < rows; index += 1) {
+    const t = rows <= 1 ? 0 : index / (rows - 1);
+    const point = curve.getPoint(THREE.MathUtils.clamp(t, 0, 1));
+    chain[index * 3] = point.x;
+    chain[index * 3 + 1] = point.y;
+    chain[index * 3 + 2] = point.z;
+  }
+  return chain;
+}
+
+function windChainPointAt(chain, index) {
+  const offset = index * 3;
+  return { x: chain[offset], y: chain[offset + 1], z: chain[offset + 2] };
+}
+
+// Live params assembled from the store every tick (field names per the windAngleAt
+// contract); windSeed feeds the noise, windStrandRandom is consumed inside wind-preview.
+function windParamsFromState(state) {
+  return {
+    windDirectionDeg: state.windDirection,
+    windStrength: state.windStrength,
+    windFrequency: state.windFrequency,
+    windTurbulence: state.windTurbulence,
+    windTurbulenceScale: state.windTurbulenceScale,
+    windGustStrength: state.windGustStrength,
+    windGustFreq: state.windGustFreq,
+    windRootExponent: state.windRootExponent
+  };
+}
+
+function windNoiseForSeed(seed) {
+  if (!windNoiseCache.noise || windNoiseCache.seed !== seed) {
+    // createNoise4D is re-exported by wind-preview for callers (vendored simplex noise).
+    windNoiseCache = { seed, noise: windPreview.createNoise4D(windPreview.mulberry32(seed)) };
+  }
+  return windNoiseCache.noise;
+}
+
+// Build the per-lock cache: rest attribute snapshots (Float32Array copies) + chain points
+// + per-strand wind values. Skipped when the mesh has no per-vertex row data.
+function buildWindPreviewCache(lock) {
+  if (windPreviewCache.has(lock)) return windPreviewCache.get(lock);
+  const geometry = lock?.mesh?.geometry;
+  if (!geometry) return null;
+  const gridRows = geometry.userData?.gridRowIndices; // per-vertex row (float); absent → skip
+  if (!gridRows) return null;
+  let rows = Number(geometry.userData?.gridRows) || 0;
+  if (rows < 2) rows = Math.round(Number(lock.lengthSegments || 26)) + 1;
+  if (rows < 2) return null;
+  const positions = geometry.getAttribute("position");
+  const normals = geometry.getAttribute("normal");
+  const tangents = geometry.getAttribute("tangent");
+  if (!positions) return null;
+  const cache = {
+    geometry, // identity guard: drop the cache if the geometry is replaced behind our back
+    rows,
+    gridRows,
+    restPos: positions.array.slice(),
+    restNormal: normals ? normals.array.slice() : null,
+    restTangent: tangents ? tangents.array.slice() : null,
+    chainPoints: windChainPointsFor(lock, rows),
+    perStrand: windPreview.perStrandWind(windStrandSeedFor(lock), windStrandIndexFor(lock), windStore.state.windStrandRandom)
+  };
+  windPreviewCache.set(lock, cache);
+  return cache;
+}
+
+// Write the rest snapshot back into the live attributes (bitwise restore). Length guards
+// make stale caches (geometry replaced without rebuildLockGeometry) a safe no-op.
+function windRestoreLockGeometry(lock, cache) {
+  const geometry = lock?.mesh?.geometry;
+  if (!geometry) return;
+  const positions = geometry.getAttribute("position");
+  const normals = geometry.getAttribute("normal");
+  const tangents = geometry.getAttribute("tangent");
+  if (positions && cache.restPos && positions.array.length === cache.restPos.length) {
+    positions.array.set(cache.restPos);
+    positions.needsUpdate = true;
+  }
+  if (normals && cache.restNormal && normals.array.length === cache.restNormal.length) {
+    normals.array.set(cache.restNormal);
+    normals.needsUpdate = true;
+  }
+  if (tangents && cache.restTangent && tangents.array.length === cache.restTangent.length) {
+    tangents.array.set(cache.restTangent);
+    tangents.needsUpdate = true;
+  }
+  geometry.computeBoundingSphere();
+}
+
+// One deformation pass: advance windTime while playing, then deform every cached lock in
+// place (positions/normals/tangents mutated directly; rest data stays untouched).
+function windPreviewTick(deltaSeconds) {
+  const state = windStore.state;
+  if (!state.windPreviewActive) return;
+  if (state.windPlaying) state.windTime += deltaSeconds;
+  const noise = windNoiseForSeed(state.windSeed);
+  const params = windParamsFromState(state);
+  locks.forEach((lock) => {
+    const cache = windPreviewCache.get(lock);
+    if (!cache || !lock?.mesh?.geometry) return;
+    if (cache.geometry !== lock.mesh.geometry) {
+      windPreviewCache.delete(lock); // stale cache → drop (new geometry is not deformed)
+      return;
+    }
+    const geometry = lock.mesh.geometry;
+    const positions = geometry.getAttribute("position");
+    const normals = geometry.getAttribute("normal");
+    const tangents = geometry.getAttribute("tangent");
+    if (!positions) return;
+    // deformVertexData computes pos' = chainPoint + rotate(q, restPos − chainPoint): it
+    // treats the input arrays AS the rest pose. Reset to rest first, or the rotation
+    // would compound on last frame's already-deformed buffer every tick.
+    positions.array.set(cache.restPos);
+    if (normals && cache.restNormal) normals.array.set(cache.restNormal);
+    if (tangents && cache.restTangent) tangents.array.set(cache.restTangent);
+    const rowQuats = windPreview.windRowQuats(
+      cache.rows,
+      (index) => windChainPointAt(cache.chainPoints, index),
+      params,
+      cache.perStrand,
+      noise,
+      state.windTime
+    );
+    windPreview.deformVertexData({
+      positions: positions.array,
+      normals: normals ? normals.array : null,
+      tangents: tangents ? tangents.array : null,
+      gridRows: cache.gridRows,
+      rowQuats,
+      chainPoints: cache.chainPoints
+    });
+    positions.needsUpdate = true;
+    if (normals) normals.needsUpdate = true;
+    if (tangents) tangents.needsUpdate = true;
+    geometry.computeBoundingSphere();
+  });
+}
+
+// Toggle the wind preview. On: build caches for every meshed lock and tick once so a
+// static pose appears immediately. Off: bitwise-restore every cached lock and drop the
+// caches. All DOM access is defensive (elements land with the parallel index.html).
+function setWindPreviewActive(active) {
+  const state = windStore.state;
+  active = Boolean(active);
+  state.windPreviewActive = active;
+  if (active) {
+    locks.forEach((lock) => {
+      if (lock?.mesh?.geometry) buildWindPreviewCache(lock);
+    });
+  } else {
+    locks.forEach((lock) => {
+      const cache = windPreviewCache.get(lock);
+      if (!cache) return;
+      windRestoreLockGeometry(lock, cache);
+      windPreviewCache.delete(lock);
+    });
+    // windPlaying is intentionally NOT reset: like the Turntable (active = moving), the
+    // preview resumes the last play state on reactivation (store default is playing).
+  }
+  if (toggleWindPreviewButton) {
+    toggleWindPreviewButton.classList.toggle("active", active);
+    toggleWindPreviewButton.setAttribute("aria-pressed", String(active));
+  }
+  if (windPreviewMenuState) windPreviewMenuState.textContent = active ? "On" : "Off";
+  if (windPreviewPanel) windPreviewPanel.classList.toggle("hidden", !active);
+  if (windPlayPauseButton) windPlayPauseButton.textContent = state.windPlaying ? "Pause" : "Play";
+  if (active) windPreviewTick(0);
 }
 
 
@@ -6381,6 +6624,9 @@ function finishSurfaceObjectTransform() {
 }
 
 function beginHandleEdit(handle = transformControls.object) {
+  // Wind preview mutual exclusion: a strand edit stroke start (pointerdown) closes the
+  // preview so edits operate on, and rebuild from, the authored rest geometry.
+  if (windStore.state.windPreviewActive) setWindPreviewActive(false);
   if (!handle?.userData?.lockId) return;
   const lock = locks.find((item) => item.id === handle.userData.lockId);
   if (!lock) return;
@@ -9745,6 +9991,9 @@ function resetTransientInteractionsForStateRestore() {
 }
 
 function resetEditableSceneForStateRestore() {
+  // Wind preview mutual exclusion: full scene teardown/reload (project open, new project,
+  // undo/redo restore) closes the preview and drops caches before lock objects are replaced.
+  if (windStore.state.windPreviewActive) setWindPreviewActive(false);
   disposeAllEditableObjects();
   locks.length = 0;
   selectionSets.length = 0;
@@ -11944,6 +12193,9 @@ function syncLockFromCurve(lock) {
 }
 
 function rebuildLockGeometry(lock, options = {}) {
+  // Wind preview mutual exclusion: the geometry is about to be replaced, so the per-vertex
+  // rest cache would go stale — close the preview first (bitwise restores + drops caches).
+  if (windStore.state.windPreviewActive) setWindPreviewActive(false);
   restoreUvCheckerPreview(); // 几何重建前先恢复导出 UV 预览几何，构建走原几何
   const previousGeometry = lock.mesh.geometry;
   lock.mesh.geometry = strandGeometryApi.createHairGeometry(lock);
@@ -17155,7 +17407,7 @@ recentProjectsMenu.addEventListener("click", async (event) => {
 });
 appMenuDropdowns.forEach((menu) => {
   menu.addEventListener("click", (event) => {
-    if (event.target.closest("button") && !event.target.closest("#toggleTurntable")) closeAppMenus();
+    if (event.target.closest("button") && !event.target.closest("#toggleTurntable") && !event.target.closest("#toggleWindPreview")) closeAppMenus();
   });
 });
 toggleTurntableButton.addEventListener("click", () => setTurntableActive(!viewportState.state.turntableActive));
@@ -17164,6 +17416,34 @@ turntableSpeedInput.addEventListener("input", () => {
   turntableSpeedValue.textContent = `${viewportState.state.turntableSpeed.toFixed(1)}x`;
 });
 setTurntableActive(false);
+// --- Wind preview wiring (mirrors the Turntable wiring above) ---
+if (toggleWindPreviewButton) {
+  toggleWindPreviewButton.addEventListener("click", () => setWindPreviewActive(!windStore.state.windPreviewActive));
+}
+if (windPreviewCloseButton) {
+  windPreviewCloseButton.addEventListener("click", () => setWindPreviewActive(false));
+}
+if (windPlayPauseButton) {
+  windPlayPauseButton.addEventListener("click", () => {
+    windStore.state.windPlaying = !windStore.state.windPlaying;
+    windPlayPauseButton.textContent = windStore.state.windPlaying ? "Pause" : "Play";
+  });
+}
+windSliders.forEach(({ key, input, value }) => {
+  if (!input) return;
+  input.addEventListener("input", () => {
+    windStore.state[key] = Number(input.value);
+    if (value) value.textContent = (WIND_VALUE_FORMATS[key] || ((v) => String(Math.round(Number(v) * 100) / 100)))(windStore.state[key]);
+    if (key === "windSeed") windNoiseCache = { seed: null, noise: null }; // seed change → rebuild noise lazily
+    if (key === "windSeed" || key === "windStrandRandom") {
+      // per-strand values are baked into the cache → rebuild all caches on next tick
+      if (windStore.state.windPreviewActive) {
+        for (const lock of locks) windPreviewCache.delete(lock);
+      }
+    }
+  });
+});
+setWindPreviewActive(false); // normalize panel/menu state at startup (no-op restore)
 radialMenuApi.setRadialMenusEnabled(ui.state.radialMenusEnabled, { persist: false });
 clumpProceduralApi.setProceduralDrawExperimentalEnabled(draw.state.proceduralDrawExperimentalEnabled, { persist: false });
 setMultiCameraExperimentalEnabled(multiCameraState.state.experimentalEnabled, { persist: false });
@@ -20026,6 +20306,7 @@ function animate(timestamp = performance.now()) {
   referenceHeadApi.updateReferenceCropHandles();
   updateViewPlaneGrid();
   updatePullGuideVisual();
+  if (windStore.state.windPreviewActive) windPreviewTick(deltaSeconds);
   renderUvInspector(timestamp);
   renderer.render(scene, camera);
   if (multiCameraState.state.enabled && multiCameraState.state.previewRenderers) {
@@ -20138,6 +20419,12 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     sel,
     hairState,
     undoHistory,
+    windPreviewApi: {
+      setWindPreviewActive,
+      tickOnce: () => windPreviewTick(0.016),
+      getWindTime: () => windStore.state.windTime
+    },
+    windState: windStore.state,
     updateCurveObjects,
     transformControls,
     beginTipSubBoneRotate: bonesApi.beginTipSubBoneRotate,

@@ -6,6 +6,16 @@
 
 > 说明：条目按子系统归类，同一开发阶段（2.x / Phase 2.15 等）的条目可能分散到多个文件，请按关键词跳读。
 
+- **吹风预览系统（0.2.112，js 改动标注）**：
+  - `modules/geometry/wind-preview.js`（新，纯函数零依赖）：`mulberry32` / `perStrandWind(seed, strandId, intensity)` / `fbm4` / `windAngleAt` / `windAxis` / `windRowQuats` / `slerpQuat` / `rotateVec3` / `deformVertexData`（原地改 positions/normals/tangents，row=−1 passthrough）。
+  - `js/vendor/simplex-noise.js`（新）：simplex-noise 4.0.3 MIT ESM 单文件（`createNoise4D`，mulberry32 播种）。
+  - `modules/core/wind-store.js`（新）：`WIND_PREFERENCE_KEYS` + `createWindStore()`，10 持久化参数（readStoredPreference + clampNumber normalize）+ 3 运行时字段（windPreviewActive/windPlaying/windTime，不入档）。
+  - `index.html`：Preview 菜单 `#toggleWindPreview`（Turntable 同款 menuitem + `#windPreviewMenuState`）；strands 组 `#windPreviewPanel`（10 个 `windXxxInput` 滑杆 + `#windPlayPauseButton`/`#windPreviewCloseButton`，class hidden 初始）。
+  - `app.js`：`windStore` 实例；`windPreviewCache`（模块级 WeakMap，**不入 .ahs 序列化**——lock 无新持久化字段）；`windNoiseCache`（seed 失效重建）；`windChainPointsFor`（CatmullRomCurve3 采样，curveFrameAt 不暴露 point）；`buildWindPreviewCache`（rest 快照 + gridRowIndices + perStrand(含 windStrandRandom intensity)）；`windPreviewTick`（animate 钩子：windPlaying 才推进 windTime；每帧先复位 rest 再 deform，防旋转复合累积；attribute needsUpdate）；`setWindPreviewActive`（启用建缓存/关闭逐位恢复 + 菜单 aria-pressed/状态文本 + 面板 hidden 切换）；编辑互斥 3 点自动关预览（beginHandleEdit / rebuildLockGeometry / resetEditableSceneForStateRestore）；滑杆接线（seed/strandRandom 变更清缓存）；`__ahsTest.windPreviewApi` + `windState`（?ahstest=1 门控）。
+  - `modules/data/loc-zh.js` / `loc-ja.js`：各 +13 key。
+  - `tests/wind-preview.test.mjs`（新）：12 用例（确定性/值域/根少动尖多动/intensity 缩放/−1 passthrough）。
+  - `scripts/verify-wind-preview.mjs`（新）：headless Chrome + CDP 真实工程端到端（含 unpkg three 离线 vendor 拦截）。
+
 - **UV 打包多线程化（0.2.110，js 改动标注）**：
   - `modules/io/uv-pack.js`：新增导出 `preparePack` / `sampleMaxK` / `refineMaxK` / `applyPackResult`（两段式拆解，同步 `packFamilies` 输出逐位不变，冻结回归 fixtures/uv-pack-reference.json）；`alpacaPackOccupancy` 内部「Uint8Array 栅格 + 积分图 + 每岛 O(R²) 重建」→「行区间表」（每行二分判空 + 插入合并，逐格等价；fitsAt 跨调用复用 rows；旧实现注释保留可切回）。
   - `modules/io/uv-pack-async.js`（新）：`createPackAsync({createWorker, workers, timeoutMs})` → `{packFamiliesAsync, dispose}` + 懒建单例 `packFamiliesAsync`——阶段 1 64 个 sample 任务（8 seed × 8 块 × 16 采样索引）+ 阶段 2 8 个 refine 任务经 Worker 池分发，确定性合并（每 seed 块 max → 全局 k 最大、seed 并列取早）与同步逐位一致；boxes 用 Float64Array（Float32 会在栅格 ceil 边界翻转 fitsAt）；克隆工作副本成功才拷回（失败零污染）；无 Worker/池失败回退同步；任务异常 reject + dispose。

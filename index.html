@@ -74,6 +74,10 @@
                   <span>Turntable</span>
                   <span id="turntableMenuState" class="app-menu-state">Off</span>
                 </button>
+                <button id="toggleWindPreview" type="button" role="menuitem" aria-pressed="false">
+                  <span>Wind Preview</span>
+                  <span id="windPreviewMenuState" class="app-menu-state">Off</span>
+                </button>
               </div>
             </div>
             <div class="app-menu-shell">
@@ -1054,6 +1058,25 @@
           <label class="topology-control" for="sweepEdgeSmoothInput" title="Sweep edge smooth: relaxes the swept surface along its length at sharp bends after the overlap clamp, preserving the cross-section. 0 = off; default 0.3">Sweep Edge Smooth <input id="sweepEdgeSmoothInput" type="range" min="0" max="1" step="0.01" value="0.3" /></label>
           <label class="topology-control" for="sweepOverlapFalloffInput" title="Sweep overlap falloff: propagates the narrowing to neighboring rings so the transition at a sharp bend is gradual instead of an abrupt step that can open gaps. 0 = off (sharp); default 3">Sweep Overlap Falloff <input id="sweepOverlapFalloffInput" type="range" min="0" max="8" step="1" value="3" /></label>
           <label class="topology-control" for="sweepTangentSmoothInput" title="Sweep tangent smooth: post-processes the per-ring frame tangent at sharp bends (weighted by curvature) so ring orientation turns gradually instead of kinking. 0 = off; default 0.3">Sweep Tangent Smooth <input id="sweepTangentSmoothInput" type="range" min="0" max="1" step="0.01" value="0.3" /></label>
+        </div>
+        <div id="windPreviewPanel" class="panel-section sliders hidden" data-attribute-panel="strands">
+          <div class="section-head">
+            <span>Wind Preview</span>
+          </div>
+          <label class="topology-control"><span>Wind Direction</span> <input id="windDirectionInput" type="range" min="-180" max="180" step="1" value="0" /><output id="windDirectionInputValue" class="slider-value">0</output></label>
+          <label class="topology-control"><span>Strength</span> <input id="windStrengthInput" type="range" min="0" max="1" step="0.01" value="0.6" /><output id="windStrengthInputValue" class="slider-value">0.6</output></label>
+          <label class="topology-control"><span>Frequency</span> <input id="windFrequencyInput" type="range" min="0.1" max="3" step="0.05" value="0.8" /><output id="windFrequencyInputValue" class="slider-value">0.8</output></label>
+          <label class="topology-control"><span>Turbulence</span> <input id="windTurbulenceInput" type="range" min="0" max="1" step="0.01" value="0.5" /><output id="windTurbulenceInputValue" class="slider-value">0.5</output></label>
+          <label class="topology-control"><span>Turbulence Scale</span> <input id="windTurbulenceScaleInput" type="range" min="0.5" max="8" step="0.1" value="2" /><output id="windTurbulenceScaleInputValue" class="slider-value">2</output></label>
+          <label class="topology-control"><span>Gust Strength</span> <input id="windGustStrengthInput" type="range" min="0" max="1" step="0.01" value="0.35" /><output id="windGustStrengthInputValue" class="slider-value">0.35</output></label>
+          <label class="topology-control"><span>Gust Freq</span> <input id="windGustFreqInput" type="range" min="0.05" max="0.5" step="0.01" value="0.2" /><output id="windGustFreqInputValue" class="slider-value">0.2</output></label>
+          <label class="topology-control"><span>Root Exponent</span> <input id="windRootExponentInput" type="range" min="1" max="4" step="0.1" value="2.5" /><output id="windRootExponentInputValue" class="slider-value">2.5</output></label>
+          <label class="topology-control"><span>Strand Random</span> <input id="windStrandRandomInput" type="range" min="0" max="1" step="0.01" value="0.5" /><output id="windStrandRandomInputValue" class="slider-value">0.5</output></label>
+          <label class="topology-control"><span>Seed</span> <input id="windSeedInput" type="range" min="0" max="2147483647" step="1" value="20260817" /><output id="windSeedInputValue" class="slider-value">20260817</output></label>
+          <div class="button-row">
+            <button id="windPlayPauseButton" type="button">Pause</button>
+            <button id="windPreviewCloseButton" type="button">Close Preview</button>
+          </div>
         </div>
         <div id="strandShapePanel" class="panel-section sliders" data-attribute-panel="strands">
           <div class="section-head">
@@ -2326,6 +2349,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260817-1"></script>
+    <script type="module" src="./app.js?v=20260817-2"></script>
   </body>
 </html>

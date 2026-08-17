@@ -1,10 +1,24 @@
 # 吹风预览系统计划(程序化快速预览 + 后续碰撞路线图)
 
-> 状态:**已复查(0.2.111 准备阶段),暂不执行**——待用户指令后按 §7 任务表派发实施子智能体。
-> 版本基准:DHS/develop @ 0.2.110。复查更新:开关入 **Preview 菜单**(§6),依赖 dom-contract 清理先行(0.2.111)。
+> 状态:**已实施(0.2.112,见 §0.1 实施记录)**;碰撞路线图(§8)未实施。
+> 版本基准:DHS/develop @ 0.2.112。复查更新:开关入 **Preview 菜单**(§6),依赖 dom-contract 清理先行(0.2.111)。
 > 目标:AnimeHairStudio 内实现「根少动、发尖多动」的程序化吹风预览——非物理模拟、非导出动画,
 > 纯视口显示层变形;后续碰撞效果另立路线图(见 §8)。
 > 调研:子智能体并行调研(噪波/Unity 低成本实现 + 碰撞代理论文/Blender 源码),结论已并入本文。
+
+## 0.1 实施记录(0.2.112,已落地)
+
+- **交付**(3 子智能体并行 + 主进程 merge):
+  - `modules/geometry/wind-preview.js`(新):纯函数核心——mulberry32 / perStrandWind(含 intensity=windStrandRandom 缩放,0=全发丝一致)/ fbm4 / windAngleAt / windAxis / windRowQuats(根到尖累积四元数)/ slerpQuat / rotateVec3 / deformVertexData(原地变形,row=−1 顶点 passthrough);
+  - `js/vendor/simplex-noise.js`(新):simplex-noise 4.0.3 MIT 单文件 ESM vendor(createNoise4D(mulberry32(seed)) 确定性);**注意 npm 侧 open-simplex-noise 是 CJS 不适用,且 --no-save 安装会剪掉 node_modules 里未声明的 three(踩坑,已重装 three@0.165.0)**;
+  - `modules/core/wind-store.js`(新):10 个持久化参数 + windPreviewActive/windPlaying/windTime 运行时字段;
+  - `index.html`:Preview 菜单 `#toggleWindPreview`(Turntable 同款)+ `#windPreviewPanel`(strands 组 10 滑杆 + Pause/Close);
+  - `app.js`(+283):windStore 实例、windPreviewCache(WeakMap,不入 .ahs)、windNoiseCache(seed 失效)、buildWindPreviewCache(rest 快照 + 链点曲线采样)、windPreviewTick(animate 钩子,windPlaying 才推进 windTime)、setWindPreviewActive(启用建缓存/关闭逐位恢复)、编辑互斥 3 点(beginHandleEdit/rebuildLockGeometry/resetEditableSceneForStateRestore)、滑杆接线(seed/strandRandom 变更清缓存)、`__ahsTest.windPreviewApi` + `windState`;
+  - `tests/wind-preview.test.mjs`:12 用例(确定性/值域/根少动尖多动/intensity/−1 顶点 passthrough);
+  - `scripts/verify-wind-preview.mjs`:真实工程端到端(headless Chrome + CDP,离线 three vendor 拦截 unpkg)。
+- **实测**:Sussurro_v1_0046.ahs 26 locks/9685 顶点,启用后 9091 顶点变形、**根行位移 0、尖部主导**(totalDisp 573 vs root 0);暂停时逐位确定;关闭逐位恢复;菜单/面板切换正常;0 页面异常 — **11/11**。
+- **参数**:方向/强度/频率/湍流/湍流尺度/阵风强度/阵风频率/根部指数/发丝随机/种子(默认见 §5)。
+- **踩坑**:① 主进程 PowerShell 数组拍平 bug(`@(@('a','b'))` 单元素嵌套被展开成字符串对,`$p[0]` 取到 `.` → 全文件 `.`→`/` 替换,index.html 被毁一次,已从 HEAD 恢复并重放改动)——**写文件用 `$t.Replace` 时逐对验证,勿用数组下标取对**;② `npm install --no-save` 会剪除未声明依赖(three);③ unpkg 在部分时段 DNS 不可达 → 验收脚本本地 vendor three(Fetch 拦截)。
 
 ## 0. 复查记录(0.2.111,未执行)
 
