@@ -1,9 +1,18 @@
 # 吹风预览系统计划(程序化快速预览 + 后续碰撞路线图)
 
-> 状态:计划(未实施)。版本基准:DHS/develop @ 0.2.107。
+> 状态:**已复查(0.2.111 准备阶段),暂不执行**——待用户指令后按 §7 任务表派发实施子智能体。
+> 版本基准:DHS/develop @ 0.2.110。复查更新:开关入 **Preview 菜单**(§6),依赖 dom-contract 清理先行(0.2.111)。
 > 目标:AnimeHairStudio 内实现「根少动、发尖多动」的程序化吹风预览——非物理模拟、非导出动画,
 > 纯视口显示层变形;后续碰撞效果另立路线图(见 §8)。
 > 调研:子智能体并行调研(噪波/Unity 低成本实现 + 碰撞代理论文/Blender 源码),结论已并入本文。
+
+## 0. 复查记录(0.2.111,未执行)
+
+- **UI 变更**:开关按钮从「视口工具区」改为顶部 **Preview 菜单**(`#previewMenu`,Turntable 同款 menuitem 模式,`#toggleWindPreview` + `#windPreviewMenuState`),参数面板仍为 strands 组滑杆面板(仅开启时显示)——符合用户「暂时加到 preview 菜单中」的要求;
+- **前置**:dom-contract 滞后测试清理(0.2.111 并行执行中)——清理后再实施吹风,新 UI 元素可顺势补 dom-contract 断言;
+- **代码状态核验(0.2.110)**:计划 §2 的数据模型假设全部仍成立(`gridRowIndices/gridColIndices` 每顶点齐备、`animate()` 在 app.js:19986、`curveFrameAt`/`strandGeometryFrameAt` 可用);导出链路已 async 化,吹风预览不触碰导出管线,无冲突;
+- **性能预算不变**:0.44ms/帧 @6.6k 顶点(实测),60fps 余量 >30×;
+- 参数集(§5)、碰撞路线图(§8)维持不变。
 
 ## 1. 目标与范围 / Goals & Non-goals
 
@@ -99,16 +108,23 @@ normal'/tangent' = Q(t) * rest                              // 法线/切线同�
 | Seed | int | 项目固定 | 确定性来源 |
 | 预览开关 / 播放暂停 | toggle | 关 | 面板顶部 |
 
-## 6. UI 与接线
+## 6. UI 与接线(0.2.111 复查修订:开关入 Preview 菜单)
 
-- 新面板 `#windPreviewPanel`(strands 组,`panel-section sliders`,样式同 `#sweepOverlapPanel`);
-  开关按钮放视口工具区或面板内;slider 复用现有 range + setupEditableSliderControls 模式;
+- **开关:Preview 菜单**(0.2.111 复查决定,替代「视口工具区按钮」)——顶部菜单栏已有 `#previewMenu`(现只有 Turntable 一项,`#toggleTurntable` 的 `role="menuitem"` + `aria-pressed` + 状态 span 模式),按同一模式新增:
+  ```html
+  <button id="toggleWindPreview" type="button" role="menuitem" aria-pressed="false">
+    <span>Wind Preview</span>
+    <span id="windPreviewMenuState" class="app-menu-state">Off</span>
+  </button>
+  ```
+  加在 `#previewMenu` 内 Turntable 之后;`aria-pressed`/菜单状态文本随开关同步(参考 `setTurntableActive` 的菜单联动写法);
+- **参数面板** `#windPreviewPanel`(strands 组,`panel-section sliders`,样式同 `#sweepOverlapPanel`):仅预览开启时显示(或选中时显示);slider 复用现有 range + setupEditableSliderControls 模式;面板内放「播放/暂停」与「关闭预览」;
 - 新 store `windStore`(modules/core/wind-store.js,scene-store 模式 + readStoredPreference 持久化,
   字段 normalize 同上表;预计算缓存不进 store、仅内存);
 - `animate()` 钩子:`if (windState.previewActive) updateWindPreview(deltaSeconds)`(在
   `updatePullGuideVisual()` 附近);几何 buffer 标记 `needsUpdate`;关闭时恢复缓存的原 buffer(逐位);
 - 本地化:新文案加 EN 原文 + `loc-zh.js`/`loc-ja.js` 词典(面板 label 自动走 translateUiString);
-- 缓存号:index.html `?v=` bump + `modules/core/app-config.js` APP_VERSION +1(0.2.108)。
+- 缓存号:按 0.2.110 教训**定点 bump**(index.html→app.js、涉及模块链),不做全局替换;`APP_VERSION` +1。
 
 ## 7. 实现拆分(子智能体任务切分,主进程 merge)
 

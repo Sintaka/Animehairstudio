@@ -2,13 +2,13 @@
 
 > 状态：**完成**（2026-08-12，分支 0.2.59-refactor，19 个重构 commit）。
 > 本文件是从原版 app.js 拆到当前「编排层」的**权威指引**：历程、当前架构、拆分模式、每批执行模板、踩坑清单、保留区、以及给修 bug agent 的定位字典。
-> 配套：入口字典 [AGENT_QUICKSTART.md](AGENT_QUICKSTART.md)（保留代码+决策）、检索层 [FUNCTION_INDEX.md](FUNCTION_INDEX.md)（函数名→行号→文件，机器生成）、状态 [STATE_MANAGEMENT.md](STATE_MANAGEMENT.md)（15 store）。
+> 配套：入口字典 [AGENT_QUICKSTART.md](AGENT_QUICKSTART.md)（保留代码+决策）、检索层 [FUNCTION_INDEX.md](FUNCTION_INDEX.md)（函数名→行号→文件，机器生成）、状态 [STATE_MANAGEMENT.md](STATE_MANAGEMENT.md)（17 store）。
 
 ## 0. 一句话
 
-- 原版 app.js **39,207 行 / 1,319 顶层函数 / 237 全局 let** → 当前 **19,970 行 / 556 个 app.js 顶层函数（全库 2,003 个，见 FUNCTION_INDEX）/ 1 个全局 let（camera）**，净减 **−49%**（main 0.1.5 移植后 app.js 由 18,401 增至 19,970）。
-- 业务逻辑按子系统迁入 modules（**85 个文件**）；app.js 只保留「初始化 + store 装配 + 事件绑定 + 少量脊柱函数」。
-- 拆分方式统一为 **`createXxxApi(deps)` 依赖注入**，每批独立 commit + verify-smoke 基线回归（当前基线 10/11，唯一失败为内容相关的 branch-bridge 断言，基线同样失败）。
+- 原版 app.js **39,207 行 / 1,319 顶层函数 / 237 全局 let** → 当前 **20,183 行 / 556+ 个 app.js 顶层函数（全库 2,131 个，见 FUNCTION_INDEX）/ 1 个全局 let（camera）**，净减 **−49%**（main 0.1.5 移植后 app.js 由 18,401 增至 19,970；0.2.108–0.2.110 增补导出/打包异步化后到 20,183）。
+- 业务逻辑按子系统迁入 modules（**98 个文件**，含 0.2.110 新增 uv-pack-async/worker）；app.js 只保留「初始化 + store 装配 + 事件绑定 + 少量脊柱函数」。
+- 拆分方式统一为 **`createXxxApi(deps)` 依赖注入**，每批独立 commit + verify-smoke 基线回归（当前基线 9/11：export 对话框标题 + branch-bridge 为已知环境差异；dom-contract 0.2.111 清理后全绿）。
 
 ## 1. 历程总览（从原版到现在）
 
@@ -24,7 +24,7 @@
 
 ## 2. 当前架构（功能 → 文件字典）
 
-### app.js（19,970 行，编排层；main 0.1.5 移植后由 18,401 增至 19,970）
+### app.js（20,183 行，编排层；main 0.1.5 移植后由 18,401 增至 19,970，0.2.110 后 20,183）
 
 - 保留：模块 import 装配、store 创建与 deps 批填、事件绑定、render loop、启动 bootstrap。
 - 脊柱（**不拆，拆=伪模块化**）：undo/snapshot/mirror 数据管线（pushUndoState/restoreState/snapshotState/restoreLock/mirrorPartnerFor）、selection 粘合层（selectLock/getSelectedLock 等，外部调用点最多）、curve-objects 核心（createCurveObjects/updateCurveObjects/syncLockFromCurve/rebuildLockGeometry）、`__AHS_TEST_SEAM`（测试 seam，引用迁移函数处保留 api.X 重导出）。
@@ -66,7 +66,7 @@
 5. **跨批次重接**：其它 deps 批填引用了本批函数名的改 `api.X`；seam（`__AHS_TEST_SEAM`）引用了本批函数名的必须挂 `api.X` 重导出。
 6. **编码**：UTF-8 无 BOM、CRLF、中文逐字节一致（非 ASCII 总量守恒，允许 ±1 文件头注释字符）。
 7. **语法**：`Copy-Item app.js $env:TEMP\app_check.mjs -Force; node --check $env:TEMP\app_check.mjs` + `node --check <模块>`；**再以 .mjs 副本权威解析**（node --check 对无 package.json 的 ESM .js 会静默放行非法语法）。
-8. **回归**：`node scripts/verify-smoke.mjs assets/presets/layered-side-bun.ahs` 结果与 HEAD 基线一致（10/11）；seam/契约类（tip 子骨、curveObjects 字段）用 CDP 探针（`?ahstest=1`）实测。
+8. **回归**：`node scripts/verify-smoke.mjs assets/presets/layered-side-bun.ahs` 结果与 HEAD 基线一致（当前 9/11：export 对话框标题 + branch-bridge 为已知环境差异）；`node --test tests/*.test.mjs`（dom-contract 0.2.111 起应全绿）；seam/契约类（tip 子骨、curveObjects 字段）用 CDP 探针（`?ahstest=1`）实测。
 
 ## 5. 踩坑清单（17 批汇总）
 
@@ -95,11 +95,11 @@
 ## 7. 修 bug agent 定位字典
 
 - **查函数在哪**：`devlog/FUNCTION_INDEX.md`（函数名 → 文件/行号/calls）或 `Select-String` 定点搜函数名，不要整文件读。
-- **状态在哪**：`STATE_MANAGEMENT.md`（15 个 store + 1 个全局 let camera）；新状态一律进对应 store，不新增全局 let。
+- **状态在哪**：`STATE_MANAGEMENT.md`（17 个 store + 1 个全局 let camera）；新状态一律进对应 store，不新增全局 let。
 - **某功能在哪个模块**：本文件 §2 表 + AGENT_QUICKSTART §2（保留代码/决策）。
 - **模块需要新的 app.js 依赖**：走 deps 注入（模块内 `deps.X`，app.js 批填 `X: 引用`），不要改成模块内裸引用。
 - **新函数要暴露给 app.js**：加进模块 return 对象，app.js 调用点改 `api.X`。
-- **改完必验证**：node --check（.mjs 副本）+ verify-smoke（10/11 基线）+ seam/契约 CDP（如涉及 tip/bone）。
+- **改完必验证**：node --check（.mjs 副本）+ verify-smoke（当前 9/11 基线）+ `node --test tests/*.test.mjs`（dom-contract 0.2.111 起全绿）+ seam/契约 CDP（如涉及 tip/bone）。
 - **编码铁律**：改任何含中文的文件都用 UTF-8 无 BOM 写入；不要用 PowerShell 管道把中文喂给 node stdin。
 
 

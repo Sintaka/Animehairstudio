@@ -1,7 +1,8 @@
 # 新 Agent 快速入口 / AGENT QUICKSTART
 
-> 目的：让一个新 agent（或新开发者）在几分钟内知道「本 fork 改了哪些代码、哪些**必须保留**、当时的**决策**是什么」，避免从头通读 1.7MB 的 `app.js` 或 106KB 的 `js-change-annotations.md`。
+> 目的：让一个新 agent（或新开发者）在几分钟内知道「本 fork 改了哪些代码、哪些**必须保留**、当时的**决策**是什么」，避免从头通读 ≈0.9MB（20,183 行）的 `app.js` 或 106KB 的 `js-change-annotations.md`。
 > 维护：功能分支合入 / daily build +1 时，如涉及本页列出的保留代码或决策，请同步更新本页；详细条目仍按主题追加到各专题文件，本页只做摘要与指针。
+> 版本基准：0.2.110（DHS/develop，de8588a 起）。
 
 ## 0. 先读什么（建议顺序）
 
@@ -9,13 +10,13 @@
 2. `devlog/README.md` —— devlog 索引字典（各专题文件入口）
 3. `devlog/development-standards.md` —— 开发规范 + 「持续修改功能」清单（main 更新后要优先同步的本地功能）+ 许可证
 4. `devlog/main-sync-conflicts.md` —— 与 main 合并的全部决策（Local 选项移除、桥接区与 compound 并存策略、17 处冲突分类）
-5. 按需跳读：`devlog/APPJS_SPLIT_GUIDE.md`（**从原版拆分指引**：历程/当前架构/拆分模式/每批执行模板/踩坑/定位字典，新 agent 必读）、`devlog/js-change-annotations.md`（子系统索引表 + 指向 6 个 `annotations-*.md` 专题文件）、`devlog/FUNCTION_INDEX.md`（机器生成的函数目录）、`devlog/STATE_MANAGEMENT.md`（**状态管理架构：15 个 store 清单 + 替换验证 9 点**）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）
+5. 按需跳读：`devlog/APPJS_SPLIT_GUIDE.md`（**从原版拆分指引**：历程/当前架构/拆分模式/每批执行模板/踩坑/定位字典，新 agent 必读）、`devlog/js-change-annotations.md`（子系统索引表 + 指向 6 个 `annotations-*.md` 专题文件）、`devlog/FUNCTION_INDEX.md`（机器生成，当前 2,131 函数 / 99 文件）、`devlog/STATE_MANAGEMENT.md`（**状态管理架构：17 个 store 清单 + 替换验证 9 点**）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）、`devlog/in-progress/wind-preview-plan.md`（**吹风预览计划，未实施**）、`devlog/in-progress/uv-pack-parallel-plan.md`（UV 打包并行，0.2.110 已实施，Phase 2 未做）
 
 ## 1. 仓库结构速览
 
-- `app.js`（≈20k 行，编排层）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 等业务逻辑已按子系统迁入 modules（见 `APPJS_SPLIT_GUIDE.md` §2）。
-- `modules/*.js` —— 按域分目录（core/data/geometry/io/edit/sculpt/material/branch/scalp/bones/scene，共 94 个文件）；**全局状态已收敛到 17 个 store，全局 let 只剩 camera**（main 0.1.5 移植新增 multiCameraState/recovery，见 `devlog/STATE_MANAGEMENT.md`），不要再新增 app.js 全局 let。
-- `index.html` / `styles.css` —— UI。
+- `app.js`（20,183 行 ≈0.9MB，编排层）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 等业务逻辑已按子系统迁入 modules（见 `APPJS_SPLIT_GUIDE.md` §2）。**原版 main 是 39,207 行的扁平大文件，本地已拆分（−49%），不要在 app.js 里堆业务逻辑，新逻辑进 modules/<domain>/ 后经 createXxxApi 注入**。
+- `modules/*.js` —— 按域分目录（core/data/geometry/io/edit/sculpt/material/branch/scalp/bones/scene，共 98 个文件，app.js 计入则 99）；**全局状态已收敛到 17 个 store，全局 let 只剩 camera**（main 0.1.5 移植新增 multiCameraState/recovery，见 `devlog/STATE_MANAGEMENT.md`），不要再新增 app.js 全局 let。
+- `index.html` / `styles.css` —— UI（顶部菜单栏含 Preview 菜单 `#previewMenu`，Turntable 等预览开关在此；缓存号 `?v=` 定点刷新，**不要全局替换**，见 §5 坑）。
 - `server.js` —— main 带来的静态文件服务；`/api/save-project` 已是**死代码**（三个 Local 选项已移除，勿再调用）。
 - `devlog/` —— 全部开发记录（本页所在）。
 
@@ -57,9 +58,10 @@
 - 0.2.67：急弯过渡扩散——`sweepCurvatureResponse` 新增 `falloff`（默认 3），收窄系数沿脊柱传播（`#sweepOverlapPanel` 第 4 个滑块 Sweep Overlap Falloff 0–8），消除被处理边附近未收缩环的突兀/缺口。
 - 0.2.68：`smoothSweepFrames` 切线后处理平滑（按曲率热度，`#sweepOverlapPanel` 第 5 个滑块 Sweep Tangent Smooth，默认 0.3）；5 个平滑参数（Strength/Threshold/EdgeSmooth/Falloff/TangentSmooth）已接入镜像系统（createMirrorPartner + syncMirrorPartnerFromLock + 滑块 syncActiveMirror），左右对称对象自动同步。
 
-### 2.7 导出拆 UV（0.2.69–0.2.79，**保留代码**）
+### 2.7 导出拆 UV（0.2.69–0.2.79 规则；**0.2.110 打包多线程化**）
 - `modules/io/uv-unfold.js`：导出时按 `geometry.userData.gridRowIndices/gridColIndices` 生成矩形 UV 的纯函数核心——`gridDimensions` / `gridUvTable`（弧长表：row-0 环向边宽累计 u + referenceCircumference/uOffset·uScale 两种归一 + seamEndU）/ `gridUvAt` / `childUTopologyScale`（子发片 U 拓扑对齐缩放：环顶面弧长↔洞顶 u 跨度）/ `unfoldHairMesh`（closed/split/open/compound/child 五类展开，seam 双副本不丢面、passthrough 多副本、leafWeights 复制）。
-- `modules/io/uv-pack.js`（0.2.82 起；**0.2.91 起用 `alpacaPackOccupancy` 占位栅格 L 形扫描**）：`packFamilies(families,{gap,fill})` 纯函数——每个「主发片+子发片」family 统一纹素密度缩放 + 打包进 UDIM 1001（`PACK_GAP=10/4096`、不旋转只位移、等比不 normalize），并给 mesh 打 `uvisland` 岛编号。当前打包器 `alpacaPackOccupancy`（占位栅格 + 积分图 + scanLine 方形边界 + 两阶段 L 形扫描 → 方形 + 高填充）；旧实现 `maxRectsPack`/`alpacaPackTurbo`/`alpacaPack` 注释保留可切回。算法细节与参考文献见 `uv-unfold.md` §10–§11。
+- `modules/io/uv-pack.js`（0.2.82 起；**0.2.110 两段式重构**）：`packFamilies` 纯函数 + 新增 `preparePack`/`sampleMaxK`/`refineMaxK`/`applyPackResult` 导出（并行择优拆开）；`alpacaPackOccupancy` 内部**行区间表**（替代栅格+积分图，逐格等价，同步 2.5×）；`PACK_GAP=10/4096`、不旋转只位移、`uvisland` 岛编号；旧实现 `maxRectsPack`/`alpacaPackTurbo`/`alpacaPack` 注释保留可切回。算法细节与参考文献见 `uv-unfold.md` §10–§11。
+- **`modules/io/uv-pack-async.js` + `uv-pack-worker.js`（0.2.110 新增，导出/UV checker 默认走这里）**：`packFamiliesAsync` Worker 池并行（8 seed×8 块 sample + 8 refine 任务，与同步**逐位一致**，Float64Array 传 boxes，无 Worker 自动回退同步）；`buildUnfoldedMeshes`/`buildHairObj`/`buildHairUsda`/`packUnfoldedUv` **全部 async**（调用点必须 await）；真实工程实测 4.0s→约 456ms（≈9×）。验证工具：`scripts/verify-uv-pack-real.mjs`（headless Chrome + CDP 端到端）、`check-uv-bitidentity.mjs`、`diff-occupancy.mjs`。
 - `modules/io/project-files.js`：`kindForLock` / `childSeamCol` / `buildUnfoldedMeshes`（两遍：父表 + 展开；child 传 seamCol/childVStart/childVLength/childVSweepStart/uOffset/uScale/bridgeUvAt/passthroughCopyCount/passthroughSide；末尾 `packUnfoldedUv` 打包）；buildHairObj/buildHairUsda 走展开数据；USDA 输出 `primvars:uvisland`（usda-export.js）。
 - `modules/geometry/branch-bridge.js`：桥接 UV 锚点（每桥接顶点 `{ring,hole,t,band}`，8 处 pushBoundary）+ `userData.bridgeUvAnchors/bridgeSeamCol/bridgeBoundaryParentIndices`。
 - `modules/geometry/strand-geometry.js`：各几何类型 gridRow/gridCol 写入（split 用**管局部列+全局偏移**、无 −1；弃 colToSection.findIndex）。
@@ -87,7 +89,7 @@
 - **分支**：统一开发分支 `DHS/develop`（日常开发/修复直接提交）；大更改开临时 `feat/<描述>` 分支，merge 回 `DHS/develop` 后**立即删除**；发布时 `DHS/develop` merge 进 `branch-deployment`；禁止直接 merge main（上游镜像，更新按功能移植）；合并/冲突处理由主进程负责。
 - **查代码**：先用 `Select-String` / `git grep` 按函数名定点搜（第 2 节已列关键函数名），**不要整文件读**。
 - **记 devlog**：每 commit 一句话 + 指向详细文件；新条目追加到对应专题文件，不重复全文。
-- **验证**：`node scripts/verify-smoke.mjs assets/presets/layered-side-bun.ahs`（10/11 基线，唯一失败 branch-bridge 为内容相关）；或 Playwright headless + 静态服务器 `127.0.0.1:8080` + `D:/Downloads/Sussurro_v1_004*.ahs`（当前常用 0043）；不要用 `file://` 打开。
+- **验证**：`node scripts/verify-smoke.mjs assets/presets/layered-side-bun.ahs`（当前基线 9/11：export 对话框标题 + branch-bridge 数据依赖为已知环境差异）；`node --test tests/*.test.mjs`（dom-contract 0.2.111 起应全绿；其余测试以输出为准）；真实工程 UV 打包端到端用 `node scripts/verify-uv-pack-real.mjs`（headless Chrome + CDP，加载 `D:/Downloads/Sussurro_v1_0046.ahs`，7/7 基线）；或静态服务器 `127.0.0.1:8080` + `D:/Downloads/Sussurro_v1_004*.ahs`（当前常用 0046）；不要用 `file://` 打开。
 - **版本/缓存号**：改 `modules/core/app-config.js` 的 `APP_VERSION` 与 `index.html` 缓存号 `?v=YYYYMMDD-N`，与 devlog「最近版本」保持一致。
 
 ## 5. 常见坑（吸取过的教训）
@@ -98,3 +100,5 @@
 - 根骨骼 gizmo 热更新只作**起始基准**，用户手调 diff 必须保留（offset 记忆），否则 W 重进 / H 开关会跳变。
 - 删除子发片要**重算挖洞**（程序化流程 + 文件保存数据都要处理）；直接桥接要跟随 region 中心（rootRow=round((rowMin+rowMax)/2)）。
 - 浮动面板 / 3D 选区标记对 null surface（split 父回退时）必须安全。
+- **UV 打包 Worker 坑（0.2.110）**：worker 传 boxes 必须用 **Float64Array**——Float32 相对误差 ~6e-8 会让占位栅格 `ceil((w·k+gap)/cell)` 在边界翻转 fitsAt 布尔值 → 采样 k 整步跳变，破坏「异步与同步逐位一致」；node 测试注入 worker_threads 必须传 **URL 对象**（`file://` 字符串抛 ERR_WORKER_PATH，会静默走回退路径让测试假绿，加「池真实使用」断言防）。
+- **?v= 缓存号必须定点刷新，不要全局替换（0.2.110 教训）**：dom-contract 测试冻结了 app.js/index.html 里的具体版本串，全局刷新会一次打挂 89 条断言。只在本次改动链上 bump（如 project-files→uv-pack/uv-pack-async、app.js→project-files、index.html→app.js）。

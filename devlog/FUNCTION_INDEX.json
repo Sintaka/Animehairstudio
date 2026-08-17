@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-08-14T17:48:48.653Z",
-  "totalFunctions": 2033,
+  "generatedAt": "2026-08-17T05:35:20.744Z",
+  "totalFunctions": 2131,
   "files": [
     {
       "file": "app.js",
-      "lineCount": 20092,
+      "lineCount": 20184,
       "functions": [
         {
           "name": "saveLanguage",
@@ -358,105 +358,105 @@
         },
         {
           "name": "cancelRecoverySchedule",
-          "line": 2455,
+          "line": 2456,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "recoveryWriteMustWait",
-          "line": 2467,
+          "line": 2468,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "scheduleRecoveryAutosave",
-          "line": 2474,
+          "line": 2475,
           "kind": "function",
           "exported": false,
           "calls": 7
         },
         {
           "name": "markProjectChangedForRecovery",
-          "line": 2486,
+          "line": 2487,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "queueRecoveryAutosave",
-          "line": 2492,
+          "line": 2493,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "run",
-          "line": 2506,
+          "line": 2507,
           "kind": "arrow",
           "exported": false,
           "calls": 1
         },
         {
           "name": "buildRecoveryProjectContent",
-          "line": 2519,
+          "line": 2520,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "flushRecoveryAutosave",
-          "line": 2530,
+          "line": 2531,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "clearAcknowledgedRecovery",
-          "line": 2555,
+          "line": 2556,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "setAutosaveEnabled",
-          "line": 2571,
+          "line": 2572,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "setAutosaveInterval",
-          "line": 2580,
+          "line": 2581,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "offerRecoverySnapshot",
-          "line": 2590,
+          "line": 2591,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "recoverPendingProject",
-          "line": 2615,
+          "line": 2616,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "discardPendingRecovery",
-          "line": 2639,
+          "line": 2640,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "downloadPendingRecovery",
-          "line": 2651,
+          "line": 2652,
           "kind": "function",
           "exported": false,
           "calls": 1
@@ -2101,2170 +2101,2198 @@
         },
         {
           "name": "pushUndoState",
-          "line": 9673,
+          "line": 9676,
           "kind": "function",
           "exported": false,
           "calls": 68
         },
         {
           "name": "undoLastAction",
-          "line": 9681,
+          "line": 9684,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "redoLastAction",
-          "line": 9700,
+          "line": 9703,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "updateHistoryButtons",
-          "line": 9719,
+          "line": 9722,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "resetTransientInteractionsForStateRestore",
-          "line": 9724,
+          "line": 9727,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "resetEditableSceneForStateRestore",
-          "line": 9744,
+          "line": 9747,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "restoreSharedStateForStateRestore",
-          "line": 9751,
+          "line": 9754,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "restoreSceneCollectionsForStateRestore",
-          "line": 9791,
+          "line": 9794,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "validateSelectionAfterStateRestore",
-          "line": 9817,
+          "line": 9820,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "reapplySelectionAfterStateRestore",
-          "line": 9849,
+          "line": 9852,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "finalizeStateRestore",
-          "line": 9890,
+          "line": 9893,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "restoreState",
-          "line": 9897,
+          "line": 9900,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "disposeAllEditableObjects",
-          "line": 9921,
+          "line": 9924,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "restoreLock",
-          "line": 9942,
+          "line": 9946,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "restoreGuide",
-          "line": 10176,
+          "line": 10180,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "vectorToData",
-          "line": 10237,
+          "line": 10241,
           "kind": "function",
           "exported": false,
           "calls": 15
         },
         {
           "name": "dataToVector",
-          "line": 10241,
+          "line": 10245,
           "kind": "function",
           "exported": false,
           "calls": 14
         },
         {
           "name": "frameToData",
-          "line": 10271,
+          "line": 10275,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "frameFromData",
-          "line": 10283,
+          "line": 10287,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "average",
-          "line": 10295,
+          "line": 10299,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "fitPointAttributes",
-          "line": 10299,
+          "line": 10303,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "rebuildCurveObjects",
-          "line": 10328,
+          "line": 10332,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "createCurvePoints",
-          "line": 10340,
+          "line": 10344,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "deselectStrands",
-          "line": 10444,
+          "line": 10448,
           "kind": "function",
           "exported": false,
           "calls": 9
         },
         {
           "name": "beginSelectionMarquee",
-          "line": 10459,
+          "line": 10463,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "beginAltOrbit",
-          "line": 10483,
+          "line": 10487,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "beginBlenderNavigation",
-          "line": 10500,
+          "line": 10504,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "endBlenderNavigation",
-          "line": 10550,
+          "line": 10554,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "prepareSelectPointerCapture",
-          "line": 10558,
+          "line": 10562,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "endSelectPointerCapture",
-          "line": 10564,
+          "line": 10568,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "applyAltClickCandidate",
-          "line": 10570,
+          "line": 10574,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "finishBrushAltClick",
-          "line": 10596,
+          "line": 10600,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "endAltOrbit",
-          "line": 10609,
+          "line": 10613,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "dollyCameraByDrag",
-          "line": 10616,
+          "line": 10620,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "fastDragMagnitude",
-          "line": 10639,
+          "line": 10643,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "beginHoudiniZoomDrag",
-          "line": 10645,
+          "line": 10649,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "updateHoudiniZoomDrag",
-          "line": 10653,
+          "line": 10657,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "endHoudiniZoomDrag",
-          "line": 10670,
+          "line": 10674,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "updateSelectionMarquee",
-          "line": 10678,
+          "line": 10682,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "pointInsideSelectionMarquee",
-          "line": 10695,
+          "line": 10699,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "selectPointsInMarquee",
-          "line": 10703,
+          "line": 10707,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "pointKey",
-          "line": 10729,
+          "line": 10733,
           "kind": "arrow",
           "exported": false,
           "calls": 2
         },
         {
           "name": "objectSelectionScreenBounds",
-          "line": 10760,
+          "line": 10764,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "objectInsideSelectionMarquee",
-          "line": 10797,
+          "line": 10801,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "projectedPoint",
-          "line": 10814,
+          "line": 10818,
           "kind": "arrow",
           "exported": false,
           "calls": 1
         },
         {
           "name": "selectObjectsInMarquee",
-          "line": 10843,
+          "line": 10847,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "finishSelectionMarquee",
-          "line": 10888,
+          "line": 10892,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "strandSplitProfileData",
-          "line": 10912,
+          "line": 10916,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "strandSplitControlPoint",
-          "line": 10925,
+          "line": 10929,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "panelSplitControlPoint",
-          "line": 10961,
+          "line": 10965,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "panelWidthAt",
-          "line": 10978,
+          "line": 10982,
           "kind": "arrow",
           "exported": false,
           "calls": 3
         },
         {
           "name": "panelThicknessAt",
-          "line": 10985,
+          "line": 10989,
           "kind": "arrow",
           "exported": false,
           "calls": 3
         },
         {
           "name": "strandControlPointRaycast",
-          "line": 11018,
+          "line": 11022,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "strandControlPointFrame",
-          "line": 11053,
+          "line": 11057,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "strandControlPointHitFromEvent",
-          "line": 11085,
+          "line": 11089,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "createCurveObjects",
-          "line": 11143,
+          "line": 11147,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "createDimensionEdgeLines",
-          "line": 11172,
+          "line": 11176,
           "kind": "arrow",
           "exported": false,
           "calls": 2
         },
         {
           "name": "strandWidthEdgeFrameAt",
-          "line": 11288,
+          "line": 11292,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "transportedStrandWidthEdgeFrame",
-          "line": 11295,
+          "line": 11299,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "strandWidthEdgeSample",
-          "line": 11304,
+          "line": 11308,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "strandWidthEdgePoints",
-          "line": 11339,
+          "line": 11343,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "moveCurveControlsApplicable",
-          "line": 11353,
+          "line": 11357,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "moveGrabHandlesApplicable",
-          "line": 11363,
+          "line": 11367,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "moveGrabHandleVisible",
-          "line": 11373,
+          "line": 11377,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "visibleTaperMeshCurveEdits",
-          "line": 11378,
+          "line": 11382,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "syncMoveCurveControls",
-          "line": 11399,
+          "line": 11403,
           "kind": "function",
           "exported": false,
           "calls": 8
         },
         {
           "name": "syncAuthoredCheckbox",
-          "line": 11414,
+          "line": 11418,
           "kind": "arrow",
           "exported": false,
           "calls": 3
         },
         {
           "name": "setMoveGrabHandleVisibility",
-          "line": 11434,
+          "line": 11438,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "setMoveCurveControlVisibility",
-          "line": 11442,
+          "line": 11446,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "setSelectedMoveCurveShapeFlag",
-          "line": 11451,
+          "line": 11455,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "sculptBrushDebugRaycast",
-          "line": 11465,
+          "line": 11469,
           "kind": "arrow",
           "exported": false,
           "calls": 0
         },
         {
           "name": "updateCurveObjects",
-          "line": 11467,
+          "line": 11471,
           "kind": "function",
           "exported": false,
           "calls": 27
         },
         {
           "name": "pointUpDirection",
-          "line": 11672,
+          "line": 11676,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "curveFrameAtPoint",
-          "line": 11676,
+          "line": 11680,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "curveFrameAt",
-          "line": 11697,
+          "line": 11701,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "strandTwistAt",
-          "line": 11717,
+          "line": 11721,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "controlPointRotationAt",
-          "line": 11722,
+          "line": 11726,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "strandProfileTwistAt",
-          "line": 11726,
+          "line": 11730,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "strandFrameAt",
-          "line": 11732,
+          "line": 11736,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "curveFrameAtSnapshot",
-          "line": 11738,
+          "line": 11742,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "outwardNormalAtPoint",
-          "line": 11757,
+          "line": 11761,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "sampledSurfaceNormal",
-          "line": 11820,
+          "line": 11824,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "guidedNormalAt",
-          "line": 11836,
+          "line": 11840,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "twistFromHandle",
-          "line": 11855,
+          "line": 11859,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "signedAngleAroundAxis",
-          "line": 11876,
+          "line": 11880,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "handleColor",
-          "line": 11883,
+          "line": 11887,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "isAffectedCurvePoint",
-          "line": 11906,
+          "line": 11910,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "syncLockFromCurve",
-          "line": 11912,
+          "line": 11916,
           "kind": "function",
           "exported": false,
           "calls": 14
         },
         {
           "name": "rebuildLockGeometry",
-          "line": 11942,
+          "line": 11946,
           "kind": "function",
           "exported": false,
           "calls": 18
         },
         {
           "name": "flushPendingLockGeometryUpdates",
-          "line": 11966,
+          "line": 11971,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "updateLockGeometry",
-          "line": 11979,
+          "line": 11984,
           "kind": "function",
           "exported": false,
           "calls": 28
         },
         {
           "name": "setGroupColorView",
-          "line": 12000,
+          "line": 12005,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "createUvCheckerTexture",
-          "line": 12010,
+          "line": 12015,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "ensureUvCheckerForLock",
-          "line": 12046,
+          "line": 12051,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "removeUvCheckerFromLock",
-          "line": 12079,
+          "line": 12084,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "invalidateUvInspector",
-          "line": 12094,
+          "line": 12099,
           "kind": "function",
           "exported": false,
-          "calls": 7
+          "calls": 9
         },
         {
           "name": "uvInspectorRecord",
-          "line": 12098,
+          "line": 12103,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "uvInspectorRecords",
-          "line": 12137,
+          "line": 12142,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "drawUvInspectorGrid",
-          "line": 12141,
+          "line": 12146,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "renderUvInspector",
-          "line": 12175,
+          "line": 12180,
           "kind": "function",
           "exported": false,
-          "calls": 3
+          "calls": 4
         },
         {
           "name": "setUvCheckerEnabled",
-          "line": 12234,
+          "line": 12239,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
+          "name": "buildUvCheckerPreviewGeometry",
+          "line": 12262,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "restoreUvCheckerPreview",
+          "line": 12281,
+          "kind": "function",
+          "exported": false,
+          "calls": 6
+        },
+        {
+          "name": "applyUvCheckerPreview",
+          "line": 12297,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "refreshUvCheckerPreview",
+          "line": 12312,
+          "kind": "function",
+          "exported": false,
+          "calls": 1
+        },
+        {
           "name": "strandViewportBaseColor",
-          "line": 12251,
+          "line": 12340,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "strandMirrorPartnerHighlighted",
-          "line": 12286,
+          "line": 12375,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "syncStrandSelectionOutline",
-          "line": 12292,
+          "line": 12381,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "applyLockedStrandPalette",
-          "line": 12303,
+          "line": 12392,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "syncLockedStrandWireVisual",
-          "line": 12312,
+          "line": 12401,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "setStrandSelectionVisual",
-          "line": 12321,
+          "line": 12410,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "updateStrandSelectionHighlightForLock",
-          "line": 12339,
+          "line": 12428,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "updateStrandSelectionHighlight",
-          "line": 12343,
+          "line": 12432,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "refreshStrandCurveSelectionVisuals",
-          "line": 12347,
+          "line": 12436,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "resetGuideSelectionVisuals",
-          "line": 12360,
+          "line": 12449,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "refreshStrandSelectionConsumers",
-          "line": 12380,
+          "line": 12469,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "selectLock",
-          "line": 12415,
+          "line": 12504,
           "kind": "function",
           "exported": false,
           "calls": 24
         },
         {
           "name": "deselectStrandsForGuideEditor",
-          "line": 12477,
+          "line": 12566,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "syncGroupInputs",
-          "line": 12488,
+          "line": 12577,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "topologyStatsForLock",
-          "line": 12521,
+          "line": 12610,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "formatTopologyStats",
-          "line": 12529,
+          "line": 12618,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "updateTopologyStats",
-          "line": 12533,
+          "line": 12622,
           "kind": "function",
           "exported": false,
           "calls": 15
         },
         {
           "name": "normalizeStrandDimensions",
-          "line": 12567,
+          "line": 12656,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "strandBaseWidth",
-          "line": 12581,
+          "line": 12670,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "strandWidthDimension",
-          "line": 12585,
+          "line": 12674,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "strandDepthDimension",
-          "line": 12593,
+          "line": 12682,
           "kind": "function",
           "exported": false,
           "calls": 8
         },
         {
           "name": "setStrandWidthDimension",
-          "line": 12601,
+          "line": 12690,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "setStrandDepthDimension",
-          "line": 12623,
+          "line": 12712,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "syncShapeDimensionInputs",
-          "line": 12639,
+          "line": 12728,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "syncCreationShapeInputs",
-          "line": 12675,
+          "line": 12764,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "syncViewportDrawSettings",
-          "line": 12714,
+          "line": 12803,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "syncViewportTopControlRows",
-          "line": 12729,
+          "line": 12818,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "syncResponsiveSidebarDock",
-          "line": 12749,
+          "line": 12838,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "syncStrandSplitInputs",
-          "line": 12782,
+          "line": 12871,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "currentStrandTipChain",
-          "line": 12792,
+          "line": 12881,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "currentStrandTipLength",
-          "line": 12799,
+          "line": 12888,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "syncStrandTipInputs",
-          "line": 12808,
+          "line": 12897,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "currentStrandSplitTipChains",
-          "line": 12823,
+          "line": 12912,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "restPointAt",
-          "line": 12842,
+          "line": 12931,
           "kind": "arrow",
           "exported": false,
           "calls": 0
         },
         {
           "name": "currentStrandSplitTipLength",
-          "line": 12858,
+          "line": 12947,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "syncStrandSplitTipInputs",
-          "line": 12869,
+          "line": 12958,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "syncHairCardControls",
-          "line": 12880,
+          "line": 12969,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "updateAttributeEditorMode",
-          "line": 12889,
+          "line": 12978,
           "kind": "function",
           "exported": false,
           "calls": 10
         },
         {
           "name": "pinActiveToolSettingsPanel",
-          "line": 13044,
+          "line": 13133,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "curveLatticeForGroup",
-          "line": 13067,
+          "line": 13156,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "filterCurveLatticesToGroup",
-          "line": 13085,
+          "line": 13174,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "createStandaloneCurveLatticeGuide",
-          "line": 13130,
+          "line": 13219,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "showCurveLatticeForGroup",
-          "line": 13147,
+          "line": 13236,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "selectStrandGroup",
-          "line": 13184,
+          "line": 13273,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "selectCurvePoint",
-          "line": 13226,
+          "line": 13315,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "updateSelectedPointLabel",
-          "line": 13240,
+          "line": 13329,
           "kind": "function",
           "exported": false,
           "calls": 12
         },
         {
           "name": "syncInputs",
-          "line": 13253,
+          "line": 13342,
           "kind": "function",
           "exported": false,
           "calls": 13
         },
         {
           "name": "getSelectedLock",
-          "line": 13301,
+          "line": 13390,
           "kind": "function",
           "exported": false,
           "calls": 99
         },
         {
           "name": "selectedLocksInOrder",
-          "line": 13305,
+          "line": 13394,
           "kind": "function",
           "exported": false,
           "calls": 26
         },
         {
           "name": "lockStrands",
-          "line": 13311,
+          "line": 13400,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "lockSelectedStrands",
-          "line": 13344,
+          "line": 13433,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "unlockStrands",
-          "line": 13350,
+          "line": 13439,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "unlockAllStrands",
-          "line": 13365,
+          "line": 13454,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "strandEditFamily",
-          "line": 13369,
+          "line": 13458,
           "kind": "function",
           "exported": false,
           "calls": 7
         },
         {
           "name": "compatibleSelectedLocks",
-          "line": 13374,
+          "line": 13463,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "selectedEditRoots",
-          "line": 13381,
+          "line": 13470,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "editSelectedLocks",
-          "line": 13394,
+          "line": 13483,
           "kind": "function",
           "exported": false,
           "calls": 18
         },
         {
           "name": "multiEditValuesEqual",
-          "line": 13427,
+          "line": 13516,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "setMixedControl",
-          "line": 13436,
+          "line": 13525,
           "kind": "function",
           "exported": false,
           "calls": 29
         },
         {
           "name": "syncMultiStrandInputs",
-          "line": 13453,
+          "line": 13542,
           "kind": "function",
           "exported": false,
           "calls": 18
         },
         {
           "name": "values",
-          "line": 13469,
+          "line": 13558,
           "kind": "arrow",
           "exported": false,
           "calls": 35
         },
         {
           "name": "selectedRebuildableCurves",
-          "line": 13550,
+          "line": 13639,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "createCompoundStrand",
-          "line": 13557,
+          "line": 13646,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "refreshRebuildCurveDialog",
-          "line": 13618,
+          "line": 13707,
           "kind": "function",
           "exported": false,
           "calls": 7
         },
         {
           "name": "openRebuildCurveDialog",
-          "line": 13631,
+          "line": 13720,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "rebuildSelectedCurves",
-          "line": 13645,
+          "line": 13734,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "cleanSelectionSets",
-          "line": 13686,
+          "line": 13775,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "createSelectionSetFromSelection",
-          "line": 13691,
+          "line": 13780,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "selectionSetById",
-          "line": 13702,
+          "line": 13791,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "selectionSetCanEditFromSelection",
-          "line": 13706,
+          "line": 13795,
           "kind": "function",
           "exported": false,
           "calls": 7
         },
         {
           "name": "editSelectionSetFromSelection",
-          "line": 13715,
+          "line": 13804,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "closeSelectionSetMembershipDialog",
-          "line": 13735,
+          "line": 13824,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "openSelectionSetMembershipDialog",
-          "line": 13741,
+          "line": 13830,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "deleteSelectionSet",
-          "line": 13773,
+          "line": 13862,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "selectSelectionSet",
-          "line": 13782,
+          "line": 13871,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "deleteSelectedStrands",
-          "line": 13792,
+          "line": 13881,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "deleteGuide",
-          "line": 13800,
+          "line": 13889,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "deleteSelectedGuide",
-          "line": 13823,
+          "line": 13912,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "hasDeletableSelection",
-          "line": 13828,
+          "line": 13917,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "deleteCurrentSelection",
-          "line": 13836,
+          "line": 13925,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "hideOutlinerContextMenu",
-          "line": 13844,
+          "line": 13933,
           "kind": "function",
           "exported": false,
           "calls": 16
         },
         {
           "name": "outlinerLockTargets",
-          "line": 13849,
+          "line": 13938,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "showOutlinerContextMenu",
-          "line": 13876,
+          "line": 13965,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "setPullMoveEnabled",
-          "line": 13973,
+          "line": 14062,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "setNavigationTipsEnabled",
-          "line": 13982,
+          "line": 14071,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "configureNavigationMouseButtons",
-          "line": 13989,
+          "line": 14078,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "syncNavigationModifierLocks",
-          "line": 14002,
+          "line": 14091,
           "kind": "function",
           "exported": false,
           "calls": 7
         },
         {
           "name": "setNavigationStyle",
-          "line": 14007,
+          "line": 14096,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "applyCameraSmoothingPreference",
-          "line": 14023,
+          "line": 14112,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "setCameraSmoothingEnabled",
-          "line": 14038,
+          "line": 14127,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "setCameraSmoothingStrength",
-          "line": 14044,
+          "line": 14133,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "setScaleSensitivity",
-          "line": 14052,
+          "line": 14141,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "setToolTipsEnabled",
-          "line": 14060,
+          "line": 14149,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "setCompactToolButtonsEnabled",
-          "line": 14067,
+          "line": 14156,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "setViewportStatisticsEnabled",
-          "line": 14076,
+          "line": 14165,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "setTwistCurveAllStrandsPreviewEnabled",
-          "line": 14084,
+          "line": 14173,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "setLayerColorShiftsEnabled",
-          "line": 14099,
+          "line": 14188,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "setOutlinerFolderColorsEnabled",
-          "line": 14108,
+          "line": 14197,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "setSidePanelStyle",
-          "line": 14118,
+          "line": 14207,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "setGlassPanelColor",
-          "line": 14136,
+          "line": 14225,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "setOutlinerFolderColorOpacity",
-          "line": 14146,
+          "line": 14235,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "sideNamingDisplayId",
-          "line": 14163,
+          "line": 14252,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "strandRegionDisplayLabel",
-          "line": 14176,
+          "line": 14265,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "updateSideNamingLabels",
-          "line": 14194,
+          "line": 14283,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "setSideNamingPerspective",
-          "line": 14221,
+          "line": 14310,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "setControlPointDisplaySize",
-          "line": 14230,
+          "line": 14319,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "scaleHexColor",
-          "line": 14242,
+          "line": 14331,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "setViewportBackgroundColor",
-          "line": 14247,
+          "line": 14336,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "setDefaultHairShader",
-          "line": 14269,
+          "line": 14358,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "setPreferenceCategory",
-          "line": 14275,
+          "line": 14364,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "openPreferencesDialog",
-          "line": 14302,
+          "line": 14391,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "savePreferencesDialog",
-          "line": 14341,
+          "line": 14430,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "cancelPreferencesDialog",
-          "line": 14371,
+          "line": 14460,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "createOutlinerStrandButton",
-          "line": 14411,
+          "line": 14500,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "createOutlinerCurveSurface",
-          "line": 14497,
+          "line": 14586,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "selectionSetMatchesCurrentSelection",
-          "line": 14594,
+          "line": 14683,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "createSelectionSetsOutlinerFolder",
-          "line": 14601,
+          "line": 14690,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "renderLockList",
-          "line": 14680,
+          "line": 14769,
           "kind": "function",
           "exported": false,
           "calls": 37
         },
         {
           "name": "updateCount",
-          "line": 14861,
+          "line": 14950,
           "kind": "function",
           "exported": false,
           "calls": 10
         },
         {
           "name": "captureInputUndo",
-          "line": 14870,
+          "line": 14959,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "bindUndoCapture",
-          "line": 14876,
+          "line": 14965,
           "kind": "function",
           "exported": false,
           "calls": 41
         },
         {
           "name": "bindLockInput",
-          "line": 14887,
+          "line": 14976,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "applyValue",
-          "line": 14904,
+          "line": 14993,
           "kind": "arrow",
           "exported": false,
           "calls": 2
         },
         {
           "name": "applyUniformTransformScale",
-          "line": 15239,
+          "line": 15328,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "applyReducedTransformScale",
-          "line": 15256,
+          "line": 15345,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "applyTransformPrecision",
-          "line": 15295,
+          "line": 15384,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "updateTransformScalePointer",
-          "line": 15324,
+          "line": 15413,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "syncDrawCurlControls",
-          "line": 16399,
+          "line": 16488,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "handleLiveSurfaceChange",
-          "line": 16447,
+          "line": 16536,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "applyStrandTipToTarget",
-          "line": 16507,
+          "line": 16596,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "strandTipTarget",
-          "line": 16518,
+          "line": 16607,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "strandSplitTipTarget",
-          "line": 16591,
+          "line": 16680,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "applyStrandSplitTipToTarget",
-          "line": 16596,
+          "line": 16685,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "selectedBranchChildLock",
-          "line": 16888,
+          "line": 16977,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "updateBranchBridgeSliderInputs",
-          "line": 16892,
+          "line": 16981,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "updateSweepOverlapSliderInputs",
-          "line": 16933,
+          "line": 17022,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "initPanelResizeHandles",
-          "line": 17100,
+          "line": 17189,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "applyWidth",
-          "line": 17106,
+          "line": 17195,
           "kind": "arrow",
           "exported": false,
           "calls": 2
         },
         {
           "name": "restoreWidth",
-          "line": 17113,
+          "line": 17202,
           "kind": "arrow",
           "exported": false,
           "calls": 2
         },
         {
           "name": "bindResize",
-          "line": 17121,
+          "line": 17210,
           "kind": "arrow",
           "exported": false,
           "calls": 2
         },
         {
           "name": "onMove",
-          "line": 17130,
+          "line": 17219,
           "kind": "arrow",
           "exported": false,
           "calls": 0
         },
         {
           "name": "onUp",
-          "line": 17134,
+          "line": 17223,
           "kind": "arrow",
           "exported": false,
           "calls": 0
         },
         {
           "name": "updateSnappedFloatingPanels",
-          "line": 17151,
+          "line": 17240,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "initFloatingPanelControls",
-          "line": 17160,
+          "line": 17249,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "detach",
-          "line": 17169,
+          "line": 17258,
           "kind": "arrow",
           "exported": false,
           "calls": 22
         },
         {
           "name": "endDrag",
-          "line": 17207,
+          "line": 17296,
           "kind": "arrow",
           "exported": false,
           "calls": 0
         },
         {
           "name": "endResize",
-          "line": 17239,
+          "line": 17328,
           "kind": "arrow",
           "exported": false,
           "calls": 0
         },
         {
           "name": "updateSculptBrushDockCompact",
-          "line": 17250,
+          "line": 17339,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "selectPatchNotesVersion",
-          "line": 17409,
+          "line": 17498,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "toggleCapsuleGuideTool",
-          "line": 17640,
+          "line": 17729,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "activateCapsuleGuideDrawTool",
-          "line": 17646,
+          "line": 17735,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "createCurveLatticeGuideFromUi",
-          "line": 17653,
+          "line": 17742,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "deleteLocks",
-          "line": 18220,
+          "line": 18310,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "disposeCurveObjects",
-          "line": 18298,
+          "line": 18389,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "activateMultiCameraView",
-          "line": 18345,
+          "line": 18436,
           "kind": "arrow",
           "exported": false,
           "calls": 1
         },
         {
           "name": "resize",
-          "line": 18377,
+          "line": 18468,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "handleViewportPointerMove",
-          "line": 18403,
+          "line": 18494,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "blockProportionalSizingEvent",
-          "line": 18414,
-          "kind": "function",
-          "exported": false,
-          "calls": 1
-        },
-        {
-          "name": "updateLightAngleFromInputs",
-          "line": 18420,
-          "kind": "function",
-          "exported": false,
-          "calls": 2
-        },
-        {
-          "name": "startViewSnap",
-          "line": 18434,
-          "kind": "function",
-          "exported": false,
-          "calls": 3
-        },
-        {
-          "name": "beginViewSnapFromActiveOrbit",
-          "line": 18464,
-          "kind": "function",
-          "exported": false,
-          "calls": 3
-        },
-        {
-          "name": "trackViewportPointerDown",
-          "line": 18481,
-          "kind": "function",
-          "exported": false,
-          "calls": 1
-        },
-        {
-          "name": "trackViewportPointerMove",
-          "line": 18497,
-          "kind": "function",
-          "exported": false,
-          "calls": 1
-        },
-        {
-          "name": "clearViewportPointer",
           "line": 18505,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
+          "name": "updateLightAngleFromInputs",
+          "line": 18511,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "startViewSnap",
+          "line": 18525,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "beginViewSnapFromActiveOrbit",
+          "line": 18555,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "trackViewportPointerDown",
+          "line": 18572,
+          "kind": "function",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "trackViewportPointerMove",
+          "line": 18588,
+          "kind": "function",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "clearViewportPointer",
+          "line": 18596,
+          "kind": "function",
+          "exported": false,
+          "calls": 1
+        },
+        {
           "name": "updateViewSnap",
-          "line": 18510,
+          "line": 18601,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "nearestCardinalAxis",
-          "line": 18546,
+          "line": 18637,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "cardinalAxisKey",
-          "line": 18560,
+          "line": 18651,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "steppedDragAmount",
-          "line": 18564,
+          "line": 18655,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "snapCameraToCardinalAxis",
-          "line": 18570,
+          "line": 18661,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "endViewSnap",
-          "line": 18586,
+          "line": 18677,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "updateCameraViewCube",
-          "line": 18605,
+          "line": 18696,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "activateView",
-          "line": 18623,
+          "line": 18714,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "activateStrandControlPoint",
-          "line": 18648,
+          "line": 18739,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "refreshStrandControlPointSelection",
-          "line": 18698,
+          "line": 18789,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "addStrandControlPointSelection",
-          "line": 18725,
+          "line": 18816,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "removeStrandControlPointSelection",
-          "line": 18742,
+          "line": 18833,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "sampleStrandPointNormal",
-          "line": 18756,
+          "line": 18847,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "sampleStrandPointVectors",
-          "line": 18766,
+          "line": 18857,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "remapStrandPointSelectionAfterRemoval",
-          "line": 18772,
+          "line": 18863,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "resampleStrandCurveData",
-          "line": 18783,
+          "line": 18874,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "resampleMatchingVectors",
-          "line": 18789,
+          "line": 18880,
           "kind": "arrow",
           "exported": false,
           "calls": 3
         },
         {
           "name": "finishStrandCurveTopologyChange",
-          "line": 18828,
+          "line": 18919,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "removeStrandCurvePoint",
-          "line": 18839,
+          "line": 18930,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "closestStrandCurveParameter",
-          "line": 18852,
+          "line": 18943,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "insertStrandCurvePoint",
-          "line": 18881,
+          "line": 18972,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "curvePointTopologyCursorAvailable",
-          "line": 18898,
+          "line": 18989,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "selectionModifierCursorAvailable",
-          "line": 18908,
+          "line": 18999,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "clearCurvePointTopologyCursor",
-          "line": 18924,
+          "line": 19015,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "updateCurvePointTopologyCursor",
-          "line": 18931,
+          "line": 19022,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "finishCurvePointInsertion",
-          "line": 18954,
+          "line": 19045,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "finishPointRemoval",
-          "line": 18969,
+          "line": 19060,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "isHairCreateTool",
-          "line": 18988,
+          "line": 19079,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "syncStrandHoverOutline",
-          "line": 18992,
+          "line": 19083,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "pointerOverTaperEditor",
-          "line": 19005,
+          "line": 19096,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "updateStrandBrushHover",
-          "line": 19012,
+          "line": 19103,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "strandControlPointHit",
-          "line": 19036,
+          "line": 19127,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "beginStrandWidthEdgeDrag",
-          "line": 19040,
+          "line": 19131,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "updateStrandWidthEdgeDrag",
-          "line": 19118,
+          "line": 19209,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "finishStrandWidthEdgeDrag",
-          "line": 19152,
+          "line": 19243,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "setHoveredStrandWidthEdge",
-          "line": 19192,
+          "line": 19283,
           "kind": "function",
           "exported": false,
           "calls": 8
         },
         {
           "name": "updateStrandWidthEdgeHover",
-          "line": 19205,
+          "line": 19296,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "setHoveredControlPoint",
-          "line": 19244,
+          "line": 19335,
           "kind": "function",
           "exported": false,
           "calls": 7
         },
         {
           "name": "visibleControlPointHoverTargets",
-          "line": 19257,
+          "line": 19348,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "updateControlPointHover",
-          "line": 19293,
+          "line": 19384,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "animate",
-          "line": 19912,
+          "line": 20003,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "syncCompactSidebarLayout",
-          "line": 19948,
+          "line": 20039,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "setOutlinerPanelCollapsed",
-          "line": 19967,
+          "line": 20058,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "setAttributeEditorPanelCollapsed",
-          "line": 19973,
+          "line": 20064,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "setAttributeEditorTab",
-          "line": 19979,
+          "line": 20070,
           "kind": "function",
           "exported": false,
           "calls": 6
@@ -4719,7 +4747,7 @@
     },
     {
       "file": "modules/core/hair-store.js",
-      "lineCount": 37,
+      "lineCount": 38,
       "functions": [
         {
           "name": "createHairStore",
@@ -9345,7 +9373,7 @@
     },
     {
       "file": "modules/geometry/panel-tip-strand.js",
-      "lineCount": 1075,
+      "lineCount": 1077,
       "functions": [
         {
           "name": "tipChainPointsAsVectors",
@@ -9629,14 +9657,14 @@
         },
         {
           "name": "uStart",
-          "line": 997,
+          "line": 999,
           "kind": "arrow",
           "exported": false,
           "calls": 1
         },
         {
           "name": "uEnd",
-          "line": 1000,
+          "line": 1002,
           "kind": "arrow",
           "exported": false,
           "calls": 1
@@ -12261,165 +12289,221 @@
     },
     {
       "file": "modules/io/project-files.js",
-      "lineCount": 822,
+      "lineCount": 1275,
       "functions": [
         {
           "name": "createProjectSaveApi",
-          "line": 15,
+          "line": 17,
           "kind": "function",
           "exported": true,
           "calls": 2
         },
         {
           "name": "downloadTextFile",
-          "line": 66,
+          "line": 65,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "downloadProjectFile",
-          "line": 78,
+          "line": 77,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "bufferAttributeTuples",
-          "line": 82,
+          "line": 81,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "flatTuples",
-          "line": 89,
+          "line": 88,
           "kind": "function",
           "exported": false,
           "calls": 6
         },
         {
           "name": "setProjectSaveButtonsDisabled",
-          "line": 98,
+          "line": 97,
           "kind": "function",
           "exported": false,
           "calls": 5
         },
         {
           "name": "buildHairProjectFile",
-          "line": 104,
+          "line": 103,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
           "name": "kindForLock",
-          "line": 121,
+          "line": 120,
           "kind": "function",
           "exported": false,
-          "calls": 3
+          "calls": 4
         },
         {
           "name": "childSeamCol",
-          "line": 132,
+          "line": 131,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
+          "name": "flatPanelMesh",
+          "line": 138,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
           "name": "buildUnfoldedMeshes",
-          "line": 137,
+          "line": 173,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "childVLength",
-          "line": 161,
+          "line": 204,
           "kind": "arrow",
           "exported": false,
           "calls": 0
         },
         {
           "name": "childGridRows",
-          "line": 174,
+          "line": 217,
           "kind": "arrow",
           "exported": false,
           "calls": 0
         },
         {
           "name": "rPosOf",
-          "line": 220,
+          "line": 263,
           "kind": "arrow",
           "exported": false,
           "calls": 2
         },
         {
+          "name": "packUnfoldedUv",
+          "line": 333,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
           "name": "buildHairObj",
-          "line": 286,
+          "line": 364,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "buildHairUsda",
-          "line": 355,
+          "line": 433,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
-          "name": "openFileActionDialog",
-          "line": 522,
-          "kind": "function",
+          "name": "jointNameOf",
+          "line": 449,
+          "kind": "arrow",
           "exported": false,
-          "calls": 5
+          "calls": 13
         },
         {
-          "name": "performFileAction",
-          "line": 567,
-          "kind": "function",
+          "name": "rowsFor",
+          "line": 680,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "rowTAt",
+          "line": 693,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 4
+        },
+        {
+          "name": "smoothMainPairIndices",
+          "line": 698,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "tipIdxFor",
+          "line": 707,
+          "kind": "arrow",
           "exported": false,
           "calls": 2
         },
         {
+          "name": "bindBySweepRow",
+          "line": 725,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "openFileActionDialog",
+          "line": 936,
+          "kind": "function",
+          "exported": false,
+          "calls": 4
+        },
+        {
+          "name": "performFileAction",
+          "line": 993,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
           "name": "saveHairProjectFile",
-          "line": 636,
+          "line": 1066,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "saveHairProjectQuickly",
-          "line": 666,
+          "line": 1096,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "exportHairObj",
-          "line": 694,
+          "line": 1124,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "exportHairUsda",
-          "line": 698,
+          "line": 1133,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "exportHairProjectQuickly",
-          "line": 702,
+          "line": 1137,
           "kind": "function",
           "exported": false,
           "calls": 1
         },
         {
           "name": "writeExportThroughFileSystem",
-          "line": 754,
+          "line": 1192,
           "kind": "function",
           "exported": false,
           "calls": 3
@@ -12708,14 +12792,14 @@
     },
     {
       "file": "modules/io/usda-export.js",
-      "lineCount": 260,
+      "lineCount": 718,
       "functions": [
         {
           "name": "finiteNumber",
           "line": 1,
           "kind": "function",
           "exported": false,
-          "calls": 4
+          "calls": 20
         },
         {
           "name": "formatNumber",
@@ -12743,7 +12827,7 @@
           "line": 29,
           "kind": "function",
           "exported": false,
-          "calls": 5
+          "calls": 4
         },
         {
           "name": "tuple",
@@ -12757,81 +12841,701 @@
           "line": 45,
           "kind": "function",
           "exported": false,
-          "calls": 7
+          "calls": 5
         },
         {
           "name": "numberArray",
           "line": 49,
           "kind": "function",
           "exported": false,
-          "calls": 6
+          "calls": 7
+        },
+        {
+          "name": "flatIntArray",
+          "line": 54,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "floatArray",
+          "line": 64,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
         },
         {
           "name": "metadataLines",
-          "line": 53,
+          "line": 73,
           "kind": "function",
           "exported": false,
           "calls": 3
         },
         {
           "name": "primvarLines",
-          "line": 60,
+          "line": 80,
           "kind": "function",
           "exported": false,
           "calls": 4
         },
         {
-          "name": "meshBlock",
-          "line": 72,
+          "name": "hasSkinData",
+          "line": 95,
           "kind": "function",
           "exported": false,
-          "calls": 2
+          "calls": 3
+        },
+        {
+          "name": "meshBlock",
+          "line": 102,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
         },
         {
           "name": "curveBlock",
-          "line": 139,
-          "kind": "function",
-          "exported": false,
-          "calls": 2
-        },
-        {
-          "name": "quatTuple",
-          "line": 157,
+          "line": 181,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
           "name": "pointTuple",
+          "line": 199,
+          "kind": "function",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "quatToMat3",
+          "line": 205,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "axesToMat3",
+          "line": 220,
+          "kind": "function",
+          "exported": true,
+          "calls": 3
+        },
+        {
+          "name": "component",
+          "line": 222,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 9
+        },
+        {
+          "name": "mat3ToMat4",
+          "line": 234,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "translationMatrix",
+          "line": 245,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "matrixMultiply",
+          "line": 255,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "mat3Transpose",
+          "line": 271,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "mat3Multiply",
+          "line": 277,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "rowVecTimesMat3",
+          "line": 295,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "orientOf",
+          "line": 306,
+          "kind": "function",
+          "exported": false,
+          "calls": 4
+        },
+        {
+          "name": "matrixTuple",
+          "line": 311,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "skeletonBlock",
+          "line": 333,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "jointId",
+          "line": 337,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "fullPathOf",
+          "line": 341,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "worldOf",
+          "line": 351,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 6
+        },
+        {
+          "name": "localOf",
+          "line": 364,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "smoothMainPair",
+          "line": 397,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "clamp",
+          "line": 398,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 12
+        },
+        {
+          "name": "tipChainNearestIndex",
+          "line": 408,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "exportAnimeHairUsda",
+          "line": 418,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "splitBoneLayout",
+          "line": 504,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "splitChainLayout",
+          "line": 578,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "smoothstep",
+          "line": 624,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "restPointAt",
+          "line": 628,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 0
+        },
+        {
+          "name": "cross",
+          "line": 660,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "bridgeRootParentName",
+          "line": 707,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        }
+      ]
+    },
+    {
+      "file": "modules/io/uv-pack-async.js",
+      "lineCount": 503,
+      "functions": [
+        {
+          "name": "makeLCG",
+          "line": 42,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "shuffle",
+          "line": 49,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "triangleArea",
+          "line": 58,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "meshSurfaceArea",
+          "line": 70,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "uvBounds",
+          "line": 91,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "fallbackPreparePack",
+          "line": 118,
+          "kind": "function",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "fallbackApplyPackResult",
           "line": 161,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
-          "name": "skeletonBlock",
-          "line": 167,
+          "name": "getContract",
+          "line": 246,
           "kind": "function",
           "exported": false,
           "calls": 2
         },
         {
-          "name": "childrenOf",
-          "line": 173,
-          "kind": "arrow",
+          "name": "deepClone",
+          "line": 259,
+          "kind": "function",
           "exported": false,
-          "calls": 1
+          "calls": 3
         },
         {
-          "name": "jointBlock",
-          "line": 174,
+          "name": "copyBackFamilies",
+          "line": 271,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "createPackAsync",
+          "line": 294,
+          "kind": "function",
+          "exported": true,
+          "calls": 3
+        },
+        {
+          "name": "buildPool",
+          "line": 302,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "failPool",
+          "line": 309,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 4
+        },
+        {
+          "name": "pump",
+          "line": 321,
           "kind": "arrow",
           "exported": false,
           "calls": 2
         },
         {
-          "name": "exportAnimeHairUsda",
-          "line": 197,
+          "name": "bind",
+          "line": 329,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "onMessage",
+          "line": 330,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "onError",
+          "line": 339,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "request",
+          "line": 363,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "dispose",
+          "line": 376,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 4
+        },
+        {
+          "name": "ensurePool",
+          "line": 380,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "packFamiliesAsync",
+          "line": 393,
+          "kind": "function",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "poolRequest",
+          "line": 491,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        }
+      ]
+    },
+    {
+      "file": "modules/io/uv-pack-worker.js",
+      "lineCount": 116,
+      "functions": [
+        {
+          "name": "decodeBoxes",
+          "line": 32,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "fitsAt",
+          "line": 42,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "localSampleMaxK",
+          "line": 55,
+          "kind": "function",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "localRefineMaxK",
+          "line": 65,
+          "kind": "function",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "handle",
+          "line": 81,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "setupBrowser",
+          "line": 103,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "setupNode",
+          "line": 107,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        }
+      ]
+    },
+    {
+      "file": "modules/io/uv-pack.js",
+      "lineCount": 1060,
+      "functions": [
+        {
+          "name": "makeLCG",
+          "line": 16,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "shuffle",
+          "line": 25,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "triangleArea",
+          "line": 44,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "meshSurfaceArea",
+          "line": 58,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "uvBounds",
+          "line": 81,
+          "kind": "function",
+          "exported": false,
+          "calls": 4
+        },
+        {
+          "name": "maxRectsPack",
+          "line": 114,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "sortKey",
+          "line": 123,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 4
+        },
+        {
+          "name": "splitFreeNode",
+          "line": 136,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "pruneFreeList",
+          "line": 149,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "commonIntervalLength",
+          "line": 166,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "contactScore",
+          "line": 169,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 1
+        },
+        {
+          "name": "findMaxK",
+          "line": 250,
+          "kind": "function",
+          "exported": true,
+          "calls": 3
+        },
+        {
+          "name": "fitsAt",
+          "line": 253,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 6
+        },
+        {
+          "name": "spiralCells",
+          "line": 298,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "alpacaPack",
+          "line": 320,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "rebuildIntegral",
+          "line": 325,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "regionEmpty",
+          "line": 338,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 5
+        },
+        {
+          "name": "markOccupied",
+          "line": 342,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 5
+        },
+        {
+          "name": "alpacaPackTurbo",
+          "line": 436,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "makeRows",
+          "line": 532,
+          "kind": "function",
+          "exported": false,
+          "calls": 5
+        },
+        {
+          "name": "rowOverlaps",
+          "line": 541,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "insertRowInterval",
+          "line": 554,
+          "kind": "function",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "alpacaPackOccupancyCore",
+          "line": 584,
+          "kind": "function",
+          "exported": false,
+          "calls": 4
+        },
+        {
+          "name": "tryTop",
+          "line": 638,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "tryRight",
+          "line": 650,
+          "kind": "arrow",
+          "exported": false,
+          "calls": 2
+        },
+        {
+          "name": "alpacaPackOccupancy",
+          "line": 690,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "findMaxKAlpaca",
+          "line": 698,
+          "kind": "function",
+          "exported": true,
+          "calls": 1
+        },
+        {
+          "name": "alpacaFitsAt",
+          "line": 738,
+          "kind": "function",
+          "exported": false,
+          "calls": 3
+        },
+        {
+          "name": "sampleMaxK",
+          "line": 755,
+          "kind": "function",
+          "exported": true,
+          "calls": 5
+        },
+        {
+          "name": "refineMaxK",
+          "line": 768,
+          "kind": "function",
+          "exported": true,
+          "calls": 3
+        },
+        {
+          "name": "preparePack",
+          "line": 788,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "applyPackResult",
+          "line": 839,
+          "kind": "function",
+          "exported": true,
+          "calls": 2
+        },
+        {
+          "name": "packFamilies",
+          "line": 944,
           "kind": "function",
           "exported": true,
           "calls": 1
@@ -12840,7 +13544,7 @@
     },
     {
       "file": "modules/io/uv-unfold.js",
-      "lineCount": 660,
+      "lineCount": 665,
       "functions": [
         {
           "name": "gridDimensions",
@@ -12893,28 +13597,28 @@
         },
         {
           "name": "unfoldHairMesh",
-          "line": 325,
+          "line": 330,
           "kind": "function",
           "exported": true,
           "calls": 1
         },
         {
           "name": "copyCountOf",
-          "line": 413,
+          "line": 418,
           "kind": "arrow",
           "exported": false,
           "calls": 1
         },
         {
           "name": "vForRow",
-          "line": 455,
+          "line": 460,
           "kind": "arrow",
           "exported": false,
           "calls": 3
         },
         {
           "name": "fillVertex",
-          "line": 461,
+          "line": 466,
           "kind": "arrow",
           "exported": false,
           "calls": 6
