@@ -176,23 +176,30 @@ function createBoneViewHandles(lock, group) {
       tipWidthLines.push(sideLines);
     }
   }
-  let strandSplitHandle = null;
-  let strandSplitLine = null;
+  const strandSplitHandles = [];
+  const strandSplitLines = [];
   let strandSplitTipHandles = [];
   let strandSplitTipLines = [];
   let strandTipHandle = null;
   let strandTipLine = null;
   if (lock.geometryType === "strand") {
-    strandSplitLine = new THREE.Line(
-      new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color: 0xff42cf, transparent: true, opacity: 0.9, depthTest: false })
-    );
-    strandSplitLine.renderOrder = 6;
-    group.add(strandSplitLine);
-    strandSplitHandle = createSplitControlHandle();
-    strandSplitHandle.userData.lockId = lock.id;
-    strandSplitHandle.userData.strandSplitHandle = true;
-    group.add(strandSplitHandle);
+    // 每个 strandSplits 条目一个手柄 + 引导线（mirror panelSplitHandles 的按条目构建）。
+    lock.strandSplits = deps.cloneStrandSplits(lock.strandSplits, lock.strandSplitPosition, lock.strandSplitHeight);
+    lock.strandSplits.forEach((split, index) => {
+      const line = new THREE.Line(
+        new THREE.BufferGeometry(),
+        new THREE.LineBasicMaterial({ color: 0xff42cf, transparent: true, opacity: 0.9, depthTest: false })
+      );
+      line.renderOrder = 6;
+      group.add(line);
+      strandSplitLines.push(line);
+      const handle = createSplitControlHandle();
+      handle.userData.lockId = lock.id;
+      handle.userData.strandSplitHandle = true;
+      handle.userData.strandSplitIndex = index;
+      group.add(handle);
+      strandSplitHandles.push(handle);
+    });
     // Split-strand per-tube tip sub-bone handles + guide lines (Route 2): one per
     // tube (0/1), shown only while the lock is a split strand with strandSplitBones.
     for (let tubeIndex = 0; tubeIndex < 2; tubeIndex += 1) {
@@ -267,8 +274,8 @@ function createBoneViewHandles(lock, group) {
     tipNormalArrows,
     tipWidthHandles,
     tipWidthLines,
-    strandSplitHandle,
-    strandSplitLine,
+    strandSplitHandles,
+    strandSplitLines,
     strandSplitTipHandles,
     strandSplitTipLines,
     strandTipHandle,
@@ -298,7 +305,12 @@ function updateBoneViewHandles(lock, ctx) {
       return;
     }
     handle.position.copy(deps.panelSplitControlPoint(lock, split, null, null, index));
-    handle.material.opacity = deps.sculptState.panelSplitDrag?.lockId === lock.id && deps.sculptState.panelSplitDrag.splitIndex === index ? 0.9 : 0.68;
+    const dragging = deps.sculptState.panelSplitDrag?.lockId === lock.id && deps.sculptState.panelSplitDrag.splitIndex === index;
+    // 被选中的 zipper（按 order 匹配）放大并提亮，便于识别 Del 目标。
+    const selected = deps.sculptState.panelSplitSelection?.lockId === lock.id
+      && Number(deps.sculptState.panelSplitSelection.order) === Number(split.order);
+    handle.material.opacity = selected ? 1 : dragging ? 0.9 : 0.68;
+    handle.scale.setScalar(selected ? 1.3 : 1);
     if (!line) return;
     line.visible = true;
     line.geometry.dispose();
@@ -398,8 +410,12 @@ function updateBoneViewHandles(lock, ctx) {
     }
     const forkT = tipForkTs[segment] ?? 1;
     const t = point / Math.max(1, tip.points.length - 1);
-    // Only expose sub-bone points below the segment's fork (zipper); above stays current.
-    if (t <= forkT) {
+    // Only expose sub-bone points from the segment's fork (zipper) row down; above stays
+    // current. Uses the same firstBelow index rule as the guide line / brush / USDA export
+    // (floor, lower clamp 1) so every point that the brush can move also has a grabbable
+    // handle — the fork row itself is exposed, one row more than the old strict t > forkT.
+    const firstBelowHandle = Math.min(tip.points.length - 1, Math.max(1, Math.floor(forkT * (tip.points.length - 1))));
+    if (point < firstBelowHandle) {
       handle.visible = false;
       syncTipNormalArrow();
       return;
@@ -444,7 +460,11 @@ function updateBoneViewHandles(lock, ctx) {
       return;
     }
     const forkT = tipForkTs[segment] ?? 1;
-    const firstBelow = Math.min(tip.points.length - 1, Math.max(1, Math.ceil(forkT * (tip.points.length - 1))));
+    // floor (not ceil): the fork row itself belongs to the exposed sub-bone chain, so the
+    // guide line covers one extra row toward the root — same rule as the USDA export
+    // (splitChainLayout / splitParentMainIndex). Lower clamp stays 1: index 0 is the chain
+    // root sitting on the main chain and must never become an editable sub-bone point.
+    const firstBelow = Math.min(tip.points.length - 1, Math.max(1, Math.floor(forkT * (tip.points.length - 1))));
     const exposed = tip.points.slice(firstBelow);
     if (exposed.length < 2) {
       line.visible = false;
@@ -523,37 +543,46 @@ function updateBoneViewHandles(lock, ctx) {
     && lock.geometryType === "strand"
     && !lock.hairCard
     && Boolean(lock.strandSplitEnabled);
-  const strandSplitHandle = lock.curveObjects.strandSplitHandle;
-  const strandSplitLine = lock.curveObjects.strandSplitLine;
-  if (strandSplitHandle) {
-    strandSplitHandle.visible = strandSplitVisible;
-    strandSplitHandle.material.opacity = deps.sculptState.panelSplitDrag?.lockId === lock.id && deps.sculptState.panelSplitDrag.kind === "strand" ? 0.9 : 0.68;
-    if (strandSplitVisible) {
-      const split = {
-        position: lock.strandSplitPosition,
-        height: lock.strandSplitHeight
-      };
-      const profileData = deps.strandSplitProfileData(lock);
-      strandSplitHandle.position.copy(deps.strandSplitControlPoint(lock, split, null, null, profileData));
-      if (strandSplitLine) {
-        strandSplitLine.visible = true;
-        strandSplitLine.geometry.dispose();
-        const points = [];
-        const startT = 1 - Number(lock.strandSplitHeight ?? 0.3);
-        for (let step = 0; step <= 12; step += 1) {
-          points.push(deps.strandSplitControlPoint(
-            lock,
-            split,
-            THREE.MathUtils.lerp(startT, 1, step / 12),
-            null,
-            profileData
-          ));
-        }
-        strandSplitLine.geometry = new THREE.BufferGeometry().setFromPoints(points);
-      }
+  const strandSplitHandles = lock.curveObjects.strandSplitHandles || [];
+  const strandSplitLines = lock.curveObjects.strandSplitLines || [];
+  const strandSplits = strandSplitVisible
+    ? deps.cloneStrandSplits(lock.strandSplits, lock.strandSplitPosition, lock.strandSplitHeight)
+    : [];
+  const strandProfileData = strandSplitVisible ? deps.strandSplitProfileData(lock) : null;
+  strandSplitHandles.forEach((handle, index) => {
+    const split = strandSplits[index];
+    const line = strandSplitLines[index];
+    const visible = strandSplitVisible && Boolean(split);
+    handle.visible = visible;
+    if (!visible) {
+      if (line) line.visible = false;
+      return;
     }
-  }
-  if (strandSplitLine && !strandSplitVisible) strandSplitLine.visible = false;
+    handle.position.copy(deps.strandSplitControlPoint(lock, split, null, null, strandProfileData));
+    const dragging = deps.sculptState.panelSplitDrag?.lockId === lock.id
+      && deps.sculptState.panelSplitDrag.kind === "strand"
+      && deps.sculptState.panelSplitDrag.splitIndex === index;
+    // 被选中的 strand zipper（按 order 匹配）放大并提亮，便于识别 Del 目标。
+    const selected = deps.sculptState.strandSplitSelection?.lockId === lock.id
+      && Number(deps.sculptState.strandSplitSelection.order) === Number(split.order);
+    handle.material.opacity = selected ? 1 : dragging ? 0.9 : 0.68;
+    handle.scale.setScalar(selected ? 1.3 : 1);
+    if (!line) return;
+    line.visible = true;
+    line.geometry.dispose();
+    const points = [];
+    const startT = 1 - Number(split.height ?? 0.3);
+    for (let step = 0; step <= 12; step += 1) {
+      points.push(deps.strandSplitControlPoint(
+        lock,
+        split,
+        THREE.MathUtils.lerp(startT, 1, step / 12),
+        null,
+        strandProfileData
+      ));
+    }
+    line.geometry = new THREE.BufferGeometry().setFromPoints(points);
+  });
   // Split-strand per-tube tip handles + guide lines (Route 2). Mutually exclusive
   // with the Route 1 single strandTip block below (that block requires
   // !lock.strandSplitEnabled, and strandSplitBones is null for non-split strands).
@@ -679,18 +708,18 @@ function disposeBoneViewHandles(curveObjects) {
     curveObjects.tipHighlightMesh.geometry.dispose();
     curveObjects.tipHighlightMesh.material.dispose();
   }
-  if (curveObjects.strandSplitHandle) {
-    curveObjects.strandSplitHandle.geometry.dispose();
-    curveObjects.strandSplitHandle.material.dispose();
-  }
+  curveObjects.strandSplitHandles?.forEach((handle) => {
+    handle.geometry.dispose();
+    handle.material.dispose();
+  });
   if (curveObjects.branchSweepStartHandle) {
     curveObjects.branchSweepStartHandle.geometry.dispose();
     curveObjects.branchSweepStartHandle.material.dispose();
   }
-  if (curveObjects.strandSplitLine) {
-    curveObjects.strandSplitLine.geometry.dispose();
-    curveObjects.strandSplitLine.material.dispose();
-  }
+  curveObjects.strandSplitLines?.forEach((line) => {
+    line.geometry.dispose();
+    line.material.dispose();
+  });
   curveObjects.strandSplitTipHandles?.forEach((handle) => {
     handle.geometry.dispose();
     handle.material.dispose();

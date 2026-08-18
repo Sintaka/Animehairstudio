@@ -13,7 +13,7 @@ import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260814-12";
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260814-8";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260814-12";
-import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip, strandSplitBonesFor, materializeStrandSplitBones, strandSplitBonesToData, strandSplitBonesFromData, mirrorStrandSplitBones } from "./modules/bones/bone-model.js?v=20260813-1";
+import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip, strandSplitBonesFor, materializeStrandSplitBones, strandSplitBonesToData, strandSplitBonesFromData, mirrorStrandSplitBones, strandSplitForkTForSegment, strandSplitDirectionForSegment } from "./modules/bones/bone-model.js?v=20260813-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260813-1";
 import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260814-12";
 import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-3";
@@ -1512,8 +1512,8 @@ const panelCreationDefaults = {
   panelSplitSnapToLoops: true,
   panelSplitHeight: 0.3,
   panelSplits: [
-    { position: -1 / 3, height: 0.3 },
-    { position: 1 / 3, height: 0.3 }
+    { position: -1 / 3, height: 0.3, order: 0 },
+    { position: 1 / 3, height: 0.3, order: 1 }
   ],
   panelSplitGap: 0.07
 };
@@ -1528,14 +1528,83 @@ function normalizePanelSplits(value, fallbackHeight = panelCreationDefaults?.pan
     { position: 1 / 3, height: fallbackHeight }
   ];
   const source = Array.isArray(value) ? value : fallback;
-  return source.slice(0, THREE.MathUtils.clamp(Math.round(maxCount), 0, 23)).map((split, index) => ({
-    position: THREE.MathUtils.clamp(Number(split?.position ?? fallback[index % fallback.length].position), -0.88, 0.88),
-    height: THREE.MathUtils.clamp(Number(split?.height ?? fallback[index % fallback.length].height), 0, 0.78)
-  })).sort((a, b) => a.position - b.position);
+  // 先按原始数组顺序建立条目，缺失的 order 用数组索引作为确定性回退，保证旧存档也能得到稳定 order
+  const entries = source.slice(0, THREE.MathUtils.clamp(Math.round(maxCount), 0, 23)).map((split, index) => {
+    const rawOrder = Number(split?.order);
+    return {
+      position: THREE.MathUtils.clamp(Number(split?.position ?? fallback[index % fallback.length].position), -0.88, 0.88),
+      height: THREE.MathUtils.clamp(Number(split?.height ?? fallback[index % fallback.length].height), 0, 0.78),
+      order: Number.isFinite(rawOrder) ? Math.round(rawOrder) : index,
+      _index: index
+    };
+  });
+  // order 必须唯一：若重复或缺失，按 (order, 原始索引) 排序后重新编号
+  const orderValues = entries.map((entry) => entry.order);
+  const hasDuplicate = new Set(orderValues).size !== orderValues.length;
+  if (hasDuplicate) {
+    entries
+      .slice()
+      .sort((a, b) => (a.order - b.order) || (a._index - b._index))
+      .forEach((entry, reindex) => { entry.order = reindex; });
+  }
+  return entries
+    .map((entry) => ({ position: entry.position, height: entry.height, order: entry.order }))
+    .sort((a, b) => a.position - b.position);
 }
 
 function clonePanelSplits(value, fallbackHeight, maxCount = 23) {
   return normalizePanelSplits(value, fallbackHeight, maxCount).map((split) => ({ ...split }));
+}
+
+// 普通发丝多拉链上限：N 个拉链 → N+1 根管。UI/几何/骨骼共用同一上限。
+const STRAND_SPLIT_MAX = 8;
+// 普通发丝多拉链数据模型（Phase E：解除单条上限，默认到 STRAND_SPLIT_MAX）。
+// value 为数组时归一化；否则以 legacy 标量回退成单条，保证旧存档迁移。
+function normalizeStrandSplits(value, legacyPosition, legacyHeight, maxCount = STRAND_SPLIT_MAX) {
+  const cap = THREE.MathUtils.clamp(Math.round(Number(maxCount ?? STRAND_SPLIT_MAX)), 0, 23);
+  if (Array.isArray(value) && value.length) {
+    // 先按原始顺序建立条目，缺失 order 用数组索引作为确定性回退
+    const entries = value.map((split, index) => {
+      const rawOrder = Number(split?.order);
+      return {
+        position: THREE.MathUtils.clamp(Number(split?.position ?? 0), -0.8, 0.8),
+        height: THREE.MathUtils.clamp(Number(split?.height ?? 0.3), 0.02, 0.8),
+        order: Number.isFinite(rawOrder) ? Math.round(rawOrder) : index,
+        _index: index
+      };
+    });
+    // order 必须唯一：重复或缺失时按 (order, 原始索引) 重新编号
+    const orderValues = entries.map((entry) => entry.order);
+    const hasDuplicate = new Set(orderValues).size !== orderValues.length;
+    if (hasDuplicate) {
+      entries
+        .slice()
+        .sort((a, b) => (a.order - b.order) || (a._index - b._index))
+        .forEach((entry, reindex) => { entry.order = reindex; });
+    }
+    return entries
+      .map((entry) => ({ position: entry.position, height: entry.height, order: entry.order }))
+      .sort((a, b) => a.position - b.position)
+      .slice(0, cap);
+  }
+  // 数组缺失：以 legacy 标量回退成单条（Phase A 单拉链）
+  return [{
+    position: THREE.MathUtils.clamp(Number(legacyPosition ?? 0), -0.8, 0.8),
+    height: THREE.MathUtils.clamp(Number(legacyHeight ?? 0.3), 0.02, 0.8),
+    order: 0
+  }].slice(0, cap);
+}
+
+function cloneStrandSplits(value, legacyPosition, legacyHeight, maxCount = STRAND_SPLIT_MAX) {
+  return normalizeStrandSplits(value, legacyPosition, legacyHeight, maxCount).map((split) => ({ ...split }));
+}
+
+// 将 strandSplits[0] 回写到 legacy 标量，保持标量作为单一真源
+function syncStrandSplitLegacyFields(lock) {
+  if (Array.isArray(lock.strandSplits) && lock.strandSplits.length) {
+    lock.strandSplitPosition = lock.strandSplits[0].position;
+    lock.strandSplitHeight = lock.strandSplits[0].height;
+  }
 }
 
 function snapPanelSplitHeight(height, lengthLoops) {
@@ -3325,6 +3394,9 @@ const resetStrandSplitTipsButton = document.querySelector("#resetStrandSplitTips
 const panelSplitCountValue = document.querySelector("#panelSplitCount");
 const addPanelSplitButton = document.querySelector("#addPanelSplit");
 const removePanelSplitButton = document.querySelector("#removePanelSplit");
+const strandSplitCountValue = document.querySelector("#strandSplitCount");
+const addStrandSplitButton = document.querySelector("#addStrandSplit");
+const removeStrandSplitButton = document.querySelector("#removeStrandSplit");
 const panelSegmentLabel = document.querySelector("#panelSegmentLabel");
 const previousPanelSegmentButton = document.querySelector("#previousPanelSegment");
 const nextPanelSegmentButton = document.querySelector("#nextPanelSegment");
@@ -8596,7 +8668,12 @@ Object.assign(segmentControlDeps, {
   updateTopologyStats,
   updateViewportStatsVisibility,
   clonePanelSplits,
-  snapPanelSplitHeight
+  snapPanelSplitHeight,
+  cloneStrandSplits,
+  syncStrandSplitLegacyFields,
+  syncStrandSplitInputs,
+  strandCreationDefaults,
+  STRAND_SPLIT_MAX
 });
 // Bone interaction api deps batch (refactor bones B2): all deps are defined by this point (last
 // dep: shapePresets / taperEditorDeps block); the batch takes effect here, before the init-block
@@ -8643,6 +8720,8 @@ Object.assign(boneInteractionDeps, {
   activateStrandControlPoint,
   closestStrandCurveParameter,
   clonePanelSplits,
+  cloneStrandSplits,
+  syncStrandSplitLegacyFields,
   snapPanelSplitHeight,
   strandGeometryCurve,
   strandSplitProfileData,
@@ -9057,6 +9136,9 @@ function addLock(presetName, overrides = {}, options = {}) {
   lock.strandTipStart = THREE.MathUtils.clamp(Number(base.strandTipStart ?? strandCreationDefaults.strandTipStart ?? 0.75), 0.2, 0.95);
   lock.strandTip = Array.isArray(base.strandTip?.points) ? strandTipFromData(base.strandTip, lock) : null;
   lock.strandSplitBones = Array.isArray(base.strandSplitBones) ? strandSplitBonesFromData(base.strandSplitBones, lock) : null;
+  // 多拉链数组（Phase A：单条上限）——legacy 文件无 base.strandSplits 时由标量迁移
+  lock.strandSplits = cloneStrandSplits(base.strandSplits, lock.strandSplitPosition, lock.strandSplitHeight, STRAND_SPLIT_MAX);
+  syncStrandSplitLegacyFields(lock);
   lock.profileOffset = Number(base.profileOffset ?? topologyDefaults.profileOffset ?? 0);
   const surfaceColumns = normalizeSurfaceLatticeCount(base.surfaceColumns, DEFAULT_SURFACE_LATTICE_COLUMNS);
   const surfaceRows = normalizeSurfaceLatticeCount(base.surfaceRows, DEFAULT_SURFACE_LATTICE_ROWS);
@@ -9279,6 +9361,7 @@ function createMirrorPartner(lock, options = {}) {
     strandSplitPosition: -Number(lock.strandSplitPosition ?? 0),
     strandSplitHeight: Number(lock.strandSplitHeight ?? 0.3),
     strandSplitGap: Number(lock.strandSplitGap ?? 0.12),
+    strandSplits: (lock.strandSplits || []).map((s) => ({ position: -s.position, height: s.height, order: s.order })),
     strandTipStart: Number(lock.strandTipStart ?? 0.75),
     strandTip: mirrorStrandTip(lock.strandTip),
     strandSplitBones: mirrorStrandSplitBones(lock.strandSplitBones),
@@ -9449,6 +9532,8 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   partner.strandSplitPosition = -Number(lock.strandSplitPosition ?? 0);
   partner.strandSplitHeight = Number(lock.strandSplitHeight ?? 0.3);
   partner.strandSplitGap = Number(lock.strandSplitGap ?? 0.12);
+  partner.strandSplits = (lock.strandSplits || []).map((s) => ({ position: -s.position, height: s.height, order: s.order }));
+  syncStrandSplitLegacyFields(partner);
   partner.strandTipStart = Number(lock.strandTipStart ?? 0.75);
   partner.strandTip = mirrorStrandTip(lock.strandTip);
   partner.strandSplitBones = mirrorStrandSplitBones(lock.strandSplitBones);
@@ -9524,6 +9609,7 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   if (
     partner.curveObjects.handles.length !== partner.points.length
     || (partner.curveObjects.panelSplitHandles?.length || 0) !== (partner.panelSplits?.length || 0)
+    || (partner.curveObjects.strandSplitHandles?.length || 0) !== (partner.strandSplits?.length || 0)
   ) rebuildCurveObjects(partner);
   syncLockFromCurve(partner);
   materialApi.applyMaterialDefinitionToLock(partner);
@@ -9677,6 +9763,7 @@ function snapshotState() {
       strandSplitPosition: Number(lock.strandSplitPosition ?? 0),
       strandSplitHeight: Number(lock.strandSplitHeight ?? 0.3),
       strandSplitGap: Number(lock.strandSplitGap ?? 0.12),
+      strandSplits: cloneStrandSplits(lock.strandSplits, lock.strandSplitPosition, lock.strandSplitHeight, STRAND_SPLIT_MAX),
       strandTipStart: Number(lock.strandTipStart ?? 0.75),
       strandTip: lock.strandTip ? strandTipToData(lock.strandTip) : null,
       strandSplitBones: lock.strandSplitBones ? strandSplitBonesToData(lock.strandSplitBones) : null,
@@ -10233,6 +10320,12 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     strandSplitPosition: THREE.MathUtils.clamp(Number(snapshot.strandSplitPosition ?? 0), -0.8, 0.8),
     strandSplitHeight: THREE.MathUtils.clamp(Number(snapshot.strandSplitHeight ?? 0.3), 0.02, 0.8),
     strandSplitGap: THREE.MathUtils.clamp(Number(snapshot.strandSplitGap ?? 0.12), 0, 0.5),
+    strandSplits: cloneStrandSplits(
+      snapshot.strandSplits,
+      THREE.MathUtils.clamp(Number(snapshot.strandSplitPosition ?? 0), -0.8, 0.8),
+      THREE.MathUtils.clamp(Number(snapshot.strandSplitHeight ?? 0.3), 0.02, 0.8),
+      STRAND_SPLIT_MAX
+    ),
     strandTipStart: THREE.MathUtils.clamp(Number(snapshot.strandTipStart ?? 0.75), 0.2, 0.95),
     strandTip: strandTipFromData(snapshot.strandTip, snapshot),
     strandSplitBones: strandSplitBonesFromData(snapshot.strandSplitBones, snapshot),
@@ -10701,6 +10794,8 @@ function createCurvePoints(lock) {
 function deselectStrands() {
   guideApi.clearMultiPointSelection();
   clearStrandSelectionState();
+  sculptState.state.panelSplitSelection = null;
+  sculptState.state.strandSplitSelection = null;
   sel.state.selectedCurveSurfaceController = null;
   sel.state.clumpViewportSelection = false;
   sel.state.selectedStrandGroup = null;
@@ -12066,6 +12161,7 @@ Object.assign(boneViewHandlesDeps, {
   sel: sel.state,
   transformControls,
   clonePanelSplits,
+  cloneStrandSplits,
   isPanelGeometry,
   panelSplitControlPoint,
   strandSplitControlPoint,
@@ -12788,6 +12884,12 @@ function selectLock(id, options = {}) {
   if (sculptState.state.panelTipHover && sculptState.state.panelTipHover.lockId !== id) {
     sculptState.state.panelTipHover = null;
   }
+  if (sculptState.state.panelSplitSelection && sculptState.state.panelSplitSelection.lockId !== id) {
+    sculptState.state.panelSplitSelection = null;
+  }
+  if (sculptState.state.strandSplitSelection && sculptState.state.strandSplitSelection.lockId !== id) {
+    sculptState.state.strandSplitSelection = null;
+  }
   guideApi.clearMultiPointSelection();
   const selectedCurveSurfaceLock = locks.find((item) => item.id === sel.state.selectedId && item.geometryType === "curve-surface");
   const requestedControllerIndex = Math.round(Number(options.curveSurfaceControllerIndex));
@@ -13132,7 +13234,19 @@ function syncStrandSplitInputs(target = taperEditor.activeStrandShapeTarget()) {
   strandSplitInputs.strandSplitGap.value = gap;
   strandSplitInputs.strandSplitGap.disabled = !target.strandSplitEnabled;
   strandSplitValues.strandSplitGap.textContent = gap.toFixed(2);
+  syncStrandSplitControls(target);
   syncStrandSplitTipInputs(target);
+}
+
+// 同步 strand Zipper Controls 计数 + 边界禁用（mirror syncPanelShapeInputs 的 zipper 部分）。
+function syncStrandSplitControls(target = taperEditor.activeStrandShapeTarget()) {
+  if (!target || (target.geometryType && target.geometryType !== "strand")) return;
+  const splits = cloneStrandSplits(target.strandSplits, target.strandSplitPosition, target.strandSplitHeight, STRAND_SPLIT_MAX);
+  const enabled = Boolean(target.strandSplitEnabled);
+  if (strandSplitCountValue) strandSplitCountValue.textContent = String(splits.length);
+  // 分裂发丝至少保留 1 个拉链：<=1 时禁用移除（用 Split Geometry 开关归零）。
+  if (removeStrandSplitButton) removeStrandSplitButton.disabled = !enabled || splits.length <= 1;
+  if (addStrandSplitButton) addStrandSplitButton.disabled = !enabled || splits.length >= STRAND_SPLIT_MAX;
 }
 
 function currentStrandTipChain(target) {
@@ -13194,11 +13308,13 @@ function currentStrandSplitTipChains(lock) {
     ? storedRestCenters
     : null;
   const baseWidth = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1);
-  const splitStart = 1 - THREE.MathUtils.clamp(Number(lock.strandSplitHeight ?? 0.3), 0.02, 0.8);
   const defaultSpread = THREE.MathUtils.clamp(Number(lock.strandSplitGap ?? 0.12), 0, 0.99);
   return bones.map((bone, tubeIndex) => {
     const spread = bone.spread ?? defaultSpread;
-    const direction = tubeIndex === 0 ? -1 : 1;
+    // 多拉链：叉口深度与推开方向都按段取（与 createSplitStrandGeometry 同规则）；
+    // 单拉链时退化为旧的 1-strandSplitHeight 与 -1/+1，行为不变。
+    const splitStart = strandSplitForkTForSegment(lock, tubeIndex);
+    const direction = strandSplitDirectionForSegment(lock, tubeIndex);
     const restPointAt = (t) => {
       if (tubeRestCenters) {
         const center = sampleCenterlinePoint(tubeRestCenters[tubeIndex], parameters, t);
@@ -17110,6 +17226,8 @@ Object.entries(panelShapeInputs).forEach(([key, input]) => {
 
 addPanelSplitButton?.addEventListener("click", () => segmentApi.changePanelSplitCount(1));
 removePanelSplitButton?.addEventListener("click", () => segmentApi.changePanelSplitCount(-1));
+addStrandSplitButton?.addEventListener("click", () => segmentApi.changeStrandSplitCount(1));
+removeStrandSplitButton?.addEventListener("click", () => segmentApi.changeStrandSplitCount(-1));
 previousPanelSegmentButton?.addEventListener("click", () => {
   const selected = getSelectedLock();
   const target = isPanelGeometry(selected) ? selected : taperEditor.activeStrandShapeTarget();
@@ -18542,6 +18660,9 @@ window.addEventListener("keydown", (event) => {
       materialApi.deleteActiveHairMaterial();
       return;
     }
+    // 选中了 zipper 时，Del 只删除该 zipper，不删除整个 lock。
+    if (segmentApi.deleteSelectedPanelSplit()) return;
+    if (segmentApi.deleteSelectedStrandSplit()) return;
     deleteCurrentSelection();
     return;
   }
@@ -20520,6 +20641,7 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     tipSegmentWeightAt: panelTipStrand.tipSegmentWeightAt,
     tipWidthCommonForkT: panelTipStrand.tipWidthCommonForkT,
     tipWidthControlTs: panelTipStrand.tipWidthControlTs,
+    tipWidthSideControlTs: panelTipStrand.tipWidthSideControlTs,
     tipWidthSpreadGap: panelTipStrand.tipWidthSpreadGap,
     tipWidthControlPlacement: panelTipStrand.tipWidthControlPlacement,
     tipWidthEdgePosition: panelTipStrand.tipWidthEdgePosition,

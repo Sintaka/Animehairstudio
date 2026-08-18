@@ -259,6 +259,112 @@ export function mirrorSplitBones(bones) {
   return mirrored;
 }
 
+// ---- 分段骨骼重映射（增删拉链时的一次性骨骼数据搬迁） ----
+// 段 = 排序后拉链之间的间隔：N 个拉链 → N+1 段，段 k 跨越边界 k..k+1。
+// splitBones / strandSplitBones 是 index-keyed 数组，只改 splits 数组会让骨骼整体
+// 错位（用户的发尖位移“跑到下一个发尖”）。下面两个纯函数把骨骼数据搬到正确的段上，
+// 并让被细分 / 合并出来的段继承来源段的姿态：tip 的 authored delta 会由
+// materializeTipChain 在新段自己的 rest 链上自动重新叠加，无需改动几何管线。
+
+// 深克隆单个分段骨骼（tip / 曲线数组全部不共享引用）。
+// name 与 parentParam 故意丢弃：两者都由下标派生（name → `split.k`，
+// parentParam → panel 回退 0.5 / strand 回退 strandSplitForkTForSegment），
+// 继承旧值会让名字重复、并把叉口深度停留在旧的段边界上。
+function cloneSegmentBone(bone) {
+  if (!bone || typeof bone !== "object") return null;
+  const point = (p) => (p ? { x: Number(p.x), y: Number(p.y), z: Number(p.z) } : null);
+  const curve = (key) => (Array.isArray(bone[key]) ? bone[key].map((p) => ({ ...p })) : null);
+  return {
+    name: null,
+    parent: bone.parent || "main",
+    parentParam: null,
+    p: point(bone.p),
+    orient: bone.orient
+      ? {
+        x: Number(bone.orient.x),
+        y: Number(bone.orient.y),
+        z: Number(bone.orient.z),
+        w: Number(bone.orient.w ?? 1)
+      }
+      : null,
+    scale: bone.scale ? { x: Number(bone.scale.x), z: Number(bone.scale.z) } : null,
+    tip: bone.tip && Array.isArray(bone.tip.points)
+      ? {
+        points: bone.tip.points.map(point),
+        restPoints: Array.isArray(bone.tip.restPoints) ? bone.tip.restPoints.map(point) : null,
+        twists: Array.isArray(bone.tip.twists) ? bone.tip.twists.map((v) => Number(v) || 0) : null,
+        active: bone.tip.active !== false
+      }
+      : null,
+    spread: bone.spread == null ? null : Number(bone.spread),
+    taperCurve: curve("taperCurve"),
+    taperCurveSecondary: curve("taperCurveSecondary"),
+    depthCurve: curve("depthCurve"),
+    depthCurveSecondary: curve("depthCurveSecondary"),
+    asymmetricWidthCurve: bone.asymmetricWidthCurve == null ? null : Boolean(bone.asymmetricWidthCurve),
+    asymmetricDepthCurve: bone.asymmetricDepthCurve == null ? null : Boolean(bone.asymmetricDepthCurve),
+    kind: bone.kind || "split",
+    meta: bone.meta ? { ...bone.meta } : null
+  };
+}
+
+// 合并时选留哪一段的姿态：显式 survivorIndex 优先；否则按 span 取更宽的那段
+// （更宽 = 更接近合并后的几何，发尖姿态最接近现状）；都没有则取左段。
+function resolveMergeSurvivor(bones, deleteIndex, options) {
+  const explicit = Number(options?.survivorIndex);
+  if (Number.isFinite(explicit)) {
+    return THREE.MathUtils.clamp(Math.round(explicit), 0, Math.max(0, bones.length - 1));
+  }
+  const spans = Array.isArray(options?.spans) ? options.spans : null;
+  if (spans) {
+    const left = Number(spans[deleteIndex]);
+    const right = Number(spans[deleteIndex + 1]);
+    if (Number.isFinite(left) && Number.isFinite(right) && right > left) return deleteIndex + 1;
+  }
+  return deleteIndex;
+}
+
+// 插入：在排序下标 insertIndex 新增一个拉链，把段 insertIndex 一分为二。
+// 返回长度 +1 的新数组：段 0..insertIndex-1 原样；段 insertIndex 与 insertIndex+1
+// 都从来源段 insertIndex 深克隆（两半都继承被细分段的姿态）；其后整体后移一格。
+// 缺失的来源写入 null，交由 normalize 派生默认值。输入不被修改。
+export function remapSegmentBonesOnInsert(bones, insertIndex) {
+  const list = Array.isArray(bones) ? bones : [];
+  const at = THREE.MathUtils.clamp(
+    Math.floor(Number(insertIndex) || 0),
+    0,
+    Math.max(0, list.length - 1)
+  );
+  const out = [];
+  for (let k = 0; k < list.length + 1; k += 1) {
+    // k <= at：两半都取来源段 at；k > at：来源整体后移一格（BUG 1 的错位修正）
+    const sourceIndex = k <= at ? Math.min(k, at) : k - 1;
+    out.push(cloneSegmentBone(list[sourceIndex]));
+  }
+  return out;
+}
+
+// 删除：移除排序下标 deleteIndex 的拉链，把段 deleteIndex 与 deleteIndex+1 合并为一段。
+// 返回长度 -1 的新数组：段 0..deleteIndex-1 原样；段 deleteIndex 取 survivor 的深克隆；
+// 其后从 bones[deleteIndex+2..] 前移一格。输入不被修改。
+export function remapSegmentBonesOnDelete(bones, deleteIndex, options = {}) {
+  const list = Array.isArray(bones) ? bones : [];
+  const outCount = Math.max(0, list.length - 1);
+  if (!outCount) return [];
+  const at = THREE.MathUtils.clamp(Math.floor(Number(deleteIndex) || 0), 0, outCount - 1);
+  const survivor = THREE.MathUtils.clamp(
+    resolveMergeSurvivor(list, at, options),
+    0,
+    Math.max(0, list.length - 1)
+  );
+  const out = [];
+  for (let k = 0; k < outCount; k += 1) {
+    const sourceIndex = k < at ? k : (k === at ? survivor : k + 1);
+    out.push(cloneSegmentBone(list[sourceIndex]));
+  }
+  return out;
+}
+
 // ---- strand tip sub-bone data model (Route 1: regular-strand single tip) ----
 // lock.strandTip is optional; old files without it derive defaults in the geometry
 // layer (rest chain from the strand's own curve), never written back here.
@@ -320,12 +426,48 @@ export function strandSplitForkT(lock) {
   return 1 - height;
 }
 
+// Sorted, clamped split list matching createSplitStrandGeometry exactly (the same
+// legacy single-scalar fallback), so bone layout and geometry agree on N and heights.
+export function strandSplitsFor(lock) {
+  const rawSplits = Array.isArray(lock?.strandSplits) && lock.strandSplits.length
+    ? lock.strandSplits
+    : [{ position: Number(lock?.strandSplitPosition ?? 0), height: Number(lock?.strandSplitHeight ?? 0.3) }];
+  return rawSplits
+    .map((split) => ({
+      position: THREE.MathUtils.clamp(Number(split?.position ?? 0), -0.8, 0.8),
+      height: THREE.MathUtils.clamp(Number(split?.height ?? 0.3), 0.02, 0.8)
+    }))
+    .sort((a, b) => a.position - b.position);
+}
+
+// Per-tube fork parameter (opening start along the main chain). Section k opens where
+// its adjacent split(s) are deepest, matching the geometry's sectionSplitStart:
+// 1 - max(splits[k-1].height, splits[k].height). Edge sections use their single
+// adjacent split. At N=1 both tubes reduce to 1 - strandSplitHeight (legacy value).
+export function strandSplitForkTForSegment(lock, segmentIndex) {
+  const splits = strandSplitsFor(lock);
+  const leftHeight = splits[segmentIndex - 1]?.height ?? 0;
+  const rightHeight = splits[segmentIndex]?.height ?? 0;
+  return 1 - Math.max(leftHeight, rightHeight);
+}
+
+// 管 k 的横向推开方向：最左 -1、最右 +1、中间按其两侧拉链位置中点的符号。与
+// createSplitStrandGeometry 的 per-section direction 同规则（N=1 时为 -1/+1，与旧版一致）。
+export function strandSplitDirectionForSegment(lock, segmentIndex) {
+  const splits = strandSplitsFor(lock);
+  const splitCount = splits.length;
+  if (segmentIndex <= 0) return -1;
+  if (segmentIndex >= splitCount) return 1;
+  const center = ((splits[segmentIndex - 1]?.position ?? -1) + (splits[segmentIndex]?.position ?? 1)) / 2;
+  return Math.sign(center);
+}
+
 function normalizeStrandSplitBone(bone, lock, index) {
   const normalized = normalizeBone(bone, null, lock);
   normalized.name = bone?.name || `split.${index}`;
   normalized.parent = bone?.parent || "main";
   normalized.parentParam = THREE.MathUtils.clamp(
-    Number(bone?.parentParam ?? strandSplitForkT(lock)),
+    Number(bone?.parentParam ?? strandSplitForkTForSegment(lock, index)),
     0,
     1
   );
@@ -340,15 +482,18 @@ function normalizeStrandSplitBone(bone, lock, index) {
 // (not written back). Returns null for any non-split-strand lock.
 export function strandSplitBonesFor(lock) {
   if (lock?.geometryType !== "strand" || !lock.strandSplitEnabled) return null;
-  const stored = Array.isArray(lock?.strandSplitBones) && lock.strandSplitBones.length === 2
+  // Tube count = number of zippers + 1 (N splits -> N+1 sections). Derived the same way
+  // as the geometry so bones and tubes always agree. At N=1 this is exactly 2.
+  const tubeCount = strandSplitsFor(lock).length + 1;
+  const stored = Array.isArray(lock?.strandSplitBones) && lock.strandSplitBones.length === tubeCount
     ? lock.strandSplitBones
     : null;
   if (stored) return stored.map((bone, k) => normalizeStrandSplitBone(bone, lock, k));
   const spread = defaultStrandSplitSpread(lock);
-  return [0, 1].map((k) => ({
+  return Array.from({ length: tubeCount }, (_, k) => ({
     name: `split.${k}`,
     parent: "main",
-    parentParam: strandSplitForkT(lock),
+    parentParam: strandSplitForkTForSegment(lock, k),
     p: null,
     orient: null,
     tip: null,
@@ -401,7 +546,11 @@ export function strandSplitBonesToData(bones) {
 }
 
 export function strandSplitBonesFromData(data, lock = null) {
-  if (!Array.isArray(data) || data.length !== 2) return null;
+  // Empty / invalid arrays -> null. Otherwise the array is length-agnostic: it maps as-is
+  // (N+1 tubes). When a lock is supplied we still accept it, whether or not its length
+  // matches the lock's current tube count, so both a legacy 2-length file (N=1) and an
+  // N+1-length file round-trip. Length literals are intentionally gone.
+  if (!Array.isArray(data) || !data.length) return null;
   return data.map((bone, k) => normalizeStrandSplitBone(bone, lock, k));
 }
 

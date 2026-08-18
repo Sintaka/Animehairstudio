@@ -1,4 +1,4 @@
-﻿// creation-presets.js — creation-preset snapshot/normalize/apply logic (refactor 3d-1).
+// creation-presets.js — creation-preset snapshot/normalize/apply logic (refactor 3d-1).
 // Extracted from app.js; all app.js coupling injected via createCreationPresetsApi(deps).
 import * as THREE from "three";
 import { cloneShapePresetValue } from "./shape-presets.js";
@@ -59,6 +59,7 @@ export function createCreationPresetsApi(deps) {
       strandSplitPosition: presetNumber(source.strandSplitPosition, 0),
       strandSplitHeight: presetNumber(source.strandSplitHeight, 0.3),
       strandSplitGap: presetNumber(source.strandSplitGap, 0.12),
+      strandSplits: Array.isArray(source.strandSplits) ? source.strandSplits.map((s) => ({ ...s })) : null,
       profileOffset: presetNumber(source.profileOffset, 0),
       rootScalpOffset: presetNumber(source.rootScalpOffset, 0),
       strandRotation: presetNumber(source.strandRotation, 0),
@@ -183,7 +184,7 @@ export function createCreationPresetsApi(deps) {
   function applyCreationPresetSnapshot(target, snapshot, type) {
     const keys = [
       "width", "depth", "widthScale", "depthScale", "profileTrimLeft", "profileTrimRight", "profileTrimRoundness", "hairCard",
-      "strandSplitEnabled", "strandSplitPosition", "strandSplitHeight", "strandSplitGap", "profileOffset", "rootScalpOffset", "strandRotation", "twist",
+      "strandSplitEnabled", "strandSplitPosition", "strandSplitHeight", "strandSplitGap", "strandSplits", "profileOffset", "rootScalpOffset", "strandRotation", "twist",
       "hairLayer", "dynamicDensity", "densityAggression", "twistDensity", "curlCount", "curlDisplacement",
       "braidMeshPreset", "braidWidth", "braidDepth", "braidSegmentLength", "braidRotation",
       "asymmetricWidthCurve", "asymmetricDepthCurve", "centerAsymmetricProfile"

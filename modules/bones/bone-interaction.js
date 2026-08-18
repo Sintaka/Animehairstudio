@@ -96,7 +96,10 @@ function applyTipSubBoneTransform(lock, handle) {
     if (!bone || !bone.tip || !Array.isArray(bone.tip.points) || bone.tip.points.length < 2) return;
     // fork 以下第一个暴露点：把暴露子链当整体做 Pull Strand 求解，根点钉在 fork 处。
     const forkT = deps.panelTipStrand.splitForkT(lock, segment, splits);
-    const firstBelow = Math.min(drag.restPoints.length - 1, Math.max(1, Math.ceil(forkT * (drag.restPoints.length - 1))));
+    // floor (not ceil): the fork row itself is exposed, matching the USDA export rule —
+    // one more editable tip point toward the root. Lower clamp stays 1 so the chain root
+    // (index 0, pinned on the main chain) is never pulled.
+    const firstBelow = Math.min(drag.restPoints.length - 1, Math.max(1, Math.floor(forkT * (drag.restPoints.length - 1))));
     if (point < firstBelow) return;
     const exposedVecs = [];
     for (let i = firstBelow; i < bone.tip.points.length; i += 1) {
@@ -158,8 +161,7 @@ function beginPanelSplitHandleDrag(event) {
   const strandHandle = lock?.geometryType === "strand"
     && lock.strandSplitEnabled
     && lock.curveObjects?.group.visible
-    && lock.curveObjects.strandSplitHandle?.visible
-    ? [lock.curveObjects.strandSplitHandle]
+    ? (lock.curveObjects.strandSplitHandles || []).filter((handle) => handle.visible)
     : [];
   const strandSplitTipHandles = lock?.geometryType === "strand" && lock.strandSplitEnabled && lock.curveObjects?.group.visible
     ? (lock.curveObjects.strandSplitTipHandles || [])
@@ -265,9 +267,11 @@ function beginPanelSplitHandleDrag(event) {
           : "panel",
     splitIndex: tipWidthSegment != null ? tipWidthSegment : tipIndex != null ? tipIndex : splitTipTube != null
       ? splitTipTube
-      : hit.object.userData.panelSegmentIndex != null
-        ? hit.object.userData.panelSegmentIndex
-        : hit.object.userData.panelSplitIndex,
+      : hit.object.userData.strandSplitHandle
+        ? hit.object.userData.strandSplitIndex
+        : hit.object.userData.panelSegmentIndex != null
+          ? hit.object.userData.panelSegmentIndex
+          : hit.object.userData.panelSplitIndex,
     tipPoint: splitTipPoint != null ? splitTipPoint : tipPoint,
     tipStartWorld: splitTipStartWorld != null ? splitTipStartWorld : tipStartWorld,
     tipWidthSide,
@@ -281,6 +285,18 @@ function beginPanelSplitHandleDrag(event) {
     tipWidthStartEdgeScreenDist,
     tipWidthBones
   };
+  // 点击普通 zipper 手柄（kind==="panel"）时同时选中它；拖拽本身不删除。
+  if (deps.sculptState.panelSplitDrag.kind === "panel" && hit.object.userData.panelSplitIndex != null) {
+    const selectSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const selected = selectSplits[hit.object.userData.panelSplitIndex];
+    if (selected) deps.sculptState.panelSplitSelection = { lockId: lock.id, order: Number(selected.order) };
+  }
+  // 点击 strand zipper 手柄（kind==="strand"）时同时选中它，供 Del 删除。
+  if (deps.sculptState.panelSplitDrag.kind === "strand" && hit.object.userData.strandSplitIndex != null) {
+    const selectSplits = deps.cloneStrandSplits(lock.strandSplits, lock.strandSplitPosition, lock.strandSplitHeight);
+    const selected = selectSplits[hit.object.userData.strandSplitIndex];
+    if (selected) deps.sculptState.strandSplitSelection = { lockId: lock.id, order: Number(selected.order) };
+  }
   deps.renderer.domElement.setPointerCapture?.(event.pointerId);
   deps.renderer.domElement.style.cursor = "grabbing";
   deps.updateCurveObjects(lock, { visible: true });
@@ -321,8 +337,18 @@ function updatePanelSplitHandleDrag(event) {
       }
     }
     if (!best) return;
-    lock.strandSplitPosition = THREE.MathUtils.clamp(best.position, -0.8, 0.8);
-    lock.strandSplitHeight = THREE.MathUtils.clamp(best.height, 0.02, 0.8);
+    // 写回 strandSplits[index]（N 拉链），并夹在相邻拉链之间保持最小间距；
+    // 随后 syncStrandSplitLegacyFields 把 splits[0] 回写 legacy 标量（N=1 与旧行为一致）。
+    const splits = deps.cloneStrandSplits(lock.strandSplits, lock.strandSplitPosition, lock.strandSplitHeight);
+    const index = deps.sculptState.panelSplitDrag.splitIndex;
+    if (!splits[index]) return;
+    const minimumSeparation = 0.12;
+    const minPosition = index > 0 ? splits[index - 1].position + minimumSeparation : -0.8;
+    const maxPosition = index < splits.length - 1 ? splits[index + 1].position - minimumSeparation : 0.8;
+    splits[index].position = THREE.MathUtils.clamp(best.position, minPosition, maxPosition);
+    splits[index].height = THREE.MathUtils.clamp(best.height, 0.02, 0.8);
+    lock.strandSplits = splits;
+    deps.syncStrandSplitLegacyFields(lock);
     deps.updateLockGeometry(lock, { immediate: true });
     deps.updateCurveObjects(lock, { visible: true });
     deps.syncActiveMirror(lock, { deferGeometry: false });
@@ -603,7 +629,10 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   const reverse = Boolean(stroke.reverse);
   const tool = deps.effectiveSculptBrushTool();
   const forkT = deps.panelTipStrand.splitForkT(lock, segmentIndex, splits);
-  const firstBelow = Math.min(rest.length - 1, Math.max(1, Math.ceil(forkT * (rest.length - 1))));
+  // floor (not ceil): the fork row itself is exposed, matching the USDA export rule —
+  // the brush reaches one more row toward the root. Lower clamp stays 1 so the chain root
+  // (index 0, pinned on the main chain) stays out of the brush-editable range.
+  const firstBelow = Math.min(rest.length - 1, Math.max(1, Math.floor(forkT * (rest.length - 1))));
   const scaleCenter = current[firstBelow] || current[0];
   const weights = new Array(current.length).fill(0);
   for (let index = firstBelow; index < current.length; index += 1) {

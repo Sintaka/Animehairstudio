@@ -7,7 +7,7 @@
 // 运行：node tests/usda-export.test.mjs
 
 import assert from "node:assert/strict";
-import { exportAnimeHairUsda, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName, smoothMainPair, tipChainNearestIndex } from "../modules/io/usda-export.js";
+import { exportAnimeHairUsda, axesToMat3, splitBoneLayout, splitChainLayout, splitParentMainIndex, bridgeRootParentName, smoothMainPair, tipChainNearestIndex } from "../modules/io/usda-export.js";
 
 // project-files.js 已把内部骨骼名（main./split.）映射为发丝名前缀（jointNameOf），
 // 且 skeleton.name 已是去重后的 `${usdIdentifier(lock.name)}_Skel`；这里直接喂
@@ -419,14 +419,18 @@ const panelLock = {
   ],
   points: Array.from({ length: 6 }, (_, i) => ({ x: 0, y: 1.7 - i * 0.25, z: 0 }))
 };
-// split.0：heights=[0.25] → forkT 0.75 → round(0.75·5)=4。
-assert.equal(splitBoneLayout(panelLock, { name: "split.0" }, { mainCount: 6 }).parentMainIndex, 4, "split.0 fork 应指向 main.4");
-// split.1~4：相邻高度 max=0.4375 → forkT 0.5625 → round(2.8125)=3。
+// parentMainIndex = firstExposed − 1，其中第一个暴露索引
+// firstExposed = clamp(floor(forkT·(mainCount−1)), 1, mainCount−1) —— fork 所在行本身
+// 也暴露（比旧的严格 t > forkT 规则多暴露一行发尖骨骼）。floor（不是 round）仍必要：
+// round 会在 frac > 0.5 时把骨骼根抬到自己的第一个暴露子节点上（甚至越过）。
+// split.0：heights=[0.25] → forkT 0.75 → floor(0.75·5)=3 = firstExposed → 根 2。
+assert.equal(splitBoneLayout(panelLock, { name: "split.0" }, { mainCount: 6 }).parentMainIndex, 2, "split.0 fork 应指向 main.2");
+// split.1~4：相邻高度 max=0.4375 → forkT 0.5625 → floor(2.8125)=2 = firstExposed → 根 1。
 for (const k of [1, 2, 3, 4]) {
   assert.equal(
     splitBoneLayout(panelLock, { name: `split.${k}` }, { mainCount: 6 }).parentMainIndex,
-    3,
-    `split.${k} fork 应指向 main.3`
+    1,
+    `split.${k} fork 应指向 main.1`
   );
 }
 // p = tip 链末点；stub 应收到原始 panelSplits 引用与 bone。
@@ -471,16 +475,16 @@ const strandLock = {
 };
 const fakeCurve = { getPoint: (t) => (t >= 1 ? { x: 0, y: 0.5, z: 0 } : { x: 0, y: 1.7, z: 0 }) };
 const frameStub = () => ({ x: { x: 0, y: 0, z: 1 } });
-// forkT = 1 - 0.36125 = 0.63875 → round(0.63875·10)=6。
+// forkT = 1 - 0.36125 = 0.63875 → firstExposed = floor(6.3875)=6 → 根 5。
 assert.equal(
   splitBoneLayout(strandLock, { name: "split.0", spread: 0.19 }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).parentMainIndex,
-  6,
-  "发丝 split.0 fork 应指向 main.6"
+  5,
+  "发丝 split.0 fork 应指向 main.5"
 );
 assert.equal(
   splitBoneLayout(strandLock, { name: "split.1", spread: 0.19 }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).parentMainIndex,
-  6,
-  "发丝 split.1 fork 应指向 main.6"
+  5,
+  "发丝 split.1 fork 应指向 main.5"
 );
 // offset = 0.16·0.19 = 0.0304；k=0 沿 -frame.x、k=1 沿 +frame.x（float 比较容差 1e-9）。
 const p0 = splitBoneLayout(strandLock, { name: "split.0", spread: 0.19 }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).p;
@@ -495,6 +499,45 @@ assert.deepEqual(
   [0, 0.5, 0],
   "无 frame 时应回退到曲线末端 [0, 0.5, 0]"
 );
+
+// ---- 发丝多拉链（N=2 → 3 管）：per-tube forkT + per-tube direction ----
+// strandSplits 两条拉链 -> 3 段。fork 深度 = 1 - max(相邻拉链高)：
+//   split.0 = 1-0.4=0.6、split.1(中间) = 1-max(0.4,0.2)=0.6、split.2 = 1-0.2=0.8。
+// direction：split.0 最左 -1、split.2 最右 +1、split.1 中间 sign((-0.3+0.3)/2)=0。
+const strandMultiLock = {
+  geometryType: "strand",
+  strandSplitEnabled: true,
+  strandSplits: [
+    { position: -0.3, height: 0.4, order: 0 },
+    { position: 0.3, height: 0.2, order: 1 }
+  ],
+  baseWidth: 0.16,
+  points: Array.from({ length: 11 }, (_, i) => ({ x: 0, y: 1.7 - i * 0.12, z: 0 }))
+};
+// parentMainIndex = floor(forkT·10) − 1：split.0/1 → floor(0.6·10)−1=5、split.2 → floor(0.8·10)−1=7。
+assert.equal(
+  splitBoneLayout(strandMultiLock, { name: "split.0", spread: 0.19 }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).parentMainIndex,
+  5,
+  "N=2 发丝 split.0 fork = 1-0.4 → main.5"
+);
+assert.equal(
+  splitBoneLayout(strandMultiLock, { name: "split.1", spread: 0.19 }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).parentMainIndex,
+  5,
+  "N=2 发丝 split.1 fork = 1-max(0.4,0.2) → main.5"
+);
+assert.equal(
+  splitBoneLayout(strandMultiLock, { name: "split.2", spread: 0.19 }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).parentMainIndex,
+  7,
+  "N=2 发丝 split.2 fork = 1-0.2 → main.7"
+);
+// direction 通过 p 的侧向偏移符号验证：frameStub 的 frame.x=(0,0,1) → p[2]=baseWidth·spread·direction。
+// tip = fakeCurve(1) = (0,0.5,0)，offset 幅度 = 0.16·0.19 = 0.0304。
+const mp0 = splitBoneLayout(strandMultiLock, { name: "split.0", spread: 0.19 }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).p;
+const mp1 = splitBoneLayout(strandMultiLock, { name: "split.1", spread: 0.19 }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).p;
+const mp2 = splitBoneLayout(strandMultiLock, { name: "split.2", spread: 0.19 }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).p;
+assert.ok(mp0[2] < 0 && Math.abs(mp0[2] + 0.0304) < 1e-9, "split.0 最左 direction=-1 → p.z=-0.0304");
+assert.ok(Math.abs(mp1[2]) < 1e-9, "split.1 中间 direction=sign(0)=0 → p.z=0");
+assert.ok(mp2[2] > 0 && Math.abs(mp2[2] - 0.0304) < 1e-9, "split.2 最右 direction=+1 → p.z=+0.0304");
 
 // ---- bridgeRootParentName：桥接子锁根关节的父骨骼名 ----
 const parentLock = { id: "P", points: Array.from({ length: 13 }, (_, i) => ({ x: 0, y: 0, z: 0 })) };
@@ -547,33 +590,40 @@ const tipChainStub = (l, k, splits, b) => ({
 });
 // y=tangent=(0,0,1)、z=up=(0,1,0) → cross(z,y)=(1,0,0) → identity。
 const identityTipFrame = () => ({ x: { x: 0, y: 0, z: 1 }, y: { x: 0, y: 0, z: 1 }, z: { x: 0, y: 1, z: 0 } });
-// split.0：forkT = 1-0.25 = 0.75 → 暴露 t_4=0.8 / t_5=1.0 → 2 关节。
+// split.0：forkT = 1-0.25 = 0.75 → firstExposed = floor(0.75·5)=3 → 暴露 3/4/5 → 3 关节
+// （fork 行本身也暴露，比旧规则多一根发尖骨骼）。
 const chain0 = splitChainLayout(tipChainLock, { name: "split.0" }, {
   mainCount: 6,
   splitTipForSegment: tipChainStub,
   panelTipChainFrameAt: identityTipFrame
 });
-assert.equal(chain0.joints.length, 2, "split.0 应有 2 个暴露关节");
+assert.equal(chain0.joints.length, 3, "split.0 应有 3 个暴露关节");
 assert.equal(chain0.joints[0].name, "split.0", "链根关节名应为 split.0");
-assert.equal(chain0.joints[0].parent, "main.4", "split.0 父级应为 main.4");
-assert.deepEqual(chain0.joints[0].p, [4, 14, 24], "split.0 位置应直接采样 tip 链点 4");
+assert.equal(chain0.joints[0].parent, "main.2", "split.0 父级应为 main.2（firstExposed 3 − 1，严格位于第一个暴露点之下）");
+assert.deepEqual(chain0.joints[0].p, [3, 13, 23], "split.0 位置应直接采样 tip 链点 3");
 assert.deepEqual(chain0.joints[0].orient, [1, 0, 0, 0, 1, 0, 0, 0, 1], "身份 frame 应得到 identity orient");
-assert.equal(chain0.joints[1].name, "split.0.tip.5", "第二关节名应为 split.0.tip.5");
-assert.equal(chain0.joints[1].parent, "split.0", "tip.5 应链到 split.0");
-assert.deepEqual(chain0.joints[1].p, [5, 15, 25], "tip.5 位置应直接采样 tip 链点 5");
-// split.1：forkT = 1-max(0.25,0.4375) = 0.5625 → 暴露 t_3/t_4/t_5 → 3 关节链式。
+assert.equal(chain0.joints[1].name, "split.0.tip.4", "第二关节名应为 split.0.tip.4");
+assert.equal(chain0.joints[1].parent, "split.0", "tip.4 应链到 split.0");
+assert.deepEqual(chain0.joints[1].p, [4, 14, 24], "tip.4 位置应直接采样 tip 链点 4");
+assert.equal(chain0.joints[2].name, "split.0.tip.5", "第三关节名应为 split.0.tip.5");
+assert.equal(chain0.joints[2].parent, "split.0.tip.4", "tip.5 应链到 tip.4");
+assert.deepEqual(chain0.joints[2].p, [5, 15, 25], "tip.5 位置应直接采样 tip 链点 5");
+// split.1：forkT = 1-max(0.25,0.4375) = 0.5625 → firstExposed = floor(2.8125)=2 →
+// 暴露 2/3/4/5 → 4 关节链式。
 const chain1 = splitChainLayout(tipChainLock, { name: "split.1" }, {
   mainCount: 6,
   splitTipForSegment: tipChainStub,
   panelTipChainFrameAt: identityTipFrame
 });
-assert.equal(chain1.joints.length, 3, "split.1 应有 3 个暴露关节");
+assert.equal(chain1.joints.length, 4, "split.1 应有 4 个暴露关节");
 assert.equal(chain1.joints[0].name, "split.1", "链根关节名应为 split.1");
-assert.equal(chain1.joints[0].parent, "main.3", "split.1 父级应为 main.3");
-assert.equal(chain1.joints[1].name, "split.1.tip.4", "第二关节名应为 split.1.tip.4");
-assert.equal(chain1.joints[1].parent, "split.1", "tip.4 应链到 split.1");
-assert.equal(chain1.joints[2].name, "split.1.tip.5", "第三关节名应为 split.1.tip.5");
-assert.equal(chain1.joints[2].parent, "split.1.tip.4", "tip.5 应链到 tip.4");
+assert.equal(chain1.joints[0].parent, "main.1", "split.1 父级应为 main.1（firstExposed 2 − 1，严格位于第一个暴露点之下）");
+assert.equal(chain1.joints[1].name, "split.1.tip.3", "第二关节名应为 split.1.tip.3");
+assert.equal(chain1.joints[1].parent, "split.1", "tip.3 应链到 split.1");
+assert.equal(chain1.joints[2].name, "split.1.tip.4", "第三关节名应为 split.1.tip.4");
+assert.equal(chain1.joints[2].parent, "split.1.tip.3", "tip.4 应链到 tip.3");
+assert.equal(chain1.joints[3].name, "split.1.tip.5", "第四关节名应为 split.1.tip.5");
+assert.equal(chain1.joints[3].parent, "split.1.tip.4", "tip.5 应链到 tip.4");
 // 非身份 frame：y=(0,1,0)、z=(0,0,1) → cross(z,y)=(-1,0,0) → 非对角矩阵。
 const nonIdentityTipFrame = () => ({ x: { x: 0, y: 0, z: 1 }, y: { x: 0, y: 1, z: 0 }, z: { x: 0, y: 0, z: 1 } });
 const chainRot = splitChainLayout(tipChainLock, { name: "split.0" }, {
@@ -623,22 +673,25 @@ const strandChain = splitChainLayout(strandChainLock, { name: "split.0" }, {
   materializeTipChain: strandMaterializeStub,
   strandTipChainFrameAt: strandChainFrame
 });
-// forkT = 1-0.36125 = 0.63875；t>0.63875 → 7/8/9/10 → 4 关节。
-assert.equal(strandChain.joints.length, 4, "发丝 split.0 应有 4 个暴露关节（t>0.63875 → 7/8/9/10）");
+// forkT = 1-0.36125 = 0.63875；firstExposed = floor(6.3875)=6 → 6/7/8/9/10 → 5 关节。
+assert.equal(strandChain.joints.length, 5, "发丝 split.0 应有 5 个暴露关节（firstExposed 6 → 6/7/8/9/10）");
 assert.equal(strandChain.joints[0].name, "split.0", "发丝链根应为 split.0");
-assert.equal(strandChain.joints[0].parent, "main.6", "发丝 split.0 父级应为 main.6");
-assert.equal(strandChain.joints[1].name, "split.0.tip.8", "第二关节名应为 split.0.tip.8");
-assert.equal(strandChain.joints[2].name, "split.0.tip.9", "第三关节名应为 split.0.tip.9");
-assert.equal(strandChain.joints[3].name, "split.0.tip.10", "第四关节名应为 split.0.tip.10");
-assert.equal(strandChain.joints[1].parent, "split.0", "tip.8 应链到 split.0");
-assert.equal(strandChain.joints[2].parent, "split.0.tip.8", "tip.9 应链到 tip.8");
-assert.equal(strandChain.joints[3].parent, "split.0.tip.9", "tip.10 应链到 tip.9");
-// p：restPointAt(0.7) = curve(0.7) + frame.x·opening；opening 用同一公式重算（1e-9 容差）。
-const t7 = 7 / 10;
+assert.equal(strandChain.joints[0].parent, "main.5", "发丝 split.0 父级应为 main.5");
+assert.equal(strandChain.joints[1].name, "split.0.tip.7", "第二关节名应为 split.0.tip.7");
+assert.equal(strandChain.joints[2].name, "split.0.tip.8", "第三关节名应为 split.0.tip.8");
+assert.equal(strandChain.joints[3].name, "split.0.tip.9", "第四关节名应为 split.0.tip.9");
+assert.equal(strandChain.joints[4].name, "split.0.tip.10", "第五关节名应为 split.0.tip.10");
+assert.equal(strandChain.joints[1].parent, "split.0", "tip.7 应链到 split.0");
+assert.equal(strandChain.joints[2].parent, "split.0.tip.7", "tip.8 应链到 tip.7");
+assert.equal(strandChain.joints[3].parent, "split.0.tip.8", "tip.9 应链到 tip.8");
+assert.equal(strandChain.joints[4].parent, "split.0.tip.9", "tip.10 应链到 tip.9");
+// p：restPointAt(0.6) = curve(0.6) + frame.x·opening；opening 用同一公式重算（1e-9 容差）。
+// t_6 = 0.6 < splitStart 0.63875 → opening = 0（fork 行本身位于开口起点之上，未展开）。
+const t6 = 6 / 10;
 const strandSplitStart = 1 - 0.36125;
-const u7 = (t7 - strandSplitStart) / Math.max(0.0001, 1 - strandSplitStart);
-const ss7 = u7 * u7 * (3 - 2 * u7);
-const expectedOpening = 0.16 * 0.19 * ss7 * (-1);
+const u6 = (t6 - strandSplitStart) / Math.max(0.0001, 1 - strandSplitStart);
+const ss6 = u6 * u6 * (3 - 2 * u6);
+const expectedOpening = t6 <= strandSplitStart ? 0 : 0.16 * 0.19 * ss6 * (-1);
 assert.ok(
   Math.abs(strandChain.joints[0].p[2] - (0 + 1 * expectedOpening)) < 1e-9,
   `发丝 split.0 位置 z 应约等于 ${expectedOpening}（实测 ${strandChain.joints[0].p[2]}）`
@@ -659,7 +712,9 @@ const noExposure = splitChainLayout(singleSplitLock, { name: "split.0" }, {
 });
 assert.equal(noExposure.joints.length, 1, "无暴露段时应回退为单关节");
 assert.equal(noExposure.joints[0].name, "split.0", "回退关节名应为 split.0");
-assert.equal(noExposure.joints[0].parent, "main.5", "forkT=1 → parentMainIndex 应为 main.5");
+// forkT=1 → firstExposed 钳到末点 5（单关节），根 = 5 − 1 = 4：新规则连这个退化情形
+// 也满足 root < firstExposed（旧规则下根 = 5 = 暴露点本身）。
+assert.equal(noExposure.joints[0].parent, "main.4", "forkT=1 → parentMainIndex 应为 main.4");
 assert.deepEqual(noExposure.joints[0].p, [5, 15, 25], "回退关节位置应为 tip 链末点 [5,15,25]");
 
 // mainCount 1 → null（无 tip 链可导出：发丝分支缺 materializeTipChain）。
@@ -717,25 +772,132 @@ assert.deepEqual(smoothMainPair(0.5, 1), { main: 0, next: 0, frac: 0 }, "mainCou
 // ---- tipChainNearestIndex：暴露区最近发尖链关节 ----
 // 链点 i 的主链参数 t_i = i/(mainCount-1)，暴露区 = t_i > forkT（视口规则）；
 // 返回暴露区内最接近参数 t 的链索引（无暴露 → 末点）与暴露起点 i0。
-// mainCount 6 → last = 5；forkT 0.75 → i0 = floor(0.75·5)+1 = 4。
-assert.deepEqual(tipChainNearestIndex(1, 6, 0.75), { index: 5, i0: 4 }, "t=1 → 末点 5（i0=4）");
-assert.deepEqual(tipChainNearestIndex(0.8, 6, 0.75), { index: 4, i0: 4 }, "t=0.8 → ci=4.0 → round 4 = i0（split 根自身）");
-assert.deepEqual(tipChainNearestIndex(0.99, 6, 0.75), { index: 5, i0: 4 }, "t=0.99 → ci=4.95 → 末点 5");
-// forkT 0.5625 → i0 = floor(0.5625·5)+1 = 3。
-assert.deepEqual(tipChainNearestIndex(0.6, 6, 0.5625), { index: 3, i0: 3 }, "t=0.6 → ci=3.0 → 3 = i0");
-assert.deepEqual(tipChainNearestIndex(0.9, 6, 0.5625), { index: 5, i0: 3 }, "t=0.9 → ci=4.5 → JS round 4.5 = 5");
-assert.deepEqual(tipChainNearestIndex(1, 6, 0.5625), { index: 5, i0: 3 }, "t=1 → 末点 5");
+// 暴露起点 i0 = clamp(floor(forkT·last), 1, last)，与 splitChainLayout 的暴露循环同规则
+// （fork 行本身也暴露，比旧的 floor+1 多一行）。
+// mainCount 6 → last = 5；forkT 0.75 → i0 = floor(0.75·5) = 3。
+assert.deepEqual(tipChainNearestIndex(1, 6, 0.75), { index: 5, i0: 3 }, "t=1 → 末点 5（i0=3）");
+assert.deepEqual(tipChainNearestIndex(0.8, 6, 0.75), { index: 4, i0: 3 }, "t=0.8 → ci=4.0 → round 4（i0=3）");
+assert.deepEqual(tipChainNearestIndex(0.6, 6, 0.75), { index: 3, i0: 3 }, "t=0.6 → ci=3.0 → 3 = i0（split 根自身）");
+assert.deepEqual(tipChainNearestIndex(0.99, 6, 0.75), { index: 5, i0: 3 }, "t=0.99 → ci=4.95 → 末点 5");
+// forkT 0.5625 → i0 = floor(0.5625·5) = 2。
+assert.deepEqual(tipChainNearestIndex(0.4, 6, 0.5625), { index: 2, i0: 2 }, "t=0.4 → ci=2.0 → 2 = i0");
+assert.deepEqual(tipChainNearestIndex(0.6, 6, 0.5625), { index: 3, i0: 2 }, "t=0.6 → ci=3.0 → 3");
+assert.deepEqual(tipChainNearestIndex(0.9, 6, 0.5625), { index: 5, i0: 2 }, "t=0.9 → ci=4.5 → JS round 4.5 = 5");
+assert.deepEqual(tipChainNearestIndex(1, 6, 0.5625), { index: 5, i0: 2 }, "t=1 → 末点 5");
 // forkT 1 → 仅末点暴露（单暴露点）。
 assert.deepEqual(tipChainNearestIndex(1, 6, 1), { index: 5, i0: 5 }, "forkT=1 → 仅末点 5 暴露");
 // t 越界钳到 [0,1]：t=2 同 t=1；t=-1 → ci=0 → 钳到 i0。
-assert.deepEqual(tipChainNearestIndex(2, 6, 0.75), { index: 5, i0: 4 }, "t=2 → 同 t=1");
-assert.deepEqual(tipChainNearestIndex(-1, 6, 0.75), { index: 4, i0: 4 }, "t=-1 → ci=0 → index=4=i0");
-// mainCount 2 → last = 1；forkT 0.5 → i0 = floor(0.5)+1 = 1。
+assert.deepEqual(tipChainNearestIndex(2, 6, 0.75), { index: 5, i0: 3 }, "t=2 → 同 t=1");
+assert.deepEqual(tipChainNearestIndex(-1, 6, 0.75), { index: 3, i0: 3 }, "t=-1 → ci=0 → index=3=i0");
+// forkT 0 → floor(0)=0，下界钳到 1（索引 0 是坐在主链上的链根，不作为发尖关节）。
+assert.deepEqual(tipChainNearestIndex(0, 6, 0), { index: 1, i0: 1 }, "forkT=0 → i0 下界钳到 1");
+// mainCount 2 → last = 1；forkT 0.5 → floor(0.5)=0 → 钳到 1。
 assert.deepEqual(tipChainNearestIndex(1, 2, 0.5), { index: 1, i0: 1 }, "mainCount=2 → 单暴露点 1");
 // 与 smoothMainPair 边界一致性：暴露区内取点，index 永不小于 i0（整型比较，无容差）。
 for (const t of [0, 0.5, 0.75, 0.99, 1]) {
   const nearest = tipChainNearestIndex(t, 6, 0.5625);
   assert.ok(nearest.index >= nearest.i0, `forkT=0.5625/mainCount=6 时 t=${t} → index=${nearest.index} 应 >= i0=${nearest.i0}`);
 }
+
+// ---- 回归：split 骨骼根索引必须严格小于它自己的第一个暴露链索引 ----
+// 第一个暴露索引 firstExposed = clamp(floor(forkT·(mainCount−1)), 1, mainCount−1)：
+// fork 所在那一行本身也暴露，比旧的严格 t > forkT 规则（floor+1）往发根方向多暴露
+// 一行 —— 每个 zipper 高度都多一根发尖骨骼。根 = firstExposed − 1（floor，非 round：
+// round 在 frac > 0.5 时会跳到甚至越过第一个暴露子节点）。
+// 以 mainCount=6 与 6 个常用 zipper 高度逐一验证根与暴露起点、并锁住暴露关节数。
+const rootIndexHeights = [0.4375, 0.5, 0.3, 0.2, 0.78, 0.28];
+const rootIndexMainCount = 6;
+for (const height of rootIndexHeights) {
+  const forkT = 1 - height;
+  const chainLast = rootIndexMainCount - 1;
+  const firstExposed = Math.min(chainLast, Math.max(1, Math.floor(forkT * chainLast)));
+  // 纯函数层：splitParentMainIndex。
+  const rootIndex = splitParentMainIndex(forkT, rootIndexMainCount);
+  assert.ok(
+    rootIndex < firstExposed,
+    `h=${height}（forkT=${forkT}）：根索引 ${rootIndex} 应严格小于第一个暴露索引 ${firstExposed}`
+  );
+  assert.equal(rootIndex, firstExposed - 1, `h=${height}：根应正好锚在第一个暴露点下方一格`);
+  // splitBoneLayout（面板分支）：单 zipper → 相邻高度 max = height。
+  const heightLock = {
+    geometryType: "panel",
+    panelSplitEnabled: true,
+    panelSplits: [{ position: 0, height }],
+    points: Array.from({ length: rootIndexMainCount }, (_, i) => ({ x: 0, y: 1.7 - i * 0.25, z: 0 }))
+  };
+  for (const k of [0, 1]) {
+    assert.equal(
+      splitBoneLayout(heightLock, { name: `split.${k}` }, { mainCount: rootIndexMainCount }).parentMainIndex,
+      rootIndex,
+      `h=${height}：splitBoneLayout split.${k} 根索引应为 ${rootIndex}`
+    );
+  }
+  // splitChainLayout：链根关节 parent 必须是 main.<rootIndex>，且第一个暴露关节
+  // （链根自身采样的链点）索引 = firstExposed → 根严格在其下。
+  const heightChain = splitChainLayout(heightLock, { name: "split.0" }, {
+    mainCount: rootIndexMainCount,
+    splitTipForSegment: tipChainStub,
+    panelTipChainFrameAt: identityTipFrame
+  });
+  assert.equal(
+    heightChain.joints[0].parent,
+    `main.${rootIndex}`,
+    `h=${height}：splitChainLayout 链根父级应为 main.${rootIndex}`
+  );
+  // 链根位置直接采样链点 firstExposed（tipChainStub 的点 i = (i, 10+i, 20+i)）。
+  assert.deepEqual(
+    heightChain.joints[0].p,
+    [firstExposed, 10 + firstExposed, 20 + firstExposed],
+    `h=${height}：链根应采样第一个暴露链点 ${firstExposed}`
+  );
+  // 暴露关节数 = last − firstExposed + 1，且必须严格多于旧规则（floor+1）的数量：
+  // 方向翻转（少暴露一行）会立刻打破这条断言。
+  const oldFirstExposed = Math.min(chainLast, Math.floor(forkT * chainLast) + 1);
+  assert.equal(
+    heightChain.joints.length,
+    chainLast - firstExposed + 1,
+    `h=${height}：暴露关节数应为 ${chainLast - firstExposed + 1}`
+  );
+  assert.equal(
+    heightChain.joints.length,
+    (chainLast - oldFirstExposed + 1) + 1,
+    `h=${height}：暴露关节数应比旧规则（首个暴露 ${oldFirstExposed}）正好多 1`
+  );
+  // 视口规则现在与导出一致（bone-view-handles.js / bone-interaction.js 已由 ceil 改 floor）：
+  // 视口 firstBelow = clamp(floor(forkT·last), 1, last) === firstExposed，根严格在其下。
+  const viewportFirstBelow = Math.min(chainLast, Math.max(1, Math.floor(forkT * chainLast)));
+  assert.equal(
+    viewportFirstBelow,
+    firstExposed,
+    `h=${height}：视口 firstBelow ${viewportFirstBelow} 应与导出 firstExposed ${firstExposed} 一致`
+  );
+  assert.ok(
+    rootIndex < viewportFirstBelow,
+    `h=${height}：根索引 ${rootIndex} 应严格小于视口 firstBelow ${viewportFirstBelow}`
+  );
+}
+// 暴露关节数比旧规则多 1 的代表性硬编码值（mainCount=6、h=0.4375 → forkT 0.5625）：
+// 旧规则 firstExposed=3 → 3 个关节；新规则 firstExposed=2 → 4 个关节。
+const gainedLock = {
+  geometryType: "panel",
+  panelSplitEnabled: true,
+  panelSplits: [{ position: 0, height: 0.4375 }],
+  points: Array.from({ length: 6 }, (_, i) => ({ x: 0, y: 1.7 - i * 0.25, z: 0 }))
+};
+const gainedChain = splitChainLayout(gainedLock, { name: "split.0" }, {
+  mainCount: 6,
+  splitTipForSegment: tipChainStub,
+  panelTipChainFrameAt: identityTipFrame
+});
+assert.equal(gainedChain.joints.length, 4, "h=0.4375/mainCount=6 → 4 个暴露关节（旧规则 3）");
+assert.equal(gainedChain.joints[0].parent, "main.1", "h=0.4375：链根应挂 main.1（firstExposed 2 − 1）");
+assert.deepEqual(gainedChain.joints[0].p, [2, 12, 22], "h=0.4375：链根应采样链点 2");
+// mainCount <= 1 时恒为 0（保持既有行为）。
+assert.equal(splitParentMainIndex(0.5, 1), 0, "mainCount=1 → 根索引 0");
+assert.equal(splitParentMainIndex(0.5, 0), 0, "mainCount=0 → 根索引 0");
+// forkT 越界钳到 [0,1]，索引钳到 [0, mainCount-1]。
+assert.equal(splitParentMainIndex(-1, 6), 0, "forkT=-1 → 钳到根索引 0");
+assert.equal(splitParentMainIndex(2, 6), 4, "forkT=2 → 钳到 forkT=1 → 根索引 4");
+assert.equal(splitParentMainIndex(1, 6), 4, "forkT=1（仅末点暴露）→ 根索引 4");
 
 console.log("usda-export.test.mjs: all assertions passed");

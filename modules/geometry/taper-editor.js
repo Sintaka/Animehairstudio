@@ -437,12 +437,16 @@ function renderTaperCurveEditor() {
   // 只用于保持两侧控制参数一致，不应在浮动面板里被拖动。
   const segmentLock = segmentEditing ? deps.locks.find((item) => item.id === deps.sculptState.taperCurveEdit.id) : null;
   const segmentSplits = segmentLock ? deps.clonePanelSplits(segmentLock.panelSplits, segmentLock.panelSplitHeight) : null;
-  const tipSideForkFor = () => {
+  // 每条曲线用它自己那一侧的 fork：控制点现在按本侧 fork 分布（panel-tip-strand.js
+  // 的 tipWidthSideControlTs），所以 primary(右)/secondary(左) 各自的暴露区不同，
+  // 面板的「锁定点」判定必须同样按侧取，否则浅 zipper 侧会把可抓点误标成锁定点。
+  const tipSideForkFor = (curveSide) => {
     if (!segmentLock || !segmentSplits || !segmentSplits.length) return 0;
-    return deps.tipWidthCommonForkT(
+    return deps.tipWidthSideForkT(
       segmentLock,
       deps.sculptState.taperCurveEdit.segmentIndex,
-      segmentSplits
+      segmentSplits,
+      curveSide === "secondary" ? -1 : 1
     );
   };
   deps.taperAsymmetryToggleRow.classList.toggle("hidden", editingTwist || editingProceduralBranch || segmentEditing);
@@ -492,7 +496,7 @@ function renderTaperCurveEditor() {
       handle.setAttribute("class", `profile-point${selected ? " selected" : ""}`);
       handle.dataset.taperPoint = index;
       handle.dataset.curveSide = side;
-      if (segmentEditing && point.position < tipSideForkFor() - 1e-4) {
+      if (segmentEditing && point.position < tipSideForkFor(side) - 1e-4) {
         handle.dataset.tipHidden = "1";
         handle.classList.add("tip-hidden");
       }
