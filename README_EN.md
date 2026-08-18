@@ -73,7 +73,7 @@ How it behaves:
 
 Each split segment gets its own tip sub-bone. Selecting one in the viewport shows that segment's tip chain handles, highlight, and normal arrows. The green control points are the segment's tip WidthCurve — they only affect the width of the current tip; the upper part of the zipper follows the main bone (no splitting). Segment Spread controls how much the tip converges (0–0.99, which also prevents degenerate faces). Skin weights are divided along the top diagonal of the zipper on each side, so the Scale brush doesn't tear the low-zipper side apart. Under rotate (E) / scale (R) the tip sub-bone is attached to the transform gizmo.
 
-When the two zippers have different heights, the green control points on **both** sides can now be grabbed (older versions dropped one point on the shallower side, which pulled a dent into the width). Sculpting a tip with a brush no longer jumps back to its pre-edit position either.
+When the two zippers have different heights, the green control points **share one set of parameter positions across both sides (identical spacing)**, but each side only exposes the ones below its own zipper — so the deeper zipper's side has more control points and the shallower side has fewer, the count following the zipper heights dynamically rather than both sides being padded to the same number. Every visible control point can be grabbed and does affect that side's width (older versions left one unreachable point on the shallower side, which pulled a dent into the width). Sculpting a tip with a brush no longer jumps back to its pre-edit position either.
 
 ## Zipper editing
 

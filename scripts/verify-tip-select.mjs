@@ -597,7 +597,8 @@ try {
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const bone = t.materializeSplitBones(lock)[2] || null;
-    // 控制位置按侧分布（tipWidthSideControlTs）：每个位置都在本侧暴露区内，直接取首个。
+    // tipWidthSideControlTs = 共享网格 ∩ 本侧暴露区：返回的每个位置都在本侧暴露区内且
+    // 可抓，直接取首个。
     const ts = t.tipWidthSideControlTs(lock, 2, splits, 1);
     const tt = ts[0];
     const fullW = Math.max(0.01, Number(lock.width ?? 0.62));
@@ -633,8 +634,9 @@ try {
     }
     // Locked (above-zipper) region is NOT baked into the curve anymore: the sampler falls
     // back to the global curve below the fork, so value at 0.3 (must be < forkT for seg2
-    // right = 0.8125) equals the global. Curve points below the fork are hidden-but-recorded
-    // (common-fork distribution, 8.21) and intentionally not applied by the sampler.
+    // right = 0.8125) equals the global. Only derived record points (position 0 / the
+    // opposite fork when it sits below this one) live below the fork, and the sampler
+    // intentionally ignores that band — no shared-grid control position is written there.
     const globalAt = t.sampleTaperCurve(lock.taperCurve, 0.3);
     const fullW = Math.max(0.01, Number(lock.width ?? 0.62));
     const sampledLocked = t.tipPanelWidthAt(lock, 0.3, 1, bone, 2, splits) / fullW;
@@ -790,7 +792,7 @@ try {
     const fullW = Math.max(0.01, Number(lock.width ?? 0.62));
     const rightFork = t.tipWidthSideForkT(lock, 2, splits, 1);
     const leftFork = t.tipWidthSideForkT(lock, 2, splits, -1);
-    // exposed region: 控制位置按侧分布，每个位置都在本侧暴露区内（无需再过滤），
+    // exposed region: tipWidthSideControlTs 已是本侧暴露的共享网格子集（无需再过滤），
     // 采样必须为 1；above-zipper (t < fork) 仍回退全局曲线。
     const exposed = [];
     for (const side of [1, -1]) {
@@ -862,22 +864,25 @@ try {
     if (ed && !ed.open) ed.show();
     t.renderTaperCurveEditor();
     const points = [...document.querySelectorAll('#taperCurvePoints circle[data-curve-side="primary"]')];
-    // 锁定点判定改为按侧 fork（primary = 右侧）：与 taper-editor 的 per-side 规则一致。
-    // 用公共 fork 会把浅 zipper 侧本已可抓的点误判成锁定点。
+    // 锁定点判定与视口把手同源（primary = 右侧）：可拖 ⇔ 该位置是本侧**暴露的**共享网格
+    // 位置。低于本侧 fork 的记录点与本侧 fork 锚点都是派生接续点 → 锁定。
     const sideFork = t.tipWidthSideForkT(lock, 2, splits, 1);
+    const exposed = t.tipWidthSideControlTs(lock, 2, splits, 1);
+    const isExposed = (position) => exposed.some((candidate) => Math.abs(candidate - position) < 1e-3);
     const curve = bone.taperCurve || [];
-    let hiddenAtOrAboveFork = 0; let visibleAtOrAboveFork = 0; let hiddenAboveFork = 0;
+    let hiddenExposed = 0; let visibleExposed = 0; let visibleNotExposed = 0;
     for (const p of points) {
       const pt = curve[Number(p.dataset.taperPoint)];
-      const belowFork = pt && pt.position < sideFork - 1e-4;
-      if (p.dataset.tipHidden === "1") { if (belowFork) hiddenAboveFork++; else hiddenAtOrAboveFork++; }
-      else if (!belowFork) visibleAtOrAboveFork++;
+      const exposedPoint = pt && isExposed(pt.position);
+      if (p.dataset.tipHidden === "1") { if (exposedPoint) hiddenExposed++; }
+      else if (exposedPoint) visibleExposed++;
+      else visibleNotExposed++;
     }
     if (ed && ed.open) ed.close();
     t.sculptState.state.taperCurveEdit = null;
-    return JSON.stringify({ total: points.length, sideFork: Number(sideFork.toFixed(3)), hiddenAtOrAboveFork, visibleAtOrAboveFork, hiddenAboveFork });
+    return JSON.stringify({ total: points.length, sideFork: Number(sideFork.toFixed(3)), exposedCount: exposed.length, hiddenExposed, visibleExposed, visibleNotExposed });
   })()`));
-  check("floating panel keeps points at/above this side's fork draggable", panelDragCheck.total > 0 && panelDragCheck.hiddenAtOrAboveFork === 0 && panelDragCheck.visibleAtOrAboveFork > 0, `panel=${JSON.stringify(panelDragCheck)}`);
+  check("floating panel draggable points == this side's exposed shared-grid positions", panelDragCheck.total > 0 && panelDragCheck.hiddenExposed === 0 && panelDragCheck.visibleExposed > 0 && panelDragCheck.visibleNotExposed === 0, `panel=${JSON.stringify(panelDragCheck)}`);
   } else {
     check("Ctrl+drag is asymmetric (only dragged side changes)", false, "no left handle");
   }
@@ -893,7 +898,13 @@ try {
     for (let seg = 0; seg <= splits.length; seg++) {
       for (const side of [1, -1]) {
         const bone = t.materializeSplitBones(lock)[seg] || null;
-        const placement = t.tipWidthControlPlacement(lock, seg, splits, bone, side, 2);
+        // pointIndex 索引**共享网格**：某侧未暴露的网格位置返回 null（把手隐藏），所以
+        // 不能写死索引 2 —— 取本侧第一个真正暴露的把手。
+        const grid = t.tipWidthGridTs(lock, seg, splits);
+        let placement = null;
+        for (let idx = 0; idx < grid.length && !placement; idx++) {
+          placement = t.tipWidthControlPlacement(lock, seg, splits, bone, side, idx);
+        }
         if (!placement) continue;
         const tt = placement.t;
         const P0 = placement.point.clone();
@@ -918,7 +929,8 @@ try {
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const bone = t.materializeSplitBones(lock)[2] || null;
-    const ts = t.tipWidthControlTs(0);
+    // 共享网格的最后一个位置恒为发尖端 t=1，两侧都必然暴露它（fork < 1）。
+    const ts = t.tipWidthGridTs(lock, 2, splits);
     const last = t.tipWidthControlPlacement(lock, 2, splits, bone, 1, ts.length - 1);
     return JSON.stringify({ count: ts.length, lastT: Number(ts[ts.length - 1].toFixed(3)), tipPlacement: !!last && Math.abs(last.t - 1) < 1e-3 });
   })()`));
@@ -1173,10 +1185,10 @@ try {
   })()`);
   await sleep(300);
 
-  // ============ 8.21: curve lean + 按侧分布（无隐藏活点不变式）============
-  // 旧版断言「浅 zipper 侧可见控制点更少」（rightVisible < leftVisible）——那正是宽度
-  // 凹陷的 bug：落在 [commonFork, sideFork) 的点没有把手却仍参与采样。现在按侧分布，
-  // 两侧都应有全部 6 个可抓位置，且每个位置都能拿到 placement。
+  // ============ 8.21: curve lean + 共享网格 / 动态暴露（无隐藏活点不变式）============
+  // 参数两侧共享（同间距，基于最深 zipper），暴露的**数量**按各自 zipper 高度动态变化：
+  // 深 zipper 侧暴露得多、浅 zipper 侧少（0.2.118 的「两侧都 6 个、间距不同」是错的）。
+  // 不变式仍须成立：某侧暴露的每个位置都能拿到 placement（可抓），未暴露的返回 null。
   const leanCheck = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
@@ -1185,13 +1197,25 @@ try {
     const commonFork = t.tipWidthCommonForkT(lock, 2, splits);
     const rightFork = t.tipWidthSideForkT(lock, 2, splits, 1);
     const leftFork = t.tipWidthSideForkT(lock, 2, splits, -1);
+    const grid = t.tipWidthGridTs(lock, 2, splits);
     const rightTs = t.tipWidthSideControlTs(lock, 2, splits, 1);
     const leftTs = t.tipWidthSideControlTs(lock, 2, splits, -1);
-    // 每个位置都必须 >= 本侧 fork，且 placement 非 null（可抓）。
-    const rightVisible = rightTs.filter((p) => p >= rightFork - 1e-4).length;
-    const leftVisible = leftTs.filter((p) => p >= leftFork - 1e-4).length;
-    const rightGrabbable = rightTs.filter((p, i) => !!t.tipWidthControlPlacement(lock, 2, splits, bone, 1, i)).length;
-    const leftGrabbable = leftTs.filter((p, i) => !!t.tipWidthControlPlacement(lock, 2, splits, bone, -1, i)).length;
+    // 两侧暴露位置都必须取自同一共享网格（同间距）。
+    const onGrid = (list) => list.every((p) => grid.some((g) => Math.abs(g - p) < 1e-9));
+    const sharedGrid = onGrid(rightTs) && onGrid(leftTs);
+    // 深 zipper 侧暴露不少于浅侧（fork 更小 → 子集更大）。
+    const deeperSideExposesMore = (leftFork <= rightFork) === (leftTs.length >= rightTs.length);
+    // placement 按共享网格索引：暴露的位置必须非 null，未暴露的必须 null。
+    const placementMatches = (sideSign, exposedTs) => grid.every((g, i) => {
+      const exposed = exposedTs.some((p) => Math.abs(p - g) < 1e-9);
+      return !!t.tipWidthControlPlacement(lock, 2, splits, bone, sideSign, i) === exposed;
+    });
+    const rightGrabbable = grid.filter((g, i) => !!t.tipWidthControlPlacement(lock, 2, splits, bone, 1, i)).length;
+    const leftGrabbable = grid.filter((g, i) => !!t.tipWidthControlPlacement(lock, 2, splits, bone, -1, i)).length;
+    const rightVisible = rightTs.length;
+    const leftVisible = leftTs.length;
+    const rightExact = placementMatches(1, rightTs);
+    const leftExact = placementMatches(-1, leftTs);
     const rightEditT = rightTs[0];
     const leftEditT = leftTs[0];
     t.setTipWidthCurveValue(lock, 2, splits, bone, 1, rightEditT, 1.4);
@@ -1209,18 +1233,27 @@ try {
       leftGrabbable,
       rightTsCount: rightTs.length,
       leftTsCount: leftTs.length,
+      gridCount: grid.length,
+      sharedGrid,
+      deeperSideExposesMore,
+      rightExact,
+      leftExact,
       rightChanged: rightCurve.some((p) => Math.abs(p.value - t.sampleTaperCurve(lock.taperCurve, p.position)) > 0.01),
       leftChanged: leftCurve.some((p) => Math.abs(p.value - t.sampleTaperCurve(lock.taperCurve, p.position)) > 0.01)
     });
   })()`));
   check(
-    "tip width curve lean, per-side distributed, both sides fully grabbable (no hidden live point)",
+    "tip width curve lean, shared grid + dynamic per-side exposure (no hidden live point)",
     leanCheck.ok
       && leanCheck.rightCount <= 9 && leanCheck.leftCount <= 9
-      && leanCheck.rightVisible === leanCheck.rightTsCount
-      && leanCheck.leftVisible === leanCheck.leftTsCount
+      && leanCheck.sharedGrid === true
+      && leanCheck.deeperSideExposesMore === true
+      && leanCheck.rightExact === true && leanCheck.leftExact === true
       && leanCheck.rightGrabbable === leanCheck.rightTsCount
       && leanCheck.leftGrabbable === leanCheck.leftTsCount
+      && leanCheck.rightVisible > 0 && leanCheck.leftVisible > 0
+      && leanCheck.rightVisible <= leanCheck.gridCount
+      && leanCheck.leftVisible <= leanCheck.gridCount
       && leanCheck.rightChanged === true && leanCheck.leftChanged === true,
     `lean=${JSON.stringify(leanCheck)}`
   );
@@ -1391,8 +1424,11 @@ try {
     const secondary = document.querySelector('#taperCurveSecondaryPath');
     const symD = secondary.getAttribute('d') || '';
     const symFlag = t.sculptState.state.taperCurveEdit.displayAsymmetric === false;
-    // edit only the RIGHT side (asymmetric data); tt = first exposed control position
-    const tt = t.tipWidthSideControlTs(lock, 0, splits, 1)[0];
+    // edit only the RIGHT side (asymmetric data); tt = first exposed control position.
+    // 暴露子集恒非空（fork < 1 时至少含发尖端 t=1）；fork >= 1 的全锁定侧不参与本项。
+    const rightExposed = t.tipWidthSideControlTs(lock, 0, splits, 1);
+    if (!rightExposed.length) return JSON.stringify({ ok: false, reason: "right side fully locked" });
+    const tt = rightExposed[0];
     t.setTipWidthCurveValue(lock, 0, splits, bone, 1, tt, 1.4);
     t.renderTaperCurveEditor();
     const asymD = secondary.getAttribute('d') || '';

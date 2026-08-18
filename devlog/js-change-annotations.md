@@ -22,6 +22,16 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（0.2.123）
+
+> 发尖 WidthCurve 控制点改回共用网格 + 按侧动态暴露（修正 0.2.118 的设计错误；分支 DHS/develop，1 Opus 子智能体 + 主进程 merge/实测核验）：
+> - **modules/geometry/panel-tip-strand.js**：新增 `tipWidthGridTs(lock, segmentIndex, splits)`（唯一共享网格 = `tipWidthControlTs(commonForkT)`，最深 zipper span 的 5 中点 + 尖端 1；**其下标即稳定把手索引**）与 `tipWidthSideExposesT(lock, segmentIndex, splits, side, t)`（暴露判据单一定义点）；`tipWidthSideControlTs` 从「按本侧 fork 独立分布」改为「共享网格**过滤**出本侧暴露子集」（契约写进注释：参数共享、数量动态）；`tipWidthControlPlacement` 改为索引完整网格 + 未暴露返回 null（注释里把该守卫从「安全网」正名为**动态暴露的真正机制**）；`tipWidthResetCurve`/`buildTipWidthCurve`/`setTipWidthCurveValue` 同步走同一判据，`setTipWidthCurveValue` 补 `positions.length === 0` 早退（全锁侧 `sideForkT >= 1` 无处可写）；`tipWidthRecordsOppositeFork` **保留**（对侧 fork 为滑杆连续值、几乎不落网格，对侧更浅时会成为本侧暴露区内的无把手活点）。导出 `tipWidthGridTs`/`tipWidthSideExposesT`。
+> - **modules/geometry/taper-editor.js**：新增 `tipPointLocked(curveSide, position)`——段 **width** 曲线的点，仅当其 position 属于该侧暴露子集时可拖，其余（position-0 记录点、对侧 fork 记录点、本侧 fork 锚点）读作锁定；非 width 的段曲线（depth，无 fork 暴露语义）保持原 fork 阈值规则。
+> - **modules/bones/bone-view-handles.js**：仅注释（说明固定的 `TIP_WIDTH_CONTROL_POINTS + 1` 把手数组对应**完整共享网格**、`userData.tipWidthIndex` 索引该网格）。**modules/bones/bone-interaction.js**：零改动（索引语义未变，隐藏把手不可 raycast 命中，且 `setTipWidthCurveValue` 独立吸附到暴露子集，陈旧 index 也无法写出不可达点）。
+> - **app.js**：`taperEditorDeps` 新增 `tipWidthSideControlTs`；测试 seam 暴露 `tipWidthGridTs`/`tipWidthSideExposesT`。
+> - 索引方案取 (a)（索引完整网格、以可见性表达非对称数量），而非 (b)（索引过滤子集）——后者同一 index 在两侧含义不同、zipper 高度一变即漂移，把手创建时捕获的索引会静默指向另一参数。
+> - 回归：Node 全量 288/288（首个测试重写为共享网格/子集/同间距/深侧更多/精确计数 + placement↔暴露双射 + 0.2.118 不变式双向断言；新增对称场景；写入测试新增「拖深侧位置时浅侧曲线逐字节不变」；旧档迁移 fixture 换成真正的 0.2.118 per-side 曲线）+ 真实 Sussurro_v1_0060.ahs 130/130；`scripts/verify-tip-select.mjs` 9 处同步（含把写死的「两侧各 6 个可抓」改为按函数推导的共享网格成员性 + 单调性 + 双射，符合 0.2.121 的验收脚本规范）；缓存号 20260830-1 + APP_VERSION 0.2.123 冻结同步。
+
 ## 最近更新（0.2.122）
 
 > Twist Brush 方向反转 + 描边期间冻结影响范围（分支 DHS/develop，1 Opus 子智能体 + 主进程 merge/自审）：
