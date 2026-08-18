@@ -2,52 +2,99 @@
 
 **English** | [中文](README.md)
 
-**Anime Hair Studio** is a web-based animated hair-sheet production app for styling anime-style hair — draw and sculpt strands, braids, panels and more directly in the browser (3D viewport, scalp guides, clumps, materials, presets, OBJ/USDA export).
+**Anime Hair Studio** is a web-based anime hair-sheet production tool: draw and sculpt strands, braids and panels straight in the browser (3D viewport drawing/sculpting), with scalp guides, clumps, materials, presets, and OBJ/USDA export.
 
-The original project was created by **Ludetools** and lives at [github.com/Ludetools/Animehairstudio](https://github.com/Ludetools/Animehairstudio). This repository keeps the original author's license.
+This project comes from the original author **Ludetools** ([github.com/Ludetools/Animehairstudio](https://github.com/Ludetools/Animehairstudio)). This repository keeps the original author's LICENSE and donation links; it is source-available and limited to personal / non-commercial use.
 
 ## Using my code
 
-This repository is a local adaptation of the original project. My own code changes usually live on **dev branches** (not `main`) — for example `codex/dev-local-adaptation`. If you want to use my code — whether by merging a branch or building something new on top of it (secondary development) — you can use it directly, **no permission needed**. I am committed to improving this open-source project to adapt it to Houdini workflows.
+This repository is a local adaptation of the original project. My own changes usually live on **dev branches** (not `main`). Whether you merge a branch or build something new on top of it (secondary development), you can use it directly, **no permission needed**; I keep improving this project to fit Houdini workflows better.
 
-## What's changed (summary)
+## Local deployment (Python)
 
-- **Quick Save (Ctrl+S) / Save as (Ctrl+Shift+S)** — Ctrl+S re-saves to the last saved project file; Save as picks a new location (File System Access API when available, download fallback otherwise). The File menu **removes** the 3 Local dev options (Local Save / Local Export to OBJ / Local Export to USDA, previously routed through the `server.js` local service), unifying save/export under the three new shortcuts. The File menu **adds** three save/export shortcuts: Ctrl+S Quick Save, Ctrl+Shift+S Save as, Ctrl+Alt+S Quick Export; save/export prefers the File System Access API to write directly to disk (remembered file handle, overwrites the same file, no more download (1) suffixes), falling back to a download/dialog when the browser doesn't support it. The shortcuts help has a dedicated "Sintaka Fork" section.
-- **Drag & drop project files** — dragging a `.ahs` / `.animehair.json` project onto the app opens it (no longer treated as a reference image); images still drop as 2D/3D references with the original drop overlay.
-- **Sculpt brush selection mask** — with nothing selected, only visible hair can be sculpted; with a selection, only the selected hair is sculpted (invisible hair is never sculpted).
-- **Material deletion** — delete extra materials via the panel button or the Delete key; affected hair reverts to the default material, which cannot be deleted.
-- **Floating editors follow selection** — Strand Profile / Width-Depth Curve panels retarget to the newly selected strand; "show points on mesh" markers follow sculpting/moving.
-- **Viewport navigation modes** — Default and Houdini (default). Houdini: Alt+Left = rotate, Alt+Middle = pan, Alt+Right = zoom (drag, normalized), scroll wheel = zoom.
-- **Simplified Chinese (zh) UI** — full Simplified Chinese dictionary in Settings → Language (3D terms kept in English), on top of the original English/Japanese.
-- **Low-poly child strands** — draw branch strands off a parent and connect them through a carved parent region + watertight low-poly bridge (root ring, top/bottom bands, side quads) with uniform smoothing; child root-bone gizmo/twist/H-mode workflow; falls back to direct sweep when the parent doesn't use topology connect. UV layout is solved (export-time unwrap + island packing into UDIM 1001).
-- **Panel split tip sub-bones (发尖子骨骼 tip sub-bone)** — each split segment gets a full transform sub-bone (P / orient quaternion / per-segment spread + per-segment Width/Depth curves); viewport tip chain handles + highlight + normal arrows; rotate (E) / scale (R) attach to the transform gizmo; per-side tip WidthCurve (green control points, zipper-truncated, Segment Spread 0–0.99, Reset to all-1); per-vertex skin weights [mainJoint, segment, weight] with USDA SkelBindingAPI skinning.
-- **Local dev server** — `start-dev-server.cmd` runs `python -m http.server 8080 --bind 127.0.0.1` and opens the default browser. Don't open `index.html` via `file://` (browser security blocks it).
-- **Export UV auto-layout + UV Checker preview** — on export, islands (each "parent + child" family / panel sheet) are scaled to uniform texel density and packed into UDIM 1001 via an alpaca occupancy-grid L-shape scan (square bbox, no overlap, uniform-scale no normalize, no rotation), with `primvars:uvisland` written to USDA; the **⟳ button at the top of the UV Checker window** runs the same export unwrap pipeline to preview the final packed layout in the viewport checker + 2D UV Inspector — no need to import into a DCC.
+1. Install Python 3.
+2. In the project root, run `python -m http.server 8080 --bind 127.0.0.1`.
+3. Open `http://127.0.0.1:8080/` in your browser.
+4. Or just double-click `start-dev-server.cmd` (it opens the browser automatically).
+5. Don't open `index.html` directly via `file://` — browser security restrictions block module loading.
 
-## Low-poly child strands — base mesh
+Alternatively (requires Node.js): the built-in static server also doubles as a proxy for the native save dialog — run `node server.js` in the project root and open `http://127.0.0.1:5173/` (change the port with `PORT=xxxx node server.js`, or `$env:PORT=xxxx; node server.js` in Windows PowerShell). You can also use the generic npm static server: `npx http-server . -p 8080`.
 
-![Low-poly child strand base mesh](devlog/assets/lowpoly-child-strand-basemesh.png)
+## What's new in this repository (summary)
 
-> Base-mesh close-up of a low-poly child strand in this fork: the parent hair is carved open and the child is joined by a low-poly watertight bridge (parent-hole boundary → child root ring → top/bottom bands + side quads). This fork supports the low-poly child-strand topology; **UV layout is solved** (export-time unwrap + island packing into UDIM 1001).
+- **Simplified Chinese UI** (Settings → Language, 3D terms kept in English), on top of the original English/Japanese.
+- **Five custom sculpt brushes** (Slide / Scale·Cut-Extend / Push / Orient / **Twist**) + Smooth twist; Ctrl = reverse — the Scale brush grows by default and shrinks with Ctrl; Cut·Extend extends by default and cuts with Ctrl.
+- **Twist Brush** — manual axial roll around the strand tangent, camera-independent (drag right / drag left roll opposite ways, Ctrl reverses again); it rotates orientation only and never moves points; in H mode child bones roll along while their positions stay pinned; the affected point set is locked at mouse-down.
+- **Panel split sub-bones + tip sub-bones** — each split segment gets a full transform bone (P / orient / spread + per-segment Width/Depth curves); viewport tip chain handles / highlight / normal arrows; rotate and scale attach to the gizmo; tip WidthCurve (green control points, independent per side, zipper-truncated, Segment Spread 0–0.99, Reset to all-1); per-vertex skin weights [mainJoint, segment, weight] + USDA SkelBindingAPI skinning.
+- **Multiple zippers on ordinary strands** — upgraded from a single zipper to many (N zippers → N+1 tubes); the strand panel gains +/− **Zipper Controls** (up to 8), each zipper has its own position/height and can be dragged straight in the viewport; geometry, UV unwrapping, bones and USDA export all follow. Existing single-zipper files open unchanged.
+- **Zipper editing quality-of-life** — zippers carry a creation order, so `−` removes the **most recently added** one (not the right-most); click a zipper handle to select it (it highlights) and press **Del** to delete just that zipper; dragging never deletes. Adding a zipper makes both halves **inherit the original segment's tip pose**, and deleting one keeps the merged segment close to its existing pose.
+- **Tip width curve fix** — when two zippers had different heights, one green width control point on the shallower zipper's side could not be grabbed, leaving a dent in the tip width. All control points are now reachable on both sides.
+- **One more tip bone exposed** — each zipper height now exposes one additional tip bone, and the bone root always anchors below its first exposed point; the viewport and the USDA export now agree on exactly which rows are exposed.
+- **Brush no longer snaps tip poses** — sculpting a tip sub-bone with a brush used to make it jump back to its pre-edit position (most visible right after adding a zipper). Fixed.
+- **Quick Save / Export** — Ctrl+S quick-saves to the last project file (remembered file handle), Ctrl+Shift+S saves as, Ctrl+Alt+S quick-exports a replay of the last export (prefers the File System Access API to write directly to disk, avoiding download "(1)" suffixes).
+- The File menu **removes** the 3 Local dev options (Local Save / Local Export to OBJ / Local Export to USDA, previously routed through the `server.js` local service); save/export is unified under the three shortcuts above. The shortcuts help has a dedicated "Sintaka Fork" section.
+- **Child strands** (low-poly watertight bridge + carved parent + Region selection + root-bone gizmo/twist/H mode + Bridge Smooth).
+- **Sculpt brush selection mask** — with nothing selected, only visible hair is sculpted; with a selection, only the selected hair is sculpted (invisible hair is never sculpted).
+- **Viewport navigation styles** — Anime Hair Studio (default) / Blender / Houdini, switchable in Settings → Preferences → Navigation style.
+- **S + left-drag to resize the brush** (sculpt brushes included); Delete removes extra materials; Ctrl+Z undo fixed (works outside text inputs).
+- **Drag & drop a .ahs / .animehair.json file to open the project**; floating panels follow the selection.
+- **Wind Preview** — open the floating window from the Preview menu; 10 parameters (direction / strength / frequency / turbulence / gust / root exponent / per-strand randomness / seed and more) preview wind-blown hair live, with roots pinned and the largest sway at the tips. Closing the window restores the hair bit-for-bit and nothing is written to the project file.
+- **Export UV auto-layout + UV Checker preview** — on export, each island (`uvisland`: one per "parent + child" family / whole panel sheet) is scaled to uniform texel density and packed into UDIM 1001 with an alpaca occupancy-grid L-shape scan (square bbox, no overlap, uniform scale without normalizing, no rotation); USDA writes `primvars:uvisland`. The **⟳ button at the top of the UV Checker window** runs the same export unwrap in one click and previews the final packed layout in the viewport checker + 2D UV Inspector — no DCC round-trip needed. Packing is multi-threaded, so large projects export noticeably faster.
+- **USDA skeleton / skin export** — a complete USD Skeleton plus SkelBindingAPI skin binding, ready for USD Character Import in Houdini (see below).
 
-- Parent-surface region selection (2D u/v panel + 3D markers), direct/indirect bridge, uniform smoothing (Strength/Detail).
-- Child root-bone workflow: gizmo-carried twist, Hierarchy (H) rigid move with curvature swing, region-anchored center.
-- When the parent does not use topology connect (e.g. Split Geometry), the child falls back to direct generation (sweep from its root).
-- Detailed notes: `devlog/js-change-annotations.md` (Phase 2.x), `devlog/main-sync-conflicts.md`.
+## Sculpt brushes
 
-**New agent / developer onboarding:** start with [devlog/AGENT_QUICKSTART.md](devlog/AGENT_QUICKSTART.md) — it lists which code must be preserved and the decisions behind them. See [devlog/README.md](devlog/README.md) for the full devlog index and detailed change annotations.
+Five custom sculpt brushes:
 
-## Panel split tip sub-bones
+- **Slide** — moves control points along the curve trajectory (tangent direction), restricted to the tangent/normal plane, without changing the curve's length proportion.
+- **Push** — pushes along the local up direction (normal / away from the surface), restricted to normal-direction movement.
+- **Orient** — rolls the section around the tangent, turning the section's normal (up direction) toward the viewport-orthogonal direction (changes tangent roll).
+- **Scale** — two modes: **Scale** — root-anchored uniform radial scaling of the whole hair sheet (no movement); **Cut·Extend** — uniform parameter scaling of the whole sheet preserving point spacing (factor < 1 cuts, factor > 1 extends along the end tangent).
+- **Twist** — manual roll around the tangent axis; it changes orientation only and never moves points (see the next section).
+
+Ctrl = reverse on all brushes: Scale defaults to growing, Ctrl shrinks; Cut·Extend defaults to extending, Ctrl cuts.
+
+## Twist Brush
+
+Twist is a manual axial-roll brush: hold the left button and **drag left or right**, and the strands inside the brush roll around their own tangent direction. Use it to hand-tune how a hair sheet faces without changing its shape.
+
+How it behaves:
+
+- **Camera-independent** — the angle comes from the horizontal drag only, so **dragging right and dragging left are two opposite directions** and Ctrl reverses them again. That is the real difference from Orient: Orient rolls the section normal toward the current viewport direction, so the same drag flips once you orbit; Twist does not, and drag-right stays the same roll direction after you orbit.
+- **Rotates orientation only, never moves points** — geometry positions stay put; only the roll angle of the swept section changes.
+- **Hierarchy (H) mode** — the roll carries to downstream child bones, but their **positions stay pinned**; the whole sub-chain rolls rigidly. This differs from an ordinary hierarchical rotate, which swings positions around a pivot as well.
+- **Affected point set is locked at mouse-down** — this is the only brush that freezes its influence at the start of the stroke: the moment you press the left button, which points are affected and how strongly is fixed, and moving the cursor no longer changes the range until you release. Every other brush follows the cursor live.
+
+**No hotkey is assigned to Twist** — it is reachable only from its brush button in the tool dock.
+
+## Tip sub-bones
 
 ![Panel split tip sub-bone editing](devlog/assets/tip-subbone-width-curve.png)
 
-Each split segment gets its own tip sub-bone. Selecting one in the viewport shows that segment's tip chain handles, highlight, and normal arrows. The green control points are the segment's tip WidthCurve — they only affect the width of the current tip; the upper part of the zipper follows the main bone (no splitting). Segment Spread controls how much the tip converges (0–0.99). Skin weights are divided along the top diagonal line of the zipper on each side, so the scale brush doesn't tear the low-zipper side apart. Under rotate (E) / scale (R) tools the tip sub-bone is attached to the transform gizmo.
+Each split segment gets its own tip sub-bone. Selecting one in the viewport shows that segment's tip chain handles, highlight, and normal arrows. The green control points are the segment's tip WidthCurve — they only affect the width of the current tip; the upper part of the zipper follows the main bone (no splitting). Segment Spread controls how much the tip converges (0–0.99, which also prevents degenerate faces). Skin weights are divided along the top diagonal of the zipper on each side, so the Scale brush doesn't tear the low-zipper side apart. Under rotate (E) / scale (R) the tip sub-bone is attached to the transform gizmo.
 
-Shortcuts:
+When the two zippers have different heights, the green control points on **both** sides can now be grabbed (older versions dropped one point on the shallower side, which pulled a dent into the width). Sculpting a tip with a brush no longer jumps back to its pre-edit position either.
 
-- **Alt + Left-click** — quick-switch selection to the hovered tip sub-bone segment (or hovered strand). — same Alt+click pick / quick-switch habit as Zbrush
-- **Ctrl + Left-drag on a green tip WidthCurve handle** — asymmetric width edit (only the dragged side); without Ctrl it mirrors both sides.
-- **Ctrl + Left-drag elsewhere** — reverse / special: sculpt brushes act in reverse (Scale brush: default grows (root-anchored uniform), Ctrl shrinks; Cut·Extend default extends, Ctrl cuts); selection Ctrl+click removes from selection.
+## Zipper editing
+
+Both panels and ordinary strands support multiple zippers: **N zippers cut the sheet into N+1 tubes**. Add and remove them with `+` / `−` under **Zipper Controls** in the matching panel (up to 8 on a strand). Each zipper has its own position and height and its handle can be dragged directly in the viewport.
+
+- `+` subdivides the **currently selected segment** first; both halves it creates **inherit the original segment's tip pose** instead of snapping back to a default.
+- `−` removes the **most recently added** zipper (not the right-most one), so a carefully placed zipper doesn't get deleted by accident; the large tip left after a merge also stays close to its existing pose.
+- Click a zipper handle to **select** it (the handle grows and brightens), then press **Del** to delete just that zipper; Del only deletes the whole hair when no zipper is selected. **Dragging a handle never deletes** anything.
+- Each zipper height exposes one more tip bone, and the bone root always anchors below its first exposed point; the viewport and the USDA export agree on which rows are exposed.
+- Geometry, UV unwrapping, bones and USDA export all follow the multi-zipper setup. Existing single-zipper files open unchanged.
+
+## Shortcuts
+
+- **Alt + Left-click** — quick-switch the selection to the hovered tip sub-bone segment (or hovered strand) without deselecting first. Same habit as ZBrush (Alt+click to pick / quick-switch the hovered target).
+- **Ctrl + Left-drag** (green tip WidthCurve control point) — asymmetric edit: only the dragged side moves; without Ctrl both sides mirror equally.
+- **Ctrl + Left-drag** (elsewhere) — special / reverse: sculpt brushes act in reverse (Scale grows by default and shrinks with Ctrl; Cut·Extend extends by default and cuts with Ctrl), and the select tool removes from the selection.
+- **Save / export** — Ctrl+S quick-saves to the last project file (remembered handle, overwrites the same file); Ctrl+Shift+S saves as; Ctrl+Alt+S quick-exports a replay of the last export.
+- **Del** — deletes only the selected zipper when one is selected; deletes the focused material when the material panel has focus; otherwise deletes the current hair selection.
+- **Other custom shortcuts** — S + left-drag to resize the brush, Delete to remove extra materials, H for hierarchy editing (root-bone workflow), Ctrl+Z undo (works outside text inputs).
+- **Viewport navigation** — the default Anime Hair Studio style is Alt+Left to orbit / Alt+Right to pan / scroll wheel to zoom; the Houdini style is Alt+Left to orbit / Alt+Middle to pan / Alt+Right to zoom / scroll wheel to zoom. Switch in Settings → Preferences → Navigation style.
+- The full list lives in the app under Help → Shortcuts (everything added by this repository is grouped in the "Sintaka Fork" section).
 
 ## Coordinate system & gizmo axes
 
@@ -57,27 +104,23 @@ The app uses Three.js's right-handed coordinate system; the curve / tip sub-bone
 
 Three important axes (colors match the screenshot): **Green = Tangent (Y)** — along the tip chain / curve direction; **Red = Bitangent (X)** — lateral / width direction; **Blue = Normal (Z)** — perpendicular to the panel / curve surface. Width drag, rotation axes, and normal arrows all use this local frame.
 
-## Sculpt brushes
+## Child strands (low-poly watertight bridge)
 
-Four custom sculpt brushes:
+![Low-poly child strand base mesh](devlog/assets/lowpoly-child-strand-basemesh.png)
 
-- **Slide** — moves control points along the curve trajectory (tangent direction), restricted to the tangent/normal plane, without changing the curve's length proportion.
-- **Push** — pushes along the local up direction (normal / away from the surface), restricted to normal-direction movement.
-- **Orient** — rolls the section around the tangent, turning the section's normal (up direction) toward the viewport-orthogonal direction (changes tangent roll).
-- **Scale** — two modes: **Scale** — root-anchored uniform radial scaling of the whole hair sheet (no movement); **Cut·Extend** — uniform parameter scaling of the whole sheet preserving point spacing (factor < 1 cuts, factor > 1 extends along the end tangent).
-
-Ctrl = reverse on all brushes: Scale defaults to growing, Ctrl shrinks; Cut·Extend defaults to extending, Ctrl cuts.
+The parent sheet is carved open and the child is joined through a low-poly watertight bridge (parent-hole boundary → child root ring → top/bottom bands + side quads): parent-surface Region selection (2D u/v panel + 3D markers), direct/indirect bridging, uniform smoothing (Strength/Detail); a child root-bone workflow (gizmo-carried twist, rigid Hierarchy (H) moves, region-anchored center). When the parent does not use topology connect (e.g. Split Geometry), the child falls back to direct generation (sweep from its root). **UV layout is solved** (export-time unwrap + island packing into UDIM 1001, see "Export UV layout" below).
 
 ## Export UV layout (unwrapping)
 
 ![UV Checker preview (export packed layout)](devlog/assets/uv-checker.png)
 
-On export (OBJ/USDA), rectangular UVs are generated from the sweep grid (`gridRow/gridCol`; V-negative = hair tangent, so hair runs straight down), then each "parent + child / panel sheet" is packed as an island (`uvisland`) at uniform texel density into UDIM 1001 ([0,1]²) via an **alpaca occupancy-grid L-shape scan**:
+On export (OBJ/USDA), rectangular UVs are generated from the sweep grid's `gridRow/gridCol` attributes (V-negative = hair tangent, so hair runs straight down), then each "parent + child / whole panel sheet" is treated as an island (`uvisland` index), scaled to uniform texel density, and packed into UDIM 1001 ([0,1]²) with an **alpaca occupancy-grid L-shape scan**:
 
-- **Algorithm**: rasterize the tile (256 cells/UV unit) + integral-image O(1) occupancy test; a growing `scanLine` keeps a square frontier, with two-phase placement (first an L-shape scan along the top + right edges to fill interior gaps, then expand the frontier); then fit-to-tile (uniform scale + center, preserving aspect ratio, no normalize, no rotation).
+- **Algorithm**: rasterize the tile (256 cells per UV unit) + integral-image O(1) occupancy test; a growing `scanLine` keeps a square frontier, with two-phase placement (first an L-shape scan along the top + right edges to fill interior gaps, then expand the frontier only when nothing fits); then fit-to-tile (uniform scale + center, preserving aspect ratio, no normalize, no rotation).
 - **Multi-start selection**: 8 deterministic shuffled orders, pick the best (≈+7% fill vs a single greedy pass).
-- **Result**: panels and strands packed together, near-square bbox (U/V both nearly full), no overlap/fallback, ~0.76–0.81 fill.
-- **Preview**: the ⟳ button at the top of the UV Checker window runs the same export pipeline to preview the final layout in the viewport checker + 2D UV Inspector.
+- **Result**: panels and ordinary strands packed together, near-square bbox (U/V both nearly full), no overlap and no fallback, ~0.76–0.81 fill.
+- **Preview**: the ⟳ button at the top of the UV Checker window runs the same export pipeline to preview the final layout in the viewport checker + 2D UV Inspector, no DCC import needed.
+- **Speed**: packing is multi-threaded (worker pool), cutting export time substantially on large projects; browsers without worker support fall back to single-threaded automatically with identical results.
 
 References:
 
@@ -86,17 +129,31 @@ References:
 - Jylänki, J. *A Thousand Ways to Pack the Bin — A Practical Approach to Two-Dimensional Rectangle Bin Packing*. <http://clb.demon.fi/projects/more-rectangle-bin-packing>
 - jpcy/xatlas — UV atlas library. <https://github.com/jpcy/xatlas>
 
+## USDA skeleton / skin export
+
+Tick **Bones & Capture Mesh** in the USDA export dialog (on by default) and you get a complete, usable USD rig:
+
+- A single `def SkelRoot "Character"` holding one `def Skeleton "Hair_Skel"` and all skinned meshes — in Houdini, one `skelrootpath` in `USD Character Import` brings in the whole character at once.
+- One empty `Hair_Root` joint as the single skeleton root (x = 0 centerline, positioned at the average of all hair roots); every strand's root joint hangs under it, forming one connected joint tree.
+- Each strand's joints are named after **the strand** (`${strandName}_${index}` / `_split_${k}` / `_split_${k}_tip_${j}`), with automatic de-duplication for same-named strands.
+- Meshes carry `SkelBindingAPI`: `rel skel:skeleton` + `int[] primvars:skel:jointIndices` / `float[] primvars:skel:jointWeights` (with `elementSize`); panel segments use two influences, ordinary strands one, and bridged child-strand families 4-influence capture.
+- `int[] primvars:uvisland` is written alongside (one island id per face), so a DCC can select islands by `@uvisland==k`.
+- The dialog also offers a Path Prefix (the root name persists and is reused by quick export). OBJ shares the same pipeline but has no primvar mechanism, so it carries neither bones nor uvisland.
+
+This rig has been validated in Houdini (joint hierarchy and names, rest vs bind transforms, skinned joint indices and weights).
+
 ## Known limitations
 
-- **UV**: export UV is unwrapped and packed into UDIM 1001; the packer is greedy (alpaca occupancy-grid L-shape + multi-start seed selection), fill ~0.76–0.81, no rotation (keeps the strand anisotropy direction); hairCard / curve-surface and other open/compound types are not packed yet.
-- **Export**: USDA export is currently centered on NURBS curves (BasisCurves); **full USD skeletons are not exported yet (Skeleton / SkelBindingAPI skin binding)** — bone/skin data is not yet exported as a usable skeleton.
+- **UV**: export UV is unwrapped and packed into UDIM 1001; the packer is greedy (alpaca occupancy-grid L-shape scan + multi-start seed selection), fill ~0.76–0.81, no rotation (keeps the strand anisotropy direction); hairCard / curve-surface and other open/compound types are not packed yet.
+- **Child bridging combined with multiple zippers**: when the parent is an ordinary strand cut into **3 or more tubes** (that is, 2 or more zippers), the child no longer uses the carved watertight bridge and safely falls back to direct generation (sweep from its root). Panels and strands with at most 2 tubes (≤1 zipper) are unaffected.
+- **Two pieces still missing for multi-zipper strands**: a per-segment spread UI, and snap-to-loops for zipper positions.
 
-## Local deployment
+## Developer documentation
 
-1. Install Python 3.
-2. In the project root, run `python -m http.server 8080 --bind 127.0.0.1`.
-3. Open `http://127.0.0.1:8080/` in your browser.
-4. Or just double-click `start-dev-server.cmd` (it opens the browser automatically).
-5. Don't open `index.html` directly via `file://` — browser security restrictions block module loading.
+- New agent onboarding: [devlog/AGENT_QUICKSTART.md](devlog/AGENT_QUICKSTART.md)
+- Full devlog index: [devlog/README.md](devlog/README.md)
 
-Alternatively (requires Node.js): the built-in static server also doubles as a proxy for the native save dialog — run `node server.js` in the project root and open `http://127.0.0.1:5173/` (change the port with `PORT=xxxx node server.js`, or `$env:PORT=xxxx; node server.js` in Windows PowerShell). You can also use the generic npm static server: `npx http-server . -p 8080`.
+## License
+
+Source-available (not OSI open source): personal / non-commercial use only; redistribution must include the LICENSE and retain the author's donation links.
+
