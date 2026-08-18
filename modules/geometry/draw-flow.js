@@ -459,7 +459,7 @@ function applyDrawClumpTemplateSettings(target, template) {
   const settings = template?.settings || {};
   [
     "strandRotation", "twist", "widthScale", "depthScale", "profileTrimLeft", "profileTrimRight", "profileTrimRoundness",
-    "hairCard", "strandSplitEnabled", "strandSplitPosition", "strandSplitHeight", "strandSplitGap",
+    "hairCard", "strandSplitEnabled", "strandSplitPosition", "strandSplitHeight", "strandSplitGap", "strandSplits",
     "profileOffset", "radialSegments", "lengthSegments", "dynamicDensity", "densityAggression", "twistDensity",
     "asymmetricWidthCurve", "asymmetricDepthCurve", "centerAsymmetricProfile"
   ].forEach((key) => {
@@ -664,6 +664,7 @@ function updateDrawStrandPreview() {
     strandSplitPosition: extensionLock?.strandSplitPosition ?? deps.sculptState.drawStrandStroke.strandSplitPosition,
     strandSplitHeight: extensionLock?.strandSplitHeight ?? deps.sculptState.drawStrandStroke.strandSplitHeight,
     strandSplitGap: extensionLock?.strandSplitGap ?? deps.sculptState.drawStrandStroke.strandSplitGap,
+    strandSplits: extensionLock?.strandSplits ?? deps.sculptState.drawStrandStroke.strandSplits,
     panelSplitEnabled: extensionLock?.panelSplitEnabled ?? deps.sculptState.drawStrandStroke.panelSplitEnabled,
     panelSplitSnapToLoops: extensionLock?.panelSplitSnapToLoops ?? deps.sculptState.drawStrandStroke.panelSplitSnapToLoops,
     panelSplitHeight: extensionLock?.panelSplitHeight ?? deps.sculptState.drawStrandStroke.panelSplitHeight,
@@ -875,6 +876,7 @@ function beginDrawStrandStroke(event, hit, extensionLock = null, branchStart = n
     strandSplitPosition: Number(deps.strandCreationDefaults.strandSplitPosition),
     strandSplitHeight: Number(deps.strandCreationDefaults.strandSplitHeight),
     strandSplitGap: Number(deps.strandCreationDefaults.strandSplitGap),
+    strandSplits: Array.isArray(deps.strandCreationDefaults.strandSplits) ? deps.strandCreationDefaults.strandSplits.map((s) => ({ ...s })) : null,
     panelSplitEnabled: deps.panelCreationDefaults.panelSplitEnabled !== false,
     panelSplitSnapToLoops: deps.panelCreationDefaults.panelSplitSnapToLoops !== false,
     panelSplitHeight: Number(deps.panelCreationDefaults.panelSplitHeight),
@@ -1048,6 +1050,7 @@ function createDrawnLock(stroke, points, pointSurfaceNormals, width, isCenter, s
     strandSplitPosition: Number(setting("strandSplitPosition", stroke.strandSplitPosition ?? deps.strandCreationDefaults.strandSplitPosition)),
     strandSplitHeight: Number(setting("strandSplitHeight", stroke.strandSplitHeight ?? deps.strandCreationDefaults.strandSplitHeight)),
     strandSplitGap: Number(setting("strandSplitGap", stroke.strandSplitGap ?? deps.strandCreationDefaults.strandSplitGap)),
+    strandSplits: Array.isArray(stroke.strandSplits) ? stroke.strandSplits.map((s) => ({ ...s })) : (deps.strandCreationDefaults.strandSplits ?? null),
     depth: shapeTemplate && clumpTemplate
       ? stroke.brushSize * ((shapeTemplate.depth ?? shapeTemplate.width) / clumpTemplate.baseWidth)
       : stroke.brushDepth,

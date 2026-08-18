@@ -63,6 +63,17 @@ function clipStrandProfilePolygon(points, splitX, keepLeft) {
   ));
 }
 
+// Interval-band clip: keep the sub-polygon with lowX <= x <= highX by chaining the
+// proven half-plane clip twice (no new clip math). A ±Infinity bound is skipped so an
+// outer section reduces EXACTLY to a single half-plane clip (byte-identical to the
+// legacy two-section path at N=1).
+function clipStrandProfileBand(points, lowX, highX) {
+  let band = points;
+  if (Number.isFinite(highX)) band = clipStrandProfilePolygon(band, highX, true);
+  if (Number.isFinite(lowX)) band = clipStrandProfilePolygon(band, lowX, false);
+  return band;
+}
+
 function pushOrientedTriangle(indices, vertices, a, b, c, outward) {
   const pointA = new THREE.Vector3(vertices[a * 3], vertices[a * 3 + 1], vertices[a * 3 + 2]);
   const pointB = new THREE.Vector3(vertices[b * 3], vertices[b * 3 + 1], vertices[b * 3 + 2]);
@@ -93,13 +104,49 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   const minX = Math.min(...polygon.map((point) => point.x));
   const maxX = Math.max(...polygon.map((point) => point.x));
   if (!Number.isFinite(minX) || maxX - minX < 0.0001) return null;
-  const splitPosition = THREE.MathUtils.clamp(Number(lock.strandSplitPosition ?? 0), -0.8, 0.8);
-  const splitX = THREE.MathUtils.lerp(minX, maxX, splitPosition * 0.5 + 0.5);
-  const sections = [
-    { points: clipStrandProfilePolygon(polygon, splitX, true), direction: -1 },
-    { points: clipStrandProfilePolygon(polygon, splitX, false), direction: 1 }
-  ].filter((section) => section.points.length >= 3);
-  if (sections.length !== 2) return null;
+  // Drive sections from the split array (N zippers -> N+1 tubes). Fall back to the
+  // legacy single-scalar split so old files reduce to the exact 2-section result.
+  const rawSplits = Array.isArray(lock.strandSplits) && lock.strandSplits.length
+    ? lock.strandSplits
+    : [{ position: Number(lock.strandSplitPosition ?? 0), height: Number(lock.strandSplitHeight ?? 0.3) }];
+  const splits = rawSplits
+    .map((split) => ({
+      position: THREE.MathUtils.clamp(Number(split?.position ?? 0), -0.8, 0.8),
+      height: THREE.MathUtils.clamp(Number(split?.height ?? 0.3), 0.02, 0.8)
+    }))
+    .sort((a, b) => a.position - b.position);
+  const splitCount = splits.length;
+  const splitXs = splits.map((split) => THREE.MathUtils.lerp(minX, maxX, split.position * 0.5 + 0.5));
+  const profileMidX = (minX + maxX) / 2;
+  // N+2 boundaries -> N+1 sections. Outer bounds are ±Infinity so the first section
+  // keeps everything left of splitX[0] and the last keeps everything right of the last
+  // splitX EXACTLY like the legacy single half-plane clips.
+  const boundaryXs = [-Infinity, ...splitXs, Infinity];
+  const sections = [];
+  for (let i = 0; i < splitCount + 1; i += 1) {
+    const lowX = boundaryXs[i];
+    const highX = boundaryXs[i + 1];
+    const points = clipStrandProfileBand(polygon, lowX, highX);
+    if (points.length < 3) continue;
+    // Lateral spread direction: push away from the profile center about each section's
+    // own center. Leftmost -> -1, rightmost -> +1 (matches the legacy 2-section case),
+    // a middle section centered on the profile mid gets ~0.
+    const sectionCenterX = (Number.isFinite(lowX) ? lowX : minX) * 0.5
+      + (Number.isFinite(highX) ? highX : maxX) * 0.5;
+    let direction;
+    if (i === 0) direction = -1;
+    else if (i === splitCount) direction = 1;
+    else direction = Math.sign(sectionCenterX - profileMidX);
+    // Each section opens where its adjacent split(s) are deepest (shallowest opening
+    // start row). Edge sections use their single adjacent split.
+    const leftSplit = splits[i - 1];
+    const rightSplit = splits[i];
+    const sectionHeight = Math.max(leftSplit?.height ?? 0, rightSplit?.height ?? 0);
+    sections.push({ points, direction, sectionSplitStart: 1 - sectionHeight });
+  }
+  // A degenerate (<3 pt) section would cascade into a broken mesh / null UV table;
+  // bail out like the legacy guard rather than emit it.
+  if (sections.length !== splitCount + 1) return null;
 
   const curlSegments = lock.curlEnabled ? Math.ceil(Number(lock.curlCount ?? 4) * 14) : 0;
   const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), curlSegments), 4, 256);
@@ -124,8 +171,10 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   const colors = [];
   const indices = [];
   const triangleEdgeMasks = [];
-  const splitHeight = THREE.MathUtils.clamp(Number(lock.strandSplitHeight ?? 0.3), 0.02, 0.8);
-  const splitStart = 1 - splitHeight;
+  // Shallowest opening start across all sections (single conservative value for the
+  // capture/tip weighting and the fused-grid splitStartRow). At N=1 both sections share
+  // the same start, so this equals the legacy 1 - strandSplitHeight.
+  const splitStart = Math.min(...sections.map((section) => section.sectionSplitStart));
   // Route 2: per-tube spread comes from each split bone (relative semantics); the
   // legacy absolute splitGap only derives the default spread so old files keep the
   // same look (default 0.12 -> spread 0.12; opening = baseWidth * spread).
@@ -200,9 +249,10 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
       const tubeSpread = splitBones
         ? (splitBones[sectionIndex]?.spread ?? defaultSplitSpread)
         : defaultSplitSpread;
-      const opening = t <= splitStart
+      const sectionSplitStart = section.sectionSplitStart;
+      const opening = t <= sectionSplitStart
         ? 0
-        : baseWidth * tubeSpread * THREE.MathUtils.smoothstep(t, splitStart, 1) * section.direction;
+        : baseWidth * tubeSpread * THREE.MathUtils.smoothstep(t, sectionSplitStart, 1) * section.direction;
       section.points.forEach((profile, column) => {
         const warped = warpedSection[column];
         const ringPoint = frame.x.clone().multiplyScalar(warped.x * factors[row]);
@@ -356,7 +406,13 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   const colToSection = [];
   for (let c = 0; c < fusedCols; c += 1) {
     const point = polygon[c];
-    const section = point.x <= splitX ? 0 : 1;
+    // Section = the boundary interval containing point.x = count of splitXs strictly
+    // below it (clamped to [0, N]). At N=1 this reduces to point.x <= splitX ? 0 : 1.
+    let section = 0;
+    for (let s = 0; s < splitXs.length; s += 1) {
+      if (point.x > splitXs[s]) section += 1;
+    }
+    section = Math.max(0, Math.min(splitCount, section));
     const ring = sections[section].points;
     let col = -1;
     for (let k = 0; k < ring.length; k += 1) {

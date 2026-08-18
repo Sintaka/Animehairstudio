@@ -763,6 +763,8 @@ function applyBranchRootRegionCarving(lock, geometry) {
   const index = geometry?.index;
   const rows = Number(geometry?.userData?.gridRows || 0);
   if (!children.length || !Array.isArray(faces) || !faces.length || !index || rows < 2) return;
+  const splitSectionCount = Array.isArray(geometry?.userData?.splitSections) ? geometry.userData.splitSections.length : 0;
+  if (splitSectionCount > 2) return; // 多拉链 split 父发片：不挖洞（子发片走直接生成回退）
   const splitFused = geometry?.userData?.splitFusedGrid || null;
   const removed = new Set();
   children.forEach((child) => {
@@ -841,6 +843,8 @@ function branchRootRegionSurface(lock) {
   const rows = Number(geometry?.userData?.gridRows || 0);
   const cols = Number(geometry?.userData?.gridColumns || 0);
   if (rows < 2 || cols < 2) return null;
+  const splitSectionCount = Array.isArray(geometry?.userData?.splitSections) ? geometry.userData.splitSections.length : 0;
+  if (splitSectionCount > 2) return null; // 多拉链（>2 管）split 父发片暂不支持子发片桥接（Phase F 门控）
   const faces = geometry?.userData?.quadFaces;
   // facesPerRow / skipCol are grid properties fixed at build time (the carved
   // quadFaces shrink, so deriving them from the carved list would drift).

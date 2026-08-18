@@ -400,6 +400,160 @@ const ARC10_POINTS = [[0, 0], [1, 0], [3, 0], [8 / 3, Math.sqrt(80) / 3]];
   }
 }
 
+// ---- split：3 管（N-tube 泛化回归），ringSize 不等 [4,3,4]，scale 不等 [1,2,3] ----
+// 验证 gridUvTable/unfoldHairMesh 的 split 分支对 N=3（非 2）管仍成立：管 g 的列全局
+// 偏移 = 前面各管 ringSize 之和；每管周长独立（2*(ringSize-1)*scale，因 wrap 边距离
+// = (ringSize-1)*scale）；管沿 U 轴依次右移不重叠；每管一个 seam 副本槽（pos C+g）。
+{
+  const R = 2;
+  const ringSizes = [4, 3, 4];
+  const scales = [1, 2, 3];
+  const tubes = ringSizes.length; // 3
+  const colBases = [];
+  {
+    let acc = 0;
+    for (let s = 0; s < tubes; s += 1) { colBases.push(acc); acc += ringSizes[s]; }
+  }
+  const C = ringSizes.reduce((a, b) => a + b, 0); // 4+3+4 = 11
+  const splitSections = [];
+  {
+    let base = 0;
+    let faceBase = 0;
+    for (let s = 0; s < tubes; s += 1) {
+      splitSections.push({ base, ringSize: ringSizes[s], faceBase });
+      base += R * ringSizes[s];
+      faceBase += (R - 1) * ringSizes[s];
+    }
+  }
+  const indexAt = (section, r, localCol) =>
+    splitSections[section].base + r * splitSections[section].ringSize + localCol;
+
+  const positions = [];
+  const uvs = [];
+  const normals = [];
+  const gridRowIndices = [];
+  const gridColIndices = [];
+  for (let s = 0; s < tubes; s += 1) {
+    const ringSize = ringSizes[s];
+    for (let r = 0; r < R; r += 1) {
+      for (let k = 0; k < ringSize; k += 1) {
+        positions.push(r, k * scales[s], s);
+        normals.push(0, 0, 1);
+        uvs.push(0.11, 0.22); // 原 uv（展开后不应混入）
+        gridRowIndices.push(r);
+        gridColIndices.push(colBases[s] + k);
+      }
+    }
+  }
+  const quadFaces = [];
+  const pushRingQuads = (section) => {
+    const ringSize = splitSections[section].ringSize;
+    for (let r = 0; r < R - 1; r += 1) {
+      for (let k = 0; k < ringSize; k += 1) {
+        const next = (k + 1) % ringSize; // wrap quad：k=ringSize-1 → 0
+        quadFaces.push([
+          indexAt(section, r, k),
+          indexAt(section, r + 1, k),
+          indexAt(section, r + 1, next),
+          indexAt(section, r, next)
+        ]);
+      }
+    }
+  };
+  for (let s = 0; s < tubes; s += 1) pushRingQuads(s);
+
+  const geometry = {
+    userData: {
+      gridRowIndices: new Float32Array(gridRowIndices),
+      gridColIndices: new Float32Array(gridColIndices),
+      quadFaces,
+      splitSections
+    },
+    getAttribute: (name) => ({
+      position: makeAttr(positions, 3),
+      normal: makeAttr(normals, 3),
+      uv: makeAttr(uvs, 2)
+    }[name])
+  };
+
+  // 每管周长 = 2*(ringSize-1)*scale（(ringSize-1) 段步长边 + 1 条 wrap 边，wrap 边距离
+  // 恰好也是 (ringSize-1)*scale，因坐标沿 y 轴线性排列）。
+  const tubeCirc = ringSizes.map((ringSize, s) => 2 * (ringSize - 1) * scales[s]);
+  const totalCirc = tubeCirc.reduce((a, b) => a + b, 0); // 6+8+18 = 32
+
+  const table = gridUvTable(geometry, "split", -1);
+  assert.ok(table, "3-tube split arc table");
+  assert.ok(Math.abs(table.circumference - totalCirc) < 1e-6, `circumference ${table.circumference}`);
+  assert.equal(table.rows, R);
+
+  // 逐管 colU：管 g 的 u = (前管周长累计 + 管内累计弧长) / 总周长
+  let accBase = 0;
+  for (let s = 0; s < tubes; s += 1) {
+    const ringSize = ringSizes[s];
+    for (let l = 0; l < ringSize; l += 1) {
+      const expected = (accBase + l * scales[s]) / totalCirc;
+      assert.ok(Math.abs(table.colU.get(colBases[s] + l) - expected) < EPS,
+        `tube${s} col${l} u expected ${expected}`);
+    }
+    accBase += tubeCirc[s];
+  }
+  // seamEndU：管 g 终点 = 前 g+1 管周长累计 / 总周长（管 tubes-1 应恰为 1）
+  let acc2 = 0;
+  for (let s = 0; s < tubes; s += 1) {
+    acc2 += tubeCirc[s];
+    assert.ok(Math.abs(table.seamEndU[s] - acc2 / totalCirc) < EPS, `seamEndU[${s}]`);
+  }
+  assert.ok(Math.abs(table.seamEndU[tubes - 1] - 1) < EPS, "last tube seamEndU = 1");
+
+  // 展开：每行 = C 展开列 + tubes 个副本槽
+  const mesh = unfoldHairMesh(geometry, { kind: "split" });
+  assert.ok(mesh, "3-tube split unfold should succeed");
+  assert.equal(mesh.positions.length / 3, R * (C + tubes));
+  assert.equal(mesh.uvs.length / 2, R * (C + tubes));
+  // 每管 (R-1)*ringSize quads 全保留
+  const expectedFaceCount = ringSizes.reduce((sum, ringSize) => sum + (R - 1) * ringSize, 0);
+  assert.equal(mesh.faces.length, expectedFaceCount);
+
+  // 三管 u 范围互不重叠、按管序排列：max(管 s-1 u) < min(管 s u)
+  const tubeURanges = ringSizes.map((ringSize, s) => {
+    const us = [];
+    for (let l = 0; l < ringSize; l += 1) us.push(table.colU.get(colBases[s] + l));
+    return us;
+  });
+  for (let s = 1; s < tubes; s += 1) {
+    const prevMax = Math.max(...tubeURanges[s - 1]);
+    const curMin = Math.min(...tubeURanges[s]);
+    assert.ok(curMin > prevMax, `tube${s} min u (${curMin}) > tube${s - 1} max u (${prevMax})`);
+  }
+  // 所有 u 在 [0,1]，v 为 0 或 1（网格顶点无中间 row 以外的值这里只有 R=2）
+  for (let i = 0; i < mesh.uvs.length; i += 2) {
+    assert.ok(mesh.uvs[i] >= 0 && mesh.uvs[i] <= 1, `3-tube u in [0,1]: ${mesh.uvs[i]}`);
+  }
+
+  // 每管一个 seam 副本槽：pos = C+g，u = seamEndU[g]，gridCol = 管首全局列（colBases[g]）
+  const rowStride = C + tubes;
+  for (let g = 0; g < tubes; g += 1) {
+    const slot = C + g;
+    const newIndex = 0 * rowStride + slot; // row 0
+    assert.ok(Math.abs(mesh.uvs[newIndex * 2] - table.seamEndU[g]) < EPS,
+      `tube${g} seam copy slot u`);
+    assert.equal(mesh.gridCols[newIndex], colBases[g], `tube${g} seam copy slot gridCol`);
+    // row1 同一管副本槽同样成立
+    const newIndexRow1 = 1 * rowStride + slot;
+    assert.ok(Math.abs(mesh.uvs[newIndexRow1 * 2] - table.seamEndU[g]) < EPS,
+      `tube${g} seam copy slot u (row1)`);
+  }
+
+  // face 索引全部有效
+  const newVertexCount = mesh.positions.length / 3;
+  for (const face of mesh.faces) {
+    for (const index of face) {
+      assert.ok(Number.isInteger(index) && index >= 0 && index < newVertexCount,
+        `3-tube face index ${index}`);
+    }
+  }
+}
+
 // ---- compound：open 布局 + col=-1 顶点 passthrough（uv = 原 uv 属性） ----
 {
   const positions = [0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 0, 9, 9, 9];

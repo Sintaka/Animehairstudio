@@ -733,7 +733,21 @@ export function createProjectSaveApi(deps) {
         forkT = heights.length ? 1 - Math.max(...heights) : 1;
       } else {
         if (!lock.strandSplitEnabled) return null;
-        forkT = 1 - THREE.MathUtils.clamp(Number(lock.strandSplitHeight ?? 0.3), 0.02, 0.8);
+        // Per-tube forkT = 1 - max(相邻拉链高)（与 createSplitStrandGeometry /
+        // bone-model / usda-export 对齐）。N=1 时 = 1 - strandSplitHeight（旧值）。
+        const clampSplit = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+        const rawStrandSplits = Array.isArray(lock.strandSplits) && lock.strandSplits.length
+          ? lock.strandSplits
+          : [{ position: Number(lock.strandSplitPosition ?? 0), height: Number(lock.strandSplitHeight ?? 0.3) }];
+        const strandSplits = rawStrandSplits
+          .map((split) => ({
+            position: clampSplit(Number(split?.position ?? 0), -0.8, 0.8),
+            height: clampSplit(Number(split?.height ?? 0.3), 0.02, 0.8)
+          }))
+          .sort((a, b) => a.position - b.position);
+        const leftHeight = strandSplits[segment - 1]?.height ?? 0;
+        const rightHeight = strandSplits[segment]?.height ?? 0;
+        forkT = 1 - Math.max(leftHeight, rightHeight);
       }
       const t = rowTAt(vertex, gridRowIndices, rows);
       const { index, i0 } = tipChainNearestIndex(t, mainCount, forkT);

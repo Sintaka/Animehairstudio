@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -1516,6 +1516,23 @@ test("hair card toggle sweeps the upper authored profile arc as an open double-s
   assert.match(css, /\.hair-card-hidden\s*\{[\s\S]*?display:\s*none !important;/);
 });
 
+test("strand split controls expose multi-zipper add/remove stepper", async () => {
+  const [html, source] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+  ]);
+  // The strand Split Tip controls carry a zipper +/- stepper mirroring the panel one.
+  assert.match(html, /id=["']strandSplitControls["'][\s\S]*?id=["']removeStrandSplit["'][\s\S]*?id=["']strandSplitCount["'][\s\S]*?id=["']addStrandSplit["'][\s\S]*?id=["']strandSplitGap["']/);
+  // Multi-zipper cap constant and clone/normalize default to it (not truncated to 1).
+  assert.match(source, /const STRAND_SPLIT_MAX = \d+;/);
+  assert.match(source, /function normalizeStrandSplits\(value, legacyPosition, legacyHeight, maxCount = STRAND_SPLIT_MAX\)/);
+  // Buttons are wired to the segment control api's strand count change.
+  assert.match(source, /addStrandSplitButton\?\.addEventListener\("click", \(\) => segmentApi\.changeStrandSplitCount\(1\)\)/);
+  assert.match(source, /removeStrandSplitButton\?\.addEventListener\("click", \(\) => segmentApi\.changeStrandSplitCount\(-1\)\)/);
+  // Del removes the selected strand zipper before deleting the whole selection.
+  assert.match(source, /if \(segmentApi\.deleteSelectedStrandSplit\(\)\) return;/);
+});
+
 test("hair card state propagates through defaults, drawing, mirrors, history, projects, and presets", async () => {
   const source = await readFile(new URL("../app.js", import.meta.url), "utf8");
   const [creationPresets, drawFlow] = await Promise.all([
@@ -2501,7 +2518,7 @@ test("settings menu exposes preferences, language, and app version", async () =>
   assert.match(localization, /"Alt \+ Left Mouse":/);
   assert.match(localization, /"Center viewport on selected object":/);
   assert.equal(packageData.version, "0.1.5-Sintaka.0.2.63");
-  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.114["']/);
+  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.119["']/);
 });
 
 test("title bar exposes icon-only Patreon and Ko-fi support links", async () => {
@@ -2752,7 +2769,7 @@ test("newly drawn strands create linked mirror instances while X mirror is enabl
     readFile(new URL("../modules/geometry/draw-flow.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20260821-1/);
+  assert.match(html, /app\.js\?v=20260826-1/);
   assert.match(html, /id="mirrorInstanceAction"[^>]*>Mirror Strand<\/button>/);
   assert.match(
     source,
@@ -2844,7 +2861,7 @@ test("project materials select standard, anime anisotropic, and Lambert shaders"
     html,
     /id=["']hairMaterialShader["'][\s\S]*value=["']standard-anisotropic["']>Standard Anisotropic<[\s\S]*value=["']anime-anisotropic["']>Anime Anisotropic<[\s\S]*value=["']lambert["']>Lambert</
   );
-  assert.match(html, /app\.js\?v=20260821-1/);
+  assert.match(html, /app\.js\?v=20260826-1/);
   assert.match(
     html,
     /id=["']hairMaterialAnimeControls["'][\s\S]*id=["']hairMaterialAnimeBaseColor["'][\s\S]*value=["']#dbc2aa["'][\s\S]*id=["']hairMaterialAnimeShadowColor["'][\s\S]*value=["']#99675c["'][\s\S]*id=["']hairMaterialAnimeRimColor["'][\s\S]*value=["']#ffd9cf["'][\s\S]*id=["']hairMaterialAnimeRimStrength["'][\s\S]*value=["']0\.35["'][\s\S]*id=["']hairMaterialAnimeRimWidth["'][\s\S]*value=["']0\.3["'][\s\S]*id=["']hairMaterialAnimeHighlightEdgeSuppression["']/
@@ -4359,8 +4376,8 @@ test("strand width and depth curve editors expose draggable viewport mesh points
     /class="profile-dialog-actions taper-curve-actions"[\s\S]*id="addTaperPoint"[\s\S]*class="taper-toggle-stack"[\s\S]*id="taperAsymmetryToggle"[\s\S]*id="taperMeshPointsToggle"/
   );
   assert.doesNotMatch(html, /id="taperCurveSide"/);
-  assert.match(html, /styles\.css\?v=20260821-1/);
-  assert.match(html, /app\.js\?v=20260821-1/);
+  assert.match(html, /styles\.css\?v=20260826-1/);
+  assert.match(html, /app\.js\?v=20260826-1/);
   // localization.js is now loaded as an ES-module import inside app.js (there is no
   // separate localization script tag anymore).
   assert.match(source, /from "\.\/modules\/data\/localization\.js\?v=20260814-12"/);
@@ -4714,6 +4731,16 @@ test("attached branches draw a persistent projected topology imprint on their pa
   assert.match(branchBridge, /function applyBranchRootRegionCarving\(lock, geometry\)[\s\S]*const children = deps\.branchChildrenFor\(lock\)[\s\S]*children\.forEach\(\(child\) => \{[\s\S]*branchRootRegionSurface\(child\)/);
   // moved to modules/geometry/branch-bridge.js
   assert.match(branchBridge, /indices\.push\(a, c, b, b, c, d\)[\s\S]*triangleEdgeMasks\.push\(\[0, 1, 1\], \[1, 1, 0\]\)/);
+  // Phase F child-bridge gate: multi-zipper (>2 tube) split parents must not attempt
+  // fused-grid carving/bridging until the fused grid is validated beyond 2 sections.
+  assert.match(
+    branchBridge,
+    /function applyBranchRootRegionCarving\(lock, geometry\)[\s\S]*splitSectionCount = Array\.isArray\(geometry\?\.userData\?\.splitSections\)[\s\S]*if \(splitSectionCount > 2\) return;/
+  );
+  assert.match(
+    branchBridge,
+    /function branchRootRegionSurface\(lock\)[\s\S]*splitSectionCount = Array\.isArray\(geometry\?\.userData\?\.splitSections\)[\s\S]*if \(splitSectionCount > 2\) return null;/
+  );
   assert.match(source, /branchBridge\.applyBranchRootRegionCarving\(lock, lock\.mesh\.geometry\)/);
   assert.match(source, /locks\.filter\(\(lock\) => branchHierarchy\.branchChildrenFor\(lock\)\.length\)\.forEach\(\(parent\) => \{[\s\S]*branchBridge\.applyBranchRootRegionCarving\(parent, parent\.mesh\.geometry\)/);
   assert.doesNotMatch(source, /createBranchKnifeOverlayGeometry|syncBranchKnifeOverlay|branchKnifeImprintCount|projectBranchProfileToParent/);

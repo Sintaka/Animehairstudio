@@ -418,14 +418,16 @@ export function smoothMainPair(t, mainCount) {
   return { main, next, frac: x - main };
 }
 
-// 发尖链最近关节：链点 i 的主链参数 t_i = i/(mainCount-1)；暴露区 = t_i > forkT
-// （视口规则）。返回暴露区内最接近参数 t 的链索引（无暴露 → 末点）与暴露起点 i0。
+// 发尖链最近关节：链点 i 的主链参数 t_i = i/(mainCount-1)；暴露起点
+// i0 = clamp(floor(forkT·last), 1, last) —— 与 splitChainLayout 的暴露循环逐值同规则
+// （fork 所在行本身也暴露，比旧的严格 t > forkT 多一行）。必须与之同步，否则蒙皮会绑到
+// 不存在 / 差一位的关节上。返回暴露区内最接近参数 t 的链索引与暴露起点 i0。
 export function tipChainNearestIndex(t, mainCount, forkT) {
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   const n = Math.max(2, Math.floor(Number(mainCount) || 0));
   const last = n - 1;
   const fork = clamp(Number(forkT) || 0, 0, 1);
-  const i0 = Math.min(last, Math.floor(fork * last) + 1);
+  const i0 = clamp(Math.floor(fork * last), 1, last);
   const ci = clamp(Number(t) || 0, 0, 1) * last;
   return { index: Math.min(last, Math.max(i0, Math.round(ci))), i0 };
 }
@@ -511,6 +513,54 @@ export function exportAnimeHairUsda({
   return parts.join("\n");
 }
 
+// ---- 发丝多拉链 split 辅助（与 createSplitStrandGeometry / bone-model 对齐）----
+// N 条拉链 -> N+1 管。splits 归一化方式与几何完全一致（同样的 legacy 单标量回退，
+// 按 position 排序），使 fork 深度与方向和几何、骨骼三处逐值一致。
+function strandSplitsForExport(lock) {
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const rawSplits = Array.isArray(lock?.strandSplits) && lock.strandSplits.length
+    ? lock.strandSplits
+    : [{ position: Number(lock?.strandSplitPosition ?? 0), height: Number(lock?.strandSplitHeight ?? 0.3) }];
+  return rawSplits
+    .map((split) => ({
+      position: clamp(Number(split?.position ?? 0), -0.8, 0.8),
+      height: clamp(Number(split?.height ?? 0.3), 0.02, 0.8)
+    }))
+    .sort((a, b) => a.position - b.position);
+}
+
+// 管 k 的 fork 深度：1 - max(相邻拉链高)，边缘段用单一相邻拉链。与 Phase B 的
+// sectionSplitStart 及 bone-model strandSplitForkTForSegment 一致。N=1 时 = 1 - strandSplitHeight。
+function strandForkTForTube(splits, k) {
+  const leftHeight = splits[k - 1]?.height ?? 0;
+  const rightHeight = splits[k]?.height ?? 0;
+  return 1 - Math.max(leftHeight, rightHeight);
+}
+
+// 管 k 的横向推开方向：最左 -> -1，最右 -> +1，中间段按其两侧拉链位置中点的符号。
+// N=1 时 k=0 -> -1、k=1 -> +1，与旧版 direction = k===0 ? -1 : 1 逐值相同。
+function strandDirectionForTube(splits, k) {
+  const splitCount = splits.length;
+  if (k === 0) return -1;
+  if (k === splitCount) return 1;
+  const center = ((splits[k - 1]?.position ?? -1) + (splits[k]?.position ?? 1)) / 2;
+  return Math.sign(center);
+}
+
+// split 骨骼根部锚定的主链索引：必须严格位于自己的第一个暴露链点之下（根不能与它的
+// 子节点落在同一主链索引上，否则等于根没有锚在 zipper 行之下）。第一个暴露索引现在是
+// firstExposed = clamp(floor(forkT·(mainCount−1)), 1, mainCount−1) —— 比旧的严格
+// t > forkT 规则（floor+1）往发根方向多暴露一行，让发尖骨骼覆盖到 fork 所在行。
+// 于是根 = firstExposed − 1 = floor(forkT·(mainCount−1)) − 1，钳到 [0, mainCount−1]
+// （mainCount ≤ 1 时恒为 0）。floor（不是 round）仍是必要的：round 在
+// frac(forkT·(mainCount−1)) > 0.5 时会跳到（甚至越过）第一个暴露子节点。
+export function splitParentMainIndex(forkT, mainCount) {
+  const count = Number(mainCount);
+  if (!Number.isFinite(count) || count <= 1) return 0;
+  const clamped = Math.min(1, Math.max(0, Number(forkT) || 0));
+  return Math.min(count - 1, Math.max(0, Math.floor(clamped * (count - 1)) - 1));
+}
+
 // ---- splitBoneLayout / bridgeRootParentName：split 骨骼的 fork 父索引与派生位置 ----
 // split 骨骼（split.N，暴露段）在数据流里 authored p 为 null、父级是根骨骼，导出时
 // 按此解析：fork 参数（暴露段起始处的主链位置）→ 父主骨骼索引 parentMainIndex，以及
@@ -552,9 +602,9 @@ export function splitBoneLayout(lock, bone, options = {}) {
       if (Number.isFinite(tip?.x)) p = [tip.x, tip.y, tip.z];
     }
   } else if (lock.geometryType === "strand" && lock.strandSplitEnabled) {
-    // 发丝分支：forkT = 1 - splitHeight；p = 曲线末端 + 宽度 × spread 侧向偏移。
-    const splitHeight = clamp(Number(lock.strandSplitHeight ?? 0.3), 0.02, 0.8);
-    forkT = 1 - splitHeight;
+    // 发丝分支：per-tube forkT = 1 - max(相邻拉链高)；p = 曲线末端 + 宽度 × spread 侧向偏移。
+    const splits = strandSplitsForExport(lock);
+    forkT = strandForkTForTube(splits, k);
     try {
       if (curve && typeof strandGeometryFrameAt === "function") {
         const frame = strandGeometryFrameAt(lock, curve, 1);
@@ -562,7 +612,7 @@ export function splitBoneLayout(lock, bone, options = {}) {
         if (frame?.x && tip && Number.isFinite(tip.x)) {
           const baseWidth = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1);
           const spread = clamp(Number(bone.spread ?? lock.strandSplitGap ?? 0.12), 0, 0.99);
-          const direction = k === 0 ? -1 : 1;
+          const direction = strandDirectionForTube(splits, k);
           const offset = baseWidth * spread * direction;
           p = [tip.x + frame.x.x * offset, tip.y + frame.x.y * offset, tip.z + frame.x.z * offset];
         }
@@ -580,7 +630,7 @@ export function splitBoneLayout(lock, bone, options = {}) {
   }
 
   if (forkT == null) return null;
-  const parentMainIndex = mainCount > 1 ? Math.round(clamp(forkT, 0, 1) * (mainCount - 1)) : 0;
+  const parentMainIndex = splitParentMainIndex(forkT, mainCount);
   return { parentMainIndex, p };
 }
 
@@ -625,9 +675,10 @@ export function splitChainLayout(lock, bone, options = {}) {
       }
     }
   } else if (lock.geometryType === "strand" && lock.strandSplitEnabled) {
-    // 发丝分支：forkT = 1 - splitHeight；tip 链 = 主链曲线 + 宽度 × spread 沿
-    // frame.x 侧向偏移（k=0 向左，其余向右），smoothstep 从 fork 平滑展开。
-    forkT = 1 - clamp(Number(lock.strandSplitHeight ?? 0.3), 0.02, 0.8);
+    // 发丝分支：per-tube forkT = 1 - max(相邻拉链高)；tip 链 = 主链曲线 + 宽度 × spread
+    // 沿 frame.x 侧向偏移（per-tube direction），smoothstep 从 fork 平滑展开。
+    const splits = strandSplitsForExport(lock);
+    forkT = strandForkTForTube(splits, k);
     try {
       if (curve && typeof curve.getPoint === "function"
         && typeof strandGeometryFrameAt === "function"
@@ -635,7 +686,7 @@ export function splitChainLayout(lock, bone, options = {}) {
         const splitStart = forkT;
         const baseWidth = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1);
         const spread = clamp(Number(bone.spread ?? lock.strandSplitGap ?? 0.12), 0, 0.99);
-        const direction = k === 0 ? -1 : 1;
+        const direction = strandDirectionForTube(splits, k);
         const smoothstep = (x, min, max) => {
           const t = clamp((x - min) / Math.max(0.0001, max - min), 0, 1);
           return t * t * (3 - 2 * t);
@@ -662,16 +713,22 @@ export function splitChainLayout(lock, bone, options = {}) {
 
   if (!chain || !Array.isArray(chain.points) || chain.points.length < 2) return null;
 
-  // 暴露段索引（视口规则：t 严格大于 forkT；无暴露 → 至少末点，即单骨情形）。
+  // 暴露段索引：第一个暴露索引 = clamp(floor(forkT·(n−1)), 1, n−1)，即 fork 所在
+  // 那一行本身也暴露 —— 比旧的严格 t > forkT 规则多暴露一行，发尖骨骼覆盖到 fork 行，
+  // 每个 zipper 高度都多一根发尖骨骼（用户要求的方向）。下界钳到 1：索引 0 是链根，
+  // 它坐在主链上，暴露它会与 main 骨骼重复、也让根骨骼无处可锚。
+  // 无暴露 → 至少末点，即单骨情形。
   const n = chain.points.length;
+  const last = n - 1;
+  const firstExposed = Math.min(last, Math.max(1, Math.floor(forkT * last)));
   const indices = [];
-  for (let i = 0; i < n; i += 1) {
-    const t = i / Math.max(1, n - 1);
-    if (t > forkT) indices.push(i);
-  }
+  for (let i = firstExposed; i < n; i += 1) indices.push(i);
   if (!indices.length) indices.push(n - 1);
 
-  const parentMainIndex = mainCount > 1 ? Math.round(clamp(forkT, 0, 1) * (mainCount - 1)) : 0;
+  // 根用 mainCount（主链行数），暴露用 n（tip 链点数）；两者在实际数据流里相等
+  // （panel: splitTipForSegment 建 mainCount 点；strand: materializeTipChain(max(2, mainCount))），
+  // 因此 parentMainIndex = firstExposed − 1，严格位于第一个暴露点之下。
+  const parentMainIndex = splitParentMainIndex(forkT, mainCount);
   const cross = (a, b) => ({
     x: a.y * b.z - a.z * b.y,
     y: a.z * b.x - a.x * b.z,

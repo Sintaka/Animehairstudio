@@ -22,6 +22,57 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（0.2.119）
+
+> 发尖骨骼暴露方向取反：多暴露一行（分支 DHS/develop，1 Opus 子智能体 + 主进程 merge/自审/收尾）。0.2.118 的 `round`→`floor` 结构修复保留，但方向反了：
+> - **modules/io/usda-export.js**：暴露循环从严格 `t > forkT`（`floor+1`）改为 `firstExposed = clamp(floor(forkT·last), 1, last)`（fork 行本身也暴露）；`splitParentMainIndex` 改 `clamp(floor(forkT·(count−1)) − 1, 0, count−1)`（= `firstExposed − 1`）；`tipChainNearestIndex` 的 `i0` 同步为**同一表达式**（不同步会让蒙皮绑到不存在/差一位的关节——`project-files.js` L753 靠 `index === i0` 区分根关节与 `tip.N`）。
+> - **modules/bones/bone-view-handles.js**：引导线 `firstBelow`（L467）与把手可见性 `firstBelowHandle`（L417）`Math.ceil`→`Math.floor`。**modules/bones/bone-interaction.js**：拖拽（L102）与雕刻笔刷（L635）同样改 floor。四处 + 导出共用 `clamp(floor(forkT·last), 1, last)`，视口与导出的暴露行集合现在完全一致。
+> - **scripts/verify-skeleton-layout.mjs**（主进程收尾）：`exposedCountFor` helper 改新规则；「split 不得 parent 到 main.0」旧守卫（0.2.106 抓硬挂 main.0 的 bug）在新规则下会误判深 zipper 的正确 `root=0`（Side Left 2 height 0.62 → firstExposed=1/root=0）→ 改为断言 root 由 fork 深度推导且 `< firstExposed`；`forkTFor` 定义提前（const 箭头 TDZ）。**scripts/verify-tip-select.mjs**：L321 缩放中心的 ceil→floor 同步。
+> - 保留不动：`tipCaptureWeightAt`（严格 `t > forkT`）—— 它管发尖变形的网格行归属（几何 capture），非骨骼索引。
+> - 回归：Node 全量 275/275（更新约 12 处写死索引断言、新增「暴露数比旧规则恰好 +1」方向守卫与「视口 firstBelow === 导出 firstExposed」断言）+ 真实 Sussurro_v1_0060.ahs 130/130；缓存号 20260826-1 + APP_VERSION 0.2.119 冻结同步。
+
+## 最近更新（0.2.118）
+
+> 发尖 WidthCurve 控制点按侧分布（修宽度凹陷）+ 发尖骨骼根部改 floor（分支 DHS/develop，1 Opus 子智能体 + 主进程 merge/自审/收尾）：
+> - **modules/geometry/panel-tip-strand.js**：新增 `tipWidthSideControlTs(lock, segmentIndex, splits, side)`（控制位置从**本侧** `tipWidthSideForkT` 分布，替代原公共 `tipWidthCommonForkT` 分布）与 `tipWidthRecordsOppositeFork`（对侧 fork 记录点仅在 ≤ 本侧 fork 时写入）；`tipWidthResetCurve`/`buildTipWidthCurve`/`tipWidthControlPlacement` 三处统一改用按侧位置（`placement` 的 `t < sideForkT` 隐藏守卫降级为安全网）；`buildTipWidthCurve` 新增旧档**重采样迁移**（旧公共 fork 位置的创作数据按新位置采样迁移，不退回全局默认）；`setTipWidthCurveValue` 写入位置吸附到本侧控制网格 + 跳过本侧锁定区（修对称拖拽写出无把手点并在重建时丢失编辑）。`tipWidthCommonForkT` 保留（供浮动面板与段级 fork 使用）。
+> - **modules/io/usda-export.js**：新增导出 `splitParentMainIndex(forkT, mainCount)` = `clamp(floor(forkT·(mainCount−1)))`；`splitBoneLayout`/`splitChainLayout` 两处 `parentMainIndex` 从 `Math.round` 改为调用它——原 round 在 `frac > 0.5` 时会把骨骼根跳到自己第一个暴露子节点之上（mainCount=6 时 6 个常见高度中 4 个出错，含当前工程的 0.4375）。
+> - **modules/geometry/taper-editor.js**：浮动曲线面板的锁定点规则改按侧 fork（`tipSideForkFor(curveSide)` 走 `deps.tipWidthSideForkT`），否则浅 zipper 侧已可抓的点会被误判为锁定点。
+> - **app.js**：seam 导出 `tipWidthSideControlTs`（供 `__ahsTest` 与浏览器校验脚本使用）。
+> - **scripts/verify-tip-select.mjs**（主进程收尾）：9 处按公共 fork 推导控制位置全部改按侧；原断言 `rightVisible < leftVisible`（**把凹陷 bug 当预期行为在测**）改为「两侧全部 6 个位置可抓、placement 非 null」的新不变式；浮动面板锁定点断言同步改按侧 fork。
+> - 回归：Node 全量 275/275（新增 4 测试：无隐藏活点、Reset 两侧平坦、旧档迁移、floor 根 vs 首个暴露点）+ 真实 Sussurro_v1_0060.ahs 98/98；更新 3 处旧断言（原写死 round 错值）；缓存号 20260825-1 + APP_VERSION 0.2.118 冻结同步。待浏览器验收：视口把手渲染与 verify-tip-select.mjs 本轮未跑浏览器。
+
+## 最近更新（0.2.117）
+
+> zipper 增删的段骨骼重映射 + 新段继承来源姿态（分支 DHS/develop，子智能体中途失败 → 主进程接手完成 + 自审）。根因：`splitBones`/`strandSplitBones` 按**段下标**存储、`normalizeSplitBones` 按 `value[k]` 位置映射，而增删 zipper 会重新划分段，旧代码从不重映射 → 骨骼错位到相邻段：
+> - **modules/bones/bone-model.js**：新增纯函数 `remapSegmentBonesOnInsert(bones, insertIndex)`（段一分为二，两半都从来源段深克隆；其后整体后移）、`remapSegmentBonesOnDelete(bones, deleteIndex, {spans, survivorIndex})`（两段合并取 survivor；其后整体前移）、`cloneSegmentBone`（深克隆 `tip`/曲线；`name`/`parentParam` 置 null 交由 normalize 按新段边界重新派生）、`resolveMergeSurvivor`（显式 survivorIndex > 更宽 span > 左段）；新增 `strandSplitDirectionForSegment`（与 `createSplitStrandGeometry` 的 per-section direction 同规则）。
+> - **modules/bones/segment-control.js**：新增 `fitSegmentBones`/`segmentSpans`/`hasOrder`/`dropDanglingPanelSplitSelection`/`dropDanglingStrandSplitSelection`；四条增删路径（panel ±/Del、strand ±/Del）统一改为「按段身份重映射骨骼 → 改 splits → materialize 双写 → 清理悬空选择」；`changePanelSplitCount` 的 `+` 改为**优先细分当前选中段**（`selectedPanelSegment`），窄段回退最大间隙。
+> - **app.js**：`currentStrandSplitTipChains` 的回退路径改用 `strandSplitForkTForSegment`/`strandSplitDirectionForSegment`（原为单一 `1-strandSplitHeight` + 2 管 `tubeIndex===0?-1:1`，N>1 时叉口与方向都错，且刚加完 zipper 时正好会走到该回退）；bone-model import 补两个 per-segment helper。
+> - **scripts/verify-skeleton-layout.mjs**：暴露数断言从写死（「Front Bangs 1 seg0 exposes 2」）改为**按公式从存档现场推导** + 「暴露数随叉口深度单调」交叉校验（用户用新 +/- 编辑存档后段高度改变会误报）。
+> - **Bug2 零管线改动**：`materializeTipChain`（tip-sub-bone.js L37-58）本就把 `points[i]-restPoints[i]` delta 重应用到新 rest chain，故 remap 深克隆 `tip` 即让新段继承来源段姿态；删除时保留更宽段 → 合并后的大发尖姿态接近现状。
+> - 回归：Node 全量 271/271（新增 4 测试，含插入错位回归 `[0,1,1,2]` vs 旧 `[0,1,2,null]`）+ 真实 Sussurro_v1_0060.ahs 98/98；缓存号 20260824-1 + APP_VERSION 0.2.117 冻结同步。
+
+## 最近更新（0.2.116）
+
+> 普通发丝多拉链移植（panel zipper → strand，分支 DHS/develop，6 阶段并行子智能体 + 主进程 merge/验证；计划 in-progress/strand-zipper-port-plan.md）——普通发丝从单拉链升级为多拉链 `lock.strandSplits=[{position,height,order}]`（N 拉链→N+1 管）：
+> - **app.js（Phase A/E）**：新增 `normalizeStrandSplits`/`cloneStrandSplits`/`syncStrandSplitLegacyFields`（`strandSplits[0]` 镜像 legacy 标量，`STRAND_SPLIT_MAX=8`）；load/save/snapshot/mirror 全程 round-trip；legacy `strandSplit*` 标量加载迁移；`syncStrandSplitControls` + `#addStrandSplit`/`#removeStrandSplit` 按钮接线；Del 处理器 `deleteSelectedStrandSplit`；`selectLock`/`deselectStrands` 清 `strandSplitSelection`；mirror rebuild 触发新增 strand 手柄数校验。
+> - **modules/geometry/strand-geometry.js（Phase B）**：`clipStrandProfileBand`（半平面裁剪串联，±Infinity 跳过）；`createSplitStrandGeometry` sections 数组驱动 N+1 段、per-section direction/`sectionSplitStart`、`colToSection` N 段化。N=1 逐字节等价。
+> - **modules/io/uv-unfold.js（Phase C）**：零改动（split 分支本就按 `splitSections.length` 泛化）；tests/uv-unfold.test.mjs 补 3 管回归。
+> - **modules/bones/bone-model.js + modules/io/usda-export.js + project-files.js（Phase D）**：`strandSplitBonesFor`/`FromData` 2→N+1 + `strandSplitsFor`/`strandSplitForkTForSegment`；USDA `splitBoneLayout`/`splitChainLayout` 发丝分支 per-tube fork/direction（与几何逐值对齐）。
+> - **modules/bones/segment-control.js + bone-view-handles.js + bone-interaction.js（Phase E）**：`changeStrandSplitCount`（最大 order 删、min-sep 0.12、≥1 拉链）/`deleteSelectedStrandSplit`；单手柄→数组 + 选中高亮；拖拽写 `strandSplits[i]` + 点击选中。
+> - **modules/geometry/branch-bridge.js（Phase F）**：split 父发片 `splitSections.length>2` 时 `branchRootRegionSurface` 返回 null / `applyBranchRootRegionCarving` 跳过（子发片回退直接生成）。
+> - **modules/edit/sculpt-edit-store.js**：新增 `strandSplitSelection`。**modules/data/loc-zh.js / loc-ja.js**：新增 4 词条（Zipper Controls / Add·Remove a strand zipper control / 说明）。
+> - 回归：Node 全量 267/267（缓存号 20260823-1 + APP_VERSION 0.2.116 冻结同步）+ 真实 Sussurro_v1_0060.ahs 骨骼导出 verify-skeleton-layout 82/82；N=1 全程逐字节/逐值等价。
+
+## 最近更新（0.2.115）
+
+> Panel zipper 创建序号 + 可选中 Del 删除（分支 DHS/develop，1 子智能体编码 + 主进程 merge/验证）：
+> - **app.js**：`normalizePanelSplits`（~L1525）为每个 `panelSplits` 条目补 `order` 整数（保留既有值；旧存档缺失用数组索引回退；重复按 (order,原索引) 重排）；`panelCreationDefaults.panelSplits` 两默认条目加 `order:0/1`；Delete 键处理（~L18568）在 `deleteCurrentSelection()` 前先 `if (segmentApi.deleteSelectedPanelSplit()) return;`；`selectLock`（换 lock）/`deselectStrands` 清 `panelSplitSelection`。数组仍按 position 排序供几何消费。
+> - **modules/edit/sculpt-edit-store.js**：sculptState 新增 `panelSplitSelection: null`。
+> - **modules/bones/segment-control.js**：`changePanelSplitCount` 的 `+` 分配 `order=max+1`、`-` 改删 order 最大者（最近创建）而非 `splits.pop()`（原删最右 position）；新增 `deleteSelectedPanelSplit()`（按选中 order splice + 沿用同一重建路径，返回 true/false）暴露到 api。
+> - **modules/bones/bone-interaction.js**：`beginPanelSplitHandleDrag` 中 kind==="panel" 且命中普通 zipper 手柄时写 `panelSplitSelection={lockId,order}`（点击即选中；拖拽不删除）。
+> - **modules/bones/bone-view-handles.js**：选中的 zipper 手柄（按 order 匹配）放大 1.3× + opacity 1，其余复位 0.68/1。
+> - 回归：Node 全量 261/261（dom-contract 缓存号 20260822-1 + APP_VERSION 0.2.115 冻结断言同步）。普通发丝多 zipper 移植计划见 in-progress/strand-zipper-port-plan.md。
+
 ## 最近更新（2026-08-17）
 
 > 桥接 USDA family 融合、split capture 与 Wind Preview 间距收尾：

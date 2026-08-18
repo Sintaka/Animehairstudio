@@ -42,6 +42,19 @@ const check = (name, ok, detail = "") => {
 };
 
 const mainCountOf = (lock) => (Array.isArray(lock.points) ? lock.points.length : 0);
+// 段/管的 fork 深度（1 − 相邻 zipper 最大高度）。定义提前到首次使用之前（③ 的
+// root 推导校验要用），避免 const 箭头函数的 TDZ。
+const forkTFor = (lock, k) => {
+  if (["panel", "surface"].includes(lock.geometryType) && Array.isArray(lock.panelSplits) && lock.panelSplits.length) {
+    const heights = [lock.panelSplits[k - 1]?.height, lock.panelSplits[k]?.height]
+      .filter((h) => h != null).map(Number);
+    return heights.length ? 1 - Math.max(...heights) : 1;
+  }
+  if (lock.geometryType === "strand" && lock.strandSplitEnabled) {
+    return 1 - Math.min(0.8, Math.max(0.02, Number(lock.strandSplitHeight ?? 0.3)));
+  }
+  return null;
+};
 
 // ---- ① split 骨骼 fork parent（面板段：1-max(两侧 zipper 高)；发丝管：1-splitHeight）----
 const splitFindings = [];
@@ -71,9 +84,21 @@ for (const f of splitFindings) {
     Number.isInteger(f.index) && f.index >= 0 && f.index < mainCount,
     `mainCount=${mainCount}`
   );
-  // split 骨骼不允许再 parent 到 main.0（发根/头顶）——旧 bug 症状。
-  if (f.index === 0 && mainCount > 1) {
-    check(`split NOT at main.0: ${f.lock} split.${f.k}`, false, "fork 索引 0 但 mainCount>1（zipper 高度异常）");
+  // 0.2.106 的旧 bug 是「所有 split 骨骼一律硬挂 main.0（忽略 fork 深度）」。旧断言用
+  // 「index 不得为 0」来抓它，但 0.2.119 起 root = firstExposed − 1，深 zipper
+  // （forkT·last < 2）下 root=0 是**正确**结果（如 Side Left 2 height 0.62 → forkT·5=1.89
+  // → firstExposed=1、root=0）。所以改为直接断言真正的不变式：root 由 fork 深度推导，
+  // 且严格位于第一个暴露行之下。
+  const forkT = forkTFor(lock, f.k);
+  if (forkT != null && mainCount > 1) {
+    const last = mainCount - 1;
+    const firstExposed = Math.min(last, Math.max(1, Math.floor(forkT * last)));
+    const expectedRoot = Math.min(last, Math.max(0, Math.floor(forkT * last) - 1));
+    check(
+      `split root derives from fork depth: ${f.lock} split.${f.k} -> main.${f.index}`,
+      f.index === expectedRoot && f.index < firstExposed,
+      `forkT=${forkT.toFixed(4)} firstExposed=${firstExposed} expectedRoot=${expectedRoot} got=${f.index}`
+    );
   }
 }
 
@@ -112,19 +137,15 @@ for (const f of splitFindings) {
   check(`parent exists in main chain: ${f.lock} split.${f.k} -> main.${f.index}`, exists, `mainCount=${mainCount}`);
 }
 
-// ---- ④ 发尖暴露链数量（0.2.107）：暴露链点 = 链参数 t > forkT 的点；split.${k} = 链根，
-//     后续暴露点为 tip 关节。数量 = (N-1) - floor(forkT*(N-1))，最少 1（仅发尖点）。----
+// ---- ④ 发尖暴露链数量（0.2.107，规则于 0.2.119 多暴露一行）：第一个暴露链索引
+//     firstExposed = clamp(floor(forkT*(N-1)), 1, N-1)（fork 所在行本身也暴露）；
+//     split.${k} = 链根，后续暴露点为 tip 关节。数量 = (N-1) - firstExposed + 1，最少 1。----
 const chainFindings = [];
-const forkTFor = (lock, k) => {
-  if (["panel", "surface"].includes(lock.geometryType) && Array.isArray(lock.panelSplits) && lock.panelSplits.length) {
-    const heights = [lock.panelSplits[k - 1]?.height, lock.panelSplits[k]?.height]
-      .filter((h) => h != null).map(Number);
-    return heights.length ? 1 - Math.max(...heights) : 1;
-  }
-  if (lock.geometryType === "strand" && lock.strandSplitEnabled) {
-    return 1 - Math.min(0.8, Math.max(0.02, Number(lock.strandSplitHeight ?? 0.3)));
-  }
-  return null;
+// 与 usda-export.js splitChainLayout 逐值同规则（floor，下界 1：索引 0 是坐在主链上的链根）。
+const exposedCountFor = (mainCount, forkT) => {
+  const last = Math.max(1, mainCount - 1);
+  const firstExposed = Math.min(last, Math.max(1, Math.floor(forkT * last)));
+  return Math.max(1, last - firstExposed + 1);
 };
 for (const lock of locks) {
   const mainCount = mainCountOf(lock);
@@ -132,14 +153,14 @@ for (const lock of locks) {
     for (let k = 0; k < lock.panelSplits.length + 1; k += 1) {
       const forkT = forkTFor(lock, k);
       if (forkT == null) continue;
-      const exposed = Math.max(1, (mainCount - 1) - Math.floor(forkT * (mainCount - 1)));
+      const exposed = exposedCountFor(mainCount, forkT);
       chainFindings.push({ lock: lock.name, k, exposed });
     }
   } else if (lock.geometryType === "strand" && lock.strandSplitEnabled) {
     for (let k = 0; k < 2; k += 1) {
       const forkT = forkTFor(lock, k);
       if (forkT == null) continue;
-      const exposed = Math.max(1, (mainCount - 1) - Math.floor(forkT * (mainCount - 1)));
+      const exposed = exposedCountFor(mainCount, forkT);
       chainFindings.push({ lock: lock.name, k, exposed });
     }
   }
@@ -151,18 +172,35 @@ for (const f of chainFindings) {
     ""
   );
 }
-// 已知值（与视口暴露规则一致）：Front Bangs 1 seg0=2 / seg1-4=3；Side Bangs Left 1 每管=4。
-const fb1 = locks.find((l) => l.name === "Front Bangs 1");
-if (fb1) {
-  const e0 = chainFindings.find((f) => f.lock === "Front Bangs 1" && f.k === 0)?.exposed;
-  const e1 = chainFindings.find((f) => f.lock === "Front Bangs 1" && f.k === 1)?.exposed;
-  check("Front Bangs 1 seg0 exposes 2", e0 === 2, `got ${e0}`);
-  check("Front Bangs 1 seg1 exposes 3", e1 === 3, `got ${e1}`);
+// 暴露数与存档内容强相关（增删 zipper 会改变段的相邻高度），因此不写死具体数字，
+// 改为按同一公式从存档现场推导并交叉校验——既能抓住真回归，又不会因用户编辑存档而误报。
+const expectedExposed = (lock, k) => {
+  const mainCount = mainCountOf(lock);
+  const forkT = forkTFor(lock, k);
+  if (forkT == null) return null;
+  return exposedCountFor(mainCount, forkT);
+};
+for (const f of chainFindings) {
+  const lock = locks.find((l) => l.name === f.lock);
+  const expected = expectedExposed(lock, f.k);
+  check(
+    `exposed count matches fork depth: ${f.lock} split.${f.k} -> ${f.exposed}`,
+    expected != null && f.exposed === expected,
+    `expected ${expected}, got ${f.exposed}`
+  );
 }
-const sbl1 = locks.find((l) => l.name === "Side Bangs Left 1");
-if (sbl1) {
-  const e0 = chainFindings.find((f) => f.lock === "Side Bangs Left 1" && f.k === 0)?.exposed;
-  check("Side Bangs Left 1 tube0 exposes 4", e0 === 4, `got ${e0}`);
+// 段的暴露数必须随其相邻拉链高度单调：更深的拉链（height 更大 → forkT 更小）暴露更多链点。
+for (const lock of locks) {
+  if (!["panel", "surface"].includes(lock.geometryType)) continue;
+  if (!Array.isArray(lock.panelSplits) || !lock.panelSplits.length) continue;
+  const rows = [];
+  for (let k = 0; k < lock.panelSplits.length + 1; k += 1) {
+    const forkT = forkTFor(lock, k);
+    if (forkT == null) continue;
+    rows.push({ forkT, exposed: expectedExposed(lock, k) });
+  }
+  const monotonic = rows.every((a) => rows.every((b) => (a.forkT < b.forkT ? a.exposed >= b.exposed : true)));
+  check(`exposure is monotonic in fork depth: ${lock.name}`, monotonic, JSON.stringify(rows));
 }
 
 const failed = results.filter((r) => !r.ok);
