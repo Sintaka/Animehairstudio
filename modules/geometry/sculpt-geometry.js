@@ -8,6 +8,7 @@ import {
   pointInCameraFacingHalfSpace,
   proportionalSculptWeights,
   sculptBrushWeight,
+  sculptTwistBrushDeltas,
   smoothSculptPointDeltas,
   smoothSculptTwistDeltas
 } from "../sculpt/sculpt-brush.js?v=20260814-12";
@@ -477,7 +478,7 @@ function captureSculptMoveStrokeInfluence(
 }
 
 function beginSculptMoveStroke(event) {
-  const reverseTool = ["sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient"].includes(deps.sel.activeTool);
+  const reverseTool = ["sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient", "sculpt-twist"].includes(deps.sel.activeTool);
   if (
     !deps.sculptBrushToolActive()
     || deps.sculptState.brushSizeHotkeyHeld
@@ -505,7 +506,11 @@ function beginSculptMoveStroke(event) {
     planeNormal,
     planeOffset,
     units,
-    moveInfluence: deps.sel.activeTool === "sculpt-move"
+    // Twist snapshots the influence for the same reason move does, but for a different
+    // goal: its affected point set must stay FIXED for the whole stroke (see the
+    // fixedMoveBrushInfluence comment). The capture is tool-agnostic — plain cursor
+    // weights at the stroke-start position — so reusing it here is safe.
+    moveInfluence: ["sculpt-move", "sculpt-twist"].includes(deps.sel.activeTool)
       ? captureSculptMoveStrokeInfluence(
           units,
           event.clientX,
@@ -562,8 +567,13 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
   const scaleBrushActive = deps.effectiveSculptBrushTool() === "sculpt-scale";
   const pushBrushActive = deps.effectiveSculptBrushTool() === "sculpt-push";
   const orientBrushActive = deps.effectiveSculptBrushTool() === "sculpt-orient";
+  const twistBrushActive = deps.effectiveSculptBrushTool() === "sculpt-twist";
   const reverse = Boolean(stroke.reverse);
   const preserveTips = Boolean(deps.sculptBrushPreserveTipsByTool[deps.sel.activeTool]);
+  // Twist joins move in reading the stroke-START influence snapshot: once the button goes
+  // down its affected point set must stay FIXED for the whole stroke (user requirement), so
+  // rolling continues on exactly the points picked at mousedown even as the cursor moves
+  // away. Orient is the contrast case — it keeps tracking the cursor per sample.
   const fixedMoveBrushInfluence = !smoothBrushActive && !inflateBrushActive && !slideBrushActive && !scaleBrushActive && !pushBrushActive && !orientBrushActive;
   const strokeDistance = Math.hypot(deltaX, deltaY);
   const changedSources = [];
@@ -644,6 +654,9 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
         }
         continue;
       }
+      // Twist is applied after this loop: H-mode propagation needs the whole weight array
+      // (downstream points have not been visited yet at this iteration).
+      if (twistBrushActive) continue;
             if (smoothBrushActive) continue;
       if (preserveTips && !inflateBrushActive && pointIndex === source.points.length - 1) continue;
       if (scaleBrushActive) continue;
@@ -674,6 +687,32 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
       }
       sourceChanged = true;
 
+    }
+    if (twistBrushActive && pointWeights.some((pointWeightValue) => pointWeightValue > 0)) {
+      // Manual axial roll: drag-driven, NO camera term. Positions are never written — only
+      // the pointTwists scalars, exactly like the orient brush's write target.
+      if (!stroke.undoCaptured) { deps.pushUndoState(); stroke.undoCaptured = true; }
+      if (!source.pointTwists) source.pointTwists = source.points.map(() => 0);
+      const range = deps.curveSurfaceControllerPointRange
+        ? deps.curveSurfaceControllerPointRange(source)
+        : { start: 0, end: source.points.length };
+      const deltas = sculptTwistBrushDeltas(source.points.length, pointWeights, {
+        deltaX,
+        strength,
+        reverse,
+        // H mode carries the roll to the downstream sub-chain WITHOUT moving it: the same
+        // scalar delta accumulates into every later point in range, so no position or axis
+        // is re-chained (that is what applyHierarchicalRotate does, and why it is not used).
+        hierarchy: Boolean(deps.sculptState.hierarchyEditing),
+        rangeStart: range.start,
+        rangeEnd: range.end,
+        firstIndex: 1
+      });
+      deltas.forEach((delta, pointIndex) => {
+        if (!delta) return;
+        source.pointTwists[pointIndex] = (Number(source.pointTwists[pointIndex]) || 0) + delta;
+        sourceChanged = true;
+      });
     }
     if (scaleBrushActive) {
       const unitAffected = pointWeights.some((pointWeightValue) => pointWeightValue > 0);

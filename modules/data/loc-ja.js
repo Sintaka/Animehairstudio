@@ -189,6 +189,8 @@ export default Object.freeze({
   "Scale Brush": "スケールブラシ",
   "Push Brush": "プッシュブラシ",
   "Orient Brush": "オリエントブラシ",
+  "Twist Brush": "ツイストブラシ",
+  "Twist strands around their tangent axis by dragging horizontally": "左右のドラッグでストランドを接線軸まわりにねじります",
   "Scale Mode": "スケールモード",
   "Cut/Extend": "カット/延長",
   "Brush Settings": "\u30d6\u30e9\u30b7\u8a2d\u5b9a",

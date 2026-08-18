@@ -390,11 +390,13 @@ test("strandSplitBonesFromData round-trips a 3-length (N=2) array", () => {
   assert.equal(strandSplitBonesFromData(null, lock), null, "null -> null");
 });
 
-// ---- 发尖宽度控制点：无「活但抓不到」的点 + Reset 平直（不同高度 zipper）----
-// 两侧 zipper 高度不同时，控制点位置必须按各侧自己的 fork 分布（tipWidthSideControlTs）。
-// 旧实现按公共 fork（最深 zipper）分布：浅 zipper 侧前几个位置落在
-// [commonFork, sideFork) 里 —— 视口里没有把手（tipWidthControlPlacement 返回 null）
-// 但仍留在曲线数据中参与采样，用户抓不到却把宽度拽出凹陷。
+// ---- 发尖宽度控制点：共享参数网格 + 按 zipper 高度动态暴露 + 无「活但抓不到」的点 ----
+// 设计（0.2.123）：两侧共用**同一批**控制参数（共享网格 = 最深 zipper 的 fork 等分），
+// 所以左右间距永远一致；每侧只**动态暴露**落在自己暴露区（t >= 本侧 fork）的那部分
+// → 数量非对称（深 zipper 侧多、浅 zipper 侧少），而不是两侧各自等分不同长度的区间
+// （0.2.118 的错误设计：两侧都是 6 个点，间距不同）。
+// 同时必须保住 0.2.118 修掉的那类 bug：某参数出现在本侧曲线数据里（参与本侧采样）
+// 当且仅当本侧为它提供可抓把手（tipWidthControlPlacement 非 null）。
 function tipWidthHarness() {
   const panel = createPanelTipStrandApi({
     clonePanelSplits: (value) => (Array.isArray(value) ? value.map((split) => ({ ...split })) : []),
@@ -438,7 +440,7 @@ function tipWidthHarness() {
   return { panel, splits, lock, segment: 1 };
 }
 
-test("tip width control positions are per-side: every live curve point is reachable", () => {
+test("tip width控制参数两侧共享（同间距），暴露数量按 zipper 高度动态非对称", () => {
   const { panel, splits, lock, segment } = tipWidthHarness();
   const leftFork = panel.tipWidthSideForkT(lock, segment, splits, -1);
   const rightFork = panel.tipWidthSideForkT(lock, segment, splits, 1);
@@ -448,55 +450,135 @@ test("tip width control positions are per-side: every live curve point is reacha
   assert.ok(Math.abs(commonFork - leftFork) < 1e-9, "公共 fork = 最深 zipper = 左侧 fork");
   assert.ok(rightFork > commonFork + 1e-6, "右侧是浅 zipper 侧：本侧 fork 严格深于公共 fork");
 
-  // 每侧位置数 = 视口手柄数（bone-view-handles.js: TIP_WIDTH_CONTROL_POINTS + 1），
-  // 且每个位置都 >= 本侧自己的 fork（都在本侧暴露区内 → 都能抓到）。
-  for (const [side, fork] of [[-1, leftFork], [1, rightFork]]) {
-    const positions = panel.tipWidthSideControlTs(lock, segment, splits, side);
-    assert.equal(positions.length, TIP_WIDTH_CONTROL_POINTS + 1, `side ${side} 位置数应为手柄数`);
-    positions.forEach((position, index) => {
+  // ① 共享网格：唯一一套参数，基于最深 zipper 等分（间距 = (1-commonFork)/N）。
+  const grid = panel.tipWidthGridTs(lock, segment, splits);
+  assert.equal(grid.length, TIP_WIDTH_CONTROL_POINTS + 1, "共享网格 = N 中点 + 发尖端");
+  assert.ok(Math.abs(grid.at(-1) - 1) < 1e-9, "共享网格最后一个位置是发尖端 t=1");
+  const leftPositions = panel.tipWidthSideControlTs(lock, segment, splits, -1);
+  const rightPositions = panel.tipWidthSideControlTs(lock, segment, splits, 1);
+  for (const [side, positions] of [[-1, leftPositions], [1, rightPositions]]) {
+    positions.forEach((position) => {
       assert.ok(
-        position >= fork - 1e-9,
-        `side ${side} 位置 ${index}（${position}）应 >= 本侧 fork ${fork}（旧实现按公共 fork 分布会低于本侧 fork → 抓不到）`
+        grid.some((candidate) => Math.abs(candidate - position) < 1e-12),
+        `side ${side} 暴露位置 ${position} 必须取自共享网格（不得是本侧独立等分）`
       );
     });
-    assert.ok(Math.abs(positions.at(-1) - 1) < 1e-9, `side ${side} 最后一个位置应为发尖端 t=1`);
-    // 视口放置：全部 6 个位置都必须真的返回放置（无 null = 无隐藏点）。
-    const bone = { spread: 0, taperCurve: null, taperCurveSecondary: null, asymmetricWidthCurve: false };
-    for (let index = 0; index < positions.length; index += 1) {
+  }
+  // 两侧共有的位置数值完全一致 = 间距一致（0.2.118 各自等分不同长度 → 间距不同）。
+  const shared = leftPositions.filter((position) => rightPositions
+    .some((candidate) => Math.abs(candidate - position) < 1e-12));
+  assert.deepEqual(shared, rightPositions, "浅 zipper 侧暴露的位置是深侧位置的子集（同参数同间距）");
+  const spacings = grid.slice(1, TIP_WIDTH_CONTROL_POINTS).map((position, index) => position - grid[index]);
+  spacings.forEach((spacing) => {
+    assert.ok(Math.abs(spacing - spacings[0]) < 1e-12, "共享网格中点间距均匀");
+  });
+
+  // ② 动态非对称数量：深 zipper 侧暴露更多。左 fork 0.5 → 6 个；右 fork 0.8 → 3 个。
+  assert.ok(
+    leftPositions.length > rightPositions.length,
+    `深 zipper 侧应暴露更多控制点（左 ${leftPositions.length} vs 右 ${rightPositions.length}）`
+  );
+  assert.equal(leftPositions.length, TIP_WIDTH_CONTROL_POINTS + 1, "左（深）侧暴露整套共享网格");
+  assert.equal(
+    rightPositions.length,
+    grid.filter((position) => position >= rightFork - 1e-4).length,
+    "右（浅）侧暴露数 = 共享网格中 >= 本侧 fork 的位置数"
+  );
+  assert.equal(rightPositions.length, 3, "实测：右 fork 0.8 时共享网格只有 0.85/0.95/1 落在暴露区");
+
+  // ③ 视口放置：pointIndex 索引**共享网格**（bone-view-handles.js 固定手柄数组）。
+  // 暴露的位置必须有放置且参数与网格一致；未暴露的位置必须返回 null（手柄隐藏）。
+  const bone = { spread: 0, taperCurve: null, taperCurveSecondary: null, asymmetricWidthCurve: false };
+  for (const [side, positions] of [[-1, leftPositions], [1, rightPositions]]) {
+    let visible = 0;
+    grid.forEach((gridT, index) => {
       const placement = panel.tipWidthControlPlacement(lock, segment, splits, bone, side, index);
-      assert.ok(placement, `side ${side} 控制点 ${index} 应有视口放置（不得隐藏）`);
-      assert.ok(
-        Math.abs(placement.t - positions[index]) < 1e-9,
-        `side ${side} 控制点 ${index} 的放置参数应与位置一致`
-      );
-      assert.ok(Number.isFinite(placement.point.x), `side ${side} 控制点 ${index} 位置应有限`);
-    }
+      const exposed = positions.some((position) => Math.abs(position - gridT) < 1e-12);
+      if (exposed) {
+        assert.ok(placement, `side ${side} 网格位置 ${gridT} 已暴露 → 必须有把手`);
+        assert.ok(
+          Math.abs(placement.t - gridT) < 1e-9,
+          `side ${side} 手柄 ${index} 的参数必须正是共享网格位置 ${gridT}（索引不得错位）`
+        );
+        assert.ok(Number.isFinite(placement.point.x), `side ${side} 控制点 ${index} 位置应有限`);
+        visible += 1;
+      } else {
+        assert.equal(placement, null, `side ${side} 网格位置 ${gridT} 未暴露 → 必须隐藏（null）`);
+      }
+    });
+    assert.equal(visible, positions.length, `side ${side} 可见把手数 = 本侧暴露位置数`);
+    // 越界索引安全（手柄数组长度恒为 N+1）。
+    assert.equal(panel.tipWidthControlPlacement(lock, segment, splits, bone, side, grid.length), null);
+    assert.equal(panel.tipWidthControlPlacement(lock, segment, splits, bone, side, -1), null);
   }
 
-  // 曲线数据不变式：本侧 fork 之上（严格）的每个点都必须是本侧的一个控制位置。
-  // 本侧 fork 锚点本身是派生的连续性锚（恒 = 全局曲线在 fork 处的采样，用于与
-  // zipper 以上的锁定区接续），不是创作点；对侧 fork 锚点只在它落在本侧 fork 之下
-  // （不参与本侧采样）时才记录。旧实现无条件写对侧 fork：左侧曲线里的 0.8 严格高于
-  // 左侧 fork 0.5 却没有把手 —— 正是抓不到的活点。
-  const bone = { spread: 0, taperCurve: null, taperCurveSecondary: null, asymmetricWidthCurve: false };
+  // ④ 0.2.118 不变式（共享网格不得让它失效）：本侧 fork 之上（严格）的每个曲线点都
+  // 必须是本侧暴露的位置 **且** tipWidthControlPlacement 返回非 null；本侧 fork 之下
+  // 不得出现任何共享网格位置（那段采样回退全局曲线，写进去就是抓不到的活点）。
+  // 本侧 fork 锚点本身是派生的连续性锚（恒 = 全局曲线在 fork 处的采样，用于与 zipper
+  // 以上的锁定区接续），不是创作点；对侧 fork 锚点只在它落在本侧 fork 之下（不参与
+  // 本侧采样）时才记录 —— 两者都不是网格位置，故与上面的判据不冲突。
   for (const side of [-1, 1]) {
     const fork = panel.tipWidthSideForkT(lock, segment, splits, side);
     const positions = panel.tipWidthSideControlTs(lock, segment, splits, side);
     const curve = panel.buildTipWidthCurve(lock, segment, splits, bone, side);
+    const placementTs = grid
+      .map((_, index) => panel.tipWidthControlPlacement(lock, segment, splits, bone, side, index))
+      .filter(Boolean)
+      .map((placement) => placement.t);
     curve.forEach((point) => {
-      if (point.position <= fork + 1e-4) return; // 锁定区记录点 / 本侧 fork 锚点
+      if (point.position <= fork + 1e-4) {
+        // 锁定区记录点 / 本侧 fork 锚点：不得是共享网格位置。
+        assert.ok(
+          !grid.some((gridT) => Math.abs(gridT - point.position) < 1e-3),
+          `side ${side} 本侧 fork ${fork} 之下的曲线点 ${point.position} 不得是共享网格控制位置（活但抓不到）`
+        );
+        return;
+      }
       assert.ok(
         positions.some((position) => Math.abs(position - point.position) < 1e-3),
-        `side ${side} 曲线点 ${point.position} 高于本侧 fork ${fork} 却不是控制位置（活但抓不到）`
+        `side ${side} 曲线点 ${point.position} 高于本侧 fork ${fork} 却不是本侧暴露位置（活但抓不到）`
+      );
+      assert.ok(
+        placementTs.some((t) => Math.abs(t - point.position) < 1e-3),
+        `side ${side} 曲线点 ${point.position} 必须有视口把手（placement 非 null）`
       );
     });
-    // 反向：每个控制位置都在曲线里（可抓的点确实影响采样）。
+    // 反向：每个暴露位置都在曲线里（可抓的点确实影响采样）。
     positions.forEach((position) => {
       assert.ok(
         curve.some((point) => Math.abs(point.position - position) < 1e-3),
-        `side ${side} 控制位置 ${position} 应存在于曲线数据中`
+        `side ${side} 暴露位置 ${position} 应存在于曲线数据中`
       );
     });
+  }
+});
+
+// 对称高度是常见情形：两侧必须暴露同一套完整共享网格（共享网格改动不得扰动它）。
+test("symmetric zipper heights expose the same full shared grid on both sides", () => {
+  const { panel, lock } = tipWidthHarness();
+  const bone = { spread: 0, taperCurve: null, taperCurveSecondary: null, asymmetricWidthCurve: false };
+  for (const height of [0.4375, 0.2, 0.5, 0.78]) {
+    const splits = [
+      { position: -0.4, height, order: 0 },
+      { position: 0.4, height, order: 1 }
+    ];
+    const segment = 1;
+    const grid = panel.tipWidthGridTs(lock, segment, splits);
+    const left = panel.tipWidthSideControlTs(lock, segment, splits, -1);
+    const right = panel.tipWidthSideControlTs(lock, segment, splits, 1);
+    assert.equal(left.length, TIP_WIDTH_CONTROL_POINTS + 1, `height ${height}: 左侧暴露整套网格`);
+    assert.equal(right.length, TIP_WIDTH_CONTROL_POINTS + 1, `height ${height}: 右侧暴露整套网格`);
+    assert.deepEqual(left, grid, `height ${height}: 左侧 = 共享网格`);
+    assert.deepEqual(right, grid, `height ${height}: 右侧 = 共享网格`);
+    for (const side of [-1, 1]) {
+      grid.forEach((_, index) => {
+        assert.ok(
+          panel.tipWidthControlPlacement(lock, segment, splits, bone, side, index),
+          `height ${height} side ${side} 手柄 ${index} 应可抓（对称情形全部暴露）`
+        );
+      });
+    }
   }
 });
 
@@ -517,7 +599,7 @@ test("tip width Reset is flat (no dent) for very different zipper heights", () =
       taperCurveSecondary: panel.tipWidthResetCurve(lock, segment, splits, -1),
       asymmetricWidthCurve: true
     };
-    // Reset 曲线本身整段全 1（含两侧 fork 锚点与所有控制位置）。
+    // Reset 曲线本身整段全 1（含本侧 fork 锚点、允许的记录点与所有暴露的共享网格位置）。
     for (const curve of [bone.taperCurve, bone.taperCurveSecondary]) {
       curve.forEach((point) => {
         assert.ok(Math.abs(point.value - 1) < 1e-9, `Reset 曲线点 ${point.position} 应为 1`);
@@ -540,7 +622,7 @@ test("tip width Reset is flat (no dent) for very different zipper heights", () =
   }
 });
 
-test("symmetric tip width writes snap onto each side's own control grid", () => {
+test("symmetric tip width writes land on the shared grid, and skip a side that hides it", () => {
   const { panel, splits, lock, segment } = tipWidthHarness();
   const bone = {
     spread: 0,
@@ -550,20 +632,33 @@ test("symmetric tip width writes snap onto each side's own control grid", () => 
   };
   const rightPositions = panel.tipWidthSideControlTs(lock, segment, splits, 1);
   const leftPositions = panel.tipWidthSideControlTs(lock, segment, splits, -1);
-  // 对称拖拽：bone-interaction.js 用同一个 t 写两侧。右侧第 0 个控制位置在左侧不是
-  // 控制位置，必须吸附到左侧最近的可抓位置，否则写入会在重建时丢失。
+  // 对称拖拽：bone-interaction.js 用同一个 t 写两侧。参数共享后，浅侧暴露的位置在深侧
+  // 一定也存在 → 同一个 t 直接落在两侧的同一个共享位置上（不再被吸到不同参数上）。
   const draggedT = rightPositions[0];
   panel.setTipWidthCurveValue(lock, segment, splits, bone, 1, draggedT, 1.5);
   panel.setTipWidthCurveValue(lock, segment, splits, bone, -1, draggedT, 1.5);
   const rightEdited = bone.taperCurve.find((point) => Math.abs(point.position - draggedT) < 1e-3);
   assert.ok(rightEdited && Math.abs(rightEdited.value - 1.5) < 1e-9, "被拖侧应在该位置写入 1.5");
-  const nearestLeft = leftPositions.reduce(
-    (best, position) => (Math.abs(position - draggedT) < Math.abs(best - draggedT) ? position : best),
-    leftPositions[0]
+  const leftEdited = bone.taperCurveSecondary.find((point) => Math.abs(point.position - draggedT) < 1e-3);
+  assert.ok(leftEdited && Math.abs(leftEdited.value - 1.5) < 1e-9, "对侧在同一个共享位置写入同值（间距一致）");
+
+  // 反向：拖深侧一个浅侧**没有暴露**的位置（0.65 < 右 fork 0.8）→ 浅侧必须跳过写入，
+  // 不得吸到 0.85（那会在用户没碰的地方改宽度），也不得写出无把手的活点。
+  const hiddenForRight = leftPositions.find((position) => !rightPositions
+    .some((candidate) => Math.abs(candidate - position) < 1e-12));
+  assert.ok(hiddenForRight != null, "非对称高度下深侧必有浅侧未暴露的位置");
+  const rightBefore = bone.taperCurve.map((point) => ({ ...point }));
+  panel.setTipWidthCurveValue(lock, segment, splits, bone, -1, hiddenForRight, 1.8);
+  panel.setTipWidthCurveValue(lock, segment, splits, bone, 1, hiddenForRight, 1.8);
+  const leftHidden = bone.taperCurveSecondary.find((point) => Math.abs(point.position - hiddenForRight) < 1e-3);
+  assert.ok(leftHidden && Math.abs(leftHidden.value - 1.8) < 1e-9, "深侧应在该位置写入 1.8");
+  assert.deepEqual(
+    bone.taperCurve.map((point) => ({ position: point.position, value: point.value })),
+    rightBefore.map((point) => ({ position: point.position, value: point.value })),
+    "浅侧曲线不得因对称写入而改变（该参数在浅侧未暴露）"
   );
-  const leftEdited = bone.taperCurveSecondary.find((point) => Math.abs(point.position - nearestLeft) < 1e-3);
-  assert.ok(leftEdited && Math.abs(leftEdited.value - 1.5) < 1e-9, "对侧应吸附到最近可抓位置并保留写入值");
-  // 重建后不变式仍成立：两侧曲线里高于本侧 fork 的点全是控制位置。
+  // 重建后不变式仍成立：两侧曲线里高于本侧 fork 的点全是本侧暴露位置且都有把手。
+  const grid = panel.tipWidthGridTs(lock, segment, splits);
   for (const side of [-1, 1]) {
     const fork = panel.tipWidthSideForkT(lock, segment, splits, side);
     const positions = panel.tipWidthSideControlTs(lock, segment, splits, side);
@@ -572,7 +667,13 @@ test("symmetric tip width writes snap onto each side's own control grid", () => 
       if (point.position <= fork + 1e-4) return;
       assert.ok(
         positions.some((position) => Math.abs(position - point.position) < 1e-3),
-        `编辑后 side ${side} 曲线点 ${point.position} 应仍是控制位置`
+        `编辑后 side ${side} 曲线点 ${point.position} 应仍是本侧暴露位置`
+      );
+      const index = grid.findIndex((gridT) => Math.abs(gridT - point.position) < 1e-3);
+      assert.ok(index >= 0, `编辑后 side ${side} 曲线点 ${point.position} 应在共享网格上`);
+      assert.ok(
+        panel.tipWidthControlPlacement(lock, segment, splits, bone, side, index),
+        `编辑后 side ${side} 曲线点 ${point.position} 必须有把手`
       );
     });
   }
@@ -580,16 +681,17 @@ test("symmetric tip width writes snap onto each side's own control grid", () => 
 
 test("stored tip width curves degrade gracefully onto the per-side control grid", () => {
   const { panel, splits, lock, segment } = tipWidthHarness();
-  // 旧 .ahs 数据：按公共 fork（0.5）分布的控制点 + 无条件写入的对侧 fork（0.8）。
+  // 0.2.118 存档：右（浅）侧按**本侧** fork 0.8 独立等分（0.82/0.86/0.90/0.94/0.98/1，
+  // 间距 0.04），这些参数在共享网格（0.85/0.95/1）上不存在 → 必须重采样迁移形状，
+  // 而不是丢回全局默认。
   const legacyCurve = [
     { position: 0, value: 1, interpolation: "linear" },
-    { position: 0.5, value: 1, interpolation: "linear" },
-    { position: 0.55, value: 1.2, interpolation: "linear" },
-    { position: 0.65, value: 1.3, interpolation: "linear" },
-    { position: 0.75, value: 1.4, interpolation: "linear" },
     { position: 0.8, value: 1.45, interpolation: "linear" },
-    { position: 0.85, value: 1.5, interpolation: "linear" },
-    { position: 0.95, value: 1.6, interpolation: "linear" },
+    { position: 0.82, value: 1.5, interpolation: "linear" },
+    { position: 0.86, value: 1.55, interpolation: "linear" },
+    { position: 0.9, value: 1.6, interpolation: "linear" },
+    { position: 0.94, value: 1.62, interpolation: "linear" },
+    { position: 0.98, value: 1.66, interpolation: "linear" },
     { position: 1, value: 1.7, interpolation: "linear" }
   ];
   const bone = {
@@ -612,12 +714,12 @@ test("stored tip width curves degrade gracefully onto the per-side control grid"
     const migrated = Math.abs(point.value - sampleLegacy(legacyCurve, position));
     assert.ok(migrated < 1e-6, `位置 ${position} 应迁移旧曲线采样值（实测差 ${migrated}）`);
   });
-  // 重建后不再有活但抓不到的点（旧的 0.8/0.85/0.95 混排被规整到本侧网格）。
+  // 重建后不再有活但抓不到的点（旧的 0.82/0.86/0.90/0.94/0.98 被规整到共享网格）。
   rebuilt.forEach((point) => {
     if (point.position <= fork + 1e-4) return;
     assert.ok(
       positions.some((position) => Math.abs(position - point.position) < 1e-3),
-      `重建后曲线点 ${point.position} 应是控制位置`
+      `重建后曲线点 ${point.position} 应是本侧暴露位置`
     );
   });
   rebuilt.forEach((point) => {
@@ -726,3 +828,66 @@ test("zipper count changes clear a dangling split selection", async () => {
   assert.match(source, /materializeSplitBones\(target\);\s*\n[\s\S]{0,200}dropDanglingPanelSplitSelection\(target, splits\)/);
   assert.match(source, /materializeStrandSplitBones\(target\);\s*\n\s*dropDanglingStrandSplitSelection\(target, splits\)/);
 });
+
+// 发尖子骨骼笔刷必须在 materialize 后的空间里工作：authored.points 存的是"旧 rest +
+// delta"的绝对值，rest 链一变（加/删 zipper 继承来源段 rest、主链编辑、zipper 高度/
+// spread、面板宽度…）它就是过期空间。笔刷若从 authored.points 播种、写回时又把
+// restPoints 重设为新 rest，就会抹掉 delta，发尖跳回改动前的位置。
+const COUNT = 4;
+
+// authored: 相对 OLD rest(x=0) 有 +5 的 delta。
+function authoredTipWithDelta(oldRestX, pointX) {
+  return {
+    points: Array.from({ length: COUNT }, (_, i) => ({ x: pointX, y: i, z: 0 })),
+    restPoints: Array.from({ length: COUNT }, (_, i) => ({ x: oldRestX, y: i, z: 0 })),
+    twists: Array.from({ length: COUNT }, () => 0),
+    active: true
+  };
+}
+
+// 新 rest 链：x = newRestX（与 authored.restPoints 不同，模拟 rest 已被改动）。
+function restChainAt(newRestX) {
+  return (t) => ({ x: newRestX, y: t * (COUNT - 1), z: 0 });
+}
+
+test("tip sub-bone brush must seed from the materialized chain, not authored points", () => {
+  const authored = authoredTipWithDelta(0, 5);
+  const restPointAt = restChainAt(20);
+
+  // ① 继承语义：显示位置 = 新 rest + delta = 20 + 5 = 25。
+  const shown = materializeTipChain(authored, restPointAt, COUNT);
+  assert.equal(shown.restPoints.length, COUNT);
+  shown.points.forEach((p, i) => {
+    assert.ok(Math.abs(p.x - 25) < 1e-9, `materialized point ${i} re-applies the inherited delta`);
+  });
+
+  // ② 修复后的笔刷往返：从 materialize 后的点播种 → +1 → 写回 points/restPoints=当前 rest。
+  const edited = shown.points.map((p) => ({ x: p.x + 1, y: p.y, z: p.z }));
+  const fixedAuthored = {
+    points: edited.map((p) => ({ ...p })),
+    restPoints: shown.restPoints.map((p) => ({ ...p })),
+    twists: authored.twists.slice(),
+    active: true
+  };
+  // 同一 rest 链上重新 materialize 必须精确复现被编辑的位置（delta 重叠成恒等）。
+  const afterFix = materializeTipChain(fixedAuthored, restPointAt, COUNT);
+  afterFix.points.forEach((p, i) => {
+    assert.ok(Math.abs(p.x - 26) < 1e-9, `fixed brush keeps the edited position at ${i} (no jump)`);
+  });
+
+  // ③ 负向对照（旧的 bug 行为）：从 authored.points 播种（过期空间）+ 同样的写回。
+  const staleEdited = authored.points.map((p) => ({ x: p.x + 1, y: p.y, z: p.z }));
+  const buggyAuthored = {
+    points: staleEdited.map((p) => ({ ...p })),
+    restPoints: shown.restPoints.map((p) => ({ ...p })),
+    twists: authored.twists.slice(),
+    active: true
+  };
+  const afterBug = materializeTipChain(buggyAuthored, restPointAt, COUNT);
+  afterBug.points.forEach((p, i) => {
+    // 6 而不是 26：正好跳回 rest 链的位移量（-20），即"发尖跳回加 zipper 前的位置"。
+    assert.ok(Math.abs(p.x - 6) < 1e-9, `stale seeding jumps back by the rest shift at ${i}`);
+  });
+  assert.ok(Math.abs(afterBug.points[0].x - afterFix.points[0].x + 20) < 1e-9, "the jump equals the rest-chain shift");
+});
+

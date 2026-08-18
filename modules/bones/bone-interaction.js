@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { splitBonesFor, materializeSplitBones } from "./bone-model.js?v=20260813-1";
 import { materializeStrandSplitBones } from "./bone-model.js?v=20260813-1";
 import { leafIndexAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
-import { smoothSculptPointDeltas } from "../sculpt/sculpt-brush.js?v=20260814-12";
+import { sculptTwistBrushDeltas, smoothSculptPointDeltas, resolveFrozenTwistStrokeWeights } from "../sculpt/sculpt-brush.js?v=20260814-12";
 import { solvePulledStrand } from "../geometry/strand-constraints.js?v=20260814-12";
 
 // deps: store .state proxies (sculptState/sel/guideState/scalpState) + module instances
@@ -619,8 +619,24 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
       restPoints: rest.map((p) => ({ x: p.x, y: p.y, z: p.z })),
       active: true
     };
-  const current = authored.points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+  // Seed from the MATERIALIZED chain (what the viewport draws), not authored.points.
+  // materializeTipChain renders points[i] = rest[i] + (authored.points[i] - authored.restPoints[i]),
+  // so authored.points is stale whenever the rest chain moved after the last edit (zipper
+  // add/remove inherits the SOURCE segment's rest baseline, main-chain / zipper height /
+  // spread / panel width edits all reshape rest too). Seeding authored.points and then
+  // re-baselining restPoints to the new rest below would drop that inherited delta and
+  // snap the tip back to its pre-change position. tip.points is in the same space as
+  // `rest`, so the write-back at the end of this function is self-consistent.
+  const displayed = (Array.isArray(tip.points) && tip.points.length === rest.length)
+    ? tip.points
+    : authored.points;
+  const current = displayed.map((p) => new THREE.Vector3(p.x, p.y, p.z));
   const points = current.map((p) => p.clone());
+  // Twists are absolute (no rest baseline); take the materialized array because it is
+  // always rest.length long and already normalized from the authored values.
+  const currentTwists = (Array.isArray(tip.twists) && tip.twists.length === rest.length)
+    ? tip.twists
+    : authored.twists;
   const rect = deps.renderer.domElement.getBoundingClientRect();
   const cursor = new THREE.Vector2(clientX - rect.left, clientY - rect.top);
   const radius = Number(deps.sculptBrushRadiusInput.value);
@@ -634,10 +650,23 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   // (index 0, pinned on the main chain) stays out of the brush-editable range.
   const firstBelow = Math.min(rest.length - 1, Math.max(1, Math.floor(forkT * (rest.length - 1))));
   const scaleCenter = current[firstBelow] || current[0];
-  const weights = new Array(current.length).fill(0);
-  for (let index = firstBelow; index < current.length; index += 1) {
-    weights[index] = deps.sculptGeom.sculptBrushPointWeight(current[index], cursor, rect, radius, falloff);
-  }
+  const computeCursorWeights = () => {
+    const computed = new Array(current.length).fill(0);
+    for (let index = firstBelow; index < current.length; index += 1) {
+      computed[index] = deps.sculptGeom.sculptBrushPointWeight(current[index], cursor, rect, radius, falloff);
+    }
+    return computed;
+  };
+  // Twist alone freezes its affected point set at mousedown (see
+  // resolveFrozenTwistStrokeWeights); every other tool keeps its live per-sample weights.
+  const weights = tool === "sculpt-twist"
+    ? resolveFrozenTwistStrokeWeights(
+      stroke,
+      `${lock.id}:${segmentIndex}`,
+      current.length,
+      computeCursorWeights
+    )
+    : computeCursorWeights();
   let changed = false;
   if (tool === "sculpt-scale") {
     // Uniform scale of the whole exposed chain around the exposed root (ZBrush-like
@@ -669,7 +698,7 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
       const tangent = curve.getTangent(t).normalize();
       // Same push direction as the main hair brush: the strand's guided normal
       // (radial outward / authored surface normal) + twist. No tip special case.
-      const twist = Array.isArray(authored.twists) ? Number(authored.twists[index]) || 0 : 0;
+      const twist = Array.isArray(currentTwists) ? Number(currentTwists[index]) || 0 : 0;
       const up = deps.guidedNormalAt(lock, point, tangent, t)
         .applyAxisAngle(tangent, twist)
         .normalize();
@@ -693,8 +722,8 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
     // orientation changes; the chain (bone position) does NOT move.
     const curve = new THREE.CatmullRomCurve3(current);
     const restCurve = new THREE.CatmullRomCurve3(rest.map((p) => new THREE.Vector3(p.x, p.y, p.z)));
-    const twistArr = (Array.isArray(authored.twists) && authored.twists.length === current.length)
-      ? authored.twists.map((v) => Number(v) || 0)
+    const twistArr = (Array.isArray(currentTwists) && currentTwists.length === current.length)
+      ? currentTwists.map((v) => Number(v) || 0)
       : current.map(() => 0);
     for (let index = firstBelow; index < current.length; index += 1) {
       if (weights[index] <= 0) continue;
@@ -717,6 +746,31 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
       twistArr[index] = twistArr[index] + angle * weights[index] * strength * 0.2;
       changed = true;
     }
+    if (changed) authored.twists = twistArr.map((v) => Number(v) || 0);
+  } else if (tool === "sculpt-twist") {
+    // Manual axial roll of the tip section around its chain tangent, driven by the drag
+    // alone (NO camera term — that is the difference from sculpt-orient above). Like
+    // orient, only the section orientation changes; the chain (bone position) does NOT move,
+    // so `points` is left untouched and only the twist scalars are written.
+    const twistArr = (Array.isArray(currentTwists) && currentTwists.length === current.length)
+      ? currentTwists.map((v) => Number(v) || 0)
+      : current.map(() => 0);
+    // H mode: the "children" are the downstream chain points of this same tip chain. The
+    // scalar delta accumulates into them so the sub-chain rolls rigidly without re-chaining.
+    const deltas = sculptTwistBrushDeltas(current.length, weights, {
+      deltaX,
+      strength,
+      reverse,
+      hierarchy: Boolean(deps.sculptState.hierarchyEditing),
+      rangeStart: firstBelow,
+      rangeEnd: current.length,
+      firstIndex: firstBelow
+    });
+    deltas.forEach((delta, index) => {
+      if (!delta) return;
+      twistArr[index] += delta;
+      changed = true;
+    });
     if (changed) authored.twists = twistArr.map((v) => Number(v) || 0);
   } else {
     // move (and any fallback): masked view-plane translation

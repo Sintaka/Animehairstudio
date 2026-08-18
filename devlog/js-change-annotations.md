@@ -22,6 +22,45 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（0.2.123）
+
+> 发尖 WidthCurve 控制点改回共用网格 + 按侧动态暴露（修正 0.2.118 的设计错误；分支 DHS/develop，1 Opus 子智能体 + 主进程 merge/实测核验）：
+> - **modules/geometry/panel-tip-strand.js**：新增 `tipWidthGridTs(lock, segmentIndex, splits)`（唯一共享网格 = `tipWidthControlTs(commonForkT)`，最深 zipper span 的 5 中点 + 尖端 1；**其下标即稳定把手索引**）与 `tipWidthSideExposesT(lock, segmentIndex, splits, side, t)`（暴露判据单一定义点）；`tipWidthSideControlTs` 从「按本侧 fork 独立分布」改为「共享网格**过滤**出本侧暴露子集」（契约写进注释：参数共享、数量动态）；`tipWidthControlPlacement` 改为索引完整网格 + 未暴露返回 null（注释里把该守卫从「安全网」正名为**动态暴露的真正机制**）；`tipWidthResetCurve`/`buildTipWidthCurve`/`setTipWidthCurveValue` 同步走同一判据，`setTipWidthCurveValue` 补 `positions.length === 0` 早退（全锁侧 `sideForkT >= 1` 无处可写）；`tipWidthRecordsOppositeFork` **保留**（对侧 fork 为滑杆连续值、几乎不落网格，对侧更浅时会成为本侧暴露区内的无把手活点）。导出 `tipWidthGridTs`/`tipWidthSideExposesT`。
+> - **modules/geometry/taper-editor.js**：新增 `tipPointLocked(curveSide, position)`——段 **width** 曲线的点，仅当其 position 属于该侧暴露子集时可拖，其余（position-0 记录点、对侧 fork 记录点、本侧 fork 锚点）读作锁定；非 width 的段曲线（depth，无 fork 暴露语义）保持原 fork 阈值规则。
+> - **modules/bones/bone-view-handles.js**：仅注释（说明固定的 `TIP_WIDTH_CONTROL_POINTS + 1` 把手数组对应**完整共享网格**、`userData.tipWidthIndex` 索引该网格）。**modules/bones/bone-interaction.js**：零改动（索引语义未变，隐藏把手不可 raycast 命中，且 `setTipWidthCurveValue` 独立吸附到暴露子集，陈旧 index 也无法写出不可达点）。
+> - **app.js**：`taperEditorDeps` 新增 `tipWidthSideControlTs`；测试 seam 暴露 `tipWidthGridTs`/`tipWidthSideExposesT`。
+> - 索引方案取 (a)（索引完整网格、以可见性表达非对称数量），而非 (b)（索引过滤子集）——后者同一 index 在两侧含义不同、zipper 高度一变即漂移，把手创建时捕获的索引会静默指向另一参数。
+> - 回归：Node 全量 288/288（首个测试重写为共享网格/子集/同间距/深侧更多/精确计数 + placement↔暴露双射 + 0.2.118 不变式双向断言；新增对称场景；写入测试新增「拖深侧位置时浅侧曲线逐字节不变」；旧档迁移 fixture 换成真正的 0.2.118 per-side 曲线）+ 真实 Sussurro_v1_0060.ahs 130/130；`scripts/verify-tip-select.mjs` 9 处同步（含把写死的「两侧各 6 个可抓」改为按函数推导的共享网格成员性 + 单调性 + 双射，符合 0.2.121 的验收脚本规范）；缓存号 20260830-1 + APP_VERSION 0.2.123 冻结同步。
+
+## 最近更新（0.2.122）
+
+> Twist Brush 方向反转 + 描边期间冻结影响范围（分支 DHS/develop，1 Opus 子智能体 + 主进程 merge/自审）：
+> - **modules/sculpt/sculpt-brush.js**：新增 `const TWIST_DIRECTION = -1`（L119）并乘进 `sculptTwistBrushAngle`（L126），`SCULPT_TWIST_BRUSH_SCALE` 保持正幅值——符号**不能**藏进 scale 常量，否则调用方的 `{scale: …}` 覆盖会静默恢复旧方向。新语义：拖右 = 绕切线负向滚转、拖左为正；Ctrl 仍相对新默认取反。新增纯函数 `resolveFrozenTwistStrokeWeights(stroke, key, pointCount, computeWeights)`（L161-174）：首个采样算权重并存 `stroke.twistTipWeights`（Map，键 `lockId:segmentIndex`），后续采样复用；长度不符则重算（防链长中途变化错位）。
+> - **modules/geometry/sculpt-geometry.js**：快照捕获条件 `deps.sel.activeTool === "sculpt-move"` → `["sculpt-move","sculpt-twist"].includes(...)`（L513）；`fixedMoveBrushInfluence` 摘掉 `&& !twistBrushActive`（L577）并重写上方注释（原注释写的是相反理由）。twist 分支读的 `pointWeights` 由该 gate 填充，自动获得起笔冻结权重。`captureSculptMoveStrokeInfluence` 经核实与工具无关（只读 units/起笔光标/半径衰减/比例输入/裁剪面，不 branch on activeTool、不回写），复用安全。
+> - **modules/bones/bone-interaction.js**：抽出 `computeCursorWeights`，`weights` 仅在 `tool === "sculpt-twist"` 时走 `resolveFrozenTwistStrokeWeights`（L653-669），其余笔刷保持实时权重。缓存挂在每次 pointerdown 新建的 stroke 对象上（`finishSculptMoveStroke` 置 null、不池化），不跨描边泄漏。
+> - **tests**：`twist-brush.test.mjs` 翻转符号断言（断的是乘积与关系，幅值/衰减/层级/范围/根排除逻辑未变）+ 3 条冻结测试；零拖拽断言改 `Math.abs(...) === 0`（乘 −1 会产生 IEEE `-0`）；`dom-contract.test.mjs` 更新捕获条件断言并把 twist 分支的 `doesNotMatch` 切片重锚到 `} else if (tool === "sculpt-twist") {`（新增三元表达式抢在原锚点之前）。
+> - 回归：Node 全量 287/287（284 + 3）+ 真实 Sussurro_v1_0060.ahs 130/130；缓存号 20260829-1 + APP_VERSION 0.2.122 冻结同步。
+
+## 最近更新（0.2.121）
+
+> 新增 Twist Brush + dev 规范审计整改（分支 DHS/develop，2 Opus 子智能体并行 + 主进程 merge/自审/整改）：
+> - **modules/sculpt/sculpt-brush.js（新增纯函数）**：`SCULPT_TWIST_BRUSH_SCALE = 0.01`、`sculptTwistBrushAngle(deltaX, weight, strength, {reverse, scale})`、`sculptTwistBrushDeltas(pointCount, weights, {deltaX, strength, reverse, hierarchy, rangeStart, rangeEnd, firstIndex})` → per-point twist **delta 数组**（签名与函数体内不出现位置）。角度**只来自 `deltaX`**、无 camera 项（与 Orient 的本质差别：后者目标 up 取自 `camera.position`，相机穿过发丝时符号翻转）；`hierarchy` 为真时把同一 delta 累加进 `[rangeStart, rangeEnd)` 全部下游点。
+> - **modules/geometry/sculpt-geometry.js**：`reverseTool` 列表 += `sculpt-twist`；新增 `twistBrushActive` 标志并纳入 `fixedMoveBrushInfluence` 排除组（twist 不移动点，与 orient 同类）；主发丝分支只写 `source.pointTwists`，range 取 `curveSurfaceControllerPointRange(source)`、`firstIndex: 1`（根不参与）。
+> - **modules/bones/bone-interaction.js**：发尖子骨骼分支紧随 `sculpt-orient` 之后，只写 `twistArr`→`authored.twists`，`points` 全程不动；range/firstIndex 取既有 `firstBelow`（暴露根钳位）。**未回归 0.2.120**：`current`/`displayed` 的物化取种子未改，twist 只读 `currentTwists`。
+> - **app.js**：`sculptBrushStrengthByTool["sculpt-twist"] = 0.5`；`sculptBrushToolActive()` 谓词列表 += `sculpt-twist`；`sculptGeomDeps` 新增 `curveSurfaceControllerPointRange`。**index.html**：Orient 之后新增工具按钮（`data-tool="sculpt-twist"` + `sculpt-twist-icon` + title/aria-label）。**styles.css**：`.sculpt-twist-icon`（仿 `.sculpt-orient-icon`）。**loc-ja.js / loc-zh.js**：2 条词条（ZH 按既有约定笔刷名保留英文）。
+> - **H 模式刻意不复用 `applyHierarchicalRotate`**（app.js L7280-7281 重挂 segment、L7287 绕 pivot 旋转位置 —— 那会改子骨骼位置，正是要避免的）；只传播 twist 标量，沿用 L7299-7302 既有累加约定。硬断言见 tests/twist-brush.test.mjs（H ON 时下游同 delta **且** 位置 deepEqual 不变）。
+> - **未加快捷键**（无既有空位；规范要求新快捷键独立分区）。**未改** `placement.js` 状态栏文案（与 slide/scale/push/orient 一致落到通用文案，改动会波及既有笔刷的共享字符串）。
+> - **devlog 规范整改**（审计子智能体产出，主进程执行）：`development-standards.md` 修版本号自相矛盾、作废 0.2.118 的「刻意不统一」结论、store 数 15→18、app.js 行数不再写死、注释规则重写、子智能体条目去产品名 + 补失败接手、bump 清单澄清、信任前缀补 node/npm、**新增 4 条根因规范**；`README.md` 修「未实施」误标 + 补 0.2.114–0.2.121 摘要 + store 数；`STATE_MANAGEMENT.md` 17→18 并补 `windState` 行。
+> - 回归：Node 全量 284/284（新增 8：twist-brush 7 + dom-contract 1）+ 真实 Sussurro_v1_0060.ahs 130/130；缓存号 20260828-1 + APP_VERSION 0.2.121 冻结同步。
+
+## 最近更新（0.2.120）
+
+> 修笔刷雕刻发尖时发尖跳回原位（分支 DHS/develop，1 Opus 子智能体 + 主进程 merge/自审）：
+> - **modules/bones/bone-interaction.js**（`applySubBoneBrushSample`）：种子从 `authored.points`（陈旧绝对空间）改为**物化链** `tip.points`（`splitTipForSegment` → `materializeTipChain`，即视口所画）——L622-639；`twists` 读取改用物化 `currentTwists`（L688 `sculpt-push`、L712-713 `sculpt-orient`）。写回（L747-749：`points = edited` + `restPoints = rest`）**保持不变**且此时才自洽：edited 与 rest 同空间 → 存储 delta = 相对当前 rest 的可见偏移 → 下次渲染 delta 重叠加为恒等。旧代码「陈旧空间取种子 + 新 rest 重基准」会销毁继承 delta，发尖跳回旧位（跳回量 = rest 链位移）。
+> - 未改动：`tip-sub-bone.js` 的 `materializeTipChain`、`bone-model.js` 的 remap 函数（姿态继承正确且必要）；`restCurve`（L711 由 `rest` 构建）与 `authored.twists` 写回（L736，twists 无 rest 基准）经核对无需改。
+> - 影响面：非 zipper 专属——`splitTipForSegment` 的 rest 由 `tipSurfaceFrameAt` 重建，主链编辑、zipper 位置/高度、面板宽度/厚度/曲率、面板 loop 数（改 mainCount）都会移动 rest，旧代码下首次笔刷描边都会跳。发丝/split 管无笔刷路径（唯一入口 sculpt-geometry.js L549，L604 硬门控 panel），只能拖拽，从不受影响。
+> - 回归：Node 全量 276/276（新增 1 测试：继承语义 + 修复后恒等 + 负向对照断言跳回量 −20）+ 真实 Sussurro_v1_0060.ahs 130/130；缓存号 20260827-1 + APP_VERSION 0.2.120 冻结同步。
+
 ## 最近更新（0.2.119）
 
 > 发尖骨骼暴露方向取反：多暴露一行（分支 DHS/develop，1 Opus 子智能体 + 主进程 merge/自审/收尾）。0.2.118 的 `round`→`floor` 结构修复保留，但方向反了：

@@ -212,7 +212,8 @@ function tipSegmentBlendAt(lock, segmentIndex, splits, t, u, lengthLoops) {
   return THREE.MathUtils.clamp((t - start) / Math.max(0.0001, 1 - start), 0, 1);
 }
 
-// All tip width control positions for one side: the 5 midpoints plus the tip end (t=1).
+// The raw control grid for a fork: 5 midpoints plus the tip end (t=1). Callers pass the
+// COMMON (deepest-zipper) fork so both sides share one grid — see tipWidthGridTs.
 function tipWidthControlTs(forkT) {
   const positions = [];
   for (let i = 0; i < TIP_WIDTH_CONTROL_POINTS; i += 1) {
@@ -223,28 +224,52 @@ function tipWidthControlTs(forkT) {
 }
 
 // The COMMON control fork for a segment: based on the DEEPEST of the two zippers.
-// Kept for the floating curve panel's locked-point rule and for callers that need the
-// segment-wide fork; the width CONTROL POSITIONS are per-side (tipWidthSideControlTs).
+// This is the SHARED GRID BASIS: both sides subdivide this one span, so the control
+// parameters (and therefore the spacing) are identical on the left and the right.
 function tipWidthCommonForkT(lock, segmentIndex, splits) {
   const leftZipper = splits[segmentIndex - 1]?.height;
   const rightZipper = splits[segmentIndex]?.height;
   return 1 - Math.max(leftZipper ?? 0, rightZipper ?? 0);
 }
 
-// All tip width control positions for ONE SIDE, distributed from THIS side's OWN fork
-// (tipWidthSideForkT) instead of the common (deepest-zipper) fork.
-// 两侧 zipper 高度不同时，浅 zipper 侧的 sideForkT 比 commonForkT 更靠发尖：若按
-// commonForkT 分布，落在 [commonForkT, sideForkT) 的控制点在该侧没有把手（视口
-// 隐藏）却仍留在曲线数据里参与采样 → 用户抓不到的「活点」把宽度拽出凹陷。
-// 按本侧 fork 分布后，每个位置都在本侧暴露区内：影响某侧宽度的控制点必定可抓，
-// 可抓的控制点必定影响该侧宽度（无隐藏活点不变式）。
+// THE one shared control grid for a segment: TIP_WIDTH_CONTROL_POINTS midpoints of the
+// COMMON (deepest-zipper) fork span plus the tip end (t=1). 两侧共用同一批 chain 参数
+// → 间距永远一致；「暴露多少个」才是按各自 zipper 高度动态决定的（见
+// tipWidthSideExposesT / tipWidthSideControlTs）。Index into this array is the stable
+// handle index used by bone-view-handles.js / bone-interaction.js.
+function tipWidthGridTs(lock, segmentIndex, splits) {
+  return tipWidthControlTs(tipWidthCommonForkT(lock, segmentIndex, splits));
+}
+
+// Does THIS side expose the shared-grid parameter t? Only the part of the grid inside
+// this side's own exposed region (t >= 本侧 fork) is exposed; the sampler
+// (tipWidthMultiplierAt) falls back to the GLOBAL curve below that fork, so anything
+// below it must be neither authored into nor grabbable on this side.
+// 单一定义点：placement / build / reset / write 全部走这里，避免各自复制判据。
+function tipWidthSideExposesT(lock, segmentIndex, splits, side, t) {
+  const sideForkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
+  if (sideForkT >= 1) return false;
+  return t >= sideForkT - 1e-4;
+}
+
+// The tip width control positions THIS side exposes: the subset of the SHARED
+// (deepest-fork) grid that lies inside this side's own exposed region. 参数共享（两侧
+// 间距一致），数量按本侧 zipper 高度动态变化 —— 深 zipper 侧暴露得多，浅 zipper 侧
+// 只暴露靠发尖的几个。
+// 不变式（0.2.118 起）：某个参数出现在本侧曲线数据里（因而影响本侧采样宽度）当且
+// 仅当本侧为它提供了可抓把手。共享网格不会破坏它，因为低于本侧 fork 的网格位置
+// 既不写入本侧曲线（buildTipWidthCurve/tipWidthResetCurve 只遍历本函数的返回值），
+// 也不返回视口放置（tipWidthControlPlacement 用同一判据返回 null）。
 function tipWidthSideControlTs(lock, segmentIndex, splits, side) {
-  return tipWidthControlTs(tipWidthSideForkT(lock, segmentIndex, splits, side));
+  return tipWidthGridTs(lock, segmentIndex, splits)
+    .filter((t) => tipWidthSideExposesT(lock, segmentIndex, splits, side, t));
 }
 
 // 对侧 fork 记录点是否该写进本侧曲线：只有落在本侧 fork 之下（采样器在该区间回退
 // 全局曲线，点不参与本侧宽度）时才写。若对侧 zipper 更浅（对侧 fork 更靠发尖），
 // 它会落在本侧暴露区内部 → 成为没有把手却参与采样的「活点」（凹陷来源），必须不写。
+// 共享网格（0.2.123）不解除这个危险：对侧 fork 是 zipper 高度的连续值，通常**不在**
+// 共享网格上，所以它落进本侧暴露区时依然是一个不可抓的活点 → 守卫必须保留。
 function tipWidthRecordsOppositeFork(lock, segmentIndex, splits, side) {
   const own = tipWidthSideForkT(lock, segmentIndex, splits, side);
   const opposite = tipWidthSideForkT(lock, segmentIndex, splits, -side);
@@ -257,9 +282,10 @@ function tipWidthRecordsOppositeFork(lock, segmentIndex, splits, side) {
 function tipWidthResetCurve(lock, segmentIndex, splits, side) {
   // Reset 后整条曲线全 1: no global curve sampling, every point (both fork boundaries
   // and exposed-region control positions) is at full width value 1. The control
-  // positions come from THIS side's own fork, so the reset curve carries a point at
-  // every position this side can actually grab — 任何 zipper 高度组合下 Reset 都是
-  // 平直全宽（无凹陷），因为整条曲线上所有点的值都是 1。
+  // positions are the shared grid filtered to THIS side's exposed subset
+  // (tipWidthSideControlTs), so the reset curve carries a point at every position this
+  // side can actually grab and nothing below its fork — 任何 zipper 高度组合下 Reset
+  // 都是平直全宽（无凹陷），因为整条曲线上所有点的值都是 1。
   const points = [];
   const addPoint = (position, value) => {
     const clampedPosition = THREE.MathUtils.clamp(Number(position) || 0, 0, 1);
@@ -375,11 +401,13 @@ function buildTipWidthCurve(lock, segmentIndex, splits, bone, side) {
     });
   };
   // The locked (above-zipper) region is no longer baked into the curve: sampling falls
-  // back to the global curve below the fork. The boundary is THIS side's own fork so
-  // the curve stays continuous at the zipper; the control positions come from THIS
-  // side's own fork too (tipWidthSideControlTs), so every point that can influence
-  // this side's sampled width has a grabbable handle, and the tip end (t=1) is part of
-  // the control array (addPoint dedupes).
+  // back to the global curve below the fork. The boundary point at THIS side's own fork
+  // is a DERIVED CONTINUITY JOIN (always the global curve's value there, never a
+  // draggable control point) that keeps the curve continuous at the zipper. The control
+  // positions are the shared grid filtered to this side's exposed subset
+  // (tipWidthSideControlTs), so every AUTHORED point that can influence this side's
+  // sampled width has a grabbable handle, and the tip end (t=1) is part of the control
+  // array (addPoint dedupes).
   // 保留当前曲线已有的 0 点：Reset 的整段覆盖在后续编辑中持续。
   const zeroPoint = current && current.find((point) => Math.abs(Number(point.position) || 0) < 1e-4);
   if (zeroPoint) addPoint(0, zeroPoint.value);
@@ -394,7 +422,7 @@ function buildTipWidthCurve(lock, segmentIndex, splits, bone, side) {
     addPoint(oppositeForkT, sampleTaperCurve(globalCurve, oppositeForkT));
   }
   const controlTs = tipWidthSideControlTs(lock, segmentIndex, splits, side);
-  // 向后兼容：更早版本按公共 fork（最深 zipper）分布控制点，已有 .ahs 里的曲线点
+  // 向后兼容：0.2.118 曾按各侧自己的 fork 分布控制点，已有 .ahs 里的曲线点
   // 可能落在现在不再使用的参数上。精确命中优先（正常重建路径，值不变）；否则若当前
   // 曲线已有创作数据，就在新位置上采样旧曲线，把创作形状迁移到可抓位置，而不是丢
   // 回全局默认（避免旧文件在下次编辑时突然跳变或留下凹陷）。空/缺失曲线仍取全局值。
@@ -420,16 +448,19 @@ function setTipWidthCurveValue(lock, segmentIndex, splits, bone, side, t, value)
   bone.asymmetricWidthCurve = true;
   const curve = side < 0 ? bone.taperCurveSecondary : bone.taperCurve;
   const clamped = THREE.MathUtils.clamp(Number(value) || 0.5, 0.08, 2);
-  // 写入位置吸附到本侧自己的控制位置（tipWidthSideControlTs）。两侧 zipper 高度不同时
-  // 控制位置按侧分布，对称拖拽（bone-interaction 用同一个 t 写两侧）传来的 t 可能不是
-  // 本侧的控制位置：不吸附就会写出一个没有把手的点，且随后的 buildTipWidthCurve 重建
-  // 会把它丢掉（编辑丢失）。吸附后每个创作点都恰好落在一个可抓位置上。
+  // 写入位置吸附到本侧**暴露的**控制位置（tipWidthSideControlTs = 共享网格 ∩ 本侧
+  // 暴露区）。两侧参数虽同源，暴露的子集却按 zipper 高度不同：对称拖拽
+  // （bone-interaction 用同一个 t 写两侧）传来的 t 可能不在本侧的暴露子集里。不吸附
+  // 就会写出一个没有把手的点，且随后的 buildTipWidthCurve 重建会把它丢掉（编辑丢失）。
+  // 吸附后每个创作点都恰好落在一个可抓位置上。
   const positions = tipWidthSideControlTs(lock, segmentIndex, splits, side);
   const sideForkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
   const requested = THREE.MathUtils.clamp(Number(t) || 0, 0, 1);
   // 本侧锁定区（低于本侧 fork）没有可编辑位置：该侧此处仍跟随主骨骼，跳过写入而不是
   // 把它吸附成一个可见编辑（zipper 更深的一侧才暴露那段）。
   if (requested < sideForkT - 1e-4) return;
+  // 本侧完全锁定（sideForkT >= 1，暴露子集为空）：无处可写。
+  if (!positions.length) return;
   const snapped = positions.reduce(
     (best, position) => (Math.abs(position - requested) < Math.abs(best - requested) ? position : best),
     positions[0]
@@ -639,14 +670,21 @@ function tipWidthEdgePoints(lock, segmentIndex, splits, bone, side) {
 function tipWidthControlPlacement(lock, segmentIndex, splits, bone, side, pointIndex) {
   const sideForkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
   if (sideForkT >= 1) return null;
-  // Each side distributes its control positions from its OWN fork, so all
-  // TIP_WIDTH_CONTROL_POINTS + 1 positions are inside this side's exposed region and
-  // every handle is grabbable (no live-but-hidden curve point). The guard below is only
-  // a safety net for degenerate forks; it no longer hides points in normal use.
-  const positions = tipWidthSideControlTs(lock, segmentIndex, splits, side);
+  // INDEX SEMANTICS (scheme a): pointIndex indexes the FULL SHARED GRID
+  // (tipWidthGridTs), never the per-side filtered subset. The viewport allocates a fixed
+  // array of TIP_WIDTH_CONTROL_POINTS + 1 handles per side (bone-view-handles.js) and
+  // looks them up by that same index, so a stable index ↔ chain-parameter mapping is what
+  // keeps the handle, its drag (bone-interaction.js) and the curve data addressing the
+  // same position on both sides.
+  // 数量的非对称性由「暴露判定」表达，而不是由数组长度表达：本侧未暴露的网格位置
+  // 返回 null → 视口把对应把手隐藏。因此这条守卫不是安全网，而是实现「按 zipper 高度
+  // 动态暴露」的真正机制，并且与 buildTipWidthCurve/tipWidthResetCurve/
+  // setTipWidthCurveValue 使用的 tipWidthSideExposesT 是同一个判据（同一定义点）→
+  // 「曲线里有 ⇔ 有把手」的不变式成立。
+  const positions = tipWidthGridTs(lock, segmentIndex, splits);
   if (pointIndex < 0 || pointIndex >= positions.length) return null;
   const t = positions[pointIndex];
-  if (t < sideForkT - 1e-4) return null;
+  if (!tipWidthSideExposesT(lock, segmentIndex, splits, side, t)) return null;
   const edge = tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t);
   if (!edge) return null;
   return { point: edge.point, t: edge.t, center: edge.center, lateral: edge.lateral };
@@ -1112,6 +1150,8 @@ function createPanelStrandGeometry(lock) {
     tipSegmentBlendAt,
     tipWidthCommonForkT,
     tipWidthControlTs,
+    tipWidthGridTs,
+    tipWidthSideExposesT,
     tipWidthSideControlTs,
     tipWidthSpreadGap,
     tipWidthResetCurve,

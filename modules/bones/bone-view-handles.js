@@ -143,7 +143,12 @@ function createBoneViewHandles(lock, group) {
       const sideHandles = { left: [], right: [] };
       const sideLines = { left: null, right: null };
       for (const side of [-1, 1]) {
-        // 5 midpoints (common fork) + the tip end (t=1) = tipWidthControlTs positions.
+        // Fixed handle array = the FULL SHARED grid (tipWidthGridTs): 5 midpoints of the
+        // common (deepest-zipper) fork span + the tip end (t=1). userData.tipWidthIndex
+        // indexes THAT grid, not a per-side subset — tipWidthControlPlacement returns
+        // null for grid positions this side does not expose and the update pass below
+        // hides those handles, so the two sides share spacing while exposing different
+        // COUNTS (按各自 zipper 高度动态暴露).
         for (let point = 0; point < TIP_WIDTH_CONTROL_POINTS + 1; point += 1) {
           const handle = createSplitControlHandle();
           handle.scale.setScalar(0.26);

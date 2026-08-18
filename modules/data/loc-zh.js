@@ -124,6 +124,8 @@ export default Object.freeze({
   "Inflate Brush": "Inflate Brush",
   "Smooth": "平滑",
   "Smooth Brush": "Smooth Brush",
+  "Twist Brush": "Twist Brush",
+  "Twist strands around their tangent axis by dragging horizontally": "左右拖拽，使 strand 绕其切线轴扭转。",
   "Brush Settings": "笔刷设置",
   "Controls how strongly each brush affects nearby strands.": "控制每个笔刷对附近 strand 的影响强度。",
   "Sculpt brushes": "雕刻笔刷",
