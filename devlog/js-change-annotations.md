@@ -22,6 +22,14 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（0.2.120）
+
+> 修笔刷雕刻发尖时发尖跳回原位（分支 DHS/develop，1 Opus 子智能体 + 主进程 merge/自审）：
+> - **modules/bones/bone-interaction.js**（`applySubBoneBrushSample`）：种子从 `authored.points`（陈旧绝对空间）改为**物化链** `tip.points`（`splitTipForSegment` → `materializeTipChain`，即视口所画）——L622-639；`twists` 读取改用物化 `currentTwists`（L688 `sculpt-push`、L712-713 `sculpt-orient`）。写回（L747-749：`points = edited` + `restPoints = rest`）**保持不变**且此时才自洽：edited 与 rest 同空间 → 存储 delta = 相对当前 rest 的可见偏移 → 下次渲染 delta 重叠加为恒等。旧代码「陈旧空间取种子 + 新 rest 重基准」会销毁继承 delta，发尖跳回旧位（跳回量 = rest 链位移）。
+> - 未改动：`tip-sub-bone.js` 的 `materializeTipChain`、`bone-model.js` 的 remap 函数（姿态继承正确且必要）；`restCurve`（L711 由 `rest` 构建）与 `authored.twists` 写回（L736，twists 无 rest 基准）经核对无需改。
+> - 影响面：非 zipper 专属——`splitTipForSegment` 的 rest 由 `tipSurfaceFrameAt` 重建，主链编辑、zipper 位置/高度、面板宽度/厚度/曲率、面板 loop 数（改 mainCount）都会移动 rest，旧代码下首次笔刷描边都会跳。发丝/split 管无笔刷路径（唯一入口 sculpt-geometry.js L549，L604 硬门控 panel），只能拖拽，从不受影响。
+> - 回归：Node 全量 276/276（新增 1 测试：继承语义 + 修复后恒等 + 负向对照断言跳回量 −20）+ 真实 Sussurro_v1_0060.ahs 130/130；缓存号 20260827-1 + APP_VERSION 0.2.120 冻结同步。
+
 ## 最近更新（0.2.119）
 
 > 发尖骨骼暴露方向取反：多暴露一行（分支 DHS/develop，1 Opus 子智能体 + 主进程 merge/自审/收尾）。0.2.118 的 `round`→`floor` 结构修复保留，但方向反了：

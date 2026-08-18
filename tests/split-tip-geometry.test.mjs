@@ -726,3 +726,66 @@ test("zipper count changes clear a dangling split selection", async () => {
   assert.match(source, /materializeSplitBones\(target\);\s*\n[\s\S]{0,200}dropDanglingPanelSplitSelection\(target, splits\)/);
   assert.match(source, /materializeStrandSplitBones\(target\);\s*\n\s*dropDanglingStrandSplitSelection\(target, splits\)/);
 });
+
+// 发尖子骨骼笔刷必须在 materialize 后的空间里工作：authored.points 存的是"旧 rest +
+// delta"的绝对值，rest 链一变（加/删 zipper 继承来源段 rest、主链编辑、zipper 高度/
+// spread、面板宽度…）它就是过期空间。笔刷若从 authored.points 播种、写回时又把
+// restPoints 重设为新 rest，就会抹掉 delta，发尖跳回改动前的位置。
+const COUNT = 4;
+
+// authored: 相对 OLD rest(x=0) 有 +5 的 delta。
+function authoredTipWithDelta(oldRestX, pointX) {
+  return {
+    points: Array.from({ length: COUNT }, (_, i) => ({ x: pointX, y: i, z: 0 })),
+    restPoints: Array.from({ length: COUNT }, (_, i) => ({ x: oldRestX, y: i, z: 0 })),
+    twists: Array.from({ length: COUNT }, () => 0),
+    active: true
+  };
+}
+
+// 新 rest 链：x = newRestX（与 authored.restPoints 不同，模拟 rest 已被改动）。
+function restChainAt(newRestX) {
+  return (t) => ({ x: newRestX, y: t * (COUNT - 1), z: 0 });
+}
+
+test("tip sub-bone brush must seed from the materialized chain, not authored points", () => {
+  const authored = authoredTipWithDelta(0, 5);
+  const restPointAt = restChainAt(20);
+
+  // ① 继承语义：显示位置 = 新 rest + delta = 20 + 5 = 25。
+  const shown = materializeTipChain(authored, restPointAt, COUNT);
+  assert.equal(shown.restPoints.length, COUNT);
+  shown.points.forEach((p, i) => {
+    assert.ok(Math.abs(p.x - 25) < 1e-9, `materialized point ${i} re-applies the inherited delta`);
+  });
+
+  // ② 修复后的笔刷往返：从 materialize 后的点播种 → +1 → 写回 points/restPoints=当前 rest。
+  const edited = shown.points.map((p) => ({ x: p.x + 1, y: p.y, z: p.z }));
+  const fixedAuthored = {
+    points: edited.map((p) => ({ ...p })),
+    restPoints: shown.restPoints.map((p) => ({ ...p })),
+    twists: authored.twists.slice(),
+    active: true
+  };
+  // 同一 rest 链上重新 materialize 必须精确复现被编辑的位置（delta 重叠成恒等）。
+  const afterFix = materializeTipChain(fixedAuthored, restPointAt, COUNT);
+  afterFix.points.forEach((p, i) => {
+    assert.ok(Math.abs(p.x - 26) < 1e-9, `fixed brush keeps the edited position at ${i} (no jump)`);
+  });
+
+  // ③ 负向对照（旧的 bug 行为）：从 authored.points 播种（过期空间）+ 同样的写回。
+  const staleEdited = authored.points.map((p) => ({ x: p.x + 1, y: p.y, z: p.z }));
+  const buggyAuthored = {
+    points: staleEdited.map((p) => ({ ...p })),
+    restPoints: shown.restPoints.map((p) => ({ ...p })),
+    twists: authored.twists.slice(),
+    active: true
+  };
+  const afterBug = materializeTipChain(buggyAuthored, restPointAt, COUNT);
+  afterBug.points.forEach((p, i) => {
+    // 6 而不是 26：正好跳回 rest 链的位移量（-20），即"发尖跳回加 zipper 前的位置"。
+    assert.ok(Math.abs(p.x - 6) < 1e-9, `stale seeding jumps back by the rest shift at ${i}`);
+  });
+  assert.ok(Math.abs(afterBug.points[0].x - afterFix.points[0].x + 20) < 1e-9, "the jump equals the rest-chain shift");
+});
+

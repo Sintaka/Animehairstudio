@@ -619,8 +619,24 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
       restPoints: rest.map((p) => ({ x: p.x, y: p.y, z: p.z })),
       active: true
     };
-  const current = authored.points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+  // Seed from the MATERIALIZED chain (what the viewport draws), not authored.points.
+  // materializeTipChain renders points[i] = rest[i] + (authored.points[i] - authored.restPoints[i]),
+  // so authored.points is stale whenever the rest chain moved after the last edit (zipper
+  // add/remove inherits the SOURCE segment's rest baseline, main-chain / zipper height /
+  // spread / panel width edits all reshape rest too). Seeding authored.points and then
+  // re-baselining restPoints to the new rest below would drop that inherited delta and
+  // snap the tip back to its pre-change position. tip.points is in the same space as
+  // `rest`, so the write-back at the end of this function is self-consistent.
+  const displayed = (Array.isArray(tip.points) && tip.points.length === rest.length)
+    ? tip.points
+    : authored.points;
+  const current = displayed.map((p) => new THREE.Vector3(p.x, p.y, p.z));
   const points = current.map((p) => p.clone());
+  // Twists are absolute (no rest baseline); take the materialized array because it is
+  // always rest.length long and already normalized from the authored values.
+  const currentTwists = (Array.isArray(tip.twists) && tip.twists.length === rest.length)
+    ? tip.twists
+    : authored.twists;
   const rect = deps.renderer.domElement.getBoundingClientRect();
   const cursor = new THREE.Vector2(clientX - rect.left, clientY - rect.top);
   const radius = Number(deps.sculptBrushRadiusInput.value);
@@ -669,7 +685,7 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
       const tangent = curve.getTangent(t).normalize();
       // Same push direction as the main hair brush: the strand's guided normal
       // (radial outward / authored surface normal) + twist. No tip special case.
-      const twist = Array.isArray(authored.twists) ? Number(authored.twists[index]) || 0 : 0;
+      const twist = Array.isArray(currentTwists) ? Number(currentTwists[index]) || 0 : 0;
       const up = deps.guidedNormalAt(lock, point, tangent, t)
         .applyAxisAngle(tangent, twist)
         .normalize();
@@ -693,8 +709,8 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
     // orientation changes; the chain (bone position) does NOT move.
     const curve = new THREE.CatmullRomCurve3(current);
     const restCurve = new THREE.CatmullRomCurve3(rest.map((p) => new THREE.Vector3(p.x, p.y, p.z)));
-    const twistArr = (Array.isArray(authored.twists) && authored.twists.length === current.length)
-      ? authored.twists.map((v) => Number(v) || 0)
+    const twistArr = (Array.isArray(currentTwists) && currentTwists.length === current.length)
+      ? currentTwists.map((v) => Number(v) || 0)
       : current.map(() => 0);
     for (let index = firstBelow; index < current.length; index += 1) {
       if (weights[index] <= 0) continue;
