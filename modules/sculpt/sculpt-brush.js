@@ -104,17 +104,26 @@ export function pointInCameraFacingHalfSpace(point, planeNormal, planeOffset = 0
 
 // Twist Brush (sculpt-twist) — MANUAL axial roll around the strand tangent.
 // Deliberately camera-free: the angle comes from the horizontal drag component only, so
-// the sign is fixed in SCREEN space (drag right => positive roll around the tangent) and
-// never flips when the camera orbits. That is the whole difference from the Orient Brush,
-// which derives its target roll from the camera position.
+// the sign is fixed in SCREEN space and never flips when the camera orbits. That is the
+// whole difference from the Orient Brush, which derives its target roll from the camera
+// position.
+// DIRECTION (single source of truth for BOTH consumers — main strand pointTwists and tip
+// sub-bone authored.twists): dragging RIGHT (deltaX > 0) produces a NEGATIVE roll around
+// the tangent; dragging LEFT produces a positive roll. Ctrl (reverse) inverts that, so
+// Ctrl + drag-right rolls positive. SCULPT_TWIST_BRUSH_SCALE stays a positive magnitude —
+// the direction lives in TWIST_DIRECTION below so a caller-supplied `scale` override gets
+// the same direction.
 export const SCULPT_TWIST_BRUSH_SCALE = 0.01;
+
+// Drag-right => negative roll. Flip this one constant to reverse the brush globally.
+const TWIST_DIRECTION = -1;
 
 export function sculptTwistBrushAngle(deltaX, weight, strength, options = {}) {
   const drag = Number(deltaX) || 0;
   const influence = Math.min(1, Math.max(0, Number(weight) || 0));
   const amount = Number(strength) || 0;
   const scale = Number.isFinite(Number(options.scale)) ? Number(options.scale) : SCULPT_TWIST_BRUSH_SCALE;
-  return (options.reverse ? -1 : 1) * drag * influence * amount * scale;
+  return TWIST_DIRECTION * (options.reverse ? -1 : 1) * drag * influence * amount * scale;
 }
 
 // Returns a per-point twist DELTA array (radians). Positions are never involved: the
@@ -139,6 +148,29 @@ export function sculptTwistBrushDeltas(pointCount, weights, options = {}) {
     for (let downstream = index + 1; downstream < end; downstream += 1) deltas[downstream] += angle;
   }
   return deltas;
+}
+
+// Freezes the twist brush's affected point set for the whole stroke (user requirement:
+// once the button goes down the selection must not follow the cursor). The FIRST twist
+// sample of a stroke computes the cursor weights and stores them on the stroke object;
+// every later sample of the SAME stroke reuses that array, so the affected points stay
+// fixed even as the cursor moves away. A fresh stroke object carries no cache, so nothing
+// leaks between strokes. Keyed per lock+segment because one stroke could in principle
+// touch more than one tip chain. A cached array whose length no longer matches the chain
+// (the chain changed mid-stroke) is recomputed rather than misindexed.
+export function resolveFrozenTwistStrokeWeights(stroke, key, pointCount, computeWeights) {
+  const count = Math.max(0, Math.floor(Number(pointCount) || 0));
+  const compute = () => {
+    const computed = computeWeights();
+    return Array.isArray(computed) ? computed : new Array(count).fill(0);
+  };
+  if (!stroke || typeof stroke !== "object") return compute();
+  if (!(stroke.twistTipWeights instanceof Map)) stroke.twistTipWeights = new Map();
+  const cached = stroke.twistTipWeights.get(key);
+  if (Array.isArray(cached) && cached.length === count) return cached;
+  const weights = compute();
+  stroke.twistTipWeights.set(key, weights);
+  return weights;
 }
 
 export function smoothSculptTwistDeltas(twists, weights, strength = 1, rate = 0.04) {

@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { splitBonesFor, materializeSplitBones } from "./bone-model.js?v=20260813-1";
 import { materializeStrandSplitBones } from "./bone-model.js?v=20260813-1";
 import { leafIndexAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
-import { sculptTwistBrushDeltas, smoothSculptPointDeltas } from "../sculpt/sculpt-brush.js?v=20260814-12";
+import { sculptTwistBrushDeltas, smoothSculptPointDeltas, resolveFrozenTwistStrokeWeights } from "../sculpt/sculpt-brush.js?v=20260814-12";
 import { solvePulledStrand } from "../geometry/strand-constraints.js?v=20260814-12";
 
 // deps: store .state proxies (sculptState/sel/guideState/scalpState) + module instances
@@ -650,10 +650,23 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   // (index 0, pinned on the main chain) stays out of the brush-editable range.
   const firstBelow = Math.min(rest.length - 1, Math.max(1, Math.floor(forkT * (rest.length - 1))));
   const scaleCenter = current[firstBelow] || current[0];
-  const weights = new Array(current.length).fill(0);
-  for (let index = firstBelow; index < current.length; index += 1) {
-    weights[index] = deps.sculptGeom.sculptBrushPointWeight(current[index], cursor, rect, radius, falloff);
-  }
+  const computeCursorWeights = () => {
+    const computed = new Array(current.length).fill(0);
+    for (let index = firstBelow; index < current.length; index += 1) {
+      computed[index] = deps.sculptGeom.sculptBrushPointWeight(current[index], cursor, rect, radius, falloff);
+    }
+    return computed;
+  };
+  // Twist alone freezes its affected point set at mousedown (see
+  // resolveFrozenTwistStrokeWeights); every other tool keeps its live per-sample weights.
+  const weights = tool === "sculpt-twist"
+    ? resolveFrozenTwistStrokeWeights(
+      stroke,
+      `${lock.id}:${segmentIndex}`,
+      current.length,
+      computeCursorWeights
+    )
+    : computeCursorWeights();
   let changed = false;
   if (tool === "sculpt-scale") {
     // Uniform scale of the whole exposed chain around the exposed root (ZBrush-like

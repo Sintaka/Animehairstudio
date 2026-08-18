@@ -22,6 +22,15 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（0.2.122）
+
+> Twist Brush 方向反转 + 描边期间冻结影响范围（分支 DHS/develop，1 Opus 子智能体 + 主进程 merge/自审）：
+> - **modules/sculpt/sculpt-brush.js**：新增 `const TWIST_DIRECTION = -1`（L119）并乘进 `sculptTwistBrushAngle`（L126），`SCULPT_TWIST_BRUSH_SCALE` 保持正幅值——符号**不能**藏进 scale 常量，否则调用方的 `{scale: …}` 覆盖会静默恢复旧方向。新语义：拖右 = 绕切线负向滚转、拖左为正；Ctrl 仍相对新默认取反。新增纯函数 `resolveFrozenTwistStrokeWeights(stroke, key, pointCount, computeWeights)`（L161-174）：首个采样算权重并存 `stroke.twistTipWeights`（Map，键 `lockId:segmentIndex`），后续采样复用；长度不符则重算（防链长中途变化错位）。
+> - **modules/geometry/sculpt-geometry.js**：快照捕获条件 `deps.sel.activeTool === "sculpt-move"` → `["sculpt-move","sculpt-twist"].includes(...)`（L513）；`fixedMoveBrushInfluence` 摘掉 `&& !twistBrushActive`（L577）并重写上方注释（原注释写的是相反理由）。twist 分支读的 `pointWeights` 由该 gate 填充，自动获得起笔冻结权重。`captureSculptMoveStrokeInfluence` 经核实与工具无关（只读 units/起笔光标/半径衰减/比例输入/裁剪面，不 branch on activeTool、不回写），复用安全。
+> - **modules/bones/bone-interaction.js**：抽出 `computeCursorWeights`，`weights` 仅在 `tool === "sculpt-twist"` 时走 `resolveFrozenTwistStrokeWeights`（L653-669），其余笔刷保持实时权重。缓存挂在每次 pointerdown 新建的 stroke 对象上（`finishSculptMoveStroke` 置 null、不池化），不跨描边泄漏。
+> - **tests**：`twist-brush.test.mjs` 翻转符号断言（断的是乘积与关系，幅值/衰减/层级/范围/根排除逻辑未变）+ 3 条冻结测试；零拖拽断言改 `Math.abs(...) === 0`（乘 −1 会产生 IEEE `-0`）；`dom-contract.test.mjs` 更新捕获条件断言并把 twist 分支的 `doesNotMatch` 切片重锚到 `} else if (tool === "sculpt-twist") {`（新增三元表达式抢在原锚点之前）。
+> - 回归：Node 全量 287/287（284 + 3）+ 真实 Sussurro_v1_0060.ahs 130/130；缓存号 20260829-1 + APP_VERSION 0.2.122 冻结同步。
+
 ## 最近更新（0.2.121）
 
 > 新增 Twist Brush + dev 规范审计整改（分支 DHS/develop，2 Opus 子智能体并行 + 主进程 merge/自审/整改）：

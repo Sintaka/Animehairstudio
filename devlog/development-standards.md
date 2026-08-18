@@ -34,7 +34,7 @@
 | 功能 | 状态 | 说明 |
 |---|---|---|
 | 简体中文（zh）语言 | 启用 | main 只有 EN/JA；zh 选项 + ZH 词典 + translateUiString 分发 |
-| 5 个自定义雕刻笔刷（Slide / Scale·Cut-Extend / Push / Orient / Twist）+ Smooth twist 平滑 | 启用 | 接入 sculpt 管线；Ctrl=反向；ScaleMode 行。**Twist（0.2.121 新增）**：绕切线轴手动滚转，角度只来自 `deltaX`、**无 camera 项**（Orient 的目标 up 取自相机、符号会随环绕翻转，Twist 不会）；纯函数 `sculptTwistBrushAngle`/`sculptTwistBrushDeltas` 单点定义、主发丝与发尖子骨骼共用；**H 模式只传播 twist 标量、绝不改子骨骼位置**（刻意不复用会重挂位置的 `applyHierarchicalRotate`），位置不变有硬断言 |
+| 5 个自定义雕刻笔刷（Slide / Scale·Cut-Extend / Push / Orient / Twist）+ Smooth twist 平滑 | 启用 | 接入 sculpt 管线；Ctrl=反向；ScaleMode 行。**Twist（0.2.121 新增，0.2.122 调整）**：绕切线轴手动滚转，角度只来自 `deltaX`、**无 camera 项**（Orient 的目标 up 取自相机、符号会随环绕翻转，Twist 不会）；纯函数 `sculptTwistBrushAngle`/`sculptTwistBrushDeltas` 单点定义、主发丝与发尖子骨骼共用；**H 模式只传播 twist 标量、绝不改子骨骼位置**（刻意不复用会重挂位置的 `applyHierarchicalRotate`），位置不变有硬断言。方向由 `TWIST_DIRECTION = -1` 单点控制（**勿把符号并进 `SCULPT_TWIST_BRUSH_SCALE`**——scale 可被调用方覆盖，符号藏在里面会被静默恢复）：拖右 = 负向滚转。**唯一使用「起笔冻结影响范围」的笔刷**：按下左键即锁定影响点集、不随光标移动（主发丝复用 `stroke.moveInfluence` 快照 + 从 `fixedMoveBrushInfluence` 排除组摘除；发尖侧用 `resolveFrozenTwistStrokeWeights` 缓存在 stroke 对象上），其余笔刷仍为实时权重 |
 | Houdini 导航 | 启用 | 并入 Navigation style（Anime Hair Studio / Blender / Houdini） |
 | S+左键拖动调节笔刷大小（含雕刻笔刷，拖动时指针固定） | 启用 | main 只有 Draw 等部分笔刷；雕刻笔刷与指针锁定为本地增强 |
 | Quick Save / Save as（Ctrl+S / Ctrl+Shift+S） | 启用 | 菜单项 + 全局快捷键 + 独立快捷键分区 |

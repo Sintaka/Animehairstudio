@@ -2007,7 +2007,7 @@ test("sculpt brushes share brush controls, per-tool strength, and camera-facing 
   // moved to modules/geometry/sculpt-geometry.js
   assert.match(sculptGeometry, /function captureSculptMoveStrokeInfluence\([\s\S]*sourceWeights[\s\S]*partnerWeights[\s\S]*influenceBySourceId\.set/);
   // moved to modules/geometry/sculpt-geometry.js
-  assert.match(sculptGeometry, /function beginSculptMoveStroke\(event\)[\s\S]*moveInfluence: deps\.sel\.activeTool === "sculpt-move"[\s\S]*captureSculptMoveStrokeInfluence/);
+  assert.match(sculptGeometry, /function beginSculptMoveStroke\(event\)[\s\S]*moveInfluence: \["sculpt-move", "sculpt-twist"\]\.includes\(deps\.sel\.activeTool\)[\s\S]*captureSculptMoveStrokeInfluence/);
   // moved to modules/geometry/sculpt-geometry.js
   assert.match(sculptGeometry, /function applySculptMoveStrokeSample\(stroke, clientX, clientY\)[\s\S]*const firstPointIndex = inflateBrushActive \? 0 : 1;[\s\S]*for \(let pointIndex = firstPointIndex; pointIndex < source\.points\.length; pointIndex \+= 1\)/);
   assert.match(source, /const sculptBrushStrengthByTool = \{[\s\S]*"sculpt-move": 0\.2,[\s\S]*"sculpt-smooth": 0\.5,[\s\S]*"sculpt-inflate": 0\.5/);
@@ -2149,7 +2149,21 @@ test("Twist Brush is docked as a sculpt brush and rolls strands around the tange
   assert.match(source, /function sculptBrushToolActive\([\s\S]*"sculpt-orient", "sculpt-twist"\]\.includes\(tool\)/);
   assert.match(sculptGeometry, /const reverseTool = \[[^\]]*"sculpt-twist"\]/);
   assert.match(sculptGeometry, /const twistBrushActive = deps\.effectiveSculptBrushTool\(\) === "sculpt-twist"/);
-  assert.match(sculptGeometry, /!orientBrushActive && !twistBrushActive/);
+  // The affected point set is frozen at mousedown: twist takes the stroke-start influence
+  // snapshot (like move) instead of live cursor weights, so it must NOT be excluded from
+  // fixedMoveBrushInfluence the way orient still is.
+  assert.match(
+    sculptGeometry,
+    /moveInfluence: \["sculpt-move", "sculpt-twist"\]\.includes\(deps\.sel\.activeTool\)\s*\?\s*captureSculptMoveStrokeInfluence\(/
+  );
+  const fixedInfluence = sculptGeometry.match(/const fixedMoveBrushInfluence = [^;]*;/)?.[0] || "";
+  assert.match(fixedInfluence, /!orientBrushActive/);
+  assert.doesNotMatch(fixedInfluence, /twistBrushActive/);
+  // Tip sub-bone path freezes its own per-sample weights for twist only.
+  assert.match(
+    boneInteraction,
+    /const weights = tool === "sculpt-twist"\s*\?\s*resolveFrozenTwistStrokeWeights\(\s*stroke,\s*`\$\{lock\.id\}:\$\{segmentIndex\}`/
+  );
   // Main strand: writes pointTwists only, hierarchy flag drives downstream propagation.
   assert.match(
     sculptGeometry,
@@ -2157,9 +2171,9 @@ test("Twist Brush is docked as a sculpt brush and rolls strands around the tange
   );
   assert.match(sculptGeometry, /sculptTwistBrushDeltas\(source\.points\.length, pointWeights, \{[\s\S]*hierarchy: Boolean\(deps\.sculptState\.hierarchyEditing\)/);
   // Tip sub-bone: writes authored.twists, never points.
-  assert.match(boneInteraction, /tool === "sculpt-twist"[\s\S]*twistArr\[index\] \+= delta[\s\S]*authored\.twists = twistArr/);
+  assert.match(boneInteraction, /\} else if \(tool === "sculpt-twist"\) \{[\s\S]*twistArr\[index\] \+= delta[\s\S]*authored\.twists = twistArr/);
   assert.doesNotMatch(
-    boneInteraction.match(/tool === "sculpt-twist"[\s\S]*?\} else \{/)?.[0] || "",
+    boneInteraction.match(/\} else if \(tool === "sculpt-twist"\) \{[\s\S]*?\n  \} else \{/)?.[0] || "",
     /points\[index\]|deps\.camera/
   );
   // The twist math must stay camera-independent: no camera term anywhere in either branch.
@@ -2558,7 +2572,7 @@ test("settings menu exposes preferences, language, and app version", async () =>
   assert.match(localization, /"Alt \+ Left Mouse":/);
   assert.match(localization, /"Center viewport on selected object":/);
   assert.equal(packageData.version, "0.1.5-Sintaka.0.2.63");
-  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.121["']/);
+  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.122["']/);
 });
 
 test("title bar exposes icon-only Patreon and Ko-fi support links", async () => {
@@ -2809,7 +2823,7 @@ test("newly drawn strands create linked mirror instances while X mirror is enabl
     readFile(new URL("../modules/geometry/draw-flow.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20260828-1/);
+  assert.match(html, /app\.js\?v=20260829-1/);
   assert.match(html, /id="mirrorInstanceAction"[^>]*>Mirror Strand<\/button>/);
   assert.match(
     source,
@@ -2901,7 +2915,7 @@ test("project materials select standard, anime anisotropic, and Lambert shaders"
     html,
     /id=["']hairMaterialShader["'][\s\S]*value=["']standard-anisotropic["']>Standard Anisotropic<[\s\S]*value=["']anime-anisotropic["']>Anime Anisotropic<[\s\S]*value=["']lambert["']>Lambert</
   );
-  assert.match(html, /app\.js\?v=20260828-1/);
+  assert.match(html, /app\.js\?v=20260829-1/);
   assert.match(
     html,
     /id=["']hairMaterialAnimeControls["'][\s\S]*id=["']hairMaterialAnimeBaseColor["'][\s\S]*value=["']#dbc2aa["'][\s\S]*id=["']hairMaterialAnimeShadowColor["'][\s\S]*value=["']#99675c["'][\s\S]*id=["']hairMaterialAnimeRimColor["'][\s\S]*value=["']#ffd9cf["'][\s\S]*id=["']hairMaterialAnimeRimStrength["'][\s\S]*value=["']0\.35["'][\s\S]*id=["']hairMaterialAnimeRimWidth["'][\s\S]*value=["']0\.3["'][\s\S]*id=["']hairMaterialAnimeHighlightEdgeSuppression["']/
@@ -4416,8 +4430,8 @@ test("strand width and depth curve editors expose draggable viewport mesh points
     /class="profile-dialog-actions taper-curve-actions"[\s\S]*id="addTaperPoint"[\s\S]*class="taper-toggle-stack"[\s\S]*id="taperAsymmetryToggle"[\s\S]*id="taperMeshPointsToggle"/
   );
   assert.doesNotMatch(html, /id="taperCurveSide"/);
-  assert.match(html, /styles\.css\?v=20260828-1/);
-  assert.match(html, /app\.js\?v=20260828-1/);
+  assert.match(html, /styles\.css\?v=20260829-1/);
+  assert.match(html, /app\.js\?v=20260829-1/);
   // localization.js is now loaded as an ES-module import inside app.js (there is no
   // separate localization script tag anymore).
   assert.match(source, /from "\.\/modules\/data\/localization\.js\?v=20260814-12"/);

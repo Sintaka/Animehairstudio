@@ -506,7 +506,11 @@ function beginSculptMoveStroke(event) {
     planeNormal,
     planeOffset,
     units,
-    moveInfluence: deps.sel.activeTool === "sculpt-move"
+    // Twist snapshots the influence for the same reason move does, but for a different
+    // goal: its affected point set must stay FIXED for the whole stroke (see the
+    // fixedMoveBrushInfluence comment). The capture is tool-agnostic — plain cursor
+    // weights at the stroke-start position — so reusing it here is safe.
+    moveInfluence: ["sculpt-move", "sculpt-twist"].includes(deps.sel.activeTool)
       ? captureSculptMoveStrokeInfluence(
           units,
           event.clientX,
@@ -566,10 +570,11 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
   const twistBrushActive = deps.effectiveSculptBrushTool() === "sculpt-twist";
   const reverse = Boolean(stroke.reverse);
   const preserveTips = Boolean(deps.sculptBrushPreserveTipsByTool[deps.sel.activeTool]);
-  // Twist joins the non-fixed group (like orient): it does not move points, so it must use
-  // LIVE cursor-weighted influence per sample rather than the move brush's stroke-start
-  // influence snapshot, which exists only to keep dragged positions coherent.
-  const fixedMoveBrushInfluence = !smoothBrushActive && !inflateBrushActive && !slideBrushActive && !scaleBrushActive && !pushBrushActive && !orientBrushActive && !twistBrushActive;
+  // Twist joins move in reading the stroke-START influence snapshot: once the button goes
+  // down its affected point set must stay FIXED for the whole stroke (user requirement), so
+  // rolling continues on exactly the points picked at mousedown even as the cursor moves
+  // away. Orient is the contrast case — it keeps tracking the cursor per sample.
+  const fixedMoveBrushInfluence = !smoothBrushActive && !inflateBrushActive && !slideBrushActive && !scaleBrushActive && !pushBrushActive && !orientBrushActive;
   const strokeDistance = Math.hypot(deltaX, deltaY);
   const changedSources = [];
 
