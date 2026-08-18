@@ -22,6 +22,18 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（0.2.121）
+
+> 新增 Twist Brush + dev 规范审计整改（分支 DHS/develop，2 Opus 子智能体并行 + 主进程 merge/自审/整改）：
+> - **modules/sculpt/sculpt-brush.js（新增纯函数）**：`SCULPT_TWIST_BRUSH_SCALE = 0.01`、`sculptTwistBrushAngle(deltaX, weight, strength, {reverse, scale})`、`sculptTwistBrushDeltas(pointCount, weights, {deltaX, strength, reverse, hierarchy, rangeStart, rangeEnd, firstIndex})` → per-point twist **delta 数组**（签名与函数体内不出现位置）。角度**只来自 `deltaX`**、无 camera 项（与 Orient 的本质差别：后者目标 up 取自 `camera.position`，相机穿过发丝时符号翻转）；`hierarchy` 为真时把同一 delta 累加进 `[rangeStart, rangeEnd)` 全部下游点。
+> - **modules/geometry/sculpt-geometry.js**：`reverseTool` 列表 += `sculpt-twist`；新增 `twistBrushActive` 标志并纳入 `fixedMoveBrushInfluence` 排除组（twist 不移动点，与 orient 同类）；主发丝分支只写 `source.pointTwists`，range 取 `curveSurfaceControllerPointRange(source)`、`firstIndex: 1`（根不参与）。
+> - **modules/bones/bone-interaction.js**：发尖子骨骼分支紧随 `sculpt-orient` 之后，只写 `twistArr`→`authored.twists`，`points` 全程不动；range/firstIndex 取既有 `firstBelow`（暴露根钳位）。**未回归 0.2.120**：`current`/`displayed` 的物化取种子未改，twist 只读 `currentTwists`。
+> - **app.js**：`sculptBrushStrengthByTool["sculpt-twist"] = 0.5`；`sculptBrushToolActive()` 谓词列表 += `sculpt-twist`；`sculptGeomDeps` 新增 `curveSurfaceControllerPointRange`。**index.html**：Orient 之后新增工具按钮（`data-tool="sculpt-twist"` + `sculpt-twist-icon` + title/aria-label）。**styles.css**：`.sculpt-twist-icon`（仿 `.sculpt-orient-icon`）。**loc-ja.js / loc-zh.js**：2 条词条（ZH 按既有约定笔刷名保留英文）。
+> - **H 模式刻意不复用 `applyHierarchicalRotate`**（app.js L7280-7281 重挂 segment、L7287 绕 pivot 旋转位置 —— 那会改子骨骼位置，正是要避免的）；只传播 twist 标量，沿用 L7299-7302 既有累加约定。硬断言见 tests/twist-brush.test.mjs（H ON 时下游同 delta **且** 位置 deepEqual 不变）。
+> - **未加快捷键**（无既有空位；规范要求新快捷键独立分区）。**未改** `placement.js` 状态栏文案（与 slide/scale/push/orient 一致落到通用文案，改动会波及既有笔刷的共享字符串）。
+> - **devlog 规范整改**（审计子智能体产出，主进程执行）：`development-standards.md` 修版本号自相矛盾、作废 0.2.118 的「刻意不统一」结论、store 数 15→18、app.js 行数不再写死、注释规则重写、子智能体条目去产品名 + 补失败接手、bump 清单澄清、信任前缀补 node/npm、**新增 4 条根因规范**；`README.md` 修「未实施」误标 + 补 0.2.114–0.2.121 摘要 + store 数；`STATE_MANAGEMENT.md` 17→18 并补 `windState` 行。
+> - 回归：Node 全量 284/284（新增 8：twist-brush 7 + dom-contract 1）+ 真实 Sussurro_v1_0060.ahs 130/130；缓存号 20260828-1 + APP_VERSION 0.2.121 冻结同步。
+
 ## 最近更新（0.2.120）
 
 > 修笔刷雕刻发尖时发尖跳回原位（分支 DHS/develop，1 Opus 子智能体 + 主进程 merge/自审）：

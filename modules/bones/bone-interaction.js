@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { splitBonesFor, materializeSplitBones } from "./bone-model.js?v=20260813-1";
 import { materializeStrandSplitBones } from "./bone-model.js?v=20260813-1";
 import { leafIndexAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
-import { smoothSculptPointDeltas } from "../sculpt/sculpt-brush.js?v=20260814-12";
+import { sculptTwistBrushDeltas, smoothSculptPointDeltas } from "../sculpt/sculpt-brush.js?v=20260814-12";
 import { solvePulledStrand } from "../geometry/strand-constraints.js?v=20260814-12";
 
 // deps: store .state proxies (sculptState/sel/guideState/scalpState) + module instances
@@ -733,6 +733,31 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
       twistArr[index] = twistArr[index] + angle * weights[index] * strength * 0.2;
       changed = true;
     }
+    if (changed) authored.twists = twistArr.map((v) => Number(v) || 0);
+  } else if (tool === "sculpt-twist") {
+    // Manual axial roll of the tip section around its chain tangent, driven by the drag
+    // alone (NO camera term — that is the difference from sculpt-orient above). Like
+    // orient, only the section orientation changes; the chain (bone position) does NOT move,
+    // so `points` is left untouched and only the twist scalars are written.
+    const twistArr = (Array.isArray(currentTwists) && currentTwists.length === current.length)
+      ? currentTwists.map((v) => Number(v) || 0)
+      : current.map(() => 0);
+    // H mode: the "children" are the downstream chain points of this same tip chain. The
+    // scalar delta accumulates into them so the sub-chain rolls rigidly without re-chaining.
+    const deltas = sculptTwistBrushDeltas(current.length, weights, {
+      deltaX,
+      strength,
+      reverse,
+      hierarchy: Boolean(deps.sculptState.hierarchyEditing),
+      rangeStart: firstBelow,
+      rangeEnd: current.length,
+      firstIndex: firstBelow
+    });
+    deltas.forEach((delta, index) => {
+      if (!delta) return;
+      twistArr[index] += delta;
+      changed = true;
+    });
     if (changed) authored.twists = twistArr.map((v) => Number(v) || 0);
   } else {
     // move (and any fallback): masked view-plane translation

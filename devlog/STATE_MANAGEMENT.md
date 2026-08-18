@@ -1,6 +1,6 @@
 # 状态管理架构 / STATE MANAGEMENT
 
-> 阶段 3（全局状态收敛）的成果与规范。app.js 原有 241 个顶层 `let`（全局可变状态）已收敛到 **17 个 store**（main 0.1.5 移植新增 multiCameraState/recovery），剩余 1 个（camera 渲染核心对象，保留全局）。
+> 阶段 3（全局状态收敛）的成果与规范。app.js 原有 241 个顶层 `let`（全局可变状态）已收敛到 **18 个 store**（main 0.1.5 移植新增 multiCameraState/recovery；0.2.112 新增 windState），剩余 1 个（camera 渲染核心对象，保留全局）。
 > 目的：让新 agent 知道「状态在哪、怎么读写、怎么加新状态」，避免再往 app.js 堆全局 let。
 
 ## 1. 核心模式：scene-store
@@ -13,7 +13,7 @@
 
 各域 store 通过 `createXxxStore()` 封装 scene-store，统一返回 `{ state, snapshot, restore }`。
 
-## 2. Store 清单（17 个）
+## 2. Store 清单（18 个）
 
 | store 变量 | 文件 | 覆盖 | 说明 |
 |---|---|---|---|
@@ -35,6 +35,7 @@
 | `miscState` | core/misc-store.js | 20 | 工具/radial/fps/braid/杂项状态（camera 保留全局） |
 | `multiCameraState` | core/multi-camera-store.js | 6 | 多相机四视图（main 0.1.5 移植，实验性，运行时状态不入档） |
 | `recovery` | io/recovery-store.js | 11 | 自动保存/崩溃恢复调度状态（main 0.1.5 移植） |
+| `windState` | core/wind-store.js | 13 | 吹风预览 10 个持久化参数 + 运行时 active/playing/time（0.2.112 新增；预览缓存走 WeakMap，不入 .ahs） |
 
 ## 3. 剩余全局 let（仅 1 个，app.js）
 

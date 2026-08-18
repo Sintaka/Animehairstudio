@@ -520,7 +520,8 @@ const sculptBrushStrengthByTool = {
   "sculpt-slide": 0.6,
   "sculpt-scale": 0.5,
   "sculpt-push": 1,
-  "sculpt-orient": 0.5
+  "sculpt-orient": 0.5,
+  "sculpt-twist": 0.5
 };
 const sculptBrushPreserveTipsByTool = {
   "sculpt-move": false,
@@ -3158,6 +3159,7 @@ Object.assign(sculptGeomDeps, {
   camera,
   commitClumpMemberRestState: clumpProceduralApi.commitClumpMemberRestState,
   curveFrameAt,
+  curveSurfaceControllerPointRange: curveSurfaceCreate.curveSurfaceControllerPointRange,
   effectiveSculptBrushTool,
   flushPendingLockGeometryUpdates,
   getSelectedLock,
@@ -5429,7 +5431,7 @@ function cycleViewportFraming() {
 
 
 function sculptBrushToolActive(tool = sel.state.activeTool) {
-  return ["sculpt-move", "sculpt-smooth", "sculpt-inflate", "sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient"].includes(tool);
+  return ["sculpt-move", "sculpt-smooth", "sculpt-inflate", "sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient", "sculpt-twist"].includes(tool);
 }
 
 function sculptBrushSelectionMaskActive() {

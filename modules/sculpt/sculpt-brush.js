@@ -102,6 +102,45 @@ export function pointInCameraFacingHalfSpace(point, planeNormal, planeOffset = 0
   return dot - (Number(planeOffset) || 0) >= -Math.abs(Number(tolerance) || 0);
 }
 
+// Twist Brush (sculpt-twist) — MANUAL axial roll around the strand tangent.
+// Deliberately camera-free: the angle comes from the horizontal drag component only, so
+// the sign is fixed in SCREEN space (drag right => positive roll around the tangent) and
+// never flips when the camera orbits. That is the whole difference from the Orient Brush,
+// which derives its target roll from the camera position.
+export const SCULPT_TWIST_BRUSH_SCALE = 0.01;
+
+export function sculptTwistBrushAngle(deltaX, weight, strength, options = {}) {
+  const drag = Number(deltaX) || 0;
+  const influence = Math.min(1, Math.max(0, Number(weight) || 0));
+  const amount = Number(strength) || 0;
+  const scale = Number.isFinite(Number(options.scale)) ? Number(options.scale) : SCULPT_TWIST_BRUSH_SCALE;
+  return (options.reverse ? -1 : 1) * drag * influence * amount * scale;
+}
+
+// Returns a per-point twist DELTA array (radians). Positions are never involved: the
+// caller adds these scalars onto its twist array and touches nothing else.
+// hierarchy (H mode): the brushed point's delta also accumulates into every downstream
+// point inside [rangeStart, rangeEnd), so the sub-chain rolls rigidly WITHOUT moving —
+// unlike a hierarchy rotate, no position or axis is re-chained.
+export function sculptTwistBrushDeltas(pointCount, weights, options = {}) {
+  const count = Math.max(0, Math.floor(Number(pointCount) || 0));
+  const deltas = new Array(count).fill(0);
+  if (!count) return deltas;
+  const { deltaX = 0, strength = 1, reverse = false, scale, hierarchy = false } = options;
+  const start = Math.max(0, Math.floor(Number(options.rangeStart) || 0));
+  const rawEnd = Number(options.rangeEnd);
+  const end = Math.min(count, Number.isFinite(rawEnd) ? Math.floor(rawEnd) : count);
+  const first = Math.max(start, Math.floor(Number(options.firstIndex) || 0));
+  for (let index = first; index < end; index += 1) {
+    const angle = sculptTwistBrushAngle(deltaX, weights?.[index], strength, { reverse, scale });
+    if (!angle) continue;
+    deltas[index] += angle;
+    if (!hierarchy) continue;
+    for (let downstream = index + 1; downstream < end; downstream += 1) deltas[downstream] += angle;
+  }
+  return deltas;
+}
+
 export function smoothSculptTwistDeltas(twists, weights, strength = 1, rate = 0.04) {
   const source = Array.isArray(twists) ? twists : [];
   const influence = Math.min(1, Math.max(0, Number(strength) || 0));
