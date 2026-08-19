@@ -1,28 +1,28 @@
 import { createScalpBuilderApi } from "./modules/scalp/scalp-builder.js?v=20260814-12";
 import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260814-12";
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
-import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260830-1";
+import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260830-1";
-import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260830-1";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260901-1";
+import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
-import { createSegmentControlApi, canFitAnotherStrandSplit, applyStrandSplitGapToTubes } from "./modules/bones/segment-control.js?v=20260830-1";
-import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260830-1";
+import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-1";
+import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-1";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260814-1";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260814-12";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260814-12";
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260814-8";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260814-12";
-import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip, strandSplitBonesFor, materializeStrandSplitBones, strandSplitBonesToData, strandSplitBonesFromData, mirrorStrandSplitBones, strandSplitForkTForSegment, strandSplitDirectionForSegment, strandSplitsFor, segmentBoneHost, SPREAD_MAX, STRAND_SEGMENT_HOST } from "./modules/bones/bone-model.js?v=20260830-1";
+import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip, strandSplitBonesFor, materializeStrandSplitBones, strandSplitBonesToData, strandSplitBonesFromData, mirrorStrandSplitBones, strandSplitsFor, segmentBoneHost, SPREAD_MAX, STRAND_SEGMENT_HOST } from "./modules/bones/bone-model.js?v=20260901-1";
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
-import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260829-2";
+import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
-import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260830-1";
+import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-1";
 import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-3";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260829-1";
-import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260814-12";
+import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260901-1";
 import { createPresetLibraryApi } from "./modules/io/preset-library.js?v=20260812-1";
-import { createDrawFlowApi } from "./modules/geometry/draw-flow.js?v=20260830-1";
+import { createDrawFlowApi } from "./modules/geometry/draw-flow.js?v=20260901-1";
 import { createRadialMenuApi } from "./modules/geometry/radial-menu.js?v=20260814-12";
 import { createPlacementApi } from "./modules/geometry/placement.js?v=20260814-12";
 import { createProceduralDuplicateApi } from "./modules/geometry/procedural-duplicate.js?v=20260814-12";
@@ -44,7 +44,7 @@ import { createReferenceStore } from "./modules/edit/reference-store.js?v=202608
 import { createDrawStore } from "./modules/edit/draw-store.js?v=20260814-12";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260814-12";
 import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
-import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260830-1";
+import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260901-1";
 // Wind preview wiring: store + pure wind math (both modules are built in parallel; until
 // they land these imports 404 — expected, coordinated at merge).
 import { createWindStore } from "./modules/core/wind-store.js?v=20260817-2";
@@ -143,7 +143,7 @@ import {
   scaleCapsuleRadialLoops
 } from "./modules/geometry/capsule-curve.js?v=20260814-12";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./modules/io/obj-export.js?v=20260814-12";
-import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260830-1";
+import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260901-1";
 import {
   fileActionFormat,
   fileNameForAction,
@@ -256,7 +256,7 @@ import {
   DEFAULT_LANGUAGE,
   LANGUAGE_STORAGE_KEY,
   normalizeLanguage
-} from "./modules/data/localization.js?v=20260829-1";
+} from "./modules/data/localization.js?v=20260901-1";
 import {
   emptyToolPresetLibrary,
   normalizeToolPresetLibrary,
@@ -285,7 +285,7 @@ import {
 import {
   createClumpBrushTemplate,
   normalizeClumpBrushTemplate
-} from "./modules/data/clump-brush-presets.js?v=20260814-12";
+} from "./modules/data/clump-brush-presets.js?v=20260901-1";
 import { createMaterialUiApi } from "./modules/material/material-ui.js?v=20260813-1";
 import { createIoTailApi } from "./modules/io/io-tail.js?v=20260813-2";
 
@@ -1461,7 +1461,6 @@ const strandCreationDefaults = {
   strandSplitEnabled: false,
   strandSplitPosition: 0,
   strandSplitHeight: 0.3,
-  strandSplitGap: 0.12,
   strandTipStart: 0.75,
   curlCount: 4,
   curlDisplacement: 0.18,
@@ -3375,13 +3374,15 @@ const panelShapeValues = {
   panelTipCurve: document.querySelector("#panelTipCurveValue"),
   panelTipLoops: document.querySelector("#panelTipLoopsValue")
 };
+// 0.2.132：全局 Split Spacing 滑杆（#strandSplitGap）已删除 —— 它承载的「segment separate
+// / 整管横向平移」语义被整体移除，发尖聚合改由每管 Tip Clump（#strandSegmentSpread）表达。
+// 两个字典**刻意保留**（不塌缩成单个 checkbox 常量）：下方的 setMixedControl 多选同步与
+// input 处理器都按 Object.entries 遍历它们，将来再加 split 级标量控件时无需重接线。
+// strandSplitValues 现为空：strandSplitEnabled 是复选框、没有读数 output。
 const strandSplitInputs = {
-  strandSplitEnabled: document.querySelector("#strandSplitEnabled"),
-  strandSplitGap: document.querySelector("#strandSplitGap")
+  strandSplitEnabled: document.querySelector("#strandSplitEnabled")
 };
-const strandSplitValues = {
-  strandSplitGap: document.querySelector("#strandSplitGapValue")
-};
+const strandSplitValues = {};
 const strandTipInputs = {
   strandTipEnabled: document.querySelector("#strandTipEnabled"),
   strandTipStart: document.querySelector("#strandTipStart")
@@ -9227,7 +9228,9 @@ function addLock(presetName, overrides = {}, options = {}) {
   lock.strandSplitEnabled = Boolean(base.strandSplitEnabled);
   lock.strandSplitPosition = THREE.MathUtils.clamp(Number(base.strandSplitPosition ?? 0), -0.8, 0.8);
   lock.strandSplitHeight = THREE.MathUtils.clamp(Number(base.strandSplitHeight ?? 0.3), 0.02, 0.8);
-  lock.strandSplitGap = THREE.MathUtils.clamp(Number(base.strandSplitGap ?? 0.12), 0, 0.5);
+  // 0.2.132：strandSplitGap 已删除（全局 Split Spacing 滑杆 + segment separate 语义一并移除）。
+  // 旧档里的该字段**刻意不迁移**到每管 Tip Clump：它记的是横向平移量，与收窄比例不同义，
+  // 迁过去只会把旧数值当成新语义用。旧档加载后每管取 DEFAULT_STRAND_TIP_CLUMP。
   lock.strandTipStart = THREE.MathUtils.clamp(Number(base.strandTipStart ?? strandCreationDefaults.strandTipStart ?? 0.75), 0.2, 0.95);
   lock.strandTip = Array.isArray(base.strandTip?.points) ? strandTipFromData(base.strandTip, lock) : null;
   lock.strandSplitBones = Array.isArray(base.strandSplitBones) ? strandSplitBonesFromData(base.strandSplitBones, lock) : null;
@@ -9455,7 +9458,6 @@ function createMirrorPartner(lock, options = {}) {
     strandSplitEnabled: Boolean(lock.strandSplitEnabled),
     strandSplitPosition: -Number(lock.strandSplitPosition ?? 0),
     strandSplitHeight: Number(lock.strandSplitHeight ?? 0.3),
-    strandSplitGap: Number(lock.strandSplitGap ?? 0.12),
     // 与 syncMirrorPartnerFromLock 的镜像写入同规则（clone → negate → sort）：取负翻转左右
     // 次序，不排序则 addLock 内的 syncStrandSplitLegacyFields 会把错误那条的 height 写进标量。
     strandSplits: cloneStrandSplits(lock.strandSplits, lock.strandSplitPosition, lock.strandSplitHeight, STRAND_SPLIT_MAX)
@@ -9630,7 +9632,6 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   partner.strandSplitEnabled = Boolean(lock.strandSplitEnabled);
   partner.strandSplitPosition = -Number(lock.strandSplitPosition ?? 0);
   partner.strandSplitHeight = Number(lock.strandSplitHeight ?? 0.3);
-  partner.strandSplitGap = Number(lock.strandSplitGap ?? 0.12);
   // 取负后必须重新排序：X 镜像把左右次序整个翻转，而 syncStrandSplitLegacyFields 读的是
   // strandSplits[0]（最左侧拉链）作为 legacy 标量真源。不排序就会把「原最左」的 height 写成
   // 「镜像后最左」的 height —— 该标量参与 save/load，且是新增拉链高度的种子，不会自愈。
@@ -9868,7 +9869,6 @@ function snapshotState() {
       strandSplitEnabled: Boolean(lock.strandSplitEnabled),
       strandSplitPosition: Number(lock.strandSplitPosition ?? 0),
       strandSplitHeight: Number(lock.strandSplitHeight ?? 0.3),
-      strandSplitGap: Number(lock.strandSplitGap ?? 0.12),
       strandSplits: cloneStrandSplits(lock.strandSplits, lock.strandSplitPosition, lock.strandSplitHeight, STRAND_SPLIT_MAX),
       strandTipStart: Number(lock.strandTipStart ?? 0.75),
       strandTip: lock.strandTip ? strandTipToData(lock.strandTip) : null,
@@ -10425,7 +10425,6 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     strandSplitEnabled: Boolean(snapshot.strandSplitEnabled),
     strandSplitPosition: THREE.MathUtils.clamp(Number(snapshot.strandSplitPosition ?? 0), -0.8, 0.8),
     strandSplitHeight: THREE.MathUtils.clamp(Number(snapshot.strandSplitHeight ?? 0.3), 0.02, 0.8),
-    strandSplitGap: THREE.MathUtils.clamp(Number(snapshot.strandSplitGap ?? 0.12), 0, 0.5),
     strandSplits: cloneStrandSplits(
       snapshot.strandSplits,
       THREE.MathUtils.clamp(Number(snapshot.strandSplitPosition ?? 0), -0.8, 0.8),
@@ -13352,10 +13351,6 @@ function syncResponsiveSidebarDock() {
 function syncStrandSplitInputs(target = taperEditor.activeStrandShapeTarget()) {
   if (!target || target.geometryType && target.geometryType !== "strand") return;
   strandSplitInputs.strandSplitEnabled.checked = Boolean(target.strandSplitEnabled);
-  const gap = Number(target.strandSplitGap ?? strandCreationDefaults.strandSplitGap);
-  strandSplitInputs.strandSplitGap.value = gap;
-  strandSplitInputs.strandSplitGap.disabled = !target.strandSplitEnabled;
-  strandSplitValues.strandSplitGap.textContent = gap.toFixed(2);
   syncStrandSplitControls(target);
   syncStrandSplitTipInputs(target);
   // 与 syncPanelShapeInputs 末尾调用 syncPanelSegmentControls 同构：段数随 zipper 增删
@@ -13419,12 +13414,8 @@ function currentStrandSplitTipChains(lock) {
   const curlSegments = lock.curlEnabled ? Math.ceil(Number(lock.curlCount ?? 4) * 14) : 0;
   const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), curlSegments), 4, 256);
   const parameters = strandCurveParameters(lock, curve, lengthSegments);
-  const frames = [];
-  let previousFrame = null;
-  for (const t of parameters) {
-    previousFrame = strandGeometryFrameAt(lock, curve, t, previousFrame);
-    frames.push(previousFrame);
-  }
+  // 0.2.132：这里原本还要预算逐行 frame，只为给已删除的 opening 提供 frame.x（横向平移方向）。
+  // rest 现在只需要曲线点或环心，两者都不用帧，故整趟 frame 预算随之删除。
   const storedRestCenters = lock.mesh?.geometry?.userData?.strandSplitRestCenters;
   const tubeRestCenters = Array.isArray(storedRestCenters)
     && storedRestCenters.length === bones.length
@@ -13439,28 +13430,20 @@ function currentStrandSplitTipChains(lock) {
     ))
     ? storedRestCenters
     : null;
-  const baseWidth = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1);
-  const defaultSpread = THREE.MathUtils.clamp(Number(lock.strandSplitGap ?? 0.12), 0, 0.99);
   return bones.map((bone, tubeIndex) => {
-    const spread = bone.spread ?? defaultSpread;
-    // 多拉链：叉口深度与推开方向都按段取（与 createSplitStrandGeometry 同规则）；
-    // 单拉链时退化为旧的 1-strandSplitHeight 与 -1/+1，行为不变。
-    const splitStart = strandSplitForkTForSegment(lock, tubeIndex);
-    const direction = strandSplitDirectionForSegment(lock, tubeIndex);
     const restPointAt = (t) => {
+      // 真源：几何写出的每管扫掠环心（strandSplitRestCenters）。0.2.120 物化空间要求视口
+      // 与几何用**同一条** rest，所以只要环心可用就一律走它。
       if (tubeRestCenters) {
         const center = sampleCenterlinePoint(tubeRestCenters[tubeIndex], parameters, t);
         if (center) return new THREE.Vector3(center.x, center.y, center.z);
       }
-      let row = 0;
-      let bestDistance = Infinity;
-      for (let r = 0; r < parameters.length; r += 1) {
-        const distance = Math.abs(parameters[r] - t);
-        if (distance < bestDistance) { bestDistance = distance; row = r; }
-      }
-      const frame = frames[row];
-      const opening = t <= splitStart ? 0 : baseWidth * spread * THREE.MathUtils.smoothstep(t, splitStart, 1) * direction;
-      return curve.getPoint(t).addScaledVector(frame.x, opening);
+      // 回退（环心尚未写出：刚加完 zipper、长度还不匹配的那一帧）= 主脊柱本身。
+      // 0.2.132 前这里加的是 opening（baseWidth·spread·smoothstep·direction，即已删除的
+      // 「整管横向平移」）；该语义移除后脊柱就是最接近管心的可得近似 —— 真正的管心还差一个
+      // band 中心的横向偏移，但那需要 profile 多边形，这条回退路径拿不到。偏差无害：
+      // materializeTipChain 会把 authored delta 重新叠加到新 rest 上（rest 变动本就是常态）。
+      return curve.getPoint(t);
     };
     const count = Math.max(2, Array.isArray(lock.points) ? lock.points.length : 2);
     return materializeTipChain(bone.tip || null, restPointAt, count);
@@ -17109,21 +17092,15 @@ Object.entries(strandSplitInputs).forEach(([key, input]) => {
       : sel.state.activeTool === "draw" ? strandCreationDefaults : null;
     if (!target) return;
     const value = input.type === "checkbox" ? input.checked : Number(input.value);
-    // strandSplitGap 是唯一需要「写标量之后再刷进每根管」的键（见 applyStrandSplitGapToTubes）；
-    // strandSplitEnabled 等其余键只有标量语义，走原路径不变。写入放在同一个 mutator 里，
-    // 多选（editSelectedLocks）与镜像同步（其内部的 syncActiveMirror → mirrorStrandSplitBones）
-    // 才会与既有处理器逐字同路，无需在这里额外补一次重建序列。
-    const writeTo = (item) => {
-      item[key] = value;
-      if (key === "strandSplitGap") applyStrandSplitGapToTubes(item);
-    };
+    // 0.2.132：这里原本有「strandSplitGap 写标量后再刷进每根管」的全局刷分支
+    // （applyStrandSplitGapToTubes）。该滑杆与其「segment separate」语义已整体删除，
+    // 剩下的键（strandSplitEnabled）只有纯标量语义，所以 mutator 回到单行写入。
+    const writeTo = (item) => { item[key] = value; };
     if (selected?.geometryType === "strand") {
       editSelectedLocks(writeTo, { immediate: true });
     } else {
       writeTo(target);
     }
-    // 全局刷刚改写了当前选中管的 spread：syncStrandSplitInputs 末尾的
-    // segmentApi.syncStrandSegmentControls 会从 bone 重读并刷新 #strandSegmentSpread 与其读数。
     syncStrandSplitInputs(target);
     if (sculptState.state.drawStrandStroke?.outputType === "strand" && target === strandCreationDefaults) {
       sculptState.state.drawStrandStroke[key] = target[key];
@@ -17396,7 +17373,7 @@ if (panelSegmentSpread) {
     const bones = materializeSplitBones(target);
     const { index } = segmentApi.selectedPanelSegment(target);
     const value = THREE.MathUtils.clamp(Number(panelSegmentSpread.value || 0), 0, SPREAD_MAX);
-    if (bones[index]) bones[index].spread = value;
+    if (bones[index]) bones[index].tipClump = value;
     if (panelSegmentSpreadValue) panelSegmentSpreadValue.textContent = value.toFixed(2);
     if (isPanelGeometry(selected)) {
       updateLockGeometry(selected, { immediate: true });

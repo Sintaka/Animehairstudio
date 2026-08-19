@@ -942,15 +942,15 @@ try {
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const bone = t.materializeSplitBones(lock)[2] || null;
-    const origSpread = bone.spread;
-    bone.spread = 0;
+    const origSpread = bone.tipClump;
+    bone.tipClump = 0;
     const p0 = t.tipWidthEdgePosition(lock, 2, splits, bone, 1, 1).point.clone();
-    bone.spread = 1; // above max: the defensive clamp must keep it equal to 0.99 (no degenerate collapse)
+    bone.tipClump = 1; // above max: the defensive clamp must keep it equal to 0.99 (no degenerate collapse)
     const p1 = t.tipWidthEdgePosition(lock, 2, splits, bone, 1, 1).point.clone();
     const gapOne = t.tipWidthSpreadGap(lock, 2, splits, bone, 1, 1);
-    bone.spread = 0.99;
+    bone.tipClump = 0.99;
     const gapMax = t.tipWidthSpreadGap(lock, 2, splits, bone, 1, 1);
-    bone.spread = origSpread;
+    bone.tipClump = origSpread;
     const gapAtTip = t.tipWidthSpreadGap(lock, 2, splits, bone, 1, 1);
     const sliderMax = document.querySelector('#panelSegmentSpread') ? document.querySelector('#panelSegmentSpread').max : null;
     return JSON.stringify({ moved: Number(p0.distanceTo(p1).toFixed(4)), gapOne: Number(gapOne.toFixed(6)), gapMax: Number(gapMax.toFixed(6)), clampOk: Math.abs(gapOne - gapMax) < 1e-9, gapAtTip: Number(gapAtTip.toFixed(4)), sliderMax });
@@ -964,16 +964,16 @@ try {
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const bone = t.materializeSplitBones(lock)[0] || null;
     if (!bone) return JSON.stringify({ missingBone: true });
-    const origSpread = bone.spread;
-    bone.spread = 0;
+    const origSpread = bone.tipClump;
+    bone.tipClump = 0;
     const gap0Outer = t.tipWidthSpreadGap(lock, 0, splits, bone, 1, -1);
     const gap0Zipper = t.tipWidthSpreadGap(lock, 0, splits, bone, 1, 1);
     const e0 = t.tipWidthEdgePosition(lock, 0, splits, bone, -1, 1);
-    bone.spread = 0.7;
+    bone.tipClump = 0.7;
     const gap7Outer = t.tipWidthSpreadGap(lock, 0, splits, bone, 1, -1);
     const gap7Zipper = t.tipWidthSpreadGap(lock, 0, splits, bone, 1, 1);
     const e7 = t.tipWidthEdgePosition(lock, 0, splits, bone, -1, 1);
-    bone.spread = origSpread;
+    bone.tipClump = origSpread;
     return JSON.stringify({
       gap0Outer: Number(gap0Outer.toFixed(6)),
       gap0Zipper: Number(gap0Zipper.toFixed(6)),
@@ -1000,14 +1000,14 @@ try {
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const bone = t.materializeSplitBones(lock)[2] || null;
-    const origSpread = bone.spread;
-    bone.spread = 1; // authored above max
+    const origSpread = bone.tipClump;
+    bone.tipClump = 1; // authored above max
     const gapOne = t.tipWidthSpreadGap(lock, 2, splits, bone, 1, 1);
-    const reRead = t.materializeSplitBones(lock)[2]?.spread; // SPREAD_MAX clamps 1 -> 0.99 on re-read
+    const reRead = t.materializeSplitBones(lock)[2]?.tipClump; // SPREAD_MAX clamps 1 -> 0.99 on re-read
     const live = t.materializeSplitBones(lock)[2] || null;
-    live.spread = 0.99;
+    live.tipClump = 0.99;
     const gapMax = t.tipWidthSpreadGap(lock, 2, splits, live, 1, 1);
-    live.spread = origSpread;
+    live.tipClump = origSpread;
     t.materializeSplitBones(lock); // restore normalized lock state
     return JSON.stringify({ gapOne: Number(gapOne.toFixed(6)), gapMax: Number(gapMax.toFixed(6)), clampOk: Math.abs(gapOne - gapMax) < 1e-9, reRead });
   })()`));

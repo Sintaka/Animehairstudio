@@ -25,7 +25,7 @@ import {
   strandSplitsFor,
   PANEL_SEGMENT_HOST,
   STRAND_SEGMENT_HOST
-} from "./bone-model.js?v=20260830-1";
+} from "./bone-model.js?v=20260901-1";
 import { tipChainFrameAt } from "../geometry/tip-sub-bone.js?v=20260830-1";
 
 // deps: panelTipStrand（panel 侧发尖链/fork/帧）+ clonePanelSplits + currentStrandSplitTipChains

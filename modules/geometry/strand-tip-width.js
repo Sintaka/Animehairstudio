@@ -8,19 +8,20 @@
 // 空间**（clipStrandProfileBand 裁剪后的 2D 截面多边形，尚未经 scaleX/frame/opening 变换）。
 // signedCoordinate 是由它派生的**管内归一化**标量 ∈ [-1, 1]，不是世界空间量。
 import * as THREE from "three";
-import { defaultStrandSplitSpread, strandSplitDirection, SPREAD_MAX } from "../bones/bone-model.js?v=20260830-1";
+import { defaultStrandTipClump, SPREAD_MAX } from "../bones/bone-model.js?v=20260901-1";
 import { sampleAsymmetricTaperCurve, sampleScale } from "./curve-math.js?v=20260813-3";
 import {
   buildTipWidthCurveFrom,
   segmentZipperHeights,
   setTipWidthCurveValueFrom,
+  tipClumpNarrowFraction,
   tipWidthCommonForkFromHeights,
   tipWidthGridFromHeights,
   tipWidthResetCurveFrom,
   tipWidthSideControlTsFrom,
   tipWidthSideExposesTAt,
   tipWidthSideForkFromHeights
-} from "./tip-width-curve.js?v=20260829-1";
+} from "./tip-width-curve.js?v=20260901-1";
 // 发尖子骨骼链的几何无关原语（与 strand-geometry.js 的「Route 2」再锚定趟用**同一批**
 // 函数）：把手必须跟随被拖动的发尖链，见文件下方 strandTipChainTransformAt。
 import {
@@ -130,6 +131,46 @@ export function strandTipBlendStartT(splits) {
 export function strandTubeSideForkT(splits, tubeIndex, side) {
   const { left, right } = segmentZipperHeights(splits, tubeIndex);
   return tipWidthSideForkFromHeights(left, right, side);
+}
+
+// ── Tip Clump（bone.tipClump）在发丝管上的收窄：profile x 绕**本管 band 中心**相对缩放 ─────
+// 0.2.132 的语义统一（用户决定）：Tip Clump 只做「发尖相对自身宽度收窄」，与 panel 完全同义。
+// panel 侧把共享比例乘上段自身**半跨度**得到 u 空间 gap（tipWidthSpreadGap）；发丝侧把同一个
+// 比例乘上**管内半跨度**、沿 profile x 向管中心收 —— 于是同一个 Tip Clump 数值在两种几何上
+// 收掉的都是「自身宽度的同一比例」。
+//
+// 坐标空间：入参与返回值都在 **profile 局部空间**（clipStrandProfileBand 的裁剪结果，尚未经
+// scaleX/frame 变换），与 band.centerX / band.halfSpan 同空间。
+//
+// 为什么必须在 warp **之前**收窄（不是 warp 之后再缩）：panel 是先把列的 u 收进 [uStart,uEnd]
+// 再用该 u 采样宽度曲线，发尖 WidthCurve 因此采在**收窄后**的坐标上。发丝要同构就必须同序 ——
+// 收窄后的 x 会经 strandTubeSignedCoordinate 归一化成 override 的 signedCoordinate，取值范围
+// 随收窄从 ±1 缩到 ±(1 − 比例)，与 panel 逐字对应。收窄是绕 centerX 的纯缩放，**不改符号**，
+// 所以 usesBoneCurveAt 的左右侧判定不受影响。
+//
+// **刻意不参与曲率收窄预趟**（与发尖 WidthCurve override 同样的三条理由，见 strand-geometry.js
+// 那段注释）：预趟产出的 factors[row] 全行全管共享，且经 falloff 会把发尖处的变细传播到
+// row 0 → row 0 顶点位移 → 破 UV 契约（红线）。所以预趟传 section.points 原样、sweep 趟才收窄。
+//
+// tipClump 为 0（或 t 未过本侧 zipper）时返回**入参数组本身**：调用方零分配、逐字节等于旧路径。
+export function strandTipClumpNarrowedProfile(points, band, tipClump, t, leftHeight, rightHeight) {
+  const list = Array.isArray(points) ? points : [];
+  if (!band || !list.length) return list;
+  const clamped = THREE.MathUtils.clamp(Number(tipClump) || 0, 0, SPREAD_MAX);
+  if (!(clamped > 0)) return list;
+  // 两侧比例分开算：相邻 zipper 高度不同时斜坡起点不同（panel 既有行为）。
+  const leftFraction = tipClumpNarrowFraction(leftHeight, clamped, t);
+  const rightFraction = tipClumpNarrowFraction(rightHeight, clamped, t);
+  if (!(leftFraction > 0) && !(rightFraction > 0)) return list;
+  return list.map((profile) => {
+    const x = Number(profile?.x) || 0;
+    // 按**管内相对坐标的符号**选边（单一定义点 strandTubeSignedCoordinate）：裁剪后边缘管的
+    // raw x 只有一个符号，按 raw x 选边会让一侧永不收窄（= 0.2.80 死区同类）。
+    const signed = strandTubeSignedCoordinate(x, band.centerX, band.halfSpan);
+    const fraction = signed < 0 ? leftFraction : rightFraction;
+    if (!(fraction > 0)) return profile;
+    return { ...profile, x: band.centerX + (x - band.centerX) * (1 - fraction) };
+  });
 }
 
 // 该管该点当前是否应改用段级曲线：本侧 fork 之上才用，之下（含本侧完全锁定 fork >= 1）
@@ -342,10 +383,12 @@ export function setStrandTipWidthCurveValue(lock, splits, tubeIndex, bone, side,
 // tip-sub-bone-host.js 文件头同一条禁令）。
 //
 // **变换链**（与 createSplitStrandGeometry 的 sweep 同构，逐项对照）：
+//   ⓪ Tip Clump 收窄 = strandTipClumpNarrowedProfile(...)  ← 与几何**同一函数**、同一入参
 //   ① warped = strandProfileTopologyAt(...)  ← 与几何同一函数、同一 widthOverride
 //   ② ringPoint = frame.x·warped.x + frame.z·warped.z
 //   ③ 曲率收窄 factors[row]：**无法复现，刻意省略**（见下方 FACTORS 说明）
-//   ④ ringPoint += frame.x · opening   ← 与几何同一 smoothstep/direction/spread 公式
+// 0.2.132 前链末还有一项「④ ringPoint += frame.x · opening」（整管横向平移）；该语义已随
+// segment separate 一起删除，几何侧也不再有这一项，两边仍逐项对应。
 // ③ 之所以不能复现：factors 来自 sweepCurvatureResponse(centers, radii, …)，而 radii 是
 // 对**全部行 × 全部管**先跑一遍 strandProfileTopologyAt 的前置 pass 的产物，并且经
 // falloff 在行间扩散——单点放置拿不到它，重算一遍等于把整条 sweep 复制进视口层。
@@ -460,10 +503,26 @@ export function strandTipWidthEdgePosition(geo, lock, splits, tubeIndex, bone, s
     sectionSplitStart: null,
     band
   });
+  // Tip Clump 收窄必须在这里也先施加、且用**与几何同一个函数**（strandTipClumpNarrowedProfile）：
+  // 绿色宽度把手要落在真实网格边缘上，而几何的发尖已被收窄。0.2.132 前这里加的是 opening
+  // （整管平移），与当时的几何同构；语义换成收窄后，两边必须一起换，否则把手会浮在网格外。
+  // 管中心点与边缘点走**同一次**收窄 + 同一次 warp：中心恰在 centerX 上，收窄对它是恒等
+  // （x − centerX = 0），所以 point − center 仍是纯横向量、拖拽基准不变。
+  const { left, right } = segmentZipperHeights(splits, tubeIndex);
+  const clumped = strandTipClumpNarrowedProfile(
+    [{ x: edgeX, z: edgeZ }, { x: band.centerX, z: edgeZ }],
+    band,
+    bone?.tipClump ?? defaultStrandTipClump(lock),
+    t,
+    // 无 zipper 的外侧镜像对侧（与 createSplitStrandGeometry 的 leftClumpHeight/
+    // rightClumpHeight 同规则；两处不同源会让把手与网格边缘错开）。
+    left ?? right ?? null,
+    right ?? left ?? null
+  );
   const warped = geo.strandProfileTopologyAt(
     lock,
     t,
-    [{ x: edgeX, z: edgeZ }, { x: band.centerX, z: edgeZ }],
+    clumped,
     sampleScale(lock?.pointScales, t, "x"),
     sampleScale(lock?.pointScales, t, "z"),
     samples,
@@ -473,20 +532,12 @@ export function strandTipWidthEdgePosition(geo, lock, splits, tubeIndex, bone, s
   const curve = geo.strandGeometryCurve(lock);
   const frame = geo.strandGeometryFrameAt(lock, curve, t, null);
   const spine = curve.getPoint(t);
-  // opening（整管横向平移）与几何逐字同构：t <= 本管 fork 时为 0，其后按
-  // smoothstep(t, fork, 1) 斜升，方向来自单一定义点 strandSplitDirection、spread 来自
-  // bone.spread（缺省回退 defaultStrandSplitSpread，与 createSplitStrandGeometry 同）。
-  // 宽度是缩放、张开是平移：两者刻意分开（红线 4），这里只是把已有平移加回去。
-  const forkT = strandTubeForkT(splits, tubeIndex);
-  const baseWidth = Number(lock?.baseWidth ?? lock?.width ?? 0.16) * Number(lock?.widthScale ?? 1);
-  const spread = bone?.spread ?? defaultStrandSplitSpread(lock);
-  const opening = t <= forkT
-    ? 0
-    : baseWidth * spread * THREE.MathUtils.smoothstep(t, forkT, 1)
-      * strandSplitDirection(tubeIndex, (Array.isArray(splits) ? splits : []).length);
+  // 0.2.132：这里原本还要把几何的 opening（整管沿 frame.x 平移）加回来。该平移已随
+  // 「segment separate」语义整体删除 —— 几何只做收窄，所以世界组装恰好是 warp 结果
+  // 乘曲率 factors，与 createSplitStrandGeometry 的 ringPoint 逐项对应。
   const factors = STRAND_TIP_WIDTH_FACTORS_APPROXIMATION;
   const toWorld = (warpedPoint) => spine.clone()
-    .addScaledVector(frame.x, warpedPoint.x * factors + opening)
+    .addScaledVector(frame.x, warpedPoint.x * factors)
     .addScaledVector(frame.z, warpedPoint.z * factors);
   const point = toWorld(warped[0]);
   const center = toWorld(warped[1]);
@@ -553,65 +604,78 @@ export function strandTipWidthEdgePoints(geo, lock, splits, tubeIndex, bone, sid
   return points;
 }
 
-// ── 绿色 Tip Clump 手柄：管 tubeIndex 在发尖处的「spread → 世界位置」线段 ─────────────
+// ── 绿色 Tip Clump 手柄：管 tubeIndex 在发尖处的「tipClump → 世界位置」线段 ────────────
 // panel 侧的对应量（bone-view-handles.js panelTipClumpHandlePoint + bone-interaction.js
 // kind==="segment"）是**段自身 u 跨度上的一个分数**：
-//   handleU = boundaries[seg] + (spread / SPREAD_MAX) * span，把手取该 u 处的段表面点。
-// 即「spread = 把手在本段自身横向跨度里的归一化位置」。发丝的正确类比不是「沿张开方向推
-// 多远」（那会在 direction === 0 的中间管上退化成一个不动的点，见下方 DEGENERATE 说明），
-// 而是**同一条**「本管自身横向跨度上的分数」：
-//   point(spread) = lerp(左边缘(spread), 右边缘(spread), spread / SPREAD_MAX)
+//   handleU = boundaries[seg] + (tipClump / SPREAD_MAX) * span，把手取该 u 处的段表面点。
+// 即「tipClump = 把手在本段自身横向跨度里的归一化位置」。发丝用**同一句话**，横向跨度换成
+// 「该管在发尖处的两侧边缘之间」：
+//   point(tipClump) = lerp(左边缘, 右边缘, tipClump / SPREAD_MAX)
 // 两侧边缘都取 t = 1（发尖端），由既有单一定义点 strandTipWidthEdgePosition 求值 —— 于是
 // 绿色手柄与该管的绿色 WidthCurve 手柄、发尖链手柄共用同一条变换链（含发尖子骨骼再锚定），
 // 拖发尖时三者一起走。
 //
-// **为什么返回线段而不是逐 spread 求值**：edgePosition 对 spread 的依赖只有 opening
-// （t = 1 时 opening = baseWidth · spread · direction，smoothstep(1, fork, 1) = 1），而它
-// 只是沿 frame.x 的平移；applyStrandTipChainTransform 对 worldPoint 是仿射的。所以
-// point(spread) 是 spread 的**仿射函数** ⇒ 世界轨迹是一条直线段，两端求值即完整确定。
-// 拖拽扫描因此只需两次几何求值 + 廉价插值，而不是每个探针都重跑一次 profile/frame 求解。
+// **跨度基准必须与 taper 无关**（0.2.132 实测踩过的坑，勿「优化」回去）：跨度取该管的
+// **标称**横向范围 —— band 的 profile 极值 × baseWidth（含 widthScale 与该行的 pointScales.x），
+// 而不是 t = 1 处真实网格边缘。理由是**默认 taper 曲线在 t = 1 的值恰为 0**
+// （app-config.js DEFAULT_TAPER_CURVE 末点 value: 0，真实工程 layered-side-bun 亦然）：
+//   - 真实边缘在那里全部收缩到脊柱同一点 ⇒ 左右边缘距离恒为 0 ⇒ 线段退化 ⇒ **手柄拖不动**
+//     （实测 scripts/verify-tip-clump.mjs 报 lowToHigh = 0；node 测试的 fixture 用的是恒 1 的
+//     FLAT_CURVE，所以掩盖了这一点）。
+//   - 每根管的中心也会一起塌到脊柱 ⇒ N+1 个手柄重叠成一个，无法分辨在拖哪根管。
+// 与 panel 同构：panel 的 handleU 建在**段边界**（u 空间，与 panel 宽度曲线无关）上，同样不随
+// taper 收缩；发丝的 band 极值就是它的对应量。taper 恒 1 时标称跨度与真实边缘重合。
+//
+// 仿射性（拖拽端 49 探针反演的前提，测试 "axis is AFFINE in Tip Clump" 钉住）：两端点都**不含
+// tipClump**，它只作为 lerp 系数出现 ⇒ point(tipClump) 严格线性。这也是为什么这里**不**调用
+// strandTipWidthEdgePosition —— 那个函数已按 tipClump 收窄，用它当端点会得到二次轨迹。
+//
+// 发尖链再锚定与 WidthCurve 手柄**共用同一条变换链**（applyStrandTipChainTransform），所以拖
+// 发尖时绿手柄、宽度手柄、发尖链手柄一起走。
 //
 // tangentOffset：沿发尖切线外推，避免与该管发尖链末点手柄（黄色）重合。**烘进本函数**是
 // 刻意的 —— 绘制与拖拽扫描必须落在**同一条**线段上，否则指针与球心恒有偏差（panel 侧就
 // 有这个已知偏差：它的扫描基线是 panelSplitControlPoint、不含偏移；发丝不复制该缺陷）。
 //
-// DEGENERATE（必须知道，不是本函数的 bug）：spread 在发丝几何里**只**经 opening 生效，而
-// opening ∝ strandSplitDirection(k, N) = (2k − N) / N。偶数拉链数的正中间管（k = N/2，如
-// N = 2 的管 1）direction === 0 ⇒ 改 spread 完全不动网格。这在 0.2.116 多拉链移植时就是
-// 这样，滑杆同样是空操作；本函数据此仍返回一条**非退化**线段（跨度来自管自身宽度，与
-// direction 无关），所以手柄可拖、读数会变，只是那一根管的网格不动。
 // 返回 null = 该管没有可放置的发尖边缘（profile 退化 / 无 splits）。
 export function strandTipClumpAxis(geo, lock, splits, tubeIndex, bone) {
-  const probeAt = (spread) => {
-    // 只覆写 spread：其余字段（tip 链、两侧 taperCurve、asymmetricWidthCurve）必须原样带上，
-    // 否则边缘位置会落在「无宽度曲线」的另一条形状上，线段就不是真实手柄轨迹了。
-    const probe = { ...(bone || {}), spread };
-    const left = strandTipWidthEdgePosition(geo, lock, splits, tubeIndex, probe, -1, 1);
-    const right = strandTipWidthEdgePosition(geo, lock, splits, tubeIndex, probe, 1, 1);
-    if (!left || !right) return null;
-    return {
-      left: left.point,
-      right: right.point,
-      // 切线取该管发尖链自身 y 轴（与法线箭头/gizmo 同一个 tipChainFrameAt 原语）；无链时
-      // 回退主几何帧 y。两者都是「发尖前进方向」。
-      tangent: tipClumpTangent(geo, lock, tubeIndex)
-    };
-  };
-  const low = probeAt(0);
-  const high = probeAt(SPREAD_MAX);
-  if (!low || !high) return null;
-  const endpointFor = (probe, spread) => probe.left.clone()
-    .lerp(probe.right, SPREAD_MAX <= 0 ? 0 : spread / SPREAD_MAX)
-    .addScaledVector(probe.tangent, TIP_CLUMP_HANDLE_TANGENT_OFFSET);
-  const start = endpointFor(low, 0);
-  const end = endpointFor(high, SPREAD_MAX);
+  const profileData = geo?.strandSplitProfileData?.(lock);
+  const samples = profileData?.samples;
+  if (!Array.isArray(samples) || samples.length < 3) return null;
+  const band = strandTubeBandExtents(samples, splits, tubeIndex);
+  if (!band) return null;
+  const curve = geo?.strandGeometryCurve?.(lock);
+  if (!curve) return null;
+  const frame = geo.strandGeometryFrameAt(lock, curve, 1, null);
+  const spine = curve.getPoint(1);
+  // profile x → 世界横向的标称比例（与 strandRadiusAt 的非曲线因子逐项相同：baseWidth ×
+  // widthScale × 该行 pointScales.x；**刻意不含** taper 采样值，见上方说明）。
+  const nominalWidth = Number(lock?.baseWidth ?? lock?.width ?? 0.16)
+    * Number(lock?.widthScale ?? 1)
+    * sampleScale(lock?.pointScales, 1, "x");
+  const worldAt = (profileX) => spine.clone().addScaledVector(frame.x, profileX * nominalWidth);
+  // 端点按**管内相对坐标的符号**定左右（单一定义点 strandTubeSignedCoordinate），与
+  // strandTipWidthEdgePosition 的选边判据同源：tipClump = 0 落在本管左侧、SPREAD_MAX 落在右侧。
+  const lowIsLeft = strandTubeSignedCoordinate(band.lowX, band.centerX, band.halfSpan) < 0;
+  const leftPoint = worldAt(lowIsLeft ? band.lowX : band.highX);
+  const rightPoint = worldAt(lowIsLeft ? band.highX : band.lowX);
+  // 切线取该管发尖链自身 y 轴（与法线箭头/gizmo 同一个 tipChainFrameAt 原语）；无链时回退
+  // 主几何帧 y。两者都是「发尖前进方向」。
+  const tangent = tipClumpTangent(geo, lock, tubeIndex);
+  // 发尖子骨骼链再锚定：与 WidthCurve 手柄同一条变换链（拖发尖时三者一起走）。
+  const tipTransform = strandTipChainTransformAt(geo, lock, splits, tubeIndex, bone, 1, frame);
+  const anchored = (point) => (
+    tipTransform ? applyStrandTipChainTransform(tipTransform, frame, point) : point
+  );
+  const start = anchored(leftPoint).addScaledVector(tangent, TIP_CLUMP_HANDLE_TANGENT_OFFSET);
+  const end = anchored(rightPoint).addScaledVector(tangent, TIP_CLUMP_HANDLE_TANGENT_OFFSET);
   return {
     start,
     end,
-    // spread → 世界位置（仿射，见上方推导）。钳在定义域内，越界探针不会跑到管外。
-    pointAt: (spread) => start.clone().lerp(
+    // tipClump → 世界位置（仿射，见上方推导）。钳在定义域内，越界探针不会跑到管外。
+    pointAt: (tipClump) => start.clone().lerp(
       end,
-      SPREAD_MAX <= 0 ? 0 : THREE.MathUtils.clamp(Number(spread) || 0, 0, SPREAD_MAX) / SPREAD_MAX
+      SPREAD_MAX <= 0 ? 0 : THREE.MathUtils.clamp(Number(tipClump) || 0, 0, SPREAD_MAX) / SPREAD_MAX
     )
   };
 }

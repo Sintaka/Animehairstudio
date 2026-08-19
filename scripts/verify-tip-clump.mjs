@@ -4,7 +4,7 @@
 //
 // What it proves that node tests cannot: the handle is actually allocated into the live
 // scene graph, becomes visible when a tip sub-bone is selected, is hit by the real
-// raycaster, and a real drag writes bone.spread + refreshes the right-hand slider.
+// raycaster, and a real drag writes bone.tipClump + refreshes the right-hand slider.
 //
 // Run: node scripts/verify-tip-clump.mjs [file.ahs] [--port 8282] [--cdp-port 9412]
 // With no .ahs argument it builds a split strand + split panel from scratch in-app.
@@ -164,7 +164,7 @@ try {
   check("selecting a tube's tip shows EVERY tube's Tip Clump handle", shownState.visible === shownState.total && shownState.total > 0, JSON.stringify(shownState));
   check("handles are the green 0x5df0a8 spheres carrying tipClumpSegment", shownState.colors.length === 1 && shownState.colors[0] === "#5df0a8" && shownState.keys.length === 1 && shownState.keys[0] === "number", JSON.stringify(shownState));
 
-  // ── 真实拖拽：raycaster 命中绿手柄 → 真 pointerdown/move/up → 写 bone.spread ────────
+  // ── 真实拖拽：raycaster 命中绿手柄 → 真 pointerdown/move/up → 写 bone.tipClump ────────
   const dragResult = JSON.parse(await evalJS(cdp, sel(`
     const THREE = t.THREE;
     const handles = (lock.curveObjects.tipClumpHandles || []).filter((h) => h.visible);
@@ -172,7 +172,7 @@ try {
     // 物化一次再取基线：真实拖拽的 begin 分支自己会 materialize，但基线必须在**同一空间**
     // 里取，否则会拿到空数组（派生视图尚未固化）而让「只改被拖那根管」无从比较。
     const beforeBones = t.materializeStrandSplitBones ? t.materializeStrandSplitBones(lock) : lock.strandSplitBones;
-    const before = (beforeBones || lock.strandSplitBones || []).map((b) => b.spread);
+    const before = (beforeBones || lock.strandSplitBones || []).map((b) => b.tipClump);
     const canvas = t.renderer.domElement;
     const rect = canvas.getBoundingClientRect();
     const from = t.projectToClient(target.position.clone());
@@ -250,7 +250,7 @@ try {
     const toY = from.y + (rect.top + rect.height / 2 - from.y) * 0.35;
     pd('pointermove', toX, toY);
     pd('pointermove', toX, toY);
-    const mid = (lock.strandSplitBones || []).map((b) => b.spread);
+    const mid = (lock.strandSplitBones || []).map((b) => b.tipClump);
     const sliderMid = document.querySelector('#strandSegmentSpread')?.value;
     const readoutMid = document.querySelector('#strandSegmentSpreadValue')?.textContent;
     pd('pointerup', toX, toY);
@@ -291,7 +291,7 @@ try {
     JSON.stringify(proximity)
   );
   check("pointerdown starts the shared kind=\"segment\" drag", dragResult.dragKind === "segment", `kind=${dragResult.dragKind} seg=${dragResult.dragSeg} diag=${JSON.stringify(dragResult.diag)}`);
-  check("a real drag writes bone.spread on the dragged tube ONLY", dragResult.changed === true && dragResult.changedCount === 1, JSON.stringify({ before: dragResult.before, mid: dragResult.mid }));
+  check("a real drag writes bone.tipClump on the dragged tube ONLY", dragResult.changed === true && dragResult.changedCount === 1, JSON.stringify({ before: dragResult.before, mid: dragResult.mid }));
   check("the right-hand Tip Clump slider hot-syncs during the drag", String(dragResult.readoutMid ?? "") !== "" && Math.abs(Number(dragResult.sliderMid) - dragResult.mid[dragResult.dragSeg]) < 0.02, JSON.stringify({ slider: dragResult.sliderMid, readout: dragResult.readoutMid, bone: dragResult.mid[dragResult.dragSeg] }));
   check("pointerup clears the drag state", dragResult.dragCleared === true);
 
@@ -302,10 +302,10 @@ try {
     const bones = lock.strandSplitBones;
     if (!bones || !bones[seg]) return JSON.stringify({ lowToHigh: -1, note: 'bones not materialized' });
     const p0 = handles[seg].position.clone();
-    bones[seg].spread = 0.05;
+    bones[seg].tipClump = 0.05;
     t.updateCurveObjects(lock, { visible: true });
     const pLow = handles[seg].position.clone();
-    bones[seg].spread = 0.95;
+    bones[seg].tipClump = 0.95;
     t.updateCurveObjects(lock, { visible: true });
     const pHigh = handles[seg].position.clone();
     return JSON.stringify({ lowToHigh: pLow.distanceTo(pHigh), fromStart: p0.distanceTo(pHigh) });`)));
@@ -359,9 +359,9 @@ try {
     const seg = 1;
     let low = null, high = null;
     if (bones[seg]) {
-      bones[seg].spread = 0.05; t.updateCurveObjects(lock, { visible: true });
+      bones[seg].tipClump = 0.05; t.updateCurveObjects(lock, { visible: true });
       low = handles[seg].position.clone();
-      bones[seg].spread = 0.95; t.updateCurveObjects(lock, { visible: true });
+      bones[seg].tipClump = 0.95; t.updateCurveObjects(lock, { visible: true });
       high = handles[seg].position.clone();
     }
     return JSON.stringify({

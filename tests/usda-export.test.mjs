@@ -1,5 +1,5 @@
 // tests/usda-export.test.mjs — 纯 node 测试（usda-export.js 仅依赖 bone-model.js 的
-// strandSplitDirection 唯一定义点 → three，无 DOM 依赖，可直接 import）：
+// strandSplitTubeCenter 唯一定义点 → three，无 DOM 依赖，可直接 import）：
 // 验证骨骼导出的 USD SkelBindingAPI 结构 —— 单个 def SkelRoot "Character" 内含所有
 // 发丝的 def Skeleton（joints / bindTransforms / restTransforms，不带 skel: 前缀），
 // 蒙皮 mesh 与 Skeleton 同级嵌在 Character SkelRoot 内，rel skel:skeleton 指向
@@ -470,7 +470,6 @@ const strandLock = {
   geometryType: "strand",
   strandSplitEnabled: true,
   strandSplitHeight: 0.36125,
-  strandSplitGap: 0.19,
   baseWidth: 0.16,
   points: Array.from({ length: 11 }, (_, i) => ({ x: 0, y: 1.7 - i * 0.12, z: 0 }))
 };
@@ -487,12 +486,29 @@ assert.equal(
   5,
   "发丝 split.1 fork 应指向 main.5"
 );
-// offset = 0.16·0.19 = 0.0304；k=0 沿 -frame.x、k=1 沿 +frame.x（float 比较容差 1e-9）。
+// 0.2.132：派生位置的侧向偏移从 baseWidth·spread·direction（已删除的 opening 平移）改为
+// baseWidth·**管中心**。legacy 单标量回退 ⇒ zipper 居中（position 0）⇒ 边界 [-1,0,1] ⇒
+// 中心 ∓0.5 ⇒ offset = 0.16·(∓0.5) = ∓0.08。spread 不再参与（故意仍传 0.19：它必须被忽略）。
 const p0 = splitBoneLayout(strandLock, { name: "split.0", spread: 0.19 }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).p;
 const p1 = splitBoneLayout(strandLock, { name: "split.1", spread: 0.19 }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).p;
 [0, 1, 2].forEach((i) => {
-  assert.ok(Math.abs(p0[i] - [0, 0.5, -0.0304][i]) < 1e-9, `split.0 p[${i}] 应约等于 [0, 0.5, -0.0304]`);
-  assert.ok(Math.abs(p1[i] - [0, 0.5, 0.0304][i]) < 1e-9, `split.1 p[${i}] 应约等于 [0, 0.5, 0.0304]`);
+  assert.ok(Math.abs(p0[i] - [0, 0.5, -0.08][i]) < 1e-9, `split.0 p[${i}] 应约等于 [0, 0.5, -0.08]`);
+  assert.ok(Math.abs(p1[i] - [0, 0.5, 0.08][i]) < 1e-9, `split.1 p[${i}] 应约等于 [0, 0.5, 0.08]`);
+});
+// Tip Clump 必须完全不影响派生位置（它只控制收窄，不决定管挂在哪）。**两个字段名都试**：
+// tipClump 是 0.2.132 起的名字，spread 是旧档字段名，任何一个悄悄回到派生位置都是回归。
+["tipClump", "spread"].forEach((field) => {
+  [0, 0.5, 0.99].forEach((value) => {
+    assert.deepEqual(
+      splitBoneLayout(
+        strandLock,
+        { name: "split.0", [field]: value },
+        { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }
+      ).p,
+      p0,
+      `${field} ${value} must not move the derived split bone position`
+    );
+  });
 });
 // 无 frame（strandGeometryFrameAt 缺省）→ p 回退曲线末端。
 assert.deepEqual(
@@ -501,10 +517,10 @@ assert.deepEqual(
   "无 frame 时应回退到曲线末端 [0, 0.5, 0]"
 );
 
-// ---- 发丝多拉链（N=2 → 3 管）：per-tube forkT + per-tube direction ----
+// ---- 发丝多拉链（N=2 → 3 管）：per-tube forkT + per-tube 管中心 ----
 // strandSplits 两条拉链 -> 3 段。fork 深度 = 1 - max(相邻拉链高)：
 //   split.0 = 1-0.4=0.6、split.1(中间) = 1-max(0.4,0.2)=0.6、split.2 = 1-0.2=0.8。
-// direction：split.0 最左 -1、split.2 最右 +1、split.1 中间 sign((-0.3+0.3)/2)=0。
+// 管中心（边界 [-1,-0.3,0.3,1] 的三个中点）：split.0 = -0.65、split.1 = 0、split.2 = +0.65。
 const strandMultiLock = {
   geometryType: "strand",
   strandSplitEnabled: true,
@@ -531,14 +547,34 @@ assert.equal(
   7,
   "N=2 发丝 split.2 fork = 1-0.2 → main.7"
 );
-// direction 通过 p 的侧向偏移符号验证：frameStub 的 frame.x=(0,0,1) → p[2]=baseWidth·spread·direction。
-// tip = fakeCurve(1) = (0,0.5,0)，offset 幅度 = 0.16·0.19 = 0.0304。
+// 管中心通过 p 的侧向偏移验证：frameStub 的 frame.x=(0,0,1) → p[2] = baseWidth · 管中心。
+// tip = fakeCurve(1) = (0,0.5,0)，幅度 = 0.16·0.65 = 0.104（中间管中心 0 ⇒ 偏移 0）。
 const mp0 = splitBoneLayout(strandMultiLock, { name: "split.0", spread: 0.19 }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).p;
 const mp1 = splitBoneLayout(strandMultiLock, { name: "split.1", spread: 0.19 }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).p;
 const mp2 = splitBoneLayout(strandMultiLock, { name: "split.2", spread: 0.19 }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).p;
-assert.ok(mp0[2] < 0 && Math.abs(mp0[2] + 0.0304) < 1e-9, "split.0 最左 direction=-1 → p.z=-0.0304");
-assert.ok(Math.abs(mp1[2]) < 1e-9, "split.1 中间 direction=sign(0)=0 → p.z=0");
-assert.ok(mp2[2] > 0 && Math.abs(mp2[2] - 0.0304) < 1e-9, "split.2 最右 direction=+1 → p.z=+0.0304");
+assert.ok(mp0[2] < 0 && Math.abs(mp0[2] + 0.104) < 1e-9, "split.0 中心 -0.65 → p.z=-0.104");
+assert.ok(Math.abs(mp1[2]) < 1e-9, "split.1 中心 0（对称 zipper 的正中间管）→ p.z=0");
+assert.ok(mp2[2] > 0 && Math.abs(mp2[2] - 0.104) < 1e-9, "split.2 中心 +0.65 → p.z=+0.104");
+
+// 非对称 zipper：中心必须跟随**真实划分**，而不是被取代的等距 (2k−N)/N 规则。
+// 边界 [-1, 0.4, 0.6, 1] ⇒ 中心 -0.3 / 0.5 / 0.8 ⇒ p.z = 0.16 × 中心。
+const strandSkewLock = {
+  geometryType: "strand",
+  strandSplitEnabled: true,
+  strandSplits: [
+    { position: 0.4, height: 0.4, order: 0 },
+    { position: 0.6, height: 0.2, order: 1 }
+  ],
+  baseWidth: 0.16,
+  points: Array.from({ length: 11 }, (_, i) => ({ x: 0, y: 1.7 - i * 0.12, z: 0 }))
+};
+[[-0.3, 0], [0.5, 1], [0.8, 2]].forEach(([center, k]) => {
+  const p = splitBoneLayout(strandSkewLock, { name: `split.${k}` }, { mainCount: 11, curve: fakeCurve, strandGeometryFrameAt: frameStub }).p;
+  assert.ok(
+    Math.abs(p[2] - 0.16 * center) < 1e-9,
+    `skewed zippers: split.${k} centre ${center} → p.z=${0.16 * center}, got ${p[2]}`
+  );
+});
 
 // ---- bridgeRootParentName：桥接子锁根关节的父骨骼名 ----
 const parentLock = { id: "P", points: Array.from({ length: 13 }, (_, i) => ({ x: 0, y: 0, z: 0 })) };
@@ -650,12 +686,11 @@ assert.equal(
 assert.equal(splitChainLayout(tipChainLock, { name: "main.3" }, { mainCount: 6 }), null, "main 骨骼应返回 null");
 assert.equal(splitChainLayout(tipChainLock, { name: "split.0.tip.5" }, { mainCount: 6 }), null, "tip 链关节应返回 null");
 
-// ---- 发丝分支：tip 链 = 主链曲线 + 宽度 × spread 侧向偏移（smoothstep 展开）----
+// ---- 发丝分支：tip 链 = 主链曲线 + 宽度 × 管中心 侧向偏移（0.2.132：沿全长恒定）----
 const strandChainLock = {
   geometryType: "strand",
   strandSplitEnabled: true,
   strandSplitHeight: 0.36125,
-  strandSplitGap: 0.19,
   baseWidth: 0.16,
   points: Array.from({ length: 11 }, (_, i) => ({ x: 0, y: 1.7 - i * 0.12, z: 0 }))
 };
@@ -686,17 +721,22 @@ assert.equal(strandChain.joints[1].parent, "split.0", "tip.7 应链到 split.0")
 assert.equal(strandChain.joints[2].parent, "split.0.tip.7", "tip.8 应链到 tip.7");
 assert.equal(strandChain.joints[3].parent, "split.0.tip.8", "tip.9 应链到 tip.8");
 assert.equal(strandChain.joints[4].parent, "split.0.tip.9", "tip.10 应链到 tip.9");
-// p：restPointAt(0.6) = curve(0.6) + frame.x·opening；opening 用同一公式重算（1e-9 容差）。
-// t_6 = 0.6 < splitStart 0.63875 → opening = 0（fork 行本身位于开口起点之上，未展开）。
-const t6 = 6 / 10;
-const strandSplitStart = 1 - 0.36125;
-const u6 = (t6 - strandSplitStart) / Math.max(0.0001, 1 - strandSplitStart);
-const ss6 = u6 * u6 * (3 - 2 * u6);
-const expectedOpening = t6 <= strandSplitStart ? 0 : 0.16 * 0.19 * ss6 * (-1);
+// p：restPointAt(t) = curve(t) + frame.x · (baseWidth × 管中心)。0.2.132 起该偏移**沿全长
+// 恒定**（管的 band 是等宽裁剪，中心不随 t 变），所以不再有 smoothstep/splitStart 项 ——
+// 原先那套是已删除的 opening 平移（spread × smoothstep × direction）。
+// legacy 单标量回退 ⇒ zipper 居中 ⇒ 管 0 中心 = -0.5 ⇒ 偏移 = 0.16 × (-0.5) = -0.08。
+const expectedTubeOffset = 0.16 * -0.5;
 assert.ok(
-  Math.abs(strandChain.joints[0].p[2] - (0 + 1 * expectedOpening)) < 1e-9,
-  `发丝 split.0 位置 z 应约等于 ${expectedOpening}（实测 ${strandChain.joints[0].p[2]}）`
+  Math.abs(strandChain.joints[0].p[2] - expectedTubeOffset) < 1e-9,
+  `发丝 split.0 位置 z 应约等于 ${expectedTubeOffset}（实测 ${strandChain.joints[0].p[2]}）`
 );
+// 恒定性：链上每个关节的横向偏移都相同（旧实现是沿 t 斜升的）。
+strandChain.joints.forEach((joint, i) => {
+  assert.ok(
+    Math.abs(joint.p[2] - expectedTubeOffset) < 1e-9,
+    `joint ${i} 的横向偏移应与管中心一致（恒定），实测 ${joint.p[2]}`
+  );
+});
 assert.deepEqual(strandChain.joints[0].orient, [1, 0, 0, 0, 1, 0, 0, 0, 1], "发丝身份 frame 应得到 identity orient");
 
 // ---- 无暴露段：forkT=1 → 回退末点，单关节 ----

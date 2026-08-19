@@ -9,7 +9,7 @@ import {
   sampleAsymmetricTaperCurve
 } from "./curve-math.js?v=20260813-3";
 import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260814-12";
-import { cloneSplitBones, segmentBoneHost } from "../bones/bone-model.js?v=20260830-1";
+import { cloneSplitBones, segmentBoneHost } from "../bones/bone-model.js?v=20260901-1";
 import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260830-1";
 import { leafWeightAt, leafWeightsValid } from "./leaf-weights.js?v=20260813-1";
 import {
@@ -17,6 +17,7 @@ import {
   buildTipWidthCurveFrom,
   segmentZipperHeights,
   setTipWidthCurveValueFrom,
+  tipClumpNarrowFraction,
   tipWidthCommonForkFromHeights,
   tipWidthControlTs as sharedTipWidthControlTs,
   tipWidthGridFromHeights,
@@ -25,7 +26,7 @@ import {
   tipWidthSideControlTsFrom,
   tipWidthSideExposesTAt,
   tipWidthSideForkFromHeights
-} from "./tip-width-curve.js?v=20260829-1";
+} from "./tip-width-curve.js?v=20260901-1";
 
 // Shared tip width control point count: 5 midpoints (common fork) + the tip end (t=1).
 // app.js createCurveObjects reuses this constant for the viewport tip width handles.
@@ -293,7 +294,7 @@ function tipWidthResetCurve(lock, segmentIndex, splits, side) {
 // The segment's tip-narrowing gap at chain parameter t on one side: 0 at the side's
 // zipper (fork), ramping linearly to 0.5*spread*span at the tip (aggregation). Edge
 // segment outer sides without a zipper mirror the opposite side's zipper (same
-// bone.spread, same ramp start): 边缘段外侧镜像对侧 zipper 参数，两侧一致收窄（自动
+// bone.tipClump, same ramp start): 边缘段外侧镜像对侧 zipper 参数，两侧一致收窄（自动
 // 补全，不展示 UI）。Only when a side has no zipper on either side (no splits at all)
 // does it never gap.
 function tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side) {
@@ -302,11 +303,11 @@ function tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side) {
   let zipper = side < 0 ? splits[segmentIndex - 1] : splits[segmentIndex];
   if (!zipper) zipper = side < 0 ? splits[segmentIndex] : splits[segmentIndex - 1];
   if (!zipper) return 0;
-  const start = 1 - Number(zipper.height ?? 0);
-  if (t <= start) return 0;
-  const ramp = (t - start) / Math.max(0.0001, 1 - start);
+  // 收窄比例（斜坡 + spread 钳位）走共享单点定义 tipClumpNarrowFraction；本函数只负责
+  // 把「比例」翻译成 panel 的 u 空间位移（× 段自身半跨度）。发丝侧消费同一个比例，只是
+  // 乘的是管内半跨度 —— 那正是「两侧 Tip Clump 数值同义」的构造性保证。
   const span = boundaries[segmentIndex + 1] - boundaries[segmentIndex];
-  return 0.5 * THREE.MathUtils.clamp(bone?.spread ?? 0, 0, 0.99) * span * ramp;
+  return 0.5 * span * tipClumpNarrowFraction(zipper.height ?? 0, bone?.tipClump ?? 0, t);
 }
 
 // Shared tip width sampler: above the segment's fork (locked) or without a segment the

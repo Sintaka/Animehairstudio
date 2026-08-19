@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_STRAND_TIP_CLUMP,
   PANEL_SEGMENT_HOST,
   STRAND_SEGMENT_HOST,
   materializeStrandSplitBones,
@@ -9,7 +10,6 @@ import {
   strandSplitsFor
 } from "../modules/bones/bone-model.js";
 import {
-  applyStrandSplitGapToTubes,
   canFitAnotherStrandSplit,
   createSegmentControlApi,
   insertedStrandSplitHeight,
@@ -18,6 +18,7 @@ import {
 import { readFile } from "node:fs/promises";
 
 const appSource = await readFile(new URL("../app.js", import.meta.url), "utf8");
+const segmentSource = await readFile(new URL("../modules/bones/segment-control.js", import.meta.url), "utf8");
 
 // N 个拉链 → N+1 管。position 刻意乱序 + 一个越界值：段数必须取自
 // strandSplitsFor 的归一化结果（排序 + 钳制），而不是原始数组的其它属性。
@@ -28,7 +29,6 @@ function splitStrand(positions) {
     strandSplitEnabled: true,
     strandSplits: positions.map((position, order) => ({ position, height: 0.3, order })),
     strandSplitHeight: 0.3,
-    strandSplitGap: 0.12,
     taperCurve: [{ position: 0, value: 1 }, { position: 1, value: 1 }],
     depthCurve: [{ position: 0, value: 1 }, { position: 1, value: 1 }]
   };
@@ -216,15 +216,15 @@ test("strand segment block hides for strands without split geometry", () => {
 test("per-segment spread writes land on the selected tube only", () => {
   const lock = splitStrand([0.4, -0.4, 0]); // 4 tubes
   const { api, sculptState, calls, dom } = segmentApiHarness(lock);
-  const baseline = materializeStrandSplitBones(lock).map((bone) => bone.spread);
+  const baseline = materializeStrandSplitBones(lock).map((bone) => bone.tipClump);
 
   sculptState.strandSegmentIndex = 2;
   api.applyStrandSegmentSpread(0.42);
   assert.equal(lock.strandSplitBones.length, 4, "materialized to one bone per tube");
-  assert.ok(Math.abs(lock.strandSplitBones[2].spread - 0.42) < 1e-9, "write hits the selected index");
+  assert.ok(Math.abs(lock.strandSplitBones[2].tipClump - 0.42) < 1e-9, "write hits the selected index");
   [0, 1, 3].forEach((index) => {
     assert.ok(
-      Math.abs(lock.strandSplitBones[index].spread - baseline[index]) < 1e-9,
+      Math.abs(lock.strandSplitBones[index].tipClump - baseline[index]) < 1e-9,
       `tube ${index} keeps its own spread`
     );
   });
@@ -238,63 +238,66 @@ test("per-segment spread writes land on the selected tube only", () => {
 
   // 钳位与 normalizeStrandSplitBone 的 SPREAD_MAX 同界：超过 0.99 会让管尖越过自身宽度。
   api.applyStrandSegmentSpread(5);
-  assert.ok(Math.abs(lock.strandSplitBones[2].spread - 0.99) < 1e-9, "clamped to SPREAD_MAX");
+  assert.ok(Math.abs(lock.strandSplitBones[2].tipClump - 0.99) < 1e-9, "clamped to SPREAD_MAX");
   api.applyStrandSegmentSpread(-1);
-  assert.equal(lock.strandSplitBones[2].spread, 0, "clamped at 0");
+  assert.equal(lock.strandSplitBones[2].tipClump, 0, "clamped at 0");
 });
 
-// ── Bug 1：Split Spacing 是全局刷，物化之后仍然必须能到达每一根管 ─────────────────────
-test("global Split Spacing writes spread onto every tube after materialization", () => {
+// ── 0.2.132：全局 Split Spacing（segment separate）已整体删除，不得复活 ────────────────
+// 本处原有两条测试守「Split Spacing 是全局刷、物化后仍能刷到每根管」（0.2.125 修的 bug
+// #20）。该滑杆连同其「整管横向平移」语义已按用户决定删除：发尖聚合改由每管 Tip Clump
+// 表达，管的横向分离由 zipper 决定。下面两条改为**删除守卫** —— 全局刷若被重新引入会覆盖
+// 每管创作过的 Tip Clump（Tip Clump 现在是逐管创作数据），那是回归而非修复。
+test("the deleted global Split Spacing brush stays deleted (no scalar-to-every-tube writer)", () => {
+  // 断言**剥掉注释后**的源码：本轮刻意在删除点留了「此处原有 X，已删除，勿复活」的契约注释
+  // （standards 第四类：刻意不改/已删除的东西及原因），直接扫全文会匹配到那些注释自身。
+  const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  assert.doesNotMatch(
+    stripComments(segmentSource),
+    /applyStrandSplitGapToTubes/,
+    "segment-control must not carry a global spread brush again"
+  );
+  // app.js 侧：**滑杆及其接线**必须没了。`strandSplitGap` 这个存档字段本身**刻意保留**
+  // （见下一条测试：它是 per-tube 默认值的派生来源，与 panel 的 panelSplitGap 同构），
+  // 所以这里断言的是「没有 DOM 控件/处理器」，而不是「字段名不出现」。
+  assert.doesNotMatch(
+    stripComments(appSource),
+    /strandSplitGap:\s*document\.querySelector/,
+    "the global Split Spacing slider must not be re-bound"
+  );
+  assert.doesNotMatch(
+    stripComments(appSource),
+    /strandSplitInputs\.strandSplitGap/,
+    "no handler may write the lock-level scalar from a control again"
+  );
+});
+
+test("every tube's Tip Clump defaults from the legacy gap field, exactly like the panel side", () => {
   const lock = splitStrand([-0.3, 0.3]); // 2 zippers -> 3 tubes
-  // 物化之前：spread 由 strandSplitGap 派生（滑杆本来就生效）。
-  assert.deepEqual(materializeStrandSplitBones(lock).map((bone) => bone.spread), [0.12, 0.12, 0.12]);
-
-  // 负向对照：这是复现「死滑杆」的那一步——物化把派生默认值固化成显式数字。
-  // 老实现只写标量，几何优先读 bone.spread，故 0.05 永远到不了网格。
+  // 0.2.132 的取舍（与 panel 的 defaultSplitTipClump 读 panelSplitGap 同构）：删掉的是
+  // **滑杆与其「整管横向平移」语义**，`lock.strandSplitGap` 这个存档字段保留，仅作 per-tube
+  // 默认值的派生来源 —— 旧档打开后每管仍拿到作者当年写下的量级，观感可比。
   lock.strandSplitGap = 0.4;
-  applyStrandSplitGapToTubes(lock);
-  assert.deepEqual(lock.strandSplitBones.map((bone) => bone.spread), [0.4, 0.4, 0.4]);
-
-  // per-tube 滑杆创作过一根管；用户已批准全局刷覆盖它（不是 bug）。
-  lock.strandSplitBones[1].spread = 0.77;
-  lock.strandSplitGap = 0.05;
-  applyStrandSplitGapToTubes(lock);
   assert.deepEqual(
-    lock.strandSplitBones.map((bone) => bone.spread),
-    [0.05, 0.05, 0.05],
-    "老实现在这里仍报 [0.4, 0.77, 0.4]：滑杆只写标量、bone 已有显式 spread"
+    materializeStrandSplitBones(lock).map((bone) => bone.tipClump),
+    [0.4, 0.4, 0.4],
+    "an old file's gap seeds every tube's Tip Clump default"
   );
-
-  // 钳位与 SPREAD_MAX 同界（滑杆 UI 只到 0.5，但定义域到 0.99，刻意不统一）。
-  lock.strandSplitGap = 5;
-  applyStrandSplitGapToTubes(lock);
-  assert.deepEqual(lock.strandSplitBones.map((bone) => bone.spread), [0.99, 0.99, 0.99]);
-  lock.strandSplitGap = -1;
-  applyStrandSplitGapToTubes(lock);
-  assert.deepEqual(lock.strandSplitBones.map((bone) => bone.spread), [0, 0, 0]);
-
-  // 非分裂目标（含 draw 创建默认值：无 geometryType）无管可写，返回 null 而不是抛错。
-  assert.equal(applyStrandSplitGapToTubes({ strandSplitGap: 0.3 }), null);
-  assert.equal(applyStrandSplitGapToTubes({ geometryType: "strand", strandSplitEnabled: false }), null);
-});
-
-test("only the strandSplitGap key brushes tube spread in the shared handler", () => {
-  // DOM 耦合的处理器只能靠源码断言守（同 split-tip-geometry.test.mjs 的既有模式）。
-  assert.match(
-    appSource,
-    /const writeTo = \(item\) => \{\s*item\[key\] = value;\s*if \(key === "strandSplitGap"\) applyStrandSplitGapToTubes\(item\);/,
-    "共用处理器里只有 strandSplitGap 触发管写入，其余键（strandSplitEnabled）保持纯标量语义"
+  // 无该字段（新建发丝）时落到常量兜底。
+  const fresh = splitStrand([-0.3, 0.3]);
+  delete fresh.strandSplitGap;
+  assert.deepEqual(
+    materializeStrandSplitBones(fresh).map((bone) => bone.tipClump),
+    [DEFAULT_STRAND_TIP_CLUMP, DEFAULT_STRAND_TIP_CLUMP, DEFAULT_STRAND_TIP_CLUMP],
+    "without the legacy field every tube falls back to the shared constant"
   );
-  // 写入必须在 mutator 内：多选与镜像同步才与既有处理器逐字同路。
-  assert.match(
-    appSource,
-    /if \(selected\?\.geometryType === "strand"\) \{\s*editSelectedLocks\(writeTo, \{ immediate: true \}\);\s*\} else \{\s*writeTo\(target\);/,
-    "多选走 editSelectedLocks(writeTo)，单目标走 writeTo(target)"
-  );
-  assert.match(
-    appSource,
-    /applyStrandSplitGapToTubes \} from "\.\/modules\/bones\/segment-control\.js/,
-    "全局刷的定义点在 segment-control（与 applyStrandSegmentSpread 同处、共用 SPREAD_MAX）"
+  // per-tube 写入仍是唯一改 Tip Clump 的途径（applyStrandSegmentSpread，上一条测试已覆盖钳位）。
+  // 关键回归：创作过的那一管**不得**被 lock 级标量刷掉 —— 这正是删掉全局刷所换来的性质。
+  lock.strandSplitBones[1].tipClump = 0.77;
+  assert.deepEqual(
+    materializeStrandSplitBones(lock).map((bone) => bone.tipClump),
+    [0.4, 0.77, 0.4],
+    "an authored per-tube Tip Clump must survive (nothing brushes over it anymore)"
   );
 });
 
@@ -388,7 +391,6 @@ test("changeStrandSplitCount(+1) applies the neighbour rule end to end", () => {
     ],
     strandSplitPosition: -0.7,
     strandSplitHeight: 0.05, // legacy 标量已被最左拉链回写成 0.05（正是老 bug 的种子）
-    strandSplitGap: 0.12,
     taperCurve: [{ position: 0, value: 1 }, { position: 1, value: 1 }],
     depthCurve: [{ position: 0, value: 1 }, { position: 1, value: 1 }]
   };

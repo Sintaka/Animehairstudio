@@ -245,7 +245,7 @@ try {
       curve: (bone.taperCurve || []).map((p) => ({ p: +p.position.toFixed(4), v: +p.value.toFixed(4) })),
       curve2: (bone.taperCurveSecondary || []).map((p) => ({ p: +p.position.toFixed(4), v: +p.value.toFixed(4) })),
       asymW: bone.asymmetricWidthCurve,
-      spread: bone.spread,
+      tipClump: bone.tipClump,
       edgeR06: edge(1, 0.60625), edgeR07: edge(1, 0.69375), edgeL07: edge(-1, 0.69375),
       widthR: +t.tipPanelWidthAt(lock, 0.69375, 1, bone, 3, tipSplits).toFixed(5),
       widthL: +t.tipPanelWidthAt(lock, 0.69375, -1, bone, 3, tipSplits).toFixed(5),
@@ -556,7 +556,7 @@ try {
         const t = window.__ahsTest; const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
         const meshHash = (() => { const a = lock.mesh.geometry.attributes.position.array; let hsh = 0; for (let i = 0; i < a.length; i++) hsh += Math.abs(a[i]) * (i + 1); return hsh.toFixed(6); })();
         const bones = t.materializeSplitBones(lock);
-        return JSON.stringify({ meshHash, spread: bones[3].spread });
+        return JSON.stringify({ meshHash, tipClump: bones[3].tipClump });
       })()`));
       check("V3 seg3 spread-handle drag changes mesh", pinfo.meshHash !== res3.meshHash, `hash ${pinfo.meshHash} -> ${res3.meshHash} spread=${res3.spread}`);
     } else {

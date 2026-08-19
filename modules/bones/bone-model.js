@@ -6,14 +6,28 @@
 import * as THREE from "three";
 
 const MAX_SPLIT_SEGMENTS = 24;
-// spread（UI 名 Tip Clump）的定义域上界：超过 1 会让段/管尖越过自身宽度、产生 crossover
-// （panel 的 segmentRamp 与 strand-geometry 的 per-section opening 都钳在同一界）。
+// tipClump（UI 名 Tip Clump）的定义域上界：超过 1 会让段/管尖越过自身宽度、产生 crossover
+// （panel 的 tipWidthSpreadGap 与 strand 的每管收窄都钳在同一界）。
 // **唯一定义点**（0.2.130 起导出）：此前 segment-control.js 保留了一份「bone-model 未导出该
 // 常量，故此处保留副本」的字面量，视口滑杆与拖拽路径还各自内联 0.99。消费方一律 import。
+// 名字保留 SPREAD_MAX（未随字段改名为 TIP_CLUMP_MAX）：它是**钳位区间**的名字，被 8 个文件
+// import，改名纯属噪声；字段名与 UI 名才是本轮要统一的东西。
 export const SPREAD_MAX = 0.99;
 
-export function defaultSplitSpread(lock) {
-  // Relative per-segment tip gap fraction; derived from the legacy absolute gap so old
+// ── 字段名：bone.tipClump（0.2.132 起），旧档字段 bone.spread ────────────────────────────
+// 为什么改名（devlog/APPJS_SPLIT_GUIDE.md §7.2b 记录了完整踩坑）：main 原版的 `spread` 是
+// **发丝聚簇**参数（`#clumpSpread`/`#clumpDepthSpread`，本仓库 clump-procedural.js 仍在用），
+// 与「发尖整体收窄」毫无关系。本 fork 一度把 per-segment 发尖数据塞进 `bone.spread`，于是
+// 同一个词同时指两件事，连续几轮把它和 main 的「简单分叉分离」（strandSplitGap/panelSplitGap）
+// 搞混、修错方向。字段名现与 UI 名一致：**Tip Clump**。
+// 兼容：读取一律 `tipClump ?? spread`，且**只在 normalize 层做这一次回退**（下游只认
+// tipClump）。写盘只写 tipClump，旧档打开后自动升级、不丢值。
+function pickTipClump(source) {
+  return source?.tipClump ?? source?.spread;
+}
+
+export function defaultSplitTipClump(lock) {
+  // Relative per-segment tip narrowing fraction; derived from the legacy absolute gap so old
   // files keep a comparable look, clamped so geometry never inverts (no crossover).
   return THREE.MathUtils.clamp(Number(lock?.panelSplitGap ?? 0.07) * 2, 0, SPREAD_MAX);
 }
@@ -24,7 +38,7 @@ export function normalizeSplitBones(value, splits, lock) {
     1,
     MAX_SPLIT_SEGMENTS
   );
-  const fallbackSpread = defaultSplitSpread(lock);
+  const fallbackTipClump = defaultSplitTipClump(lock);
   const bones = [];
   for (let k = 0; k < count; k += 1) {
     const src = Array.isArray(value) ? value[k] : null;
@@ -48,7 +62,7 @@ export function normalizeSplitBones(value, splits, lock) {
           active: src.tip.active !== false
         }
         : null,
-      spread: THREE.MathUtils.clamp(Number(src?.spread ?? fallbackSpread), 0, SPREAD_MAX),
+      tipClump: THREE.MathUtils.clamp(Number(pickTipClump(src) ?? fallbackTipClump), 0, SPREAD_MAX),
       taperCurve: srcCurve("taperCurve"),
       taperCurveSecondary: srcCurve("taperCurveSecondary"),
       depthCurve: srcCurve("depthCurve"),
@@ -220,7 +234,9 @@ export function splitBonesToData(bones) {
     parentParam: Number(bone.parentParam ?? 0.5),
     p: bone.p ? { x: bone.p.x, y: bone.p.y, z: bone.p.z } : null,
     orient: bone.orient ? { x: bone.orient.x, y: bone.orient.y, z: bone.orient.z, w: bone.orient.w } : null,
-    spread: Number(bone.spread ?? 0.5),
+    // 写盘只写 tipClump（不再写 spread）：读取侧的 pickTipClump 负责旧档回退，双写会让
+    // 两个字段各自漂移，下次谁赢取决于读取顺序。
+    tipClump: Number(pickTipClump(bone) ?? 0.5),
     taperCurve: bone.taperCurve ? bone.taperCurve.map((p) => ({ ...p })) : null,
     taperCurveSecondary: bone.taperCurveSecondary ? bone.taperCurveSecondary.map((p) => ({ ...p })) : null,
     depthCurve: bone.depthCurve ? bone.depthCurve.map((p) => ({ ...p })) : null,
@@ -300,7 +316,7 @@ function cloneSegmentBone(bone) {
         active: bone.tip.active !== false
       }
       : null,
-    spread: bone.spread == null ? null : Number(bone.spread),
+    tipClump: pickTipClump(bone) == null ? null : Number(pickTipClump(bone)),
     taperCurve: curve("taperCurve"),
     taperCurveSecondary: curve("taperCurveSecondary"),
     depthCurve: curve("depthCurve"),
@@ -417,13 +433,25 @@ export function mirrorStrandTip(tip) {
 
 // ---- strand split sub-bone data model (Route 2: split-strand per-tube tips) ----
 // lock.strandSplitBones is optional (length = 拉链数 N + 1，kind="split"); old files
-// without it derive that many default bones (spread = strandSplitGap, tip = null) in
-// memory. 长度不再是 2：0.2.116 起普通发丝是 N 拉链 → N+1 管（N=1 时仍为 2，即 legacy）。
+// without it derive that many default bones (tipClump = defaultStrandTipClump, tip = null)
+// in memory. 长度不再是 2：0.2.116 起普通发丝是 N 拉链 → N+1 管（N=1 时仍为 2，即 legacy）。
 
-export function defaultStrandSplitSpread(lock) {
-  // Relative per-tube tip spread fraction; derived from the legacy absolute gap so
-  // old files keep a comparable look (default 0.12), clamped so tubes never invert.
-  return THREE.MathUtils.clamp(Number(lock?.strandSplitGap ?? 0.12), 0, SPREAD_MAX);
+// 未创作过的管的 Tip Clump 兜底值（既无 bone.tipClump、又无 lock.strandSplitGap 时）。
+// 0.12 沿用旧的全局默认，让新建发丝的发尖有一点自然聚合（与 panel 段默认 0.5 刻意不同：
+// 管本身已被 zipper 切窄，0.5 会过度收缩）。
+export const DEFAULT_STRAND_TIP_CLUMP = 0.12;
+
+// 每管 Tip Clump 的默认值。**与 panel 的 defaultSplitTipClump 逐条同构**（那边读同样没有
+// 滑杆的 lock.panelSplitGap）：0.2.132 删掉的是全局 Split Spacing **滑杆与其「整管横向平移」
+// 语义**，`lock.strandSplitGap` 这个**存档字段刻意保留**，仅作 per-tube 默认值的派生来源 ——
+// 于是旧档打开后每管仍拿到作者当年写下的量级（gap 0.19 → 收窄比例 0.19），观感可比。
+// 数值区间可直接复用的理由：旧滑杆 UI 区间 0..0.5，正落在 tipClump 的定义域 0..0.99 内。
+export function defaultStrandTipClump(lock) {
+  return THREE.MathUtils.clamp(
+    Number(lock?.strandSplitGap ?? DEFAULT_STRAND_TIP_CLUMP),
+    0,
+    SPREAD_MAX
+  );
 }
 
 export function strandSplitForkT(lock) {
@@ -456,28 +484,33 @@ export function strandSplitForkTForSegment(lock, segmentIndex) {
   return 1 - Math.max(leftHeight, rightHeight);
 }
 
-// ---- 管 k 的横向推开方向：本仓库唯一定义点（standards「一处派生」） ----
-// 规则：沿管下标**单调递增**地从 -1 线性插到 +1（splitCount = 拉链数 N，管数 N+1）：
-//   direction(k) = (2k - N) / N，k = 0..N
-// 单调性是关键：缝 k|k+1 只有在两管**相向分离**（direction[k+1] > direction[k]）时才会
-// 张开。旧规则用离散的 ±1/0（最左 -1、最右 +1、中间取两侧拉链中点符号），N=2 时得到
-// [-1,-1,+1] —— 管 0 与管 1 同向平移、缝 0 永远闭合，所以「加了多个 zipper 只有一条缝
-// 打开」。新规则下相邻差恒为 2/N > 0，N 条缝全部张开；中间管位移量小于外侧管，因此
-// 总横向张开幅度不会随 N 膨胀。N=1 时退化为 -1/+1，与旧版逐值相同。
-// 消费方（必须与本函数保持一致，改这里就要看那两处）：
-//   - modules/geometry/strand-geometry.js  createSplitStrandGeometry（per-section direction）
-//   - modules/io/usda-export.js            strandDirectionForTube
-export function strandSplitDirection(segmentIndex, splitCount) {
-  const count = Math.max(0, Math.floor(Number(splitCount) || 0));
-  if (count <= 0) return 0; // 0 拉链 = 单管，无处可推（split 发丝恒 ≥1 拉链，此处只防除零）
-  const k = THREE.MathUtils.clamp(Math.floor(Number(segmentIndex) || 0), 0, count);
-  return (2 * k - count) / count;
+// ---- 管 k 的横向**中心**（归一化 profile 坐标 ∈ [-1, 1]）：本仓库唯一定义点 ----
+// 0.2.132 取代了原先的 `strandSplitDirection(k, N) = (2k − N) / N`「横向推开方向」。那条
+// 规则只服务于已删除的 opening 平移（segment separate）；管现在**不平移**，需要的是管自身
+// 的中心 —— 它才是「这根管的骨骼/发尖该挂在哪」的答案。
+//
+// 规则：管 k 的横向跨度是 [边界 k, 边界 k+1]，边界 = [-1, ...zipper.position, 1]（与
+// createSplitStrandGeometry 的 boundaryXs 同一批 position，只是那边先 lerp 进 profile 的
+// minX/maxX，这里留在归一化空间）；中心 = 两边界的**中点**。
+// 与旧 direction 的关系：等距 zipper 时中点恰好等于 (2k − N)/N 的一半；zipper 不等距时本
+// 规则跟随真实划分，旧规则不跟（那是它作为「推开方向」时可以接受、作为「中心」则错误）。
+//
+// 消费方（必须与本函数保持一致，改这里就要看这几处）：
+//   - modules/io/usda-export.js  strandTubeCenterForTube（未创作发尖时的派生骨骼位置）
+//   - app.js currentStrandSplitTipChains 的 rest 回退（环心尚未写出的那一帧）
+// 几何本身**不消费**它：createSplitStrandGeometry 的管心来自真实扫掠环心
+// （sweepRingCentroids），比本近似更准，勿改成读本函数。
+export function strandSplitTubeCenter(segmentIndex, splits) {
+  const positions = (Array.isArray(splits) ? splits : []).map((split) => Number(split?.position) || 0);
+  const boundaries = [-1, ...positions, 1];
+  const k = THREE.MathUtils.clamp(Math.floor(Number(segmentIndex) || 0), 0, boundaries.length - 2);
+  return (boundaries[k] + boundaries[k + 1]) * 0.5;
 }
 
 // lock 版包装：按几何一致的归一化（strandSplitsFor：排序 + 钳制 + legacy 单标量回退）
-// 取出拉链数，再套用上面的唯一规则。
-export function strandSplitDirectionForSegment(lock, segmentIndex) {
-  return strandSplitDirection(segmentIndex, strandSplitsFor(lock).length);
+// 取出拉链表，再套用上面的唯一规则。
+export function strandSplitTubeCenterForSegment(lock, segmentIndex) {
+  return strandSplitTubeCenter(segmentIndex, strandSplitsFor(lock));
 }
 
 function normalizeStrandSplitBone(bone, lock, index) {
@@ -489,14 +522,15 @@ function normalizeStrandSplitBone(bone, lock, index) {
     0,
     1
   );
-  if (bone?.spread == null) normalized.spread = defaultStrandSplitSpread(lock);
+  if (pickTipClump(bone) == null) normalized.tipClump = defaultStrandTipClump(lock);
   normalized.tip = normalizeStrandTip(bone?.tip);
   normalized.kind = "split";
   return normalized;
 }
 
 // Effective strand split bones for a split-strand lock: one per tube, left-to-right in
-// strandSplitDirection order, taken from the authored lock.strandSplitBones when present,
+// strandSplitTubeCenter order (index = left-to-right), taken from the authored
+// lock.strandSplitBones when present,
 // otherwise derived defaults (not written back). Returns null for any non-split-strand lock.
 export function strandSplitBonesFor(lock) {
   if (lock?.geometryType !== "strand" || !lock.strandSplitEnabled) return null;
@@ -507,7 +541,7 @@ export function strandSplitBonesFor(lock) {
     ? lock.strandSplitBones
     : null;
   if (stored) return stored.map((bone, k) => normalizeStrandSplitBone(bone, lock, k));
-  const spread = defaultStrandSplitSpread(lock);
+  const tipClump = defaultStrandTipClump(lock);
   return Array.from({ length: tubeCount }, (_, k) => ({
     name: `split.${k}`,
     parent: "main",
@@ -515,7 +549,7 @@ export function strandSplitBonesFor(lock) {
     p: null,
     orient: null,
     tip: null,
-    spread,
+    tipClump,
     taperCurve: null,
     taperCurveSecondary: null,
     depthCurve: null,
@@ -543,7 +577,7 @@ export function strandSplitBonesToData(bones) {
     parentParam: Number(bone.parentParam ?? 0.5),
     p: bone.p ? { x: bone.p.x, y: bone.p.y, z: bone.p.z } : null,
     orient: bone.orient ? { x: bone.orient.x, y: bone.orient.y, z: bone.orient.z, w: bone.orient.w } : null,
-    spread: Number(bone.spread ?? 0.12),
+    tipClump: Number(pickTipClump(bone) ?? DEFAULT_STRAND_TIP_CLUMP),
     taperCurve: bone.taperCurve ? bone.taperCurve.map((p) => ({ ...p })) : null,
     taperCurveSecondary: bone.taperCurveSecondary ? bone.taperCurveSecondary.map((p) => ({ ...p })) : null,
     depthCurve: bone.depthCurve ? bone.depthCurve.map((p) => ({ ...p })) : null,
@@ -574,9 +608,10 @@ export function strandSplitBonesFromData(data, lock = null) {
 
 // Mirror strand split bones: reverse tube order (tube k <-> N-k) and flip lateral p/tip x
 // + negate twists per tube. 与 mirrorSplitBones（panel 侧，L243）同规则。
-// **必须 reverse**，理由绑在 strandSplitDirection（本文件唯一定义点）的单调性上：
-// direction(k, N) = (2k - N) / N 沿管下标从 -1 单调递增到 +1，即下标 = 从左到右的横向
-// 次序。绕 X 镜像把最左管映到最右管，所以源管 k 的创作数据在镜像体里属于下标 N-k；
+// **必须 reverse**，理由绑在管下标的横向单调性上：管 k 的横向跨度是边界 [k, k+1]（边界数组
+// [-1, ...position, 1] 按 position 升序），所以 strandSplitTubeCenter(k) 沿下标单调递增，即
+// 下标 = 从左到右的横向次序。绕 X 镜像把最左管映到最右管，故源管 k 的创作数据在镜像体里
+// 属于下标 N-k；
 // 不 reverse 就等于把「最左管的发尖姿态」贴到镜像体的最左管上 —— 而那一管几何上对应
 // 源的最右管，用户看到的是每根管的发尖位移全都串到了错误的管。
 // （旧注释称「两管左右对称所以保持顺序」：仅在 N=1 且两管姿态恰好互为镜像时看不出来，
@@ -643,7 +678,11 @@ export function normalizeBone(value, fallback = null, lock = null) {
         active: src.tip.active !== false
       }
       : (fb.tip && Array.isArray(fb.tip.points) ? { ...fb.tip } : null),
-    spread: THREE.MathUtils.clamp(Number(pick("spread") ?? defaultSplitSpread(lock)), 0, SPREAD_MAX),
+    tipClump: THREE.MathUtils.clamp(
+      Number(pick("tipClump") ?? pick("spread") ?? defaultSplitTipClump(lock)),
+      0,
+      SPREAD_MAX
+    ),
     taperCurve: curve("taperCurve"),
     taperCurveSecondary: curve("taperCurveSecondary"),
     depthCurve: curve("depthCurve"),
@@ -671,7 +710,7 @@ export function bonesToData(bones) {
       p: bone.p ? { x: bone.p.x, y: bone.p.y, z: bone.p.z } : null,
       orient: bone.orient ? { x: bone.orient.x, y: bone.orient.y, z: bone.orient.z, w: bone.orient.w } : null,
       scale: bone.scale ? { x: bone.scale.x, z: bone.scale.z } : null,
-      spread: Number(bone.spread ?? 0.5),
+      tipClump: Number(pickTipClump(bone) ?? 0.5),
       taperCurve: bone.taperCurve ? bone.taperCurve.map((p) => ({ ...p })) : null,
       taperCurveSecondary: bone.taperCurveSecondary ? bone.taperCurveSecondary.map((p) => ({ ...p })) : null,
       depthCurve: bone.depthCurve ? bone.depthCurve.map((p) => ({ ...p })) : null,

@@ -227,3 +227,16 @@
    - 缝顶点**应该**动：拉链两侧的管各自绕自己的中心缩放，缝侧是管的切面。对称编辑的定义就是两侧位移等值反号，缝侧不动才是 bug（那正是老式行为）。
    - 验证：新增 3 条断言（偏心管等值反号 + 总量不变、N = 1 缝侧位移 ±0.06、m = 1 逐位恒等）。**反向对照**：把 pivot 项置 0 后前两条立刻红（高侧/缝侧位移 `got 0`），source-text 守卫同时红（证明不是空跑）；恢复后全绿。
    - panel 侧**逐字节未动**：`panel-tip-strand.js` 不调用 `strandProfileTopologyAt`，其发尖宽度早已以段中心为参考。
+
+24. **普通发丝正中间管的 Tip Clump 是死控件（0.2.132 修复；自 0.2.116 多拉链移植起就存在）**
+   - 问题：偶数拉链数时**正中间那根管**（N=2 的管 1）拖绿手柄、拉右侧 Tip Clump 滑杆，读数会变但**网格一动不动**。
+   - 根因：Tip Clump（当时叫 `bone.spread`）在发丝几何里**只**经 `opening = baseWidth · spread · smoothstep(t, fork, 1) · direction` 生效，而 `direction = strandSplitDirection(k, N) = (2k − N)/N`。`k = N/2` 时该系数恰为 **0** ⇒ 整个 opening 恒为 0 ⇒ 该管对任何 Tip Clump 取值都无响应。这一点当年是**知情的**（`strandTipClumpAxis` 的 DEGENERATE 注释把它记作「已知几何行为，不是本函数的 bug」），但它其实是个用户可见的死控件。
+   - 修复：Tip Clump 语义整体改为「绕**本管 band 中心**的相对收窄」（与 panel 同义，共享 `tipClumpNarrowFraction`），不再乘任何方向系数 ⇒ **每一根管都必然响应**。同轮删除 opening 平移语义本身（用户决策：分离改由拉 zipper 实现）。
+   - 验证：新增测试「中间管的 Tip Clump 现在会动网格」——断言 Tip Clump 0 → 0.8 使该管发尖行 span 严格变小，且两侧极值**中点逐值不动**（证明是绕管心缩放、不掺平移）；旧实现下这两个 span 逐位相同（死区）。
+
+25. **绿色 Tip Clump 手柄在真实工程里拖不动（0.2.132 当轮引入并修复；node 测试全绿、真实浏览器抓到）**
+   - 问题：把 Tip Clump 轴的跨度基准改成「t = 1 处该管的真实网格边缘」后，手柄轴长恒为 0 —— 视口里拖不动，且 N+1 个手柄重叠成一个、无法分辨在拖哪根管。
+   - 根因：**`DEFAULT_TAPER_CURVE` 的末点 `value` 恰为 0**（`app-config.js`；真实工程 layered-side-bun 的 Front Bangs 逐值相同）。于是 t = 1 处每根管的宽度都是 0、两侧边缘塌到脊柱同一点。旧实现的轴跨度来自已删除的 opening（与 taper 无关），所以此前不暴露。
+   - **为什么 node 测试没抓到**：`split-tip-geometry.test.mjs` 的 fixture 用恒 1 的 `FLAT_CURVE`，管在 t = 1 仍是满宽 —— 掩盖了真实工程的形状。教训：**凡「取发尖处几何量」的把手/放置逻辑，fixture 必须至少有一个 taper 收到 0 的构型**。
+   - 修复：轴跨度改用**标称管宽**（band 的 profile 极值 × baseWidth × widthScale × 该行 pointScales.x，**与 taper 无关**），正对应 panel 用「不随 taper 收缩的段 boundaries」建 handleU。taper 恒 1 时标称跨度与真实边缘重合。同时保住仿射性（两端点都不含 Tip Clump，它只作 lerp 系数）——拖拽端 49 探针反演的前提。
+   - 验证：`scripts/verify-tip-clump.mjs` 真实浏览器从 16/17 → **17/17**（`lowToHigh` 由 0 变为 0.146）；补 node 回归「taper(1)=0 时轴仍可拖 + 每管手柄互不重合」，并在该测试里先断言「真实边缘确实横向退化」作为前提确认。

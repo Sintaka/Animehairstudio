@@ -14,11 +14,11 @@ import {
   segmentBoneHost,
   strandSplitsFor,
   STRAND_SEGMENT_HOST
-} from "../bones/bone-model.js?v=20260830-1";
+} from "../bones/bone-model.js?v=20260901-1";
 import {
   strandTubeSideControlTs,
   strandTubeSideForkT
-} from "./strand-tip-width.js?v=20260829-2";
+} from "./strand-tip-width.js?v=20260901-1";
 import {
   DEFAULT_SWEEP_PROFILE,
   STRAND_GROUPS,

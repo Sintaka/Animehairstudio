@@ -15,13 +15,18 @@ import {
 } from "../modules/geometry/tip-sub-bone.js";
 import {
   strandSplitBonesFor,
-  strandSplitDirection,
-  strandSplitDirectionForSegment,
+  strandSplitTubeCenter,
+  strandSplitTubeCenterForSegment,
   strandSplitsFor,
   strandSplitForkT,
   strandSplitForkTForSegment,
   strandSplitBonesFromData,
   strandSplitBonesToData,
+  splitBonesFromData,
+  splitBonesToData,
+  bonesFromData,
+  bonesToData,
+  mirrorSplitBones,
   mirrorStrandSplitBones,
   remapSegmentBonesOnInsert,
   remapSegmentBonesOnDelete,
@@ -29,7 +34,7 @@ import {
   SPREAD_MAX,
   STRAND_SEGMENT_HOST
 } from "../modules/bones/bone-model.js";
-import { strandDirectionForTube } from "../modules/io/usda-export.js";
+import { strandTubeCenterForTube } from "../modules/io/usda-export.js";
 import { sampleAsymmetricTaperCurve } from "../modules/geometry/curve-math.js";
 import { unfoldHairMesh } from "../modules/io/uv-unfold.js";
 import {
@@ -116,7 +121,6 @@ test("split strands store full leaf capture below the fork and derive tube-cente
     geometryType: "strand",
     strandSplitEnabled: true,
     strandSplitHeight: 0.4,
-    strandSplitGap: 0.12,
     baseWidth: 0.2,
     widthScale: 1,
     radialSegments: 6,
@@ -207,10 +211,21 @@ test("tube-center rest poses preserve stored tip deltas and drive the viewport c
     /const storedRestCenters = lock\.mesh\?\.geometry\?\.userData\?\.strandSplitRestCenters[\s\S]*sampleCenterlinePoint\(tubeRestCenters\[tubeIndex\], parameters, t\)/,
     "split-tip editing must prefer geometry-authored tube centers"
   );
+  // 0.2.132：回退分支原为「主曲线点 + frame.x · opening」，opening 已随 segment separate 语义
+  // 删除，回退现在就是主曲线点本身。断言的**意图不变**（环心不可用时必须仍有一条有限的 rest，
+  // 否则 materializeTipChain 会拿到 undefined），只是回退表达式变简单了。
   assert.match(
     appSource,
-    /\? storedRestCenters\s*:\s*null[\s\S]*if \(tubeRestCenters\)[\s\S]*const opening = t <= splitStart/,
-    "missing or mismatched rest centers must retain the legacy main-curve fallback"
+    /\? storedRestCenters\s*:\s*null[\s\S]*if \(tubeRestCenters\)[\s\S]{0,900}?return curve\.getPoint\(t\);/,
+    "missing or mismatched rest centers must fall back to the main curve point"
+  );
+  // 负向对照：已删除的横向平移不得回到 rest 回退里。判据按**语义**而不是变量名写
+  // （app.js 另有一个无关的 `const opening = !rebuildCurveDialog.open`，那是对话框状态）：
+  // 平移必然要沿 frame.x 推一个含 spread 的量，所以扫这个组合。
+  assert.doesNotMatch(
+    appSource,
+    /addScaledVector\(frame\.x, opening\)/,
+    "the deleted lateral opening must not come back into the rest fallback"
   );
   // 0.2.126：视口把手不再自己取链，改由 tip-sub-bone-host 的适配器统一取 —— 断言的**意图
   // 不变**（视口与编辑控件必须消费同一份物化链），只是同源点搬到了适配器里。
@@ -267,7 +282,6 @@ function baseSplitLock(overrides = {}) {
     geometryType: "strand",
     strandSplitEnabled: true,
     strandSplitHeight: 0.4,
-    strandSplitGap: 0.12,
     baseWidth: 0.2,
     widthScale: 1,
     radialSegments: 6,
@@ -446,6 +460,151 @@ test("strandSplitBonesFromData round-trips a 3-length (N=2) array", () => {
   assert.equal(strandSplitBonesFromData(null, lock), null, "null -> null");
 });
 
+// ── 0.2.132 字段改名 spread → tipClump：旧档必须**逐值**升级，不得丢值 ──────────────────
+// 改名的理由见 devlog/APPJS_SPLIT_GUIDE.md §7.2b（main 的 `spread` 是发丝聚簇参数，与发尖
+// 收窄同名不同物）。兼容契约有两条，缺一条就会让用户的旧工程静默变形：
+//   ① 读：只有 spread 的旧档必须被当成 tipClump（回退只在 normalize 层做一次）。
+//   ② 写：落盘只写 tipClump（双写会让两个字段各自漂移，下次谁赢取决于读取顺序）。
+test("0.2.132: an old file's bone.spread loads as tipClump, and only tipClump is written back", () => {
+  const lock = {
+    geometryType: "strand",
+    strandSplitEnabled: true,
+    strandSplits: [
+      { position: -0.3, height: 0.4, order: 0 },
+      { position: 0.3, height: 0.2, order: 1 }
+    ]
+  };
+  // 旧档形状：**只有** spread，没有 tipClump。三管取三个不同值，防止「碰巧等于默认值」蒙对。
+  const legacyData = [0.31, 0.62, 0.93].map((spread, k) => ({
+    name: `split.${k}`,
+    parent: "main",
+    spread,
+    tip: null
+  }));
+  const restored = strandSplitBonesFromData(legacyData, lock);
+  assert.ok(restored, "the legacy array restores");
+  assert.deepEqual(
+    restored.map((bone) => bone.tipClump),
+    [0.31, 0.62, 0.93],
+    "each tube's legacy spread must arrive as its tipClump (no value lost, no default substituted)"
+  );
+  // 落盘只写新名。
+  const written = strandSplitBonesToData(restored);
+  assert.deepEqual(
+    written.map((bone) => bone.tipClump),
+    [0.31, 0.62, 0.93],
+    "serialization carries tipClump"
+  );
+  assert.ok(
+    written.every((bone) => !("spread" in bone)),
+    "serialization must NOT keep writing the legacy spread key (dual-write drifts)"
+  );
+  // 新名优先：同时存在时 tipClump 赢（旧档升级后若仍残留 spread，不得让它盖回去）。
+  const bothData = [{ name: "split.0", parent: "main", spread: 0.11, tipClump: 0.88, tip: null }];
+  const bothLock = { geometryType: "strand", strandSplitEnabled: true, strandSplits: [] };
+  assert.equal(
+    strandSplitBonesFromData(bothData, bothLock)[0].tipClump,
+    0.88,
+    "tipClump wins over a stale spread on the same bone"
+  );
+});
+
+// **三条持久化路径**都必须同样地升级旧档：发丝管（上一条）、panel 段、统一 registry。
+// 为什么必须逐条钉：它们是三个独立的 normalize/serialize 对（`strandSplitBones*` /
+// `splitBones*` / `bones*`），漏掉任何一条就会出现「同一个工程里 panel 段丢了 Tip Clump、
+// 发丝管没丢」这种只在特定几何上复现的数据损坏。
+test("0.2.132: the panel and unified-registry paths upgrade legacy spread identically", () => {
+  const panelSplits = [{ position: 0, height: 0.4 }];
+  const panelLock = { geometryType: "panel", panelSplits, panelSplitGap: 0.07 };
+  // panel 段：旧档只有 spread，两段取不同值。
+  const panelLegacy = [
+    { name: "split.0", parent: "main", spread: 0.44, tip: null },
+    { name: "split.1", parent: "main", spread: 0.77, tip: null }
+  ];
+  const panelRestored = splitBonesFromData(panelLegacy, panelSplits, panelLock);
+  assert.deepEqual(
+    panelRestored.map((bone) => bone.tipClump),
+    [0.44, 0.77],
+    "panel: legacy spread arrives as tipClump"
+  );
+  const panelWritten = splitBonesToData(panelRestored);
+  assert.deepEqual(panelWritten.map((bone) => bone.tipClump), [0.44, 0.77], "panel: writes tipClump");
+  assert.ok(
+    panelWritten.every((bone) => !("spread" in bone)),
+    "panel: must not keep writing the legacy key"
+  );
+
+  // 统一 registry（lock.bones）：同一条回退必须成立，否则 project-files 的导出侧
+  // （消费 bonesFor → normalizeBone）会拿到默认值而不是作者的值。
+  const registryRestored = bonesFromData(
+    [{ name: "split.0", kind: "split", spread: 0.55 }],
+    panelLock
+  );
+  assert.equal(registryRestored[0].tipClump, 0.55, "registry: legacy spread arrives as tipClump");
+  const registryWritten = bonesToData(registryRestored);
+  assert.equal(registryWritten[0].tipClump, 0.55, "registry: writes tipClump");
+  assert.ok(
+    registryWritten.every((bone) => !("spread" in bone)),
+    "registry: must not keep writing the legacy key"
+  );
+
+  // 镜像两条路径：tipClump 必须随管/段序 reverse 一起走（值不能留在原下标上）。
+  const clumps = [0.1, 0.5, 0.9].map((tipClump, k) => ({ name: `split.${k}`, parent: "main", tipClump, tip: null }));
+  assert.deepEqual(
+    mirrorStrandSplitBones(clumps).map((bone) => bone.tipClump),
+    [0.9, 0.5, 0.1],
+    "strand mirror reverses tipClump with the tube order"
+  );
+  assert.deepEqual(
+    mirrorSplitBones(clumps).map((bone) => bone.tipClump),
+    [0.9, 0.5, 0.1],
+    "panel mirror reverses tipClump with the segment order"
+  );
+});
+
+// 负向对照：几何**真的**读 tipClump，而不是碰巧因为默认值相同才看起来对。
+// 做法是把同一根管的两种字段写成**不同**的值，然后断言网格跟着 tipClump 走。
+test("0.2.132: geometry reads tipClump, NOT the legacy spread (differing values prove it)", () => {
+  const tubeCount = 3;
+  const bonesWith = (fields) => Array.from({ length: tubeCount }, (_, k) => ({
+    name: `split.${k}`,
+    parent: "main",
+    taperCurve: null,
+    taperCurveSecondary: null,
+    asymmetricWidthCurve: null,
+    ...fields
+  }));
+  const tipSpanOf = (fields) => {
+    const lock = tipWidthLock({
+      strandSplits: [
+        { position: -0.4, height: 0.35, order: 0 },
+        { position: 0.4, height: 0.35, order: 1 }
+      ],
+      strandSplitBones: bonesWith(fields)
+    });
+    const geometry = tipWidthGeometryFor(lock);
+    assert.ok(geometry, "fixture must build");
+    const xs = tubeRowXs(geometry, positionsOf(geometry), 1, geometry.userData.actualLengthSegments);
+    return Math.max(...xs) - Math.min(...xs);
+  };
+  // 基准：无收窄。
+  const wide = tipSpanOf({ tipClump: 0 });
+  // tipClump 收窄、spread 故意写成 0 —— 若消费端读的是 spread，这里会等于 wide。
+  const clumped = tipSpanOf({ tipClump: 0.8, spread: 0 });
+  assert.ok(
+    clumped < wide - 1e-6,
+    `tipClump must drive the mesh even when a stale spread says 0 (${wide} -> ${clumped})`
+  );
+  // 反向：只有 spread（旧档形状）时，normalize 的回退让它照旧生效。
+  const legacyOnly = tipSpanOf({ spread: 0.8 });
+  assert.ok(
+    Math.abs(legacyOnly - clumped) < 1e-9,
+    `a legacy-only bone must narrow identically (${legacyOnly} vs ${clumped})`
+  );
+  // 且 spread 单独存在时**不得**被当成 0：那会让旧档静默失去收窄。
+  assert.ok(legacyOnly < wide - 1e-6, "a legacy-only spread must not be ignored");
+});
+
 // ---- 发尖宽度控制点：共享参数网格 + 按 zipper 高度动态暴露 + 无「活但抓不到」的点 ----
 // 设计（0.2.123）：两侧共用**同一批**控制参数（共享网格 = 最深 zipper 的 fork 等分），
 // 所以左右间距永远一致；每侧只**动态暴露**落在自己暴露区（t >= 本侧 fork）的那部分
@@ -544,7 +703,7 @@ test("tip width控制参数两侧共享（同间距），暴露数量按 zipper 
 
   // ③ 视口放置：pointIndex 索引**共享网格**（bone-view-handles.js 固定手柄数组）。
   // 暴露的位置必须有放置且参数与网格一致；未暴露的位置必须返回 null（手柄隐藏）。
-  const bone = { spread: 0, taperCurve: null, taperCurveSecondary: null, asymmetricWidthCurve: false };
+  const bone = { tipClump: 0, taperCurve: null, taperCurveSecondary: null, asymmetricWidthCurve: false };
   for (const [side, positions] of [[-1, leftPositions], [1, rightPositions]]) {
     let visible = 0;
     grid.forEach((gridT, index) => {
@@ -613,7 +772,7 @@ test("tip width控制参数两侧共享（同间距），暴露数量按 zipper 
 // 对称高度是常见情形：两侧必须暴露同一套完整共享网格（共享网格改动不得扰动它）。
 test("symmetric zipper heights expose the same full shared grid on both sides", () => {
   const { panel, lock } = tipWidthHarness();
-  const bone = { spread: 0, taperCurve: null, taperCurveSecondary: null, asymmetricWidthCurve: false };
+  const bone = { tipClump: 0, taperCurve: null, taperCurveSecondary: null, asymmetricWidthCurve: false };
   for (const height of [0.4375, 0.2, 0.5, 0.78]) {
     const splits = [
       { position: -0.4, height, order: 0 },
@@ -650,7 +809,7 @@ test("tip width Reset is flat (no dent) for very different zipper heights", () =
     ];
     const segment = 1;
     const bone = {
-      spread: 0,
+      tipClump: 0,
       taperCurve: panel.tipWidthResetCurve(lock, segment, splits, 1),
       taperCurveSecondary: panel.tipWidthResetCurve(lock, segment, splits, -1),
       asymmetricWidthCurve: true
@@ -681,7 +840,7 @@ test("tip width Reset is flat (no dent) for very different zipper heights", () =
 test("symmetric tip width writes land on the shared grid, and skip a side that hides it", () => {
   const { panel, splits, lock, segment } = tipWidthHarness();
   const bone = {
-    spread: 0,
+    tipClump: 0,
     taperCurve: panel.tipWidthResetCurve(lock, segment, splits, 1),
     taperCurveSecondary: panel.tipWidthResetCurve(lock, segment, splits, -1),
     asymmetricWidthCurve: true
@@ -751,7 +910,7 @@ test("stored tip width curves degrade gracefully onto the per-side control grid"
     { position: 1, value: 1.7, interpolation: "linear" }
   ];
   const bone = {
-    spread: 0,
+    tipClump: 0,
     taperCurve: legacyCurve.map((point) => ({ ...point })),
     taperCurveSecondary: legacyCurve.map((point) => ({ ...point })),
     asymmetricWidthCurve: true
@@ -802,7 +961,7 @@ function segmentBoneWithTipDelta(id) {
     name: `split.${id}`,
     parent: "main",
     parentParam: 0.5,
-    spread: 0.1 * (id + 1),
+    tipClump: 0.1 * (id + 1),
     tip: {
       points: [{ x: id, y: 0, z: 0 }, { x: id, y: 1, z: 0 }],
       restPoints: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }],
@@ -825,7 +984,7 @@ test("inserting a zipper subdivides its segment and shifts later segments (no bo
     "两半继承被细分段(1)、其后段(2)整体后移；旧实现会得到 [0,1,2,null] 即错位+末段默认"
   );
   // spread 同样跟随来源段（BUG 2：新段基于原段而非默认）。
-  assert.ok(Math.abs(out[2].spread - bones[1].spread) < 1e-9, "new half inherits source spread");
+  assert.ok(Math.abs(out[2].tipClump - bones[1].tipClump) < 1e-9, "new half inherits source spread");
   // name/parentParam 置空以便按新段边界重新派生（不继承旧叉口深度）。
   assert.equal(out[2].name, null, "name re-derives");
   assert.equal(out[2].parentParam, null, "parentParam re-derives for the new boundaries");
@@ -947,59 +1106,71 @@ test("tip sub-bone brush must seed from the materialized chain, not authored poi
   assert.ok(Math.abs(afterBug.points[0].x - afterFix.points[0].x + 20) < 1e-9, "the jump equals the rest-chain shift");
 });
 
-// ---- 多拉链横向推开方向：每条缝都必须张开（strandSplitDirection 唯一定义点） ----
-// 报告的 bug：加了多个 zipper 只有一条缝真的打开。根因是旧规则给每管一个**离散**的
-// ±1/0 方向（最左 -1、最右 +1、中间取两侧拉链中点符号），相邻两管方向相同时它们**同向
-// 平移**、缝不动：N=2 得到 [-1,-1,+1]（缝 0 闭合）、N=3 得到 [-1,-1,+1,+1]（只有中缝开）。
-// 新规则沿管下标单调递增，相邻差恒为 2/N > 0，所以 N 条缝全开。
-function directionsFor(splitCount) {
-  return Array.from({ length: splitCount + 1 }, (_, k) => strandSplitDirection(k, splitCount));
+// ---- 管的横向中心（strandSplitTubeCenter 唯一定义点） ----
+// 0.2.132：本块原先钉的是 `strandSplitDirection(k,N) = (2k−N)/N`「横向推开方向」，即 0.2.124
+// 修「加了多个 zipper 只有一条缝张开」时引入的规则。那条规则**只服务于 opening 平移**，而
+// opening 已随 segment separate 语义整体删除。现在需要钉的量变成「管自身的中心」——它才是
+// 骨骼/发尖链该挂在哪的答案，也是镜像必须 reverse 的依据（下标 = 从左到右的横向次序）。
+// 缝张开与否现在由**收窄**决定，由下方的真实几何测试（seam gap，root vs tip）钉死。
+function centersFor(positions) {
+  const splits = positions.map((position, order) => ({ position, height: 0.3, order }));
+  return Array.from({ length: splits.length + 1 }, (_, k) => strandSplitTubeCenter(k, splits));
 }
 
-test("N=1 tube directions stay exactly the legacy [-1, 1]", () => {
-  assert.deepEqual(directionsFor(1), [-1, 1], "one zipper -> two tubes at -1/+1 (byte-identical to legacy)");
+test("N=1 centred zipper gives tube centres at -0.5 / +0.5", () => {
+  assert.deepEqual(centersFor([0]), [-0.5, 0.5], "one centred zipper halves the [-1,1] span");
 });
 
-test("tube directions are strictly increasing so EVERY seam opens", () => {
-  for (const splitCount of [2, 3, 5]) {
-    const directions = directionsFor(splitCount);
-    assert.equal(directions.length, splitCount + 1, `N=${splitCount} -> N+1 tubes`);
-    for (let k = 0; k < splitCount; k += 1) {
-      // 缝 k|k+1 张开 <=> direction[k+1] > direction[k]。旧的离散规则在 N=2 时给出
-      // [-1,-1,+1]，这里的 k=0 断言会失败 —— 正是用户报告的「只有一条缝打开」。
+test("tube centres are strictly increasing (index == left-to-right order)", () => {
+  // 单调性是镜像 reverse 的**依据**（mirrorStrandSplitBones 的注释绑在这一条上）：
+  // 下标 k 必须恒等于从左到右的横向次序，否则 X 镜像把创作数据贴到错误的管上。
+  for (const positions of [[-0.4, 0.4], [-0.5, 0, 0.5], [-0.6, -0.2, 0.2, 0.6], [-0.7, 0.1, 0.2, 0.5, 0.6]]) {
+    const centers = centersFor(positions);
+    assert.equal(centers.length, positions.length + 1, `N=${positions.length} -> N+1 tubes`);
+    for (let k = 0; k < positions.length; k += 1) {
       assert.ok(
-        directions[k + 1] > directions[k],
-        `N=${splitCount}: seam ${k}|${k + 1} must open (got ${directions[k]} -> ${directions[k + 1]})`
+        centers[k + 1] > centers[k],
+        `centres must increase along the index: tube ${k} (${centers[k]}) < tube ${k + 1} (${centers[k + 1]})`
       );
     }
-    assert.equal(directions[0], -1, `N=${splitCount}: leftmost tube still pushes to -1`);
-    assert.equal(directions[splitCount], 1, `N=${splitCount}: rightmost tube still pushes to +1`);
   }
-  assert.deepEqual(directionsFor(2), [-1, 0, 1], "N=2 spreads to -1, 0, +1");
-  directionsFor(3).forEach((value, k) => {
-    assert.ok(Math.abs(value - [-1, -1 / 3, 1 / 3, 1][k]) < 1e-12, `N=3 tube ${k} = ${[-1, -1 / 3, 1 / 3, 1][k]}`);
-  });
 });
 
-test("tube directions are symmetric about 0 so the strand never drifts sideways", () => {
-  for (const splitCount of [1, 2, 3, 4, 5, 8]) {
-    const directions = directionsFor(splitCount);
-    directions.forEach((value, k) => {
-      // 用加法而不是 strictEqual(-x)：中间管恰好是 0，而 -0 !== 0 在 assert.equal 下会假失败。
-      assert.equal(
-        value + directions[splitCount - k],
-        0,
-        `N=${splitCount}: direction[${k}] === -direction[${splitCount - k}]`
+test("tube centres follow the ACTUAL zipper division, not an even split", () => {
+  // 与被取代的 direction 规则的关键差别：direction 是等距的 (2k−N)/N，与 zipper 实际位置
+  // 无关。中心必须跟随真实划分 —— 不然「管心」会落在管外，骨骼/发尖锚点随之错位。
+  // zipper 挤在最右侧：管 0 极宽（中心靠左），管 1/2 极窄（中心贴近 +0.7 / +0.8）。
+  const centers = centersFor([0.6, 0.8]);
+  assert.ok(Math.abs(centers[0] - (-1 + 0.6) / 2) < 1e-12, `tube 0 centre = midpoint(-1, 0.6), got ${centers[0]}`);
+  assert.ok(Math.abs(centers[1] - 0.7) < 1e-12, `tube 1 centre = midpoint(0.6, 0.8), got ${centers[1]}`);
+  assert.ok(Math.abs(centers[2] - 0.9) < 1e-12, `tube 2 centre = midpoint(0.8, 1), got ${centers[2]}`);
+  // 等距 direction 规则会给出 [-1, 0, 1]（与真实划分无关）—— 负向对照。
+  assert.ok(Math.abs(centers[1] - 0) > 0.5, "an even-split rule would have put tube 1 at 0");
+});
+
+test("symmetric zippers give centres symmetric about 0, and centres stay inside the profile", () => {
+  for (const positions of [[0], [-0.4, 0.4], [-0.6, 0, 0.6], [-0.6, -0.2, 0.2, 0.6]]) {
+    const centers = centersFor(positions);
+    const last = centers.length - 1;
+    centers.forEach((value, k) => {
+      // 用加法而不是 strictEqual(-x)：正中间管恰好是 0，而 -0 !== 0 在 assert.equal 下会假失败。
+      assert.ok(
+        Math.abs(value + centers[last - k]) < 1e-12,
+        `N=${positions.length}: centre[${k}] === -centre[${last - k}] (got ${value} / ${centers[last - k]})`
       );
+      // 中心必须落在 profile 内：它会被乘上 baseWidth 当世界偏移用（usda-export 的派生锚点）。
+      assert.ok(Math.abs(value) < 1, `centre[${k}] must lie strictly inside the profile, got ${value}`);
     });
-    // 中间管的位移量严格小于外侧管 —> 全缝张开但轮廓不膨胀。
-    assert.ok(Math.max(...directions.map(Math.abs)) === 1, `N=${splitCount}: spread stays within ±1`);
   }
-  assert.equal(strandSplitDirection(0, 0), 0, "0 zippers (single tube) has nowhere to push; no divide-by-zero");
+  // 0 拉链（单管，split 发丝上不可达，仅防御）：整段就是 [-1,1]，中心 = 0。
+  assert.equal(strandSplitTubeCenter(0, []), 0, "no zippers -> the single band is centred at 0");
+  // 越界下标钳进界内，不返回 NaN/undefined（骨骼数组与 splits 短暂不同步的那一帧会走到）。
+  assert.equal(strandSplitTubeCenter(99, [{ position: 0 }]), 0.5, "an out-of-range index clamps to the last tube");
+  assert.equal(strandSplitTubeCenter(-3, [{ position: 0 }]), -0.5, "a negative index clamps to the first tube");
 });
 
-test("geometry, bone and USDA consumers agree on the direction for the same tube index", () => {
-  // 三处消费方必须逐值一致，否则导出的骨骼/视口发尖链会落在与渲染管不同的横向位置。
+test("bone and USDA consumers agree on the tube centre for the same tube index", () => {
+  // 两处消费方必须逐值一致，否则导出的骨骼/视口发尖链会落在与渲染管不同的横向位置。
   const locks = [
     // legacy 单标量（无 strandSplits 数组）
     { geometryType: "strand", strandSplitEnabled: true, strandSplitPosition: 0.1, strandSplitHeight: 0.36 },
@@ -1023,22 +1194,24 @@ test("geometry, bone and USDA consumers agree on the direction for the same tube
     const splits = strandSplitsFor(lock);
     const splitCount = splits.length;
     for (let k = 0; k <= splitCount; k += 1) {
-      const boneDirection = strandSplitDirectionForSegment(lock, k);
+      const boneCenter = strandSplitTubeCenterForSegment(lock, k);
       // usda-export 走自己的 strandSplitsForExport 归一化；喂同一个 lock 派生的 splits
-      // 列表长度必须一致，方向也必须一致。
-      const usdaDirection = strandDirectionForTube(splits, k);
-      const geometryDirection = strandSplitDirection(k, splitCount);
-      assert.equal(boneDirection, geometryDirection, `lock ${lockIndex} tube ${k}: bone == geometry`);
-      assert.equal(usdaDirection, geometryDirection, `lock ${lockIndex} tube ${k}: USDA == geometry`);
+      // 列表长度必须一致，中心也必须一致。
+      const usdaCenter = strandTubeCenterForTube(splits, k);
+      const sharedCenter = strandSplitTubeCenter(k, splits);
+      assert.equal(boneCenter, sharedCenter, `lock ${lockIndex} tube ${k}: bone == shared rule`);
+      assert.equal(usdaCenter, sharedCenter, `lock ${lockIndex} tube ${k}: USDA == shared rule`);
     }
   });
 });
 
-test("multi-zipper tubes are ALL laterally separated at the tip (the reported bug)", () => {
+test("multi-zipper tubes are ALL separated at the tip (EVERY seam opens)", () => {
   const geometryApi = makeMultiSplitGeometryApi();
-  // N=2 zippers -> 3 tubes. frame.x = world +x in this harness, so tube centre x at the
-  // tip row IS the lateral offset. Under the old discrete rule tubes 0 and 1 shared
-  // direction -1 and their tip centres were NOT separated (seam 0 stayed shut).
+  // N=2 zippers -> 3 tubes. frame.x = world +x in this harness, so x IS the lateral axis.
+  // 0.2.132：分离的**来源变了**（这才是本轮的核心行为断言）。旧实现靠 opening 整管平移，
+  // 所以只要断言「管心次序 + 心距变大」就够；现在管**不平移**，分离完全来自每管发尖朝
+  // 自身中心**收窄**（Tip Clump）。因此本测试改为量真正的缝——相邻管的**相邻边缘之间**的
+  // 间隙——并断言它在 root 处闭合、在 tip 处张开。心距（下方）现在恒定，量它已无判别力。
   const lock = baseSplitLock({
     strandSplits: [
       { position: -0.4, height: 0.4, order: 0 },
@@ -1056,22 +1229,67 @@ test("multi-zipper tubes are ALL laterally separated at the tip (the reported bu
   const positions = Array.from(geometry.getAttribute("position").array);
   const rows = geometry.userData.actualLengthSegments + 1;
   const centers = sweepRingCentroids(positions, sections, rows);
-  const tipX = centers.map((tube) => tube[rows - 1].x);
-  for (let k = 0; k + 1 < tipX.length; k += 1) {
+  // 管心次序：镜像 reverse 与骨骼锚点都依赖「下标 = 从左到右」，两端行都必须成立。
+  for (const row of [0, rows - 1]) {
+    const xs = centers.map((tube) => tube[row].x);
+    for (let k = 0; k + 1 < xs.length; k += 1) {
+      assert.ok(xs[k + 1] > xs[k], `row ${row}: tube ${k} (${xs[k]}) must sit left of tube ${k + 1} (${xs[k + 1]})`);
+    }
+  }
+  // 缝 k|k+1 的间隙 = 管 k+1 的最小 x − 管 k 的最大 x（相邻边缘之间）。
+  const seamGaps = (row) => {
+    const xs = sections.map((_, tube) => tubeRowXs(geometry, positions, tube, row));
+    return xs.slice(0, -1).map((left, k) => Math.min(...xs[k + 1]) - Math.max(...left));
+  };
+  const rootGaps = seamGaps(0);
+  const tipGaps = seamGaps(rows - 1);
+  assert.equal(tipGaps.length, 2, "N=2 zippers have two seams");
+  for (let k = 0; k < tipGaps.length; k += 1) {
+    // root（t=0，收窄比例恒 0）：两管共享裁剪边界 ⇒ 间隙恰为 0（浮点容差）。
     assert.ok(
-      tipX[k + 1] > tipX[k],
-      `tip ring centres must be strictly ordered along frame.x: tube ${k} (${tipX[k]}) < tube ${k + 1} (${tipX[k + 1]})`
+      Math.abs(rootGaps[k]) < 1e-6,
+      `seam ${k}|${k + 1} must be CLOSED at the root, got ${rootGaps[k]}`
+    );
+    // tip：每管各自朝自身中心收窄 ⇒ 每条缝都必须真的张开。这是「用户可以靠 zipper +
+    // Tip Clump 得到简单分叉」的构造性证据。
+    assert.ok(
+      tipGaps[k] > 1e-4,
+      `seam ${k}|${k + 1} must OPEN at the tip (Tip Clump narrowing), got ${tipGaps[k]}`
     );
   }
-  // Root row (t=0, before any opening) keeps the clipped-band ordering too, and the
-  // openings there are all zero — separation must come from the sweep, not the clip.
-  const rootX = centers.map((tube) => tube[0].x);
-  for (let k = 0; k + 1 < rootX.length; k += 1) {
-    assert.ok(rootX[k + 1] > rootX[k], `root band ${k} sits left of band ${k + 1}`);
-    assert.ok(
-      tipX[k + 1] - tipX[k] > rootX[k + 1] - rootX[k],
-      `seam ${k}|${k + 1} actually OPENS from root to tip`
-    );
+});
+
+test("Tip Clump = 0 leaves EVERY seam shut (narrowing is the only separation source)", () => {
+  // 负向对照，与上一条配对：把每管 Tip Clump 归零后发尖处的缝必须重新闭合。0.2.132 前
+  // 分离来自 opening 平移，spread=0 同样闭合 —— 但那时它还会**平移**管心；现在管心恒定，
+  // 所以这条同时钉住「收窄是唯一分离来源」。
+  const geometryApi = makeMultiSplitGeometryApi();
+  const lock = baseSplitLock({
+    strandSplits: [
+      { position: -0.4, height: 0.4, order: 0 },
+      { position: 0.4, height: 0.4, order: 1 }
+    ],
+    strandSplitBones: Array.from({ length: 3 }, (_, k) => ({
+      name: `split.${k}`,
+      parent: "main",
+      tipClump: 0,
+      taperCurve: null,
+      taperCurveSecondary: null,
+      asymmetricWidthCurve: null
+    }))
+  });
+  const curve = new THREE.CatmullRomCurve3(
+    lock.points.map((point) => new THREE.Vector3(point.x, point.y, point.z))
+  );
+  const geometry = geometryApi.createSplitStrandGeometry(lock, curve, splitProfile());
+  assert.ok(geometry, "zero Tip Clump must still produce geometry");
+  const positions = Array.from(geometry.getAttribute("position").array);
+  const sections = geometry.userData.splitSections;
+  const tipRow = geometry.userData.actualLengthSegments;
+  const xs = sections.map((_, tube) => tubeRowXs(geometry, positions, tube, tipRow));
+  for (let k = 0; k + 1 < xs.length; k += 1) {
+    const gap = Math.min(...xs[k + 1]) - Math.max(...xs[k]);
+    assert.ok(Math.abs(gap) < 1e-6, `seam ${k}|${k + 1} must stay shut at Tip Clump 0, got ${gap}`);
   }
 });
 
@@ -1145,8 +1363,10 @@ test("per-tube split tip handles are allocated from the tube count, not a litera
 });
 
 // ---- X 镜像必须反转管序（0.2.116 N-泛化遗留，镜像伴生体每管数据都错位） ----
-// 依据 strandSplitDirection(k,N)=(2k−N)/N 沿下标**单调递增**：下标 = 从左到右的横向次序，
-// 绕 X 镜像把最左管映到最右管，所以源管 k 的创作数据在镜像体里属于下标 N−k。
+// 依据 strandSplitTubeCenter(k, splits) 沿下标**单调递增**（0.2.132 前这条依据写作
+// strandSplitDirection(k,N)=(2k−N)/N，那个函数已随 opening 删除，单调性结论不变）：
+// 下标 = 从左到右的横向次序，绕 X 镜像把最左管映到最右管，所以源管 k 的创作数据在镜像体里
+// 属于下标 N−k。
 function authoredTubeBone(index, x) {
   return {
     name: `split.${index}`,
@@ -1154,7 +1374,7 @@ function authoredTubeBone(index, x) {
     parentParam: 0.5 + index * 0.1,
     p: { x, y: 1, z: 0 },
     orient: null,
-    spread: 0.12,
+    tipClump: 0.12,
     kind: "split",
     tip: {
       points: [{ x, y: 1, z: 0 }, { x: x + 0.05, y: 1.2, z: 0 }],
@@ -1343,7 +1563,6 @@ function tipWidthLock(overrides = {}) {
   return {
     geometryType: "strand",
     strandSplitEnabled: true,
-    strandSplitGap: 0.12,
     baseWidth: 0.2,
     widthScale: 1,
     depth: 0.16,
@@ -1368,7 +1587,7 @@ function blankTubeBones(count) {
   return Array.from({ length: count }, (_, k) => ({
     name: `split.${k}`,
     parent: "main",
-    spread: 0.12,
+    tipClump: 0.12,
     taperCurve: null,
     taperCurveSecondary: null,
     asymmetricWidthCurve: null
@@ -1685,9 +1904,14 @@ test("0.2.128: at N = 1 the seam-side vertex moves (raw-x scaling left it at EXA
     strandSplits: [{ position: 0, height: 0.4, order: 0 }],
     ...(bones ? { strandSplitBones: bones } : {})
   });
-  const authoredBones = blankTubeBones(2);
+  // Tip Clump 置 0（0.2.132）：本测试的数值锚是「宽度 override 的位移 = (x − centreX)·(R − R0)」，
+  // 而 Tip Clump 的收窄同样绕 centreX 缩放该管、会把锚从 0.06 缩成 0.06·(1 − 收窄比例)。
+  // 两个效应叠在一起就分不清测的是哪一个，故此处显式关掉 Tip Clump 只测 override 本身。
+  // 对称性/缝侧响应等结构性断言与 Tip Clump 取值无关（收窄对两侧同比例）。
+  const clumpFree = (bones) => bones.map((bone) => ({ ...bone, tipClump: 0 }));
+  const authoredBones = clumpFree(blankTubeBones(2));
   authoredBones[0].taperCurve = TIP_BUMP_CURVE.map((point) => ({ ...point }));
-  const base = tipWidthGeometryFor(n1Lock(blankTubeBones(2)));
+  const base = tipWidthGeometryFor(n1Lock(clumpFree(blankTubeBones(2))));
   const authored = tipWidthGeometryFor(n1Lock(authoredBones));
   assert.ok(base && authored);
   const basePositions = positionsOf(base);
@@ -2121,22 +2345,15 @@ function tipWidthGeoDepsWithChains(lock, chains) {
 }
 
 // 复刻 app.js currentStrandSplitTipChains 的 rest 推导（无 mesh.userData 时的回退分支）：
-// 管心 = 主曲线点 + frame.x · opening，opening 与几何 sweep 同一条 smoothstep 公式。
-// harness 的 frame 恒为单位正交，所以这里直接用 (1,0,0)。
+// 0.2.132 起该回退就是**主曲线点本身** —— 原先加的 frame.x · opening（smoothstep × spread ×
+// direction）随「segment separate」语义一并删除。这些测试钉的是「把手跟随被拖动的发尖链」，
+// 与 rest 基准取哪条线无关（displace 回调制造的 delta 才是被测量）。
 function strandTubeRestChain(lock, splits, tubeIndex, count = 3) {
   const curve = new THREE.CatmullRomCurve3(
     lock.points.map((point) => new THREE.Vector3(point.x, point.y, point.z))
   );
-  const forkT = strandTubeForkT(splits, tubeIndex);
-  const baseWidth = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1);
-  const spread = THREE.MathUtils.clamp(Number(lock.strandSplitGap ?? 0.12), 0, 0.99);
-  const direction = strandSplitDirection(tubeIndex, splits.length);
   return Array.from({ length: count }, (_, i) => {
-    const t = i / (count - 1);
-    const opening = t <= forkT
-      ? 0
-      : baseWidth * spread * THREE.MathUtils.smoothstep(t, forkT, 1) * direction;
-    const point = curve.getPoint(t).addScaledVector(new THREE.Vector3(1, 0, 0), opening);
+    const point = curve.getPoint(i / (count - 1));
     return { x: point.x, y: point.y, z: point.z };
   });
 }
@@ -2926,10 +3143,13 @@ test("Tip Clump axis: spread is the normalized position across the tube's OWN ti
   const axis = strandTipClumpAxis(geo, lock, splits, tube, bones[tube]);
   assert.ok(axis, "a split tube must expose a Tip Clump axis");
   // spread = 0 ⇒ 落在该管**左**边缘；spread = SPREAD_MAX ⇒ 落在**右**边缘。判据用被测模块
-  // 之外的独立求值（strandTipWidthEdgePosition 直接调用 + 同一个探针 spread），所以断言钉的
-  // 是「两端确实是两侧边缘」，不是复述实现。
+  // 之外的独立求值（strandTipWidthEdgePosition 直接调用），所以断言钉的是「两端确实是两侧
+  // 边缘」，不是复述实现。
+  // **两个探针都用 spread = 0**（0.2.132）：跨度基准是管的**未收窄**宽度，与 panel 用未收窄
+  // 的段 boundaries 同构。若按各自 spread 求边缘，边缘会随 spread 内收 ⇒ 轨迹变二次曲线，
+  // 下一条 AFFINE 测试会红。
   for (const [spread, side] of [[0, -1], [SPREAD_MAX, 1]]) {
-    const probeBone = { ...bones[tube], spread };
+    const probeBone = { ...bones[tube], tipClump: 0 };
     const edge = strandTipWidthEdgePosition(geo, lock, splits, tube, probeBone, side, 1);
     assert.ok(edge, `edge must exist for side ${side}`);
     // 手柄比边缘多一个沿切线的外推（避免与发尖链末点手柄重合），所以比较横向分量。
@@ -2944,6 +3164,60 @@ test("Tip Clump axis: spread is the normalized position across the tube's OWN ti
     axis.start.distanceTo(axis.end) > 0.01,
     "the axis must span a draggable distance across the tube's own width"
   );
+});
+
+test("Tip Clump axis stays draggable when the taper curve ends at 0 (the real-project shape)", () => {
+  // **实测踩过的回归**（0.2.132，scripts/verify-tip-clump.mjs 抓到、node 侧当时漏掉）：
+  // DEFAULT_TAPER_CURVE 的末点 value 恰为 **0**（真实工程 layered-side-bun 的 Front Bangs 亦然），
+  // 于是 t = 1 处每根管的真实网格宽度都是 0、所有边缘塌到脊柱同一点。若 Tip Clump 轴改用
+  // 「t = 1 的真实边缘」当端点，轴长恒为 0 ⇒ 手柄拖不动、且 N+1 个手柄重叠成一个。
+  // 本文件其余 fixture 用的是恒 1 的 FLAT_CURVE，**掩盖**了这种形状 —— 所以这条测试专门
+  // 用「末点为 0」的曲线，并同时断言「可拖」与「每根管的手柄互不重合」。
+  const taperToZero = [
+    { position: 0, value: 0.3, interpolation: "smooth" },
+    { position: 0.89, value: 0.4, interpolation: "smooth" },
+    { position: 1, value: 0, interpolation: "smooth" }
+  ];
+  const lock = tipWidthLock({
+    taperCurve: taperToZero.map((point) => ({ ...point })),
+    taperCurveSecondary: taperToZero.map((point) => ({ ...point }))
+  });
+  const splits = strandSplitsFor(lock);
+  const tubeCount = splits.length + 1;
+  const bones = blankTubeBones(tubeCount);
+  const geo = tipWidthGeoDepsWithChains(lock, null);
+  // 前提确认：真实边缘在 t = 1 的**横向**分量真的退化（否则这条测试没在考察它声称的东西）。
+  // 量 point−center：两点共用同一个 edgeZ，故其差是**纯横向**量（edgePosition 的既有性质，
+  // 也是拖拽基准）。taper(1)=0 ⇒ 该横向量为 0。**刻意不量 point 之间的距离**：本文件的
+  // fixture 用恒 1 的 depthCurve，两侧 z 不同会让距离非零、掩盖横向退化。
+  for (const side of [-1, 1]) {
+    const edge = strandTipWidthEdgePosition(geo, lock, splits, 0, { ...bones[0], tipClump: 0 }, side, 1);
+    assert.ok(edge, `edge must still resolve for side ${side}`);
+    const lateral = edge.point.clone().sub(edge.center).dot(edge.lateral);
+    assert.ok(
+      Math.abs(lateral) < 1e-9,
+      `sanity: taper(1)=0 must collapse the real tip edge laterally (side ${side} got ${lateral})`
+    );
+  }
+  // 轴仍必须可拖，且每根管各自一条。
+  const axes = Array.from({ length: tubeCount }, (_, tube) => (
+    strandTipClumpAxis(geo, lock, splits, tube, bones[tube])
+  ));
+  axes.forEach((axis, tube) => {
+    assert.ok(axis, `tube ${tube} must expose an axis`);
+    assert.ok(
+      axis.start.distanceTo(axis.end) > 0.01,
+      `tube ${tube}: the axis must stay draggable at taper(1)=0, got ${axis.start.distanceTo(axis.end)}`
+    );
+  });
+  // 手柄互不重合：取每根管当前 spread 处的点，两两距离必须可分辨（否则拖不清是哪根管）。
+  const points = axes.map((axis, tube) => axis.pointAt(bones[tube].tipClump ?? 0));
+  for (let k = 0; k + 1 < points.length; k += 1) {
+    assert.ok(
+      points[k].distanceTo(points[k + 1]) > 0.01,
+      `tubes ${k}/${k + 1} handles must stay distinguishable, got ${points[k].distanceTo(points[k + 1])}`
+    );
+  }
 });
 
 test("Tip Clump axis is AFFINE in spread, so a 49-probe scan inverts it exactly", () => {
@@ -3087,8 +3361,8 @@ test("Tip Clump handles: ONE allocation, ONE userData key, ONE hit gate for both
   // applyStrandSegmentSpread 同规则）：读派生视图 strandSplitBonesFor 写进去会被丢弃。
   assert.match(
     interactionSource,
-    /const axisBones = materializeStrandSplitBones\(lock\);[\s\S]{0,700}?bone\.spread = THREE\.MathUtils\.clamp\(clumpBest\.spread, 0, SPREAD_MAX\)/,
-    "the strand Tip Clump drag materializes before authoring bone.spread"
+    /const axisBones = materializeStrandSplitBones\(lock\);[\s\S]{0,700}?bone\.tipClump = THREE\.MathUtils\.clamp\(clumpBest\.tipClump, 0, SPREAD_MAX\)/,
+    "the strand Tip Clump drag materializes before authoring bone.tipClump"
   );
   // ④c 拖拽后热同步按几何分派到对应的那组段控件（发丝 → #strandSegmentControls）。
   assert.match(
@@ -3130,8 +3404,14 @@ test("Tip Clump handles: ONE allocation, ONE userData key, ONE hit gate for both
     "the drag hit list reuses the same visible-handle definition"
   );
   // ⑤ SPREAD_MAX 单一定义点：写入路径不得再内联 0.99 字面量。
+  // 字段 0.2.132 改名 spread → tipClump，两个名字都扫：只扫新名会让「有人写回旧字段并内联
+  // 0.99」这种回归静默通过。
   for (const [name, source] of [["bone-interaction", interactionSource], ["bone-view-handles", handleSource]]) {
-    assert.doesNotMatch(source, /spread = THREE\.MathUtils\.clamp\([^)]*0\.99/, `${name} clamps via SPREAD_MAX`);
+    assert.doesNotMatch(
+      source,
+      /(?:spread|tipClump) = THREE\.MathUtils\.clamp\([^)]*0\.99/,
+      `${name} clamps via SPREAD_MAX`
+    );
   }
   const segmentControlSource = await readFile(new URL("../modules/bones/segment-control.js", import.meta.url), "utf8");
   assert.doesNotMatch(
@@ -3142,26 +3422,43 @@ test("Tip Clump handles: ONE allocation, ONE userData key, ONE hit gate for both
   assert.match(segmentControlSource, /SPREAD_MAX,/, "segment-control imports SPREAD_MAX from bone-model");
 });
 
-test("Tip Clump axis stays non-degenerate on a direction === 0 middle tube", () => {
-  // 已知几何行为（不是本函数的 bug，见 strandTipClumpAxis 的 DEGENERATE 注释）：spread 只经
-  // opening 生效，而 opening ∝ strandSplitDirection(k, N)。N=2 的正中间管 k=1 的 direction 为
-  // 0 ⇒ 改 spread 完全不动网格（滑杆自 0.2.116 起就是空操作）。手柄仍必须可拖：跨度来自管
-  // 自身宽度、与 direction 无关。若哪天有人把手柄改成「沿张开方向推」，本断言会失败。
-  const lock = tipWidthLock({
+test("0.2.132: the middle tube's Tip Clump now MOVES THE MESH (old direction===0 dead zone)", () => {
+  // 这是本轮**修掉的一个真实死区**，原先记在 strandTipClumpAxis 的 DEGENERATE 注释里作为
+  // 「已知几何行为」：spread 当年只经 opening 生效，而 opening ∝ (2k−N)/N —— 偶数拉链数的
+  // 正中间管（N=2 的 k=1）系数恰为 0 ⇒ 拖它的绿手柄、拉它的滑杆，网格**一动不动**。
+  // Tip Clump 改为「绕本管中心收窄」后不再依赖任何方向系数，每一根管都必然响应。
+  const lock = (tipClump) => tipWidthLock({
     strandSplits: [
       { position: -0.4, height: 0.35, order: 0 },
       { position: 0.4, height: 0.35, order: 1 }
-    ]
+    ],
+    strandSplitBones: blankTubeBones(3).map((bone) => ({ ...bone, tipClump }))
   });
-  const splits = strandSplitsFor(lock);
   const middle = 1;
-  assert.equal(strandSplitDirection(middle, splits.length), 0, "sanity: the middle tube of N=2 has direction 0");
-  const bones = blankTubeBones(splits.length + 1);
-  const axis = strandTipClumpAxis(tipWidthGeoDepsWithChains(lock, null), lock, splits, middle, bones[middle]);
-  assert.ok(axis, "the middle tube still exposes an axis");
+  const tipRowXs = (clumpValue) => {
+    const geometry = tipWidthGeometryFor(lock(clumpValue));
+    assert.ok(geometry, "the N=2 fixture must produce geometry");
+    return tubeRowXs(geometry, positionsOf(geometry), middle, geometry.userData.actualLengthSegments);
+  };
+  const spanOf = (xs) => Math.max(...xs) - Math.min(...xs);
+  const loose = tipRowXs(0);
+  const clumped = tipRowXs(0.8);
+  // 中间管的发尖宽度必须真的收窄（旧实现这两个 span 逐位相同 —— 那正是死区）。
   assert.ok(
-    axis.start.distanceTo(axis.end) > 0.01,
-    "the middle tube's handle is still draggable even though its mesh cannot move"
+    spanOf(clumped) < spanOf(loose) - 1e-6,
+    `the middle tube must narrow with Tip Clump: ${spanOf(loose)} -> ${spanOf(clumped)}`
   );
+  // 收窄是绕管心的**缩放**，不是平移：两侧极值的中点逐值不动。
+  const midOf = (xs) => (Math.max(...xs) + Math.min(...xs)) * 0.5;
+  assert.ok(
+    Math.abs(midOf(clumped) - midOf(loose)) < 1e-6 * Math.max(1, spanOf(loose)),
+    `the middle tube must not translate, moved by ${midOf(clumped) - midOf(loose)}`
+  );
+  // 手柄仍必须可拖（跨度来自管自身未收窄的宽度）。
+  const splits = strandSplitsFor(lock(0));
+  const bones = blankTubeBones(splits.length + 1);
+  const axis = strandTipClumpAxis(tipWidthGeoDepsWithChains(lock(0), null), lock(0), splits, middle, bones[middle]);
+  assert.ok(axis, "the middle tube still exposes an axis");
+  assert.ok(axis.start.distanceTo(axis.end) > 0.01, "the middle tube's handle spans a draggable distance");
 });
 

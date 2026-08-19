@@ -2,7 +2,7 @@
 // Extracted from app.js; coupling injected via createBoneViewHandlesApi(deps).
 import * as THREE from "three";
 import {
-  defaultStrandSplitSpread,
+  defaultStrandTipClump,
   segmentBoneHost,
   splitBonesFor,
   strandSplitBonesFor,
@@ -11,14 +11,14 @@ import {
   PANEL_SEGMENT_HOST,
   SPREAD_MAX,
   STRAND_SEGMENT_HOST
-} from "./bone-model.js?v=20260830-1";
-import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260830-1";
-import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260830-1";
+} from "./bone-model.js?v=20260901-1";
+import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260901-1";
+import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260901-1";
 import {
   strandTipClumpAxis,
   strandTipWidthControlPlacement,
   strandTipWidthEdgePoints
-} from "../geometry/strand-tip-width.js?v=20260829-2";
+} from "../geometry/strand-tip-width.js?v=20260901-1";
 import {
   firstExposedTipChainIndex,
   materializeTipChain,
@@ -164,8 +164,8 @@ function allocateTipChainHandles(lock, group, segmentCount, pointCount, tipChain
   }
 }
 
-// 绿色 Tip Clump 手柄（每段/每管一个）：视口里直接拖它就写该段的 bone.spread（UI 名
-// Tip Clump），等价于右侧面板的 #panelSegmentSpread / #strandSegmentSpread 滑杆。
+// 绿色 Tip Clump 手柄（每段/每管一个）：视口里直接拖它就写该段的 bone.tipClump，
+// 等价于右侧面板的 #panelSegmentSpread / #strandSegmentSpread 滑杆（控件 id 未随字段改名）。
 // panel 段与 split strand 管**共用这一份分配**（0.2.130 起；此前只有 panel 有），与
 // allocateTipChainHandles / allocateTipWidthHandles 同样的理由：结构相同（每段一个球）、
 // userData 键相同（tipClumpSegment），所以命中侧只需把发丝的门控并进来，拖拽侧只需分派
@@ -257,7 +257,7 @@ function createBoneViewHandles(lock, group) {
       group.add(handle);
       panelSplitHandles.push(handle);
     });
-    // 绿色 Tip Clump 手柄：每段一个，选中任一发尖时显示，拖拽直接写 bone.spread（0..0.99）。
+    // 绿色 Tip Clump 手柄：每段一个，选中任一发尖时显示，拖拽直接写 bone.tipClump（0..0.99）。
     // 段数从 PANEL_SEGMENT_HOST 取（唯一定义点）：此前就地写 `lock.panelSplits.length + 1`，
     // 与发丝侧构成两处平行推导；现在两种几何走同一个 allocateTipClumpHandles。
     allocateTipClumpHandles(lock, group, PANEL_SEGMENT_HOST.segmentCount(lock), tipClumpHandles);
@@ -394,7 +394,7 @@ function createBoneViewHandles(lock, group) {
 
 // panel 段的绿色 Tip Clump 手柄世界位置。**逐字保留 0.2.61–0.2.65 的既有表达式**（本轮把
 // panel/发丝的公共外壳抽成 tipClumpCtx 时原样搬进这个具名函数，位置与偏移一字未动）：
-//   handleU = boundaries[seg] + (spread / SPREAD_MAX) * span
+//   handleU = boundaries[seg] + (tipClump / SPREAD_MAX) * span
 // 手柄 = trim/curve 适配的 rest 尖端表面点（tipSurfaceFrameAt 内部已应用 panelTipCurve +
 // edge trim 的 tipOffsetSampleT）沿切线 y 外推 TIP_CLUMP_HANDLE_TANGENT_OFFSET，再叠加链
 // 最后一点（t=1 尖端）的 authored delta（points − restPoints），从而跟随用户拖过的发尖。
@@ -403,8 +403,8 @@ function createBoneViewHandles(lock, group) {
 function panelTipClumpHandlePoint(lock, segment, tipSplits, tipSplitBones, segmentBoundaries, tipChains) {
   const bone = tipSplitBones[segment] || null;
   const span = Math.max(0.0001, segmentBoundaries[segment + 1] - segmentBoundaries[segment]);
-  const spread = bone?.spread ?? 0;
-  const handleU = segmentBoundaries[segment] + (spread / SPREAD_MAX) * span;
+  const tipClump = bone?.tipClump ?? 0;
+  const handleU = segmentBoundaries[segment] + (tipClump / SPREAD_MAX) * span;
   const surfaceFrame = deps.panelTipStrand.tipSurfaceFrameAt(lock, 1, handleU, segment, tipSplits);
   const point = surfaceFrame.point.clone().addScaledVector(surfaceFrame.y, TIP_CLUMP_HANDLE_TANGENT_OFFSET);
   const chain = tipChains[segment];
@@ -520,7 +520,7 @@ function updateBoneViewHandles(lock, ctx) {
       pointFor: (segment) => {
         const axis = strandTipClumpAxis(geo, lock, strandSplits, segment, strandBones[segment] || null);
         if (!axis) return null;
-        return axis.pointAt(strandBones[segment]?.spread ?? defaultStrandSplitSpread(lock));
+        return axis.pointAt(strandBones[segment]?.tipClump ?? defaultStrandTipClump(lock));
       }
     };
   })();

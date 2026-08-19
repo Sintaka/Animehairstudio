@@ -31,7 +31,6 @@ const STRAND_SETTING_FIELDS = Object.freeze([
   "strandSplitEnabled",
   "strandSplitPosition",
   "strandSplitHeight",
-  "strandSplitGap",
   "strandSplits",
   "sweepProfile",
   "profileOffset",

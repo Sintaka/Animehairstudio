@@ -25,13 +25,14 @@
 - **简体中文 UI**（Settings → Language，3D 术语保留英文）
 - **5 个自定义雕刻笔刷**（Slide / Scale·Cut-Extend / Push / Orient / **Twist**）+ Smooth twist；Ctrl=反向，例如 Scale 笔刷：默认放大，按住 Ctrl=缩小；Cut·Extend 模式默认延伸、Ctrl=裁剪
 - **Twist 笔刷**：绕 strand 切线的手动轴向滚转，方向与相机无关（拖右/拖左反向、Ctrl 再反向）；只转朝向、不移动点；H 模式下子骨骼跟着滚转但位置钉死；按下左键即锁定影响范围
-- **Panel Split 子骨骼 + 发尖子骨骼（tip sub-bone）**：每 split 段一个完整变换骨骼（P/orient/spread + 每段 Width/Depth 曲线）、视口 tip 链手柄/高亮/法线箭头、rotate/scale 挂 gizmo、发尖 WidthCurve（绿色控制点，左右独立、zipper 截断、Segment Spread 0–0.99、Reset 全 1）、每顶点蒙皮权重 [mainJoint, segment, weight] + USDA SkelBindingAPI 蒙皮
+- **Tip Clump：发尖聚合收窄，panel 与普通 strand 现在同一个意思（0.2.132 统一）**：拖 **Tip Clump** 滑杆（或视口里那个绿色小球）让这一段/这一根管的**发尖按自身宽度的比例整体收窄**，从 zipper 处的 0 线性收到发尖的满值。**简单分叉现在这样做**：用 zipper 决定缝在哪、开多深，再用 Tip Clump 把各管发尖收拢，缝就在发尖处张开。绿色宽度控制点与 Tip Clump **联动**（落在真正收窄后的边缘上）。原先普通 strand 的 **Split Spacing 滑杆已删除**——它做的是「把整根管平移推开」，与收窄不是一回事，且和 zipper 的职责重叠；旧存档照常打开，其数值会成为每根管 Tip Clump 的初值
+- **Panel Split 子骨骼 + 发尖子骨骼（tip sub-bone）**：每 split 段一个完整变换骨骼（P/orient/Tip Clump + 每段 Width/Depth 曲线）、视口 tip 链手柄/高亮/法线箭头、rotate/scale 挂 gizmo、发尖 WidthCurve（绿色控制点，左右独立、zipper 截断、Tip Clump 0–0.99、Reset 全 1）、每顶点蒙皮权重 [mainJoint, segment, weight] + USDA SkelBindingAPI 蒙皮
 - **普通 strand 支持多个 zipper**：从单 zipper 升级为多 zipper（N 个 zipper → N+1 根管），strand 面板新增 +/− **Zipper Controls**（最多 8 个），每个 zipper 有独立位置/高度、可在视口直接拖动；几何、UV 展开、骨骼与 USDA 导出全部跟随；旧的单 zipper 存档照常打开
 - **普通 strand 的子发尖现在能选中、能控制了（0.2.126 新增）**：原先普通 strand 被 zipper 分出的子发尖**根本选不中**，每根管只有尖端一个黄点可拖，更谈不上进一步编辑（panel 早就有整套）。现在完全对齐 panel 的操作方式：点子发尖即选中（**再点一次退回主选中**）、鼠标划过管身高亮该管、**每个链点都有把手**（不再只有尖端一个——3 根管 × 4 链点 = 12 个）、旋转模式显示每点法线箭头、**W/E/R 挂 gizmo** 直接变换、**笔刷只雕刻选中的那根管**（不会误伤其他管或主发丝）、alt+点快切子发尖、切换选中对象时自动清理。段号与选中态各自独立，互不污染
-- **普通 strand 也有按管编辑（0.2.125 新增）**：strand 面板新增 **Split Segments** 段选择器（`‹ 1 ›`）+ **Segment Spread**（当前这根管的尖端张开 0–0.99）+ 当前管的 **Width / Depth Curve** 预览与铅笔编辑入口；配合发尖 WidthCurve，每根管的发尖粗细可以单独调。整块只在开启 Split Geometry 时出现
+- **普通 strand 也有按管编辑（0.2.125 新增）**：strand 面板新增 **Split Segments** 段选择器（`‹ 1 ›`）+ **Tip Clump**（当前这根管的发尖收窄 0–0.99；0.2.130 前叫 Segment Spread，0.2.132 起与 panel 同义）+ 当前管的 **Width / Depth Curve** 预览与铅笔编辑入口；配合发尖 WidthCurve，每根管的发尖粗细可以单独调。整块只在开启 Split Geometry 时出现
 - **panel 发尖 gizmo 跳位修复（0.2.126）**：选中发尖后用 W/E gizmo 拖动，若该发丝的 rest 链此前动过（改主链、改 zipper 位置/高度、改 spread、改宽度、改 Split Spacing 都会动），**一按下发尖就会跳一段**。这是 panel 一直存在的老问题（与 0.2.120 修过的笔刷跳位同一个根因，当年只修了笔刷）。现已修复；rest 没动过的工程行为逐值不变
 - **发尖 WidthCurve 现在也支持普通 strand（0.2.125 新增）**：原先只有 panel 有的发尖宽度曲线移植到 strand 分裂管——每根管在自己 zipper 以上的部分用该管自己的曲线，zipper 以下跟随整根发丝的全局曲线（切换处连续、不裂）。两侧控制点共用同一套参数网格（间距一致），**暴露几个由各自 zipper 高度决定**（深的一侧多、浅的一侧少）。不影响 UV：宽度只缩放发尖，发根那一行不动
-- **Split Spacing 修复（0.2.125）**：普通 strand 的 Split Spacing 滑杆在做过任意一次 +/−、Tip Length、Reset Split Tips 或拖发尖之后就完全失效（只动读数、不动网格）；现在它是**全局刷子**，一拖就写进每一根管（会覆盖用 Segment Spread 单独调过的管，这是它「for every split tube」的本意）
+- ~~**Split Spacing 修复（0.2.125）**~~：**该滑杆已于 0.2.132 整体删除**（见上方 Tip Clump 条目），本条仅作历史记录。当年的修复是把它改成「全局刷子——写进每一根管」；现在分离由 zipper 负责、发尖收窄由每管 Tip Clump 负责，不再有这个全局滑杆
 - **多管发尖手柄修复（0.2.125）**：加到 2 个以上 zipper（≥3 根管）时，第 3 根管起看不到黄色发尖手柄、拖不动；现在每根管都有
 - **左右镜像修复（0.2.125）**：镜像发丝时每根管的发尖姿态会被贴到**错误的管**上（最左管的姿态贴到镜像体的最左管，而那一管其实对应源的最右管）；同时镜像后 zipper 没有重新排序，导致存档里记的「第一条 zipper 高度」取错。两者都已修
 - **新增 zipper 的深度（0.2.125 行为调整）**：按 `+` 新增的 zipper 原先恒取「最左那条」的高度（把最左那条拖浅后，之后新增的每条都跟着变浅）；现在**跟随被切开那一段旁边的 zipper**

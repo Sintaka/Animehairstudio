@@ -732,7 +732,7 @@ test("clumps can be saved from the outliner as reusable draw brush presets", asy
   assert.match(html, /id="clumpContextMenu"[\s\S]*id="createClumpPresetAction"[\s\S]*Create preset from clump/);
   assert.match(html, /id="creationPresetDescription"/);
   assert.match(source, /const LEGACY_CLUMP_PRESET_STORAGE_KEY = "anime-hair-studio-clump-presets-v1"/);
-  assert.match(source, /clump-brush-presets\.js\?v=20260814-12/);
+  assert.match(source, /clump-brush-presets\.js\?v=20260901-1/);
   // moved to modules/io/preset-library.js
   assert.match(presetLibrary, /function createCustomClumpPreset\(guide\)[\s\S]*pendingClumpPresetGuideId = guide\.id[\s\S]*Create Brush Preset[\s\S]*creationPresetDialog\.showModal/);
   // moved to modules/io/preset-library.js
@@ -1522,7 +1522,11 @@ test("strand split controls expose multi-zipper add/remove stepper", async () =>
     readFile(new URL("../app.js", import.meta.url), "utf8"),
   ]);
   // The strand Split Tip controls carry a zipper +/- stepper mirroring the panel one.
-  assert.match(html, /id=["']strandSplitControls["'][\s\S]*?id=["']removeStrandSplit["'][\s\S]*?id=["']strandSplitCount["'][\s\S]*?id=["']addStrandSplit["'][\s\S]*?id=["']strandSplitGap["']/);
+  // 0.2.132：锚点从已删除的 #strandSplitGap 改为 #strandSplitTipLength（stepper 之后的下一个
+  // 控件）。**必须保留一个后继锚点**：只断言三个 id 的话，stepper 被整段搬到容器外也能通过。
+  assert.match(html, /id=["']strandSplitControls["'][\s\S]*?id=["']removeStrandSplit["'][\s\S]*?id=["']strandSplitCount["'][\s\S]*?id=["']addStrandSplit["'][\s\S]*?id=["']strandSplitTipLength["']/);
+  // 全局 Split Spacing 滑杆已随「segment separate」语义删除，不得复活。
+  assert.doesNotMatch(html, /id=["']strandSplitGap["']/, "the global Split Spacing slider must stay deleted");
   // Multi-zipper cap constant and clone/normalize default to it (not truncated to 1).
   assert.match(source, /const STRAND_SPLIT_MAX = \d+;/);
   assert.match(source, /function normalizeStrandSplits\(value, legacyPosition, legacyHeight, maxCount = STRAND_SPLIT_MAX\)/);
@@ -1564,10 +1568,10 @@ test("split strands expose a per-segment selector, spread, and curve previews", 
   assert.match(source, /if \(button\.closest\("\[data-segment-curve\]"\)\) segmentApi\.openSegmentCurveEditor\(button\.dataset\.curveKey\)/);
   // The strand segment block is refreshed from the same entry as the rest of the split inputs.
   assert.match(source, /syncStrandSplitTipInputs\(target\);[\s\S]{0,200}segmentApi\.syncStrandSegmentControls\(target\)/);
-  // Spread authoring materializes before writing (materialize-before-authoring rule).
+  // Tip Clump authoring materializes before writing (materialize-before-authoring rule).
   assert.match(
     segmentControl,
-    /function applyStrandSegmentSpread[\s\S]*?materializeStrandSplitBones\(target\)[\s\S]*?bones\[index\]\.spread = spread/
+    /function applyStrandSegmentSpread[\s\S]*?materializeStrandSplitBones\(target\)[\s\S]*?bones\[index\]\.tipClump = tipClump/
   );
 });
 
@@ -1578,8 +1582,9 @@ test("the per-segment spread slider is labelled Tip Clump on BOTH geometries, id
     readFile(new URL("../modules/data/loc-ja.js", import.meta.url), "utf8"),
   ]);
   // 0.2.130 rename: the user-facing label became "Tip Clump" on panels AND ordinary strands.
-  // The element ids, the range (0..0.99) and the persisted field name (bone.spread) are
-  // deliberately UNCHANGED — renaming any of those would break every existing .ahs file.
+  // 0.2.132: the persisted field followed suit (bone.spread -> bone.tipClump, reads fall back
+  // so old .ahs files keep their values). The element ids and the range (0..0.99) are
+  // deliberately UNCHANGED — they are this contract's frozen surface.
   for (const id of ["panelSegmentSpread", "strandSegmentSpread"]) {
     assert.match(
       html,
@@ -2644,7 +2649,7 @@ test("settings menu exposes preferences, language, and app version", async () =>
   assert.match(localization, /"Alt \+ Left Mouse":/);
   assert.match(localization, /"Center viewport on selected object":/);
   assert.equal(packageData.version, "0.1.5-Sintaka.0.2.63");
-  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.131["']/);
+  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.132["']/);
 });
 
 test("title bar exposes icon-only Patreon and Ko-fi support links", async () => {
@@ -2895,7 +2900,7 @@ test("newly drawn strands create linked mirror instances while X mirror is enabl
     readFile(new URL("../modules/geometry/draw-flow.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20260907-1/);
+  assert.match(html, /app\.js\?v=20260908-1/);
   assert.match(html, /id="mirrorInstanceAction"[^>]*>Mirror Strand<\/button>/);
   assert.match(
     source,
@@ -2987,7 +2992,7 @@ test("project materials select standard, anime anisotropic, and Lambert shaders"
     html,
     /id=["']hairMaterialShader["'][\s\S]*value=["']standard-anisotropic["']>Standard Anisotropic<[\s\S]*value=["']anime-anisotropic["']>Anime Anisotropic<[\s\S]*value=["']lambert["']>Lambert</
   );
-  assert.match(html, /app\.js\?v=20260907-1/);
+  assert.match(html, /app\.js\?v=20260908-1/);
   assert.match(
     html,
     /id=["']hairMaterialAnimeControls["'][\s\S]*id=["']hairMaterialAnimeBaseColor["'][\s\S]*value=["']#dbc2aa["'][\s\S]*id=["']hairMaterialAnimeShadowColor["'][\s\S]*value=["']#99675c["'][\s\S]*id=["']hairMaterialAnimeRimColor["'][\s\S]*value=["']#ffd9cf["'][\s\S]*id=["']hairMaterialAnimeRimStrength["'][\s\S]*value=["']0\.35["'][\s\S]*id=["']hairMaterialAnimeRimWidth["'][\s\S]*value=["']0\.3["'][\s\S]*id=["']hairMaterialAnimeHighlightEdgeSuppression["']/
@@ -4502,11 +4507,11 @@ test("strand width and depth curve editors expose draggable viewport mesh points
     /class="profile-dialog-actions taper-curve-actions"[\s\S]*id="addTaperPoint"[\s\S]*class="taper-toggle-stack"[\s\S]*id="taperAsymmetryToggle"[\s\S]*id="taperMeshPointsToggle"/
   );
   assert.doesNotMatch(html, /id="taperCurveSide"/);
-  assert.match(html, /styles\.css\?v=20260907-1/);
-  assert.match(html, /app\.js\?v=20260907-1/);
+  assert.match(html, /styles\.css\?v=20260908-1/);
+  assert.match(html, /app\.js\?v=20260908-1/);
   // localization.js is now loaded as an ES-module import inside app.js (there is no
   // separate localization script tag anymore).
-  assert.match(source, /from "\.\/modules\/data\/localization\.js\?v=20260829-1"/);
+  assert.match(source, /from "\.\/modules\/data\/localization\.js\?v=20260901-1"/);
   assert.match(source, /new THREE\.SphereGeometry\(0\.016, 12, 8\)/);
   assert.match(source, /color: 0xe62bea/);
   // moved to modules/geometry/taper-editor.js

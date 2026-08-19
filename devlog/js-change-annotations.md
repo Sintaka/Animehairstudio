@@ -22,7 +22,72 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
-## 最近更新（0.2.126）
+## 最近更新（0.2.132）
+
+> **Tip Clump 语义统一 + 删除继承来的「segment separate」（分支 DHS/develop）**。用户决策原文：
+> 「那个滑块可以删了, 简单分叉可以通过发尖系统实现」「发尖的绿色宽度整体控制器应该和 tip clump
+> 联动就像现在 panel 一样, tip clump 是需要的」。即：① 普通发丝的 Tip Clump 改成与 panel **同义**的
+> 「发尖相对自身宽度整体收窄」；② main 继承来的「整管横向平移分离」语义与其全局滑杆**整体删除**
+> （分离改由拉 zipper 实现）；③ 绿色宽度手柄随 Tip Clump 联动。术语对照见
+> [APPJS_SPLIT_GUIDE.md §7.2b](APPJS_SPLIT_GUIDE.md)。
+>
+> - **modules/geometry/tip-width-curve.js**：新增 `tipClumpNarrowFraction(sideZipperHeight, tipClump, t)`
+>   —— Tip Clump 收窄比例的**唯一定义点**（本侧 zipper 处 0、线性升到发尖满值）。panel 侧
+>   `tipWidthSpreadGap` 改为「共享比例 × 0.5 × 段 span」，发丝侧乘管内半跨度，于是同一个数值在两种
+>   几何上收掉的都是「自身宽度的同一比例」。**必须线性**：发丝侧此前用 smoothstep（那是已删除的
+>   opening 平移遗留），两侧不同会让同一数值收窄形状不一致。真 import `SPREAD_MAX`（无循环依赖）。
+> - **modules/geometry/strand-geometry.js**：`createSplitStrandGeometry` 删除 `direction` 与
+>   `opening = baseWidth·spread·smoothstep(...)·direction`（整管沿 frame.x 平移）；改为在 sweep 趟里
+>   **先**用 `strandTipClumpNarrowedProfile` 把 profile x 绕本管 band 中心收窄、**再**送进
+>   `strandProfileTopologyAt` —— 与 panel「先把列的 u 收进 [uStart,uEnd]、再用该 u 采样宽度曲线」同序。
+>   每段新增 `leftClumpHeight`/`rightClumpHeight`（无 zipper 的外侧镜像对侧，与 panel 邻居规则同构）。
+>   **曲率收窄预趟刻意不传收窄**（与发尖 WidthCurve override 同样的三条理由：factors 全行全管共享、
+>   经 falloff 会传播到 row 0 破 UV 契约、语义上是基础包络粗细）。
+> - **modules/geometry/strand-tip-width.js**：新增 `strandTipClumpNarrowedProfile`（几何与把手**共用
+>   同一函数**，所以绿色宽度手柄落在真实收窄后的网格边缘上 = 用户要的「联动」）；
+>   `strandTipWidthEdgePosition` 删掉 opening 加回项、改为先收窄；`strandTipClumpAxis` 重写为
+>   **标称管宽**轴（见下方踩坑）。
+> - **modules/bones/bone-model.js**：字段 `bone.spread` → **`bone.tipClump`**（读取 `tipClump ?? spread`，
+>   **只在 normalize 层回退一次**；写盘只写新名，双写会漂移）。删除 `strandSplitDirection` /
+>   `strandSplitDirectionForSegment`（只服务于已删除的 opening），改为 `strandSplitTubeCenter(k, splits)`
+>   = 边界 `[-1, ...position, 1]` 第 k 段**中点** —— 管现在不平移，需要的是管自身的中心；它跟随**真实
+>   划分**，而旧的等距 `(2k−N)/N` 不跟。`defaultStrandTipClump(lock)` 读 `lock.strandSplitGap`（**存档
+>   字段保留**、滑杆删除，与 panel 的 `defaultSplitTipClump` 读 `panelSplitGap` 逐条同构），旧档因此
+>   保留作者当年的量级。
+> - **改名的边界（哪些跟着改、哪些刻意不改）**：跟着改的是**字段名与内部标识符** —— `bone.tipClump`、
+>   `defaultSplitTipClump`/`defaultStrandTipClump`、`tipClumpNarrowFraction` 的形参、`clumpBest.tipClump`、
+>   `segmentUi` 描述子键 `tipClumpInput`/`tipClumpValue`。**刻意不改**的是 **DOM 控件 id**
+>   （`#panelSegmentSpread`/`#strandSegmentSpread` 及其 `*Value`）与处理器名 `applyStrandSegmentSpread`：
+>   id 属 `dom-contract` 冻结面（改它要同步 index.html + 多条断言），且与用户存档无关；本轮的目标是
+>   「字段名与 UI 名指向同一个概念」，控件 id 不在其中。**`clump-procedural.js` 的 `spread`/`depthSpread`
+>   一字未动** —— 那是 main 的发丝聚簇参数（`#clumpSpread`），正是本轮要与之区分开的那个同名概念。
+> - **三条持久化路径逐条验证**（不只信一条）：`strandSplitBones*`（发丝管）、`splitBones*`（panel 段）、
+>   `bones*`（统一 registry，`project-files` 的导出侧经 `bonesFor` 消费它）都做到「旧档 `spread` 逐值
+>   升级成 `tipClump` + 落盘不再双写」；两条镜像路径（`mirrorStrandSplitBones`/`mirrorSplitBones`）的
+>   `tipClump` 随管/段序 reverse。**负向对照实测**：把 `pickTipClump` 改成只读 `spread` 后，
+>   `split-tip-geometry` 立刻 **6 条红**（含三条新增的跨路径/几何消费断言），恢复后全绿 —— 证明这些
+>   断言不是空跑。另有一条几何侧负向对照：同一根管写 `tipClump: 0.8` 与 `spread: 0`，断言网格跟着
+>   **tipClump** 走（若消费端读错字段，该断言等于基准值、立刻红）。
+> - **modules/io/usda-export.js**：`strandDirectionForTube` → `strandTubeCenterForTube`；派生骨骼位置与
+>   rest 链的侧向偏移改为 `baseWidth × 管中心`，且**沿全长恒定**（band 等宽裁剪 ⇒ 中心不随 t 变），
+>   smoothstep/splitStart 随之删除。
+> - **index.html / app.js / segment-control.js / draw-flow.js / creation-presets.js / clump-brush-presets.js**：
+>   删除 `#strandSplitGap` 滑杆与其读数、`applyStrandSplitGapToTubes` 全局刷及全部接线（创建默认值、
+>   克隆、镜像、快照、预设、draw stroke）。`app.js` 的 `currentStrandSplitTipChains` rest 回退不再加
+>   opening（连同整趟只为它预算的逐行 frame 一起删除）。两个 Tip Clump tooltip 去掉「Split Spacing」
+>   措辞，EN/JA/ZH 三词典同步。
+> - **踩坑（node 测试漏掉、真实浏览器抓到）**：`strandTipClumpAxis` 一度用「t=1 处的真实网格边缘」当
+>   跨度基准。**DEFAULT_TAPER_CURVE 末点 value 恰为 0**（真实工程亦然）⇒ 该处管宽为 0 ⇒ 轴长恒 0 ⇒
+>   **手柄拖不动**、且 N+1 个手柄重叠。本文件的 fixture 用恒 1 的 FLAT_CURVE，所以 node 全绿。改为
+>   **标称管宽**（band 极值 × baseWidth，与 taper 无关，正对应 panel 用不随 taper 收缩的段 boundaries），
+>   并补了一条「taper(1)=0 仍可拖且互不重合」的回归测试。
+> - **顺带修掉一个真实死区**：旧 Tip Clump 只经 opening 生效，而 opening ∝ `(2k−N)/N`，偶数拉链数的
+>   正中间管系数恰为 0 ⇒ 拖它完全不动网格（自 0.2.116 起如此）。收窄不依赖方向系数，每管必然响应。
+> - **验证**：node 回归 **362/362**；真实浏览器 `scripts/verify-tip-clump.mjs` **17/17**（0 page exception）；
+>   主进程探针实测「zipper + Tip Clump 真的产生分叉」：缝隙在 fork 处恒为 0、发尖处随 Tip Clump 单调
+>   张开（0 → 0.017 → 0.033 → 0.050），管宽同步收窄。
+
+## 上一轮（0.2.126）
 
 > 普通发丝发尖子骨骼「选中系统」移植（分支 DHS/develop；用户报告「选不中 zipper 分出的子发尖」，定「以 panel 操作方式为准、一批做完」）。**根因与 0.2.124 的 `strandSplitDirection` 同类**：选中逻辑当初只写在 panel 分支里、没抽成单点定义，发丝侧永远追不上；因此本轮是**泛化**而非在发丝侧新造第二套。
 > - **modules/bones/tip-sub-bone-host.js（新增）**：`resolveTipHost(lock, { materialize })` —— 一次分派出该几何的发尖链 / splits / 段骨骼 / fork / 帧，替代此前「`clonePanelSplits` + `materializeSplitBones` + `splitTipForSegment`」的 panel 专用三连。与 `bone-model.js` 的 `segmentBoneHost` 分工：那边是**纯数据**分派（段数 / 段骨骼数组 / 段号键），这边是**发尖链**分派（需要 deps 注入几何函数）。fork 走 `strandSplitForkTForSegment`，**不新写公式**。

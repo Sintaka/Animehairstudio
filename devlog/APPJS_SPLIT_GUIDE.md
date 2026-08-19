@@ -198,13 +198,35 @@
 | 多语言词典 | `data/localization.js` + `data/loc-zh.js`/`loc-ja.js` |
 | 快捷键注册/焦点回收 | `core/shortcut-registry.js` |
 
+### 7.2b 术语对照：main 原版 → 本 fork（**改名 / 语义漂移都在这里**）
+
+> **本表存在的理由**：0.2.132 之前，「发尖聚合」这个功能在**标签、代码、main 三处各叫不同的名字**，
+> 导致连续几轮对话把它和 main 的「简单分叉分离」搞混、修错方向。凡是**改过名或改过语义**的
+> 概念都必须登记在此，新 agent 从原版找功能时先查这张表，别靠猜。
+>
+> ⚠️ **最容易踩的一条**：`spread` 在 main 里是**发丝聚簇**（`#clumpSpread`/`#clumpDepthSpread`），
+> **不是**分裂管的分离量。main 表示「简单分叉分离」的词是 `strandSplitGap` / `panelSplitGap`。
+> 本 fork 一度把 per-tube 发尖数据塞进 `bone.spread`，于是**同时撞上这两个概念**。
+
+| main 原版 | 本 fork 现名 | 关系 | 说明 |
+|---|---|---|---|
+| `strandSplitGap` / `panelSplitGap`（简单分叉**分离**：整根管侧向平移推开） | **已删除该语义**（0.2.132） | ✂️ 移除 | 分离改由**拉 zipper**实现（zipper 位置/高度即决定缝在哪、开多深），不再单独给「分离量」滑块。`strandSplitGap` **字段仍留在存档里**，仅作 per-tube 值的派生默认来源，旧文件照常打开 |
+| `spread` / `depthSpread`（**发丝聚簇**，`#clumpSpread`） | 同名保留，**与发尖无关** | ⚠️ 同名不同物 | main 的 `spread` 是聚簇参数。**不要**把它和发尖的 `tipClump` 混为一谈——这正是 0.2.132 之前反复搞混的根源 |
+| （无对应物） | **`bone.tipClump`** + UI「**Tip Clump**」 | ✨ 新概念 | 每段/每管发尖的**整体宽度缩放**（以发尖骨骼为中心两侧对称收窄，panel 侧注释原文称 "aggregation/聚合"）。0.2.132 起为独立字段名；读取时 `tipClump ?? spread` 回退，旧档不丢值。panel 与发丝**同一语义**，绿色手柄与滑块联动 |
+| （无对应物） | `panelSplits` / `strandSplits`（zipper 数组） | ✨ 新概念 | main 只有单个分叉标量；本 fork 是 N 个 zipper → N+1 管/段，各带独立 position/height/order |
+| （无对应物） | ~~`strandSplitDirection(k,N)=(2k−N)/N`~~ → **`strandSplitTubeCenter(k, splits)`** | ✂️→✨ 替换 | 前者是管的横向**推开方向**，只服务于 0.2.132 删掉的 opening 平移，已随之删除；后者是管**自身的中心**（边界 `[-1,...position,1]` 第 k 段中点）。差别不只是名字：中心**跟随真实 zipper 划分**，等距的旧规则不跟（zipper 挤在一侧时旧规则会把「管心」算到管外）。消费方：usda-export 派生骨骼位置、app.js 的 rest 回退 |
+| （无对应物） | `defaultSplitTipClump(lock)` / `defaultStrandTipClump(lock)` | ✨ 新概念 | 每段/每管 Tip Clump 的**默认值**派生，分别读 `panelSplitGap` / `strandSplitGap`。**两者刻意同构**——都是「无滑杆、只喂默认值」的存档字段；上面第一行对两个字段都成立，只是删除时间不同（panel 的位移语义 0.2.59 就已删除，strand 的是 0.2.132） |
+| `panelTipSelection` / `panelTipHover` | `tipSelection` / `tipHover` | 🔁 改名 | 0.2.126 改为几何无关单键（panel 与发丝共用），使清理/高亮/笔刷门控各只有一份实现 |
+| 扁平 `modules/*.js` + 大 app.js | `modules/<domain>/*.js` + `app.js` 编排层 | 🏗️ 架构 | 见 §2；`app.js` 已判定**不再继续瘦身**（§8） |
+
 ### 7.3 单点定义速查（**禁止就地重写这些表达式**）
 
 > 0.2.124 的 bug 就是「同一条规则被复制三份、只改了一份」造成的（几何/骨骼/导出横向偏移错位）。改这些规则前先看它的消费方清单（写在各定义点的注释里）。
 
 | 规则 | 唯一定义点 |
 |---|---|
-| 管 k 横向推开方向 `(2k−N)/N` | `bones/bone-model.js` `strandSplitDirection`（`strand-geometry.js` 与 `usda-export.js` 真 import） |
+| 管 k 的横向**中心**（边界中点） | `bones/bone-model.js` `strandSplitTubeCenter`（`usda-export.js` 真 import；0.2.132 取代了只服务于已删除 opening 的 `strandSplitDirection`） |
+| **Tip Clump 收窄比例**（本侧 zipper 处 0 → 发尖满值，线性） | `geometry/tip-width-curve.js` `tipClumpNarrowFraction`（panel 乘段半跨度、发丝乘管内半跨度 —— 这是「同一数值在两种几何上同义」的构造性保证） |
 | 段/管数与段索引钳位 | `bones/bone-model.js` `resolveSegmentSelection` |
 | 几何 → 段宿主分派 | `bones/bone-model.js` `segmentBoneHost` + `PANEL_SEGMENT_HOST`/`STRAND_SEGMENT_HOST` |
 | 发尖链点数 | 两个描述子的 `tipChainPointCount`（panel 下限 0 / 发丝下限 2，**下限差是刻意的**） |

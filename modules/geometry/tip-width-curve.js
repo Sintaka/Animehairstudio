@@ -10,6 +10,10 @@
 // 两侧完全一致。
 import * as THREE from "three";
 import { sampleTaperCurve } from "./curve-math.js?v=20260813-3";
+// SPREAD_MAX 的唯一定义点在 bone-model（spread 的定义域上界）。此处真 import 而非复制
+// 0.99：tipClumpNarrowFraction 是 Tip Clump 收窄比例的单点定义，钳位必须与写入侧同界。
+// 无循环依赖：bone-model 只 import three。
+import { SPREAD_MAX } from "../bones/bone-model.js?v=20260901-1";
 
 // Shared tip width control point count: 5 midpoints (common fork) + the tip end (t=1).
 // app.js createCurveObjects reuses this constant for the viewport tip width handles
@@ -82,6 +86,30 @@ export function tipWidthSideExposesTAt(sideForkT, t) {
 // 返回值），也不返回视口放置（tipWidthControlPlacement 用同一判据返回 null）。
 export function tipWidthSideControlTsFrom(gridTs, sideForkT) {
   return (Array.isArray(gridTs) ? gridTs : []).filter((t) => tipWidthSideExposesTAt(sideForkT, t));
+}
+
+// ── Tip Clump（bone.tipClump）的收窄比例：panel 与普通发丝的**唯一定义点** ───────────────
+// 语义（0.2.132 起两侧统一）：Tip Clump 控制「该段/该管的发尖相对自身宽度收窄多少」——
+// 纯**相对缩放**，绝不是横向平移。本函数返回**本侧被收掉的半跨度比例** ∈ [0, SPREAD_MAX)：
+//   0 = 该侧边缘停在原处；0.5 = 该侧向内收掉自身半跨度的一半。
+// 斜坡：本侧 zipper 处为 0，线性升到发尖处的满值 tipClump。**必须线性**——panel 自 0.2.59
+// 起就是线性，发丝侧 0.2.132 前用的是 smoothstep（那是已删除的 opening 平移语义遗留），
+// 两侧不同会让同一个 Tip Clump 数值在 panel 与发丝上收窄曲线形状不一致。
+//
+// 入参是**标量高度**而非 (lock, segmentIndex, splits)，与本模块其余函数同一约定，所以
+// panel（lock.panelSplits）与发丝（lock.strandSplits）能共用这一份。sideZipperHeight 为
+// null（该侧无 zipper）时由调用方决定回退，本函数只负责「有高度 → 比例」这一段推导。
+//
+// 消费方（改这里就要看这几处）：
+//   - modules/geometry/panel-tip-strand.js  tipWidthSpreadGap（× 0.5 × span → u 空间的 gap）
+//   - modules/geometry/strand-geometry.js   clumpNarrowedX（× 管内半跨度 → profile x 收窄）
+//   - modules/geometry/strand-tip-width.js  strandTipClumpNarrowedProfile（把手/引导线同源）
+export function tipClumpNarrowFraction(sideZipperHeight, tipClump, t) {
+  if (sideZipperHeight == null) return 0;
+  const start = 1 - Number(sideZipperHeight);
+  if (Number(t) <= start) return 0;
+  const ramp = (Number(t) - start) / Math.max(0.0001, 1 - start);
+  return THREE.MathUtils.clamp(Number(tipClump) || 0, 0, SPREAD_MAX) * ramp;
 }
 
 // 对侧 fork 记录点是否该写进本侧曲线：只有落在本侧 fork 之下（采样器在该区间回退

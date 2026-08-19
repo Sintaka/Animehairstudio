@@ -13,7 +13,7 @@ import {
   STRAND_SEGMENT_HOST,
   resolveSegmentSelection,
   segmentBoneHost
-} from "./bone-model.js?v=20260830-1";
+} from "./bone-model.js?v=20260901-1";
 
 // 新拉链需要的最小段跨度：段太窄就放不下一条不退化的拉链。
 const MINIMUM_PANEL_SEGMENT_SPAN = 0.02;
@@ -54,26 +54,10 @@ export function canFitAnotherStrandSplit(splits) {
   return spans[largestStrandSegmentIndex(splits)] >= MINIMUM_STRAND_SPLIT_SEPARATION * 2;
 }
 
-// ── Split Spacing = 全局刷：把 lock.strandSplitGap 写进**每一根管**的 bone.spread ──────
-// 为什么必须写 bone：几何优先读 bone.spread，只有 spread == null 时才回退到
-// defaultStrandSplitSpread(lock)（bone-model.js normalizeStrandSplitBone / strandSplitBonesFor）。
-// 任何一次 materializeStrandSplitBones（±拉链、Split Tip Length、Reset Split Tips、发尖拖拽）都
-// 会把派生默认值固化成显式数字，此后单写标量再也到不了网格——滑杆就此变成死控件。
-// 语义由用户拍定（与滑杆 tooltip「Sets the default spread for every split tube」一致）：这是
-// 全局刷，会覆盖 per-tube Segment Spread（applyStrandSegmentSpread）创作过的值；这是已接受的
-// 取舍，不要改成「只写未创作过的管」之类的规则。
-// 钳位：全局滑杆的 UI 区间是 0..0.5，而 spread 的定义域是 0..SPREAD_MAX(0.99)。两者刻意不统一
-// ——本函数只保证写出的值与其余 spread 写入点同界，不加宽也不收窄滑杆本身。
-// 同规则同步点：app.js 的 strandSplitInputs 处理器（只有 strandSplitGap 这个键调用本函数），
-// 写入放在其 mutator 内，因此多选 editSelectedLocks 与 syncActiveMirror 的镜像同步逐字同路。
-export function applyStrandSplitGapToTubes(target) {
-  // 非分裂发丝（含无 geometryType 的创建默认值）返回 null：无管可写，几何仍走派生默认值。
-  const bones = materializeStrandSplitBones(target);
-  if (!bones) return null;
-  const spread = THREE.MathUtils.clamp(Number(target.strandSplitGap) || 0, 0, SPREAD_MAX);
-  bones.forEach((bone) => { bone.spread = spread; });
-  return bones;
-}
+// 0.2.132：此处原有 applyStrandSplitGapToTubes —— 全局 Split Spacing 滑杆的「刷进每一根管」
+// 写入器。滑杆与其「segment separate / 整管横向平移」语义已按用户决定整体删除，发尖聚合改由
+// 每管 Tip Clump（applyStrandSegmentSpread，见下方）单独表达，故本函数一并删除。
+// 勿重新引入「全局刷」：它会覆盖每管创作过的 Tip Clump，而 Tip Clump 现在是逐管创作数据。
 
 // ── 新拉链的 height 继承规则（0.2.124 用户批准的行为变更，不是顺手改的）───────────────
 // 旧规则取 `target.strandSplitHeight`，但 syncStrandSplitLegacyFields 会持续把
@@ -167,8 +151,11 @@ function segmentUi(host) {
       label: deps.strandSegmentLabel,
       previousButton: deps.previousStrandSegmentButton,
       nextButton: deps.nextStrandSegmentButton,
-      spread: deps.strandSegmentSpread,
-      spreadValue: deps.strandSegmentSpreadValue,
+      // 描述子键名跟随**字段名** tipClump（0.2.132），不跟随控件 id：id `#strandSegmentSpread`
+      // 属 dom-contract 冻结面（改它要同步 index.html + 多条断言 + 用户存档无关的 UI 契约），
+      // 而键名是本模块内部的东西，让它与 bone.tipClump 一致才不会再把读写指向错的概念。
+      tipClumpInput: deps.strandSegmentSpread,
+      tipClumpValue: deps.strandSegmentSpreadValue,
       taperPreview: deps.strandSegmentTaperPreview,
       depthPreview: deps.strandSegmentDepthPreview
     };
@@ -178,14 +165,14 @@ function segmentUi(host) {
     label: deps.panelSegmentLabel,
     previousButton: deps.previousPanelSegmentButton,
     nextButton: deps.nextPanelSegmentButton,
-    spread: deps.panelSegmentSpread,
-    spreadValue: deps.panelSegmentSpreadValue,
+    tipClumpInput: deps.panelSegmentSpread,
+    tipClumpValue: deps.panelSegmentSpreadValue,
     taperPreview: deps.segmentTaperPreview,
     depthPreview: deps.segmentDepthPreview
   };
 }
 
-// 段选择器 + per-segment spread + 每段曲线预览的共用同步体。panel 与 strand 只在
+// 段选择器 + per-segment Tip Clump + 每段曲线预览的共用同步体。panel 与 strand 只在
 // 描述子（host + segmentUi）上不同，逻辑一份。
 function syncSegmentControls(target, host) {
   // Refresh the width/depth curve preset selects (segment selects included) on every sync,
@@ -203,8 +190,8 @@ function syncSegmentControls(target, host) {
   if (ui.label) ui.label.textContent = String(index + 1);
   if (ui.previousButton) ui.previousButton.disabled = index === 0;
   if (ui.nextButton) ui.nextButton.disabled = index >= count - 1;
-  if (ui.spread) ui.spread.value = String(bone?.spread ?? 0);
-  if (ui.spreadValue) ui.spreadValue.textContent = (bone?.spread ?? 0).toFixed(2);
+  if (ui.tipClumpInput) ui.tipClumpInput.value = String(bone?.tipClump ?? 0);
+  if (ui.tipClumpValue) ui.tipClumpValue.textContent = (bone?.tipClump ?? 0).toFixed(2);
   const previewTarget = {
     ...(bone || {}),
     taperCurve: bone?.taperCurve || target.taperCurve,
@@ -349,21 +336,24 @@ function stepStrandSegment(delta) {
   stepSegment(delta, selected, STRAND_SEGMENT_HOST, syncStrandSegmentControls);
 }
 
-// per-segment spread 写入：先 materialize 再创作（standards「物化后再创作」），钳到
+// per-tube Tip Clump 写入：先 materialize 再创作（standards「物化后再创作」），钳到
 // [0, SPREAD_MAX] 与 normalizeSplitBones / normalizeStrandSplitBone 同界（bone-model 单点定义）
-// ——超过 1 会让段尖越过自身宽度、产生 crossover。
+// ——超过 1 会让管尖越过自身宽度、产生 crossover。
 // 同规则同步点：panel 侧的滑杆处理在 app.js（panelSegmentSpread 的 input 监听），
 // 它还要额外维护 draw 预览的 splitBones，故未并入本函数。
+// 函数名保留 applyStrandSegmentSpread（未随字段改名）：它是 DOM 控件 #strandSegmentSpread 的
+// 处理器名，与该 id 成对；id 属 dom-contract 冻结面，改名要同步动 index.html 与多条断言，
+// 而本轮的目标是**字段名与 UI 名一致**，控件 id 不在其中。
 function applyStrandSegmentSpread(value) {
   const target = deps.getSelectedLock();
   if (segmentBoneHost(target) !== STRAND_SEGMENT_HOST) return;
   const bones = materializeStrandSplitBones(target);
   if (!bones) return;
   const { index } = resolveSegmentSelection(target, deps.sculptState, STRAND_SEGMENT_HOST);
-  const spread = THREE.MathUtils.clamp(Number(value) || 0, 0, SPREAD_MAX);
+  const tipClump = THREE.MathUtils.clamp(Number(value) || 0, 0, SPREAD_MAX);
   if (!bones[index]) return;
-  bones[index].spread = spread;
-  if (deps.strandSegmentSpreadValue) deps.strandSegmentSpreadValue.textContent = spread.toFixed(2);
+  bones[index].tipClump = tipClump;
+  if (deps.strandSegmentSpreadValue) deps.strandSegmentSpreadValue.textContent = tipClump.toFixed(2);
   // 与 changeStrandSplitCount 的重建序列一致：几何 → 曲线对象（视口手柄依赖新管位置）
   // → 镜像 → 拓扑统计。
   deps.updateLockGeometry(target, { immediate: true });

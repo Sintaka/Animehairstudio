@@ -1,15 +1,15 @@
 // bone-interaction.js - Bone gizmo / handle drag / brush interaction (refactor bones B2).
 // Extracted from app.js; coupling injected via createXxxApi(deps).
 import * as THREE from "three";
-import { materializeSplitBones } from "./bone-model.js?v=20260830-1";
+import { materializeSplitBones } from "./bone-model.js?v=20260901-1";
 import {
   materializeStrandSplitBones,
   segmentBoneHost,
   strandSplitsFor,
   SPREAD_MAX,
   STRAND_SEGMENT_HOST
-} from "./bone-model.js?v=20260830-1";
-import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260830-1";
+} from "./bone-model.js?v=20260901-1";
+import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260901-1";
 import { firstExposedTipChainIndex } from "../geometry/tip-sub-bone.js?v=20260830-1";
 import {
   setStrandTipWidthCurveValue,
@@ -17,7 +17,7 @@ import {
   strandTipWidthControlPlacement,
   strandTipWidthEdgePosition,
   strandTipWidthMultiplierAt
-} from "../geometry/strand-tip-width.js?v=20260829-2";
+} from "../geometry/strand-tip-width.js?v=20260901-1";
 import { leafIndexAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { sculptTwistBrushDeltas, smoothSculptPointDeltas, resolveFrozenTwistStrokeWeights } from "../sculpt/sculpt-brush.js?v=20260814-12";
 import { solvePulledStrand } from "../geometry/strand-constraints.js?v=20260814-12";
@@ -605,13 +605,13 @@ function updatePanelSplitHandleDrag(event) {
     // 屏幕最近点求解：两条分支都是「沿一条参数线取 49 个探针、投影到屏幕、取最近」，
     // 只有探针的世界位置来源不同（panel = 段顶边的 u 采样；发丝 = 共享的 Tip Clump 线段）。
     let clumpBest = null;
-    const considerProbe = (worldPoint, spread) => {
+    const considerProbe = (worldPoint, tipClump) => {
       const projected = worldPoint.clone().project(deps.camera);
       if (projected.z < -1 || projected.z > 1) return;
       const x = (projected.x * 0.5 + 0.5) * rect.width;
       const y = (-projected.y * 0.5 + 0.5) * rect.height;
       const distanceSq = (x - targetX) ** 2 + (y - targetY) ** 2;
-      if (!clumpBest || distanceSq < clumpBest.distanceSq) clumpBest = { distanceSq, spread };
+      if (!clumpBest || distanceSq < clumpBest.distanceSq) clumpBest = { distanceSq, tipClump };
     };
     if (strandClump) {
       // 发丝：探针位置来自 strandTipClumpAxis（**与绘制手柄同一条线段**，见该函数的说明），
@@ -625,15 +625,15 @@ function updatePanelSplitHandleDrag(event) {
       const axis = strandTipClumpAxis(strandTipWidthGeoDeps(), lock, strandSplits, segment, axisBones[segment] || null);
       if (!axis) return;
       for (let step = 0; step <= 48; step += 1) {
-        const spread = THREE.MathUtils.lerp(0, SPREAD_MAX, step / 48);
-        considerProbe(axis.pointAt(spread), spread);
+        const tipClump = THREE.MathUtils.lerp(0, SPREAD_MAX, step / 48);
+        considerProbe(axis.pointAt(tipClump), tipClump);
       }
       if (!clumpBest) return;
       const bone = axisBones[segment];
-      if (bone) bone.spread = THREE.MathUtils.clamp(clumpBest.spread, 0, SPREAD_MAX);
+      if (bone) bone.tipClump = THREE.MathUtils.clamp(clumpBest.tipClump, 0, SPREAD_MAX);
     } else {
       // panel：**逐字保留**既有的段顶边 u 扫描（探针 = panelSplitControlPoint(u, height 0, t 1)）
-      // 与 u → spread 的线性反演。刻意不改成走绘制用的 tipSurfaceFrameAt：那会同时改变
+      // 与 u → tipClump 的线性反演。刻意不改成走绘制用的 tipSurfaceFrameAt：那会同时改变
       // panel 已验收的拖拽手感（扫描基线不含 tangentOffset 是既有取舍）。
       const segmentSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
       const segBoundaries = [-1, ...segmentSplits.map((split) => split.position), 1];
@@ -652,7 +652,7 @@ function updatePanelSplitHandleDrag(event) {
       if (!clumpBest) return;
       const bones = materializeSplitBones(lock);
       const bone = bones[segment];
-      if (bone) bone.spread = THREE.MathUtils.clamp(clumpBest.spread, 0, SPREAD_MAX);
+      if (bone) bone.tipClump = THREE.MathUtils.clamp(clumpBest.tipClump, 0, SPREAD_MAX);
     }
     deps.updateLockGeometry(lock, { immediate: true });
     // updateCurveObjects（不是 rebuildCurveObjects）：拖拽中手柄数量不变，重建会销毁正在被
