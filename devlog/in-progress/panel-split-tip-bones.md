@@ -1,6 +1,20 @@
 # Panel split 尖端子骨骼分析：每 split 段一个「类普通发丝尖端」的子骨骼（0.2.59 规划）
 
-> **✅ 已实现（0.2.59 落地）+ 本轮进行中**：本文档由「规划」转为「实施 + 修复记录」——尖端子骨骼 S1–S6（程序化权重 / 数据模型 / 几何跟随 / 视口手柄 / 关联系统 / USDA 蒙皮）见 §8.5；点击 toggle 选中 + 主发丝保持 + overlay z-fighting 见 §8.6；双段高亮 + 笔刷保留 tip UI 见 §8.7；边界段 / 笔刷统一变换 / undo 持久化 / bones-only / alt+点击见 §8.8；本轮 5 项改动（0.2.59 进行中）见 §8.9。§1–§7 与「§8 待确认（实施前）」为规划期内容，已被实施取代，保留作历史。
+> ## ⚠️ 本文档**不是**发尖子系统的当前状态（止于 0.2.65）
+>
+> 本文记录 0.2.59–0.2.65 的 panel 发尖子骨骼实施与修复。此后发尖子系统又经过**三轮**改动，本文**未**覆盖，读到与下列结论冲突处一律以新文档为准：
+>
+> | 轮次 | 内容 | 权威文档 |
+> |---|---|---|
+> | 0.2.123 | 发尖 WidthCurve 改回**共享网格 + 按侧动态暴露**（推翻 0.2.118 的「每侧各自等分」） | development-standards.md「发尖 WidthCurve 共享网格」行 |
+> | 0.2.125 | WidthCurve **移植到普通发丝**；抽出共享层 `modules/geometry/tip-width-curve.js` + 发丝侧 `strand-tip-width.js`；每管编辑 UI | [strand-tip-width-ui-port-plan.md](strand-tip-width-ui-port-plan.md) |
+> | 0.2.126 | 发尖**选中系统**移植到普通发丝；新增 `modules/bones/tip-sub-bone-host.js`；状态键 `panelTipSelection`/`panelTipHover` → **`tipSelection`/`tipHover`**；把手改为每链点一个 | [strand-tip-selection-port-plan.md](strand-tip-selection-port-plan.md) |
+>
+> **已知会误导的具体点**：① 本文 §8 内的 `panelTipSelection` 键名**已改名**为 `tipSelection`（几何无关，panel/发丝共用一个键）；② 本文 `tipUiActive = isPanelGeometry(lock) && …` 一类几何门控**已改为** `segmentBoneHost(lock)` 分派（`!isPanelGeometry` 是错的写法，它会卷入既非 panel 也非 split 发丝的几何）；③ 发尖把手**不再是「每段 1 个尖端把手」**，改为每链点一个 + 法线箭头，数量取自 `tipChainPointCount`；④ §8.21/§8.26 记的 `SPREAD_MAX` 历史值（1 → 0.99）以当前 `bone-model.js` 为准。
+>
+> 残余重复推导规则的审计见 [tip-subsystem-reuse-audit.md](tip-subsystem-reuse-audit.md)。
+
+> **✅ 已实现（0.2.59 落地）+ 0.2.59–0.2.65 修复记录**：本文档由「规划」转为「实施 + 修复记录」——尖端子骨骼 S1–S6（程序化权重 / 数据模型 / 几何跟随 / 视口手柄 / 关联系统 / USDA 蒙皮）见 §8.5；点击 toggle 选中 + 主发丝保持 + overlay z-fighting 见 §8.6；双段高亮 + 笔刷保留 tip UI 见 §8.7；边界段 / 笔刷统一变换 / undo 持久化 / bones-only / alt+点击见 §8.8；本轮 5 项改动（0.2.59 进行中）见 §8.9。§1–§7 与「§8 待确认（实施前）」为规划期内容，已被实施取代，保留作历史。
 > 目标：让用户能控制 panel 每个尖端的长短和走向；在尖端建立与普通发丝一样的子骨骼部分，以兼容现有工具。
 > 分支：0.2.58-panel-split-refactor；关联：unified-bone-model.md（bonesFor/架空）、bone-system-roadmap.md（registry）、split-bone-refactor-plan.md（splitBones）。
 

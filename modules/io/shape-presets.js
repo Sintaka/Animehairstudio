@@ -9,6 +9,7 @@ export function createShapePresetsApi(deps) {
   //   emptyShapePresetLibrary, SHAPE_PRESET_STORAGE_KEY, pushUndoState,
   //   applyGroupDefaultsToExistingStrands, syncGroupInputs, syncCreationShapeInputs,
   //   editSelectedLocks, syncInputs, shapeTargetForSelect, syncShapePresetSelects,
+  //   segmentCurveTargetForWrite, selectedSegmentIndex, syncSegmentControlsForLock,
   //   SHAPE_PRESETS, strandCreationDefaults, braidCreationDefaults, panelCreationDefaults }
 
   function taperAsymmetryKey(curveKey = deps.sculptState.taperCurveEdit?.curveKey) {
@@ -58,9 +59,10 @@ export function createShapePresetsApi(deps) {
       ? deps.projectState.state.customShapePresets[key].find((item) => item.id === select.value.replace(/^custom:/, ""))
       : deps.SHAPE_PRESETS[key].find((item) => item.id === select.value);
     if (select.closest("[data-segment-curve]")) {
-      // Split segment target: write the preset into this segment's live split bone
-      // (segmentCurveTargetForWrite) and refresh geometry/preview immediately. Segments
-      // always route through the asymmetric geometry path (asymmetricWidthCurve/asymmetricDepthCurve=true).
+      // Split segment target: write the preset into this segment's live segment bone
+      // (segmentCurveTargetForWrite; panel split segment or split-strand tube, resolved by
+      // geometry) and refresh geometry/preview immediately. Segments always route through
+      // the asymmetric geometry path (asymmetricWidthCurve/asymmetricDepthCurve=true).
       const lock = deps.getSelectedLock();
       const bone = deps.segmentCurveTargetForWrite();
       if (!preset || !lock || !bone) return;
@@ -70,11 +72,12 @@ export function createShapePresetsApi(deps) {
       bone[taperAsymmetryKey(key)] = true;
       deps.updateLockGeometry(lock, { immediate: true, updateBranches: false });
       deps.syncActiveMirror(lock, { deferGeometry: false });
-      deps.syncPanelSegmentControls(lock);
+      // 段控件按几何分派（panel 段 / 发丝管段各有一组 DOM）。
+      deps.syncSegmentControlsForLock(lock);
       if (
         deps.sculptState.taperCurveEdit?.type === "segment"
         && deps.sculptState.taperCurveEdit.id === lock.id
-        && deps.sculptState.taperCurveEdit.segmentIndex === (deps.sculptState.panelSegmentIndex ?? 0)
+        && deps.sculptState.taperCurveEdit.segmentIndex === deps.selectedSegmentIndex(lock)
       ) deps.renderTaperCurveEditor();
       deps.syncShapePresetSelects();
       return;

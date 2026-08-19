@@ -83,6 +83,22 @@ export function tipChainFrameAt(restTip, tip, t, referenceFrame) {
   return { x, y, z };
 }
 
+// 「发尖链第一个暴露点」的**唯一定义点**（standards「一条推导规则只准有一个定义点」）。
+// floor 而非 round/ceil：fork 那一行本身属于暴露子链（0.2.119 结论，比旧的严格 t > forkT
+// 多一行），round 在 frac>0.5 时会让骨骼根落到自己第一个暴露子节点之上（6 个常见 zipper
+// 高度里 4 个会错）。下限钳到 1：index 0 是链根、钉在主链上，永远不能变成可编辑子骨骼点；
+// 上限钳到 count-1 保证 fork≥1（本侧完全锁死）时不越界，此时暴露区只剩末点。
+// 本函数替代了此前散在四处的同一表达式（视口把手 / 引导线 / gizmo translate / 笔刷），
+// 消费方清单（改这里必须回看全部）：
+//   - modules/bones/bone-view-handles.js  发尖链把手可见性 + 引导线切片
+//   - modules/bones/bone-interaction.js   gizmo translate 求解根 + 笔刷影响区间
+//   - modules/io/usda-export.js           splitChainLayout / splitParentMainIndex（同规则，
+//     那边按导出结构自行实现，行号见 development-standards 0.2.119 行；数值必须一致）
+export function firstExposedTipChainIndex(forkT, pointCount) {
+  const last = Math.max(1, Math.floor(Number(pointCount) || 0) - 1);
+  return Math.min(last, Math.max(1, Math.floor(Number(forkT) * last)));
+}
+
 // t-only geometry blend: 0 before tipStart, ramping linearly to 1 at the strand end.
 // This is intentionally separate from capture ownership: the render mesh may blend
 // through the fork while the exported skin binding is already fully owned by the tip.

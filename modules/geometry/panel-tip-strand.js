@@ -6,17 +6,32 @@ import {
   panelTipLoopParameters,
   profileTopologyCenterWeight,
   sampleArray,
-  sampleAsymmetricTaperCurve,
-  sampleTaperCurve
+  sampleAsymmetricTaperCurve
 } from "./curve-math.js?v=20260813-3";
 import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260814-12";
-import { cloneSplitBones } from "../bones/bone-model.js?v=20260813-1";
-import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260813-1";
+import { cloneSplitBones, segmentBoneHost } from "../bones/bone-model.js?v=20260830-1";
+import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260830-1";
 import { leafWeightAt, leafWeightsValid } from "./leaf-weights.js?v=20260813-1";
+import {
+  TIP_WIDTH_CONTROL_POINTS as SHARED_TIP_WIDTH_CONTROL_POINTS,
+  buildTipWidthCurveFrom,
+  segmentZipperHeights,
+  setTipWidthCurveValueFrom,
+  tipWidthCommonForkFromHeights,
+  tipWidthControlTs as sharedTipWidthControlTs,
+  tipWidthGridFromHeights,
+  tipWidthRecordsOppositeForkFrom,
+  tipWidthResetCurveFrom,
+  tipWidthSideControlTsFrom,
+  tipWidthSideExposesTAt,
+  tipWidthSideForkFromHeights
+} from "./tip-width-curve.js?v=20260829-1";
 
 // Shared tip width control point count: 5 midpoints (common fork) + the tip end (t=1).
 // app.js createCurveObjects reuses this constant for the viewport tip width handles.
-export const TIP_WIDTH_CONTROL_POINTS = 5;
+// 单一定义点在 tip-width-curve.js（普通发丝侧共用同一常量），此处仅再导出：
+// bone-view-handles.js L5 从本模块 import 这个名字，勿改成本地字面量。
+export const TIP_WIDTH_CONTROL_POINTS = SHARED_TIP_WIDTH_CONTROL_POINTS;
 
 // splitTipForSegment returns plain {x,y,z} chain points from the tip-sub-bone
 // primitives; consumers that need real THREE.Vector3 (CatmullRomCurve3) convert here.
@@ -168,16 +183,12 @@ function splitForkT(lock, segmentIndex, splits) {
 }
 
 
-// Per-side fork for the tip width control: the left edge is exposed below the LEFT
-// zipper (splits[segment-1]), the right edge below the RIGHT zipper (splits[segment]).
-// Boundary sides without a zipper fall back to the segment fork (bounded by the other
-// side's zipper), so left/right control regions can differ.
+// 以下 tipWidth* 函数全部是 tip-width-curve.js 的**薄适配器**：本模块只负责把 panel 的
+// (lock, segmentIndex, splits) 翻译成相邻 zipper 高度，推导本身在共享模块里单点定义
+// （普通发丝侧 lock.strandSplits 复用同一批推导，勿在此处复制公式）。
 function tipWidthSideForkT(lock, segmentIndex, splits, side) {
-  const leftZipper = splits[segmentIndex - 1]?.height;
-  const rightZipper = splits[segmentIndex]?.height;
-  const segmentForkT = 1 - Math.max(leftZipper ?? 0, rightZipper ?? 0);
-  if (side < 0) return leftZipper != null ? 1 - leftZipper : segmentForkT;
-  return rightZipper != null ? 1 - rightZipper : segmentForkT;
+  const { left, right } = segmentZipperHeights(splits, segmentIndex);
+  return tipWidthSideForkFromHeights(left, right, side);
 }
 
 function tipSegmentForkAt(segmentIndex, splits, u) {
@@ -214,22 +225,11 @@ function tipSegmentBlendAt(lock, segmentIndex, splits, t, u, lengthLoops) {
 
 // The raw control grid for a fork: 5 midpoints plus the tip end (t=1). Callers pass the
 // COMMON (deepest-zipper) fork so both sides share one grid — see tipWidthGridTs.
-function tipWidthControlTs(forkT) {
-  const positions = [];
-  for (let i = 0; i < TIP_WIDTH_CONTROL_POINTS; i += 1) {
-    positions.push(THREE.MathUtils.lerp(forkT, 1, (i + 0.5) / TIP_WIDTH_CONTROL_POINTS));
-  }
-  positions.push(1);
-  return positions;
-}
+const tipWidthControlTs = sharedTipWidthControlTs;
 
-// The COMMON control fork for a segment: based on the DEEPEST of the two zippers.
-// This is the SHARED GRID BASIS: both sides subdivide this one span, so the control
-// parameters (and therefore the spacing) are identical on the left and the right.
 function tipWidthCommonForkT(lock, segmentIndex, splits) {
-  const leftZipper = splits[segmentIndex - 1]?.height;
-  const rightZipper = splits[segmentIndex]?.height;
-  return 1 - Math.max(leftZipper ?? 0, rightZipper ?? 0);
+  const { left, right } = segmentZipperHeights(splits, segmentIndex);
+  return tipWidthCommonForkFromHeights(left, right);
 }
 
 // THE one shared control grid for a segment: TIP_WIDTH_CONTROL_POINTS midpoints of the
@@ -238,7 +238,8 @@ function tipWidthCommonForkT(lock, segmentIndex, splits) {
 // tipWidthSideExposesT / tipWidthSideControlTs）。Index into this array is the stable
 // handle index used by bone-view-handles.js / bone-interaction.js.
 function tipWidthGridTs(lock, segmentIndex, splits) {
-  return tipWidthControlTs(tipWidthCommonForkT(lock, segmentIndex, splits));
+  const { left, right } = segmentZipperHeights(splits, segmentIndex);
+  return tipWidthGridFromHeights(left, right);
 }
 
 // Does THIS side expose the shared-grid parameter t? Only the part of the grid inside
@@ -246,10 +247,9 @@ function tipWidthGridTs(lock, segmentIndex, splits) {
 // (tipWidthMultiplierAt) falls back to the GLOBAL curve below that fork, so anything
 // below it must be neither authored into nor grabbable on this side.
 // 单一定义点：placement / build / reset / write 全部走这里，避免各自复制判据。
+// 判据本体在 tip-width-curve.js 的 tipWidthSideExposesTAt（与普通发丝侧共用）。
 function tipWidthSideExposesT(lock, segmentIndex, splits, side, t) {
-  const sideForkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
-  if (sideForkT >= 1) return false;
-  return t >= sideForkT - 1e-4;
+  return tipWidthSideExposesTAt(tipWidthSideForkT(lock, segmentIndex, splits, side), t);
 }
 
 // The tip width control positions THIS side exposes: the subset of the SHARED
@@ -261,8 +261,10 @@ function tipWidthSideExposesT(lock, segmentIndex, splits, side, t) {
 // 既不写入本侧曲线（buildTipWidthCurve/tipWidthResetCurve 只遍历本函数的返回值），
 // 也不返回视口放置（tipWidthControlPlacement 用同一判据返回 null）。
 function tipWidthSideControlTs(lock, segmentIndex, splits, side) {
-  return tipWidthGridTs(lock, segmentIndex, splits)
-    .filter((t) => tipWidthSideExposesT(lock, segmentIndex, splits, side, t));
+  return tipWidthSideControlTsFrom(
+    tipWidthGridTs(lock, segmentIndex, splits),
+    tipWidthSideForkT(lock, segmentIndex, splits, side)
+  );
 }
 
 // 对侧 fork 记录点是否该写进本侧曲线：只有落在本侧 fork 之下（采样器在该区间回退
@@ -271,43 +273,21 @@ function tipWidthSideControlTs(lock, segmentIndex, splits, side) {
 // 共享网格（0.2.123）不解除这个危险：对侧 fork 是 zipper 高度的连续值，通常**不在**
 // 共享网格上，所以它落进本侧暴露区时依然是一个不可抓的活点 → 守卫必须保留。
 function tipWidthRecordsOppositeFork(lock, segmentIndex, splits, side) {
-  const own = tipWidthSideForkT(lock, segmentIndex, splits, side);
-  const opposite = tipWidthSideForkT(lock, segmentIndex, splits, -side);
-  return opposite <= own + 1e-4;
+  return tipWidthRecordsOppositeForkFrom(
+    tipWidthSideForkT(lock, segmentIndex, splits, side),
+    tipWidthSideForkT(lock, segmentIndex, splits, -side)
+  );
 }
 
 // Reset curve for a tip (segment) width curve: Reset 后整条曲线全 1 (full width value 1)
 // across the entire exposed region, including both fork boundary points, so no global
 // curve sampling happens after Reset.
 function tipWidthResetCurve(lock, segmentIndex, splits, side) {
-  // Reset 后整条曲线全 1: no global curve sampling, every point (both fork boundaries
-  // and exposed-region control positions) is at full width value 1. The control
-  // positions are the shared grid filtered to THIS side's exposed subset
-  // (tipWidthSideControlTs), so the reset curve carries a point at every position this
-  // side can actually grab and nothing below its fork — 任何 zipper 高度组合下 Reset
-  // 都是平直全宽（无凹陷），因为整条曲线上所有点的值都是 1。
-  const points = [];
-  const addPoint = (position, value) => {
-    const clampedPosition = THREE.MathUtils.clamp(Number(position) || 0, 0, 1);
-    if (points.some((point) => Math.abs(point.position - clampedPosition) < 1e-4)) return;
-    points.push({
-      position: clampedPosition,
-      value: THREE.MathUtils.clamp(Number(value) ?? 0.5, 0.08, 2),
-      interpolation: "linear"
-    });
-  };
-  addPoint(0, 1);
-  // 本侧 fork 边界点（value 1，与控制点一致）；对侧 fork 只在它落在本侧 fork 之下
-  // （不参与本侧采样）时作为记录点写入，避免在本侧暴露区留下无把手的活点。
-  addPoint(tipWidthSideForkT(lock, segmentIndex, splits, side), 1);
-  if (tipWidthRecordsOppositeFork(lock, segmentIndex, splits, side)) {
-    addPoint(tipWidthSideForkT(lock, segmentIndex, splits, -side), 1);
-  }
-  for (const position of tipWidthSideControlTs(lock, segmentIndex, splits, side)) {
-    addPoint(position, 1);
-  }
-  points.sort((a, b) => a.position - b.position);
-  return points;
+  return tipWidthResetCurveFrom({
+    gridTs: tipWidthGridTs(lock, segmentIndex, splits),
+    sideForkT: tipWidthSideForkT(lock, segmentIndex, splits, side),
+    oppositeForkT: tipWidthSideForkT(lock, segmentIndex, splits, -side)
+  });
 }
 
 // The segment's tip-narrowing gap at chain parameter t on one side: 0 at the side's
@@ -389,54 +369,13 @@ function buildTipWidthCurve(lock, segmentIndex, splits, bone, side) {
     ? ((lock.asymmetricWidthCurve && lock.taperCurveSecondary) ? lock.taperCurveSecondary : lock.taperCurve)
     : lock.taperCurve;
   const current = side < 0 ? bone.taperCurveSecondary : bone.taperCurve;
-  const sideForkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
-  const points = [];
-  const addPoint = (position, value) => {
-    const clampedPosition = THREE.MathUtils.clamp(Number(position) || 0, 0, 1);
-    if (points.some((point) => Math.abs(point.position - clampedPosition) < 1e-4)) return;
-    points.push({
-      position: clampedPosition,
-      value: THREE.MathUtils.clamp(Number(value) ?? 0.5, 0.08, 2),
-      interpolation: "linear"
-    });
-  };
-  // The locked (above-zipper) region is no longer baked into the curve: sampling falls
-  // back to the global curve below the fork. The boundary point at THIS side's own fork
-  // is a DERIVED CONTINUITY JOIN (always the global curve's value there, never a
-  // draggable control point) that keeps the curve continuous at the zipper. The control
-  // positions are the shared grid filtered to this side's exposed subset
-  // (tipWidthSideControlTs), so every AUTHORED point that can influence this side's
-  // sampled width has a grabbable handle, and the tip end (t=1) is part of the control
-  // array (addPoint dedupes).
-  // 保留当前曲线已有的 0 点：Reset 的整段覆盖在后续编辑中持续。
-  const zeroPoint = current && current.find((point) => Math.abs(Number(point.position) || 0) < 1e-4);
-  if (zeroPoint) addPoint(0, zeroPoint.value);
-  addPoint(sideForkT, sampleTaperCurve(globalCurve, sideForkT));
-  // 对侧 fork 记录点（值取全局曲线采样）：asymmetricWidthCurve=false 时几何整段只采样
-  // primary 曲线，其 fork 位置可能是对侧 fork（segment 全落在 u 一侧），只写本侧 fork
-  // 会让对侧 fork 在重建后重新阶跃（zipper 开裂）。但只有当对侧 fork 落在本侧 fork
-  // 之下（不参与本侧采样）时才写：若对侧 zipper 更浅，该点会落进本侧暴露区内部，成为
-  // 没有把手却影响宽度的活点（正是宽度凹陷的来源）。
-  if (tipWidthRecordsOppositeFork(lock, segmentIndex, splits, side)) {
-    const oppositeForkT = tipWidthSideForkT(lock, segmentIndex, splits, -side);
-    addPoint(oppositeForkT, sampleTaperCurve(globalCurve, oppositeForkT));
-  }
-  const controlTs = tipWidthSideControlTs(lock, segmentIndex, splits, side);
-  // 向后兼容：0.2.118 曾按各侧自己的 fork 分布控制点，已有 .ahs 里的曲线点
-  // 可能落在现在不再使用的参数上。精确命中优先（正常重建路径，值不变）；否则若当前
-  // 曲线已有创作数据，就在新位置上采样旧曲线，把创作形状迁移到可抓位置，而不是丢
-  // 回全局默认（避免旧文件在下次编辑时突然跳变或留下凹陷）。空/缺失曲线仍取全局值。
-  const hasAuthored = Array.isArray(current) && current.length >= 2;
-  for (const position of controlTs) {
-    const edited = current && current.find((point) => Math.abs(point.position - position) < 1e-3);
-    const migrated = hasAuthored ? sampleTaperCurve(current, position) : null;
-    addPoint(
-      position,
-      edited ? edited.value : (migrated != null ? migrated : sampleTaperCurve(globalCurve, position))
-    );
-  }
-  points.sort((a, b) => a.position - b.position);
-  return points;
+  return buildTipWidthCurveFrom({
+    gridTs: tipWidthGridTs(lock, segmentIndex, splits),
+    sideForkT: tipWidthSideForkT(lock, segmentIndex, splits, side),
+    oppositeForkT: tipWidthSideForkT(lock, segmentIndex, splits, -side),
+    globalCurve,
+    current
+  });
 }
 
 // Set the width multiplier at chain parameter t for one side, then rebuild only the
@@ -447,30 +386,16 @@ function setTipWidthCurveValue(lock, segmentIndex, splits, bone, side, t, value)
   if (!bone.taperCurveSecondary) bone.taperCurveSecondary = buildTipWidthCurve(lock, segmentIndex, splits, bone, -1);
   bone.asymmetricWidthCurve = true;
   const curve = side < 0 ? bone.taperCurveSecondary : bone.taperCurve;
-  const clamped = THREE.MathUtils.clamp(Number(value) || 0.5, 0.08, 2);
-  // 写入位置吸附到本侧**暴露的**控制位置（tipWidthSideControlTs = 共享网格 ∩ 本侧
-  // 暴露区）。两侧参数虽同源，暴露的子集却按 zipper 高度不同：对称拖拽
-  // （bone-interaction 用同一个 t 写两侧）传来的 t 可能不在本侧的暴露子集里。不吸附
-  // 就会写出一个没有把手的点，且随后的 buildTipWidthCurve 重建会把它丢掉（编辑丢失）。
-  // 吸附后每个创作点都恰好落在一个可抓位置上。
-  const positions = tipWidthSideControlTs(lock, segmentIndex, splits, side);
-  const sideForkT = tipWidthSideForkT(lock, segmentIndex, splits, side);
-  const requested = THREE.MathUtils.clamp(Number(t) || 0, 0, 1);
-  // 本侧锁定区（低于本侧 fork）没有可编辑位置：该侧此处仍跟随主骨骼，跳过写入而不是
-  // 把它吸附成一个可见编辑（zipper 更深的一侧才暴露那段）。
-  if (requested < sideForkT - 1e-4) return;
-  // 本侧完全锁定（sideForkT >= 1，暴露子集为空）：无处可写。
-  if (!positions.length) return;
-  const snapped = positions.reduce(
-    (best, position) => (Math.abs(position - requested) < Math.abs(best - requested) ? position : best),
-    positions[0]
-  );
-  // Update the curve point at the snapped control position in place (the fixed control
-  // positions are always present in the lean curve, so no points accumulate).
-  const existing = curve.find((point) => Math.abs(point.position - snapped) < 1e-3);
-  if (existing) existing.value = clamped;
-  else curve.push({ position: snapped, value: clamped, interpolation: "linear" });
-  curve.sort((a, b) => a.position - b.position);
+  // 吸附与写入在共享模块里（同一判据/同一吸附规则供普通发丝复用）；返回 null = 本侧
+  // 无处可写（低于本侧 fork 或暴露子集为空）→ 不重建，保持「跳过写入」语义。
+  const written = setTipWidthCurveValueFrom({
+    curve,
+    gridTs: tipWidthGridTs(lock, segmentIndex, splits),
+    sideForkT: tipWidthSideForkT(lock, segmentIndex, splits, side),
+    t,
+    value
+  });
+  if (!written) return;
   if (side < 0) bone.taperCurveSecondary = buildTipWidthCurve(lock, segmentIndex, splits, bone, -1);
   else bone.taperCurve = buildTipWidthCurve(lock, segmentIndex, splits, bone, 1);
 }
@@ -713,11 +638,17 @@ function tipHighlightMaterial() {
 }
 
 function updateTipHighlight(lock) {
-  const selection = deps.sculptState.panelTipSelection;
-  const hover = deps.sculptState.panelTipHover;
+  const selection = deps.sculptState.tipSelection;
+  const hover = deps.sculptState.tipHover;
   const selectedSeg = selection && selection.lockId === lock.id ? selection.segmentIndex : null;
   const hoveredSeg = hover && hover.lockId === lock.id ? hover.segmentIndex : null;
-  if ((selectedSeg == null && hoveredSeg == null) || !deps.isPanelGeometry(lock) || lock.panelSplitEnabled === false || !lock.curveObjects) {
+  // 几何门控从 isPanelGeometry 扩为 segmentBoneHost（0.2.126）：本函数主体**本来就与几何
+  // 无关** —— 它只读 geometry.userData.leafWeights（panelWeights 是 panel 侧的旧别名），而
+  // createSplitStrandGeometry 早就以逐字段相同的 [mainJoint, leafIndex, weight] stride-3
+  // 格式写出同一个 leafWeights（strandSplitWeights 是它的别名）。所以普通发丝的表面高亮
+  // 不需要任何新代码，只需要放开这道门。segmentBoneHost 对未开启 split 的发丝返回 null，
+  // 故非 split 发丝与此前行为逐字节相同（不高亮）。
+  if ((selectedSeg == null && hoveredSeg == null) || !segmentBoneHost(lock) || lock.panelSplitEnabled === false || !lock.curveObjects) {
     if (lock.curveObjects?.tipHighlightMesh) lock.curveObjects.tipHighlightMesh.visible = false;
     return;
   }

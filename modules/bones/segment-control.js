@@ -7,11 +7,100 @@ import {
   strandSplitBonesFor,
   materializeStrandSplitBones,
   remapSegmentBonesOnInsert,
-  remapSegmentBonesOnDelete
-} from "./bone-model.js?v=20260813-1";
+  remapSegmentBonesOnDelete,
+  PANEL_SEGMENT_HOST,
+  STRAND_SEGMENT_HOST,
+  resolveSegmentSelection,
+  segmentBoneHost
+} from "./bone-model.js?v=20260830-1";
 
 // 新拉链需要的最小段跨度：段太窄就放不下一条不退化的拉链。
 const MINIMUM_PANEL_SEGMENT_SPAN = 0.02;
+
+// ── 普通发丝拉链的「插得下吗」判据：本仓库唯一定义点（standards「一条推导规则一个定义点」）──
+// 消费方（改这里必须同时看这两处）：
+//   - changeStrandSplitCount（本文件）：+ 分支的插入守卫
+//   - app.js syncStrandSplitControls：#addStrandSplit 按钮的 disabled 状态
+// 曾经只有守卫、没有门控：N=7 时最大段跨度恰好降到 0.2 < 0.24，按钮仍是 enabled，点下去
+// 在 pushUndoState 之前就 return —— 看着能点、既不改数据也不留撤销记录的静默 no-op。
+// 相邻拉链最小间距；新拉链落在段中点，故段跨度必须 ≥ 2×（左右各留一份）。
+const MINIMUM_STRAND_SPLIT_SEPARATION = 0.12;
+// 发丝拉链的位置定义域端点：与 createSplitStrandGeometry 的分段边界、normalizeStrandSplits
+// 的 position 钳位区间同为 ±0.8。段 = 排序后拉链之间的间隔（N 拉链 → N+1 管）。
+const STRAND_SPLIT_BOUND = 0.8;
+
+// 段边界（N+2 项 → N+1 段）。splits 可能未排序：边界必须按 position 升序，否则跨度出负值。
+function strandSplitBoundaries(splits) {
+  const positions = (Array.isArray(splits) ? splits : [])
+    .map((split) => Number(split?.position) || 0)
+    .sort((a, b) => a - b);
+  return [-STRAND_SPLIT_BOUND, ...positions, STRAND_SPLIT_BOUND];
+}
+
+// 最宽段的下标：+ 按钮细分的目标段，也是「插得下吗」的判据对象。
+export function largestStrandSegmentIndex(splits) {
+  const spans = segmentSpans(strandSplitBoundaries(splits));
+  let largest = 0;
+  for (let index = 1; index < spans.length; index += 1) {
+    if (spans[index] > spans[largest]) largest = index;
+  }
+  return largest;
+}
+
+// 最宽段还能不能容纳一条新拉链（不产生退化段、保持水密）。
+export function canFitAnotherStrandSplit(splits) {
+  const spans = segmentSpans(strandSplitBoundaries(splits));
+  return spans[largestStrandSegmentIndex(splits)] >= MINIMUM_STRAND_SPLIT_SEPARATION * 2;
+}
+
+// spread 的定义域上界，与 bone-model.js 的 SPREAD_MAX 同值：超过 1 会让段尖越过自身宽度、
+// 产生 crossover（strand-geometry 的 per-section spread 也钳在同一界）。bone-model 未导出该
+// 常量，故此处保留副本；改动必须两处同步。
+const SPREAD_MAX = 0.99;
+
+// ── Split Spacing = 全局刷：把 lock.strandSplitGap 写进**每一根管**的 bone.spread ──────
+// 为什么必须写 bone：几何优先读 bone.spread，只有 spread == null 时才回退到
+// defaultStrandSplitSpread(lock)（bone-model.js normalizeStrandSplitBone / strandSplitBonesFor）。
+// 任何一次 materializeStrandSplitBones（±拉链、Split Tip Length、Reset Split Tips、发尖拖拽）都
+// 会把派生默认值固化成显式数字，此后单写标量再也到不了网格——滑杆就此变成死控件。
+// 语义由用户拍定（与滑杆 tooltip「Sets the default spread for every split tube」一致）：这是
+// 全局刷，会覆盖 per-tube Segment Spread（applyStrandSegmentSpread）创作过的值；这是已接受的
+// 取舍，不要改成「只写未创作过的管」之类的规则。
+// 钳位：全局滑杆的 UI 区间是 0..0.5，而 spread 的定义域是 0..SPREAD_MAX(0.99)。两者刻意不统一
+// ——本函数只保证写出的值与其余 spread 写入点同界，不加宽也不收窄滑杆本身。
+// 同规则同步点：app.js 的 strandSplitInputs 处理器（只有 strandSplitGap 这个键调用本函数），
+// 写入放在其 mutator 内，因此多选 editSelectedLocks 与 syncActiveMirror 的镜像同步逐字同路。
+export function applyStrandSplitGapToTubes(target) {
+  // 非分裂发丝（含无 geometryType 的创建默认值）返回 null：无管可写，几何仍走派生默认值。
+  const bones = materializeStrandSplitBones(target);
+  if (!bones) return null;
+  const spread = THREE.MathUtils.clamp(Number(target.strandSplitGap) || 0, 0, SPREAD_MAX);
+  bones.forEach((bone) => { bone.spread = spread; });
+  return bones;
+}
+
+// ── 新拉链的 height 继承规则（0.2.124 用户批准的行为变更，不是顺手改的）───────────────
+// 旧规则取 `target.strandSplitHeight`，但 syncStrandSplitLegacyFields 会持续把
+// strandSplits[0].height 回写到该标量（legacy 标量是 N=1 的真源），于是「把最左侧拉链拖浅」
+// 之后每一条新增拉链都继承那个值 —— 与被细分的段毫无关系。panel 侧没这个病：
+// panelSplitHeight 从不被数组回写，segment-control 读到的是真正的默认值。
+// 新规则：继承**被细分段**的相邻拉链。
+//   - 内部段（左右都有拉链）：取两者算术平均。理由与 position 取段中点同源——新拉链落在段
+//     正中，深度也居中才不会凭空偏向某一侧；两值都在 [0.02,0.8] 内，平均值必然也在界内。
+//   - 边缘段（只有一侧有拉链）：取那一侧（唯一有语义关联的邻居）。
+//   - 无邻居（N=0，split 发丝理论上不会出现，仅防御）：回退旧默认 strandSplitHeight ?? 0.3。
+export function insertedStrandSplitHeight(target, splits, segmentIndex) {
+  // 邻居按 position 升序取：段 i 的左邻是 sorted[i-1]、右邻是 sorted[i]，与
+  // strandSplitBoundaries 的边界排列一一对应。
+  const sorted = (Array.isArray(splits) ? splits : []).slice().sort((a, b) => (Number(a?.position) || 0) - (Number(b?.position) || 0));
+  const left = sorted[segmentIndex - 1];
+  const right = sorted[segmentIndex];
+  const heights = [left, right]
+    .filter((split) => split && Number.isFinite(Number(split.height)))
+    .map((split) => Number(split.height));
+  if (!heights.length) return Number(target?.strandSplitHeight ?? 0.3);
+  return heights.reduce((sum, height) => sum + height, 0) / heights.length;
+}
 
 // 把段骨骼数组对齐到给定段数（多余截断、缺失补 null 交由 normalize 派生默认值）。
 // splits 被 maxCount 截断时，骨骼数组长度可能与段数不一致，重映射前先对齐。
@@ -35,6 +124,8 @@ function hasOrder(splits, order) {
 //   branchSweep) + DOM elements (panelSegmentLabel/previousPanelSegmentButton/nextPanelSegmentButton/
 //   panelSegmentSpread/panelSegmentSpreadValue/panelShapeInputs/panelShapeValues/panelSplitCountValue/
 //   addPanelSplitButton/removePanelSplitButton/segmentTaperPreview/segmentDepthPreview/
+//   strandSegmentControls/strandSegmentLabel/previousStrandSegmentButton/nextStrandSegmentButton/
+//   strandSegmentSpread/strandSegmentSpreadValue/strandSegmentTaperPreview/strandSegmentDepthPreview/
 //   sweepProfileEditor/taperMeshPointsToggleRow/taperCurveEditor) + app.js helper functions
 //   (getSelectedLock/isPanelGeometry/pushUndoState/updateDrawStrandPreview/updateLockGeometry/
 //   rebuildCurveObjects/syncActiveMirror/updateTopologyStats/updateViewportStatsVisibility/
@@ -53,33 +144,106 @@ function dropDanglingStrandSplitSelection(target, splits) {
   if (!hasOrder(splits, selection.order)) deps.sculptState.strandSplitSelection = null;
 }
 
-function selectedPanelSegment(lock) {
-  const count = Math.max(1, (Array.isArray(lock?.panelSplits) ? lock.panelSplits.length : 0) + 1);
-  const index = THREE.MathUtils.clamp(Math.round(Number(deps.sculptState.panelSegmentIndex || 0)), 0, count - 1);
-  return { index, count };
+// 段数缩小后清掉越界的发尖子骨骼选择（0.2.126，panel 与发丝共用一份）。
+// 为什么必须显式清而不能只靠 resolveSegmentSelection 的钳位：那个钳位管的是
+// panelSegmentIndex / strandSegmentIndex（"面板当前显示哪一段"），而 tipSelection 是独立
+// 状态、不经过它。删掉最后一段/最后一根管后若不清，tipSelection 会指向一个已不存在的段：
+// 视口既没有该段的把手（按新段数分配），笔刷的 applySubBoneBrushSample 又会因为
+// "有选择"而**消费掉**每一笔（return true），表现为「选中了看不见的东西，主发丝也刷不动」。
+// 刻意**不**改成钳到最后一段：删段是用户主动收缩，回退到"未选中"比静默改选目标更可预期
+// （与 panelSplitSelection / strandSplitSelection 删除后置 null 的既有语义一致）。
+// 调用点（四条增删路径，改这里要看全部）：changePanelSplitCount / deleteSelectedPanelSplit /
+// changeStrandSplitCount / deleteSelectedStrandSplit。
+function dropDanglingTipSelection(target, segmentCount) {
+  const selection = deps.sculptState.tipSelection;
+  if (!selection || selection.lockId !== target?.id) return;
+  if (!(Number(selection.segmentIndex) < Number(segmentCount))) deps.sculptState.tipSelection = null;
 }
 
-function syncPanelSegmentControls(target = deps.taperEditor.activeStrandShapeTarget()) {
+// ── 段 UI 的宿主描述子（几何无关的段选择器/spread/曲线预览逻辑只写一遍）──────────
+// bone-model 的 *_SEGMENT_HOST 负责「数据侧」推导（段数、骨骼数组、索引键），这里补上
+// 「DOM 侧」绑定。container 只有发丝侧有：panel 那组控件由 #strandShapePanel.panel-context
+// 的 CSS 整块显隐，发丝侧则要按「已开启分裂」逐块 toggle。
+function segmentUi(host) {
+  if (host === STRAND_SEGMENT_HOST) {
+    return {
+      container: deps.strandSegmentControls,
+      label: deps.strandSegmentLabel,
+      previousButton: deps.previousStrandSegmentButton,
+      nextButton: deps.nextStrandSegmentButton,
+      spread: deps.strandSegmentSpread,
+      spreadValue: deps.strandSegmentSpreadValue,
+      taperPreview: deps.strandSegmentTaperPreview,
+      depthPreview: deps.strandSegmentDepthPreview
+    };
+  }
+  return {
+    container: null,
+    label: deps.panelSegmentLabel,
+    previousButton: deps.previousPanelSegmentButton,
+    nextButton: deps.nextPanelSegmentButton,
+    spread: deps.panelSegmentSpread,
+    spreadValue: deps.panelSegmentSpreadValue,
+    taperPreview: deps.segmentTaperPreview,
+    depthPreview: deps.segmentDepthPreview
+  };
+}
+
+// 段选择器 + per-segment spread + 每段曲线预览的共用同步体。panel 与 strand 只在
+// 描述子（host + segmentUi）上不同，逻辑一份。
+function syncSegmentControls(target, host) {
   // Refresh the width/depth curve preset selects (segment selects included) on every sync,
   // including when no panel target is selected (resets the selects).
   deps.syncShapePresetSelects();
-  if (!target) return;
-  const { index, count } = selectedPanelSegment(target);
-  const bone = splitBonesFor(target)[index] || null;
-  if (deps.panelSegmentLabel) deps.panelSegmentLabel.textContent = String(index + 1);
-  if (deps.previousPanelSegmentButton) deps.previousPanelSegmentButton.disabled = index === 0;
-  if (deps.nextPanelSegmentButton) deps.nextPanelSegmentButton.disabled = index >= count - 1;
-  if (deps.panelSegmentSpread) deps.panelSegmentSpread.value = String(bone?.spread ?? 0);
-  if (deps.panelSegmentSpreadValue) deps.panelSegmentSpreadValue.textContent = (bone?.spread ?? 0).toFixed(2);
+  const ui = segmentUi(host);
+  const selection = target ? resolveSegmentSelection(target, deps.sculptState, host) : null;
+  const bones = selection ? host.bonesFor(target) : null;
+  // 发丝侧：未开启分裂（bonesFor 返回 null）或非发丝目标时整块隐藏，与
+  // #strandSplitControls 自身的显隐同源（都只对「已分裂的普通发丝」暴露）。
+  ui.container?.classList.toggle("hidden", !bones);
+  if (!selection || !bones) return;
+  const { index, count } = selection;
+  const bone = bones[index] || null;
+  if (ui.label) ui.label.textContent = String(index + 1);
+  if (ui.previousButton) ui.previousButton.disabled = index === 0;
+  if (ui.nextButton) ui.nextButton.disabled = index >= count - 1;
+  if (ui.spread) ui.spread.value = String(bone?.spread ?? 0);
+  if (ui.spreadValue) ui.spreadValue.textContent = (bone?.spread ?? 0).toFixed(2);
   const previewTarget = {
     ...(bone || {}),
     taperCurve: bone?.taperCurve || target.taperCurve,
     depthCurve: bone?.depthCurve || target.depthCurve
   };
-  deps.taperEditor.renderTaperPreview(deps.segmentTaperPreview, previewTarget, "taperCurve");
-  deps.taperEditor.renderTaperPreview(deps.segmentDepthPreview, previewTarget, "depthCurve");
+  deps.taperEditor.renderTaperPreview(ui.taperPreview, previewTarget, "taperCurve");
+  deps.taperEditor.renderTaperPreview(ui.depthPreview, previewTarget, "depthCurve");
   // 浮动面板开着且正在编辑同一 lock 的子发尖曲线时，同步到当前段（热刷新）。
   deps.taperEditor.retargetOpenSegmentTaperEditor?.(target, index);
+}
+
+function selectedPanelSegment(lock) {
+  const { index, count } = resolveSegmentSelection(lock, deps.sculptState, PANEL_SEGMENT_HOST);
+  return { index, count };
+}
+
+// 段数 = 拉链数 + 1，经 strandSplitsFor 归一化（与几何同真源）；未开启分裂时返回
+// count=1/index=0，调用方靠 bonesFor 为 null 判断「没有段可编」。
+function selectedStrandSegment(lock) {
+  const { index, count } = resolveSegmentSelection(lock, deps.sculptState, STRAND_SEGMENT_HOST);
+  return { index, count };
+}
+
+function syncPanelSegmentControls(target = deps.taperEditor.activeStrandShapeTarget()) {
+  // panel 的创建默认值没有 geometryType（无法经 segmentBoneHost 分派），但段语义相同，
+  // 所以这里恒用 PANEL_SEGMENT_HOST，不走几何分派。
+  if (!target) {
+    deps.syncShapePresetSelects();
+    return;
+  }
+  syncSegmentControls(target, PANEL_SEGMENT_HOST);
+}
+
+function syncStrandSegmentControls(target = deps.taperEditor.activeStrandShapeTarget()) {
+  syncSegmentControls(target, STRAND_SEGMENT_HOST);
 }
 
 function syncPanelShapeInputs(target = deps.taperEditor.activeStrandShapeTarget()) {
@@ -109,13 +273,18 @@ function syncPanelShapeInputs(target = deps.taperEditor.activeStrandShapeTarget(
   syncPanelSegmentControls(target);
 }
 
-function openPanelSegmentCurveEditor(curveKey = "taperCurve") {
+// 打开浮动曲线编辑器，目标 = 当前几何当前段的段骨骼。panel 与发丝共用一份实现：
+// 唯一差异是宿主描述子（哪个字段存段骨骼、用哪个索引键、预览 SVG 是哪两个），
+// 由 segmentBoneHost 单点分派——铅笔按钮不再按容器 id 分流。
+function openSegmentCurveEditor(curveKey = "taperCurve") {
   const selectedLock = deps.getSelectedLock();
-  if (!selectedLock || !deps.isPanelGeometry(selectedLock)) return;
-  const { index } = selectedPanelSegment(selectedLock);
-  const bones = materializeSplitBones(selectedLock);
-  const bone = bones[index];
+  const host = segmentBoneHost(selectedLock);
+  if (!host) return;
+  const selection = resolveSegmentSelection(selectedLock, deps.sculptState, host);
+  const bones = host.materializeBones(selectedLock);
+  const bone = bones?.[selection.index];
   if (!bone) return;
+  const ui = segmentUi(host);
   if (!Array.isArray(bone[curveKey]) || !bone[curveKey].length) {
     bone[curveKey] = deps.shapePresets.cloneShapePresetValue(selectedLock[curveKey]);
   }
@@ -123,7 +292,7 @@ function openPanelSegmentCurveEditor(curveKey = "taperCurve") {
   deps.sculptState.taperCurveEdit = {
     type: "segment",
     id: selectedLock.id,
-    segmentIndex: index,
+    segmentIndex: selection.index,
     curveKey,
     side: "primary",
     selectedIndex: 0,
@@ -137,12 +306,74 @@ function openPanelSegmentCurveEditor(curveKey = "taperCurve") {
   deps.taperMeshPointsToggleRow.classList.add("hidden");
   deps.taperEditor.renderTaperCurveEditor();
   deps.taperEditor.renderTaperPreview(
-    curveKey === "depthCurve" ? deps.segmentDepthPreview : deps.segmentTaperPreview,
+    curveKey === "depthCurve" ? ui.depthPreview : ui.taperPreview,
     deps.taperEditor.activeTaperTarget(),
     curveKey
   );
   deps.taperCurveEditor.show();
   deps.updateViewportStatsVisibility();
+}
+
+// 保留具名入口：panel 侧调用点（视口 alt 点击等）语义不变，只是走同一份实现。
+function openPanelSegmentCurveEditor(curveKey = "taperCurve") {
+  if (!deps.isPanelGeometry(deps.getSelectedLock())) return;
+  openSegmentCurveEditor(curveKey);
+}
+
+function openStrandSegmentCurveEditor(curveKey = "taperCurve") {
+  const selected = deps.getSelectedLock();
+  if (segmentBoneHost(selected) !== STRAND_SEGMENT_HOST) return;
+  openSegmentCurveEditor(curveKey);
+}
+
+// 段步进：把索引写回 store 后重新同步控件。panel 与发丝只差宿主描述子与「目标 lock
+// 怎么取」，逻辑一份（app.js 只负责转发点击）。
+// 浮动面板的热刷新由 syncSegmentControls 末尾的 retargetOpenSegmentTaperEditor 负责，
+// 这里刻意不再补一次：旧 panel 处理器在 sync 之后又 retarget 一遍，同一次点击把曲线
+// 面板渲染两次。retarget 幂等，去掉只是省功，行为不变。
+function stepSegment(delta, target, host, syncControls) {
+  if (!target) return;
+  const { index, count } = resolveSegmentSelection(target, deps.sculptState, host);
+  const next = THREE.MathUtils.clamp(index + Math.sign(delta), 0, count - 1);
+  deps.sculptState[host.segmentIndexKey] = next;
+  syncControls(target);
+}
+
+function stepPanelSegment(delta) {
+  const selected = deps.getSelectedLock();
+  // panel 未选中时回退到创建默认值目标（步进对「新建 panel 的默认段」同样生效）。
+  const target = deps.isPanelGeometry(selected) ? selected : deps.taperEditor.activeStrandShapeTarget();
+  stepSegment(delta, target, PANEL_SEGMENT_HOST, syncPanelSegmentControls);
+}
+
+function stepStrandSegment(delta) {
+  const selected = deps.getSelectedLock();
+  // 只有「已分裂的普通发丝」有管段可切；其余情况这块 UI 本就隐藏，不做无效写入。
+  if (segmentBoneHost(selected) !== STRAND_SEGMENT_HOST) return;
+  stepSegment(delta, selected, STRAND_SEGMENT_HOST, syncStrandSegmentControls);
+}
+
+// per-segment spread 写入：先 materialize 再创作（standards「物化后再创作」），钳到
+// [0, SPREAD_MAX] 与 normalizeSplitBones / normalizeStrandSplitBone 同界（模块顶部单点定义）
+// ——超过 1 会让段尖越过自身宽度、产生 crossover。
+// 同规则同步点：panel 侧的滑杆处理在 app.js（panelSegmentSpread 的 input 监听），
+// 它还要额外维护 draw 预览的 splitBones，故未并入本函数。
+function applyStrandSegmentSpread(value) {
+  const target = deps.getSelectedLock();
+  if (segmentBoneHost(target) !== STRAND_SEGMENT_HOST) return;
+  const bones = materializeStrandSplitBones(target);
+  if (!bones) return;
+  const { index } = resolveSegmentSelection(target, deps.sculptState, STRAND_SEGMENT_HOST);
+  const spread = THREE.MathUtils.clamp(Number(value) || 0, 0, SPREAD_MAX);
+  if (!bones[index]) return;
+  bones[index].spread = spread;
+  if (deps.strandSegmentSpreadValue) deps.strandSegmentSpreadValue.textContent = spread.toFixed(2);
+  // 与 changeStrandSplitCount 的重建序列一致：几何 → 曲线对象（视口手柄依赖新管位置）
+  // → 镜像 → 拓扑统计。
+  deps.updateLockGeometry(target, { immediate: true });
+  deps.rebuildCurveObjects(target);
+  deps.syncActiveMirror(target, { deferGeometry: false });
+  deps.updateTopologyStats();
 }
 
 function changePanelSplitCount(delta) {
@@ -204,6 +435,8 @@ function changePanelSplitCount(delta) {
   // 选中的 zipper 可能刚被 - 删掉：清掉悬空选择，否则下次按 Del 会因 order 找不到而
   // 穿透到 deleteCurrentSelection() 直接删掉整根头发。
   dropDanglingPanelSplitSelection(target, splits);
+  // 段数 = zipper 数 + 1（与 PANEL_SEGMENT_HOST.segmentCount 同规则；此处 splits 已是最终值）。
+  dropDanglingTipSelection(target, splits.length + 1);
   if (deps.sculptState.drawStrandStroke?.outputType === "panel" && target === deps.panelCreationDefaults) {
     deps.sculptState.drawStrandStroke.panelSplits = deps.clonePanelSplits(splits, target.panelSplitHeight, widthLoops - 1);
     deps.updateDrawStrandPreview();
@@ -239,6 +472,7 @@ function deleteSelectedPanelSplit() {
   target.panelSplits = splits;
   materializeSplitBones(target);
   deps.sculptState.panelSplitSelection = null;
+  dropDanglingTipSelection(target, splits.length + 1);
   deps.updateLockGeometry(target, { immediate: true });
   deps.rebuildCurveObjects(target);
   deps.syncActiveMirror(target, { refreshUi: true });
@@ -272,19 +506,15 @@ function changeStrandSplitCount(delta) {
   if (delta > 0 && splits.length >= deps.STRAND_SPLIT_MAX) return;
   // 分裂发丝至少保留 1 个拉链（>=2 管）；归零请用 Split Geometry 开关。
   if (delta < 0 && splits.length <= 1) return;
-  // 相邻拉链最小间距，避免产生退化（过窄）的段。
-  const minimumSeparation = 0.12;
-  // 段 = 排序后拉链之间的间隔（N 拉链 → N+1 管）；与 createSplitStrandGeometry 的分段一致。
-  const boundaries = [-0.8, ...splits.map((split) => split.position), 0.8];
+  // 段边界/最宽段/「插得下吗」全部取自模块顶部的单一定义点，app.js 的按钮门控消费同一组
+  // 函数——过去两边各算一遍，边界值漂移就会出现「能点但不生效」。
+  const boundaries = strandSplitBoundaries(splits);
   const spans = segmentSpans(boundaries);
   // 骨骼重映射的输入：按当前管数对齐的有效骨骼（authored 优先，其次派生默认）。
   const previousBones = fitSegmentBones(strandSplitBonesFor(target), splits.length + 1);
-  let largestGapIndex = 0;
-  for (let index = 1; index < spans.length; index += 1) {
-    if (spans[index] > spans[largestGapIndex]) largestGapIndex = index;
-  }
+  const largestGapIndex = largestStrandSegmentIndex(splits);
   // 间隙不足以容纳一个最小间距的新拉链时放弃（保持水密、不产生退化段）。
-  if (delta > 0 && spans[largestGapIndex] < minimumSeparation * 2) return;
+  if (delta > 0 && !canFitAnotherStrandSplit(splits)) return;
   let deleteIndex = 0;
   if (delta < 0) {
     // 删除 order 最大者（最近创建的），mirror 面板行为。
@@ -297,7 +527,7 @@ function changeStrandSplitCount(delta) {
     // 在最大间隙插入，position 落在间隙中点；order 取当前最大 +1（单调、不复用）。
     const position = (boundaries[largestGapIndex] + boundaries[largestGapIndex + 1]) * 0.5;
     const nextOrder = splits.length ? Math.max(...splits.map((s) => Number(s.order) || 0)) + 1 : 0;
-    splits.push({ position, height: Number(target.strandSplitHeight ?? 0.3), order: nextOrder });
+    splits.push({ position, height: insertedStrandSplitHeight(target, splits, largestGapIndex), order: nextOrder });
     splits.sort((a, b) => a.position - b.position);
     // 被细分的管一分为二：两半都继承来源管姿态，其后管整体后移（修正骨骼错位）。
     target.strandSplitBones = remapSegmentBonesOnInsert(previousBones, largestGapIndex);
@@ -311,6 +541,8 @@ function changeStrandSplitCount(delta) {
   // 双写持久字段：此时长度已与新管数一致，重映射不被覆盖。
   materializeStrandSplitBones(target);
   dropDanglingStrandSplitSelection(target, splits);
+  // 管数 = 拉链数 + 1（与 STRAND_SEGMENT_HOST.segmentCount 同规则；splits 已是最终值）。
+  dropDanglingTipSelection(target, splits.length + 1);
   if (deps.sculptState.drawStrandStroke?.outputType === "strand" && target === deps.strandCreationDefaults) {
     deps.sculptState.drawStrandStroke.strandSplits = splits.map((s) => ({ ...s }));
     deps.sculptState.drawStrandStroke.strandSplitPosition = target.strandSplitPosition;
@@ -328,6 +560,10 @@ function changeStrandSplitCount(delta) {
 
 // 删除当前被选中的 strand zipper（按 order 匹配），沿用与 changeStrandSplitCount 相同的重建路径。
 // 分裂发丝至少保留 1 个拉链：删到只剩 1 时拒绝（返回 false）。
+// 刻意不套 insertedStrandSplitHeight：删除只移除条目、从不新建拉链，没有「该继承谁」的问题；
+// 存活拉链各自保留自己的 height（合并段的姿态由 remapSegmentBonesOnDelete 处理）。
+// 同理 draw 预览路径（下方 drawStrandStroke.strandSplits = splits.map(...)）只是把已经算好的
+// 数组复制给预览，height 来源仍是本函数与 changeStrandSplitCount，无需第二份规则。
 function deleteSelectedStrandSplit() {
   const selection = deps.sculptState.strandSplitSelection;
   if (!selection) return false;
@@ -349,6 +585,7 @@ function deleteSelectedStrandSplit() {
   deps.syncStrandSplitLegacyFields(target);
   materializeStrandSplitBones(target);
   deps.sculptState.strandSplitSelection = null;
+  dropDanglingTipSelection(target, splits.length + 1);
   deps.updateLockGeometry(target, { immediate: true });
   deps.rebuildCurveObjects(target);
   deps.syncActiveMirror(target, { refreshUi: true });
@@ -357,11 +594,27 @@ function deleteSelectedStrandSplit() {
   return true;
 }
 
+// 按几何把「段控件同步」分派到对应实现。段曲线预设写入后（shape-presets）需要刷新
+// 当前几何那一块控件，这里是唯一分派点。
+function syncSegmentControlsForLock(lock) {
+  const host = segmentBoneHost(lock);
+  if (host === STRAND_SEGMENT_HOST) syncStrandSegmentControls(lock);
+  else if (host === PANEL_SEGMENT_HOST) syncPanelSegmentControls(lock);
+}
+
   return {
     selectedPanelSegment,
+    selectedStrandSegment,
     syncPanelSegmentControls,
+    syncStrandSegmentControls,
+    syncSegmentControlsForLock,
     syncPanelShapeInputs,
+    openSegmentCurveEditor,
     openPanelSegmentCurveEditor,
+    openStrandSegmentCurveEditor,
+    stepPanelSegment,
+    stepStrandSegment,
+    applyStrandSegmentSpread,
     changePanelSplitCount,
     deleteSelectedPanelSplit,
     changeStrandSplitCount,

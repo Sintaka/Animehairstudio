@@ -9,7 +9,16 @@ import {
   twistCurveDisplayRange,
   twistRateUnitsFromDegrees
 } from "./curve-math.js?v=20260813-3";
-import { materializeSplitBones, splitBonesFor } from "../bones/bone-model.js?v=20260813-1";
+import {
+  resolveSegmentSelection,
+  segmentBoneHost,
+  strandSplitsFor,
+  STRAND_SEGMENT_HOST
+} from "../bones/bone-model.js?v=20260830-1";
+import {
+  strandTubeSideControlTs,
+  strandTubeSideForkT
+} from "./strand-tip-width.js?v=20260829-2";
 import {
   DEFAULT_SWEEP_PROFILE,
   STRAND_GROUPS,
@@ -28,7 +37,8 @@ export function createTaperEditorApi(deps) {
   //   taperCurveBaseAxis/taperCurveValueAxis/taperCurveCenterLine/taperCurvePoints/taperCurveOptions/
   //   taperAsymmetryToggleRow/taperAsymmetryToggle/centerAsymmetricProfileRow/centerAsymmetricProfileToggle/
   //   taperMeshPointsToggleRow/taperMeshPointsToggle/taperPointValue/taperPointPosition/taperPointInterpolation/
-  //   taperPreviewPaths/segmentTaperPreview/segmentDepthPreview/strandTwistCurvePreview/
+  //   taperPreviewPaths/segmentTaperPreview/segmentDepthPreview/strandSegmentTaperPreview/
+  //   strandSegmentDepthPreview/strandTwistCurvePreview/
   //   proceduralBranchLengthCurvePreview/proceduralBranchShapeCurvePreview/sweepProfileEditor/sweepProfileTarget/
   //   groupDefaultsWarning) + app.js helper functions (including visibleTaperMeshCurveEdits for the
   //   Move tool viewport curve controls); full list: devlog/in-progress/g5-taper-refactor-map.md
@@ -40,18 +50,21 @@ function activeStrandShapeTarget() {
 function activeTaperTarget() {
   if (!deps.sculptState.taperCurveEdit) return null;
   if (deps.sculptState.taperCurveEdit.type === "segment") {
-    // The editor target for a segment is its split sub-bone (live reference into
-    // lock.splitBones); curve edits mutate the bone directly.
+    // The editor target for a segment is its split sub-bone (live reference into the
+    // host's bones field); curve edits mutate the bone directly. Panel and split-strand
+    // segments differ only by that host (segmentBoneHost is the single dispatch point).
     const lock = deps.locks.find((item) => item.id === deps.sculptState.taperCurveEdit.id);
-    if (!lock) return null;
-    // 复用已 materialize 的 lock.splitBones（live 引用）：每次重新调用
-    // materializeSplitBones 都会深克隆曲线数组，导致浮动面板拖动 segment 曲线点
-    // 时写进临时数组、宽度不生效。length 不匹配（splits 变化）时才重新 materialize。
-    const splitCount = (Array.isArray(lock.panelSplits) ? lock.panelSplits.length : 0) + 1;
-    const bones = (Array.isArray(lock.splitBones) && lock.splitBones.length === splitCount)
-      ? lock.splitBones
-      : materializeSplitBones(lock);
-    const bone = bones[deps.sculptState.taperCurveEdit.segmentIndex] || null;
+    const host = segmentBoneHost(lock);
+    if (!lock || !host) return null;
+    // 复用已 materialize 的段骨骼数组（live 引用）：每次重新调用 materialize 都会深克隆
+    // 曲线数组，导致浮动面板拖动 segment 曲线点时写进临时数组、宽度不生效。
+    // length 不匹配（splits 变化）时才重新 materialize。
+    const segmentCount = host.segmentCount(lock);
+    const stored = lock[host.bonesField];
+    const bones = (Array.isArray(stored) && stored.length === segmentCount)
+      ? stored
+      : host.materializeBones(lock);
+    const bone = bones?.[deps.sculptState.taperCurveEdit.segmentIndex] || null;
     if (!bone) return null;
     const curveKey = deps.sculptState.taperCurveEdit.curveKey;
     if (!Array.isArray(bone[curveKey]) || !bone[curveKey].length) {
@@ -172,20 +185,16 @@ function renderTaperPreview(path, target, curveKey) {
     .join(" ");
   secondaryPath?.setAttribute("d", `${secondaryLine} L151,35 L9,35 Z`);
 }
-// Read-only view of the selected panel's current split segment bone, used by the
-// shape-preset selects (syncShapePresetSelects / openSaveShapePreset). Never materializes:
-// syncing/displaying the select must not write splitBones. Returns a shallow copy with
-// per-field fallback to the lock-level curve so the select shows the segment's effective curve.
+// Read-only view of the selected geometry's current segment bone (panel split segment or
+// split-strand tube), used by the shape-preset selects (syncShapePresetSelects /
+// openSaveShapePreset). Never materializes: syncing/displaying the select must not write
+// the bones field. Returns a shallow copy with per-field fallback to the lock-level curve
+// so the select shows the segment's effective curve.
 function segmentCurveTarget() {
   const lock = deps.getSelectedLock();
-  if (!lock || !deps.isPanelGeometry(lock)) return null;
-  const splitCount = (Array.isArray(lock.panelSplits) ? lock.panelSplits.length : 0) + 1;
-  const index = THREE.MathUtils.clamp(
-    Math.round(Number(deps.sculptState.panelSegmentIndex ?? 0)),
-    0,
-    splitCount - 1
-  );
-  const bone = splitBonesFor(lock)[index];
+  const selection = resolveSegmentSelection(lock, deps.sculptState);
+  if (!selection) return null;
+  const bone = selection.host.bonesFor(lock)?.[selection.index];
   if (!bone) return null;
   return {
     ...bone,
@@ -198,24 +207,26 @@ function segmentCurveTarget() {
     centerAsymmetricProfile: bone.centerAsymmetricProfile == null ? Boolean(lock.centerAsymmetricProfile) : bone.centerAsymmetricProfile
   };
 }
-// Live split bone for the selected panel segment (used by applyShapePreset). Reuses the
-// already-materialized lock.splitBones when the split count matches (same rule as
+// Live segment bone for the selected geometry (used by applyShapePreset). Reuses the
+// already-materialized bones array when its length matches the segment count (same rule as
 // activeTaperTarget so preset writes hit the live bone); materializes otherwise. The index
-// is clamped the same way selectedPanelSegment / syncPanelSegmentControls clamp it.
+// is clamped by resolveSegmentSelection, the same rule the segment steppers use.
 function segmentCurveTargetForWrite() {
   const lock = deps.getSelectedLock();
-  if (!lock || !deps.isPanelGeometry(lock)) return null;
-  const splitCount = (Array.isArray(lock.panelSplits) ? lock.panelSplits.length : 0) + 1;
-  const bones = (Array.isArray(lock.splitBones) && lock.splitBones.length === splitCount)
-    ? lock.splitBones
-    : materializeSplitBones(lock);
+  const selection = resolveSegmentSelection(lock, deps.sculptState);
+  if (!selection) return null;
+  const { host, index, count } = selection;
+  const stored = lock[host.bonesField];
+  const bones = (Array.isArray(stored) && stored.length === count)
+    ? stored
+    : host.materializeBones(lock);
   if (!bones) return null;
-  const index = THREE.MathUtils.clamp(
-    Math.round(Number(deps.sculptState.panelSegmentIndex ?? 0)),
-    0,
-    splitCount - 1
-  );
   return bones[index] || null;
+}
+// 当前几何选中的段下标（shape-presets 用来判断浮动面板是否仍停在同一段上）。
+// 无段骨骼的几何返回 null，调用方据此跳过。
+function selectedSegmentIndex(lock = deps.getSelectedLock()) {
+  return resolveSegmentSelection(lock, deps.sculptState)?.index ?? null;
 }
 function shapeTargetForSelect(select) {
   if (select.closest("#groupSettingsPanel")) return deps.sel.selectedStrandGroup ? deps.strandGroupDefaults[deps.sel.selectedStrandGroup] : null;
@@ -437,7 +448,20 @@ function renderTaperCurveEditor() {
   // 记录点 + 本侧 fork 连续性锚点）只用于与 zipper 以上的锁定区接续，不应在浮动面板
   // 里被拖动。
   const segmentLock = segmentEditing ? deps.locks.find((item) => item.id === deps.sculptState.taperCurveEdit.id) : null;
-  const segmentSplits = segmentLock ? deps.clonePanelSplits(segmentLock.panelSplits, segmentLock.panelSplitHeight) : null;
+  // 「按侧暴露」的 splits 按几何取真源：panel 取 clonePanelSplits，split strand 取
+  // strandSplitsFor（排序 + 钳制 + legacy 单标量回退，与几何段划分同源）。
+  // **绝不能**对发丝调 clonePanelSplits —— 它会回退出一套与几何无关的假 panelSplits
+  // （两条 position ±1/3、height = panel 默认），据此算出的暴露子集与该管的真实拉链高度
+  // 无关，会把可编辑点误标成锁定点。这正是 Phase C 暂时把整块门控在 isPanelGeometry 的原因。
+  const segmentHost = segmentLock ? segmentBoneHost(segmentLock) : null;
+  const strandSegment = segmentHost === STRAND_SEGMENT_HOST;
+  const segmentSplits = !segmentLock
+    ? null
+    : strandSegment
+      ? strandSplitsFor(segmentLock)
+      : deps.isPanelGeometry(segmentLock)
+        ? deps.clonePanelSplits(segmentLock.panelSplits, segmentLock.panelSplitHeight)
+        : null;
   // 每条曲线用它自己那一侧的 fork：两侧共用同一批控制参数（共享网格，基于最深
   // zipper），但**暴露的子集**按各自 zipper 高度不同，所以 primary(右)/secondary(左)
   // 的可编辑区不同，面板的「锁定点」判定必须按侧取，否则深 zipper 侧会把可抓点误标成
@@ -445,6 +469,16 @@ function renderTaperCurveEditor() {
   const sideOfCurve = (curveSide) => (curveSide === "secondary" ? -1 : 1);
   const tipSideForkFor = (curveSide) => {
     if (!segmentLock || !segmentSplits || !segmentSplits.length) return 0;
+    // 两种几何的每侧 fork 都来自共享的 tipWidthSideForkFromHeights（panel 经
+    // panelTipStrand.tipWidthSideForkT 适配、strand 经 strandTubeSideForkT 适配），
+    // 本文件不写第三条 fork 公式。
+    if (strandSegment) {
+      return strandTubeSideForkT(
+        segmentSplits,
+        deps.sculptState.taperCurveEdit.segmentIndex,
+        sideOfCurve(curveSide)
+      );
+    }
     return deps.tipWidthSideForkT(
       segmentLock,
       deps.sculptState.taperCurveEdit.segmentIndex,
@@ -460,6 +494,16 @@ function renderTaperCurveEditor() {
     && deps.sculptState.taperCurveEdit.curveKey === "taperCurve";
   const tipDraggablePositions = (curveSide) => {
     if (!segmentWidthCurve || !segmentLock || !segmentSplits || !segmentSplits.length) return null;
+    // 「曲线里有 ⇔ 有把手」：两种几何都取**本侧暴露的共享网格子集**，与视口 placement
+    // 返回非 null 的那批索引一一对应（strand 侧的 strandTubeSideControlTs 与
+    // strandTipWidthControlPlacement 消费同一个 tipWidthSideExposesTAt）。
+    if (strandSegment) {
+      return strandTubeSideControlTs(
+        segmentSplits,
+        deps.sculptState.taperCurveEdit.segmentIndex,
+        sideOfCurve(curveSide)
+      );
+    }
     return deps.tipWidthSideControlTs(
       segmentLock,
       deps.sculptState.taperCurveEdit.segmentIndex,
@@ -563,7 +607,7 @@ function retargetOpenTaperCurveEditor(lock) {
     // syncPanelSegmentControls 里走 retargetOpenSegmentTaperEditor；这里额外覆盖
     // refreshStrandSelectionConsumers（选择变化）路径，strand 行为保持不变。
     if (deps.sculptState.taperCurveEdit.id === lock?.id) {
-      retargetOpenSegmentTaperEditor(lock, deps.sculptState.panelSegmentIndex);
+      retargetOpenSegmentTaperEditor(lock, null);
     }
     return;
   }
@@ -586,12 +630,14 @@ function retargetOpenTaperCurveEditor(lock) {
 function retargetOpenSegmentTaperEditor(lock, index) {
   if (!deps.taperCurveEditor.open || deps.sculptState.taperCurveEdit?.type !== "segment") return;
   if (!lock || deps.sculptState.taperCurveEdit.id !== lock.id) return;
-  const splitCount = (Array.isArray(lock.panelSplits) ? lock.panelSplits.length : 0) + 1;
-  const nextIndex = THREE.MathUtils.clamp(
-    Math.max(0, Math.round(Number(index ?? deps.sculptState.panelSegmentIndex ?? 0))),
-    0,
-    splitCount - 1
-  );
+  const host = segmentBoneHost(lock);
+  if (!host) return;
+  // index == null 表示「用 store 里当前选中的段」（选择变化路径）；索引键按宿主取，
+  // 发丝段与 panel 段各有自己的 store 键，混用会让浮动面板跳到另一套段号上。
+  const selection = resolveSegmentSelection(lock, deps.sculptState, host);
+  const nextIndex = index == null
+    ? selection.index
+    : THREE.MathUtils.clamp(Math.max(0, Math.round(Number(index) || 0)), 0, selection.count - 1);
   flushScheduledTaperCurveEdit();
   finishTaperMeshPointDrag(null);
   if (deps.sculptState.taperCurveEdit.segmentIndex !== nextIndex) {
@@ -724,8 +770,12 @@ function applyTaperCurveEdit({ interactive = false } = {}) {
       deps.updateLockGeometry(lock, { immediate: true, updateBranches: false });
       deps.syncActiveMirror(lock, { deferGeometry: false });
     }
+    // 预览 SVG 按宿主取：panel 段与发丝管段各有一组，写错会让编辑刷新到隐藏的那一块。
+    const strandSegment = segmentBoneHost(lock) === STRAND_SEGMENT_HOST;
+    const depthPreview = strandSegment ? deps.strandSegmentDepthPreview : deps.segmentDepthPreview;
+    const taperPreview = strandSegment ? deps.strandSegmentTaperPreview : deps.segmentTaperPreview;
     renderTaperPreview(
-      deps.sculptState.taperCurveEdit.curveKey === "depthCurve" ? deps.segmentDepthPreview : deps.segmentTaperPreview,
+      deps.sculptState.taperCurveEdit.curveKey === "depthCurve" ? depthPreview : taperPreview,
       activeTaperTarget(),
       deps.sculptState.taperCurveEdit.curveKey
     );
@@ -1058,6 +1108,7 @@ function updateSelectedTaperPoint(key, value) {
     renderTaperPreview,
     segmentCurveTarget,
     segmentCurveTargetForWrite,
+    selectedSegmentIndex,
     shapeTargetForSelect,
     taperPointToCanvas,
     canvasToTaperPoint,

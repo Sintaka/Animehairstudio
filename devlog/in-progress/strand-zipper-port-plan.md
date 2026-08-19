@@ -1,6 +1,18 @@
 # 普通发丝多拉链移植计划 (Strand Multi-Zipper Port Plan)
 
-> **状态（0.2.116）：已全部实施（Phase A–F 落地并合并，Node 267/267 + 真实工程 82/82）。** 本文档保留为设计/踩坑参考；实现摘要见 local-adaptation-log.md / js-change-annotations.md「0.2.116」。已知未做项：per-segment spread UI、strand 拉链 snap-to-loops、N>2 子发片桥接（Phase F 已门控禁用）。
+> **状态（0.2.116）：已全部实施（Phase A–F 落地并合并，Node 267/267 + 真实工程 82/82）。** 本文档保留为设计/踩坑参考；实现摘要见 local-adaptation-log.md / js-change-annotations.md「0.2.116」。
+>
+> **⚠️ 原「已知未做项」已过期（0.2.124–0.2.126 更新，勿据旧结论重做）**：
+>
+> | 原列为未做 | 现状 | 权威文档 |
+> |---|---|---|
+> | per-segment spread UI | **已做**（0.2.125）：段选择器 + 每管 Spread + 每段曲线预览（`#strandSegmentControls`） | [strand-tip-width-ui-port-plan.md](strand-tip-width-ui-port-plan.md) |
+> | 发尖 WidthCurve（本文未列但常被问） | **已做**（0.2.125）：共享层 `tip-width-curve.js` + 发丝侧 `strand-tip-width.js` | 同上 |
+> | 发尖**选中系统** | **已做**（0.2.126）：`tip-sub-bone-host.js` + `tipSelection`/`tipHover` 键 | [strand-tip-selection-port-plan.md](strand-tip-selection-port-plan.md) |
+> | strand 拉链 snap-to-loops | **仍未做**，且判定为**非缺口**：发丝没有纵向 loop 拓扑可吸附 | — |
+> | N>2 子发片桥接 | **仍未做**（Phase F 门控禁用） | 本文 Phase F |
+>
+> **另：本文描述的横向推开规则已在 0.2.124 被替换。** 本文 §1 记的 per-section `direction` 为离散 ±1/0（最左 −1 / 最右 +1 / 中间取中心符号）——该规则会让相邻管拿到同一 direction、一起平移，导致**无论加多少 zipper 只有一条缝张开**。现为单调递增的 `strandSplitDirection(k, N) = (2k − N) / N`，**唯一定义点在 `modules/bones/bone-model.js`**，geometry 与 usda-export 真 import（N=1 仍恒 `[-1, +1]`）。见 bug-fixes.md #17。
 
 一句话摘要：将面板 (panel) 已支持的多拉链机制 (`lock.panelSplits=[{position,height,order}]`) 移植到普通发丝 (normal strand)，使其从单拉链 (`lock.strandSplit*`) 升级为多拉链 (`lock.strandSplits=[...]`)，并完成几何、UV、骨骼、UI、子桥接的适配。
 

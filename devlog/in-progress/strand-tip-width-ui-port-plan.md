@@ -1,6 +1,8 @@
 # 发尖 WidthCurve UI 移植到普通发丝：实施计划
 
-> **状态**：规划中，未实施（0.2.124 撰写）。本文档供新对话直接照做——目标是把 panel 的发尖 WidthCurve 系统（绿色控制点 + 共享网格按侧动态暴露）移植到普通发丝（ordinary strand），要求**适配发丝自身的生成行为**、**最大化代码复用**、**不破坏 UV**。
+> **状态**：实施中（0.2.125 起）。本文档供新对话直接照做——目标是把 panel 的发尖 WidthCurve 系统（绿色控制点 + 共享网格按侧动态暴露）移植到普通发丝（ordinary strand），要求**适配发丝自身的生成行为**、**最大化代码复用**、**不破坏 UV**。
+>
+> **⚠️ 实施期修正（0.2.125 主进程实测）**：§1.1 原写「按 profile 点的 `x` 符号判定左右侧」——**这条是错的**，照做会产生死区。管的 profile 被 `clipStrandProfileBand` 裁成子多边形后，**每根管的 raw `x` 只有一个符号**（实测圆形 profile + 拉链 ±0.4：管 0 的 x 全为负、管 2 全为正，只有中间管跨 0）。若用 raw `x` 当 `signedCoordinate`，边缘管会整管只采到一侧曲线、另一侧曲线永不生效——与 panel 在 0.2.80 修掉的「不跨 0 段曲线动了发丝不动」**是同一类 bug**。正确做法与 panel 修复后完全同构：用**管内相对坐标** `(x − tubeCenterX) / tubeHalfSpan ∈ [-1, 1]`（tubeCenter/HalfSpan 取该管**裁剪后实际** x 极值，边缘管的 ±Infinity 边界要先与 profile 的 minX/maxX 取交）。详见 §4 Phase B。
 >
 > **前置事实**：0.2.116 已把 zipper 移植到普通发丝（N 拉链→N+1 管），0.2.124 修掉了「只有一条缝张开」。0.2.117 骨骼重映射 / 0.2.119 每段 fork / 0.2.120 物化空间 **strand 侧已具备，勿重复移植**。当前唯一缺口就是本文档要做的 WidthCurve UI。
 
@@ -25,7 +27,7 @@ sampleAsymmetricTaperCurve(shapeCurve, secondaryCurve, asymmetric, signedCoordin
 
 ### 1.1 推荐的移植语义（管的「每侧宽度」）
 
-发丝的管是闭合截面，「左右侧」按 profile 点的 `x` 符号判定（与 `sampleAsymmetricTaperCurve` 的 `signedCoordinate` 一致，无需新约定）。语义定为：
+发丝的管是闭合截面，「左右侧」按 profile 点在**该管内**的相对横向位置判定（`(x − tubeCenterX)/tubeHalfSpan`，见上方「实施期修正」——**不是** raw `x` 符号）。语义定为：
 
 > 对管 `i` 的顶点，在 `t > sectionSplitStart_i`（该段 fork 以上，即已张开的发尖部分）时，`x` 方向的半径改由 **`strandSplitBones[i]` 的曲线**采样；`t <= fork` 时仍用 lock 级全局曲线。
 
@@ -133,10 +135,11 @@ sampleAsymmetricTaperCurve(shapeCurve, secondaryCurve, asymmetric, signedCoordin
    const secondaryCurve = curveOverride?.secondary ?? (...);
    const asymmetric = curveOverride?.asymmetric ?? (...);
    ```
-   **默认 null ⇒ 行为逐字节不变**（现有全部调用点不动）。
-2. `strandProfileTopologyAt`（L7571）增加可选 `widthOverride`，透传给 `strandRadiusAt`（仅 x 轴；depth 本轮不做）。
-3. `strand-geometry.js` L235 调用点：在段循环内已有 `sectionIndex` / `splitBones` / `section.sectionSplitStart`，据此构造 override —— **仅当 `t > sectionSplitStart` 且该段 bone 有 `taperCurve` 时**才传，否则传 null。
+   **默认 null ⇒ 行为逐字节不变**（现有全部调用点不动）。**注**：override 还必须能替换 `signedCoordinate` 与 `blendZone`——见下条第 3 点，管内相对坐标不是 `profile.x`，且 panel 的发尖采样用 `blendZone = 0.25`（`tipWidthMultiplierAt` 末参），发丝要同构就得一起传。
+2. `strandProfileTopologyAt`（L7571）增加可选 `widthOverride`，透传给 `strandRadiusAt`（仅 x 轴；depth 本轮不做）。**注意 L7593 的 `centerAsymmetricProfile` 分支**：它按 `boundsTransformed` 的 x 极值重新居中 profile，那是**整管平移**——发尖宽度必须只做缩放（§6 红线 4），所以 override 生效时不得让它把管重新居中，否则宽度改动会变成位移、缝会被推开。
+3. `strand-geometry.js` L235 调用点：在段循环内已有 `sectionIndex` / `splitBones` / `section.sectionSplitStart`，据此构造 override —— **仅当 `t > sectionSplitStart` 且该段 bone 有 `taperCurve` 时**才传，否则传 null。**每管的 `signedCoordinate` 必须是管内相对坐标**：`(profile.x − tubeCenterX) / tubeHalfSpan`，其中 `tubeCenterX`/`tubeHalfSpan` 由该管**裁剪后 points 的实际 x 极值**求得（边缘管的 ±Infinity 边界先与 polygon 的 minX/maxX 取交）。理由见文首「实施期修正」：raw `x` 在边缘管只有一个符号 → 一侧曲线永不生效（= panel 0.2.80 死区同类 bug）。该「管内相对坐标」是新的推导规则，**必须单点定义**（纯函数，几何与把手 placement、拖拽读值三处共用）。
 4. 新增 `strandTipWidthMultiplierAt(lock, t, signedX, bone, sectionIndex, splits)`（放共享模块或 strand 侧）：供拖拽读「当前该侧宽度倍率」，对应 panel 的 `tipPanelWidthAt`。
+5. **fork 连续性自检**：bone 曲线在 fork 锚点取全局曲线采样值（`buildTipWidthCurve` 已如此），故切换点连续；但 **Reset 后曲线整段为 1**，若全局曲线在 fork 处 ≠ 1，fork 上下会出现宽度阶跃。panel 侧是既有权衡（同一套 `tipWidthResetCurve`），发丝管是闭合截面、阶跃更容易看成「缝口错位」——实施时必须在真实工程上目视确认一次，若明显则单独提出（属**设计变更**，不得夹带进本移植）。
 
 **验收**：
 - 段曲线为空/全 1 时，几何与改动前**逐字节一致**（deepEqual positions）；
@@ -193,14 +196,35 @@ sampleAsymmetricTaperCurve(shapeCurve, secondaryCurve, asymmetric, signedCoordin
 5. **规范约束**：涉及跨文件同规则（如暴露判据同时被 placement/build/reset/write 消费）必须**单点定义**；修 bug 不得夹带设计变更；含中文文件 UTF-8 无 BOM 用 `write`/`edit` 工具写。
 6. **验收缺口（历次遗留）**：视口把手渲染与拖拽手感**始终只有 node 级验证**，`verify-tip-select.mjs` 需真实浏览器。本移植完成后建议实跑一次该脚本。
 
-## 7. 每阶段验收清单（照抄即可）
+## 6.5 顺带修的普通发丝 bug（本轮，与移植分开提交）
 
-- [ ] **A**：全量测试绿；panel 断言一条未改；新模块被 panel 侧 import
-- [ ] **B**：段曲线空/全 1 时几何 deepEqual 不变；改非 1 时仅 fork 以上 x 变化、row 0 不变；**UV 逐值不变断言**通过；N=1 legacy + N=3 水密仍绿
-- [ ] **C**：段选择器切换/禁用正确；`dom-contract` 新断言
-- [ ] **D**：深侧把手多/浅侧少/间距一致；每个可见把手可抓且影响该侧；Reset 后两侧全暴露区恒 1（无凹陷）；拖拽默认对称、Ctrl 非对称
-- [ ] **E**：三语词条；README 双语；devlog 四处；版本号 + 缓存号 + 5 条冻结断言；真实工程 `verify-skeleton-layout` 仍全过
-- [ ] **全程**：`node --test "tests/*.test.mjs"` 全绿（当前基线 **293/293**）+ 真实 `D:\Downloads\Sussurro_v1_0060.ahs` 130/130
+> 主进程实测确认，非推测。这些是 0.2.116 N-泛化的遗留，与 WidthCurve 移植无关，但同属「普通发丝小 bug」范围。
+
+| # | 症状 | 位置 | 根因 | 判定 |
+|---|---|---|---|---|
+| 1 | N≥2 拉链（≥3 管）时，**第 3 根管及以后没有发尖把手**（黄色 tip 手柄 + 引导线），用户无法拖动它们的发尖 | `modules/bones/bone-view-handles.js` **L210**（创建）与 **L606**（更新）均为 `for (let tubeIndex = 0; tubeIndex < 2; ...)` 写死 2 | 0.2.116 把管数泛化成 N+1，但这两个循环仍是 2 管时代的字面量；注释也还写着「one per tube (0/1)」 | **真 bug（P1）**。写入侧 `strandSplitTipLength`/`resetStrandSplitTips`（app.js L17103/L17128）已按 `chains.forEach` 全管泛化 → 数据能改、把手看不见，属纯遗漏，修它**不改任何用户可见设计**（只是让本该存在的把手出现） |
+
+修法：两处循环上限改为 `strandSplitBonesFor(lock)`/`lock.curveObjects.strandSplitTipHandles` 的实际长度（与 `strandSplitBonesFor` 的管数同源，勿再写字面量）。回归用 source-text 断言（`tests/split-tip-geometry.test.mjs` L173/L183 已有同类模式）+ N=3 时把手数 = 管数的断言。
+
+## 6.6 遗留待办（0.2.125 实施后**仍未**解决，勿当成已完成）
+
+| # | 项 | 状态 | 说明 |
+|---|---|---|---|
+| 1 | **fork 连续性目视确认**（§4 Phase B item 5） | **未做，需真实浏览器** | Reset 把整条段曲线置 1；若 lock 级全局宽度曲线在 fork 处 ≠ 1，fork 上下会出现宽度**阶跃**。panel 侧是既有权衡（两边共用 `tipWidthResetCurveFrom`），但发丝管是**闭合截面**，阶跃更容易被看成「缝口错位」。node 级测试判不了（只能断言数值、不能判断观感）。**若确认明显，修它属设计变更**（要动 Reset 语义或 fork 锚点取值），必须单独提出确认，**不得夹带**。 |
+| 2b | **`verify-tip-select.mjs` 有 4 条断言钉的是 0.2.123 之前的旧模型，需改写**（0.2.126 定位） | **未做，需单独一轮** | 该脚本现为 **47/51**。4 条失败（`hasBothForks` / `lockedGlobal` / `hasRightSecondary` / 浮动面板刷新）要求**每侧在自己的 fork 处都有一个曲线点**——那正是 0.2.118 的 per-side 模型，**0.2.123 已明确推翻**（改为「一套共享网格 + 按侧动态暴露」）。主进程用真实导出函数独立核实：heights 0.5/0.3125 时共享网格 = `0.55/0.65/0.75/0.85/0.95/1`（由**最深** fork 生成），两侧各自的 fork（0.5 / 0.6875）**都不在网格上**；而 0.2.123 语义完好——深侧暴露 6、浅侧暴露 4、Reset 全 1。更关键：满足该脚本会**重新引入凹陷 bug**（`tipWidthRecordsOppositeFork` 守卫存在的理由就是「对侧 fork 落进本侧暴露区会成为无把手活点」，见 bug-fixes.md #14）。**结论：这 4 条是脚本过时，不是回归**；0.2.126 只做了必要的机械改名（`panelTipSelection`→`tipSelection`、`panelTipHandles`→`tipChainHandles`，37 增 37 删、判据逻辑未动），刻意不顺手改写断言（属上一轮 Phase D/E 的收尾，混进来违反「修 bug 不夹带设计变更」）。 |
+| 2 | `scripts/verify-tip-select.mjs` 增加发丝段 | 未做（但**已有替代性浏览器验收**） | 该脚本本身未扩展。不过 0.2.125 用 `scripts/verify-uv-pack-real.mjs`（headless Chrome + CDP）跑通了真实工程 `Sussurro_v1_0060.ahs` 的**端到端**验收：**7/7**（app boot / 26 locks 加载 / 完整导出展开+打包管线 ×3 计时 474-450ms 且逐位确定 / 78 meshes·31467 uvs·23 islands·U∈[0,1] V∈[0.0151,0.9849] / UV checker 刷新 / **0 page exceptions**）。**「0 异常」这条恰好覆盖了本轮最大的机械风险**：它在真实浏览器里跑通了整个 module graph，任何一个 `?v=` 缓存号写错（本轮改了 12 处导入边）都会表现为 import 失败 → page exception。**仍缺的是「把手渲染与拖拽手感」的目视确认**（绿色控制点在管表面的位置是否贴合、拖拽是否顺手），这需要人眼，脚本判不了。 |
+| 3 | strand 拉链 snap-to-loops | 未做（可能长期不做） | 发丝无纵向 loop 拓扑可吸附 → 判定为**非缺口**而非欠账。 |
+| 4 | N>2 子发片桥接 | 门控禁用 | 与本移植无关，见 0.2.116 F 阶段。 |
+
+## 7. 每阶段验收清单（0.2.125 实施结果）
+
+- [x] **A**：全量测试绿；panel 断言一条未改；新模块被 panel 侧 import。**另加证**：36 用例（6 组 zipper 高度 × 3 段 × 2 侧）适配器输出与 `git show HEAD:` **逐字节相同（496,518 字节）**
+- [x] **B**：未创作曲线时几何 deepEqual 不变（对照 harness **丢弃第 7 参**，即真正的改动前输出）；改非 1 时仅 fork 以上位移、**row 0 逐位不变**；**UV 逐值不变**（主进程独立探针复核：910 个 uv 值全同、54 个 fork 以上顶点位移）；N=1 legacy + N=3 水密仍绿。**边缘管双侧可达**（死区回归，raw x 实现会失败此条——实测确认）
+- [x] **C**：段选择器切换/禁用正确；`dom-contract` 新断言 1 条 + `strand-segment-ui.test.mjs` 5 条
+- [ ] **D**：深侧把手多/浅侧少/间距一致；每个可见把手可抓且影响该侧；Reset 后两侧全暴露区恒 1（无凹陷）；拖拽默认对称、Ctrl 非对称 —— **进行中**
+- [ ] **E**：三语词条 ✅；README 双语 ✅；devlog ✅（bug-fixes #18–#21 / 规范表两行 + 作废旧结论 / 时间线 / devlog README / AGENT_QUICKSTART）；**版本号 + 缓存号 + 冻结断言待 Phase D 完成后一并做**（缓存号必须定点、且 9 个被改模块的 `?v=` 都要过一遍）；真实工程 `verify-skeleton-layout` 130/130 ✅
+- [x] **全程**：`node --test "tests/*.test.mjs"` 全绿 —— 基线 293/293 → **当前 331/331**（本文档原写的 293 已是历史值）+ 真实 `D:\Downloads\Sussurro_v1_0060.ahs` **130/130** + **真实浏览器端到端 7/7**（`verify-uv-pack-real.mjs`，headless Chrome，含 0 page exceptions ⇒ 12 处 `?v=` 改动的 module graph 全部加载成功）
+- ⚠️ **测试注意**：`tests/uv-pack-async.test.mjs` 是**负载相关 flake**（Worker 池单条最慢约 14s），并行跑子智能体时可能超时报**恰好 1 条** fail，重跑即绿。本轮实测复现一次（317/318 → 318/318）。
 
 ## 8. 参考坐标（实施时直接跳）
 

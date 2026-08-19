@@ -19,7 +19,8 @@ import {
   compoundProfileBridgePlan
 } from "./compound-strand.js?v=20260814-12";
 import { DEFAULT_SWEEP_PROFILE, ROUND_SWEEP_PROFILE } from "../core/app-config.js?v=20260815-4";
-import { strandSplitBonesFor, strandSplitDirection, strandTipFor } from "../bones/bone-model.js?v=20260813-1";
+import { strandSplitBonesFor, strandSplitDirection, strandTipFor } from "../bones/bone-model.js?v=20260830-1";
+import { strandTipWidthProfileOverride, strandTubeBandExtents } from "./strand-tip-width.js?v=20260829-2";
 import {
   materializeTipChain,
   sampleCenterlinePoint,
@@ -28,7 +29,7 @@ import {
   tipCaptureWeightAt,
   tipChainFrameAt,
   tipWeightAt
-} from "./tip-sub-bone.js?v=20260813-1";
+} from "./tip-sub-bone.js?v=20260830-1";
 import { SWEEP_OVERLAP_DEFAULTS } from "./strand-sweep.js?v=20260813-3";
 
 export function createStrandGeometryApi(deps) {
@@ -137,7 +138,11 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     const leftSplit = splits[i - 1];
     const rightSplit = splits[i];
     const sectionHeight = Math.max(leftSplit?.height ?? 0, rightSplit?.height ?? 0);
-    sections.push({ points, direction, sectionSplitStart: 1 - sectionHeight });
+    // band = 该管裁剪后的实际 x 跨度（profile 局部空间），发尖 WidthCurve 的**管内相对
+    // 坐标**由它归一化。这里一次算好挂在 section 上，避免 sweep 循环里逐行重算；
+    // splitXs 直接传入，保证 band 边界与上面的裁剪用**同一批**数值（同一条 lerp 公式）。
+    const band = strandTubeBandExtents(polygon, splits, i, splitXs);
+    sections.push({ points, direction, sectionSplitStart: 1 - sectionHeight, band });
   }
   // A degenerate (<3 pt) section would cascade into a broken mesh / null UV table;
   // bail out like the legacy guard rather than emit it.
@@ -206,6 +211,17 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     const scaleZ = sampleScale(lock.pointScales, t, "z");
     let rowRadius = 0;
     sections.forEach((section) => {
+      // 刻意**不**在这一趟传发尖 WidthCurve override（与下方 sweep 的同名调用差且仅差这
+      // 一个参数，属已知的、必须保留的不对称，勿「顺手统一」）。三条理由：
+      // ① 本趟产出的是**全行共享**的曲率收窄响应（radii → sweepCurvatureResponse →
+      //    factors[row] 乘到该行**所有管**的顶点上）。把某一管的创作宽度喂进去，会让该管
+      //    的曲线改动跨管污染其他管的位置。
+      // ② factors 经 falloff 在行间扩散，发尖处 radii 变小可传播到 row 0 → row 0 顶点位移
+      //    → uv-unfold 的 U（只由 row 0 弧长决定）改变 = 破 UV 契约（红线，见
+      //    devlog/in-progress/strand-tip-width-ui-port-plan.md §3）。
+      // ③ 语义上曲率收窄响应的是发丝**基础包络有多粗**（防自穿插），发尖 WidthCurve 是
+      //    其后的美术缩放；喂回去会形成「收窄→更细→少收窄→更粗」的非线性反馈，创作值
+      //    与最终宽度不再成正比。
       const warpedSection = deps.strandProfileTopologyAt(lock, t, section.points, scaleX, scaleZ, polygon);
       for (let column = 0; column < section.points.length; column += 1) {
         const warped = warpedSection[column];
@@ -232,19 +248,34 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
       const frame = frames[row];
       const scaleX = sampleScale(lock.pointScales, t, "x");
       const scaleZ = sampleScale(lock.pointScales, t, "z");
+      const sectionSplitStart = section.sectionSplitStart;
+      // 每管发尖 WidthCurve：仅在「有段骨骼 + 该段创作过 taperCurve + t 已过本段 fork」
+      // 时才是非 null（判据本体在 strand-tip-width.js，勿在此复制）。今天所有真实工程
+      // 都没有创作过的 strandSplitBones 曲线 → 恒 null → 与改动前逐字节一致、零分配。
+      const tipWidthOverride = splitBones
+        ? strandTipWidthProfileOverride({
+          lock,
+          bone: splitBones[sectionIndex] || null,
+          splits,
+          tubeIndex: sectionIndex,
+          t,
+          sectionSplitStart,
+          band: section.band
+        })
+        : null;
       const warpedSection = deps.strandProfileTopologyAt(
         lock,
         t,
         section.points,
         scaleX,
         scaleZ,
-        polygon
+        polygon,
+        tipWidthOverride
       );
       const color = deps.strandInfluenceColor(lock, t);
       const tubeSpread = splitBones
         ? (splitBones[sectionIndex]?.spread ?? defaultSplitSpread)
         : defaultSplitSpread;
-      const sectionSplitStart = section.sectionSplitStart;
       const opening = t <= sectionSplitStart
         ? 0
         : baseWidth * tubeSpread * THREE.MathUtils.smoothstep(t, sectionSplitStart, 1) * section.direction;

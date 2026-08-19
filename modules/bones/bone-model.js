@@ -411,9 +411,10 @@ export function mirrorStrandTip(tip) {
   };
 }
 
-// ---- strand split sub-bone data model (Route 2: split-strand two-tube tips) ----
-// lock.strandSplitBones is optional (length 2, kind="split"); old files without it
-// derive two default bones (spread = strandSplitGap, tip = null) in memory.
+// ---- strand split sub-bone data model (Route 2: split-strand per-tube tips) ----
+// lock.strandSplitBones is optional (length = 拉链数 N + 1，kind="split"); old files
+// without it derive that many default bones (spread = strandSplitGap, tip = null) in
+// memory. 长度不再是 2：0.2.116 起普通发丝是 N 拉链 → N+1 管（N=1 时仍为 2，即 legacy）。
 
 export function defaultStrandSplitSpread(lock) {
   // Relative per-tube tip spread fraction; derived from the legacy absolute gap so
@@ -490,9 +491,9 @@ function normalizeStrandSplitBone(bone, lock, index) {
   return normalized;
 }
 
-// Effective strand split bones for a split-strand lock: exactly two tubes (left/right),
-// taken from the authored lock.strandSplitBones when present, otherwise derived defaults
-// (not written back). Returns null for any non-split-strand lock.
+// Effective strand split bones for a split-strand lock: one per tube, left-to-right in
+// strandSplitDirection order, taken from the authored lock.strandSplitBones when present,
+// otherwise derived defaults (not written back). Returns null for any non-split-strand lock.
 export function strandSplitBonesFor(lock) {
   if (lock?.geometryType !== "strand" || !lock.strandSplitEnabled) return null;
   // Tube count = number of zippers + 1 (N splits -> N+1 sections). Derived the same way
@@ -567,12 +568,29 @@ export function strandSplitBonesFromData(data, lock = null) {
   return data.map((bone, k) => normalizeStrandSplitBone(bone, lock, k));
 }
 
-// Mirror strand split bones: flip lateral p/tip x and negate twists per tube. The two
-// tubes are left/right symmetric, so the order is kept (no reverse).
+// Mirror strand split bones: reverse tube order (tube k <-> N-k) and flip lateral p/tip x
+// + negate twists per tube. 与 mirrorSplitBones（panel 侧，L243）同规则。
+// **必须 reverse**，理由绑在 strandSplitDirection（本文件唯一定义点）的单调性上：
+// direction(k, N) = (2k - N) / N 沿管下标从 -1 单调递增到 +1，即下标 = 从左到右的横向
+// 次序。绕 X 镜像把最左管映到最右管，所以源管 k 的创作数据在镜像体里属于下标 N-k；
+// 不 reverse 就等于把「最左管的发尖姿态」贴到镜像体的最左管上 —— 而那一管几何上对应
+// 源的最右管，用户看到的是每根管的发尖位移全都串到了错误的管。
+// （旧注释称「两管左右对称所以保持顺序」：仅在 N=1 且两管姿态恰好互为镜像时看不出来，
+// 一旦任一管被单独创作、或 N≥2，下标就必须反转。）
+// 派生字段：name 置 null，交由 normalizeStrandSplitBone 按**新**下标重派生
+// （`split.${index}`），与 cloneSegmentBone 的处置一致——继承旧名会让下标 k 的骨骼叫
+// `split.${N-k}`，USDA 关节名与按下标排布的骨骼层级就此错位。
+// parentParam 刻意**保留**（不置 null）：它在 reverse 下恒等成立——
+// 镜像体的 splits 是源 splits 取反 position 后重新按 position 排序，等价于 heights 数组
+// 整体反转，于是 forkT'(k) = 1 - max(h'[k-1], h'[k]) = 1 - max(h[N-k], h[N-1-k]) = forkT(N-k)，
+// 正是下标 N-k 的源骨骼携带的值。而置 null 反而有害：镜像伴生体的 strandSplitBones 被
+// 直接赋值、不经 materializeStrandSplitBones（app.js syncActiveMirror），保存时
+// strandSplitBonesToData 会把 null 写成硬编码 0.5，把正确的叉口深度永久损坏。
 export function mirrorStrandSplitBones(bones) {
   if (!Array.isArray(bones) || !bones.length) return null;
-  return bones.map((bone) => ({
+  return bones.slice().reverse().map((bone) => ({
     ...bone,
+    name: null,
     p: bone.p ? { ...bone.p, x: -bone.p.x } : null,
     tip: bone.tip && Array.isArray(bone.tip.points)
       ? {
@@ -691,6 +709,67 @@ export function mirrorBones(bones) {
   }, null, null));
   if (mirrored.every((bone) => bone.kind === "split")) mirrored.reverse();
   return mirrored;
+}
+
+// ── 段骨骼「宿主」描述子：panel 段与普通发丝管的唯一分派点 ────────────────────
+// 两种几何都按「段下标 = 身份」存 per-segment 创作数据（spread / 每段 Width-Depth
+// 曲线），字段名与段数推导方式不同。凡消费方需要「当前几何的段数 / 段骨骼数组 /
+// 选中段索引」，一律经此处取描述子，禁止在消费方就地重写 `panelSplits.length + 1`
+// 之类的表达式（standards「一条推导规则只准有一个定义点」）。
+// 消费方清单（改这里必须回看这几处）：
+//   - modules/bones/segment-control.js  段选择器 / per-segment spread / 曲线编辑入口
+//   - modules/geometry/taper-editor.js  segment 类型的编辑目标与热刷新重定向
+//   - modules/io/shape-presets.js       段曲线预设写入后的「是否仍在编辑同一段」判定
+// segmentCount 刻意各自委托给几何真源：panel 直接数 panelSplits（几何同规则），
+// strand 走 strandSplitsFor（排序 + 钳制 + legacy 单标量回退），不得改成读原始数组。
+// tipChainPointCount = 该几何的发尖子骨骼链点数，**唯一定义点**（0.2.126 新增）：两种几何
+// 的发尖链都复刻主链拓扑（同点数），但下限不同 —— panel 的把手分配允许 0（主链不足 2 点时
+// 整段没有可编辑发尖，splitTipForSegment 也返回 null），发丝的 materializeTipChain 恒需
+// >= 2 点（它内部 Math.max(2, count)，传 0 会造出与视口不一致的 2 点链）。消费方一律读这里，
+// 禁止再就地写 `lock.points.length` / `Math.max(2, ...)`：把手分配、链物化、笔刷区间三处
+// 一旦不同源，就会出现「手柄比链点多/少」而越界或漏点。
+export const PANEL_SEGMENT_HOST = Object.freeze({
+  kind: "panel",
+  bonesField: "splitBones",
+  segmentIndexKey: "panelSegmentIndex",
+  segmentCount: (lock) => Math.max(1, (Array.isArray(lock?.panelSplits) ? lock.panelSplits.length : 0) + 1),
+  tipChainPointCount: (lock) => (Array.isArray(lock?.points) ? lock.points.length : 0),
+  bonesFor: splitBonesFor,
+  materializeBones: materializeSplitBones
+});
+
+export const STRAND_SEGMENT_HOST = Object.freeze({
+  kind: "strand",
+  bonesField: "strandSplitBones",
+  segmentIndexKey: "strandSegmentIndex",
+  segmentCount: (lock) => strandSplitsFor(lock).length + 1,
+  tipChainPointCount: (lock) => Math.max(2, Array.isArray(lock?.points) ? lock.points.length : 2),
+  bonesFor: strandSplitBonesFor,
+  materializeBones: materializeStrandSplitBones
+});
+
+// 几何 → 宿主。panel/surface 走 panel 段；开启分裂的普通发丝走管段；其余无段骨骼。
+// 与 app.js 的 isPanelGeometry(["panel","surface"]) 同规则——那边是 UI 门控、这里是
+// 数据分派，两处都改才算改完。
+export function segmentBoneHost(lock) {
+  if (["panel", "surface"].includes(lock?.geometryType)) return PANEL_SEGMENT_HOST;
+  if (lock?.geometryType === "strand" && lock.strandSplitEnabled) return STRAND_SEGMENT_HOST;
+  return null;
+}
+
+// 选中段的解析：钳位用 round（步进按钮与视口点击写的都是整数下标，round 只在读到
+// 脏值/浮点时兜底），count-1 上限保证删段后残留的旧下标不会越界。
+// host 可显式传入：panel 的创建默认值对象没有 geometryType，无法经 segmentBoneHost
+// 分派，但它的段语义与 panel lock 完全相同。
+export function resolveSegmentSelection(lock, sculptState, host = segmentBoneHost(lock)) {
+  if (!host) return null;
+  const count = Math.max(1, host.segmentCount(lock));
+  const index = THREE.MathUtils.clamp(
+    Math.round(Number(sculptState?.[host.segmentIndexKey] ?? 0)) || 0,
+    0,
+    count - 1
+  );
+  return { host, index, count };
 }
 
 // Registry written on save: authored extras (non-split) + the live panel split bones

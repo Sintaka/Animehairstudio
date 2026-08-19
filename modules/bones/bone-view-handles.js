@@ -1,9 +1,26 @@
 // bone-view-handles.js - Viewport bone/segment/split handle create/update/dispose (refactor bones B3).
 // Extracted from app.js; coupling injected via createBoneViewHandlesApi(deps).
 import * as THREE from "three";
-import { splitBonesFor, strandSplitBonesFor, strandTipFor } from "./bone-model.js?v=20260813-1";
-import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260815-4";
-import { materializeTipChain, sampleTipPosition } from "../geometry/tip-sub-bone.js?v=20260813-1";
+import {
+  segmentBoneHost,
+  splitBonesFor,
+  strandSplitBonesFor,
+  strandSplitsFor,
+  strandTipFor,
+  PANEL_SEGMENT_HOST,
+  STRAND_SEGMENT_HOST
+} from "./bone-model.js?v=20260830-1";
+import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260830-1";
+import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260830-1";
+import {
+  strandTipWidthControlPlacement,
+  strandTipWidthEdgePoints
+} from "../geometry/strand-tip-width.js?v=20260829-2";
+import {
+  firstExposedTipChainIndex,
+  materializeTipChain,
+  sampleTipPosition
+} from "../geometry/tip-sub-bone.js?v=20260830-1";
 // 绿色发段手柄沿尖端切线方向的外推距离（世界单位）：让手柄落在 trim/curve 适配后的
 // 最尖端稍前方，避免与粉色/黄色发尖子骨骼手柄重合而难以拖拽。
 const TIP_SEGMENT_HANDLE_TANGENT_OFFSET = 0.08;
@@ -16,6 +33,38 @@ const TIP_SEGMENT_HANDLE_TANGENT_OFFSET = 0.08;
 //   tipUiActive, brushBonesOnly } (computed in the spine, not recomputed here).
 // Batch-fill point in app.js: after the strandGeometryDeps batch (all deps defined).
 export function createBoneViewHandlesApi(deps) {
+// 发尖子骨骼宿主适配器：panel 段 / 发丝管的单一几何分派（见 tip-sub-bone-host.js）。
+// 同规则同步点：bone-interaction.js 用同样的五项 deps 构造同一个 API —— 把手放置（这边）
+// 与编辑基准（那边）必须来自同一条变换链，否则一按下就跳。
+// **五项都必须惰性求值**：本 API 在 app.js 顶部即被构造，而 deps 要到后面的 Object.assign
+// 批次才填满（见文件头 "Batch-fill point in app.js"）。写成 `panelTipStrand: deps.panelTipStrand`
+// 会把 undefined 快照下来，之后每次 chainFrameAt 都 TypeError —— 实测由 verify-tip-select.mjs
+// 在真实浏览器里抓到（node 测试不执行视口代码，抓不到这类时序 bug）。函数用箭头包一层、
+// 对象用 getter，目的都是「调用时才读 deps」。
+const { resolveTipHost } = createTipSubBoneHostApi({
+  get panelTipStrand() { return deps.panelTipStrand; },
+  clonePanelSplits: (...args) => deps.clonePanelSplits(...args),
+  currentStrandSplitTipChains: (lock) => deps.currentStrandSplitTipChains(lock),
+  strandGeometryCurve: (lock) => deps.strandGeometryCurve(lock),
+  strandGeometryFrameAt: (...args) => deps.strandGeometryFrameAt(...args)
+});
+
+// 发丝发尖 WidthCurve placement 需要的几何 dep 组：从本模块的 deps 转发，让
+// strand-tip-width.js 保持「无 deps 注入的纯函数」形态（node 测试可直接构造这五项）。
+// 同规则同步点：bone-interaction.js 有一份同名同形的转发（拖拽读值/写入共用同一放置
+// 函数），两处必须转发**同样的五项**，否则把手位置与拖拽基准会来自不同变换链。
+// strandSplitTipChains 是第五项（0.2.127）：把手要跟着被拖动的发尖子骨骼链走，链只能取
+// currentStrandSplitTipChains（0.2.120 物化空间真源）。
+function strandTipWidthGeoDeps() {
+  return {
+    strandGeometryCurve: deps.strandGeometryCurve,
+    strandGeometryFrameAt: deps.strandGeometryFrameAt,
+    strandProfileTopologyAt: deps.strandProfileTopologyAt,
+    strandSplitProfileData: deps.strandSplitProfileData,
+    strandSplitTipChains: (lock) => deps.currentStrandSplitTipChains(lock)
+  };
+}
+
 function createSplitControlHandle() {
   const handle = new THREE.Mesh(
     new THREE.SphereGeometry(0.052, 18, 12),
@@ -57,12 +106,109 @@ function createCurveNormalIndicator() {
   return indicator;
 }
 
+// Tip width control handles + guide lines for ONE segment/tube: a fixed array of
+// TIP_WIDTH_CONTROL_POINTS + 1 handles per side, indexing the FULL SHARED grid
+// (tipWidthGridFromHeights): 5 midpoints of the common (deepest-zipper) fork span + the
+// tip end (t=1). userData.tipWidthIndex indexes THAT grid, never a per-side filtered
+// subset — the placement functions return null for grid positions this side does not
+// expose and the update pass hides those handles, so the two sides share spacing while
+// exposing different COUNTS (按各自 zipper 高度动态暴露).
+// panel（每 panel 段）与 split strand（每管）共用这一份分配：结构完全相同（段 × 侧 ×
+// 完整网格索引）且 userData 键相同（tipWidthSegment / tipWidthSide / tipWidthIndex），
+// 所以 bone-interaction.js 的拖拽只需要**分派读写函数**、不需要第二套命中/状态字段。
+// 几何区分刻意**不**引入平行键（例如 strandTipWidthSegment）：拖拽侧一律从 lock 解析
+// 几何（segmentBoneHost / geometryType），少一组键就少一处可漂移的同步点。
+//
+// 发尖子骨骼**链**把手 + 每点法线箭头 + 每段引导线：panel 段与 split strand 管同样共用
+// 一份分配（0.2.126 起；此前发丝只有「每管一个、钉在链末点」的退化把手，无法选中/编辑
+// 中间链点）。结构 = 段 × 链点，与上面的 tipWidth 分配（段 × 侧 × 网格索引）并列。
+// userData 键 tipSegmentIndex / tipChainPoint 同样**不按几何分叉**（不写平行的
+// strandTipSegmentIndex）：命中侧一律从 lock 经 resolveTipHost 解析几何。
+// segmentCount / pointCount 一律由调用方从 segmentBoneHost 描述子取（segmentCount /
+// tipChainPointCount），本函数不自己推导，避免第二个段数/链长定义点。
+function allocateTipChainHandles(lock, group, segmentCount, pointCount, tipChainHandles, tipChainLines, tipNormalArrows) {
+  for (let segment = 0; segment < segmentCount; segment += 1) {
+    for (let point = 0; point < pointCount; point += 1) {
+      const handle = createSplitControlHandle();
+      handle.scale.setScalar(0.42);
+      handle.material = new THREE.MeshBasicMaterial({
+        color: 0xffd84d,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.9
+      });
+      handle.userData.lockId = lock.id;
+      handle.userData.tipSegmentIndex = segment;
+      handle.userData.tipChainPoint = point;
+      group.add(handle);
+      tipChainHandles.push(handle);
+      // 旋转模式下选中发尖子骨骼时，每个暴露链点显示一个法线箭头（子骨骼自身法线）。
+      const tipNormalArrow = createCurveNormalIndicator();
+      tipNormalArrow.visible = false;
+      tipNormalArrow.userData.lockId = lock.id;
+      tipNormalArrow.userData.tipSegmentIndex = segment;
+      tipNormalArrow.userData.tipChainPoint = point;
+      group.add(tipNormalArrow);
+      tipNormalArrows.push(tipNormalArrow);
+    }
+    // Guide line connecting the sub-bone chain points (like a strand guide).
+    const line = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0xffd84d, transparent: true, opacity: 0.7, depthTest: false })
+    );
+    line.renderOrder = 6;
+    group.add(line);
+    tipChainLines.push(line);
+  }
+}
+
+function allocateTipWidthHandles(lock, group, segmentCount, tipWidthHandles, tipWidthLines) {
+  for (let segment = 0; segment < segmentCount; segment += 1) {
+    const sideHandles = { left: [], right: [] };
+    const sideLines = { left: null, right: null };
+    for (const side of [-1, 1]) {
+      for (let point = 0; point < TIP_WIDTH_CONTROL_POINTS + 1; point += 1) {
+        const handle = createSplitControlHandle();
+        handle.scale.setScalar(0.26);
+        handle.material = new THREE.MeshBasicMaterial({
+          color: 0x5df0a8,
+          depthTest: false,
+          depthWrite: false,
+          transparent: true,
+          opacity: 0.95
+        });
+        handle.userData.lockId = lock.id;
+        handle.userData.tipWidthSegment = segment;
+        handle.userData.tipWidthSide = side;
+        handle.userData.tipWidthIndex = point;
+        group.add(handle);
+        sideHandles[side < 0 ? "left" : "right"].push(handle);
+      }
+      const line = new THREE.Line(
+        new THREE.BufferGeometry(),
+        new THREE.LineBasicMaterial({ color: 0x5df0a8, transparent: true, opacity: 0.85, depthTest: false })
+      );
+      line.renderOrder = 6;
+      line.userData.lockId = lock.id;
+      line.userData.tipWidthLineSegment = segment;
+      line.userData.tipWidthLineSide = side;
+      group.add(line);
+      sideLines[side < 0 ? "left" : "right"] = line;
+    }
+    tipWidthHandles.push(sideHandles);
+    tipWidthLines.push(sideLines);
+  }
+}
+
 function createBoneViewHandles(lock, group) {
   const panelSplitHandles = [];
   const panelSplitLines = [];
   const panelSegmentHandles = [];
-  const panelTipHandles = [];
-  const panelTipLines = [];
+  // 发尖链把手/引导线/法线箭头：panel 与 split strand 共用同一对数组（一个 lock 只可能是
+  // 其中一种几何，两个分支不会互相覆盖）。数组名去掉 panel 前缀正是为了标明这一点。
+  const tipChainHandles = [];
+  const tipChainLines = [];
   const tipWidthHandles = [];
   const tipWidthLines = [];
   const tipNormalArrows = [];
@@ -102,89 +248,24 @@ function createBoneViewHandles(lock, group) {
     // Tip sub-bone handles: one per sub-bone chain point (full chain like the main
     // bone, laterally offset to the segment center). Only points below the segment's
     // fork (zipper) are exposed in updateCurveObjects.
-    const tipMainPointCount = Array.isArray(lock.points) ? lock.points.length : 0;
-    for (let segment = 0; segment < lock.panelSplits.length + 1; segment += 1) {
-      for (let point = 0; point < tipMainPointCount; point += 1) {
-        const handle = createSplitControlHandle();
-        handle.scale.setScalar(0.42);
-        handle.material = new THREE.MeshBasicMaterial({
-          color: 0xffd84d,
-          depthTest: false,
-          depthWrite: false,
-          transparent: true,
-          opacity: 0.9
-        });
-        handle.userData.lockId = lock.id;
-        handle.userData.panelTipIndex = segment;
-        handle.userData.panelTipPoint = point;
-        group.add(handle);
-        panelTipHandles.push(handle);
-        // 旋转模式下选中发尖子骨骼时，每个暴露链点显示一个法线箭头（子骨骼自身法线）。
-        const tipNormalArrow = createCurveNormalIndicator();
-        tipNormalArrow.visible = false;
-        tipNormalArrow.userData.lockId = lock.id;
-        tipNormalArrow.userData.panelTipIndex = segment;
-        tipNormalArrow.userData.panelTipPoint = point;
-        group.add(tipNormalArrow);
-        tipNormalArrows.push(tipNormalArrow);
-      }
-      // Guide line connecting the sub-bone chain points (like a strand guide).
-      const line = new THREE.Line(
-        new THREE.BufferGeometry(),
-        new THREE.LineBasicMaterial({ color: 0xffd84d, transparent: true, opacity: 0.7, depthTest: false })
-      );
-      line.renderOrder = 6;
-      group.add(line);
-      panelTipLines.push(line);
-    }
+    // 段数与链长都从 PANEL_SEGMENT_HOST 描述子取（唯一定义点，见 bone-model.js）：
+    // 此前这里就地写 `lock.panelSplits.length + 1` 与 `lock.points.length`，与发丝侧的
+    // 同类表达式构成两处平行推导；现在两种几何走同一个 allocateTipChainHandles。
+    allocateTipChainHandles(
+      lock,
+      group,
+      PANEL_SEGMENT_HOST.segmentCount(lock),
+      PANEL_SEGMENT_HOST.tipChainPointCount(lock),
+      tipChainHandles,
+      tipChainLines,
+      tipNormalArrows
+    );
     // Tip width control (pink curve + control points, per side along the exposed
     // below-zipper chain). Only the selected tip segment's points/curve show.
-    for (let segment = 0; segment < lock.panelSplits.length + 1; segment += 1) {
-      const sideHandles = { left: [], right: [] };
-      const sideLines = { left: null, right: null };
-      for (const side of [-1, 1]) {
-        // Fixed handle array = the FULL SHARED grid (tipWidthGridTs): 5 midpoints of the
-        // common (deepest-zipper) fork span + the tip end (t=1). userData.tipWidthIndex
-        // indexes THAT grid, not a per-side subset — tipWidthControlPlacement returns
-        // null for grid positions this side does not expose and the update pass below
-        // hides those handles, so the two sides share spacing while exposing different
-        // COUNTS (按各自 zipper 高度动态暴露).
-        for (let point = 0; point < TIP_WIDTH_CONTROL_POINTS + 1; point += 1) {
-          const handle = createSplitControlHandle();
-          handle.scale.setScalar(0.26);
-          handle.material = new THREE.MeshBasicMaterial({
-            color: 0x5df0a8,
-            depthTest: false,
-            depthWrite: false,
-            transparent: true,
-            opacity: 0.95
-          });
-          handle.userData.lockId = lock.id;
-          handle.userData.tipWidthSegment = segment;
-          handle.userData.tipWidthSide = side;
-          handle.userData.tipWidthIndex = point;
-          group.add(handle);
-          sideHandles[side < 0 ? "left" : "right"].push(handle);
-        }
-        const line = new THREE.Line(
-          new THREE.BufferGeometry(),
-          new THREE.LineBasicMaterial({ color: 0x5df0a8, transparent: true, opacity: 0.85, depthTest: false })
-        );
-        line.renderOrder = 6;
-        line.userData.lockId = lock.id;
-        line.userData.tipWidthLineSegment = segment;
-        line.userData.tipWidthLineSide = side;
-        group.add(line);
-        sideLines[side < 0 ? "left" : "right"] = line;
-      }
-      tipWidthHandles.push(sideHandles);
-      tipWidthLines.push(sideLines);
-    }
+    allocateTipWidthHandles(lock, group, PANEL_SEGMENT_HOST.segmentCount(lock), tipWidthHandles, tipWidthLines);
   }
   const strandSplitHandles = [];
   const strandSplitLines = [];
-  let strandSplitTipHandles = [];
-  let strandSplitTipLines = [];
   let strandTipHandle = null;
   let strandTipLine = null;
   if (lock.geometryType === "strand") {
@@ -205,32 +286,37 @@ function createBoneViewHandles(lock, group) {
       group.add(handle);
       strandSplitHandles.push(handle);
     });
-    // Split-strand per-tube tip sub-bone handles + guide lines (Route 2): one per
-    // tube (0/1), shown only while the lock is a split strand with strandSplitBones.
-    for (let tubeIndex = 0; tubeIndex < 2; tubeIndex += 1) {
-      const strandSplitTipHandle = createSplitControlHandle();
-      strandSplitTipHandle.scale.setScalar(0.5);
-      strandSplitTipHandle.material = new THREE.MeshBasicMaterial({
-        color: 0xffd84d,
-        depthTest: false,
-        depthWrite: false,
-        transparent: true,
-        opacity: 0.9
-      });
-      strandSplitTipHandle.userData.lockId = lock.id;
-      strandSplitTipHandle.userData.strandSplitTipTube = tubeIndex;
-      group.add(strandSplitTipHandle);
-      strandSplitTipHandles.push(strandSplitTipHandle);
-      const strandSplitTipLine = new THREE.Line(
-        new THREE.BufferGeometry(),
-        new THREE.LineBasicMaterial({ color: 0xffd84d, transparent: true, opacity: 0.7, depthTest: false })
-      );
-      strandSplitTipLine.renderOrder = 6;
-      strandSplitTipLine.userData.lockId = lock.id;
-      strandSplitTipLine.userData.strandSplitTipLineTube = tubeIndex;
-      group.add(strandSplitTipLine);
-      strandSplitTipLines.push(strandSplitTipLine);
-    }
+    // Split-strand per-tube tip sub-bone handles + guide lines (Route 2).
+    // **0.2.126 起改为「每管 × 每链点」**，与 panel 段共用 allocateTipChainHandles：此前
+    // 是「每管一个、钉在链末点（t=1）」的退化分配，导致普通发丝的发尖子骨骼既不能选中、
+    // 也无法编辑除末点以外的任何链点（用户报告的「选不到 zipper 分裂出来的子发尖」）。
+    // 管数派生（standards「一条推导规则只准有一个定义点」）：拉链数 N → N+1 管，与
+    // strandSplitBonesFor 完全同源——它同样是 strandSplitsFor(lock).length + 1，而
+    // lock.strandSplits 刚在上面被 cloneStrandSplits 归一化过（排序 + 钳制 + STRAND_SPLIT_MAX
+    // 截断），所以这里读它得到的 N 与骨骼/几何三方恒等，不会出现手柄比骨骼多或少。
+    // 刻意不写 strandSplitBonesFor(lock)?.length：它对未启用 split 的发丝返回 null，而
+    // 手柄必须**预先**按管数分配（创建只在 rebuildCurveObjects 时跑一次，启用 split 后
+    // 不会重新分配），非 split 时可见性由更新阶段整体关掉。
+    // 这条理由对 STRAND_SEGMENT_HOST.segmentCount 同样成立：它走 strandSplitsFor(lock)，
+    // 与刚归一化的 lock.strandSplits 逐值相同，且对未启用 split 的发丝也返回 N+1（不是
+    // null），正是「预先分配」需要的语义 —— 所以这里用描述子而不是骨骼数组长度。
+    const strandSplitTipTubeCount = STRAND_SEGMENT_HOST.segmentCount(lock);
+    allocateTipChainHandles(
+      lock,
+      group,
+      strandSplitTipTubeCount,
+      STRAND_SEGMENT_HOST.tipChainPointCount(lock),
+      tipChainHandles,
+      tipChainLines,
+      tipNormalArrows
+    );
+    // 每管发尖 WidthCurve 把手 + 引导线（与 panel 段共用 allocateTipWidthHandles，
+    // 因此结构与 userData 键完全一致）。管数与上面的发尖链把手**同源**
+    // （strandSplitTipTubeCount，理由见该处注释）：两次分配必须给同样多的管，否则某根管
+    // 会有发尖把手却没有宽度把手。
+    // 与 panel 分支互斥：一个 lock 只可能是 panel 或 strand，所以两边共用同一对
+    // tipWidthHandles / tipWidthLines（以及 tipChainHandles / tipChainLines）不会互相覆盖。
+    allocateTipWidthHandles(lock, group, strandSplitTipTubeCount, tipWidthHandles, tipWidthLines);
     // Ordinary-strand single tip sub-bone handle + guide line (Route 1); shown only
     // when the lock is a non-split, non-hair-card strand with a materialized strandTip.
     strandTipLine = new THREE.Line(
@@ -274,15 +360,13 @@ function createBoneViewHandles(lock, group) {
     panelSplitHandles,
     panelSplitLines,
     panelSegmentHandles,
-    panelTipHandles,
-    panelTipLines,
+    tipChainHandles,
+    tipChainLines,
     tipNormalArrows,
     tipWidthHandles,
     tipWidthLines,
     strandSplitHandles,
     strandSplitLines,
-    strandSplitTipHandles,
-    strandSplitTipLines,
     strandTipHandle,
     strandTipLine,
     branchSweepStartHandle
@@ -342,9 +426,30 @@ function updateBoneViewHandles(lock, ctx) {
   const tipForkTs = tipSplits.length
     ? Array.from({ length: tipSplits.length + 1 }, (_, segment) => deps.panelTipStrand.splitForkT(lock, segment, tipSplits))
     : [];
+  // ── 发尖子骨骼链把手/法线箭头/引导线的几何分派（0.2.126） ──────────────────────────
+  // 与下方 tipWidth 的 tipWidthCtx 同款结构：一个 ctx 提供「本几何的段数 / 每段链 / 每段
+  // fork / 参考帧 / 基础可见性」，两个 forEach 只消费 ctx、不再自己 if(几何)。
+  // panel 分支**刻意复用**上面已算好的 tipChains / tipForkTs（同一批值、同一批调用），
+  // 所以 panel 的可见性、位置、朝向、透明度逐字不变；发丝分支从 host 现取。
+  // 基础门控与 panel 原条件同构：brush 抑制时若有发尖被选中仍显示（tipUiActive），
+  // 发丝额外要求 strandSplitEnabled（非 split 发丝走 Route 1 的单发尖把手，见文件末尾）。
+  const tipChainCtx = (() => {
+    const host = resolveTipHost(lock);
+    if (!host) return null;
+    const base = (!sculptBrushHelpersSuppressed || tipUiActive) && !brushDebugVisible;
+    if (host.kind === "panel") {
+      return { host, base: base && tipSplits.length > 0, chains: tipChains, forkTs: tipForkTs };
+    }
+    return {
+      host,
+      base: base && Boolean(lock.strandSplitEnabled),
+      chains: Array.from({ length: host.segmentCount }, (_, segment) => host.tipChainFor(segment)),
+      forkTs: Array.from({ length: host.segmentCount }, (_, segment) => host.forkTFor(segment))
+    };
+  })();
   lock.curveObjects.panelSegmentHandles?.forEach((handle, segment) => {
     // 有意设计（请勿改动）：只要任一子发尖被选中，所有段的绿色手柄都会显示，视口里可以
-    // 同时拖任意段的手柄来调该段 spread；拖非选中段的手柄不会切换 panelTipSelection
+    // 同时拖任意段的手柄来调该段 spread；拖非选中段的手柄不会切换 tipSelection
     // （保持当前选中的发尖段不变），与子发尖的选中/编辑互不干扰。
     const visible = tipUiActive
       && !sculptBrushHelpersSuppressed
@@ -373,59 +478,53 @@ function updateBoneViewHandles(lock, ctx) {
     }
     if (delta) handle.position.add(delta);
     // 选中段高亮与 WidthCurve 一致（选中 0.9、拖拽中 1、未选中 0.68）。
-    const selected = deps.sculptState.panelTipSelection?.lockId === lock.id
-      && deps.sculptState.panelTipSelection.segmentIndex === segment;
+    const selected = deps.sculptState.tipSelection?.lockId === lock.id
+      && deps.sculptState.tipSelection.segmentIndex === segment;
     const dragging = deps.sculptState.panelSplitDrag?.lockId === lock.id
       && deps.sculptState.panelSplitDrag.kind === "segment"
       && deps.sculptState.panelSplitDrag.splitIndex === segment;
     handle.material.opacity = dragging ? 1 : (selected ? 0.9 : 0.68);
   });
-  lock.curveObjects.panelTipHandles?.forEach((handle, handleIndex) => {
-    const segment = handle.userData.panelTipIndex;
-    const point = handle.userData.panelTipPoint;
+  lock.curveObjects.tipChainHandles?.forEach((handle, handleIndex) => {
+    const segment = handle.userData.tipSegmentIndex;
+    const point = handle.userData.tipChainPoint;
     const arrow = lock.curveObjects.tipNormalArrows?.[handleIndex];
+    const tip = tipChainCtx?.chains?.[segment] || null;
     // 旋转模式下选中发尖子骨骼时，给每个暴露链点显示自身法线箭头。
     const syncTipNormalArrow = () => {
       if (!arrow) return;
-      const tipSelected = deps.sculptState.panelTipSelection?.lockId === lock.id
-        && deps.sculptState.panelTipSelection.segmentIndex === segment;
+      const tipSelected = deps.sculptState.tipSelection?.lockId === lock.id
+        && deps.sculptState.tipSelection.segmentIndex === segment;
       arrow.visible = handle.visible && tipSelected && deps.sel.activeTool === "rotate";
       if (!arrow.visible) return;
-      const tip = tipChains[segment];
       const chainT = point / Math.max(1, tip.points.length - 1);
       arrow.position.copy(tip.points[point]);
-      arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), deps.panelTipStrand.tipChainFrameAt(lock, tip, tip, chainT, segment, tipSplits).z);
+      // 参考帧按几何分派（panel = 段表面帧 z / 发丝 = 该管发丝几何帧 z），两侧都落到
+      // tip-sub-bone.js 的同一个 tipChainFrameAt 原语上。
+      arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tipChainCtx.host.chainFrameAt(segment, tip, chainT).z);
       arrow.scale.setScalar(0.14);
     };
-    const visible = (!sculptBrushHelpersSuppressed || tipUiActive)
-      && !brushDebugVisible
-      && deps.isPanelGeometry(lock)
-      && lock.panelSplitEnabled !== false
-      && tipSplits.length > 0;
+    const visible = Boolean(tipChainCtx) && tipChainCtx.base;
     handle.visible = visible;
     if (!visible) {
       syncTipNormalArrow();
       return;
     }
-    const tip = tipChains[segment];
-    if (!tip || point >= tip.points.length) {
+    if (!tip || !Array.isArray(tip.points) || point >= tip.points.length) {
       handle.visible = false;
       syncTipNormalArrow();
       return;
     }
-    const forkT = tipForkTs[segment] ?? 1;
+    const forkT = tipChainCtx.forkTs[segment] ?? 1;
     const t = point / Math.max(1, tip.points.length - 1);
-    // Only expose sub-bone points from the segment's fork (zipper) row down; above stays
-    // current. Uses the same firstBelow index rule as the guide line / brush / USDA export
-    // (floor, lower clamp 1) so every point that the brush can move also has a grabbable
-    // handle — the fork row itself is exposed, one row more than the old strict t > forkT.
-    const firstBelowHandle = Math.min(tip.points.length - 1, Math.max(1, Math.floor(forkT * (tip.points.length - 1))));
-    if (point < firstBelowHandle) {
+    // 暴露判据走 firstExposedTipChainIndex（tip-sub-bone.js 的唯一定义点）：fork 行本身
+    // 暴露、下限钳 1。此前这里内联同一条 floor 表达式，与引导线/笔刷/gizmo 三处并列副本。
+    if (point < firstExposedTipChainIndex(forkT, tip.points.length)) {
       handle.visible = false;
       syncTipNormalArrow();
       return;
     }
-    handle.position.copy(tip.points[point]);
+    handle.position.copy(new THREE.Vector3(tip.points[point].x, tip.points[point].y, tip.points[point].z));
     // 旋转/缩放模式下把 tip 手柄 quaternion 对齐到发尖链自身 frame（y=切线），使
     // gizmo 起始朝向=发尖真实朝向，避免 startQuaternion=identity 导致一拖就跳到
     // 主骨骼朝向；拖拽中保留 gizmo 已施加的旋转（否则每次重建把手会清零增量）。
@@ -438,11 +537,11 @@ function updateBoneViewHandles(lock, ctx) {
       && deps.transformControls.object === handle
     );
     if (!preserveDragRotation && ["rotate", "scale"].includes(deps.sel.activeTool)) {
-      const chainFrame = deps.panelTipStrand.tipChainFrameAt(lock, tip, tip, t, segment, tipSplits);
+      const chainFrame = tipChainCtx.host.chainFrameAt(segment, tip, t);
       handle.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(chainFrame.x, chainFrame.y, chainFrame.z));
     }
-    const isSelected = deps.sculptState.panelTipSelection?.lockId === lock.id
-      && deps.sculptState.panelTipSelection.segmentIndex === segment;
+    const isSelected = deps.sculptState.tipSelection?.lockId === lock.id
+      && deps.sculptState.tipSelection.segmentIndex === segment;
     const isDragged = deps.sculptState.panelSplitDrag?.lockId === lock.id
       && deps.sculptState.panelSplitDrag.kind === "tip"
       && deps.sculptState.panelSplitDrag.splitIndex === segment
@@ -451,47 +550,88 @@ function updateBoneViewHandles(lock, ctx) {
     syncTipNormalArrow();
   });
   // Guide lines connecting each sub-bone's exposed (below-fork) chain portion.
-  lock.curveObjects.panelTipLines?.forEach((line, segment) => {
-    const visible = (!sculptBrushHelpersSuppressed || tipUiActive)
-      && !brushDebugVisible
-      && deps.isPanelGeometry(lock)
-      && lock.panelSplitEnabled !== false
-      && tipSplits.length > 0;
+  lock.curveObjects.tipChainLines?.forEach((line, segment) => {
+    const visible = Boolean(tipChainCtx) && tipChainCtx.base;
     line.visible = visible;
     if (!visible) return;
-    const tip = tipChains[segment];
-    if (!tip || tip.points.length < 2) {
+    const tip = tipChainCtx.chains?.[segment];
+    if (!tip || !Array.isArray(tip.points) || tip.points.length < 2) {
       line.visible = false;
       return;
     }
-    const forkT = tipForkTs[segment] ?? 1;
-    // floor (not ceil): the fork row itself belongs to the exposed sub-bone chain, so the
-    // guide line covers one extra row toward the root — same rule as the USDA export
-    // (splitChainLayout / splitParentMainIndex). Lower clamp stays 1: index 0 is the chain
-    // root sitting on the main chain and must never become an editable sub-bone point.
-    const firstBelow = Math.min(tip.points.length - 1, Math.max(1, Math.floor(forkT * (tip.points.length - 1))));
-    const exposed = tip.points.slice(firstBelow);
+    const forkT = tipChainCtx.forkTs[segment] ?? 1;
+    // 暴露区间与把手**同源**（firstExposedTipChainIndex）：引导线画的必须正好是可抓的那
+    // 一段，否则用户会看到线上有一截没有手柄（或反之）。
+    const exposed = tip.points
+      .slice(firstExposedTipChainIndex(forkT, tip.points.length))
+      .map((p) => new THREE.Vector3(p.x, p.y, p.z));
     if (exposed.length < 2) {
       line.visible = false;
       return;
     }
     line.geometry.dispose();
     line.geometry = new THREE.BufferGeometry().setFromPoints(exposed);
-    line.material.opacity = deps.sculptState.panelTipSelection?.lockId === lock.id
-      && deps.sculptState.panelTipSelection.segmentIndex === segment
+    line.material.opacity = deps.sculptState.tipSelection?.lockId === lock.id
+      && deps.sculptState.tipSelection.segmentIndex === segment
       ? 0.95 : 0.45;
   });
-  const tipWidthSelection = deps.sculptState.panelTipSelection;
+  // ── 发尖 WidthCurve 把手/引导线的几何分派 ────────────────────────────────────────
+  // 门控从「panel only」扩为「panel 或 split strand」，panel 分支逐字不变（同一批条件、
+  // 同一个 tipWidthControlPlacement），发丝分支额外要求 strandSplitEnabled 且跳过 hairCard。
+  // **选中语义（0.2.126 起两侧同源，勿据旧注释回改）**：两侧都读 tipSelection。
+  // 0.2.125 的 Phase D 曾在发丝侧改读 strandSegmentIndex，理由是「发丝没有等价的发尖选择
+  // 状态」——该前提已不成立（本轮就是补上它），且用 strandSegmentIndex 会让宽度把手在**没
+  // 选中任何发尖**时也一直显示（它恒非 null），与 panel 手感不一致。现在发丝也走
+  // 「选中某管发尖 ⇒ 只显示该管的宽度把手」。
+  // 悬空选择由 selectLock 的统一清理路径处理（切 lock 即清），删管后残留的段号仍由
+  // resolveSegmentSelection 钳位负责——两者职责不同，都要留。
+  // 分派点用 segmentBoneHost（bone-model 的单一分派），与 bone-interaction.js 的
+  // tipWidth 分支同规则：把手放置与拖拽必须落在同一侧。
+  const tipWidthCtx = (() => {
+    if (segmentBoneHost(lock) !== STRAND_SEGMENT_HOST) {
+      if (!deps.isPanelGeometry(lock)) return null;
+      const selection = deps.sculptState.tipSelection;
+      return {
+        base: (!sculptBrushHelpersSuppressed || tipUiActive)
+          && !brushDebugVisible
+          && lock.panelSplitEnabled !== false
+          && tipSplits.length > 0,
+        selectedSegment: selection && selection.lockId === lock.id ? selection.segmentIndex : null,
+        placement: (segment, side, index) => deps.panelTipStrand.tipWidthControlPlacement(
+          lock, segment, tipSplits, tipSplitBones[segment] || null, side, index
+        ),
+        edgePoints: (segment, side) => deps.panelTipStrand.tipWidthEdgePoints(
+          lock, segment, tipSplits, tipSplitBones[segment] || null, side
+        )
+      };
+    }
+    const strandBones = strandSplitBonesFor(lock);
+    if (!strandBones) return null;
+    // splits 取 strandSplitsFor（排序 + 钳制 + legacy 单标量回退）：与几何的段划分、
+    // strandSplitForkTForSegment 的 fork 推导同真源，勿改成读原始 lock.strandSplits。
+    const strandSplits = strandSplitsFor(lock);
+    const geo = strandTipWidthGeoDeps();
+    const strandSelection = deps.sculptState.tipSelection;
+    return {
+      // base 与 panel 分支同构：brush 抑制时若有发尖被选中仍显示（tipUiActive）。
+      base: (!sculptBrushHelpersSuppressed || tipUiActive)
+        && !brushDebugVisible
+        && !lock.hairCard
+        && Boolean(lock.strandSplitEnabled)
+        && lock.id === deps.sel.selectedId,
+      selectedSegment: strandSelection && strandSelection.lockId === lock.id ? strandSelection.segmentIndex : null,
+      placement: (segment, side, index) => strandTipWidthControlPlacement(
+        geo, lock, strandSplits, segment, strandBones[segment] || null, side, index
+      ),
+      edgePoints: (segment, side) => strandTipWidthEdgePoints(
+        geo, lock, strandSplits, segment, strandBones[segment] || null, side
+      )
+    };
+  })();
   lock.curveObjects.tipWidthHandles?.forEach((sideHandles, segment) => {
-    const selected = tipWidthSelection
-      && tipWidthSelection.lockId === lock.id
-      && tipWidthSelection.segmentIndex === segment;
-    const baseVisible = Boolean(selected)
-      && (!sculptBrushHelpersSuppressed || tipUiActive)
-      && !brushDebugVisible
-      && deps.isPanelGeometry(lock)
-      && lock.panelSplitEnabled !== false
-      && tipSplits.length > 0;
+    const baseVisible = Boolean(tipWidthCtx)
+      && tipWidthCtx.base
+      && tipWidthCtx.selectedSegment === segment;
     for (const side of [-1, 1]) {
       const list = side < 0 ? sideHandles.left : sideHandles.right;
       list.forEach((handle, index) => {
@@ -499,7 +639,7 @@ function updateBoneViewHandles(lock, ctx) {
           handle.visible = false;
           return;
         }
-        const placement = deps.panelTipStrand.tipWidthControlPlacement(lock, segment, tipSplits, tipSplitBones[segment] || null, side, index);
+        const placement = tipWidthCtx.placement(segment, side, index);
         if (!placement) {
           handle.visible = false;
           return;
@@ -516,15 +656,9 @@ function updateBoneViewHandles(lock, ctx) {
     }
   });
   lock.curveObjects.tipWidthLines?.forEach((sideLines, segment) => {
-    const selected = tipWidthSelection
-      && tipWidthSelection.lockId === lock.id
-      && tipWidthSelection.segmentIndex === segment;
-    const lineBase = Boolean(selected)
-      && (!sculptBrushHelpersSuppressed || tipUiActive)
-      && !brushDebugVisible
-      && deps.isPanelGeometry(lock)
-      && lock.panelSplitEnabled !== false
-      && tipSplits.length > 0;
+    const lineBase = Boolean(tipWidthCtx)
+      && tipWidthCtx.base
+      && tipWidthCtx.selectedSegment === segment;
     for (const side of [-1, 1]) {
       const line = side < 0 ? sideLines.left : sideLines.right;
       if (!line) continue;
@@ -532,7 +666,7 @@ function updateBoneViewHandles(lock, ctx) {
         line.visible = false;
         continue;
       }
-      const edgePoints = deps.panelTipStrand.tipWidthEdgePoints(lock, segment, tipSplits, tipSplitBones[segment] || null, side);
+      const edgePoints = tipWidthCtx.edgePoints(segment, side);
       if (edgePoints.length < 2) {
         line.visible = false;
         continue;
@@ -543,7 +677,14 @@ function updateBoneViewHandles(lock, ctx) {
     }
   });
   deps.panelTipStrand.updateTipHighlight(lock);
-  const strandSplitVisible = !sculptBrushHelpersSuppressed
+  // !tipUiActive 与 panel 的 zipper 手柄同规则（见上方 panelSplitHandles 块）：选中某管
+  // 发尖后，该管的绿色宽度控制点与黄色链末点手柄都落在管边缘/fork 附近，而 zipper 球体
+  // 更大、renderOrder 相同，会抢走拖拽。取消发尖选中即可继续拖 zipper。这条 0.2.126 才对
+  // 发丝生效，因为在此之前发丝根本无法选中发尖（tipUiActive 恒为 false）。
+  // 注：手柄与引导线**一起**隐藏（下方 `if (!visible)` 分支），与 panel 块的实际行为一致
+  // ——panel 那里的注释写「LINES stay visible」与代码不符，勿据那句话把这里改成只藏球体。
+  const strandSplitVisible = !tipUiActive
+    && !sculptBrushHelpersSuppressed
     && !brushDebugVisible
     && lock.geometryType === "strand"
     && !lock.hairCard
@@ -588,44 +729,11 @@ function updateBoneViewHandles(lock, ctx) {
     }
     line.geometry = new THREE.BufferGeometry().setFromPoints(points);
   });
-  // Split-strand per-tube tip handles + guide lines (Route 2). Mutually exclusive
-  // with the Route 1 single strandTip block below (that block requires
-  // !lock.strandSplitEnabled, and strandSplitBones is null for non-split strands).
-  const strandSplitBones = strandSplitBonesFor(lock);
-  const splitTipVisible = !sculptBrushHelpersSuppressed
-    && !brushDebugVisible
-    && lock.geometryType === "strand"
-    && !lock.hairCard
-    && Boolean(strandSplitBones);
-  const strandSplitTipHandles = lock.curveObjects.strandSplitTipHandles;
-  const strandSplitTipLines = lock.curveObjects.strandSplitTipLines;
-  const strandSplitTipChains = typeof deps.currentStrandSplitTipChains === "function"
-    ? deps.currentStrandSplitTipChains(lock)
-    : null;
-  if (Array.isArray(strandSplitTipHandles)) {
-    for (let tubeIndex = 0; tubeIndex < 2; tubeIndex += 1) {
-      const handle = strandSplitTipHandles[tubeIndex];
-      const line = Array.isArray(strandSplitTipLines) ? strandSplitTipLines[tubeIndex] : null;
-      if (!handle) continue;
-      handle.visible = splitTipVisible;
-      if (line) line.visible = splitTipVisible;
-      if (!splitTipVisible) continue;
-      const bone = strandSplitBones[tubeIndex] || null;
-      const tipChain = strandSplitTipChains?.[tubeIndex] || materializeTipChain(
-        bone?.tip || null,
-        (t) => deps.strandGeometryCurve(lock).getPoint(t),
-        Math.max(2, Array.isArray(lock.points) ? lock.points.length : 2)
-      );
-      const tipEnd = sampleTipPosition(tipChain, 1);
-      handle.position.set(tipEnd.x, tipEnd.y, tipEnd.z);
-      if (line) {
-        line.geometry.dispose();
-        const points = tipChain.points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
-        line.geometry = new THREE.BufferGeometry().setFromPoints(points);
-        line.visible = true;
-      }
-    }
-  }
+  // 刻意不改（0.2.126）：split 发丝的「每管一个、钉在链末点」把手块**已删除**，改由上方与
+  // panel 共用的 tipChainHandles / tipChainLines 承担（每管 × 每链点，只暴露 fork 以下）。
+  // 保留这条注释是为了让下一个人知道那块不是漏了：末点手柄现在就是该管链的最后一个链点
+  // 手柄，位置逐值相同；引导线则从「整条链」收窄为「暴露段」，与 panel 一致、也与可抓范围
+  // 一致（此前线画到 fork 以上却抓不到，属误导）。Route 1（非 split 单发尖）仍独立保留。
   const strandTip = strandTipFor(lock);
   const strandTipHandle = lock.curveObjects.strandTipHandle;
   const strandTipLine = lock.curveObjects.strandTipLine;
@@ -683,11 +791,11 @@ function disposeBoneViewHandles(curveObjects) {
     handle.geometry.dispose();
     handle.material.dispose();
   });
-  curveObjects.panelTipHandles?.forEach((handle) => {
+  curveObjects.tipChainHandles?.forEach((handle) => {
     handle.geometry.dispose();
     handle.material.dispose();
   });
-  curveObjects.panelTipLines?.forEach((line) => {
+  curveObjects.tipChainLines?.forEach((line) => {
     line.geometry.dispose();
     line.material.dispose();
   });
@@ -722,14 +830,6 @@ function disposeBoneViewHandles(curveObjects) {
     curveObjects.branchSweepStartHandle.material.dispose();
   }
   curveObjects.strandSplitLines?.forEach((line) => {
-    line.geometry.dispose();
-    line.material.dispose();
-  });
-  curveObjects.strandSplitTipHandles?.forEach((handle) => {
-    handle.geometry.dispose();
-    handle.material.dispose();
-  });
-  curveObjects.strandSplitTipLines?.forEach((line) => {
     line.geometry.dispose();
     line.material.dispose();
   });

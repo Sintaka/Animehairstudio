@@ -1,7 +1,7 @@
 // 唯一外部依赖：发丝多拉链的「管 k 横向推开方向」唯一定义点（standards「一处派生」）。
 // bone-model.js 只依赖 three，不反向依赖 io/*，故无循环依赖；导出的骨骼横向偏移因此
 // 与 createSplitStrandGeometry 渲染出的管逐值一致。
-import { strandSplitDirection } from "../bones/bone-model.js?v=20260813-1";
+import { strandSplitDirection } from "../bones/bone-model.js?v=20260830-1";
 
 function finiteNumber(value) {
   const number = Number(value);

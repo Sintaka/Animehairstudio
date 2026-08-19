@@ -228,7 +228,7 @@ try {
   const before = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-    t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 3 };
+    t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 3 };
     t.sculptState.state.panelSegmentIndex = 3;
     t.updateCurveObjects(lock, { visible: true });
     const tipSplits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
@@ -267,7 +267,7 @@ try {
     t.raycaster.setFromCamera(ndc, t.camera());
     const allHandles = [
       ...(lock.curveObjects.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right]),
-      ...(lock.curveObjects.panelTipHandles || []),
+      ...(lock.curveObjects.tipChainHandles || []),
       ...(lock.curveObjects.panelSegmentHandles || []),
       ...(lock.curveObjects.panelSplitHandles || [])
     ];
@@ -347,7 +347,7 @@ try {
   // ---- 对照：seg1 band 内 +1 拖拽（用户称其它发尖正常） ----
   const pressInfo1 = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest; const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-    t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 1 };
+    t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 1 };
     t.sculptState.state.panelSegmentIndex = 1;
     t.updateCurveObjects(lock, { visible: true });
     const h = lock.curveObjects.tipWidthHandles[1].right[1];
@@ -392,7 +392,7 @@ try {
   {
     const pinfo = JSON.parse(await evalJS(cdp, `(() => {
       const t = window.__ahsTest; const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-      t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 3 };
+      t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 3 };
       t.sculptState.state.panelSegmentIndex = 3;
       t.updateCurveObjects(lock, { visible: true });
       const h = lock.curveObjects.tipWidthHandles[3].right[1];
@@ -442,7 +442,7 @@ try {
   {
     const pinfo = JSON.parse(await evalJS(cdp, `(() => {
       const t = window.__ahsTest; const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-      t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 3 };
+      t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 3 };
       t.updateCurveObjects(lock, { visible: true });
       const h = lock.curveObjects.tipWidthHandles[3].left[3];
       const rect = t.renderer.domElement.getBoundingClientRect();
@@ -464,7 +464,7 @@ try {
         const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
         const all = [
           ...(lock.curveObjects.tipWidthHandles || []).flatMap((s) => [...s.left, ...s.right]),
-          ...(lock.curveObjects.panelTipHandles || []),
+          ...(lock.curveObjects.tipChainHandles || []),
           ...(lock.curveObjects.panelSegmentHandles || []),
           ...(lock.curveObjects.panelSplitHandles || [])
         ];
@@ -506,7 +506,7 @@ try {
   {
     const pinfo = JSON.parse(await evalJS(cdp, `(() => {
       const t = window.__ahsTest; const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-      t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 3 };
+      t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 3 };
       t.updateCurveObjects(lock, { visible: true });
       const h = lock.curveObjects.panelSegmentHandles[3];
       const rect = t.renderer.domElement.getBoundingClientRect();
@@ -525,7 +525,7 @@ try {
         const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
         const all = [
           ...(lock.curveObjects.tipWidthHandles || []).flatMap((s) => [...s.left, ...s.right]),
-          ...(lock.curveObjects.panelTipHandles || []),
+          ...(lock.curveObjects.tipChainHandles || []),
           ...(lock.curveObjects.panelSegmentHandles || []),
           ...(lock.curveObjects.panelSplitHandles || [])
         ];
