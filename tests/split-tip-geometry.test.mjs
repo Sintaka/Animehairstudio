@@ -3064,9 +3064,10 @@ test("Tip Clump handles: ONE allocation, ONE userData key, ONE hit gate for both
     assert.doesNotMatch(source, /curveObjects[.?]*\.?panelSegmentHandles/, `${name} no longer uses the old array name`);
   }
   // ③ 命中门控走 segmentBoneHost（与发尖链/宽度把手同一道门），不是手写 isPanelGeometry。
+  // 门控本体在 visibleTipClumpHandles 里（0.2.130 起它同时供「让位判据」复用，见 ④e）。
   assert.match(
     interactionSource,
-    /const segmentHandles = Boolean\(segmentBoneHost\(lock\)\)[\s\S]{0,120}?lock\.curveObjects\.tipClumpHandles/,
+    /function visibleTipClumpHandles\(lock\) \{[\s\S]{0,300}?Boolean\(segmentBoneHost\(lock\)\)[\s\S]{0,200}?lock\.curveObjects\.tipClumpHandles/,
     "the Tip Clump hit list is gated by the single segmentBoneHost dispatch"
   );
   // ④ 拖拽仍复用既有 kind "segment"（不新增第二个 kind：begin/end/可见性/高亮都靠它匹配）。
@@ -3100,6 +3101,33 @@ test("Tip Clump handles: ONE allocation, ONE userData key, ONE hit gate for both
     interactionSource,
     /kind === "segment"[\s\S]{0,2000}?deps\.rebuildCurveObjects/,
     "the Tip Clump drag must not rebuild curve objects mid-drag"
+  );
+  // ④e 绿手柄必须优先于**曲线控制点**（0.2.130 浏览器实测暴露的真实缺陷）：控制点用 12px
+  // 屏幕半径拾取、且在 capture 阶段 stopImmediatePropagation，而普通发丝的发尖控制点就落在
+  // 管尖（真实工程 layered-side-bun / Front Bangs 1 实测相距 9.7–10px）⇒ 不让位就完全抓不到
+  // 绿手柄。让位判据必须是**射线命中球体**（比屏幕半径窄），且与拖拽命中列表同一定义点。
+  assert.match(
+    interactionSource,
+    /function visibleTipClumpHandles\(lock\)/,
+    "there is a single definition point for the grabbable Tip Clump handles"
+  );
+  assert.match(
+    interactionSource,
+    /function prepareCurvePointSelection\(event\)[\s\S]{0,1800}?if \(pointerHitsTipClumpHandle\(clumpLock\)\) return;/,
+    "curve-point selection yields to a pointer that is on a Tip Clump handle"
+  );
+  // 让位必须在**两种编辑模式之前**：绿手柄在对象模式与组件模式下都可见可拖，只放进
+  // componentEditModeActive 分支会让对象模式继续被抢走（实测那条路径就是抢走者）。
+  assert.match(
+    interactionSource,
+    /if \(pointerHitsTipClumpHandle\(clumpLock\)\) return;\s*\}\s*if \(!deps\.componentEditModeActive\(\)\)/,
+    "the carve-out precedes BOTH edit-mode branches"
+  );
+  // 拖拽命中列表与让位判据读同一个函数（否则会「让位了却抓不到」）。
+  assert.match(
+    interactionSource,
+    /const segmentHandles = visibleTipClumpHandles\(lock\);/,
+    "the drag hit list reuses the same visible-handle definition"
   );
   // ⑤ SPREAD_MAX 单一定义点：写入路径不得再内联 0.99 字面量。
   for (const [name, source] of [["bone-interaction", interactionSource], ["bone-view-handles", handleSource]]) {

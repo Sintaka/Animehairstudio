@@ -215,6 +215,22 @@ function applyTipSubBoneTransform(lock, handle) {
   deps.syncActiveMirror(lock, { deferGeometry: false });
 }
 
+// 当前可抓的绿色 Tip Clump 手柄（可见 + 本几何有段骨骼宿主）。**唯一定义点**：
+// beginPanelSplitHandleDrag 的命中列表与 prepareCurvePointSelection 的让位判据都读它，
+// 两处必须认同同一组对象，否则会出现「让位了但抓不到」或「抓得到却被抢走」。
+function visibleTipClumpHandles(lock) {
+  if (!lock || !Boolean(segmentBoneHost(lock)) || !lock.curveObjects?.group.visible) return [];
+  return (lock.curveObjects.tipClumpHandles || []).filter((handle) => handle.visible);
+}
+
+// 指针是否正落在某个绿色 Tip Clump 手柄上（射线命中球体本身，非屏幕半径）。
+// 用途见 prepareCurvePointSelection 里的让位注释。调用方需已设好 deps.raycaster。
+function pointerHitsTipClumpHandle(lock) {
+  const handles = visibleTipClumpHandles(lock);
+  if (!handles.length) return false;
+  return Boolean(deps.raycaster.intersectObjects(handles, false)[0]);
+}
+
 function beginPanelSplitHandleDrag(event) {
   if (event.button !== 0 || event.shiftKey || event.altKey || event.metaKey) return false;
   const lock = deps.getSelectedLock();
@@ -222,11 +238,9 @@ function beginPanelSplitHandleDrag(event) {
     ? lock.curveObjects.panelSplitHandles || []
     : [];
   // 绿色 Tip Clump 手柄：0.2.130 起 panel 段与 split strand 管**共用同一个数组与同一个
-  // userData 键**（tipClumpSegment），所以门控与下方 tipHostGate 同规则（segmentBoneHost 非
-  // null ⇔ panel/surface 或已分裂普通发丝），不再手写 isPanelGeometry。
-  const segmentHandles = Boolean(segmentBoneHost(lock)) && lock.curveObjects?.group.visible
-    ? lock.curveObjects.tipClumpHandles || []
-    : [];
+  // userData 键**（tipClumpSegment），门控走 visibleTipClumpHandles（segmentBoneHost 非 null
+  // ⇔ panel/surface 或已分裂普通发丝），不再手写 isPanelGeometry。
+  const segmentHandles = visibleTipClumpHandles(lock);
   // 发尖链把手与发尖 WidthCurve 把手：panel 段与 split strand 管**共用同一个数组与同一批
   // userData 键**（bone-view-handles.js 的 allocateTipChainHandles / allocateTipWidthHandles），
   // 所以命中列表只需要把发丝的门控并进来，而不是加一条平行分支。可见性本身已由更新阶段按
@@ -946,6 +960,26 @@ function updatePanelTipHover(event) {
 
 function prepareCurvePointSelection(event) {
   if (event.button !== 0) return;
+  // ── 绿色 Tip Clump 手柄优先于曲线控制点（0.2.130）────────────────────────────────────
+  // 为什么必须有这条让位：控制点的拾取是**屏幕半径 12px**
+  // （STRAND_CONTROL_POINT_MIN_PICK_PIXELS，见 app.js strandControlPointHitFromEvent），而本
+  // 函数挂在 capture 阶段并在命中后 stopImmediatePropagation —— 主 pointerdown（
+  // beginPanelSplitHandleDrag 所在那个）于是根本不执行。普通发丝的**发尖控制点就落在管尖**，
+  // 与绿色 Tip Clump 手柄的实测屏幕距离只有 9.7–10px（真实工程 layered-side-bun 的
+  // Front Bangs 1，浏览器实测），因此绿手柄在真实使用中会完全抓不到 —— 移植到发丝时暴露的
+  // 真实缺陷，不是脚本假象。panel 侧此前没有暴露它，只因 panel 的控制点沿面板中心线走、
+  // 离段尖表面点较远（**不是**因为 panel 有豁免；同一相机角度下 panel 也可能重合）。
+  // 让位判据用**射线命中球体本身**（比 12px 屏幕半径窄，且与实际可拖对象逐一对应），
+  // 与既有的「gizmo 优先」让位（见下方 pointerHitsTransformGizmo）同一形状。
+  // 顺序：放在最前面，两种编辑模式（对象/组件）都让位 —— 绿手柄在两种模式下都可见可拖。
+  const clumpLock = deps.getSelectedLock();
+  if (visibleTipClumpHandles(clumpLock).length) {
+    const rect = deps.renderer.domElement.getBoundingClientRect();
+    deps.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    deps.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    deps.raycaster.setFromCamera(deps.pointer, deps.camera);
+    if (pointerHitsTipClumpHandle(clumpLock)) return;
+  }
   if (!deps.componentEditModeActive()) {
     // Object mode: a highlighted (hovered) control point still selects its strand, so
     // clicking a bone never falls through to the parent hair that sits underneath it.

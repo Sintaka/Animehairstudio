@@ -20781,6 +20781,10 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     windState: windStore.state,
     updateCurveObjects,
     transformControls,
+    // guideState：验证脚本需要能清掉 hoveredControlPoint。合成 pointerdown 时若它有残留，
+    // capture 阶段的 prepareCurvePointSelection 会 stopImmediatePropagation，主 pointerdown
+    // 根本不执行（真实用户走 pointermove 不会有这个残留）。见 scripts/verify-tip-clump.mjs。
+    guideState,
     beginTipSubBoneRotate: bonesApi.beginTipSubBoneRotate,
     beginTipSubBoneTranslate: bonesApi.beginTipSubBoneTranslate,
     updateTipHighlight: panelTipStrand.updateTipHighlight,
@@ -20815,6 +20819,9 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     splitForkT: panelTipStrand.splitForkT,
     clonePanelSplits,
     materializeSplitBones,
+    // 发丝段骨骼的物化入口：验证脚本要在与拖拽写入**同一空间**里取基线（派生视图未固化时
+    // lock.strandSplitBones 是空的）。见 scripts/verify-tip-clump.mjs。
+    materializeStrandSplitBones,
     strandVisibleForDisplay,
     isPanelGeometry,
     projectToClient(world) {
