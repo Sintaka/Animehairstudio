@@ -22,6 +22,16 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（0.2.124）
+
+> 修普通发丝多 zipper「只有一个缝起效」（分支 DHS/develop，1 Opus 子智能体 + 主进程 merge/实测核验）：
+> - **modules/bones/bone-model.js**（L454-476）：新增导出纯函数 `strandSplitDirection(segmentIndex, splitCount)` = `(2k − N) / N` —— 该横向推开规则的**唯一定义点**；`strandSplitDirectionForSegment(lock, k)` 改为薄封装（N 取自既有 `strandSplitsFor` 归一化）。注释记录「为何单调性才是修复」并列出两个消费方。
+> - **modules/geometry/strand-geometry.js**（L22 import、L118-134）：per-section `direction` 改调 `strandSplitDirection(i, splitCount)`，删除已失效的 `profileMidX` 与「push away from profile center」旧注释。原离散规则（`i===0?-1 : i===splitCount?+1 : Math.sign(center−mid)`）会让相邻管拿到同一 direction、一起平移 → 缝不张开。
+> - **modules/io/usda-export.js**（L1-7 新增 import、L534-539）：`strandDirectionForTube` 改为委托同一规则并导出（供跨消费方一致性断言）。此前它与 bone-model、strand-geometry 各持一份**复制的**离散规则，只改几何会让骨骼/导出偏移与渲染管错位。
+> - **index.html**（L1191）：Split Spacing tooltip 从「how far apart the **two** tip branches open」改为覆盖 N 根管（该字符串无 localization key，词典无需改）。
+> - 依赖检查：bone-model 仅 import three，无循环；usda-export 原零 import，新增后为 usda-export → bone-model → three（浏览器 importmap 与 node 测试均覆盖）。顺带修正 `tests/usda-export.test.mjs` 头部「usda-export 无 import」的过期说明。
+> - 回归：Node 全量 293/293（新增 5：N=1 恒 `[-1,1]` legacy 一致、严格递增使每条缝都开、对称不侧漂、**三消费方逐值一致**、几何级「N+1 管在 tip 全部横向分离」）+ 真实 Sussurro_v1_0060.ahs 130/130；缓存号 20260831-1 + APP_VERSION 0.2.124 冻结同步。
+
 ## 最近更新（0.2.123）
 
 > 发尖 WidthCurve 控制点改回共用网格 + 按侧动态暴露（修正 0.2.118 的设计错误；分支 DHS/develop，1 Opus 子智能体 + 主进程 merge/实测核验）：

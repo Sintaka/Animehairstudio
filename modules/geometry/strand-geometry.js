@@ -19,7 +19,7 @@ import {
   compoundProfileBridgePlan
 } from "./compound-strand.js?v=20260814-12";
 import { DEFAULT_SWEEP_PROFILE, ROUND_SWEEP_PROFILE } from "../core/app-config.js?v=20260815-4";
-import { strandSplitBonesFor, strandTipFor } from "../bones/bone-model.js?v=20260813-1";
+import { strandSplitBonesFor, strandSplitDirection, strandTipFor } from "../bones/bone-model.js?v=20260813-1";
 import {
   materializeTipChain,
   sampleCenterlinePoint,
@@ -117,7 +117,6 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     .sort((a, b) => a.position - b.position);
   const splitCount = splits.length;
   const splitXs = splits.map((split) => THREE.MathUtils.lerp(minX, maxX, split.position * 0.5 + 0.5));
-  const profileMidX = (minX + maxX) / 2;
   // N+2 boundaries -> N+1 sections. Outer bounds are ±Infinity so the first section
   // keeps everything left of splitX[0] and the last keeps everything right of the last
   // splitX EXACTLY like the legacy single half-plane clips.
@@ -128,15 +127,11 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     const highX = boundaryXs[i + 1];
     const points = clipStrandProfileBand(polygon, lowX, highX);
     if (points.length < 3) continue;
-    // Lateral spread direction: push away from the profile center about each section's
-    // own center. Leftmost -> -1, rightmost -> +1 (matches the legacy 2-section case),
-    // a middle section centered on the profile mid gets ~0.
-    const sectionCenterX = (Number.isFinite(lowX) ? lowX : minX) * 0.5
-      + (Number.isFinite(highX) ? highX : maxX) * 0.5;
-    let direction;
-    if (i === 0) direction = -1;
-    else if (i === splitCount) direction = 1;
-    else direction = Math.sign(sectionCenterX - profileMidX);
+    // Lateral spread direction: strictly increasing along the tube index, -1 .. +1.
+    // Single definition point: strandSplitDirection in modules/bones/bone-model.js
+    // (see the comment there for why monotonicity is what makes EVERY seam open;
+    // the old discrete ±1/0 rule left all but one seam shut). N=1 -> -1/+1, legacy.
+    const direction = strandSplitDirection(i, splitCount);
     // Each section opens where its adjacent split(s) are deepest (shallowest opening
     // start row). Edge sections use their single adjacent split.
     const leftSplit = splits[i - 1];

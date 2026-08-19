@@ -13,6 +13,9 @@ import {
 } from "../modules/geometry/tip-sub-bone.js";
 import {
   strandSplitBonesFor,
+  strandSplitDirection,
+  strandSplitDirectionForSegment,
+  strandSplitsFor,
   strandSplitForkT,
   strandSplitForkTForSegment,
   strandSplitBonesFromData,
@@ -20,6 +23,7 @@ import {
   remapSegmentBonesOnInsert,
   remapSegmentBonesOnDelete
 } from "../modules/bones/bone-model.js";
+import { strandDirectionForTube } from "../modules/io/usda-export.js";
 
 function assertCentersClose(actual, expected, epsilon = 0.000001) {
   assert.equal(actual.length, expected.length);
@@ -889,5 +893,133 @@ test("tip sub-bone brush must seed from the materialized chain, not authored poi
     assert.ok(Math.abs(p.x - 6) < 1e-9, `stale seeding jumps back by the rest shift at ${i}`);
   });
   assert.ok(Math.abs(afterBug.points[0].x - afterFix.points[0].x + 20) < 1e-9, "the jump equals the rest-chain shift");
+});
+
+// ---- 多拉链横向推开方向：每条缝都必须张开（strandSplitDirection 唯一定义点） ----
+// 报告的 bug：加了多个 zipper 只有一条缝真的打开。根因是旧规则给每管一个**离散**的
+// ±1/0 方向（最左 -1、最右 +1、中间取两侧拉链中点符号），相邻两管方向相同时它们**同向
+// 平移**、缝不动：N=2 得到 [-1,-1,+1]（缝 0 闭合）、N=3 得到 [-1,-1,+1,+1]（只有中缝开）。
+// 新规则沿管下标单调递增，相邻差恒为 2/N > 0，所以 N 条缝全开。
+function directionsFor(splitCount) {
+  return Array.from({ length: splitCount + 1 }, (_, k) => strandSplitDirection(k, splitCount));
+}
+
+test("N=1 tube directions stay exactly the legacy [-1, 1]", () => {
+  assert.deepEqual(directionsFor(1), [-1, 1], "one zipper -> two tubes at -1/+1 (byte-identical to legacy)");
+});
+
+test("tube directions are strictly increasing so EVERY seam opens", () => {
+  for (const splitCount of [2, 3, 5]) {
+    const directions = directionsFor(splitCount);
+    assert.equal(directions.length, splitCount + 1, `N=${splitCount} -> N+1 tubes`);
+    for (let k = 0; k < splitCount; k += 1) {
+      // 缝 k|k+1 张开 <=> direction[k+1] > direction[k]。旧的离散规则在 N=2 时给出
+      // [-1,-1,+1]，这里的 k=0 断言会失败 —— 正是用户报告的「只有一条缝打开」。
+      assert.ok(
+        directions[k + 1] > directions[k],
+        `N=${splitCount}: seam ${k}|${k + 1} must open (got ${directions[k]} -> ${directions[k + 1]})`
+      );
+    }
+    assert.equal(directions[0], -1, `N=${splitCount}: leftmost tube still pushes to -1`);
+    assert.equal(directions[splitCount], 1, `N=${splitCount}: rightmost tube still pushes to +1`);
+  }
+  assert.deepEqual(directionsFor(2), [-1, 0, 1], "N=2 spreads to -1, 0, +1");
+  directionsFor(3).forEach((value, k) => {
+    assert.ok(Math.abs(value - [-1, -1 / 3, 1 / 3, 1][k]) < 1e-12, `N=3 tube ${k} = ${[-1, -1 / 3, 1 / 3, 1][k]}`);
+  });
+});
+
+test("tube directions are symmetric about 0 so the strand never drifts sideways", () => {
+  for (const splitCount of [1, 2, 3, 4, 5, 8]) {
+    const directions = directionsFor(splitCount);
+    directions.forEach((value, k) => {
+      // 用加法而不是 strictEqual(-x)：中间管恰好是 0，而 -0 !== 0 在 assert.equal 下会假失败。
+      assert.equal(
+        value + directions[splitCount - k],
+        0,
+        `N=${splitCount}: direction[${k}] === -direction[${splitCount - k}]`
+      );
+    });
+    // 中间管的位移量严格小于外侧管 —> 全缝张开但轮廓不膨胀。
+    assert.ok(Math.max(...directions.map(Math.abs)) === 1, `N=${splitCount}: spread stays within ±1`);
+  }
+  assert.equal(strandSplitDirection(0, 0), 0, "0 zippers (single tube) has nowhere to push; no divide-by-zero");
+});
+
+test("geometry, bone and USDA consumers agree on the direction for the same tube index", () => {
+  // 三处消费方必须逐值一致，否则导出的骨骼/视口发尖链会落在与渲染管不同的横向位置。
+  const locks = [
+    // legacy 单标量（无 strandSplits 数组）
+    { geometryType: "strand", strandSplitEnabled: true, strandSplitPosition: 0.1, strandSplitHeight: 0.36 },
+    // N=2，故意乱序 + 越界 position（考验两处归一化：排序 + 钳制到 ±0.8）
+    {
+      geometryType: "strand",
+      strandSplitEnabled: true,
+      strandSplits: [
+        { position: 0.95, height: 0.2, order: 1 },
+        { position: -0.4, height: 0.4, order: 0 }
+      ]
+    },
+    // N=4
+    {
+      geometryType: "strand",
+      strandSplitEnabled: true,
+      strandSplits: [-0.6, -0.2, 0.2, 0.6].map((position, order) => ({ position, height: 0.3, order }))
+    }
+  ];
+  locks.forEach((lock, lockIndex) => {
+    const splits = strandSplitsFor(lock);
+    const splitCount = splits.length;
+    for (let k = 0; k <= splitCount; k += 1) {
+      const boneDirection = strandSplitDirectionForSegment(lock, k);
+      // usda-export 走自己的 strandSplitsForExport 归一化；喂同一个 lock 派生的 splits
+      // 列表长度必须一致，方向也必须一致。
+      const usdaDirection = strandDirectionForTube(splits, k);
+      const geometryDirection = strandSplitDirection(k, splitCount);
+      assert.equal(boneDirection, geometryDirection, `lock ${lockIndex} tube ${k}: bone == geometry`);
+      assert.equal(usdaDirection, geometryDirection, `lock ${lockIndex} tube ${k}: USDA == geometry`);
+    }
+  });
+});
+
+test("multi-zipper tubes are ALL laterally separated at the tip (the reported bug)", () => {
+  const geometryApi = makeMultiSplitGeometryApi();
+  // N=2 zippers -> 3 tubes. frame.x = world +x in this harness, so tube centre x at the
+  // tip row IS the lateral offset. Under the old discrete rule tubes 0 and 1 shared
+  // direction -1 and their tip centres were NOT separated (seam 0 stayed shut).
+  const lock = baseSplitLock({
+    strandSplits: [
+      { position: -0.4, height: 0.4, order: 0 },
+      { position: 0.4, height: 0.4, order: 1 }
+    ]
+  });
+  const curve = new THREE.CatmullRomCurve3(
+    lock.points.map((point) => new THREE.Vector3(point.x, point.y, point.z))
+  );
+  const geometry = geometryApi.createSplitStrandGeometry(lock, curve, splitProfile());
+  assert.ok(geometry, "N=2 zippers should produce geometry");
+  const sections = geometry.userData.splitSections;
+  assert.equal(sections.length, 3, "two zippers yield three tubes");
+
+  const positions = Array.from(geometry.getAttribute("position").array);
+  const rows = geometry.userData.actualLengthSegments + 1;
+  const centers = sweepRingCentroids(positions, sections, rows);
+  const tipX = centers.map((tube) => tube[rows - 1].x);
+  for (let k = 0; k + 1 < tipX.length; k += 1) {
+    assert.ok(
+      tipX[k + 1] > tipX[k],
+      `tip ring centres must be strictly ordered along frame.x: tube ${k} (${tipX[k]}) < tube ${k + 1} (${tipX[k + 1]})`
+    );
+  }
+  // Root row (t=0, before any opening) keeps the clipped-band ordering too, and the
+  // openings there are all zero — separation must come from the sweep, not the clip.
+  const rootX = centers.map((tube) => tube[0].x);
+  for (let k = 0; k + 1 < rootX.length; k += 1) {
+    assert.ok(rootX[k + 1] > rootX[k], `root band ${k} sits left of band ${k + 1}`);
+    assert.ok(
+      tipX[k + 1] - tipX[k] > rootX[k + 1] - rootX[k],
+      `seam ${k}|${k + 1} actually OPENS from root to tip`
+    );
+  }
 });
 
