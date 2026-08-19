@@ -19,6 +19,7 @@ import {
   setTipWidthCurveValueFrom,
   tipClumpNarrowFraction,
   tipWidthCommonForkFromHeights,
+  tipWidthCommonForkFromPresentHeights,
   tipWidthControlTs as sharedTipWidthControlTs,
   tipWidthGridFromHeights,
   tipWidthRecordsOppositeForkFrom,
@@ -176,11 +177,14 @@ function surfacePanelPoint(lock, t, u, shell = 0) {
   );
 }
 
+// 段 segmentIndex 的 fork-T：**委托** tip-width-curve 的 guard 形式唯一定义点。
+// 本函数只负责把 panel 的 (splits, segmentIndex) 翻译成相邻 zipper 高度，推导本身不在此处。
+// 注意保留 `|| null`（而非 `?.height`）：splits 条目可能是 falsy 占位，与 guard 形式的
+// 「在场判定」共同决定缺侧语义。
 function splitForkT(lock, segmentIndex, splits) {
   const leftSplit = splits[segmentIndex - 1] || null;
   const rightSplit = splits[segmentIndex] || null;
-  const heights = [leftSplit?.height, rightSplit?.height].filter((height) => height != null);
-  return heights.length ? 1 - Math.max(...heights) : 1;
+  return tipWidthCommonForkFromPresentHeights(leftSplit?.height, rightSplit?.height);
 }
 
 

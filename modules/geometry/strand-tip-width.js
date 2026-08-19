@@ -96,12 +96,14 @@ export function strandTubeSignedCoordinate(x, centerX, halfSpan) {
 // bone-model.js 的 strandSplitForkTForSegment、strand-geometry.js 的 sectionSplitStart
 // 是同一条推导（1 - max(左右拉链高度)，缺侧记 0）。本函数**不自算**，只做「相邻拉链高度 →
 // 共享模块」的翻译。
-// 现状警告（勿按旧注释的「三处」理解）：这条规则目前在**全仓库 9 处**各自计算了一遍 ——
-//   bone-model.js:452、panel-tip-strand.js:182、tip-width-curve.js:33、tip-width-curve.js:42、
-//   project-files.js:733、project-files.js:750、usda-export.js:542、usda-export.js:591、
-//   usda-export.js:672
-// 本模块是**已经**收敛到共享定义点的那一侧；收敛其余各处是独立任务，跟踪于
-// devlog/in-progress/tip-subsystem-reuse-audit.md，**不要**在改本文件时顺手动它们。
+// 0.2.133 起该规则**已收敛**：此前散在 9 处的独立算式（bone-model / panel-tip-strand /
+// tip-width-curve ×2 / project-files ×2 / usda-export ×3）全部折叠到 tip-width-curve.js 的
+// tipWidthCommonForkFromHeights（`?? 0` 缺侧语义）与 tipWidthCommonForkFromPresentHeights
+// （guard 缺侧语义，供读**原始** lock.panelSplits 的导出/存档侧使用）。
+// 唯一**刻意保留**的第二处算术在 bone-model.js strandSplitForkTForSegment —— 它是 lock 版
+// （额外走 strandSplitsFor 归一化），且 tip-width-curve 反向 import 它的 SPREAD_MAX，
+// 折叠会造成循环依赖。tests/split-tip-geometry.test.mjs 的「fork-T has ONE definition
+// point」+ 负对照断言钉住这一状态，**勿在任何消费方重写该公式**。
 export function strandTubeForkT(splits, tubeIndex) {
   const { left, right } = segmentZipperHeights(splits, tubeIndex);
   return tipWidthCommonForkFromHeights(left, right);

@@ -35,6 +35,9 @@ import {
   tipWeightAt
 } from "./tip-sub-bone.js?v=20260830-1";
 import { SWEEP_OVERLAP_DEFAULTS } from "./strand-sweep.js?v=20260813-3";
+// fork-T（`1 − max(相邻 zipper 高)`）的唯一定义点。本文件此前自写一份 sectionSplitStart，
+// 0.2.133 折叠。无新依赖边：strand-tip-width.js 已 import 同一模块。
+import { tipWidthCommonForkFromHeights } from "./tip-width-curve.js?v=20260901-1";
 
 export function createStrandGeometryApi(deps) {
   // deps: api objects (branchSweep/strandSweep/branchBridge/curveSurfaceCreate/panelTipStrand/
@@ -136,7 +139,6 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     // start row). Edge sections use their single adjacent split.
     const leftSplit = splits[i - 1];
     const rightSplit = splits[i];
-    const sectionHeight = Math.max(leftSplit?.height ?? 0, rightSplit?.height ?? 0);
     // Tip Clump 的**每侧**斜坡起点：本侧 zipper 高度（无 zipper 的外侧镜像对侧，与 panel
     // 的 tipWidthSpreadGap 邻居规则逐字同构 —— 边缘段外侧自动补全、不展示 UI）。两侧高度
     // 不同时收窄斜坡起点不同，这正是 panel 既有行为。
@@ -148,7 +150,10 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     const band = strandTubeBandExtents(polygon, splits, i, splitXs);
     sections.push({
       points,
-      sectionSplitStart: 1 - sectionHeight,
+      // fork-T 走 tip-width-curve 的唯一定义点（此前这里是 `1 - Math.max(...)` 的第 4 份
+      // 副本）。splits 已在上方归一化（height 钳到 [0.02, 0.8]），缺侧为 undefined ⇒ 与
+      // 共享层的 `?? 0` 缺侧语义一致，逐值不变。
+      sectionSplitStart: tipWidthCommonForkFromHeights(leftSplit?.height, rightSplit?.height),
       band,
       leftClumpHeight,
       rightClumpHeight

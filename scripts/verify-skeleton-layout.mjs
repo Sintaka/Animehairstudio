@@ -6,7 +6,13 @@
 import fs from "node:fs";
 import { splitBoneLayout, bridgeRootParentName, usdIdentifier } from "../modules/io/usda-export.js";
 
-const ahsPath = process.argv[2] || "D:/Downloads/Sussurro_v1_0046.ahs";
+// 默认路径是**外部工作文件**，会随版本推进改名（_0046 → _0060 → …）。0.2.133 有子智能体
+// 因这个写死的旧名找不到文件、误以为无法验证真实工程 —— 优先取仓库内自带预设作为回退，
+// 保证「不传参也能跑」，真实工程仍可显式传路径。
+const ahsPath = process.argv[2]
+  || (fs.existsSync("D:/Downloads/Sussurro_v1_0060.ahs")
+    ? "D:/Downloads/Sussurro_v1_0060.ahs"
+    : "assets/presets/layered-side-bun.ahs");
 if (!fs.existsSync(ahsPath)) {
   console.error("missing project file:", ahsPath);
   process.exit(1);

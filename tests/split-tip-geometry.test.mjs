@@ -53,7 +53,11 @@ import {
   strandTubeSideForkT,
   strandTubeSignedCoordinate
 } from "../modules/geometry/strand-tip-width.js";
-import { tipWidthSideExposesTAt } from "../modules/geometry/tip-width-curve.js";
+import {
+  tipWidthCommonForkFromHeights,
+  tipWidthCommonForkFromPresentHeights,
+  tipWidthSideExposesTAt
+} from "../modules/geometry/tip-width-curve.js";
 import { firstExposedTipChainIndex } from "../modules/geometry/tip-sub-bone.js";
 import { leafIndexAt, leafWeightsValid } from "../modules/geometry/leaf-weights.js";
 
@@ -1971,6 +1975,112 @@ test("0.2.128: a multiplier of exactly 1 stays BYTE-identical (the pivot term mu
     positionsOf(base),
     "an authored-but-unity curve must not move a single vertex by a single bit"
   );
+});
+
+// ── 0.2.133: fork-T 单一定义点 + **负对照** ────────────────────────────────────────────
+// 0.2.124 的「多条拉链只有一条开缝」是同一条推导有 3 份副本、只改了 1 份造成的。fork-T
+// 此前有 9 份副本。本组断言钉住 collapse 结果，并且**先证明检测器本身有判别力** ——
+// 一条 doesNotMatch 若正则写错就会永远通过（假绿），那是比重复代码更危险的护栏。
+const FORK_T_FORMULA = /1\s*-\s*Math\.max\s*\(/;
+
+test("0.2.133 negative control: the fork-T detector actually catches a reintroduced formula", () => {
+  // 负对照：把 9 处副本里**每一种**历史写法喂给检测器，全部必须被抓到。若哪天有人
+  // 「顺手」把公式写回任一消费方，下一条测试就会红 —— 前提是检测器真的能抓，此处证明它能。
+  const reintroduced = [
+    "  return 1 - Math.max(leftHeight ?? 0, rightHeight ?? 0);",
+    "  const sectionHeight = Math.max(l, r);\n  return 1 - Math.max(l, r);",
+    "  forkT = heights.length ? 1 - Math.max(...heights) : 1;",
+    "  return 1 - Math.max(...heights);",
+    "forkT = 1 -   Math.max( a, b )",
+    "const segmentForkT = 1-Math.max(leftHeight ?? 0, rightHeight ?? 0);"
+  ];
+  reintroduced.forEach((sample, index) => {
+    assert.match(
+      sample,
+      FORK_T_FORMULA,
+      `detector must catch historical fork-T copy #${index}: ${sample}`
+    );
+  });
+  // 反向：检测器不得把**无关**代码误报成 fork-T 公式（否则它会逼着后人绕开正则而不是
+  // 绕开重复）。Math.max 本身是常见写法，只有「1 - Math.max(」这一形态才是 fork-T。
+  [
+    "  const maxX = Math.max(...polygon.map((point) => point.x));",
+    "  return Math.max(2, points.length);",
+    "  const ramp = 1 - Math.min(1, t);",
+    "  height: clamp(Number(split?.height ?? 0.3), 0.02, 0.8)"
+  ].forEach((sample) => {
+    assert.doesNotMatch(sample, FORK_T_FORMULA, `detector must not false-positive on: ${sample}`);
+  });
+});
+
+test("0.2.133: fork-T has ONE definition point — no consumer re-derives it", async () => {
+  // 9 处副本折叠后的**唯一**允许持有该公式的文件：tip-width-curve.js（定义点）与
+  // bone-model.js（lock 版 strandSplitForkTForSegment —— 它额外做 strandSplitsFor 归一化，
+  // 且 tip-width-curve 反向 import 它的 SPREAD_MAX，折叠会造成循环依赖，刻意保留）。
+  const consumers = [
+    "../modules/geometry/panel-tip-strand.js",
+    "../modules/geometry/strand-geometry.js",
+    "../modules/geometry/strand-tip-width.js",
+    "../modules/io/usda-export.js",
+    "../modules/io/project-files.js"
+  ];
+  const sources = await Promise.all(
+    consumers.map((path) => readFile(new URL(path, import.meta.url), "utf8"))
+  );
+  // 注释里出现该公式是允许的（用于解释规则本身），所以只扫**代码行**：去掉整行注释。
+  const codeOnly = (source) => source
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
+  consumers.forEach((path, index) => {
+    const code = codeOnly(sources[index]);
+    assert.doesNotMatch(
+      code,
+      FORK_T_FORMULA,
+      `${path} must call tipWidthCommonForkFromHeights / …FromPresentHeights, not re-derive fork-T`
+    );
+    assert.match(
+      sources[index],
+      /tipWidthCommonForkFrom(Present)?Heights/,
+      `${path} must consume the shared fork-T definition point`
+    );
+  });
+  // 定义点本身必须仍持有公式（否则上面几条会因为规则整体消失而假绿）。
+  const definition = await readFile(new URL("../modules/geometry/tip-width-curve.js", import.meta.url), "utf8");
+  assert.match(definition, FORK_T_FORMULA, "tip-width-curve.js still owns the one fork-T formula");
+  // 且只持有**一份**：guard 形式必须委托 `?? 0` 版，不得各写一遍算术。注释提及不计入
+  // （定义点的注释刻意引用该公式来说明规则），所以与消费方同样只扫代码行。
+  assert.equal(
+    (codeOnly(definition).match(/1\s*-\s*Math\.max\s*\(/g) || []).length,
+    1,
+    "tip-width-curve.js must contain the fork-T arithmetic exactly once"
+  );
+});
+
+test("0.2.133: the two fork-T entry points agree except on the documented negative-height case", () => {
+  // 两个缺侧语义的**契约**：非负高度上逐值相同；只在「单侧在场且该侧 height < 0」时不同。
+  // 这条差异不是疏漏 —— 导出侧读原始 lock.panelSplits（loader 不钳 height），collapse
+  // 刻意保留 guard 形式以免重构夹带行为变化。此断言把该边界钉死，防止后人合并两个入口。
+  const heights = [0, 0.02, 0.2, 0.4, 0.78, 0.8, 1, 1.5, null, undefined];
+  heights.forEach((left) => {
+    heights.forEach((right) => {
+      assert.equal(
+        tipWidthCommonForkFromPresentHeights(left, right),
+        tipWidthCommonForkFromHeights(left, right),
+        `non-negative heights must agree: (${left}, ${right})`
+      );
+    });
+  });
+  // 两侧都在场时，即使为负也一致（max 不被缺侧的 0 抬高）。
+  assert.equal(tipWidthCommonForkFromPresentHeights(-0.1, -0.5), tipWidthCommonForkFromHeights(-0.1, -0.5));
+  // 单侧在场 + 负高度：guard 形式保留 >1（该段锁死得更深），`?? 0` 版钳到 1。
+  assert.equal(tipWidthCommonForkFromPresentHeights(-0.1, null), 1.1);
+  assert.equal(tipWidthCommonForkFromHeights(-0.1, null), 1);
+  assert.equal(tipWidthCommonForkFromPresentHeights(null, -0.5), 1.5);
+  assert.equal(tipWidthCommonForkFromHeights(null, -0.5), 1);
+  // 两侧缺失 ⇒ 完全锁死（1），两个入口一致。
+  assert.equal(tipWidthCommonForkFromPresentHeights(null, undefined), 1);
+  assert.equal(tipWidthCommonForkFromHeights(null, undefined), 1);
 });
 
 test("per-tube tip WidthCurve: the tube-relative coordinate has a single definition point", () => {

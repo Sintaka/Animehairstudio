@@ -20,7 +20,7 @@
 
 | 规则 | 单一定义点应在哪 | 重复站点（file:line） | 严重性 | 建议处置 |
 |---|---|---|---|---|
-| **fork-T = `1 − max(左右相邻 zipper 高)`** | `tip-width-curve.js:41` `tipWidthCommonForkFromHeights`（高度版，几何无关）；`bone-model.js:448` `strandSplitForkTForSegment` 是它的 **lock 版**（额外做 `strandSplitsFor` 归一化，合理保留） | 全仓库共 **7 处**独立算式：① `tip-width-curve.js:33`（`tipWidthSideForkFromHeights` 内的 `segmentForkT`，与 `:42` 同式）；② `panel-tip-strand.js:182` `splitForkT`；③ `bone-model.js:452`；④ `strand-geometry.js:140` `sectionHeight` + `:145` `1 - sectionHeight`；⑤ `usda-export.js:542` `strandForkTForTube`；⑥ `usda-export.js:591` 与 `:672`（panel，两处）；⑦ `project-files.js:733`（panel）+ `:750`（strand），**同一函数内两份** | **高** | **`strand-tip-width.js:84` 的注释写「三处必须一致，勿新写第四条公式」——实际是 7 处，该注释本身已过期，须一并更正。** 处置：②⑤⑥⑦ 改调 `tipWidthCommonForkFromHeights`；④ 保留（它同时要 `sectionHeight` 供 band 用，改动收益低）；③ 保留（lock 版归一化入口）。**先证等价**（实测见文末）：在全部可达输入上逐值相同；唯一差异是**负高度**（`splitForkT(-0.1,null)`→1.1 vs 共享层→1.0），而两处归一化都把 height 下界钳到 ≥0（`normalizePanelSplits` `[0,0.78]`、`strandSplitsFor` `[0.02,0.8]`）⇒ 不可达。②⑤⑥⑦ 均已具备 import 路径 |
+| ~~**fork-T = `1 − max(左右相邻 zipper 高)`**~~ **（0.2.133 已 collapse，见 §9）** | `tip-width-curve.js:41` `tipWidthCommonForkFromHeights`（高度版，几何无关）；`bone-model.js:448` `strandSplitForkTForSegment` 是它的 **lock 版**（额外做 `strandSplitsFor` 归一化，合理保留） | 全仓库共 **7 处**独立算式：① `tip-width-curve.js:33`（`tipWidthSideForkFromHeights` 内的 `segmentForkT`，与 `:42` 同式）；② `panel-tip-strand.js:182` `splitForkT`；③ `bone-model.js:452`；④ `strand-geometry.js:140` `sectionHeight` + `:145` `1 - sectionHeight`；⑤ `usda-export.js:542` `strandForkTForTube`；⑥ `usda-export.js:591` 与 `:672`（panel，两处）；⑦ `project-files.js:733`（panel）+ `:750`（strand），**同一函数内两份** | **高** | **`strand-tip-width.js:84` 的注释写「三处必须一致，勿新写第四条公式」——实际是 7 处，该注释本身已过期，须一并更正。** 处置：②⑤⑥⑦ 改调 `tipWidthCommonForkFromHeights`；④ 保留（它同时要 `sectionHeight` 供 band 用，改动收益低）；③ 保留（lock 版归一化入口）。**先证等价**（实测见文末）：在全部可达输入上逐值相同；唯一差异是**负高度**（`splitForkT(-0.1,null)`→1.1 vs 共享层→1.0），而两处归一化都把 height 下界钳到 ≥0（`normalizePanelSplits` `[0,0.78]`、`strandSplitsFor` `[0.02,0.8]`）⇒ 不可达。②⑤⑥⑦ 均已具备 import 路径 |
 | **最刺眼的一处：同一文件内两份等价 fork** | 同上 | `panel-tip-strand.js:178` `splitForkT` 与 `:230` `tipWidthCommonForkT` **相距 50 行、可证等价**，且后者**无生产调用点**（只被测试读，见 §6） | **高** | 单独列出因为它是**成本最低的一刀**：删 `tipWidthCommonForkT` 或让 `splitForkT` 委托它，无跨模块协调。**注意** `panel-tip-strand.js:186-188` 的段头注释写「以下 tipWidth* 函数全部是薄适配器…勿在此处复制公式」——而 `splitForkT` 就在该注释上方 8 行处复制着公式，注释与代码互相矛盾 |
 | **`SPREAD_MAX = 0.99`（spread 定义域上界）** | `bone-model.js:9`（**未导出**，这是重复的直接原因） | `segment-control.js:59` 第二份 `const SPREAD_MAX = 0.99;`，注释自陈「bone-model 未导出该常量，故此处保留副本；改动必须两处同步」 | **中** | `export const SPREAD_MAX` 于 bone-model，`segment-control.js` 改 import（**该文件已 import bone-model**，零新依赖边）。这是成本最低、收益明确的一条 |
 | 同上（内联字面量 `0.99`） | 同上 | `app.js:13403`、`app.js:17358`、`bone-interaction.js:599`（`* 0.99` 与 `clamp(…,0,0.99)`）、`bone-view-handles.js:461`（`spread / 0.99`）、`usda-export.js:617`、`usda-export.js:691`、`strand-geometry.js:183`、`panel-tip-strand.js:309` | **中** | 同上导出后逐处替换为常量。**注意**：`taper-editor.js:282/1094` 与 `curve-math.js:988` 的 `0.99`/`0.999` 是**曲线 position 钳位**，与 spread 无关，**不要一起替换**（不同规则同值，替换会把两条规则绑死） |
@@ -197,3 +197,45 @@ standards 明确允许跨模块（视口/导出分层）保留副本，条件是
 - **store / 键名**：`panelTipSelection`/`panelTipHover` 在**全部生产代码中已归零**，仅存 1 处解释性注释（`sculpt-edit-store.js:15`）与 2 条**负向**测试断言（`tests/strand-segment-ui.test.mjs:423/426`，作用正是钉住改名）。
 - **计数**（0.2.126 现场统计，非沿用旧文档）：app.js **20,788** 行；`modules/**/*.js` **104** 文件 / 约 **41,800** 行；`-store.js` **19** 个文件 = 18 域 store + `scene-store` 基类；`sculptState` **79** 键；`tests/*.test.mjs` **16** 个文件。`FUNCTION_INDEX` 重新生成为 **2,293** 函数 / **105** 文件（原 2,154 / 101，且缺 `tip-width-curve.js`/`strand-tip-width.js`/`tip-sub-bone-host.js`/`bridge-export.js` 四个模块）。
 - **测试基线**：审计开始时 **342 pass / 0 fail**，结束时 **347 pass / 0 fail**（并发的 0.2.127 一路新增 5 条）。两次均一次跑过，未出现 `uv-pack-async` 的负载 flake。
+
+## 9. fork-T collapse 已完成（0.2.133）
+
+§2 第一行与 §7 步骤 4 **已执行**。审计当时记为 7 处，0.2.132 之后实际为 **9 处**（`usda-export.js`
+的 panel 分支拆成 `splitBoneLayout` / `splitChainLayout` 两处、`tip-width-curve.js` 自身含
+`tipWidthSideForkFromHeights` 内的回退式）。9 处全部折叠，**逐值/逐字节等价已实测**。
+
+**定义点（`modules/geometry/tip-width-curve.js`）现为两个入口，算术只有一份**：
+
+| 入口 | 缺侧语义 | 消费方 |
+|---|---|---|
+| `tipWidthCommonForkFromHeights(l, r)` | `?? 0`（缺侧 = 零深拉链） | `tipWidthSideForkFromHeights` 回退式、`strand-tip-width.js` `strandTubeForkT`、`strand-geometry.js` `sectionSplitStart`、`usda-export.js` `strandForkTForTube`、`project-files.js` 发丝分支 |
+| `tipWidthCommonForkFromPresentHeights(l, r)` | guard（只让在场高度参与 max，全缺 → 1）；**委托**上一个入口做算术 | `panel-tip-strand.js` `splitForkT`、`usda-export.js` `splitBoneLayout`/`splitChainLayout` 的 panel 分支、`project-files.js` panel 分支 |
+
+**为何必须保留两个入口**（不是疏漏）：两者在**非负**高度上逐值相同，仅在「单侧相邻 zipper
+在场且其 `height < 0`」时不同（guard → >1，`?? 0` → 1）。而导出侧/存档蒙皮侧读的是**原始**
+`lock.panelSplits` —— `.ahs` 经 `JSON.parse` 进来，loader **不钳** height（`normalizePanelSplits`
+的 `[0, 0.78]` 只作用于 app.js 的编辑路径），所以负高度在手改存档上**可达**。0.2.133 刻意
+保留该分支语义（重构不夹带行为变化）。该边界由测试钉住。
+
+**刻意未折叠的 2 处**：
+1. `bone-model.js` `strandSplitForkTForSegment`（lock 版归一化入口）。`tip-width-curve.js`
+   反向 `import { SPREAD_MAX }` 自 `bone-model.js` ⇒ 折叠会造成**循环依赖**。
+2. `scripts/verify-skeleton-layout.mjs:47` `forkTFor`。它是校验生产实现的**独立 oracle**，
+   改成调用被测代码会让该校验自证、失去判别力。
+
+**验收证据**：
+- `node --test "tests/*.test.mjs"`：**364 → 364 pass / 0 fail**（新增 3 条 fork-T 断言后
+  367，见下）。
+- **逐字节等价探针** `scripts/probe-forkt-equivalence.mjs`（新增，可复跑）：HEAD 与
+  collapse 后两份 JSON **SHA-256 完全相同**（398,528 bytes）。覆盖 ① 合成输入全笛卡尔积
+  （含负高度 / NaN / 字符串 / null 等**越界**取值）；② 真实 `assets/presets/layered-side-bun.ahs`
+  全部 lock × 全部段的 `splitBoneLayout` / `splitChainLayout` 输出；③ `createSplitStrandGeometry`
+  的**完整 position / uv / index 数组**（6 组 splits × 3 组 tipClump，全精度写出）。
+- `scripts/verify-skeleton-layout.mjs`：**40/41**（与 collapse 前逐条相同；唯一 FAIL 是
+  "0 bridge children"，该 preset 无桥接子发片，与本轮无关）。
+  ⚠ 该脚本默认路径 `D:/Downloads/Sussurro_v1_0046.ahs` **在本机不存在**，故 130/130 基线
+  未能复跑；上述 40/41 是可达替代基线。
+- **负对照**：`tests/split-tip-geometry.test.mjs` 的
+  "0.2.133 negative control: the fork-T detector actually catches a reintroduced formula"
+  先证明检测正则能抓住 6 种历史写法、且不误报 4 种无关 `Math.max` 用法，**然后**才用它断言
+  5 个消费方文件不含该公式。这样 `doesNotMatch` 不会因正则写错而假绿。

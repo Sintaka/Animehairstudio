@@ -34,7 +34,8 @@ export function segmentZipperHeights(splits, segmentIndex) {
 // Boundary sides without a zipper fall back to the segment fork (bounded by the other
 // side's zipper), so left/right control regions can differ.
 export function tipWidthSideForkFromHeights(leftHeight, rightHeight, side) {
-  const segmentForkT = 1 - Math.max(leftHeight ?? 0, rightHeight ?? 0);
+  // 边界回退值走唯一定义点（此前这里是 fork-T 的第 2 份算式，与下方 :~76 逐字同式）。
+  const segmentForkT = tipWidthCommonForkFromHeights(leftHeight, rightHeight);
   if (side < 0) return leftHeight != null ? 1 - leftHeight : segmentForkT;
   return rightHeight != null ? 1 - rightHeight : segmentForkT;
 }
@@ -42,8 +43,47 @@ export function tipWidthSideForkFromHeights(leftHeight, rightHeight, side) {
 // The COMMON control fork for a segment: based on the DEEPEST of the two zippers.
 // This is the SHARED GRID BASIS: both sides subdivide this one span, so the control
 // parameters (and therefore the spacing) are identical on the left and the right.
+//
+// ★ 全仓库 fork-T 规则（`1 − max(相邻 zipper 高)`）的**唯一定义点**。0.2.133 起，此前
+// 散落在 9 处的独立算式全部折叠到这里（panel 段 / 发丝管 / 视口 / 导出 / 存档蒙皮）。
+// 消费方清单见本函数下方 tipWidthCommonForkFromPresentHeights 的注释。
+// **禁止**在任何消费方重写 `1 - Math.max(...)`：0.2.124 的「多条拉链只有一条开缝」正是
+// 同一条规则有 3 份副本、只改了 1 份造成的（tests/split-tip-geometry.test.mjs 有负向
+// 断言钉住这一点）。
+//
+// 缺侧语义：null/undefined（最外边界，该侧无 zipper）按 `?? 0` 视作「零深拉链」⇒ 该侧
+// 不约束 fork。这与「只让在场高度参与 max」的 guard 形式**在非负高度上逐值相同**，仅在
+// 负高度且只有单侧在场时不同 —— 那条差异由下方的 guard 形式版本独立承载。
 export function tipWidthCommonForkFromHeights(leftHeight, rightHeight) {
   return 1 - Math.max(leftHeight ?? 0, rightHeight ?? 0);
+}
+
+// 同一条 fork-T 规则的 **guard 形式**：只让**在场**（!= null）的相邻高度参与 max，两侧
+// 都不在场时返回 1（该段完全锁死）。算术本身**委托** tipWidthCommonForkFromHeights，
+// 所以 `1 - Math.max(...)` 在本仓库仍只有一处。
+//
+// 为什么必须与 `?? 0` 版并存而不是二选一：两者在**非负**高度上逐值相同，但在「只有单侧
+// 相邻 zipper 在场、且其 height < 0」时不同（guard 形式 → >1，`?? 0` 版 → 1）。而导出侧
+// （usda-export.splitBoneLayout / splitChainLayout）与存档蒙皮侧（project-files.tipIdxFor）
+// 读的是**原始** lock.panelSplits —— 那里没有经过 app.js normalizePanelSplits 的
+// [0, 0.78] 钳制（.ahs 直接被 JSON.parse，loader 不钳 height），因此负高度在手改存档上
+// **可达**。0.2.133 的 collapse 刻意保留该分支语义（重构不夹带行为变化）。
+//
+// 消费方（改这里就要看这几处 —— 全部**只调用**，不得复制公式）：
+//   - modules/geometry/panel-tip-strand.js  splitForkT（panel 段发尖链 / 视口把手）
+//   - modules/io/usda-export.js             splitBoneLayout / splitChainLayout 的 panel 分支
+//   - modules/io/project-files.js           tipIdxFor 的 panel 分支（USDA 蒙皮关节名）
+// 独立复刻（**刻意保留**，勿折叠）：scripts/verify-skeleton-layout.mjs:47 forkTFor ——
+// 它是校验生产实现的**独立 oracle**，改成调用被测代码会让该校验自证、失去判别力。
+export function tipWidthCommonForkFromPresentHeights(leftHeight, rightHeight) {
+  const present = [leftHeight, rightHeight].filter((height) => height != null).map(Number);
+  if (!present.length) return 1;
+  // 单侧在场时把缺侧也填成在场值：max(h, h) === h，于是「缺侧不参与」被精确表达，
+  // 同时算术仍走唯一定义点（负高度下 max 不会被 0 抬高，guard 语义得以保留）。
+  return tipWidthCommonForkFromHeights(
+    present[0],
+    present.length > 1 ? present[1] : present[0]
+  );
 }
 
 // The raw control grid for a fork: 5 midpoints plus the tip end (t=1). Callers pass the

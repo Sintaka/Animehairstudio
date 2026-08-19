@@ -2,6 +2,14 @@
 // bone-model.js 只依赖 three，不反向依赖 io/*，故无循环依赖；导出的骨骼横向偏移因此
 // 与 createSplitStrandGeometry 渲染出的管逐值一致。
 import { strandSplitTubeCenter } from "../bones/bone-model.js?v=20260901-1";
+// fork-T（`1 − max(相邻 zipper 高)`）的唯一定义点。本文件此前有 3 份独立算式
+// （strandForkTForTube + splitBoneLayout/splitChainLayout 的 panel 分支各一），0.2.133 折叠。
+// 两种缺侧语义各有一个入口：`?? 0` 版（发丝，splits 已归一化）与 guard 版（panel，读原始
+// lock.panelSplits）。tip-width-curve 只 import three / curve-math / bone-model ⇒ 无循环。
+import {
+  tipWidthCommonForkFromHeights,
+  tipWidthCommonForkFromPresentHeights
+} from "../geometry/tip-width-curve.js?v=20260901-1";
 
 function finiteNumber(value) {
   const number = Number(value);
@@ -534,12 +542,12 @@ function strandSplitsForExport(lock) {
     .sort((a, b) => a.position - b.position);
 }
 
-// 管 k 的 fork 深度：1 - max(相邻拉链高)，边缘段用单一相邻拉链。与 Phase B 的
-// sectionSplitStart 及 bone-model strandSplitForkTForSegment 一致。N=1 时 = 1 - strandSplitHeight。
+// 管 k 的 fork 深度：**委托** tip-width-curve 的唯一定义点（`1 − max(相邻拉链高)`）。
+// 边缘段的缺侧为 undefined ⇒ 共享层按 `?? 0` 处理，与此前本地 `?? 0` 写法逐值相同。
+// 与 Phase B 的 sectionSplitStart 及 bone-model strandSplitForkTForSegment 同一条规则。
+// N=1 时 = 1 - strandSplitHeight。
 function strandForkTForTube(splits, k) {
-  const leftHeight = splits[k - 1]?.height ?? 0;
-  const rightHeight = splits[k]?.height ?? 0;
-  return 1 - Math.max(leftHeight, rightHeight);
+  return tipWidthCommonForkFromHeights(splits[k - 1]?.height, splits[k]?.height);
 }
 
 // 管 k 的横向**中心**（归一化 profile 坐标 ∈ [-1, 1]，唯一定义点 = bone-model.js 的
@@ -584,12 +592,15 @@ export function splitBoneLayout(lock, bone, options = {}) {
   let p = null;
 
   if (lock.geometryType === "panel" || lock.geometryType === "surface") {
-    // 面板/表面分支：forkT = 1 - max(相邻段高)；无 panelSplits 时该 split 无意义。
+    // 面板/表面分支：forkT 走 tip-width-curve 的 guard 形式唯一定义点（只让在场的相邻
+    // 段高参与 max）。这里读的是**原始** lock.panelSplits（未经 normalizePanelSplits
+    // 钳制），guard 形式正是为此保留 —— 详见 tipWidthCommonForkFromPresentHeights。
+    // 无 panelSplits 时该 split 无意义。
     if (!Array.isArray(lock.panelSplits) || !lock.panelSplits.length) return null;
-    const heights = [lock.panelSplits[k - 1]?.height, lock.panelSplits[k]?.height]
-      .filter((h) => h != null)
-      .map(Number);
-    forkT = heights.length ? 1 - Math.max(...heights) : 1;
+    forkT = tipWidthCommonForkFromPresentHeights(
+      lock.panelSplits[k - 1]?.height,
+      lock.panelSplits[k]?.height
+    );
     if (typeof splitTipForSegment === "function") {
       try {
         const tip = splitTipForSegment(lock, k, lock.panelSplits, bone);
@@ -669,12 +680,13 @@ export function splitChainLayout(lock, bone, options = {}) {
   let chain = null;
 
   if (lock.geometryType === "panel" || lock.geometryType === "surface") {
-    // 面板/表面分支：forkT = 1 - max(相邻段高)；tip 链由 splitTipForSegment 提供。
+    // 面板/表面分支：forkT 走与 splitBoneLayout 同一个 guard 形式定义点（同上，读原始
+    // panelSplits）；tip 链由 splitTipForSegment 提供。
     if (!Array.isArray(lock.panelSplits) || !lock.panelSplits.length) return null;
-    const heights = [lock.panelSplits[k - 1]?.height, lock.panelSplits[k]?.height]
-      .filter((h) => h != null)
-      .map(Number);
-    forkT = heights.length ? 1 - Math.max(...heights) : 1;
+    forkT = tipWidthCommonForkFromPresentHeights(
+      lock.panelSplits[k - 1]?.height,
+      lock.panelSplits[k]?.height
+    );
     if (typeof splitTipForSegment === "function") {
       try {
         chain = splitTipForSegment(lock, k, lock.panelSplits, bone);
