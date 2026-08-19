@@ -1,4 +1,5 @@
-// tests/usda-export.test.mjs — 纯 node 测试（usda-export.js 无 import，可直接 import）：
+// tests/usda-export.test.mjs — 纯 node 测试（usda-export.js 仅依赖 bone-model.js 的
+// strandSplitDirection 唯一定义点 → three，无 DOM 依赖，可直接 import）：
 // 验证骨骼导出的 USD SkelBindingAPI 结构 —— 单个 def SkelRoot "Character" 内含所有
 // 发丝的 def Skeleton（joints / bindTransforms / restTransforms，不带 skel: 前缀），
 // 蒙皮 mesh 与 Skeleton 同级嵌在 Character SkelRoot 内，rel skel:skeleton 指向

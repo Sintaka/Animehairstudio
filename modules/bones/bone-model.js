@@ -451,15 +451,28 @@ export function strandSplitForkTForSegment(lock, segmentIndex) {
   return 1 - Math.max(leftHeight, rightHeight);
 }
 
-// 管 k 的横向推开方向：最左 -1、最右 +1、中间按其两侧拉链位置中点的符号。与
-// createSplitStrandGeometry 的 per-section direction 同规则（N=1 时为 -1/+1，与旧版一致）。
+// ---- 管 k 的横向推开方向：本仓库唯一定义点（standards「一处派生」） ----
+// 规则：沿管下标**单调递增**地从 -1 线性插到 +1（splitCount = 拉链数 N，管数 N+1）：
+//   direction(k) = (2k - N) / N，k = 0..N
+// 单调性是关键：缝 k|k+1 只有在两管**相向分离**（direction[k+1] > direction[k]）时才会
+// 张开。旧规则用离散的 ±1/0（最左 -1、最右 +1、中间取两侧拉链中点符号），N=2 时得到
+// [-1,-1,+1] —— 管 0 与管 1 同向平移、缝 0 永远闭合，所以「加了多个 zipper 只有一条缝
+// 打开」。新规则下相邻差恒为 2/N > 0，N 条缝全部张开；中间管位移量小于外侧管，因此
+// 总横向张开幅度不会随 N 膨胀。N=1 时退化为 -1/+1，与旧版逐值相同。
+// 消费方（必须与本函数保持一致，改这里就要看那两处）：
+//   - modules/geometry/strand-geometry.js  createSplitStrandGeometry（per-section direction）
+//   - modules/io/usda-export.js            strandDirectionForTube
+export function strandSplitDirection(segmentIndex, splitCount) {
+  const count = Math.max(0, Math.floor(Number(splitCount) || 0));
+  if (count <= 0) return 0; // 0 拉链 = 单管，无处可推（split 发丝恒 ≥1 拉链，此处只防除零）
+  const k = THREE.MathUtils.clamp(Math.floor(Number(segmentIndex) || 0), 0, count);
+  return (2 * k - count) / count;
+}
+
+// lock 版包装：按几何一致的归一化（strandSplitsFor：排序 + 钳制 + legacy 单标量回退）
+// 取出拉链数，再套用上面的唯一规则。
 export function strandSplitDirectionForSegment(lock, segmentIndex) {
-  const splits = strandSplitsFor(lock);
-  const splitCount = splits.length;
-  if (segmentIndex <= 0) return -1;
-  if (segmentIndex >= splitCount) return 1;
-  const center = ((splits[segmentIndex - 1]?.position ?? -1) + (splits[segmentIndex]?.position ?? 1)) / 2;
-  return Math.sign(center);
+  return strandSplitDirection(segmentIndex, strandSplitsFor(lock).length);
 }
 
 function normalizeStrandSplitBone(bone, lock, index) {

@@ -1,3 +1,8 @@
+// 唯一外部依赖：发丝多拉链的「管 k 横向推开方向」唯一定义点（standards「一处派生」）。
+// bone-model.js 只依赖 three，不反向依赖 io/*，故无循环依赖；导出的骨骼横向偏移因此
+// 与 createSplitStrandGeometry 渲染出的管逐值一致。
+import { strandSplitDirection } from "../bones/bone-model.js?v=20260813-1";
+
 function finiteNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
@@ -537,14 +542,12 @@ function strandForkTForTube(splits, k) {
   return 1 - Math.max(leftHeight, rightHeight);
 }
 
-// 管 k 的横向推开方向：最左 -> -1，最右 -> +1，中间段按其两侧拉链位置中点的符号。
-// N=1 时 k=0 -> -1、k=1 -> +1，与旧版 direction = k===0 ? -1 : 1 逐值相同。
-function strandDirectionForTube(splits, k) {
-  const splitCount = splits.length;
-  if (k === 0) return -1;
-  if (k === splitCount) return 1;
-  const center = ((splits[k - 1]?.position ?? -1) + (splits[k]?.position ?? 1)) / 2;
-  return Math.sign(center);
+// 管 k 的横向推开方向：沿管下标从 -1 单调递增到 +1（唯一定义点 = bone-model.js 的
+// strandSplitDirection，见那里的注释：单调性正是「每条缝都张开」的充要条件）。
+// splits 由 strandSplitsForExport 归一化（与几何同规则：排序 + 钳制 + legacy 回退），
+// 所以同一个 k 在几何/骨骼/导出三处得到同一个 direction。N=1 时 k=0 -> -1、k=1 -> +1。
+export function strandDirectionForTube(splits, k) {
+  return strandSplitDirection(k, Array.isArray(splits) ? splits.length : 0);
 }
 
 // split 骨骼根部锚定的主链索引：必须严格位于自己的第一个暴露链点之下（根不能与它的
