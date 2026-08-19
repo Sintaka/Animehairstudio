@@ -6,7 +6,11 @@
 import * as THREE from "three";
 
 const MAX_SPLIT_SEGMENTS = 24;
-const SPREAD_MAX = 0.99;
+// spread（UI 名 Tip Clump）的定义域上界：超过 1 会让段/管尖越过自身宽度、产生 crossover
+// （panel 的 segmentRamp 与 strand-geometry 的 per-section opening 都钳在同一界）。
+// **唯一定义点**（0.2.130 起导出）：此前 segment-control.js 保留了一份「bone-model 未导出该
+// 常量，故此处保留副本」的字面量，视口滑杆与拖拽路径还各自内联 0.99。消费方一律 import。
+export const SPREAD_MAX = 0.99;
 
 export function defaultSplitSpread(lock) {
   // Relative per-segment tip gap fraction; derived from the legacy absolute gap so old

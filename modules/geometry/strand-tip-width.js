@@ -8,7 +8,7 @@
 // 空间**（clipStrandProfileBand 裁剪后的 2D 截面多边形，尚未经 scaleX/frame/opening 变换）。
 // signedCoordinate 是由它派生的**管内归一化**标量 ∈ [-1, 1]，不是世界空间量。
 import * as THREE from "three";
-import { defaultStrandSplitSpread, strandSplitDirection } from "../bones/bone-model.js?v=20260830-1";
+import { defaultStrandSplitSpread, strandSplitDirection, SPREAD_MAX } from "../bones/bone-model.js?v=20260830-1";
 import { sampleAsymmetricTaperCurve, sampleScale } from "./curve-math.js?v=20260813-3";
 import {
   buildTipWidthCurveFrom,
@@ -23,7 +23,12 @@ import {
 } from "./tip-width-curve.js?v=20260829-1";
 // 发尖子骨骼链的几何无关原语（与 strand-geometry.js 的「Route 2」再锚定趟用**同一批**
 // 函数）：把手必须跟随被拖动的发尖链，见文件下方 strandTipChainTransformAt。
-import { sampleTipPosition, tipChainFrameAt, tipWeightAt } from "./tip-sub-bone.js?v=20260830-1";
+import {
+  sampleTipPosition,
+  tipChainFrameAt,
+  tipWeightAt,
+  TIP_CLUMP_HANDLE_TANGENT_OFFSET
+} from "./tip-sub-bone.js?v=20260830-1";
 
 // panel 的发尖采样混合带宽（tipWidthMultiplierAt 末参 0.25）。发丝要与之同构就必须用同一
 // 个值：带宽决定「离管中心多远算完全属于该侧」，两边不同会让同一条曲线在 panel 与发丝上
@@ -546,4 +551,79 @@ export function strandTipWidthEdgePoints(geo, lock, splits, tubeIndex, bone, sid
     if (edge) points.push(edge.point);
   }
   return points;
+}
+
+// ── 绿色 Tip Clump 手柄：管 tubeIndex 在发尖处的「spread → 世界位置」线段 ─────────────
+// panel 侧的对应量（bone-view-handles.js panelTipClumpHandlePoint + bone-interaction.js
+// kind==="segment"）是**段自身 u 跨度上的一个分数**：
+//   handleU = boundaries[seg] + (spread / SPREAD_MAX) * span，把手取该 u 处的段表面点。
+// 即「spread = 把手在本段自身横向跨度里的归一化位置」。发丝的正确类比不是「沿张开方向推
+// 多远」（那会在 direction === 0 的中间管上退化成一个不动的点，见下方 DEGENERATE 说明），
+// 而是**同一条**「本管自身横向跨度上的分数」：
+//   point(spread) = lerp(左边缘(spread), 右边缘(spread), spread / SPREAD_MAX)
+// 两侧边缘都取 t = 1（发尖端），由既有单一定义点 strandTipWidthEdgePosition 求值 —— 于是
+// 绿色手柄与该管的绿色 WidthCurve 手柄、发尖链手柄共用同一条变换链（含发尖子骨骼再锚定），
+// 拖发尖时三者一起走。
+//
+// **为什么返回线段而不是逐 spread 求值**：edgePosition 对 spread 的依赖只有 opening
+// （t = 1 时 opening = baseWidth · spread · direction，smoothstep(1, fork, 1) = 1），而它
+// 只是沿 frame.x 的平移；applyStrandTipChainTransform 对 worldPoint 是仿射的。所以
+// point(spread) 是 spread 的**仿射函数** ⇒ 世界轨迹是一条直线段，两端求值即完整确定。
+// 拖拽扫描因此只需两次几何求值 + 廉价插值，而不是每个探针都重跑一次 profile/frame 求解。
+//
+// tangentOffset：沿发尖切线外推，避免与该管发尖链末点手柄（黄色）重合。**烘进本函数**是
+// 刻意的 —— 绘制与拖拽扫描必须落在**同一条**线段上，否则指针与球心恒有偏差（panel 侧就
+// 有这个已知偏差：它的扫描基线是 panelSplitControlPoint、不含偏移；发丝不复制该缺陷）。
+//
+// DEGENERATE（必须知道，不是本函数的 bug）：spread 在发丝几何里**只**经 opening 生效，而
+// opening ∝ strandSplitDirection(k, N) = (2k − N) / N。偶数拉链数的正中间管（k = N/2，如
+// N = 2 的管 1）direction === 0 ⇒ 改 spread 完全不动网格。这在 0.2.116 多拉链移植时就是
+// 这样，滑杆同样是空操作；本函数据此仍返回一条**非退化**线段（跨度来自管自身宽度，与
+// direction 无关），所以手柄可拖、读数会变，只是那一根管的网格不动。
+// 返回 null = 该管没有可放置的发尖边缘（profile 退化 / 无 splits）。
+export function strandTipClumpAxis(geo, lock, splits, tubeIndex, bone) {
+  const probeAt = (spread) => {
+    // 只覆写 spread：其余字段（tip 链、两侧 taperCurve、asymmetricWidthCurve）必须原样带上，
+    // 否则边缘位置会落在「无宽度曲线」的另一条形状上，线段就不是真实手柄轨迹了。
+    const probe = { ...(bone || {}), spread };
+    const left = strandTipWidthEdgePosition(geo, lock, splits, tubeIndex, probe, -1, 1);
+    const right = strandTipWidthEdgePosition(geo, lock, splits, tubeIndex, probe, 1, 1);
+    if (!left || !right) return null;
+    return {
+      left: left.point,
+      right: right.point,
+      // 切线取该管发尖链自身 y 轴（与法线箭头/gizmo 同一个 tipChainFrameAt 原语）；无链时
+      // 回退主几何帧 y。两者都是「发尖前进方向」。
+      tangent: tipClumpTangent(geo, lock, tubeIndex)
+    };
+  };
+  const low = probeAt(0);
+  const high = probeAt(SPREAD_MAX);
+  if (!low || !high) return null;
+  const endpointFor = (probe, spread) => probe.left.clone()
+    .lerp(probe.right, SPREAD_MAX <= 0 ? 0 : spread / SPREAD_MAX)
+    .addScaledVector(probe.tangent, TIP_CLUMP_HANDLE_TANGENT_OFFSET);
+  const start = endpointFor(low, 0);
+  const end = endpointFor(high, SPREAD_MAX);
+  return {
+    start,
+    end,
+    // spread → 世界位置（仿射，见上方推导）。钳在定义域内，越界探针不会跑到管外。
+    pointAt: (spread) => start.clone().lerp(
+      end,
+      SPREAD_MAX <= 0 ? 0 : THREE.MathUtils.clamp(Number(spread) || 0, 0, SPREAD_MAX) / SPREAD_MAX
+    )
+  };
+}
+
+// 发尖切线：优先该管物化发尖链在 t = 1 的帧 y（跟随被拖动的发尖），无链则退回主几何帧 y。
+function tipClumpTangent(geo, lock, tubeIndex) {
+  const curve = geo?.strandGeometryCurve?.(lock);
+  const mainFrame = curve ? geo.strandGeometryFrameAt(lock, curve, 1, null) : null;
+  const chain = geo?.strandSplitTipChains?.(lock)?.[tubeIndex];
+  if (chain && Array.isArray(chain.points) && chain.points.length >= 2 && chain.active !== false && mainFrame) {
+    return tipChainFrameAt(chain, chain, 1, mainFrame.z.clone()).y;
+  }
+  if (mainFrame) return mainFrame.y.clone();
+  return new THREE.Vector3(0, 1, 0);
 }

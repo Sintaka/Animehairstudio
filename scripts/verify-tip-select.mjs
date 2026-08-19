@@ -126,7 +126,7 @@ try {
       ...(lock.curveObjects?.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right]),
       ...(lock.curveObjects?.handles || []),
       ...(lock.curveObjects?.panelSplitHandles || []),
-      ...(lock.curveObjects?.panelSegmentHandles || [])
+      ...(lock.curveObjects?.tipClumpHandles || [])
     ].filter((h) => h && h.visible);
     const rect = t.renderer.domElement.getBoundingClientRect();
     const v = new t.THREE.Vector3();
@@ -235,7 +235,7 @@ try {
       ...(lock.curveObjects?.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right]),
       ...(lock.curveObjects?.handles || []),
       ...(lock.curveObjects?.panelSplitHandles || []),
-      ...(lock.curveObjects?.panelSegmentHandles || [])
+      ...(lock.curveObjects?.tipClumpHandles || [])
     ].filter((h) => h && h.visible);
     const rect = t.renderer.domElement.getBoundingClientRect();
     const v = new t.THREE.Vector3();
@@ -543,7 +543,7 @@ try {
     const leftLen = lineLen(lines ? lines.left : null);
     const rightLen = lineLen(lines ? lines.right : null);
     const handleColor = seg && seg.left[0] ? '#' + seg.left[0].material.color.getHexString() : null;
-    const greenVis = (lock.curveObjects.panelSegmentHandles || []).filter((h) => h.visible).length;
+    const greenVis = (lock.curveObjects.tipClumpHandles || []).filter((h) => h.visible).length;
     const widthEdgeVis = (lock.curveObjects.widthEdgeLines || []).filter((e) => e.visible).length;
     return JSON.stringify({ leftVis, rightVis, leftLine: !!lines && lines.left.visible, rightLine: !!lines && lines.right.visible, leftLen: Number(leftLen.toFixed(4)), rightLen: Number(rightLen.toFixed(4)), handleColor, greenVis, widthEdgeVis });
   })()`));
@@ -1081,7 +1081,7 @@ try {
     const allHandles = [
       ...(lock.curveObjects?.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right]),
       ...(lock.curveObjects?.panelSplitHandles || []),
-      ...(lock.curveObjects?.panelSegmentHandles || []),
+      ...(lock.curveObjects?.tipClumpHandles || []),
       ...(lock.curveObjects?.tipChainHandles || []),
       ...(lock.curveObjects?.strandSplitHandles || [])
     ].filter((h) => h && h.visible);

@@ -268,7 +268,7 @@ try {
     const allHandles = [
       ...(lock.curveObjects.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right]),
       ...(lock.curveObjects.tipChainHandles || []),
-      ...(lock.curveObjects.panelSegmentHandles || []),
+      ...(lock.curveObjects.tipClumpHandles || []),
       ...(lock.curveObjects.panelSplitHandles || [])
     ];
     const hits = t.raycaster.intersectObjects(allHandles.filter((x) => x.visible), false).slice(0, 3)
@@ -465,7 +465,7 @@ try {
         const all = [
           ...(lock.curveObjects.tipWidthHandles || []).flatMap((s) => [...s.left, ...s.right]),
           ...(lock.curveObjects.tipChainHandles || []),
-          ...(lock.curveObjects.panelSegmentHandles || []),
+          ...(lock.curveObjects.tipClumpHandles || []),
           ...(lock.curveObjects.panelSplitHandles || [])
         ];
         const hits = t.raycaster.intersectObjects(all.filter((x) => x.visible), false).slice(0, 3).map((x) => ({ ud: x.object.userData, d: +x.distance.toFixed(3) }));
@@ -508,7 +508,7 @@ try {
       const t = window.__ahsTest; const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
       t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 3 };
       t.updateCurveObjects(lock, { visible: true });
-      const h = lock.curveObjects.panelSegmentHandles[3];
+      const h = lock.curveObjects.tipClumpHandles[3];
       const rect = t.renderer.domElement.getBoundingClientRect();
       const c = t.projectToClient(new t.THREE.Vector3(h.position.x, h.position.y, h.position.z));
       const meshHash = (() => { const a = lock.mesh.geometry.attributes.position.array; let hsh = 0; for (let i = 0; i < a.length; i++) hsh += Math.abs(a[i]) * (i + 1); return hsh.toFixed(6); })();
@@ -526,7 +526,7 @@ try {
         const all = [
           ...(lock.curveObjects.tipWidthHandles || []).flatMap((s) => [...s.left, ...s.right]),
           ...(lock.curveObjects.tipChainHandles || []),
-          ...(lock.curveObjects.panelSegmentHandles || []),
+          ...(lock.curveObjects.tipClumpHandles || []),
           ...(lock.curveObjects.panelSplitHandles || [])
         ];
         const hits = t.raycaster.intersectObjects(all.filter((x) => x.visible), false).slice(0, 3).map((x) => ({ ud: x.object.userData, d: +x.distance.toFixed(3) }));

@@ -620,7 +620,7 @@ export default Object.freeze({
   "Snap Zippers to Loops": "分割線をループにスナップ",
   "Split Segments": "分割セグメント",
   "Segment": "セグメント",
-  "Segment Spread": "セグメント間隔",
+  "Tip Clump": "先端クランプ",
   "Edit Segment Width Curve": "セグメント幅カーブを編集",
   "Edit Segment Depth Curve": "セグメント奥行カーブを編集",
   "Previous segment": "前のセグメント",

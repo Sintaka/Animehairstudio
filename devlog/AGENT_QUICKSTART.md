@@ -1,8 +1,8 @@
 # 新 Agent 快速入口 / AGENT QUICKSTART
 
-> 目的：让一个新 agent（或新开发者）在几分钟内知道「本 fork 改了哪些代码、哪些**必须保留**、当时的**决策**是什么」，避免从头通读 ≈0.9MB（20,788 行）的 `app.js` 或 52KB 的 `js-change-annotations.md`（索引 + 6 个 `annotations-*.md` 专题）。
+> 目的：让一个新 agent（或新开发者）在几分钟内知道「本 fork 改了哪些代码、哪些**必须保留**、当时的**决策**是什么」，避免从头通读 ≈0.9MB（**约 2 万行；具体值现场统计,勿引用本页数字**）的 `app.js` 或 52KB 的 `js-change-annotations.md`（索引 + 6 个 `annotations-*.md` 专题）。
 > 维护：功能分支合入 / daily build +1 时，如涉及本页列出的保留代码或决策，请同步更新本页；详细条目仍按主题追加到各专题文件，本页只做摘要与指针。
-> 版本基准：0.2.126（DHS/develop）。**行数/文件数/store 数一律现场统计**（`node scripts/gen-function-index.js` 会顺带刷新 app.js 行数与文件数），本页历史上写死过 3 组过期计数。
+> 版本基准：0.2.129（DHS/develop）。**行数/文件数/store 数一律现场统计**（`node scripts/gen-function-index.js` 会顺带刷新 app.js 行数与文件数），本页历史上写死过 3 组过期计数。
 
 ## 0. 先读什么（建议顺序）
 
@@ -14,8 +14,8 @@
 
 ## 1. 仓库结构速览
 
-- `app.js`（20,788 行 ≈0.9MB，编排层）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 等业务逻辑已按子系统迁入 modules（见 `APPJS_SPLIT_GUIDE.md` §2）。**原版 main 是 39,207 行的扁平大文件，本地已拆分（约 −47%），不要在 app.js 里堆业务逻辑，新逻辑进 modules/<domain>/ 后经 createXxxApi 注入**。
-- `modules/*.js` —— 按域分目录（core/data/geometry/io/edit/sculpt/material/branch/scalp/bones/scene，共 104 个文件、约 41,800 行，app.js 计入则 105）；**全局状态已收敛到 18 个 store，全局 let 只剩 camera**（main 0.1.5 移植新增 multiCameraState/recovery，0.2.112 新增 windState，见 `devlog/STATE_MANAGEMENT.md`），不要再新增 app.js 全局 let。
+- `app.js`（≈0.9MB，编排层；行数现场统计）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 等业务逻辑已按子系统迁入 modules（见 `APPJS_SPLIT_GUIDE.md` §2）。**原版 main 是 39,207 行的扁平大文件，本地已拆分（约 −47%），不要在 app.js 里堆业务逻辑，新逻辑进 modules/<domain>/ 后经 createXxxApi 注入**。
+- `modules/*.js` —— 按域分目录（core/data/geometry/io/edit/sculpt/material/branch/scalp/bones/scene，0.2.129 实测 104 个文件、42,120 行，app.js 计入则 105；**这两个数字每轮都在变,引用前请现场统计**）；**全局状态已收敛到 18 个 store，全局 let 只剩 camera**（main 0.1.5 移植新增 multiCameraState/recovery，0.2.112 新增 windState，见 `devlog/STATE_MANAGEMENT.md`），不要再新增 app.js 全局 let。
 - `index.html` / `styles.css` —— UI（顶部菜单栏含 Preview 菜单 `#previewMenu`，Turntable 等预览开关在此；缓存号 `?v=` 定点刷新，**不要全局替换**，见 §5 坑）。
 - `server.js` —— main 带来的静态文件服务；`/api/save-project` 已是**死代码**（三个 Local 选项已移除，勿再调用）。
 - `devlog/` —— 全部开发记录（本页所在）。

@@ -1571,6 +1571,40 @@ test("split strands expose a per-segment selector, spread, and curve previews", 
   );
 });
 
+test("the per-segment spread slider is labelled Tip Clump on BOTH geometries, ids unchanged", async () => {
+  const [html, zh, ja] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../modules/data/loc-zh.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/data/loc-ja.js", import.meta.url), "utf8"),
+  ]);
+  // 0.2.130 rename: the user-facing label became "Tip Clump" on panels AND ordinary strands.
+  // The element ids, the range (0..0.99) and the persisted field name (bone.spread) are
+  // deliberately UNCHANGED — renaming any of those would break every existing .ahs file.
+  for (const id of ["panelSegmentSpread", "strandSegmentSpread"]) {
+    assert.match(
+      html,
+      new RegExp(`>Tip Clump <input id=["']${id}["']`),
+      `${id} is labelled "Tip Clump"`
+    );
+  }
+  assert.equal(
+    (html.match(/Segment Spread/g) || []).length,
+    0,
+    "no visible \"Segment Spread\" label survives the rename"
+  );
+  // Ids / readouts / range still exist exactly as before the rename.
+  assert.match(html, /id=["']panelSegmentSpreadValue["']/);
+  assert.match(html, /id=["']strandSegmentSpreadValue["']/);
+  assert.match(html, /id=["']panelSegmentSpread["'][^>]*max=["']0\.99["']/);
+  // Localization: the key follows the English source string, so the old key must be gone
+  // and the new one present in both non-English catalogs (otherwise the label falls back
+  // to English while every neighbouring control stays translated).
+  for (const [name, catalog] of [["loc-zh", zh], ["loc-ja", ja]]) {
+    assert.doesNotMatch(catalog, /"Segment Spread":/, `${name} drops the stale key`);
+    assert.match(catalog, /"Tip Clump":/, `${name} translates the new label`);
+  }
+});
+
 test("hair card state propagates through defaults, drawing, mirrors, history, projects, and presets", async () => {
   const source = await readFile(new URL("../app.js", import.meta.url), "utf8");
   const [creationPresets, drawFlow] = await Promise.all([
@@ -2610,7 +2644,7 @@ test("settings menu exposes preferences, language, and app version", async () =>
   assert.match(localization, /"Alt \+ Left Mouse":/);
   assert.match(localization, /"Center viewport on selected object":/);
   assert.equal(packageData.version, "0.1.5-Sintaka.0.2.63");
-  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.129["']/);
+  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.130["']/);
 });
 
 test("title bar exposes icon-only Patreon and Ko-fi support links", async () => {
@@ -2861,7 +2895,7 @@ test("newly drawn strands create linked mirror instances while X mirror is enabl
     readFile(new URL("../modules/geometry/draw-flow.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20260905-1/);
+  assert.match(html, /app\.js\?v=20260906-1/);
   assert.match(html, /id="mirrorInstanceAction"[^>]*>Mirror Strand<\/button>/);
   assert.match(
     source,
@@ -2953,7 +2987,7 @@ test("project materials select standard, anime anisotropic, and Lambert shaders"
     html,
     /id=["']hairMaterialShader["'][\s\S]*value=["']standard-anisotropic["']>Standard Anisotropic<[\s\S]*value=["']anime-anisotropic["']>Anime Anisotropic<[\s\S]*value=["']lambert["']>Lambert</
   );
-  assert.match(html, /app\.js\?v=20260905-1/);
+  assert.match(html, /app\.js\?v=20260906-1/);
   assert.match(
     html,
     /id=["']hairMaterialAnimeControls["'][\s\S]*id=["']hairMaterialAnimeBaseColor["'][\s\S]*value=["']#dbc2aa["'][\s\S]*id=["']hairMaterialAnimeShadowColor["'][\s\S]*value=["']#99675c["'][\s\S]*id=["']hairMaterialAnimeRimColor["'][\s\S]*value=["']#ffd9cf["'][\s\S]*id=["']hairMaterialAnimeRimStrength["'][\s\S]*value=["']0\.35["'][\s\S]*id=["']hairMaterialAnimeRimWidth["'][\s\S]*value=["']0\.3["'][\s\S]*id=["']hairMaterialAnimeHighlightEdgeSuppression["']/
@@ -4468,8 +4502,8 @@ test("strand width and depth curve editors expose draggable viewport mesh points
     /class="profile-dialog-actions taper-curve-actions"[\s\S]*id="addTaperPoint"[\s\S]*class="taper-toggle-stack"[\s\S]*id="taperAsymmetryToggle"[\s\S]*id="taperMeshPointsToggle"/
   );
   assert.doesNotMatch(html, /id="taperCurveSide"/);
-  assert.match(html, /styles\.css\?v=20260905-1/);
-  assert.match(html, /app\.js\?v=20260905-1/);
+  assert.match(html, /styles\.css\?v=20260906-1/);
+  assert.match(html, /app\.js\?v=20260906-1/);
   // localization.js is now loaded as an ES-module import inside app.js (there is no
   // separate localization script tag anymore).
   assert.match(source, /from "\.\/modules\/data\/localization\.js\?v=20260829-1"/);

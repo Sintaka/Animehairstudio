@@ -26,6 +26,7 @@ import {
   remapSegmentBonesOnInsert,
   remapSegmentBonesOnDelete,
   PANEL_SEGMENT_HOST,
+  SPREAD_MAX,
   STRAND_SEGMENT_HOST
 } from "../modules/bones/bone-model.js";
 import { strandDirectionForTube } from "../modules/io/usda-export.js";
@@ -34,6 +35,7 @@ import { unfoldHairMesh } from "../modules/io/uv-unfold.js";
 import {
   setStrandTipWidthCurveValue,
   strandTipBlendStartT,
+  strandTipClumpAxis,
   strandTipWidthControlPlacement,
   strandTipWidthEdgePoints,
   strandTipWidthEdgePosition,
@@ -2486,10 +2488,21 @@ test("Phase D: dispatch has no second grid/exposure/fork rule (source contract)"
       `${name} dispatches tip-width geometry via segmentBoneHost`
     );
   }
+  // 0.2.130：本断言原是「全文件恰好 2 处 segmentBoneHost 分派」，用总数来守「tipWidth 没有
+  // 第三条规则」。绿色 Tip Clump 手柄移植到发丝后，拖拽分支多了一处**属于另一个子系统**的
+  // 分派（strandClump），总数变 3。因此改为**按子系统**计数，守卫的牙齿不变：tipWidth 仍只
+  // 准有「起始 + 移动」两处，Tip Clump 只准有一处，任何第四处分派都会让本断言失败。
+  const allDispatches = interactionSource.match(/(?:const \w+ = )?segmentBoneHost\(lock\) (?:!==|===) STRAND_SEGMENT_HOST/g) || [];
+  assert.equal(allDispatches.length, 3, "no fourth segmentBoneHost dispatch appears in the drag paths");
   assert.equal(
-    (interactionSource.match(/segmentBoneHost\(lock\) (?:!==|===) STRAND_SEGMENT_HOST/g) || []).length,
+    allDispatches.filter((line) => /strandClump/.test(line)).length,
+    1,
+    "the Tip Clump drag dispatches exactly once (its own subsystem, not a third tipWidth rule)"
+  );
+  assert.equal(
+    allDispatches.filter((line) => !/strandClump/.test(line)).length,
     2,
-    "drag start and drag move each dispatch once, with no third rule"
+    "tipWidth drag start and drag move each dispatch once, with no third rule"
   );
   // ④ 发丝写入走共享核心的适配器，不是第二套曲线数学。
   assert.match(
@@ -2896,6 +2909,231 @@ test("tip highlight and hover gates dispatch on segmentBoneHost, not isPanelGeom
     interactionSource,
     /const segment = leafIndexAt\(leafWeights, hit\.face\.a\);/,
     "the hit test itself is unchanged (leafIndexAt on the hit face)"
+  );
+});
+
+// ═══ 0.2.130 绿色 Tip Clump 手柄移植到普通发丝 ═══════════════════════════════════════
+// panel 的绿色手柄语义 = 「spread 是把手在**本段自身横向跨度**里的归一化位置」
+// （handleU = boundaries[seg] + (spread / SPREAD_MAX) * span）。发丝的正确类比是同一句话，
+// 只是横向跨度换成「该管在发尖处的两侧边缘之间」。下面的测试把这条类比 + 拖拽反演钉死。
+
+test("Tip Clump axis: spread is the normalized position across the tube's OWN tip width", () => {
+  const lock = tipWidthLock();
+  const splits = strandSplitsFor(lock);
+  const bones = blankTubeBones(splits.length + 1);
+  const tube = TIP_WIDTH_ASYMMETRIC_TUBE;
+  const geo = tipWidthGeoDepsWithChains(lock, null);
+  const axis = strandTipClumpAxis(geo, lock, splits, tube, bones[tube]);
+  assert.ok(axis, "a split tube must expose a Tip Clump axis");
+  // spread = 0 ⇒ 落在该管**左**边缘；spread = SPREAD_MAX ⇒ 落在**右**边缘。判据用被测模块
+  // 之外的独立求值（strandTipWidthEdgePosition 直接调用 + 同一个探针 spread），所以断言钉的
+  // 是「两端确实是两侧边缘」，不是复述实现。
+  for (const [spread, side] of [[0, -1], [SPREAD_MAX, 1]]) {
+    const probeBone = { ...bones[tube], spread };
+    const edge = strandTipWidthEdgePosition(geo, lock, splits, tube, probeBone, side, 1);
+    assert.ok(edge, `edge must exist for side ${side}`);
+    // 手柄比边缘多一个沿切线的外推（避免与发尖链末点手柄重合），所以比较横向分量。
+    const handle = axis.pointAt(spread);
+    assert.ok(
+      Math.abs(handle.x - edge.point.x) < 1e-9,
+      `spread ${spread} must land on the ${side < 0 ? "left" : "right"} edge laterally`
+    );
+  }
+  // 跨度非零：手柄真的能沿一段可见距离移动（否则视口里拖不动）。
+  assert.ok(
+    axis.start.distanceTo(axis.end) > 0.01,
+    "the axis must span a draggable distance across the tube's own width"
+  );
+});
+
+test("Tip Clump axis is AFFINE in spread, so a 49-probe scan inverts it exactly", () => {
+  const lock = tipWidthLock();
+  const splits = strandSplitsFor(lock);
+  const bones = blankTubeBones(splits.length + 1);
+  const tube = TIP_WIDTH_ASYMMETRIC_TUBE;
+  const axis = strandTipClumpAxis(tipWidthGeoDepsWithChains(lock, null), lock, splits, tube, bones[tube]);
+  // 仿射 ⇒ 中点性质：pointAt(m) 恰是两端的中点。这正是拖拽端只需两次几何求值、其余用廉价
+  // 插值扫描的依据；若哪天 opening 不再是纯平移（非仿射），本断言会先失败。
+  const mid = axis.pointAt(SPREAD_MAX / 2);
+  const expected = axis.start.clone().lerp(axis.end, 0.5);
+  assert.ok(mid.distanceTo(expected) < 1e-9, "the midpoint spread maps to the geometric midpoint");
+  // 反演往返：把 pointAt(s) 当「指针落点」，用与 bone-interaction 同构的 49 探针最近点扫描
+  // 反解回 spread，必须回到出发值（容差 = 探针间距的一半）。
+  const step = SPREAD_MAX / 48;
+  for (const spread of [0, 0.2, 0.5, 0.9, SPREAD_MAX]) {
+    const target = axis.pointAt(spread);
+    let best = null;
+    for (let i = 0; i <= 48; i += 1) {
+      const probe = THREE.MathUtils.lerp(0, SPREAD_MAX, i / 48);
+      const distance = axis.pointAt(probe).distanceTo(target);
+      if (!best || distance < best.distance) best = { distance, probe };
+    }
+    assert.ok(
+      Math.abs(best.probe - spread) <= step / 2 + 1e-9,
+      `scan must recover spread ${spread} (got ${best.probe})`
+    );
+  }
+});
+
+test("Tip Clump axis FOLLOWS a dragged tip sub-bone (same transform chain as the width handles)", () => {
+  const lock = tipWidthLock();
+  const splits = strandSplitsFor(lock);
+  const bones = blankTubeBones(splits.length + 1);
+  const tube = TIP_REANCHOR_TUBE;
+  // 链数组必须是 **N+1 管**（不是 splits.length）：少一条会让被测管取到 undefined，
+  // 于是「跟随」断言在完全没有链的情况下也绿灯（实测过：漏掉 +1 时本测试假通过）。
+  const tubeCount = splits.length + 1;
+  const neutralChains = Array.from({ length: tubeCount }, (_, i) => strandTubeTipChain(lock, splits, i));
+  const neutral = strandTipClumpAxis(
+    tipWidthGeoDepsWithChains(lock, neutralChains),
+    lock,
+    splits,
+    tube,
+    { ...bones[tube], tip: { active: true } }
+  );
+  // ① 完全无链（app.js 尚未物化时的守卫路径）：仍必须产出一条可用的轴，不得抛异常。
+  // 切线此时回退主几何帧 y —— 与有链时的管心切线有微小夹角，所以下面 ② 只钉「不跳走」，
+  // **刻意不**钉 byte-identity：管心含 opening 横向偏移，它自己的切线才是正确的外推方向，
+  // 有链就该用链的（这不是缺陷，是取值优先级）。
+  const noChainAtAll = strandTipClumpAxis(tipWidthGeoDepsWithChains(lock, null), lock, splits, tube, bones[tube]);
+  assert.ok(noChainAtAll, "the no-chain guard path still yields an axis");
+  // ② 中性链（points === restPoints，无 authored 位移）不得让手柄跳走：平移项恒等消掉，
+  // 只剩上面那点切线夹角。
+  assert.ok(
+    neutral.pointAt(0.4).distanceTo(noChainAtAll.pointAt(0.4)) < 0.02,
+    "a neutral (undragged) chain must not teleport the handle"
+  );
+  // 被拖动的链（末两点 +x）：手柄必须跟着走。这是 0.2.127 为宽度把手修过的同一类 bug，
+  // 本轮的新手柄从一开始就落在同一条链变换上（它复用 strandTipWidthEdgePosition）。
+  const draggedChains = Array.from({ length: tubeCount }, (_, i) => strandTubeTipChain(
+    lock,
+    splits,
+    i,
+    (point, index) => (i === tube ? { ...point, x: point.x + TIP_DRAG_DISPLACEMENT[index] } : point)
+  ));
+  const dragged = strandTipClumpAxis(
+    tipWidthGeoDepsWithChains(lock, draggedChains),
+    lock,
+    splits,
+    tube,
+    { ...bones[tube], tip: { active: true } }
+  );
+  assert.ok(
+    dragged.pointAt(0.4).distanceTo(neutral.pointAt(0.4)) > 0.05,
+    "dragging the tip sub-bone must move the Tip Clump handle with it"
+  );
+});
+
+test("Tip Clump handles: ONE allocation, ONE userData key, ONE hit gate for both geometries", async () => {
+  const [handleSource, interactionSource] = await Promise.all([
+    readFile(new URL("../modules/bones/bone-view-handles.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/bones/bone-interaction.js", import.meta.url), "utf8")
+  ]);
+  // ① 分配：两种几何调**同一个** allocateTipClumpHandles，段数各自从描述子取。
+  assert.match(
+    handleSource,
+    /allocateTipClumpHandles\(lock, group, PANEL_SEGMENT_HOST\.segmentCount\(lock\), tipClumpHandles\)/,
+    "panel allocates via the shared allocator, sized by the host descriptor"
+  );
+  assert.match(
+    handleSource,
+    /allocateTipClumpHandles\(lock, group, strandSplitTipTubeCount, tipClumpHandles\)/,
+    "strand allocates via the SAME allocator, reusing the tube count of the other tip handles"
+  );
+  assert.equal(
+    (handleSource.match(/function allocateTipClumpHandles\(/g) || []).length,
+    1,
+    "there is exactly one Tip Clump allocator (no per-geometry copy)"
+  );
+  // ② userData 键不按几何分叉：只有 tipClumpSegment，绝不出现 strandTipClumpSegment。
+  // 匹配**属性访问/赋值**而不是裸标识符：两个文件的注释里都写着「不写
+  // strandTipClumpSegment」，裸匹配会被自己的说明文字绊倒。
+  for (const [name, source] of [["bone-view-handles", handleSource], ["bone-interaction", interactionSource]]) {
+    assert.doesNotMatch(
+      source,
+      /userData\.strandTipClumpSegment/,
+      `${name} must not introduce a parallel strand-only userData key`
+    );
+  }
+  // 旧的 userData 键/数组名必须彻底消失（否则命中侧会静默读到 undefined、绿手柄不可拖）。
+  // 只匹配 `userData.panelSegmentIndex` / `curveObjects.panelSegmentHandles`：**store 键**
+  // sculptState.panelSegmentIndex 是另一个命名空间（右侧面板停在哪一段），它必须保留 ——
+  // 裸匹配会把 bone-interaction 里解释这个 store 键的注释当成违规。
+  for (const [name, source] of [["bone-view-handles", handleSource], ["bone-interaction", interactionSource]]) {
+    assert.doesNotMatch(source, /userData\.panelSegmentIndex/, `${name} no longer uses the old userData key`);
+    assert.doesNotMatch(source, /curveObjects[.?]*\.?panelSegmentHandles/, `${name} no longer uses the old array name`);
+  }
+  // ③ 命中门控走 segmentBoneHost（与发尖链/宽度把手同一道门），不是手写 isPanelGeometry。
+  assert.match(
+    interactionSource,
+    /const segmentHandles = Boolean\(segmentBoneHost\(lock\)\)[\s\S]{0,120}?lock\.curveObjects\.tipClumpHandles/,
+    "the Tip Clump hit list is gated by the single segmentBoneHost dispatch"
+  );
+  // ④ 拖拽仍复用既有 kind "segment"（不新增第二个 kind：begin/end/可见性/高亮都靠它匹配）。
+  assert.match(
+    interactionSource,
+    /hit\.object\.userData\.tipClumpSegment != null\s*\?\s*"segment"/,
+    "the Tip Clump drag reuses the existing kind \"segment\""
+  );
+  // 同样匹配**代码**而不是裸字符串（实现里的注释写着「刻意不新增 kind "strandSegment"」）：
+  // 只有当它真的出现在 kind 比较/赋值里才算违规。
+  assert.doesNotMatch(
+    interactionSource,
+    /kind (?:===|!==|:) "strandSegment"/,
+    "no second drag kind was introduced"
+  );
+  // ④b 发丝写入必须落在**物化**骨骼上（standards「物化后再创作」，与滑杆路径
+  // applyStrandSegmentSpread 同规则）：读派生视图 strandSplitBonesFor 写进去会被丢弃。
+  assert.match(
+    interactionSource,
+    /const axisBones = materializeStrandSplitBones\(lock\);[\s\S]{0,700}?bone\.spread = THREE\.MathUtils\.clamp\(clumpBest\.spread, 0, SPREAD_MAX\)/,
+    "the strand Tip Clump drag materializes before authoring bone.spread"
+  );
+  // ④c 拖拽后热同步按几何分派到对应的那组段控件（发丝 → #strandSegmentControls）。
+  assert.match(
+    interactionSource,
+    /if \(strandClump\) deps\.syncStrandSegmentControls\(lock\);\s*\n\s*else deps\.syncPanelSegmentControls\(lock\);/,
+    "the drag refreshes the right geometry's segment panel"
+  );
+  // ④d 拖拽中必须用 updateCurveObjects（不是 rebuild）：重建会销毁正被拖的球、中断拖拽。
+  assert.doesNotMatch(
+    interactionSource,
+    /kind === "segment"[\s\S]{0,2000}?deps\.rebuildCurveObjects/,
+    "the Tip Clump drag must not rebuild curve objects mid-drag"
+  );
+  // ⑤ SPREAD_MAX 单一定义点：写入路径不得再内联 0.99 字面量。
+  for (const [name, source] of [["bone-interaction", interactionSource], ["bone-view-handles", handleSource]]) {
+    assert.doesNotMatch(source, /spread = THREE\.MathUtils\.clamp\([^)]*0\.99/, `${name} clamps via SPREAD_MAX`);
+  }
+  const segmentControlSource = await readFile(new URL("../modules/bones/segment-control.js", import.meta.url), "utf8");
+  assert.doesNotMatch(
+    segmentControlSource,
+    /^const SPREAD_MAX = /m,
+    "segment-control imports SPREAD_MAX instead of keeping its own copy"
+  );
+  assert.match(segmentControlSource, /SPREAD_MAX,/, "segment-control imports SPREAD_MAX from bone-model");
+});
+
+test("Tip Clump axis stays non-degenerate on a direction === 0 middle tube", () => {
+  // 已知几何行为（不是本函数的 bug，见 strandTipClumpAxis 的 DEGENERATE 注释）：spread 只经
+  // opening 生效，而 opening ∝ strandSplitDirection(k, N)。N=2 的正中间管 k=1 的 direction 为
+  // 0 ⇒ 改 spread 完全不动网格（滑杆自 0.2.116 起就是空操作）。手柄仍必须可拖：跨度来自管
+  // 自身宽度、与 direction 无关。若哪天有人把手柄改成「沿张开方向推」，本断言会失败。
+  const lock = tipWidthLock({
+    strandSplits: [
+      { position: -0.4, height: 0.35, order: 0 },
+      { position: 0.4, height: 0.35, order: 1 }
+    ]
+  });
+  const splits = strandSplitsFor(lock);
+  const middle = 1;
+  assert.equal(strandSplitDirection(middle, splits.length), 0, "sanity: the middle tube of N=2 has direction 0");
+  const bones = blankTubeBones(splits.length + 1);
+  const axis = strandTipClumpAxis(tipWidthGeoDepsWithChains(lock, null), lock, splits, middle, bones[middle]);
+  assert.ok(axis, "the middle tube still exposes an axis");
+  assert.ok(
+    axis.start.distanceTo(axis.end) > 0.01,
+    "the middle tube's handle is still draggable even though its mesh cannot move"
   );
 });
 

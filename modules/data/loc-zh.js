@@ -501,7 +501,7 @@ export default Object.freeze({
   "Snap Zippers to Loops": "将 Zippers 吸附到环",
   "Split Segments": "分割段",
   "Segment": "段",
-  "Segment Spread": "段分裂间距",
+  "Tip Clump": "发尖聚合",
   "Edit Segment Width Curve": "编辑段宽度曲线",
   "Edit Segment Depth Curve": "编辑段深度曲线",
   "Previous segment": "上一个段",

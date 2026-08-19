@@ -6,6 +6,14 @@ import * as THREE from "three";
 
 const clamp = THREE.MathUtils.clamp;
 
+// 绿色 Tip Clump 手柄沿尖端切线方向的外推距离（世界单位）：让手柄落在 trim/curve 适配后的
+// 最尖端稍前方，避免与粉色/黄色发尖子骨骼手柄重合而难以拖拽。
+// **唯一定义点**（0.2.130 起）：此前只是 bone-view-handles.js 的一个模块局部常量，够用是
+// 因为 panel 的拖拽扫描刻意**不**含这个偏移（扫描基线在 panelSplitControlPoint 上）。发丝把
+// 偏移烘进了共享的 tipClumpAxis（绘制与扫描同一条线段，见 strand-tip-width.js），于是
+// 常量被两个模块消费 —— 放到几何原语层，两边都 import，不留第二份字面量。
+export const TIP_CLUMP_HANDLE_TANGENT_OFFSET = 0.08;
+
 function isValidTip(tip) {
   return Boolean(tip) && Array.isArray(tip.points) && tip.points.length >= 2;
 }

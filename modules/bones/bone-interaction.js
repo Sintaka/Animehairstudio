@@ -6,12 +6,14 @@ import {
   materializeStrandSplitBones,
   segmentBoneHost,
   strandSplitsFor,
+  SPREAD_MAX,
   STRAND_SEGMENT_HOST
 } from "./bone-model.js?v=20260830-1";
 import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260830-1";
 import { firstExposedTipChainIndex } from "../geometry/tip-sub-bone.js?v=20260830-1";
 import {
   setStrandTipWidthCurveValue,
+  strandTipClumpAxis,
   strandTipWidthControlPlacement,
   strandTipWidthEdgePosition,
   strandTipWidthMultiplierAt
@@ -219,8 +221,11 @@ function beginPanelSplitHandleDrag(event) {
   const panelHandles = deps.isPanelGeometry(lock) && lock.curveObjects?.group.visible
     ? lock.curveObjects.panelSplitHandles || []
     : [];
-  const segmentHandles = deps.isPanelGeometry(lock) && lock.curveObjects?.group.visible
-    ? lock.curveObjects.panelSegmentHandles || []
+  // 绿色 Tip Clump 手柄：0.2.130 起 panel 段与 split strand 管**共用同一个数组与同一个
+  // userData 键**（tipClumpSegment），所以门控与下方 tipHostGate 同规则（segmentBoneHost 非
+  // null ⇔ panel/surface 或已分裂普通发丝），不再手写 isPanelGeometry。
+  const segmentHandles = Boolean(segmentBoneHost(lock)) && lock.curveObjects?.group.visible
+    ? lock.curveObjects.tipClumpHandles || []
     : [];
   // 发尖链把手与发尖 WidthCurve 把手：panel 段与 split strand 管**共用同一个数组与同一批
   // userData 键**（bone-view-handles.js 的 allocateTipChainHandles / allocateTipWidthHandles），
@@ -365,14 +370,14 @@ function beginPanelSplitHandleDrag(event) {
     kind: tipWidthIndex != null ? "tipWidth" : tipIndex != null ? "tip"
       : hit.object.userData.strandSplitHandle
         ? "strand"
-        : hit.object.userData.panelSegmentIndex != null
+        : hit.object.userData.tipClumpSegment != null
           ? "segment"
           : "panel",
     splitIndex: tipWidthSegment != null ? tipWidthSegment : tipIndex != null ? tipIndex
       : hit.object.userData.strandSplitHandle
         ? hit.object.userData.strandSplitIndex
-        : hit.object.userData.panelSegmentIndex != null
-          ? hit.object.userData.panelSegmentIndex
+        : hit.object.userData.tipClumpSegment != null
+          ? hit.object.userData.tipClumpSegment
           : hit.object.userData.panelSplitIndex,
     tipPoint,
     tipStartWorld,
@@ -576,38 +581,77 @@ function updatePanelSplitHandleDrag(event) {
     event.preventDefault();
     return;
   }
+  // ── 绿色 Tip Clump 手柄拖拽（kind === "segment"，UI 名 Tip Clump）─────────────────────
+  // 0.2.130 起 panel 与 split strand **共用这一个 kind**：命中字段（tipClumpSegment）、
+  // drag 记录（kind/splitIndex）、结束路径完全相同，只有「屏幕位置 → spread」的求解按几何
+  // 分派。刻意不新增 kind "strandSegment"：那会让 begin/end/可见性/高亮四处各长一条平行分支。
   if (deps.sculptState.panelSplitDrag.kind === "segment") {
-    const segmentSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const segment = deps.sculptState.panelSplitDrag.splitIndex;
-    const segBoundaries = [-1, ...segmentSplits.map((split) => split.position), 1];
-    if (segment < 0 || segment >= segBoundaries.length - 1) {
-      endPanelSplitHandleDrag(event);
-      return;
-    }
-    const span = Math.max(0.0001, segBoundaries[segment + 1] - segBoundaries[segment]);
-    let segmentBest = null;
-    for (let uStep = 0; uStep <= 48; uStep += 1) {
-      const u = THREE.MathUtils.lerp(segBoundaries[segment], segBoundaries[segment + 1], uStep / 48);
-      const projected = deps.panelSplitControlPoint(lock, { position: u, height: 0 }, 1, curve, segment).project(deps.camera);
-      if (projected.z < -1 || projected.z > 1) continue;
+    const strandClump = segmentBoneHost(lock) === STRAND_SEGMENT_HOST;
+    // 屏幕最近点求解：两条分支都是「沿一条参数线取 49 个探针、投影到屏幕、取最近」，
+    // 只有探针的世界位置来源不同（panel = 段顶边的 u 采样；发丝 = 共享的 Tip Clump 线段）。
+    let clumpBest = null;
+    const considerProbe = (worldPoint, spread) => {
+      const projected = worldPoint.clone().project(deps.camera);
+      if (projected.z < -1 || projected.z > 1) return;
       const x = (projected.x * 0.5 + 0.5) * rect.width;
       const y = (-projected.y * 0.5 + 0.5) * rect.height;
       const distanceSq = (x - targetX) ** 2 + (y - targetY) ** 2;
-      if (!segmentBest || distanceSq < segmentBest.distanceSq) segmentBest = { distanceSq, u };
-    }
-    if (!segmentBest) return;
-    const bones = materializeSplitBones(lock);
-    const bone = bones[segment];
-    if (bone) {
-      bone.spread = THREE.MathUtils.clamp(((segmentBest.u - segBoundaries[segment]) / span) * 0.99, 0, 0.99);
+      if (!clumpBest || distanceSq < clumpBest.distanceSq) clumpBest = { distanceSq, spread };
+    };
+    if (strandClump) {
+      // 发丝：探针位置来自 strandTipClumpAxis（**与绘制手柄同一条线段**，见该函数的说明），
+      // 所以指针落点与球心一致，不像 panel 那样有 tangentOffset 造成的固定偏差。
+      const strandSplits = strandSplitsFor(lock);
+      const axisBones = materializeStrandSplitBones(lock);
+      if (!axisBones || segment < 0 || segment >= axisBones.length) {
+        endPanelSplitHandleDrag(event);
+        return;
+      }
+      const axis = strandTipClumpAxis(strandTipWidthGeoDeps(), lock, strandSplits, segment, axisBones[segment] || null);
+      if (!axis) return;
+      for (let step = 0; step <= 48; step += 1) {
+        const spread = THREE.MathUtils.lerp(0, SPREAD_MAX, step / 48);
+        considerProbe(axis.pointAt(spread), spread);
+      }
+      if (!clumpBest) return;
+      const bone = axisBones[segment];
+      if (bone) bone.spread = THREE.MathUtils.clamp(clumpBest.spread, 0, SPREAD_MAX);
+    } else {
+      // panel：**逐字保留**既有的段顶边 u 扫描（探针 = panelSplitControlPoint(u, height 0, t 1)）
+      // 与 u → spread 的线性反演。刻意不改成走绘制用的 tipSurfaceFrameAt：那会同时改变
+      // panel 已验收的拖拽手感（扫描基线不含 tangentOffset 是既有取舍）。
+      const segmentSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+      const segBoundaries = [-1, ...segmentSplits.map((split) => split.position), 1];
+      if (segment < 0 || segment >= segBoundaries.length - 1) {
+        endPanelSplitHandleDrag(event);
+        return;
+      }
+      const span = Math.max(0.0001, segBoundaries[segment + 1] - segBoundaries[segment]);
+      for (let uStep = 0; uStep <= 48; uStep += 1) {
+        const u = THREE.MathUtils.lerp(segBoundaries[segment], segBoundaries[segment + 1], uStep / 48);
+        considerProbe(
+          deps.panelSplitControlPoint(lock, { position: u, height: 0 }, 1, curve, segment),
+          ((u - segBoundaries[segment]) / span) * SPREAD_MAX
+        );
+      }
+      if (!clumpBest) return;
+      const bones = materializeSplitBones(lock);
+      const bone = bones[segment];
+      if (bone) bone.spread = THREE.MathUtils.clamp(clumpBest.spread, 0, SPREAD_MAX);
     }
     deps.updateLockGeometry(lock, { immediate: true });
+    // updateCurveObjects（不是 rebuildCurveObjects）：拖拽中手柄数量不变，重建会销毁正在被
+    // 拖的那个球、当场中断拖拽。applyStrandSegmentSpread（滑杆路径）用 rebuild 是因为它不在
+    // 拖拽中，两处差异是有意的。
     deps.updateCurveObjects(lock, { visible: true });
     deps.syncActiveMirror(lock, { deferGeometry: false });
     deps.updateTopologyStats();
-    // 右侧属性面板预览同步：该 lock 是当前选中/面板尖端选中时热更新。
+    // 右侧属性面板热同步：该 lock 是当前选中/发尖选中时刷新对应几何的那组段控件
+    // （与上方 tipWidth 分支同规则的按几何分派）。
     if (deps.sculptState.tipSelection?.lockId === lock.id || deps.getSelectedLock()?.id === lock.id) {
-      deps.syncPanelSegmentControls(lock);
+      if (strandClump) deps.syncStrandSegmentControls(lock);
+      else deps.syncPanelSegmentControls(lock);
     }
     event.preventDefault();
     return;

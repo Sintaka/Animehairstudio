@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anime Hair Studio</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=20260905-1" />
+    <link rel="stylesheet" href="./styles.css?v=20260906-1" />
   </head>
   <body>
     <main class="studio-shell">
@@ -1109,7 +1109,7 @@
                 <button id="nextPanelSegment" type="button" title="Next segment" aria-label="Next segment">&#8250;</button>
               </div>
             </div>
-            <label class="topology-control" title="Controls how far this segment's tip narrows relative to its own width (per-segment Split Spacing).">Segment Spread <input id="panelSegmentSpread" type="range" min="0" max="0.99" step="0.01" value="0.5" /><output id="panelSegmentSpreadValue" class="slider-value">0.50</output></label>
+            <label class="topology-control" title="Controls how far this segment's tip narrows relative to its own width (per-segment Split Spacing).">Tip Clump <input id="panelSegmentSpread" type="range" min="0" max="0.99" step="0.01" value="0.5" /><output id="panelSegmentSpreadValue" class="slider-value">0.50</output></label>
             <div id="panelSegmentCurveControls" data-segment-curve="1">
               <div class="curve-heading-row"><div class="subsection-label">Width Curve</div><select class="shape-preset-select" data-shape-preset="taperCurve" aria-label="Selected segment width curve preset"></select></div>
               <div class="taper-curve-control">
@@ -1198,7 +1198,7 @@
                   <button id="nextStrandSegment" type="button" title="Next segment" aria-label="Next segment">&#8250;</button>
                 </div>
               </div>
-              <label class="topology-control" title="Controls how far this tube's tip opens sideways relative to its own width (per-tube Split Spacing).">Segment Spread <input id="strandSegmentSpread" type="range" min="0" max="0.99" step="0.01" value="0.12" /><output id="strandSegmentSpreadValue" class="slider-value">0.12</output></label>
+              <label class="topology-control" title="Controls how far this tube's tip opens sideways relative to its own width (per-tube Split Spacing).">Tip Clump <input id="strandSegmentSpread" type="range" min="0" max="0.99" step="0.01" value="0.12" /><output id="strandSegmentSpreadValue" class="slider-value">0.12</output></label>
               <div id="strandSegmentCurveControls" data-segment-curve="1">
                 <div class="curve-heading-row"><div class="subsection-label">Width Curve</div><select class="shape-preset-select" data-shape-preset="taperCurve" aria-label="Selected segment width curve preset"></select></div>
                 <div class="taper-curve-control">
@@ -2389,6 +2389,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260905-1"></script>
+    <script type="module" src="./app.js?v=20260906-1"></script>
   </body>
 </html>

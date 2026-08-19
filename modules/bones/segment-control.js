@@ -9,6 +9,7 @@ import {
   remapSegmentBonesOnInsert,
   remapSegmentBonesOnDelete,
   PANEL_SEGMENT_HOST,
+  SPREAD_MAX,
   STRAND_SEGMENT_HOST,
   resolveSegmentSelection,
   segmentBoneHost
@@ -52,11 +53,6 @@ export function canFitAnotherStrandSplit(splits) {
   const spans = segmentSpans(strandSplitBoundaries(splits));
   return spans[largestStrandSegmentIndex(splits)] >= MINIMUM_STRAND_SPLIT_SEPARATION * 2;
 }
-
-// spread 的定义域上界，与 bone-model.js 的 SPREAD_MAX 同值：超过 1 会让段尖越过自身宽度、
-// 产生 crossover（strand-geometry 的 per-section spread 也钳在同一界）。bone-model 未导出该
-// 常量，故此处保留副本；改动必须两处同步。
-const SPREAD_MAX = 0.99;
 
 // ── Split Spacing = 全局刷：把 lock.strandSplitGap 写进**每一根管**的 bone.spread ──────
 // 为什么必须写 bone：几何优先读 bone.spread，只有 spread == null 时才回退到
@@ -354,7 +350,7 @@ function stepStrandSegment(delta) {
 }
 
 // per-segment spread 写入：先 materialize 再创作（standards「物化后再创作」），钳到
-// [0, SPREAD_MAX] 与 normalizeSplitBones / normalizeStrandSplitBone 同界（模块顶部单点定义）
+// [0, SPREAD_MAX] 与 normalizeSplitBones / normalizeStrandSplitBone 同界（bone-model 单点定义）
 // ——超过 1 会让段尖越过自身宽度、产生 crossover。
 // 同规则同步点：panel 侧的滑杆处理在 app.js（panelSegmentSpread 的 input 监听），
 // 它还要额外维护 draw 预览的 splitBones，故未并入本函数。

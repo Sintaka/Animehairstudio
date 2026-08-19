@@ -13,7 +13,7 @@ import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260814-12";
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260814-8";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260814-12";
-import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip, strandSplitBonesFor, materializeStrandSplitBones, strandSplitBonesToData, strandSplitBonesFromData, mirrorStrandSplitBones, strandSplitForkTForSegment, strandSplitDirectionForSegment, strandSplitsFor, segmentBoneHost, STRAND_SEGMENT_HOST } from "./modules/bones/bone-model.js?v=20260830-1";
+import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip, strandSplitBonesFor, materializeStrandSplitBones, strandSplitBonesToData, strandSplitBonesFromData, mirrorStrandSplitBones, strandSplitForkTForSegment, strandSplitDirectionForSegment, strandSplitsFor, segmentBoneHost, SPREAD_MAX, STRAND_SEGMENT_HOST } from "./modules/bones/bone-model.js?v=20260830-1";
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260829-2";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
@@ -17395,7 +17395,7 @@ if (panelSegmentSpread) {
     if (!target) return;
     const bones = materializeSplitBones(target);
     const { index } = segmentApi.selectedPanelSegment(target);
-    const value = THREE.MathUtils.clamp(Number(panelSegmentSpread.value || 0), 0, 0.99);
+    const value = THREE.MathUtils.clamp(Number(panelSegmentSpread.value || 0), 0, SPREAD_MAX);
     if (bones[index]) bones[index].spread = value;
     if (panelSegmentSpreadValue) panelSegmentSpreadValue.textContent = value.toFixed(2);
     if (isPanelGeometry(selected)) {
