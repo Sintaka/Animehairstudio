@@ -1,4 +1,4 @@
-﻿// organize-modules.js — move remaining flat modules into domain folders (refactor 2c).
+// organize-modules.js — move remaining flat modules into domain folders (refactor 2c).
 const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");

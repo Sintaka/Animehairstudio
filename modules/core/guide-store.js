@@ -1,4 +1,4 @@
-﻿// guide-store.js — scalp-guide / curve-lattice / capsule guide state (refactor 3c-6).
+// guide-store.js — scalp-guide / curve-lattice / capsule guide state (refactor 3c-6).
 import { createSceneStore } from "./scene-store.js?v=20260809-1";
 export function createGuideStore() {
   const store = createSceneStore({

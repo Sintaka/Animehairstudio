@@ -1,4 +1,4 @@
-﻿// branch-store.js — child-strand (子发片) parameters & view state (refactor 3c).
+// branch-store.js — child-strand (子发片) parameters & view state (refactor 3c).
 // Preference-backed fields load from localStorage via core/preference-storage.
 import * as THREE from "three";
 import { createSceneStore } from "../core/scene-store.js?v=20260809-1";

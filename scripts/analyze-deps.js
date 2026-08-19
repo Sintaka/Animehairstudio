@@ -1,4 +1,4 @@
-﻿// analyze-deps.js — module import graph + app.js subsystem coupling stats.
+// analyze-deps.js — module import graph + app.js subsystem coupling stats.
 // Run: node scripts/analyze-deps.js
 const fs = require("fs");
 const path = require("path");

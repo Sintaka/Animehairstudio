@@ -1,4 +1,4 @@
-﻿// recovery-store.js — autosave / crash-recovery scheduling state (port of main 0.1.5).
+// recovery-store.js — autosave / crash-recovery scheduling state (port of main 0.1.5).
 // All autosave state lives here (no new top-level let in app.js); the scheduler itself
 // stays in app.js, using the store pattern from modules/core/scene-store.js.
 import { createSceneStore } from "../core/scene-store.js?v=20260809-1";

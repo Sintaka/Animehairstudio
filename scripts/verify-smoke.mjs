@@ -1,4 +1,4 @@
-﻿// verify-smoke.mjs — self-contained smoke test for the web app.
+// verify-smoke.mjs — self-contained smoke test for the web app.
 // Starts a static server (query-string friendly, maps the repo root), launches
 // headless Chrome over CDP, loads the app, and asserts:
 //   1. zero page exceptions / console errors during boot

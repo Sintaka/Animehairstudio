@@ -1,4 +1,4 @@
-﻿// split-localization.js — split the JA/ZH dictionaries out of localization.js
+// split-localization.js — split the JA/ZH dictionaries out of localization.js
 // into modules/loc-ja.js and modules/loc-zh.js (zero logic change), then bump
 // cache-busting query strings for the touched import chain.
 // Run: node scripts/split-localization.js

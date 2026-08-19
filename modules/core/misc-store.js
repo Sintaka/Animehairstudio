@@ -1,4 +1,4 @@
-﻿// misc-store.js — leftover tool/UI/fps/braid state (refactor 3c wrap-up).
+// misc-store.js — leftover tool/UI/fps/braid state (refactor 3c wrap-up).
 import { createSceneStore } from "./scene-store.js?v=20260809-1";
 export function createMiscStore() {
   const store = createSceneStore({
