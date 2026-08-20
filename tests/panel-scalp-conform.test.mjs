@@ -297,11 +297,13 @@ test("跨消费方一致：宽度把手的截面点与网格拿到同一份弯�
     const column = Math.floor(baseline.cols[vertex] / 2);
     const t = row / LENGTH_LOOPS;
     const u = THREE.MathUtils.lerp(-1, 1, column / WIDTH_LOOPS);
-    // **跳过发尖那一行（t == 1）**：TAPER_TO_ZERO 使网格侧宽度收成 0 ⇒ 截面退化成一个点，
-    // 而把手侧走 `tipPanelWidthAt` 在该处**不为 0** —— 这是 0.2.139 之前就存在的两函数不一致，
-    // 旧模型比较的是 delta（绝对差抵消掉了）所以看不出来，弧长参数化对截面形状是非线性的、
-    // 于是暴露出来。实测该行差 0.013（其余行 <1e-5）。**这是已知未解项，不是本轮引入的**；
-    // 修它要统一 tipPanelWidthAt / panelWidthAt 在 t=1 的取值，属独立改动。
+    // **跳过发尖那一行（t == 1）**，成因是**退化截面的切向无定义**（0.2.141 实测更正了归因）：
+    // TAPER_TO_ZERO 让 t=1 处宽度收成 0 ⇒ 截面退化成一个点 ⇒「弯后切向 angle」没有定义。
+    // 网格侧得 angle=0（逐段循环一次都没进），把手侧得非零值，于是壳厚被放到不同方向上。
+    // 实测拆解：中面**都恰好落在 1.5（一致）**，只有半程壳厚不同（网格 ±0.0400 / 把手 ±0.0379，
+    // 比值 0.9475 = cos(18.8°)）。**曾误记为「tipPanelWidthAt 与 panelWidthAt 取值不同」，
+    // 那是错的** —— 两者是同一公式、同一 fullWidth；`splits=null` vs `[]` 也实测无差别。
+    // 修它要给退化截面定义一个确定切向（如沿用上一行的 angle），属独立改动。
     if (row >= LENGTH_LOOPS) continue;
     const meshDelta = vertexAt(probe, vertex).sub(vertexAt(baseline, vertex));
     const sectionDelta = probeApi.tipMainSectionPoint(probeLock, t, u, shell, null, -1, null)
