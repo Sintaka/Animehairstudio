@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anime Hair Studio</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=20260909-2" />
+    <link rel="stylesheet" href="./styles.css?v=20260909-3" />
   </head>
   <body>
     <main class="studio-shell">
@@ -1094,7 +1094,7 @@
               <label class="topology-control" title="Sets the number of editable points across the Surface.">Horizontal Points <input id="surfaceLatticeColumns" type="range" min="3" max="11" step="2" value="3" /><output id="surfaceLatticeColumnsValue" class="slider-value">3</output></label>
               <label class="topology-control" title="Sets the number of editable points along the Surface.">Vertical Points <input id="surfaceLatticeRows" type="range" min="3" max="11" step="2" value="3" /><output id="surfaceLatticeRowsValue" class="slider-value">3</output></label>
             </div>
-            <label class="topology-control" title="Sets the full width of the procedural panel.">Width <input id="panelWidth" type="range" min="0.08" max="2.5" step="0.01" value="0.62" /><output id="panelWidthValue" class="slider-value">0.62</output></label>
+            <label class="topology-control" title="Sets the full width of the procedural panel.">Width <input id="panelWidth" type="range" min="0.08" max="5" step="0.01" value="0.62" /><output id="panelWidthValue" class="slider-value">0.62</output></label>
             <label class="topology-control" title="Adds non-destructive front-to-back extrusion to the flat panel.">Thickness <input id="panelThickness" type="range" min="0.005" max="0.5" step="0.005" value="0.08" /><output id="panelThicknessValue" class="slider-value">0.08</output></label>
             <label class="topology-control" title="Controls the number of vertical loops along the panel.">Vertical Loops <input id="panelLengthLoops" type="range" min="3" max="32" step="1" value="10" /><output id="panelLengthLoopsValue" class="slider-value">10</output></label>
             <label class="topology-control" title="Controls the number of horizontal loops across the panel.">Horizontal Loops <input id="panelWidthLoops" type="range" min="3" max="24" step="1" value="6" /><output id="panelWidthLoopsValue" class="slider-value">6</output></label>
@@ -1108,9 +1108,10 @@
             </div>
             <div id="panelHemisphereControls" class="control-emphasis control-emphasis--blue">
               <div class="subsection-label">Hemispherical Deform</div>
-              <label class="topology-control" title="Bulges the swept surface forward along its normal into a spherical cap, for panels that must follow a convex form such as the forehead. Negative dents inward; 0 = off.">Bulge Amount <input id="panelHemisphereAmount" type="range" min="-1" max="1" step="0.01" value="0" /><output id="panelHemisphereAmountValue" class="slider-value">0.00</output></label>
+              <label class="topology-control" title="Bulges the panel forward along its normal while wrapping both sides backward around the scalp, so a wide flat panel snaps onto a convex form such as the forehead. Widen the panel first, then raise this. Negative dents inward; 0 = off.">Bulge Amount <input id="panelHemisphereAmount" type="range" min="-1" max="1" step="0.01" value="0" /><output id="panelHemisphereAmountValue" class="slider-value">0.00</output></label>
               <label class="topology-control" title="Sets how far the dome reaches from its center along the panel.">Bulge Width <input id="panelHemisphereWidth" type="range" min="0.05" max="1" step="0.01" value="0.5" /><output id="panelHemisphereWidthValue" class="slider-value">0.50</output></label>
               <label class="topology-control" title="Positions the dome apex along the panel length. The root never moves.">Bulge Center <input id="panelHemisphereCenter" type="range" min="0" max="1" step="0.01" value="0.5" /><output id="panelHemisphereCenterValue" class="slider-value">0.50</output></label>
+              <label class="topology-control" title="Where this panel's root sits on the scalp, from the very crown (0) to the side of the head (1). Lower values keep the sideways wrap near the root gentle and let it build toward the tip. Mapped non-linearly so the shallow angles a real hairline uses get most of the slider.">Root Latitude <input id="panelHemisphereRootAngle" type="range" min="0" max="1" step="0.01" value="0.5" /><output id="panelHemisphereRootAngleValue" class="slider-value">0.50</output></label>
             </div>
             <div id="panelZipperGroup" class="control-emphasis control-emphasis--green">
             <div class="subsection-label">Split Segments</div>
@@ -2413,6 +2414,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260909-2"></script>
+    <script type="module" src="./app.js?v=20260909-3"></script>
   </body>
 </html>

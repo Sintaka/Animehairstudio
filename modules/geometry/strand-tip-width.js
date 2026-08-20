@@ -9,7 +9,7 @@
 // signedCoordinate 是由它派生的**管内归一化**标量 ∈ [-1, 1]，不是世界空间量。
 import * as THREE from "three";
 import { defaultStrandTipClump, SPREAD_MAX } from "../bones/bone-model.js?v=20260901-1";
-import { sampleAsymmetricTaperCurve, sampleScale } from "./curve-math.js?v=20260909-2";
+import { sampleAsymmetricTaperCurve, sampleScale } from "./curve-math.js?v=20260909-3";
 import {
   buildTipWidthCurveFrom,
   segmentZipperHeights,

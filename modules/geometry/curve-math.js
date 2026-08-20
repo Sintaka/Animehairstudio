@@ -300,6 +300,17 @@ export function panelTipCurveParameter(t, u, tipCurve = 0, edgeTrim = 0) {
 // tipSurfaceFrameAt 的差分求法线）不会在 t→0 处读到跳变而算出错误法线。
 const PANEL_HEMISPHERE_ROOT_GUARD = 0.05;
 
+// 两侧后移的默认根部纬度旋钮（0..1，经 φ₀ = (π/2)·knob² 非线性映射）。
+// 0.5 ⇒ φ₀ = 22.5° ⇒ rootFraction = sin 22.5° ≈ 0.383：刘海根落在离头顶约 22.5° 的位置，
+// 是「前额刘海」的常见起刷纬度。**这是本文件唯一定义点**，UI 默认值与 app.js 的
+// panelCreationDefaults 都必须与它同值（不同源会让"没动过滑杆"的面板与默认几何不一致）。
+export const PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE = 0.5;
+
+// wrapRatio = 面板半宽 / 头皮球半径 的上限。当前 UI 最宽 width=5 ⇒ 半宽 2.5，
+// 头皮球半径 1（app.js 的 scalpSurface.radius）⇒ k = 2.5，故 4 留了充裕余量；
+// 钳位存在的意义是防止外部（脚本/旧档/将来放宽的滑杆）传入荒谬值把面片卷过头顶。
+const PANEL_HEMISPHERE_MAX_WRAP_RATIO = 4;
+
 // 面板半球隆起（沿面板法线的球冠位移），是四个 Trim 控件的**法线方向对位物**：
 // 它们重参数化 sampleT（切向），本函数返回法线方向的标量位移，调用方乘以世界尺度。
 //
@@ -311,10 +322,26 @@ const PANEL_HEMISPHERE_ROOT_GUARD = 0.05;
 // 守卫写在本函数**内部**，任何消费方都无法忘记它。
 //
 // 剖面 = 真球冠（不是任意凸包）：dt = (t − center)/width，r = hypot(dt, u)，
-// offset = amount·sqrt(1 − r²) （r < 1），r ≥ 1 处**精确为 0**。u 已由面板参数化
-// 归一到 [-1, 1]。面板自己的 panelCurvature（camber，沿 u 的抛物线）是**另一个**
-// 艺术控件，两者刻意不合并：camber 描述截面弧度、本函数描述沿 t 的球冠。
-export function panelHemisphereOffset(t, u, amount = 0, width = 0.5, center = 0.5) {
+// offset = amount·sqrt(1 − r²) （r < 1）。u 已由面板参数化归一到 [-1, 1]。
+// 面板自己的 panelCurvature（camber，沿 u 的抛物线）是**另一个**艺术控件，两者刻意
+// 不合并：camber 描述截面弧度、本函数描述沿 t 的球冠。
+//
+// 0.2.135 起在球冠之外**叠加"两侧后移"**（lateral wrap），使面板整体贴合头皮而不是
+// 单纯向前凸：用户原话「我拉宽 width, 然后我拉动 Bulge Amount, 这个 panel 就差不多
+// 贴着头皮往后挪了, 而不是我手动去调整边缘曲线」。因此
+//   offset = amount · (cap − recede) · guard(t)
+// 其中 recede ≥ 0 在中线为 0、向两侧增大 ⇒ 中间前凸、两侧后移。**注意由此
+// `r ≥ 1` 处不再恒为 0**（球冠支撑域之外仍有后移），这是刻意的语义变更：后移必须作用
+// 于整片宽度，否则宽面板的边缘会停在切平面上、贴不住头。
+export function panelHemisphereOffset(
+  t,
+  u,
+  amount = 0,
+  width = 0.5,
+  center = 0.5,
+  wrapRatio = 0,
+  rootAngle = PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE
+) {
   const strength = clamp(Number(amount) || 0, -1, 1);
   // amount == 0 必须逐位守恒（先例：SWEEP_OVERLAP_DEFAULTS「全部关到 0 时输出
   // 逐位守恒」），所以在触碰任何坐标之前就返回。
@@ -332,10 +359,51 @@ export function panelHemisphereOffset(t, u, amount = 0, width = 0.5, center = 0.
   const apex = clamp(Number(center) || 0, 0, 1);
   const dt = (along - apex) / halfExtent;
   const radiusSquared = dt * dt + lateral * lateral;
-  if (radiusSquared >= 1) return 0;
+  // 球冠项：支撑域外为 0（**不再提前 return** —— 后移项在域外仍要生效，见函数头注释）。
+  const cap = radiusSquared >= 1 ? 0 : Math.sqrt(1 - radiusSquared);
   const guardAmount = clamp(along / PANEL_HEMISPHERE_ROOT_GUARD, 0, 1);
   const guard = guardAmount * guardAmount * (3 - 2 * guardAmount);
-  return strength * Math.sqrt(1 - radiusSquared) * guard;
+  const recede = panelHemisphereRecession(along, lateral, wrapRatio, rootAngle);
+  return strength * (cap - recede) * guard;
+}
+
+// 两侧后移量（**归一化**：与 cap 同量纲，调用方统一乘以 fullWidth·0.5）。
+// 模型 = 把平面窄条**卷到半径 R 的球面**上：横向弧长 s = |u|·W（W = 面板半宽）对应
+// 圆心角 θ = s/R，该点相对切平面的后移 = R(1 − cos θ)。除以 W 归一后得
+//   recede = (1 − cos(|u|·k)) / k,  k = W/R  （wrapRatio）
+// 这个式子的关键性质：**k 越大（面板越宽）后移越强**，所以"拉宽 width 再拉 Bulge
+// Amount 就贴上头皮"是自然结果，不需要用户另调边缘曲线。k → 0 时 recede → 0
+// （退化为纯球冠，与 0.2.134 行为一致）。
+//
+// θ 钳到 π：超过半圈后 cos 回升会让后移**反而变小**，几何上是面片卷过头顶再折回来的
+// 退化态。当前 UI 上限（width 5 ⇒ k = 2.5 ⇒ θmax ≈ 143°）够不到，但钳位写在数值层
+// 而不是靠 UI 约定 —— 与本文件 width 下限同一处置。
+function panelHemisphereRecession(along, lateral, wrapRatio, rootAngle) {
+  const k = clamp(Number(wrapRatio) || 0, 0, PANEL_HEMISPHERE_MAX_WRAP_RATIO);
+  if (k <= 0.000001) return 0;
+  const theta = Math.min(Math.PI, Math.abs(lateral) * k);
+  const shell = (1 - Math.cos(theta)) / k;
+  return shell * panelHemisphereWrapRamp(along, rootAngle);
+}
+
+// 沿 t 的后移权重：根部弱、往发尖增强，权重在 [rootFraction, 1]。
+//
+// 为什么根部要弱：面板根锚在头皮上，**发根那一圈本来就贴着头**，无需额外后移；真正需要
+// 往后收的是往下走、绕过颅侧的部分。若整片等权后移，根部会被拉离头皮（视觉上"整片往后
+// 平移"而不是"包住头"）。
+//
+// rootAngle（UI 滑杆 0..1）= 用户告诉我们"这片刘海的根大概长在头皮的哪个纬度"。
+// **非线性映射**，按用户要求把控制权交给用户：φ₀ = (π/2)·rootAngle²。
+// 用平方而非线性的理由：φ₀ 极小（贴真头顶）时 sin φ₀ 变化最快、观感最敏感，平方映射把
+// 滑杆的**低端拉开**（0→0.5 只覆盖 0°→22.5°），而真实刘海根几乎不会从头顶正中垂直
+// 90° 起刷（用户原话「根部一般难以从真的头顶上垂直90度开始刷」），所以把分辨率放在
+// 常用的浅纬度一侧、把少用的陡端压缩到滑杆末段。
+// rootFraction = sin φ₀ 的物理含义：该纬度处表面已经"侧过去"多少 —— 真头顶为 0
+// （完全没侧过去，后移从 0 开始长），赤道为 1（已经完全侧向，全程等权后移）。
+function panelHemisphereWrapRamp(along, rootAngle) {
+  const knob = clamp(Number(rootAngle) || 0, 0, 1);
+  const rootFraction = Math.sin((Math.PI * 0.5) * knob * knob);
+  return rootFraction + (1 - rootFraction) * along;
 }
 
 export function panelTipLoopParameters(baseLoopCount, extraTipLoops = 0, tipStart = 0.55) {

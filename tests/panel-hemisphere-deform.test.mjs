@@ -12,7 +12,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as THREE from "three";
 import { createPanelTipStrandApi } from "../modules/geometry/panel-tip-strand.js";
-import { panelHemisphereOffset, panelTipCurveParameter } from "../modules/geometry/curve-math.js";
+import {
+  PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE,
+  panelHemisphereOffset,
+  panelTipCurveParameter
+} from "../modules/geometry/curve-math.js";
 
 const LENGTH_LOOPS = 10;
 const WIDTH_LOOPS = 6;
@@ -92,6 +96,15 @@ function buildPanel(lock) {
   };
 }
 
+// 期望值必须用**与几何同一组参数**推导：`panelHemisphereParams` 是那组参数（含 0.2.135
+// 新增的 wrapRatio/rootAngle）的唯一定义点。**教训**：本文件初版在两条量值断言里手写了
+// 5 个参数，加「两侧后移」后它们立刻变红 —— 红的是测试而不是几何。凡「期望值 = 某纯函数
+// 的输出」的断言，参数一律从同一个解析函数取，不要在测试里复制参数列表。
+function hemisphereOffsetFor(api, lock, t, u) {
+  const p = api.panelHemisphereParams(lock);
+  return panelHemisphereOffset(t, u, p.amount, p.width, p.center, p.wrapRatio, p.rootAngle) * p.scale;
+}
+
 test("剖面是真球冠：r >= 1 精确为 0、朝顶点单调、u 上对称", () => {
   const amount = 0.8;
   const width = 0.5;
@@ -133,6 +146,106 @@ test("amount 取负 = 向内凹陷（与正向严格反号）", () => {
     }
   }
   assert.ok(panelHemisphereOffset(0.5, 0, -0.6, 0.5, 0.5) < 0, "负 amount 沿法线向内");
+});
+
+// ── 0.2.135「两侧后移」（lateral wrap）─────────────────────────────────────────
+// 用户要的手感：「我拉宽 width, 然后我拉动 Bulge Amount, 这个 panel 就差不多贴着头皮
+// 往后挪了, 而不是我手动去调整边缘曲线」。所以判据是**符号**（中间前凸/两侧后移）与
+// **单调性**（越宽越贴），而不是某个写死的数值。
+const WIDE_WRAP_RATIO = 2.5; // = 半宽 2.5 / 头皮半径 1，对应 UI 最宽 width=5
+
+test("两侧后移：中线前凸、边缘后移，且后移随面板变宽而增强", () => {
+  const ra = PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE;
+  const at = (u, k) => panelHemisphereOffset(0.5, u, 1, 0.5, 0.5, k, ra);
+
+  // 中线仍是纯前凸（recede 在 u=0 处恒为 0 ⇒ 球冠顶点不受后移影响）。
+  assert.equal(at(0, WIDE_WRAP_RATIO), at(0, 0), "u=0 处后移必须恰为 0（中线不动）");
+  assert.ok(at(0, WIDE_WRAP_RATIO) > 0, "中线必须前凸");
+  // 边缘变成后移（负号）—— 这正是 0.2.134 没有的行为。
+  assert.ok(at(1, WIDE_WRAP_RATIO) < 0, "边缘必须后移（负）");
+
+  // 沿 u 单调不增：从中线走到边缘，位移一路减小（前凸 → 0 → 后移）。
+  let previous = Infinity;
+  for (let step = 0; step <= 20; step += 1) {
+    const value = at(step / 20, WIDE_WRAP_RATIO);
+    assert.ok(value <= previous + 1e-12, `沿 u 必须单调不增：u=${step / 20}`);
+    previous = value;
+  }
+
+  // 越宽越贴：同一 u，wrapRatio 越大后移越强（|负值| 越大）。这条是「拉宽 width 就自动
+  // 加强后移」的机械化保证 —— 它由 wrapRatio = 半宽/头皮半径 承载。
+  let lastEdge = Infinity;
+  for (const k of [0.31, 0.8, 1.5, WIDE_WRAP_RATIO]) {
+    const edge = at(1, k);
+    assert.ok(edge < lastEdge, `wrapRatio 越大边缘后移必须越强：k=${k} 得到 ${edge}`);
+    lastEdge = edge;
+  }
+});
+
+// 根部斜坡：发根那一圈本来就贴着头皮，需要往后收的是往下绕过颅侧的部分。若整片等权
+// 后移，根部会被拉离头皮（观感是"整片往后平移"而不是"包住头"）。
+test("根部后移弱于发尖（同一 u 上 |后移| 随 t 单调增强）", () => {
+  const ra = PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE;
+  // 取 u=1 且球冠支撑域之外（width 小、center 小）⇒ cap 恒为 0，只剩后移项，判据干净。
+  const recedeAt = (t) => -panelHemisphereOffset(t, 1, 1, 0.05, 0, WIDE_WRAP_RATIO, ra);
+  let previous = -Infinity;
+  for (let step = 1; step <= 20; step += 1) {
+    const t = step / 20;
+    const value = recedeAt(t);
+    assert.ok(value > 0, `边缘必须后移：t=${t}`);
+    assert.ok(value >= previous - 1e-12, `后移必须随 t 单调不减：t=${t}`);
+    previous = value;
+  }
+  assert.ok(recedeAt(1) > recedeAt(0.1), "发尖后移必须明显强于根部");
+});
+
+// 非线性映射是用户明确要求的（「注意要做一个非线性范围映射，因为根部一般难以从真的
+// 头顶上垂直90度开始刷，这个控制权给用户」）。φ₀ = (π/2)·knob²、rootFraction = sin φ₀。
+test("Root Latitude 非线性映射：低端分辨率更高，两端语义正确", () => {
+  // 只留后移项（同上：球冠支撑域之外），并归一到 t=1（此处 ramp = 1，与 knob 无关）
+  // 与 t=0.5 的比值即可反解 rootFraction，无需导出内部函数。
+  const recede = (t, knob) => -panelHemisphereOffset(t, 1, 1, 0.05, 0, WIDE_WRAP_RATIO, knob);
+  const rootFractionOf = (knob) => {
+    // ramp(t) = f + (1-f)·t ⇒ ramp(0.5) / ramp(1) = (f + (1-f)/2) / 1 = (1+f)/2
+    const ratio = recede(0.5, knob) / recede(1, knob);
+    return 2 * ratio - 1;
+  };
+  // 两端语义：knob=0 ⇒ 真头顶 ⇒ rootFraction 0（后移从 0 开始长）；
+  //           knob=1 ⇒ 头侧（赤道）⇒ rootFraction 1（全程等权后移）。
+  assert.ok(Math.abs(rootFractionOf(0) - 0) < 1e-9, "knob=0 ⇒ rootFraction 0（真头顶）");
+  assert.ok(Math.abs(rootFractionOf(1) - 1) < 1e-9, "knob=1 ⇒ rootFraction 1（头侧）");
+  // 默认值 0.5 ⇒ φ₀ = 22.5° ⇒ sin 22.5° ≈ 0.38268（按同一公式推导，不写死）。
+  assert.ok(
+    Math.abs(rootFractionOf(0.5) - Math.sin(Math.PI * 0.5 * 0.25)) < 1e-9,
+    "默认 0.5 必须落在 φ₀ = 22.5°"
+  );
+  // 非线性判据：滑杆低半段覆盖的 rootFraction 跨度必须**小于**高半段 —— 即低端更"细"，
+  // 把分辨率留给真实发际线常用的浅纬度。负向对照：线性映射下两段跨度会相等。
+  const lowSpan = rootFractionOf(0.5) - rootFractionOf(0);
+  const highSpan = rootFractionOf(1) - rootFractionOf(0.5);
+  assert.ok(lowSpan < highSpan, `低半段跨度 ${lowSpan} 必须小于高半段 ${highSpan}（非线性）`);
+  // 单调性：旋钮增大 ⇒ 根部后移占比增大。
+  let previous = -Infinity;
+  for (let step = 0; step <= 10; step += 1) {
+    const value = rootFractionOf(step / 10);
+    assert.ok(value >= previous - 1e-9, `rootFraction 必须随旋钮单调不减：knob=${step / 10}`);
+    previous = value;
+  }
+});
+
+test("wrapRatio = 0 退化为纯球冠（0.2.134 行为，向后兼容）", () => {
+  for (const t of [0.2, 0.5, 0.9]) {
+    for (const u of [-1, -0.5, 0, 0.5, 1]) {
+      const r = Math.hypot((t - 0.5) / 0.5, u);
+      const expected = r >= 1 ? 0 : Math.sqrt(1 - r * r);
+      const guardAmount = Math.min(1, t / 0.05);
+      const guard = guardAmount * guardAmount * (3 - 2 * guardAmount);
+      assert.ok(
+        Math.abs(panelHemisphereOffset(t, u, 1, 0.5, 0.5, 0, 0.5) - expected * guard) < 1e-12,
+        `wrapRatio=0 时必须只剩球冠项：t=${t} u=${u}`
+      );
+    }
+  }
 });
 
 // 半球关到 0 的档必须与「根本没有这三个字段」的旧档逐位相同 —— 否则每一个存量 .ahs
@@ -206,21 +319,20 @@ test("t == 0 时纯函数恒返回 0（守卫在定义点内部，消费方无�
 // z 分量之差度量。期望值按被测的同一公式推导（panelHemisphereOffset × fullWidth*0.5），
 // 不写死数字。
 test("中段行沿面板法线位移 = panelHemisphereOffset × (fullWidth × 0.5)", () => {
-  const amount = 0.75;
-  const width = 0.45;
-  const center = 0.5;
+  const probeLockForMagnitude = panelLock({
+    panelHemisphereAmount: 0.75,
+    panelHemisphereWidth: 0.45,
+    panelHemisphereCenter: 0.5
+  });
   const baseline = buildPanel(panelLock());
-  const probe = buildPanel(panelLock({
-    panelHemisphereAmount: amount,
-    panelHemisphereWidth: width,
-    panelHemisphereCenter: center
-  }));
+  const probe = buildPanel(probeLockForMagnitude);
   assert.equal(probe.count, baseline.count);
 
-  const scale = PANEL_WIDTH * 0.5;
+  const probeApi = panelApi(probeLockForMagnitude);
   const columns = WIDTH_LOOPS; // 单段（splits 关闭）时全部宽度列都归这一段
   let movedCount = 0;
   let maximumObserved = 0;
+  let maximumExpected = 0;
   for (let vertex = 0; vertex < baseline.count; vertex += 1) {
     const row = baseline.rows[vertex];
     const column = Math.floor(baseline.cols[vertex] / 2);
@@ -228,7 +340,8 @@ test("中段行沿面板法线位移 = panelHemisphereOffset × (fullWidth × 0.
     const u = THREE.MathUtils.lerp(-1, 1, column / columns);
     // Trim 全为 0 ⇒ sampleT == t（走与几何同一个 panelTipCurveParameter，不假设恒等）。
     const sampleT = panelTipCurveParameter(t, u, 0, 0);
-    const expected = panelHemisphereOffset(sampleT, u, amount, width, center) * scale;
+    const expected = hemisphereOffsetFor(probeApi, probeLockForMagnitude, sampleT, u);
+    maximumExpected = Math.max(maximumExpected, Math.abs(expected));
     const actualDz = probe.positions[vertex * 3 + 2] - baseline.positions[vertex * 3 + 2];
     // position 是 Float32 存储 ⇒ 1e-6 绝对容差（位移量级约 0.23）。
     assert.ok(
@@ -242,12 +355,15 @@ test("中段行沿面板法线位移 = panelHemisphereOffset × (fullWidth × 0.
     maximumObserved = Math.max(maximumObserved, Math.abs(actualDz));
   }
   assert.ok(movedCount > 0, "必须真的有中段顶点移动了（否则上面的断言是空转）");
-  // 顶点位于 center 处、u = 0 的列上 ⇒ 峰值应达到 amount × scale。默认细分下
-  // center=0.5 恰好落在 row 5（t=0.5），u=0 落在 column 3。
+  // 峰值也逐值核对，但期望值来自**同一组参数**的枚举最大值，而不是写死 amount × scale。
+  // 0.2.135 起「两侧后移」叠加进来，最大位移不一定还落在球冠顶点上（宽面板的边缘后移
+  // 可能更大），所以峰值必须从实际采样的期望值里取 max —— 写死顶点值会让这条断言
+  // 在语义变更后变红，而红的是测试不是几何（本文件初版就是这么错的）。
   assert.ok(
-    Math.abs(maximumObserved - amount * scale) < 1e-6,
-    `峰值位移应为 amount × fullWidth × 0.5 = ${amount * scale}，实测 ${maximumObserved}`
+    Math.abs(maximumObserved - maximumExpected) < 1e-6,
+    `峰值位移应为 ${maximumExpected}，实测 ${maximumObserved}`
   );
+  assert.ok(maximumExpected > 0, "sanity：期望峰值必须非零");
 });
 
 // 跨消费方一致性（规范要求的形式：断言两个消费方彼此相等，而不是各自断言自己的值）。
@@ -273,7 +389,6 @@ test("跨消费方一致：宽度把手的截面点与网格拿到同一份法�
     panelHemisphereCenter: center
   }));
 
-  const scale = PANEL_WIDTH * 0.5;
   let checked = 0;
   for (let vertex = 0; vertex < baseline.count; vertex += 1) {
     const row = baseline.rows[vertex];
@@ -290,12 +405,59 @@ test("跨消费方一致：宽度把手的截面点与网格拿到同一份法�
       Math.abs(sectionDz - geometryDz) < 1e-6,
       `row ${row} col ${column} shell ${shell}：把手位移 ${sectionDz} ≠ 网格位移 ${geometryDz}`
     );
-    // 并且两者都等于同一个纯函数的输出 × 同一个世界尺度。
-    const expected = panelHemisphereOffset(t, u, amount, width, center) * scale;
+    // 并且两者都等于同一个纯函数的输出 × 同一个世界尺度（参数从唯一定义点取）。
+    const expected = hemisphereOffsetFor(probeApi, probeLock, t, u);
     assert.ok(Math.abs(sectionDz - expected) < 1e-6, "把手位移必须来自 panelHemisphereOffset");
     checked += 1;
   }
   assert.ok(checked > 0, "sanity：确实比较过顶点");
+});
+
+// 用户要的核心手感在**几何层**的验证：宽面板 + 拉 Bulge Amount ⇒ 中间往前、两侧往后。
+// 上面那些后移断言都在纯函数层；这条走真实的 createPanelStrandGeometry，确认 wrapRatio
+// 真的由 lock.width 推出来并送到了顶点上（漏接 wrapRatio 会让这条变红而纯函数层全绿）。
+test("几何层：宽面板拉 Bulge Amount ⇒ 中间前凸、两侧后移（用户要的手感）", () => {
+  const WIDE = 5; // UI 上限，用户场景「一体前额 panel」
+  const baseline = buildPanel(panelLock({ width: WIDE }));
+  const probe = buildPanel(panelLock({ width: WIDE, panelHemisphereAmount: 0.6 }));
+  assert.equal(probe.count, baseline.count);
+
+  // 采样行取**球冠顶点所在行**（t = Bulge Center = 0.5 ⇒ row 5），不要取发尖行：
+  // ① 默认 center=0.5/width=0.5 时球冠支撑域恰好在 t=1 结束（dt=1 ⇒ r=1 ⇒ cap=0），
+  //    而 u=0 处后移恒为 0 ⇒ 发尖行中线位移**本来就是 0**，断言会假红（本测试初版如此）；
+  // ② fixture 用 TAPER_TO_ZERO，t=1 处面板宽度收成 0、u 间距退化，是最差采样位置。
+  const APEX_ROW = Math.round(LENGTH_LOOPS * 0.5);
+  const sampleRow = (base, top, row) => {
+    let center = null;
+    let edge = null;
+    let maxAbsU = 0;
+    for (let vertex = 0; vertex < base.count; vertex += 1) {
+      if (base.rows[vertex] !== row) continue;
+      const column = Math.floor(base.cols[vertex] / 2);
+      const u = THREE.MathUtils.lerp(-1, 1, column / WIDTH_LOOPS);
+      const dz = top.positions[vertex * 3 + 2] - base.positions[vertex * 3 + 2];
+      if (Math.abs(u) < 1e-9) center = dz;
+      if (Math.abs(u) >= maxAbsU) { maxAbsU = Math.abs(u); edge = dz; }
+    }
+    return { center, edge, maxAbsU };
+  };
+  const { center: centerDz, edge: edgeDz, maxAbsU } = sampleRow(baseline, probe, APEX_ROW);
+  assert.ok(centerDz !== null && edgeDz !== null, "sanity：取到了中线与边缘顶点");
+  assert.ok(centerDz > 1e-4, `中线必须前凸，实测 dz=${centerDz}`);
+  assert.ok(edgeDz < -1e-4, `边缘必须后移，实测 dz=${edgeDz}（|u|=${maxAbsU}）`);
+
+  // 窄面板（默认宽度）后移应显著更弱 —— 「拉宽 width 才贴上头皮」的机械化保证。
+  // 注意两者的 dz 都要除以各自的世界尺度（半宽）才可比：scale 正比于 width，不归一
+  // 会把「宽面板本来位移就大」误当成「后移更强」。
+  const narrowBase = buildPanel(panelLock());
+  const narrowProbe = buildPanel(panelLock({ panelHemisphereAmount: 0.6 }));
+  const narrow = sampleRow(narrowBase, narrowProbe, APEX_ROW);
+  const wideNormalized = edgeDz / (WIDE * 0.5);
+  const narrowNormalized = narrow.edge / (PANEL_WIDTH * 0.5);
+  assert.ok(
+    wideNormalized < narrowNormalized,
+    `归一化后宽面板边缘必须更靠后：宽 ${wideNormalized} vs 窄 ${narrowNormalized}`
+  );
 });
 
 // geometryType === "surface"（lattice 控制）跳过程序化形变，与 panelTipCurve /
@@ -432,9 +594,14 @@ test("空操作路径：两处消费点 + 纯函数各自带 amount==0 早退（
 // 既有惯例做**源码文本**断言（dom-contract 全篇如此，split-tip-geometry.test.mjs L1471 亦
 // 明确写了这条理由）。这不能替代浏览器验证，但能把「三个字段少接了一条路径」钉死 ——
 // 少接任何一条，值就活不过 .ahs 存取 / undo / 镜像 / preset 克隆。
-const HEMISPHERE_FIELDS = ["panelHemisphereAmount", "panelHemisphereWidth", "panelHemisphereCenter"];
+const HEMISPHERE_FIELDS = [
+  "panelHemisphereAmount",
+  "panelHemisphereWidth",
+  "panelHemisphereCenter",
+  "panelHemisphereRootAngle"
+];
 
-test("app.js 接线：三个字段覆盖全部 7 类路径（源码文本断言）", async () => {
+test("app.js 接线：四个字段覆盖全部 7 类路径（源码文本断言）", async () => {
   const app = await readFile(new URL("../app.js", import.meta.url), "utf8");
 
   // ① panelCreationDefaults：中性默认值（amount 0 ⇒ 新建面板与引入前逐位相同）。
@@ -481,7 +648,7 @@ test("app.js 接线：三个字段覆盖全部 7 类路径（源码文本断言�
 
 // 镜像语义是本轮最容易被将来"顺手统一"改错的一处：邻居 panelTipCurve 取负、
 // 左右 EdgeTrim 互换，唯独半球三值原样拷贝。把它钉成断言而不是只写注释。
-test("app.js 镜像：三个值原样拷贝 —— 不取反、不左右互换", async () => {
+test("app.js 镜像：四个值原样拷贝 —— 不取反、不左右互换", async () => {
   const app = await readFile(new URL("../app.js", import.meta.url), "utf8");
   // 用 ok/!ok 而不是 assert.match：app.js 近 1MB，match 失败会把整个文件打进报错。
   const has = (pattern, message) => assert.ok(pattern.test(app), message);

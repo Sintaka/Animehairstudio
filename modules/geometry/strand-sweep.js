@@ -3,7 +3,7 @@
 // child-strand sweep (createBranchChildGeometry): both are "sweep a profile along a
 // curve with transported frames". Callers add caps/bridge + geometry metadata.
 import * as THREE from "three";
-import { sweepCurvatureResponse, smoothSweepChains, smoothSweepFrames } from "./curve-math.js?v=20260909-2";
+import { sweepCurvatureResponse, smoothSweepChains, smoothSweepFrames } from "./curve-math.js?v=20260909-3";
 
 export const SWEEP_OVERLAP_DEFAULTS = Object.freeze({ strength: 0.7, threshold: 0.6, edgeSmooth: 0.3, falloff: 3, tangentSmooth: 0.3 });
 

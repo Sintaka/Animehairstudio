@@ -3,7 +3,7 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260909-2";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260909-3";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
 import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-1";
@@ -106,7 +106,7 @@ import {
   twistRateUnitsFromDegrees,
   upperProfileArcIndices,
   uniformCurveParameters
-} from "./modules/geometry/curve-math.js?v=20260909-2";
+} from "./modules/geometry/curve-math.js?v=20260909-3";
 import {
   curveLatticeLoopPointIndices,
   DEFAULT_CURVE_LATTICE_PLANE,
@@ -1515,6 +1515,10 @@ const panelCreationDefaults = {
   panelHemisphereAmount: 0,
   panelHemisphereWidth: 0.5,
   panelHemisphereCenter: 0.5,
+  // 根部纬度旋钮：与 curve-math.js 的 PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE 同值（0.5）。
+  // 那里是唯一定义点；此处是受控副本（app.js 不 import 几何常量），不同源会让「没动过
+  // 滑杆的面板」与默认几何不一致。index.html 的 value= 也必须同值。
+  panelHemisphereRootAngle: 0.5,
   panelSplitEnabled: true,
   panelSplitSnapToLoops: true,
   panelSplitHeight: 0.3,
@@ -3364,12 +3368,14 @@ const panelHemisphereControls = document.querySelector("#panelHemisphereControls
 const panelHemisphereInputEntries = Object.entries({
   panelHemisphereAmount: document.querySelector("#panelHemisphereAmount"),
   panelHemisphereWidth: document.querySelector("#panelHemisphereWidth"),
-  panelHemisphereCenter: document.querySelector("#panelHemisphereCenter")
+  panelHemisphereCenter: document.querySelector("#panelHemisphereCenter"),
+  panelHemisphereRootAngle: document.querySelector("#panelHemisphereRootAngle")
 }).filter(([, element]) => Boolean(element));
 const panelHemisphereValueEntries = Object.entries({
   panelHemisphereAmount: document.querySelector("#panelHemisphereAmountValue"),
   panelHemisphereWidth: document.querySelector("#panelHemisphereWidthValue"),
-  panelHemisphereCenter: document.querySelector("#panelHemisphereCenterValue")
+  panelHemisphereCenter: document.querySelector("#panelHemisphereCenterValue"),
+  panelHemisphereRootAngle: document.querySelector("#panelHemisphereRootAngleValue")
 }).filter(([, element]) => Boolean(element));
 const panelShapeInputs = {
   width: document.querySelector("#panelWidth"),
@@ -9334,6 +9340,11 @@ function addLock(presetName, overrides = {}, options = {}) {
     0,
     1
   );
+  lock.panelHemisphereRootAngle = THREE.MathUtils.clamp(
+    Number(base.panelHemisphereRootAngle ?? panelCreationDefaults.panelHemisphereRootAngle),
+    0,
+    1
+  );
   lock.panelSplitEnabled = base.panelSplitEnabled !== false;
   lock.panelSplitSnapToLoops = base.panelSplitSnapToLoops !== false;
   lock.panelSplitHeight = Number(base.panelSplitHeight ?? panelCreationDefaults.panelSplitHeight);
@@ -9505,6 +9516,8 @@ function createMirrorPartner(lock, options = {}) {
     panelHemisphereAmount: lock.panelHemisphereAmount,
     panelHemisphereWidth: lock.panelHemisphereWidth,
     panelHemisphereCenter: lock.panelHemisphereCenter,
+    // 根部纬度同理原样拷贝：它沿 t 度量「根长在头皮哪个纬度」，与左右无关。
+    panelHemisphereRootAngle: lock.panelHemisphereRootAngle,
     profileTrimLeft: lock.profileTrimRight,
     profileTrimRight: lock.profileTrimLeft,
     profileTrimRoundness: lock.profileTrimRoundness,
@@ -9693,6 +9706,12 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   );
   partner.panelHemisphereCenter = THREE.MathUtils.clamp(
     Number(lock.panelHemisphereCenter ?? panelCreationDefaults.panelHemisphereCenter),
+    0,
+    1
+  );
+  // 根部纬度：同名 → 同名（沿 t 度量，与左右无关）。同步点：createMirrorPartner 处同名注释。
+  partner.panelHemisphereRootAngle = THREE.MathUtils.clamp(
+    Number(lock.panelHemisphereRootAngle ?? panelCreationDefaults.panelHemisphereRootAngle),
     0,
     1
   );
@@ -9936,6 +9955,7 @@ function snapshotState() {
       panelHemisphereAmount: Number(lock.panelHemisphereAmount ?? panelCreationDefaults.panelHemisphereAmount),
       panelHemisphereWidth: Number(lock.panelHemisphereWidth ?? panelCreationDefaults.panelHemisphereWidth),
       panelHemisphereCenter: Number(lock.panelHemisphereCenter ?? panelCreationDefaults.panelHemisphereCenter),
+      panelHemisphereRootAngle: Number(lock.panelHemisphereRootAngle ?? panelCreationDefaults.panelHemisphereRootAngle),
       profileTrimLeft: Number(lock.profileTrimLeft ?? 0),
       profileTrimRight: Number(lock.profileTrimRight ?? 0),
       profileTrimRoundness: Number(lock.profileTrimRoundness ?? 1),
@@ -10624,6 +10644,12 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     ),
     panelHemisphereCenter: THREE.MathUtils.clamp(
       Number(snapshot.panelHemisphereCenter ?? panelCreationDefaults.panelHemisphereCenter),
+      0,
+      1
+    ),
+    // 旧档（0.2.134 及更早）没有这个字段 ⇒ 回落到默认 0.5，与「没动过滑杆的新面板」一致。
+    panelHemisphereRootAngle: THREE.MathUtils.clamp(
+      Number(snapshot.panelHemisphereRootAngle ?? panelCreationDefaults.panelHemisphereRootAngle),
       0,
       1
     ),

@@ -236,6 +236,84 @@ try {
   check("slider UI resyncs after undo", Math.abs(Number(restored.slider) - restored.a) < 1e-6,
     `slider=${restored.slider} field=${restored.a}`);
 
+  // ── 0.2.135：Panel Width 上限 5 + 两侧后移 + Root Latitude ────────────────────
+  const widthMax = await evalJS(cdp, `document.querySelector('#panelWidth').max`);
+  check("Panel Width 上限已放宽到 5", String(widthMax) === "5", `max=${widthMax}`);
+  const rootUi = JSON.parse(await evalJS(cdp, `(() => {
+    const s = document.querySelector('#panelHemisphereRootAngle');
+    return JSON.stringify({ present: !!s, min: s && s.min, max: s && s.max, value: s && s.value,
+      out: document.querySelector('#panelHemisphereRootAngleValue')?.textContent });
+  })()`));
+  check("Root Latitude 滑杆存在且默认 0.5", rootUi.present && Number(rootUi.value) === 0.5, JSON.stringify(rootUi));
+
+  // 把面板拉宽到 5（真实滑杆），再拉 Bulge Amount，测「中间前凸 / 两侧后移」。
+  // 判据取**沿面板法线**的位移：真实工程里 panel 朝向任意，所以先从几何自身取法线，
+  // 不能像 node 测试那样假设法线就是世界 +Z。
+  const wrapProbe = `(() => {
+    const t = window.__ahsTest;
+    const lock = ${lockRef};
+    const pos = lock.mesh.geometry.getAttribute('position');
+    const rows = lock.mesh.geometry.userData.gridRowIndices || [];
+    const cols = lock.mesh.geometry.userData.gridColIndices || [];
+    const maxRow = Math.max(...rows.filter((r) => r >= 0));
+    const targetRow = Math.round(maxRow * 0.5);
+    const out = [];
+    for (let i = 0; i < pos.count; i++) {
+      if (rows[i] !== targetRow) continue;
+      out.push({ i, col: cols[i], x: pos.array[i*3], y: pos.array[i*3+1], z: pos.array[i*3+2] });
+    }
+    return JSON.stringify({ targetRow, verts: out });
+  })()`;
+  await evalJS(cdp, `(() => {
+    const w = document.querySelector('#panelWidth');
+    w.value = '5'; w.dispatchEvent(new Event('input', { bubbles: true }));
+    const a = document.querySelector('#panelHemisphereAmount');
+    a.value = '0'; a.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+  await sleep(2500);
+  const flat = JSON.parse(await evalJS(cdp, wrapProbe));
+  await evalJS(cdp, `(() => { const a = document.querySelector('#panelHemisphereAmount'); a.value = '0.6'; a.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await sleep(2500);
+  const bulged = JSON.parse(await evalJS(cdp, wrapProbe));
+  check("wide-panel probe sampled the same row", flat.verts.length === bulged.verts.length && flat.verts.length > 4,
+    `row=${flat.targetRow} verts=${flat.verts.length}`);
+  if (flat.verts.length === bulged.verts.length && flat.verts.length > 4) {
+    // 面板法线 ≈ 位移最大那点的位移方向（amount>0 ⇒ 中线沿 +normal）。用中线点定法线。
+    const mid = Math.floor(flat.verts.length / 2);
+    const nvec = ["x", "y", "z"].map((k) => bulged.verts[mid][k] - flat.verts[mid][k]);
+    const nlen = Math.hypot(...nvec);
+    const dot = (idx) => {
+      const d = ["x", "y", "z"].map((k, j) => (bulged.verts[idx][k] - flat.verts[idx][k]) * (nvec[j] / nlen));
+      return d[0] + d[1] + d[2];
+    };
+    const centerAlong = dot(mid);
+    const edgeAlong = Math.min(dot(0), dot(flat.verts.length - 1));
+    check("wide panel: centre moves FORWARD along the panel normal", centerAlong > 1e-4, `centre=${centerAlong.toFixed(5)}`);
+    check("wide panel: both sides move BACKWARD (negative along same normal)", edgeAlong < -1e-4,
+      `edge=${edgeAlong.toFixed(5)} (this is the new 0.2.135 behaviour)`);
+  }
+  // Root Latitude 改变形状（同一 amount 下根部附近后移应变化）。
+  const rootEffect = await evalJS(cdp, `(() => {
+    const lock = ${lockRef};
+    const read = () => { lock.mesh.geometry.computeBoundingBox(); const b = lock.mesh.geometry.boundingBox;
+      return [b.min.x,b.min.y,b.min.z,b.max.x,b.max.y,b.max.z].map((v)=>Number(v.toFixed(5))).join(','); };
+    const s = document.querySelector('#panelHemisphereRootAngle');
+    s.value = '0'; s.dispatchEvent(new Event('input', { bubbles: true }));
+    return JSON.stringify({ low: read() });
+  })()`);
+  await sleep(2000);
+  const rootHigh = await evalJS(cdp, `(() => {
+    const lock = ${lockRef};
+    const s = document.querySelector('#panelHemisphereRootAngle');
+    s.value = '1'; s.dispatchEvent(new Event('input', { bubbles: true }));
+    lock.mesh.geometry.computeBoundingBox(); const b = lock.mesh.geometry.boundingBox;
+    return [b.min.x,b.min.y,b.min.z,b.max.x,b.max.y,b.max.z].map((v)=>Number(v.toFixed(5))).join(',');
+  })()`);
+  await sleep(2000);
+  check("Root Latitude 真的改变几何（0 vs 1 包围盒不同）",
+    JSON.parse(rootEffect).low !== rootHigh, `low=${JSON.parse(rootEffect).low} high=${rootHigh}`);
+
   const uiErr = cdp.events.filter((e) => e.method === "Runtime.exceptionThrown").length;
   check("0 new exceptions across all slider interaction", uiErr === bootErr, `${uiErr - bootErr} new`);
 } catch (error) {

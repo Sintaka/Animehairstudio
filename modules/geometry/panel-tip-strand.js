@@ -2,13 +2,21 @@
 // Extracted from app.js; coupling injected via createPanelTipStrandApi(deps).
 import * as THREE from "three";
 import {
+  PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE,
   panelHemisphereOffset,
   panelTipCurveParameter,
   panelTipLoopParameters,
   profileTopologyCenterWeight,
   sampleArray,
   sampleAsymmetricTaperCurve
-} from "./curve-math.js?v=20260909-2";
+} from "./curve-math.js?v=20260909-3";
+
+// 头皮球半径：与 app.js 的 `scalpSurface = { y: 0.9, radius: 1, ... }` 同值。
+// 半球「两侧后移」按此常数把面板卷到头皮上 —— 按用户要求是**定常数**、不做真适配。
+// 这是**受控副本**（几何层不便 import app.js 的运行时状态）：若 scalpSurface.radius 的
+// 默认值变了，这里要同步。用户可缩放头模，但本值刻意不跟随 —— 它只是「快速出半球效果」
+// 的手感基准，跟随会让同一 Bulge Amount 在不同头模上给出不同形状。
+const PANEL_SCALP_RADIUS = 1;
 import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260814-12";
 import { cloneSplitBones, segmentBoneHost } from "../bones/bone-model.js?v=20260901-1";
 import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260830-1";
@@ -451,16 +459,27 @@ function tipPanelFrameAt(lock, t) {
 // geometryType === "surface"（lattice 控制）恒 0：与 panelTipCurve / panelLeftEdgeTrim
 // 的既有先例一致（tipOffsetSampleT 与 createPanelStrandGeometry 都在 latticeControlled
 // 时把这些强制为 0）—— lattice 面板的形状由控制网格直接决定，程序化形变不适用。
+// 0.2.135：新增 wrapRatio = 面板半宽 / 头皮球半径，喂给 panelHemisphereOffset 的
+// 「两侧后移」项。头皮半径取 PANEL_SCALP_RADIUS（= app.js 的 scalpSurface.radius），
+// 按用户要求是**常数**、不做真适配 —— 目的是「调了 Bulge Amount 就能快速出半球效果」。
+// wrapRatio 随 lock.width 变化，所以拉宽 width 会自动加强后移（这正是要的手感）。
 function panelHemisphereParams(lock) {
   const amount = lock?.geometryType === "surface"
     ? 0
     : THREE.MathUtils.clamp(Number(lock?.panelHemisphereAmount ?? 0), -1, 1);
   const fullWidth = Math.max(0.01, Number(lock?.width ?? 0.62));
+  const halfWidth = fullWidth * 0.5;
   return {
     amount,
     width: THREE.MathUtils.clamp(Number(lock?.panelHemisphereWidth ?? 0.5), 0.05, 1),
     center: THREE.MathUtils.clamp(Number(lock?.panelHemisphereCenter ?? 0.5), 0, 1),
-    scale: fullWidth * 0.5
+    rootAngle: THREE.MathUtils.clamp(
+      Number(lock?.panelHemisphereRootAngle ?? PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE),
+      0,
+      1
+    ),
+    wrapRatio: halfWidth / PANEL_SCALP_RADIUS,
+    scale: halfWidth
   };
 }
 
@@ -515,7 +534,15 @@ function tipMainSectionPoint(lock, t, u, shell, bone, segmentIndex = -1, splits 
   if (hemisphere.amount !== 0) {
     point.addScaledVector(
       frame.z,
-      panelHemisphereOffset(t, u, hemisphere.amount, hemisphere.width, hemisphere.center) * hemisphere.scale
+      panelHemisphereOffset(
+        t,
+        u,
+        hemisphere.amount,
+        hemisphere.width,
+        hemisphere.center,
+        hemisphere.wrapRatio,
+        hemisphere.rootAngle
+      ) * hemisphere.scale
     );
   }
   return point;
@@ -931,7 +958,15 @@ function createPanelStrandGeometry(lock) {
     if (hemisphere.amount !== 0) {
       point.addScaledVector(
         frame.z,
-        panelHemisphereOffset(sampleT, u, hemisphere.amount, hemisphere.width, hemisphere.center) * hemisphere.scale
+        panelHemisphereOffset(
+          sampleT,
+          u,
+          hemisphere.amount,
+          hemisphere.width,
+          hemisphere.center,
+          hemisphere.wrapRatio,
+          hemisphere.rootAngle
+        ) * hemisphere.scale
       );
     }
     return point;
