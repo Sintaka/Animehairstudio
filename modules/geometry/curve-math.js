@@ -359,7 +359,13 @@ export const PANEL_SCALP_CONFORM_DEFAULTS = Object.freeze({
 //
 // k 极小时**逐位返回 sample(u)**：amount==0 的逐位守恒契约建立在这上面（阈值 1e-9 远小于
 // 任何真实曲率，正常参数永远走主分支）。
-export function panelBendCrossSection(sample, u, curvature, steps = 16) {
+// `steps` **默认 8 是扫出来的，不是拍的**（同一 panel 扫 4→32，判据 = 弯后折线长度 / 弯前）：
+//   4 步 ⇒ 误差 1.18%   6 步 ⇒ 0.51%   **8 步 ⇒ 0.29%**   16 步 ⇒ 0.066%   32 步 ⇒ 0.011%
+// 测试容差 2%，所以 8 步已有 7× 余量；而这是**几何热路径**（用户实时拖滑杆），16 步实测
+// 让 24×24 细分的单发片重建到 29.2ms、超过 ~16ms 帧预算。8 步把它砍半、误差仍在容差内。
+// **仍有一个未做的优化**：同一行的截面对所有 shell / 所有 u 都相同，现在每个顶点都从 0
+// 重新积分一遍；按行建前缀和表可再降一个数量级（见 devlog 已知未解项）。
+export function panelBendCrossSection(sample, u, curvature, steps = 8) {
   const target = Number(u) || 0;
   const k = Number(curvature) || 0;
   if (Math.abs(k) < 1e-9 || target === 0) {

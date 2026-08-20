@@ -9,7 +9,7 @@ import {
   profileTopologyCenterWeight,
   sampleArray,
   sampleAsymmetricTaperCurve
-} from "./curve-math.js?v=20260910-4";
+} from "./curve-math.js?v=20260910-5";
 
 // 头部代理的兜底参数：与 app.js 的 `scalpSurface = { x:0, y:0.9, z:0, radius:1, scaleXYZ:1 }`
 // 同值。**优先用注入的 deps.scalpSurface（真实运行时状态，跟随用户调整头模）**，

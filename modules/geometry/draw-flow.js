@@ -9,7 +9,7 @@ import {
   eightWayScreenDelta,
   normalizeTaperCurve,
   sampleArray
-} from "./curve-math.js?v=20260910-4";
+} from "./curve-math.js?v=20260910-5";
 import {
   proceduralAccessoryTaperScale,
   proceduralAccessoryTemplateData

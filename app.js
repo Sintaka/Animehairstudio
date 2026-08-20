@@ -109,7 +109,7 @@ import {
   // Scalp Conform 的默认值：**唯一定义点在 curve-math.js**。import 而不是抄写 —— 抄写会让
   // 默认值变成多个定义点（0.2.137 初版在此硬写过三处上限，已改为 import）。
   PANEL_SCALP_CONFORM_DEFAULTS
-} from "./modules/geometry/curve-math.js?v=20260910-4";
+} from "./modules/geometry/curve-math.js?v=20260910-5";
 import {
   curveLatticeLoopPointIndices,
   DEFAULT_CURVE_LATTICE_PLANE,
