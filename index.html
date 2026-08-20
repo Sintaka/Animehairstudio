@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anime Hair Studio</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=20260909-3" />
+    <link rel="stylesheet" href="./styles.css?v=20260910-1" />
   </head>
   <body>
     <main class="studio-shell">
@@ -1106,12 +1106,12 @@
               <label id="panelTipCurveControl" class="topology-control" title="Bows the fringe tip in either direction without changing the panel topology.">Tip Curve <input id="panelTipCurve" type="range" min="-1" max="1" step="0.01" value="0" /><output id="panelTipCurveValue" class="slider-value">0.00</output></label>
               <label class="topology-control" title="Adds extra horizontal loops only through the lower fringe for smoother tips and zipper openings.">Tip Loops <input id="panelTipLoops" type="range" min="0" max="16" step="1" value="0" /><output id="panelTipLoopsValue" class="slider-value">0</output></label>
             </div>
-            <div id="panelHemisphereControls" class="control-emphasis control-emphasis--blue">
-              <div class="subsection-label">Hemispherical Deform</div>
-              <label class="topology-control" title="Bulges the panel forward along its normal while wrapping both sides backward around the scalp, so a wide flat panel snaps onto a convex form such as the forehead. Widen the panel first, then raise this. Negative dents inward; 0 = off.">Bulge Amount <input id="panelHemisphereAmount" type="range" min="-1" max="1" step="0.01" value="0" /><output id="panelHemisphereAmountValue" class="slider-value">0.00</output></label>
-              <label class="topology-control" title="Sets how far the dome reaches from its center along the panel.">Bulge Width <input id="panelHemisphereWidth" type="range" min="0.05" max="1" step="0.01" value="0.5" /><output id="panelHemisphereWidthValue" class="slider-value">0.50</output></label>
-              <label class="topology-control" title="Positions the dome apex along the panel length. The root never moves.">Bulge Center <input id="panelHemisphereCenter" type="range" min="0" max="1" step="0.01" value="0.5" /><output id="panelHemisphereCenterValue" class="slider-value">0.50</output></label>
-              <label class="topology-control" title="Where this panel's root sits on the scalp, from the very crown (0) to the side of the head (1). Lower values keep the sideways wrap near the root gentle and let it build toward the tip. Mapped non-linearly so the shallow angles a real hairline uses get most of the slider.">Root Latitude <input id="panelHemisphereRootAngle" type="range" min="0" max="1" step="0.01" value="0.5" /><output id="panelHemisphereRootAngleValue" class="slider-value">0.50</output></label>
+            <div id="panelScalpConformControls" class="control-emphasis control-emphasis--blue">
+              <div class="subsection-label">Scalp Conform</div>
+              <label class="topology-control" title="Wraps the panel onto the head itself: every row is pulled toward the real scalp surface in world space, so a wide flat panel snaps onto the forehead and its sides land where the skull actually is. 1 = sitting exactly on the scalp, negative pushes away from the head, 0 = off. The root never moves.">Conform <input id="panelScalpConformAmount" type="range" min="-1" max="1" step="0.01" value="0" /><output id="panelScalpConformAmountValue" class="slider-value">0.00</output></label>
+              <label class="topology-control" title="How far down the panel the wrap reaches full strength. Small values grab the head right below the root; 1 ramps all the way to the tip.">Falloff <input id="panelScalpConformRange" type="range" min="0.05" max="1" step="0.01" value="0.6" /><output id="panelScalpConformRangeValue" class="slider-value">0.60</output></label>
+              <label class="topology-control" title="Clearance kept between the panel and the scalp, in world units. Raise it if the hair intersects the head mesh.">Scalp Gap <input id="panelScalpConformGap" type="range" min="0" max="0.5" step="0.005" value="0.02" /><output id="panelScalpConformGapValue" class="slider-value">0.020</output></label>
+              <label class="topology-control" title="Extends the head proxy downward into a capsule, measured in head radii. Raise it so long hair hangs straight past the jaw instead of curling in under the chin; 0 makes the proxy a plain sphere.">Capsule Length <input id="panelScalpConformCylinder" type="range" min="0" max="3" step="0.05" value="0.5" /><output id="panelScalpConformCylinderValue" class="slider-value">0.50</output></label>
             </div>
             <div id="panelZipperGroup" class="control-emphasis control-emphasis--green">
             <div class="subsection-label">Split Segments</div>
@@ -2414,6 +2414,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260909-3"></script>
+    <script type="module" src="./app.js?v=20260910-1"></script>
   </body>
 </html>

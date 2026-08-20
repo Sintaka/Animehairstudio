@@ -3,7 +3,7 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260909-3";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-1";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
 import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-1";
@@ -106,7 +106,7 @@ import {
   twistRateUnitsFromDegrees,
   upperProfileArcIndices,
   uniformCurveParameters
-} from "./modules/geometry/curve-math.js?v=20260909-3";
+} from "./modules/geometry/curve-math.js?v=20260910-1";
 import {
   curveLatticeLoopPointIndices,
   DEFAULT_CURVE_LATTICE_PLANE,
@@ -1510,15 +1510,14 @@ const panelCreationDefaults = {
   panelRightEdgeTrim: 0,
   panelTipCurve: 0,
   panelTipLoops: 0,
-  // 半球隆起（法线方向的球冠）：四个 Trim 控件的法线方向对位物。默认全部为中性
-  // （amount 0 ⇒ 输出与引入前逐位相同）。
-  panelHemisphereAmount: 0,
-  panelHemisphereWidth: 0.5,
-  panelHemisphereCenter: 0.5,
-  // 根部纬度旋钮：与 curve-math.js 的 PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE 同值（0.5）。
-  // 那里是唯一定义点；此处是受控副本（app.js 不 import 几何常量），不同源会让「没动过
-  // 滑杆的面板」与默认几何不一致。index.html 的 value= 也必须同值。
-  panelHemisphereRootAngle: 0.5,
+  // Scalp Conform（0.2.136 世界空间收缩包裹）：四个默认值是
+  // curve-math.js 的 PANEL_SCALP_CONFORM_DEFAULTS 的**受控副本**（app.js 不 import 几何
+  // 常量）。那里是唯一定义点；三处（那里 / 此处 / index.html 的 value=）不同源会让
+  // 「没动过滑杆的面板」与默认几何不一致。amount 0 ⇒ 输出与引入前逐位相同。
+  panelScalpConformAmount: 0,
+  panelScalpConformRange: 0.6,
+  panelScalpConformGap: 0.02,
+  panelScalpConformCylinder: 0.5,
   panelSplitEnabled: true,
   panelSplitSnapToLoops: true,
   panelSplitHeight: 0.3,
@@ -3359,23 +3358,23 @@ const surfaceLatticeRowsInput = document.querySelector("#surfaceLatticeRows");
 const surfaceLatticeRowsValue = document.querySelector("#surfaceLatticeRowsValue");
 const panelCurvatureControl = document.querySelector("#panelCurvatureControl");
 const panelTipCurveControl = document.querySelector("#panelTipCurveControl");
-const panelHemisphereControls = document.querySelector("#panelHemisphereControls");
-// 半球隆起的三个滑杆走**已有**的 panelShapeInputs 通用接线（bindUndoCapture + input
+const panelScalpConformControls = document.querySelector("#panelScalpConformControls");
+// Scalp Conform 的四个滑杆走**已有**的 panelShapeInputs 通用接线（bindUndoCapture + input
 // 监听 + setMixedControl 多选同步各只有一份实现），因此这里只需把键补进字典。
 // 但通用接线对元素做 `input.addEventListener` 时**不判空**，而本文件被 index.html
-// 加载时该 markup 可能尚未存在 —— 所以先滤掉缺失项：缺失时这三个键根本不进字典，
+// 加载时该 markup 可能尚未存在 —— 所以先滤掉缺失项：缺失时这四个键根本不进字典，
 // 通用循环遍历不到，启动不会抛（其余既有键沿用原样，行为逐字节不变）。
-const panelHemisphereInputEntries = Object.entries({
-  panelHemisphereAmount: document.querySelector("#panelHemisphereAmount"),
-  panelHemisphereWidth: document.querySelector("#panelHemisphereWidth"),
-  panelHemisphereCenter: document.querySelector("#panelHemisphereCenter"),
-  panelHemisphereRootAngle: document.querySelector("#panelHemisphereRootAngle")
+const panelScalpConformInputEntries = Object.entries({
+  panelScalpConformAmount: document.querySelector("#panelScalpConformAmount"),
+  panelScalpConformRange: document.querySelector("#panelScalpConformRange"),
+  panelScalpConformGap: document.querySelector("#panelScalpConformGap"),
+  panelScalpConformCylinder: document.querySelector("#panelScalpConformCylinder")
 }).filter(([, element]) => Boolean(element));
-const panelHemisphereValueEntries = Object.entries({
-  panelHemisphereAmount: document.querySelector("#panelHemisphereAmountValue"),
-  panelHemisphereWidth: document.querySelector("#panelHemisphereWidthValue"),
-  panelHemisphereCenter: document.querySelector("#panelHemisphereCenterValue"),
-  panelHemisphereRootAngle: document.querySelector("#panelHemisphereRootAngleValue")
+const panelScalpConformValueEntries = Object.entries({
+  panelScalpConformAmount: document.querySelector("#panelScalpConformAmountValue"),
+  panelScalpConformRange: document.querySelector("#panelScalpConformRangeValue"),
+  panelScalpConformGap: document.querySelector("#panelScalpConformGapValue"),
+  panelScalpConformCylinder: document.querySelector("#panelScalpConformCylinderValue")
 }).filter(([, element]) => Boolean(element));
 const panelShapeInputs = {
   width: document.querySelector("#panelWidth"),
@@ -3389,7 +3388,7 @@ const panelShapeInputs = {
   panelTipLoops: document.querySelector("#panelTipLoops"),
   panelSplitEnabled: document.querySelector("#panelSplitEnabled"),
   panelSplitSnapToLoops: document.querySelector("#panelSplitSnapToLoops"),
-  ...Object.fromEntries(panelHemisphereInputEntries)
+  ...Object.fromEntries(panelScalpConformInputEntries)
 };
 const panelShapeValues = {
   width: document.querySelector("#panelWidthValue"),
@@ -3401,7 +3400,7 @@ const panelShapeValues = {
   panelRightEdgeTrim: document.querySelector("#panelRightEdgeTrimValue"),
   panelTipCurve: document.querySelector("#panelTipCurveValue"),
   panelTipLoops: document.querySelector("#panelTipLoopsValue"),
-  ...Object.fromEntries(panelHemisphereValueEntries)
+  ...Object.fromEntries(panelScalpConformValueEntries)
 };
 // 0.2.132：全局 Split Spacing 滑杆（#strandSplitGap）已删除 —— 它承载的「segment separate
 // / 整管横向平移」语义被整体移除，发尖聚合改由每管 Tip Clump（#strandSegmentSpread）表达。
@@ -9325,25 +9324,28 @@ function addLock(presetName, overrides = {}, options = {}) {
   lock.panelTipLoops = lock.geometryType === "surface"
     ? 0
     : THREE.MathUtils.clamp(Math.round(Number(base.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16);
-  // 半球隆起：amount 在 surface（lattice 控制）上恒 0，与上面 panelTipCurve / panelTipLoops
-  // 同规则；width/center 是纯剖面参数，即使被忽略也无害，照常规范化以便 UI 显示稳定。
-  lock.panelHemisphereAmount = lock.geometryType === "surface"
+  // Scalp Conform：amount 在 surface（lattice 控制）上恒 0，与上面 panelTipCurve /
+  // panelTipLoops 同规则；range/gap/cylinder 即使被忽略也无害，照常规范化以便 UI 显示稳定。
+  lock.panelScalpConformAmount = lock.geometryType === "surface"
     ? 0
-    : THREE.MathUtils.clamp(Number(base.panelHemisphereAmount ?? panelCreationDefaults.panelHemisphereAmount), -1, 1);
-  lock.panelHemisphereWidth = THREE.MathUtils.clamp(
-    Number(base.panelHemisphereWidth ?? panelCreationDefaults.panelHemisphereWidth),
+    : THREE.MathUtils.clamp(Number(base.panelScalpConformAmount ?? panelCreationDefaults.panelScalpConformAmount), -1, 1);
+  lock.panelScalpConformRange = THREE.MathUtils.clamp(
+    Number(base.panelScalpConformRange ?? panelCreationDefaults.panelScalpConformRange),
     0.05,
     1
   );
-  lock.panelHemisphereCenter = THREE.MathUtils.clamp(
-    Number(base.panelHemisphereCenter ?? panelCreationDefaults.panelHemisphereCenter),
+  // Gap 上限 0.5：世界单位的"离头皮余量"，头皮球半径为 1，半个半径已经远超任何合理发厚。
+  // Cylinder 上限 3：Capsule 圆柱段向下延伸长度（单位球空间），3 倍半径足够覆盖到胸口。
+  // 两条钳位与 curve-math.js 的 panelScalpConformParams 同界（同步点：那里的同名钳位）。
+  lock.panelScalpConformGap = THREE.MathUtils.clamp(
+    Number(base.panelScalpConformGap ?? panelCreationDefaults.panelScalpConformGap),
     0,
-    1
+    0.5
   );
-  lock.panelHemisphereRootAngle = THREE.MathUtils.clamp(
-    Number(base.panelHemisphereRootAngle ?? panelCreationDefaults.panelHemisphereRootAngle),
+  lock.panelScalpConformCylinder = THREE.MathUtils.clamp(
+    Number(base.panelScalpConformCylinder ?? panelCreationDefaults.panelScalpConformCylinder),
     0,
-    1
+    3
   );
   lock.panelSplitEnabled = base.panelSplitEnabled !== false;
   lock.panelSplitSnapToLoops = base.panelSplitSnapToLoops !== false;
@@ -9508,16 +9510,16 @@ function createMirrorPartner(lock, options = {}) {
     panelRightEdgeTrim: lock.panelRightEdgeTrim,
     panelTipCurve: lock.panelTipCurve,
     panelTipLoops: lock.panelTipLoops,
-    // 半球隆起：三个值镜像时**原样拷贝，不取反、不交换**。理由：球冠剖面
-    // r = hypot(dt, u) 在 u 上是**偶函数**（关于 u=0 对称），镜像只翻转 u 的符号 ⇒
-    // 形状不变；而 panelHemisphereCenter/Width 都沿 t（长度方向）度量，镜像不动 t。
+    // Scalp Conform：四个值镜像时**原样拷贝，不取反、不交换**。理由与旧的球冠模型不同 ——
+    // 收缩位移的方向来自**头部代理**而不是面板自己的公式：代理关于 X 对称（scalpSurface.x
+    // 默认 0），镜像后的顶点在世界空间自然找到镜像位置的表面点。四个参数（强度/沿 t 跨度/
+    // 离头余量/圆柱段长度）**都不按侧定义**，所以没有"左右"可换。
     // 对比：panelTipCurve 要取负（它的 bowWeight 随 strength 符号在"边缘/中心"间切换），
     // panelLeftEdgeTrim/panelRightEdgeTrim 要左右互换（它们本身就是按侧定义的）。
-    panelHemisphereAmount: lock.panelHemisphereAmount,
-    panelHemisphereWidth: lock.panelHemisphereWidth,
-    panelHemisphereCenter: lock.panelHemisphereCenter,
-    // 根部纬度同理原样拷贝：它沿 t 度量「根长在头皮哪个纬度」，与左右无关。
-    panelHemisphereRootAngle: lock.panelHemisphereRootAngle,
+    panelScalpConformAmount: lock.panelScalpConformAmount,
+    panelScalpConformRange: lock.panelScalpConformRange,
+    panelScalpConformGap: lock.panelScalpConformGap,
+    panelScalpConformCylinder: lock.panelScalpConformCylinder,
     profileTrimLeft: lock.profileTrimRight,
     profileTrimRight: lock.profileTrimLeft,
     profileTrimRoundness: lock.profileTrimRoundness,
@@ -9692,28 +9694,29 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   partner.panelTipLoops = lock.geometryType === "surface"
     ? 0
     : THREE.MathUtils.clamp(Math.round(Number(lock.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16);
-  // 半球隆起：三个值**原样拷贝，不取反、不交换**（与 createMirrorPartner 同规则，
-  // 同步点：那里的同名注释）。球冠剖面 r = hypot(dt, u) 在 u 上是偶函数 ⇒ X 镜像
-  // 翻转 u 的符号后形状不变；width/center 沿 t 度量，镜像不动 t。
-  // 对比上面两条：panelTipCurve 取负、左右 EdgeTrim 互换 —— 半球两者都不需要。
-  partner.panelHemisphereAmount = lock.geometryType === "surface"
+  // Scalp Conform：四个值**原样拷贝，不取反、不交换**（与 createMirrorPartner 同规则，
+  // 同步点：那里的同名注释）。收缩方向来自头部代理而非面板公式，代理关于 X 对称 ⇒ 镜像后
+  // 的顶点自然找到镜像位置的表面点；四个参数都不按侧定义。
+  // 对比上面两条：panelTipCurve 取负、左右 EdgeTrim 互换 —— 收缩两者都不需要。
+  partner.panelScalpConformAmount = lock.geometryType === "surface"
     ? 0
-    : THREE.MathUtils.clamp(Number(lock.panelHemisphereAmount ?? panelCreationDefaults.panelHemisphereAmount), -1, 1);
-  partner.panelHemisphereWidth = THREE.MathUtils.clamp(
-    Number(lock.panelHemisphereWidth ?? panelCreationDefaults.panelHemisphereWidth),
+    : THREE.MathUtils.clamp(Number(lock.panelScalpConformAmount ?? panelCreationDefaults.panelScalpConformAmount), -1, 1);
+  partner.panelScalpConformRange = THREE.MathUtils.clamp(
+    Number(lock.panelScalpConformRange ?? panelCreationDefaults.panelScalpConformRange),
     0.05,
     1
   );
-  partner.panelHemisphereCenter = THREE.MathUtils.clamp(
-    Number(lock.panelHemisphereCenter ?? panelCreationDefaults.panelHemisphereCenter),
+  partner.panelScalpConformGap = THREE.MathUtils.clamp(
+    Number(lock.panelScalpConformGap ?? panelCreationDefaults.panelScalpConformGap),
     0,
-    1
+    0.5
   );
-  // 根部纬度：同名 → 同名（沿 t 度量，与左右无关）。同步点：createMirrorPartner 处同名注释。
-  partner.panelHemisphereRootAngle = THREE.MathUtils.clamp(
-    Number(lock.panelHemisphereRootAngle ?? panelCreationDefaults.panelHemisphereRootAngle),
+  // Cylinder：同名 → 同名。收缩四值**全部原样拷贝** —— 头部代理关于 X 镜像对称
+  // （scalpSurface 的 x 默认 0），且这四个参数都不按侧定义。同步点：createMirrorPartner。
+  partner.panelScalpConformCylinder = THREE.MathUtils.clamp(
+    Number(lock.panelScalpConformCylinder ?? panelCreationDefaults.panelScalpConformCylinder),
     0,
-    1
+    3
   );
   partner.profileTrimLeft = Number(lock.profileTrimRight ?? 0);
   partner.profileTrimRight = Number(lock.profileTrimLeft ?? 0);
@@ -9952,10 +9955,10 @@ function snapshotState() {
       panelRightEdgeTrim: Number(lock.panelRightEdgeTrim ?? panelCreationDefaults.panelRightEdgeTrim),
       panelTipCurve: Number(lock.panelTipCurve ?? panelCreationDefaults.panelTipCurve),
       panelTipLoops: Number(lock.panelTipLoops ?? panelCreationDefaults.panelTipLoops),
-      panelHemisphereAmount: Number(lock.panelHemisphereAmount ?? panelCreationDefaults.panelHemisphereAmount),
-      panelHemisphereWidth: Number(lock.panelHemisphereWidth ?? panelCreationDefaults.panelHemisphereWidth),
-      panelHemisphereCenter: Number(lock.panelHemisphereCenter ?? panelCreationDefaults.panelHemisphereCenter),
-      panelHemisphereRootAngle: Number(lock.panelHemisphereRootAngle ?? panelCreationDefaults.panelHemisphereRootAngle),
+      panelScalpConformAmount: Number(lock.panelScalpConformAmount ?? panelCreationDefaults.panelScalpConformAmount),
+      panelScalpConformRange: Number(lock.panelScalpConformRange ?? panelCreationDefaults.panelScalpConformRange),
+      panelScalpConformGap: Number(lock.panelScalpConformGap ?? panelCreationDefaults.panelScalpConformGap),
+      panelScalpConformCylinder: Number(lock.panelScalpConformCylinder ?? panelCreationDefaults.panelScalpConformCylinder),
       profileTrimLeft: Number(lock.profileTrimLeft ?? 0),
       profileTrimRight: Number(lock.profileTrimRight ?? 0),
       profileTrimRoundness: Number(lock.profileTrimRoundness ?? 1),
@@ -10632,26 +10635,29 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     panelTipLoops: snapshot.geometryType === "surface"
       ? 0
       : THREE.MathUtils.clamp(Math.round(Number(snapshot.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16),
-    // 半球隆起：amount 在 surface 上恒 0（与上面 panelTipCurve/panelTipLoops 同规则）；
-    // width/center 是纯剖面参数，照常钳位反序列化，旧档缺字段时回落到中性默认值。
-    panelHemisphereAmount: snapshot.geometryType === "surface"
+    // Scalp Conform：amount 在 surface 上恒 0（与上面 panelTipCurve/panelTipLoops 同规则）；
+    // range/gap/cylinder 照常钳位反序列化，旧档缺字段时回落到中性默认值。
+    panelScalpConformAmount: snapshot.geometryType === "surface"
       ? 0
-      : THREE.MathUtils.clamp(Number(snapshot.panelHemisphereAmount ?? panelCreationDefaults.panelHemisphereAmount), -1, 1),
-    panelHemisphereWidth: THREE.MathUtils.clamp(
-      Number(snapshot.panelHemisphereWidth ?? panelCreationDefaults.panelHemisphereWidth),
+      : THREE.MathUtils.clamp(Number(snapshot.panelScalpConformAmount ?? panelCreationDefaults.panelScalpConformAmount), -1, 1),
+    panelScalpConformRange: THREE.MathUtils.clamp(
+      Number(snapshot.panelScalpConformRange ?? panelCreationDefaults.panelScalpConformRange),
       0.05,
       1
     ),
-    panelHemisphereCenter: THREE.MathUtils.clamp(
-      Number(snapshot.panelHemisphereCenter ?? panelCreationDefaults.panelHemisphereCenter),
+    panelScalpConformGap: THREE.MathUtils.clamp(
+      Number(snapshot.panelScalpConformGap ?? panelCreationDefaults.panelScalpConformGap),
       0,
-      1
+      0.5
     ),
-    // 旧档（0.2.134 及更早）没有这个字段 ⇒ 回落到默认 0.5，与「没动过滑杆的新面板」一致。
-    panelHemisphereRootAngle: THREE.MathUtils.clamp(
-      Number(snapshot.panelHemisphereRootAngle ?? panelCreationDefaults.panelHemisphereRootAngle),
+    // 旧档兼容：0.2.135 及更早的 panelHemisphere* 四字段**刻意不迁移** —— 那套是「沿面板
+    // 法线的球冠 + 两侧后移」，与本模型（世界空间朝头部代理收缩）语义完全不同，把旧数值
+    // 灌进新字段会得到与作者当年意图无关的形状。旧档因此回落到默认（amount 0 = 关闭），
+    // 即"打开旧档看到的还是当年的几何，只是这个控件是关着的"，由用户自己决定要不要开。
+    panelScalpConformCylinder: THREE.MathUtils.clamp(
+      Number(snapshot.panelScalpConformCylinder ?? panelCreationDefaults.panelScalpConformCylinder),
       0,
-      1
+      3
     ),
     panelSplitEnabled: snapshot.panelSplitEnabled !== false,
     panelSplitSnapToLoops: snapshot.panelSplitSnapToLoops !== false,
@@ -12410,6 +12416,13 @@ Object.assign(panelTipStrandDeps, {
   strandInfluenceColor,
   isPanelGeometry,
   outwardNormalAtPoint,
+  // Scalp Conform（0.2.136）的头部代理源：**注入纯数据对象本体**（不是快照拷贝），
+  // 这样用户调整头皮尺寸/位置后，下一次几何重建自动读到新值。刻意不传 scalpSurfaceGroup
+  // （Object3D）—— 几何重建时机比渲染早，它的 matrixWorld 可能是脏的；从这份纯数据推
+  // 椭球变换永远是当前值。同步点：modules/geometry/panel-tip-strand.js 的
+  // panelScalpConformParams 与 scalp-builder.js 的 updateScalpSurface 用同一套
+  // `radius * scaleXYZ` 规则。
+  scalpSurface,
   sculptState: sculptState.state
 });
 // Strand geometry api deps batch (refactor 3d batches G2+G3): all deps are defined by this
@@ -13722,10 +13735,10 @@ function updateAttributeEditorMode() {
   surfaceLatticeControls.hidden = !selectedSurface;
   panelCurvatureControl.hidden = Boolean(selectedSurface);
   panelTipCurveControl.hidden = Boolean(selectedSurface);
-  // 半球隆起容器与 panelTipCurveControl 同规则隐藏（lattice 面板不适用程序化形变）。
+  // Scalp Conform 容器与 panelTipCurveControl 同规则隐藏（lattice 面板不适用程序化形变）。
   // 可选链：本文件加载时该 markup 可能尚未存在，缺失不得在启动路径上抛。
-  panelHemisphereControls?.classList.toggle("hidden", Boolean(selectedSurface));
-  if (panelHemisphereControls) panelHemisphereControls.hidden = Boolean(selectedSurface);
+  panelScalpConformControls?.classList.toggle("hidden", Boolean(selectedSurface));
+  if (panelScalpConformControls) panelScalpConformControls.hidden = Boolean(selectedSurface);
   compoundBridgeLoopsControl.classList.toggle("hidden", !selectedCompound);
   compoundBridgeSmoothingControl.classList.toggle("hidden", !selectedCompound);
   if (selectedSurface) {
@@ -20957,6 +20970,10 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     // 从 fileApi 读会拿到 undefined、写会凭空造出一个同名属性，断言因此会假绿/假红
     // （scripts/verify-new-project.mjs 初版实测踩过）。见该脚本。
     projectState,
+    // scalpSurface：Scalp Conform 的验收要独立判断「顶点是否真的落在头皮表面 + gap 上」，
+    // 而那需要**真实头部代理参数**（中心/半径/三轴缩放）。若验收脚本自己写死 {y:0.9, r:1}，
+    // 它就只是在复述实现的假设、用户改过头模后会假绿。见 scripts/verify-scalp-conform.mjs。
+    scalpSurface,
     beginTipSubBoneRotate: bonesApi.beginTipSubBoneRotate,
     beginTipSubBoneTranslate: bonesApi.beginTipSubBoneTranslate,
     updateTipHighlight: panelTipStrand.updateTipHighlight,

@@ -18,7 +18,7 @@ import {
   sampleArray,
   surfaceArcBlendAmount,
   surfaceArcPolylinePointData
-} from "./curve-math.js?v=20260909-3";
+} from "./curve-math.js?v=20260910-1";
 import {
   DEFAULT_TWIST_CURVE,
   ROOT_SCALP_OFFSET_DISTANCE,

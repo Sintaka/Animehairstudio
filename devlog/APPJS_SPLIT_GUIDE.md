@@ -134,6 +134,7 @@
 - **BOM**：`write` 与 `edit` **都会**静默剥 BOM；**PowerShell 的 BOM 审计会说谎**（`Get-Content -Encoding Byte` 把带 BOM 的文件报成无 BOM，`>` 重定向 git 输出按 UTF-16 写盘凭空造出 `FF FE`）。用 node 读字节判定。
 - **PowerShell→node stdin 中文损坏**：管道会丢中文（变 ??）；文档写入一律 `[IO.File]::WriteAllLines($path,$lines,(New-Object System.Text.UTF8Encoding($false)))` 或用 node/工具写。
 - **信任前缀必须是命令首 token**：`git`/`node` 不在第一位就被沙箱拦（0.2.125 主进程踩了 4 次）；用 workdir 参数代替 `cd`。
+- **批量改名/替换脚本要写成文件再跑，别用 `node -e` 内联（0.2.136 教训）**：内联脚本里的正则字符类、模板串、多行解构会被 PowerShell 的引号解析吃掉，症状是**静默什么都没做**（退出码 0、无输出），照它的"成功"继续走会基于错误前提。本轮一次 `node -e` 改名脚本零输出、52 处旧标识符一个没换。写成 `scripts/tmp-*.mjs` 再 `node scripts/tmp-x.mjs`，并让脚本**逐文件打印替换数 + 回读校验**（0.2.57 有过"批量脚本 lines.join 覆盖丢失替换"的先例）；跑完即删。
 - **测试红的三种形态要分清**：① `uv-pack-async` 单条 fail = 负载 flake，重跑；② 失败集中在**刚被写过的文件**上 = 子智能体持有写入时的文件竞态，重跑；③ 其余才怀疑代码。
 - **source-text 断言**（钉代码形状的测试）重构后失效时，**要改写不要删**：先核实它守的行为仍成立，再改写断言（0.2.126 的三条如此处理，测试名保留）。
 

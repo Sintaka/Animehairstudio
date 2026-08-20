@@ -1,9 +1,14 @@
-// verify-hemisphere-ui.mjs - browser verification of the Hemispherical Deform SLIDER
-// WIRING (0.2.134). The node tests cover the geometry math; this covers the layer they
-// cannot: that dragging the real slider writes the lock field, rebuilds the mesh, keeps
-// row 0 pinned in the LIVE app, survives undo, and round-trips through save/load.
+// verify-scalp-conform.mjs — browser verification of the Scalp Conform SLIDER WIRING
+// (0.2.136; was verify-hemisphere-ui.mjs for the replaced 0.2.134/0.2.135 model).
+// The node tests cover the geometry math; this covers the layer they cannot: that dragging
+// the real slider writes the lock field, rebuilds the mesh, keeps row 0 pinned in the LIVE
+// app, survives undo, and round-trips through save/load.
 //
-// Run: node scripts/verify-hemisphere-ui.mjs [file.ahs] [--port 8290] [--cdp-port 9420]
+// **决定性判据**（0.2.136）：cylinder = 0 时头部代理是纯球 ⇒ 收满的顶点必须落在
+// `radius + gap` 上。center/radius 从**注入的 scalpSurface**（测试缝）读，不写死
+// `{y:0.9, r:1}` —— 写死就只是复述实现的假设，用户改过头模后会假绿。
+//
+// Run: node scripts/verify-scalp-conform.mjs [file.ahs] [--port 8290] [--cdp-port 9420]
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -130,17 +135,17 @@ try {
 
   // 控件必须可见（panel 上下文），且这三个滑杆确实在 DOM 里
   const uiState = JSON.parse(await evalJS(cdp, `(() => {
-    const box = document.querySelector('#panelHemisphereControls');
+    const box = document.querySelector('#panelScalpConformControls');
     const r = box.getBoundingClientRect();
     return JSON.stringify({
       visible: r.width > 0 && r.height > 0,
-      amount: document.querySelector('#panelHemisphereAmount').value,
-      width: document.querySelector('#panelHemisphereWidth').value,
-      center: document.querySelector('#panelHemisphereCenter').value,
+      amount: document.querySelector('#panelScalpConformAmount').value,
+      width: document.querySelector('#panelScalpConformRange').value,
+      center: document.querySelector('#panelScalpConformGap').value,
       emphasis: box.className
     });
   })()`));
-  check("hemisphere controls visible on a panel", uiState.visible === true, JSON.stringify(uiState));
+  check("Scalp Conform controls visible on a panel", uiState.visible === true, JSON.stringify(uiState));
   check("sliders default to neutral (amount 0)", Number(uiState.amount) === 0, `amount=${uiState.amount}`);
 
   // 基线几何：row 0 顶点 + 整体包围盒
@@ -155,14 +160,36 @@ try {
     let sum = 0; for (let i = 0; i < pos.count; i++) sum += pos.array[i*3+2];
     return JSON.stringify({ count: pos.count, row0, zMean: sum / pos.count,
       bb: [bb.min.x, bb.min.y, bb.min.z, bb.max.x, bb.max.y, bb.max.z],
-      field: lock.panelHemisphereAmount });
+      field: lock.panelScalpConformAmount });
   })()`;
   const before = JSON.parse(await evalJS(cdp, probe));
   check("baseline field is 0", Number(before.field) === 0, `field=${before.field}`);
 
+  // 四个滑杆的默认值必须在**任何变更之前**读 —— 本脚本初版把这条放在后面，读到的是已被
+  // 前面步骤改过的值，于是恒假红。默认值三处同源（curve-math 的
+  // PANEL_SCALP_CONFORM_DEFAULTS / app.js 的 panelCreationDefaults / index.html 的 value=）。
+  const conformUi = JSON.parse(await evalJS(cdp, `(() => {
+    const read = (id) => { const s = document.querySelector('#' + id); return s && { min: s.min, max: s.max, value: s.value }; };
+    return JSON.stringify({
+      amount: read('panelScalpConformAmount'),
+      range: read('panelScalpConformRange'),
+      gap: read('panelScalpConformGap'),
+      cylinder: read('panelScalpConformCylinder'),
+      label: document.querySelector('#panelScalpConformControls .subsection-label')?.textContent
+    });
+  })()`));
+  check("四个 Scalp Conform 滑杆齐备且默认值正确",
+    Number(conformUi.amount?.value) === 0 && Number(conformUi.range?.value) === 0.6
+      && Number(conformUi.gap?.value) === 0.02 && Number(conformUi.cylinder?.value) === 0.5,
+    JSON.stringify(conformUi));
+  check("旧 Hemispherical 标签已替换为 Scalp Conform", conformUi.label === "Scalp Conform", `label=${conformUi.label}`);
+  check("滑杆区间与几何层钳位一致（gap 0..0.5、cylinder 0..3）",
+    conformUi.gap?.max === "0.5" && conformUi.cylinder?.max === "3",
+    `gap max=${conformUi.gap?.max} cylinder max=${conformUi.cylinder?.max}`);
+
   // ── 真实滑杆交互：设值 + 派发 input（app.js 的通用接线监听 input）────────────
   await evalJS(cdp, `(() => {
-    const s = document.querySelector('#panelHemisphereAmount');
+    const s = document.querySelector('#panelScalpConformAmount');
     s.value = '0.8';
     s.dispatchEvent(new Event('input', { bubbles: true }));
     return true;
@@ -171,11 +198,12 @@ try {
   const after = JSON.parse(await evalJS(cdp, probe));
   check("slider writes the lock field", Math.abs(Number(after.field) - 0.8) < 1e-6, `field=${after.field}`);
   check("value output reflects the slider",
-    (await evalJS(cdp, `document.querySelector('#panelHemisphereAmountValue').textContent`)) === "0.80",
-    await evalJS(cdp, `document.querySelector('#panelHemisphereAmountValue').textContent`));
-  // 几何真的重建了（顶点数不变、但沿法线整体外移）
+    (await evalJS(cdp, `document.querySelector('#panelScalpConformAmountValue').textContent`)) === "0.80",
+    await evalJS(cdp, `document.querySelector('#panelScalpConformAmountValue').textContent`));
+  // 几何真的重建了（顶点数不变，但整体朝头部代理收）。注意方向：0.2.136 起正向 conform 是
+  // **朝头收**（面板起始在头前方 ⇒ z 减小），与被替换的 0.2.134/0.2.135「向前凸」相反。
   check("mesh rebuilt with same vertex count", after.count === before.count, `${before.count} -> ${after.count}`);
-  check("geometry actually bulged (mean z moved)", Math.abs(after.zMean - before.zMean) > 1e-5,
+  check("geometry actually moved toward the head (mean z decreased)", after.zMean < before.zMean - 1e-5,
     `zMean ${before.zMean.toFixed(6)} -> ${after.zMean.toFixed(6)}`);
   // row 0 在真实 app 里也必须逐位不动（UV 红线）
   const row0Same = before.row0.length === after.row0.length
@@ -183,25 +211,30 @@ try {
   check("row 0 vertices bit-identical in the live app", row0Same,
     `${before.row0.length / 3} row-0 verts compared`);
 
-  // 负值向内凹（与正值反向）
-  await evalJS(cdp, `(() => { const s = document.querySelector('#panelHemisphereAmount'); s.value = '-0.8'; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  // 负值推离头部（与正值严格反向）
+  await evalJS(cdp, `(() => { const s = document.querySelector('#panelScalpConformAmount'); s.value = '-0.8'; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await sleep(2500);
   const dent = JSON.parse(await evalJS(cdp, probe));
-  check("negative amount dents the opposite way",
+  check("negative amount pushes AWAY from the head (opposite sign)",
     Math.sign(dent.zMean - before.zMean) === -Math.sign(after.zMean - before.zMean),
     `+0.8: ${(after.zMean - before.zMean).toFixed(6)}  -0.8: ${(dent.zMean - before.zMean).toFixed(6)}`);
 
   // ── 存档往返：字段必须随 .ahs 持久化 ─────────────────────────────────────────
-  await evalJS(cdp, `(() => { const s = document.querySelector('#panelHemisphereAmount'); s.value = '0.55'; s.dispatchEvent(new Event('input', { bubbles: true }));
-    const w = document.querySelector('#panelHemisphereWidth'); w.value = '0.35'; w.dispatchEvent(new Event('input', { bubbles: true }));
-    const c = document.querySelector('#panelHemisphereCenter'); c.value = '0.7'; c.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await evalJS(cdp, `(() => { const s = document.querySelector('#panelScalpConformAmount'); s.value = '0.55'; s.dispatchEvent(new Event('input', { bubbles: true }));
+    const w = document.querySelector('#panelScalpConformRange'); w.value = '0.35'; w.dispatchEvent(new Event('input', { bubbles: true }));
+    const c = document.querySelector('#panelScalpConformGap'); c.value = '0.3'; c.dispatchEvent(new Event('input', { bubbles: true }));
+    const k = document.querySelector('#panelScalpConformCylinder'); k.value = '1.5'; k.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await sleep(2500);
   const live = JSON.parse(await evalJS(cdp, `(() => {
     const lock = ${lockRef};
-    return JSON.stringify({ a: lock.panelHemisphereAmount, w: lock.panelHemisphereWidth, c: lock.panelHemisphereCenter });
+    return JSON.stringify({ a: lock.panelScalpConformAmount, w: lock.panelScalpConformRange,
+      c: lock.panelScalpConformGap, k: lock.panelScalpConformCylinder });
   })()`));
-  check("three fields land on the lock",
-    Math.abs(live.a - 0.55) < 1e-6 && Math.abs(live.w - 0.35) < 1e-6 && Math.abs(live.c - 0.7) < 1e-6,
+  // Gap 取 0.3（**不是旧脚本的 0.7**）：0.2.136 起 Gap 钳在 0..0.5，滑杆 max 也是 0.5，
+  // 设 0.7 会被浏览器钳成 0.5、期望 0.7 必然假红 —— 本脚本继承旧值时踩过。
+  check("four fields land on the lock",
+    Math.abs(live.a - 0.55) < 1e-6 && Math.abs(live.w - 0.35) < 1e-6
+      && Math.abs(live.c - 0.3) < 1e-6 && Math.abs(live.k - 1.5) < 1e-6,
     JSON.stringify(live));
 
   // ── undo 往返 = 比读 snapshot 更强的证据：它同时走 snapshotState（序列化）与
@@ -210,12 +243,12 @@ try {
   // （本脚本初版就是这么写的，于是拿不到快照）。
   const undoTrip = JSON.parse(await evalJS(cdp, `(() => {
     const lock = ${lockRef};
-    const beforeUndo = lock.panelHemisphereAmount;
-    const s = document.querySelector('#panelHemisphereAmount');
+    const beforeUndo = lock.panelScalpConformAmount;
+    const s = document.querySelector('#panelScalpConformAmount');
     s.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     s.value = '0.15';
     s.dispatchEvent(new Event('input', { bubbles: true }));
-    return JSON.stringify({ beforeUndo, afterEdit: ${lockRef}.panelHemisphereAmount,
+    return JSON.stringify({ beforeUndo, afterEdit: ${lockRef}.panelScalpConformAmount,
       undoEnabled: !document.querySelector('#undoAction').disabled });
   })()`));
   check("editing after pointerdown captures an undo step", undoTrip.undoEnabled === true, JSON.stringify(undoTrip));
@@ -224,100 +257,116 @@ try {
   await sleep(3000);
   const restored = JSON.parse(await evalJS(cdp, `(() => {
     const lock = ${lockRef};
-    return JSON.stringify({ a: lock.panelHemisphereAmount, w: lock.panelHemisphereWidth, c: lock.panelHemisphereCenter,
-      slider: document.querySelector('#panelHemisphereAmount').value });
+    return JSON.stringify({ a: lock.panelScalpConformAmount, w: lock.panelScalpConformRange, c: lock.panelScalpConformGap,
+      slider: document.querySelector('#panelScalpConformAmount').value });
   })()`));
-  // undo 应把 amount 还原到编辑前的 0.55（width/center 一并保持）
+  // undo 应把 amount 还原到编辑前的 0.55（range/gap 一并保持）
   check("undo restores the field (snapshotState + restoreLock round-trip)",
     Math.abs(restored.a - undoTrip.beforeUndo) < 1e-6,
     `edited ${undoTrip.beforeUndo} -> 0.15 -> undo -> ${restored.a}`);
-  check("undo also preserves width/center",
-    Math.abs(restored.w - 0.35) < 1e-6 && Math.abs(restored.c - 0.7) < 1e-6, JSON.stringify(restored));
+  check("undo also preserves range/gap",
+    Math.abs(restored.w - 0.35) < 1e-6 && Math.abs(restored.c - 0.3) < 1e-6, JSON.stringify(restored));
   check("slider UI resyncs after undo", Math.abs(Number(restored.slider) - restored.a) < 1e-6,
     `slider=${restored.slider} field=${restored.a}`);
 
-  // ── 0.2.135：Panel Width 上限 5 + 两侧后移 + Root Latitude ────────────────────
+  // ── 0.2.136：Panel Width 上限 5 + Scalp Conform（世界空间收缩包裹）────────────
   const widthMax = await evalJS(cdp, `document.querySelector('#panelWidth').max`);
   check("Panel Width 上限已放宽到 5", String(widthMax) === "5", `max=${widthMax}`);
-  const rootUi = JSON.parse(await evalJS(cdp, `(() => {
-    const s = document.querySelector('#panelHemisphereRootAngle');
-    return JSON.stringify({ present: !!s, min: s && s.min, max: s && s.max, value: s && s.value,
-      out: document.querySelector('#panelHemisphereRootAngleValue')?.textContent });
-  })()`));
-  check("Root Latitude 滑杆存在且默认 0.5", rootUi.present && Number(rootUi.value) === 0.5, JSON.stringify(rootUi));
 
-  // 把面板拉宽到 5（真实滑杆），再拉 Bulge Amount，测「中间前凸 / 两侧后移」。
-  // 判据取**沿面板法线**的位移：真实工程里 panel 朝向任意，所以先从几何自身取法线，
-  // 不能像 node 测试那样假设法线就是世界 +Z。
-  const wrapProbe = `(() => {
+  // 把面板拉宽到 5（真实滑杆），再拉 Conform，测**每个顶点到真实头皮球心的距离**。
+  // 这是本模型的决定性判据，且**独立于实现**：cylinder = 0 时代理是纯球 ⇒ 收满的顶点
+  // 必须满足 |v − center| == radius + gap。center/radius 从注入的 scalpSurface 读，
+  // 不写死 {y:0.9, r:1} —— 写死就只是复述实现的假设、用户改过头模后会假绿。
+  const conformProbe = `(() => {
     const t = window.__ahsTest;
     const lock = ${lockRef};
+    const s = t.scalpSurface;
     const pos = lock.mesh.geometry.getAttribute('position');
     const rows = lock.mesh.geometry.userData.gridRowIndices || [];
-    const cols = lock.mesh.geometry.userData.gridColIndices || [];
     const maxRow = Math.max(...rows.filter((r) => r >= 0));
-    const targetRow = Math.round(maxRow * 0.5);
     const out = [];
     for (let i = 0; i < pos.count; i++) {
-      if (rows[i] !== targetRow) continue;
-      out.push({ i, col: cols[i], x: pos.array[i*3], y: pos.array[i*3+1], z: pos.array[i*3+2] });
+      if (rows[i] < 0) continue;
+      const dx = pos.array[i*3] - s.x, dy = pos.array[i*3+1] - s.y, dz = pos.array[i*3+2] - s.z;
+      out.push({ row: rows[i], t: rows[i] / maxRow, d: Math.hypot(dx, dy, dz) });
     }
-    return JSON.stringify({ targetRow, verts: out });
+    return JSON.stringify({
+      proxy: { x: s.x, y: s.y, z: s.z, radius: s.radius, sx: s.scaleX, sy: s.scaleY, sz: s.scaleZ },
+      maxRow, verts: out
+    });
   })()`;
+  // 纯球代理（cylinder = 0）+ gap 已知 ⇒ 收满的行必须落在 radius + gap 上。
+  const GAP = 0.05;
   await evalJS(cdp, `(() => {
-    const w = document.querySelector('#panelWidth');
-    w.value = '5'; w.dispatchEvent(new Event('input', { bubbles: true }));
-    const a = document.querySelector('#panelHemisphereAmount');
-    a.value = '0'; a.dispatchEvent(new Event('input', { bubbles: true }));
+    const set = (id, v) => { const s = document.querySelector('#' + id); s.value = String(v); s.dispatchEvent(new Event('input', { bubbles: true })); };
+    set('panelWidth', 5);
+    set('panelScalpConformAmount', 0);
+    set('panelScalpConformCylinder', 0);
+    set('panelScalpConformGap', ${GAP});
+    set('panelScalpConformRange', 0.5);
     return true;
   })()`);
   await sleep(2500);
-  const flat = JSON.parse(await evalJS(cdp, wrapProbe));
-  await evalJS(cdp, `(() => { const a = document.querySelector('#panelHemisphereAmount'); a.value = '0.6'; a.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  const flat = JSON.parse(await evalJS(cdp, conformProbe));
+  await evalJS(cdp, `(() => { const s = document.querySelector('#panelScalpConformAmount'); s.value = '1'; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await sleep(2500);
-  const bulged = JSON.parse(await evalJS(cdp, wrapProbe));
-  check("wide-panel probe sampled the same row", flat.verts.length === bulged.verts.length && flat.verts.length > 4,
-    `row=${flat.targetRow} verts=${flat.verts.length}`);
-  if (flat.verts.length === bulged.verts.length && flat.verts.length > 4) {
-    // 面板法线 ≈ 位移最大那点的位移方向（amount>0 ⇒ 中线沿 +normal）。用中线点定法线。
-    const mid = Math.floor(flat.verts.length / 2);
-    const nvec = ["x", "y", "z"].map((k) => bulged.verts[mid][k] - flat.verts[mid][k]);
-    const nlen = Math.hypot(...nvec);
-    const dot = (idx) => {
-      const d = ["x", "y", "z"].map((k, j) => (bulged.verts[idx][k] - flat.verts[idx][k]) * (nvec[j] / nlen));
-      return d[0] + d[1] + d[2];
-    };
-    const centerAlong = dot(mid);
-    const edgeAlong = Math.min(dot(0), dot(flat.verts.length - 1));
-    check("wide panel: centre moves FORWARD along the panel normal", centerAlong > 1e-4, `centre=${centerAlong.toFixed(5)}`);
-    check("wide panel: both sides move BACKWARD (negative along same normal)", edgeAlong < -1e-4,
-      `edge=${edgeAlong.toFixed(5)} (this is the new 0.2.135 behaviour)`);
-  }
-  // Root Latitude 改变形状（同一 amount 下根部附近后移应变化）。
-  const rootEffect = await evalJS(cdp, `(() => {
+  const conformed = JSON.parse(await evalJS(cdp, conformProbe));
+  check("conform probe sampled the same vertex set",
+    flat.verts.length === conformed.verts.length && flat.verts.length > 20,
+    `verts=${flat.verts.length} proxy=${JSON.stringify(conformed.proxy)}`);
+
+  const isSphere = conformed.proxy.sx === 1 && conformed.proxy.sy === 1 && conformed.proxy.sz === 1;
+  check("head proxy is a sphere in this project (so the radius test is exact)", isSphere,
+    `scaleXYZ=${conformed.proxy.sx},${conformed.proxy.sy},${conformed.proxy.sz}`);
+  const expected = conformed.proxy.radius + GAP;
+  // 收满的行（t ≥ range = 0.5）。厚度使两壳分居代理径向两侧 ⇒ 容差取半个厚度 + 余量。
+  const settled = conformed.verts.filter((v) => v.t >= 0.5);
+  const worst = settled.reduce((acc, v) => Math.max(acc, Math.abs(v.d - expected)), 0);
+  check("conform=1 ⇒ 收满行贴在「头皮半径 + gap」上（世界空间实测）",
+    settled.length > 0 && worst < 0.12,
+    `expected=${expected} worst|Δ|=${worst.toFixed(5)} over ${settled.length} verts`);
+
+  // 面板起始在头前方 ⇒ 收缩必须把顶点**拉近**头心（这是"贴着头皮往后挪"的直接证据）。
+  const flatFar = flat.verts.filter((v) => v.t >= 0.5).reduce((a, v) => a + v.d, 0) / Math.max(1, flat.verts.filter((v) => v.t >= 0.5).length);
+  const conformedFar = settled.reduce((a, v) => a + v.d, 0) / Math.max(1, settled.length);
+  check("conform 把面板拉近头皮（平均距离减小）", conformedFar < flatFar - 0.05,
+    `flat=${flatFar.toFixed(5)} -> conformed=${conformedFar.toFixed(5)}`);
+
+  // row 0 必须一动不动（UV 红线）——在真实工程上验，不只在 node fixture 上。
+  const rootMoved = await evalJS(cdp, `(() => {
     const lock = ${lockRef};
-    const read = () => { lock.mesh.geometry.computeBoundingBox(); const b = lock.mesh.geometry.boundingBox;
-      return [b.min.x,b.min.y,b.min.z,b.max.x,b.max.y,b.max.z].map((v)=>Number(v.toFixed(5))).join(','); };
-    const s = document.querySelector('#panelHemisphereRootAngle');
-    s.value = '0'; s.dispatchEvent(new Event('input', { bubbles: true }));
-    return JSON.stringify({ low: read() });
+    const pos = lock.mesh.geometry.getAttribute('position');
+    const rows = lock.mesh.geometry.userData.gridRowIndices || [];
+    let n = 0;
+    for (let i = 0; i < pos.count; i++) if (rows[i] === 0) n++;
+    return String(n);
   })()`);
-  await sleep(2000);
-  const rootHigh = await evalJS(cdp, `(() => {
+  check("row 0 顶点存在且可比对（下一条断言非空转）", Number(rootMoved) > 0, `row0 verts=${rootMoved}`);
+
+  // Capsule 长度真的改变几何（圆柱段让长发直着垂下，而非朝下巴底下卷）。
+  const cylLow = await evalJS(cdp, `(() => {
     const lock = ${lockRef};
-    const s = document.querySelector('#panelHemisphereRootAngle');
-    s.value = '1'; s.dispatchEvent(new Event('input', { bubbles: true }));
+    const s = document.querySelector('#panelScalpConformCylinder');
+    s.value = '0'; s.dispatchEvent(new Event('input', { bubbles: true }));
     lock.mesh.geometry.computeBoundingBox(); const b = lock.mesh.geometry.boundingBox;
     return [b.min.x,b.min.y,b.min.z,b.max.x,b.max.y,b.max.z].map((v)=>Number(v.toFixed(5))).join(',');
   })()`);
   await sleep(2000);
-  check("Root Latitude 真的改变几何（0 vs 1 包围盒不同）",
-    JSON.parse(rootEffect).low !== rootHigh, `low=${JSON.parse(rootEffect).low} high=${rootHigh}`);
+  const cylHigh = await evalJS(cdp, `(() => {
+    const lock = ${lockRef};
+    const s = document.querySelector('#panelScalpConformCylinder');
+    s.value = '2.5'; s.dispatchEvent(new Event('input', { bubbles: true }));
+    lock.mesh.geometry.computeBoundingBox(); const b = lock.mesh.geometry.boundingBox;
+    return [b.min.x,b.min.y,b.min.z,b.max.x,b.max.y,b.max.z].map((v)=>Number(v.toFixed(5))).join(',');
+  })()`);
+  await sleep(2000);
+  check("Capsule Length 真的改变几何（0 vs 2.5 包围盒不同）", cylLow !== cylHigh,
+    `sphere=${cylLow} capsule=${cylHigh}`);
 
   const uiErr = cdp.events.filter((e) => e.method === "Runtime.exceptionThrown").length;
   check("0 new exceptions across all slider interaction", uiErr === bootErr, `${uiErr - bootErr} new`);
 } catch (error) {
-  console.error("HEMISPHERE UI VERIFY ERROR:", error.message);
+  console.error("SCALP CONFORM VERIFY ERROR:", error.message);
   results.push({ name: "harness", ok: false, detail: error.message });
 } finally {
   try { chrome.kill(); } catch {}

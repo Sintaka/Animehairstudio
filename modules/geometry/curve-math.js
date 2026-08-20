@@ -293,117 +293,97 @@ export function panelTipCurveParameter(t, u, tipCurve = 0, edgeTrim = 0) {
   );
 }
 
-// 根部守卫带宽：半球在 t < 该值的区间内被 smoothstep 压回 0，t == 0 处恒为 0。
+// 根部守卫带宽：收缩权重在 t < 该值的区间内被 smoothstep 压回 0，t == 0 处恒为 0。
 // 取 0.05 ≈ 默认 panelLengthLoops(10) 行距 0.1 的一半 —— 在默认细分下只有 row 0
-// 落进守卫带，row 1(t=0.1) 已拿到完整隆起，所以半球不会被"抹平在根部附近"；
+// 落进守卫带，row 1(t=0.1) 已拿到完整权重，所以形变不会被"抹平在根部附近"；
 // 同时用 smoothstep 而非硬阶跃，让连续采样的消费方（发尖 rest 链、
 // tipSurfaceFrameAt 的差分求法线）不会在 t→0 处读到跳变而算出错误法线。
-const PANEL_HEMISPHERE_ROOT_GUARD = 0.05;
+const PANEL_SCALP_CONFORM_ROOT_GUARD = 0.05;
 
-// 两侧后移的默认根部纬度旋钮（0..1，经 φ₀ = (π/2)·knob² 非线性映射）。
-// 0.5 ⇒ φ₀ = 22.5° ⇒ rootFraction = sin 22.5° ≈ 0.383：刘海根落在离头顶约 22.5° 的位置，
-// 是「前额刘海」的常见起刷纬度。**这是本文件唯一定义点**，UI 默认值与 app.js 的
-// panelCreationDefaults 都必须与它同值（不同源会让"没动过滑杆"的面板与默认几何不一致）。
-export const PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE = 0.5;
+// Scalp Conform 的四个参数默认值 —— **本文件是唯一定义点**，app.js 的
+// panelCreationDefaults 与 index.html 的 value= 都必须与此同值（不同源会让"没动过滑杆"
+// 的面板与默认几何不一致，这类三处漂移在本仓库有先例）。
+// amount 0 = 关闭（输出与引入前逐位相同）；range 0.6 = 从根部 60% 处收满；
+// gap 0.02 = 离头皮的世界空间余量（防止与头模 z-fighting）；
+// cylinder 0.5 = Capsule 圆柱段向下延伸的长度（单位球空间），让长刘海直着垂下来。
+export const PANEL_SCALP_CONFORM_DEFAULTS = Object.freeze({
+  amount: 0,
+  range: 0.6,
+  gap: 0.02,
+  cylinder: 0.5
+});
 
-// wrapRatio = 面板半宽 / 头皮球半径 的上限。当前 UI 最宽 width=5 ⇒ 半宽 2.5，
-// 头皮球半径 1（app.js 的 scalpSurface.radius）⇒ k = 2.5，故 4 留了充裕余量；
-// 钳位存在的意义是防止外部（脚本/旧档/将来放宽的滑杆）传入荒谬值把面片卷过头顶。
-const PANEL_HEMISPHERE_MAX_WRAP_RATIO = 4;
-
-// 面板半球隆起（沿面板法线的球冠位移），是四个 Trim 控件的**法线方向对位物**：
-// 它们重参数化 sampleT（切向），本函数返回法线方向的标量位移，调用方乘以世界尺度。
+// ── 面板「贴合头皮」Scalp Conform：世界空间收缩包裹（shrink-wrap）──────────────
 //
-// 契约 —— 返回值在 t == 0 处**恒为 0**，两条独立理由，缺一不可：
+// 0.2.136 **替换**了 0.2.134/0.2.135 的「沿面板法线偏移」模型。用户诊断原文：
+// 「可能不能简单根据法线去弯折一个刘海, 因为那终究是单个刘海, 而非用户想贴着头皮的
+// 前额部分去弯折, 导致刘海会拱起来而且后推的边缘并没有很好的贴近它该有的位置」。
+//
+// **根因确凿**：旧模型的位移是沿**面板自己的 frame.z** 的标量偏移 —— 纯局部量，
+// 完全不知道头皮在世界空间的哪里。边缘只是"沿自己法线退了一段公式算出来的距离"，
+// 落点与头皮实际位置无关；拱起同理（面板相对自己弯，而不是去贴一个外部曲面）。
+// 旁证：app.js 现有的 `outwardNormalAtPoint` 也只是「以世界原点为心的径向」，
+// 连 `scalpSurface` 的 y=0.9 都没用上 —— 旧模型建立在同一套错误认知上。
+//
+// **新模型**：每个顶点朝**真实头部代理表面**收敛，落点由几何决定而非公式。
+//   delta = (target − point) · amount · weight(t)
+// amount = 1 ⇒ 顶点**精确**落到 target（可测的恒等式）；amount < 0 ⇒ 推离头皮。
+//
+// **头部代理 = Capsule 的一端**（用户建议）：单位球空间里 y ≥ 0 是半球、y < 0 是圆柱段。
+// 为什么不用纯球：长刘海垂到下巴时，纯球在赤道以下会让顶点**朝内卷**（往下巴底下收），
+// Capsule 的圆柱段让它直着垂下来 —— 这是纯球模型解决不了的。
+//
+// **本函数组不再需要 u**：形状来自头部几何，不来自"沿宽度方向的公式"。这是相对
+// 0.2.135 的实质简化（那时 cap/recede 都是 u 的函数）。
+// 沿 t 的收缩权重。**契约：t == 0 处恒为 0**，两条独立理由，缺一不可：
 // ① UV 红线：modules/io/uv-unfold.js 的 U 完全由 row 0 的环向弧长决定、V 纯行号，
 //    所以任何触到 t == 0 的位移都会改变 row 0 顶点、静默重排每一片面板的 UV
 //    （见 AGENT_QUICKSTART.md §2.4b「UV 红线」）。
-// ② 物理：面板根锚在头皮上，根部位移本身就是错的（发根会离开头皮）。
+// ② 物理：面板根锚在头皮上 —— 发根那一圈**本来就贴着头**，无需再收；真正需要往回收的
+//    是往下走、绕过颅侧的部分。
 // 守卫写在本函数**内部**，任何消费方都无法忘记它。
 //
-// 剖面 = 真球冠（不是任意凸包）：dt = (t − center)/width，r = hypot(dt, u)，
-// offset = amount·sqrt(1 − r²) （r < 1）。u 已由面板参数化归一到 [-1, 1]。
-// 面板自己的 panelCurvature（camber，沿 u 的抛物线）是**另一个**艺术控件，两者刻意
-// 不合并：camber 描述截面弧度、本函数描述沿 t 的球冠。
-//
-// 0.2.135 起在球冠之外**叠加"两侧后移"**（lateral wrap），使面板整体贴合头皮而不是
-// 单纯向前凸：用户原话「我拉宽 width, 然后我拉动 Bulge Amount, 这个 panel 就差不多
-// 贴着头皮往后挪了, 而不是我手动去调整边缘曲线」。因此
-//   offset = amount · (cap − recede) · guard(t)
-// 其中 recede ≥ 0 在中线为 0、向两侧增大 ⇒ 中间前凸、两侧后移。**注意由此
-// `r ≥ 1` 处不再恒为 0**（球冠支撑域之外仍有后移），这是刻意的语义变更：后移必须作用
-// 于整片宽度，否则宽面板的边缘会停在切平面上、贴不住头。
-export function panelHemisphereOffset(
-  t,
-  u,
-  amount = 0,
-  width = 0.5,
-  center = 0.5,
-  wrapRatio = 0,
-  rootAngle = PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE
-) {
-  const strength = clamp(Number(amount) || 0, -1, 1);
-  // amount == 0 必须逐位守恒（先例：SWEEP_OVERLAP_DEFAULTS「全部关到 0 时输出
-  // 逐位守恒」），所以在触碰任何坐标之前就返回。
-  if (Math.abs(strength) < 0.000001) return 0;
+// range = 从根部到"收满"的跨度（0.05..1）。range 小 ⇒ 很快收满（贴得紧）；
+// range = 1 ⇒ 一路线性增强到发尖。用 smoothstep 而非线性：两端一阶导为 0，避免在
+// "刚收满"那一行出现折痕（tipSurfaceFrameAt 靠差分求法线，折痕会让它算出错误法线）。
+export function panelScalpConformWeight(t, range = PANEL_SCALP_CONFORM_DEFAULTS.range) {
   const along = clamp(Number(t) || 0, 0, 1);
-  // t == 0 提前归零，让上面的契约「恒为 0」**字面成立**，而不是依赖下面 guard 的乘积
-  // 恰好为零：strength 为负时 `strength * … * 0` 得到的是 **-0**。-0 对位置无影响
-  // （x + -0 === x，故 row 0 逐位守恒本来就成立），但 Object.is(-0, 0) === false，
-  // 会让「精确为 0」的断言和将来任何按符号分流的消费方产生歧义。顺带省掉根部的 sqrt。
   if (along <= 0) return 0;
-  const lateral = clamp(Number(u) || 0, -1, 1);
-  // width 下限 0.05 与 UI 滑杆同值：再小的半跨度会让球冠窄到落在两行之间、
-  // 采样不到（视觉上"滑块无效"），因此在数值层就钳住而不是靠 UI 约定。
-  const halfExtent = clamp(Number(width) || 0, 0.05, 1);
-  const apex = clamp(Number(center) || 0, 0, 1);
-  const dt = (along - apex) / halfExtent;
-  const radiusSquared = dt * dt + lateral * lateral;
-  // 球冠项：支撑域外为 0（**不再提前 return** —— 后移项在域外仍要生效，见函数头注释）。
-  const cap = radiusSquared >= 1 ? 0 : Math.sqrt(1 - radiusSquared);
-  const guardAmount = clamp(along / PANEL_HEMISPHERE_ROOT_GUARD, 0, 1);
+  const span = clamp(Number(range) || 0, 0.05, 1);
+  const guardAmount = clamp(along / PANEL_SCALP_CONFORM_ROOT_GUARD, 0, 1);
   const guard = guardAmount * guardAmount * (3 - 2 * guardAmount);
-  const recede = panelHemisphereRecession(along, lateral, wrapRatio, rootAngle);
-  return strength * (cap - recede) * guard;
+  const ramp = clamp(along / span, 0, 1);
+  return guard * ramp * ramp * (3 - 2 * ramp);
 }
 
-// 两侧后移量（**归一化**：与 cap 同量纲，调用方统一乘以 fullWidth·0.5）。
-// 模型 = 把平面窄条**卷到半径 R 的球面**上：横向弧长 s = |u|·W（W = 面板半宽）对应
-// 圆心角 θ = s/R，该点相对切平面的后移 = R(1 − cos θ)。除以 W 归一后得
-//   recede = (1 − cos(|u|·k)) / k,  k = W/R  （wrapRatio）
-// 这个式子的关键性质：**k 越大（面板越宽）后移越强**，所以"拉宽 width 再拉 Bulge
-// Amount 就贴上头皮"是自然结果，不需要用户另调边缘曲线。k → 0 时 recede → 0
-// （退化为纯球冠，与 0.2.134 行为一致）。
-//
-// θ 钳到 π：超过半圈后 cos 回升会让后移**反而变小**，几何上是面片卷过头顶再折回来的
-// 退化态。当前 UI 上限（width 5 ⇒ k = 2.5 ⇒ θmax ≈ 143°）够不到，但钳位写在数值层
-// 而不是靠 UI 约定 —— 与本文件 width 下限同一处置。
-function panelHemisphereRecession(along, lateral, wrapRatio, rootAngle) {
-  const k = clamp(Number(wrapRatio) || 0, 0, PANEL_HEMISPHERE_MAX_WRAP_RATIO);
-  if (k <= 0.000001) return 0;
-  const theta = Math.min(Math.PI, Math.abs(lateral) * k);
-  const shell = (1 - Math.cos(theta)) / k;
-  return shell * panelHemisphereWrapRamp(along, rootAngle);
-}
-
-// 沿 t 的后移权重：根部弱、往发尖增强，权重在 [rootFraction, 1]。
-//
-// 为什么根部要弱：面板根锚在头皮上，**发根那一圈本来就贴着头**，无需额外后移；真正需要
-// 往后收的是往下走、绕过颅侧的部分。若整片等权后移，根部会被拉离头皮（视觉上"整片往后
-// 平移"而不是"包住头"）。
-//
-// rootAngle（UI 滑杆 0..1）= 用户告诉我们"这片刘海的根大概长在头皮的哪个纬度"。
-// **非线性映射**，按用户要求把控制权交给用户：φ₀ = (π/2)·rootAngle²。
-// 用平方而非线性的理由：φ₀ 极小（贴真头顶）时 sin φ₀ 变化最快、观感最敏感，平方映射把
-// 滑杆的**低端拉开**（0→0.5 只覆盖 0°→22.5°），而真实刘海根几乎不会从头顶正中垂直
-// 90° 起刷（用户原话「根部一般难以从真的头顶上垂直90度开始刷」），所以把分辨率放在
-// 常用的浅纬度一侧、把少用的陡端压缩到滑杆末段。
-// rootFraction = sin φ₀ 的物理含义：该纬度处表面已经"侧过去"多少 —— 真头顶为 0
-// （完全没侧过去，后移从 0 开始长），赤道为 1（已经完全侧向，全程等权后移）。
-function panelHemisphereWrapRamp(along, rootAngle) {
-  const knob = clamp(Number(rootAngle) || 0, 0, 1);
-  const rootFraction = Math.sin((Math.PI * 0.5) * knob * knob);
-  return rootFraction + (1 - rootFraction) * along;
+// Capsule 一端的最近表面点（**单位球空间**：椭球已被调用方按 radius·scaleXYZ 归一）。
+// 轴 = 从原点沿 −y 到 (0, −cylinder, 0) 的线段；对轴上最近点取径向、外推单位半径。
+// y ≥ 0 ⇒ 轴上最近点是原点 ⇒ 退化为半球（头顶）；
+// y < −cylinder ⇒ 最近点是轴末端 ⇒ 又是半球（下巴以下的收口）；
+// 中间 ⇒ 最近点在轴内部 ⇒ 圆柱段：径向只在 xz 平面内 ⇒ **顶点不朝内卷、直着垂下来**。
+// 返回 { surface, axis }：surface 用于定位，axis 用于让调用方算径向（世界空间的 gap 方向）。
+// 纯函数、只吃数字，故可在无场景图的 node 测试里直接验证。
+export function capsuleEndNearestSurface(x, y, z, cylinder) {
+  const depth = Math.max(0, Number(cylinder) || 0);
+  // 轴上最近点：沿 −y 方向的行程钳在 [0, depth]，即 axisY = −clamp(−y, 0, depth)。
+  // **`travel === 0` 时必须回 +0 而不是 `-0`**：`-clamp(...)` 在 clamp 得 0 时产出负零，
+  // 对位置无影响（x + -0 === x），但 `Object.is(-0, 0) === false` 会让「y≥0 时轴上最近点
+  // 恰为原点」这类精确断言失败，也会让将来任何按符号分流的消费方产生歧义。
+  // （本仓库同一类坑有先例：0.2.134 的球冠 strength 为负时 `strength * … * 0` 得 -0。）
+  const travel = clamp(-(Number(y) || 0), 0, depth);
+  const axisY = travel === 0 ? 0 : -travel;
+  const dx = (Number(x) || 0) - 0;
+  const dy = (Number(y) || 0) - axisY;
+  const dz = (Number(z) || 0) - 0;
+  const length = Math.hypot(dx, dy, dz);
+  // 点恰在轴上时径向无定义 —— 取 +z（面部朝向）而不是任意轴，让退化情形仍朝脸前方推出。
+  const nx = length < 0.000001 ? 0 : dx / length;
+  const ny = length < 0.000001 ? 0 : dy / length;
+  const nz = length < 0.000001 ? 1 : dz / length;
+  return {
+    surface: { x: nx, y: axisY + ny, z: nz },
+    axis: { x: 0, y: axisY, z: 0 }
+  };
 }
 
 export function panelTipLoopParameters(baseLoopCount, extraTipLoops = 0, tipStart = 0.55) {

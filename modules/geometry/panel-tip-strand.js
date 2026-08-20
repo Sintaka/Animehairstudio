@@ -2,21 +2,23 @@
 // Extracted from app.js; coupling injected via createPanelTipStrandApi(deps).
 import * as THREE from "three";
 import {
-  PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE,
-  panelHemisphereOffset,
+  PANEL_SCALP_CONFORM_DEFAULTS,
+  capsuleEndNearestSurface,
+  panelScalpConformWeight,
   panelTipCurveParameter,
   panelTipLoopParameters,
   profileTopologyCenterWeight,
   sampleArray,
   sampleAsymmetricTaperCurve
-} from "./curve-math.js?v=20260909-3";
+} from "./curve-math.js?v=20260910-1";
 
-// 头皮球半径：与 app.js 的 `scalpSurface = { y: 0.9, radius: 1, ... }` 同值。
-// 半球「两侧后移」按此常数把面板卷到头皮上 —— 按用户要求是**定常数**、不做真适配。
-// 这是**受控副本**（几何层不便 import app.js 的运行时状态）：若 scalpSurface.radius 的
-// 默认值变了，这里要同步。用户可缩放头模，但本值刻意不跟随 —— 它只是「快速出半球效果」
-// 的手感基准，跟随会让同一 Bulge Amount 在不同头模上给出不同形状。
-const PANEL_SCALP_RADIUS = 1;
+// 头部代理的兜底参数：与 app.js 的 `scalpSurface = { x:0, y:0.9, z:0, radius:1, scaleXYZ:1 }`
+// 同值。**优先用注入的 deps.scalpSurface（真实运行时状态，跟随用户调整头模）**，
+// 这里只是它缺失时的兜底（node 测试、或 deps 尚未装配完）。0.2.136 起不再像 0.2.135 那样
+// 刻意"不跟随"—— 收缩包裹的落点必须是**真实头皮位置**，跟随才是对的。
+const PANEL_SCALP_PROXY_FALLBACK = Object.freeze({
+  x: 0, y: 0.9, z: 0, radius: 1, scaleX: 1, scaleY: 1, scaleZ: 1
+});
 import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260814-12";
 import { cloneSplitBones, segmentBoneHost } from "../bones/bone-model.js?v=20260901-1";
 import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260830-1";
@@ -459,27 +461,82 @@ function tipPanelFrameAt(lock, t) {
 // geometryType === "surface"（lattice 控制）恒 0：与 panelTipCurve / panelLeftEdgeTrim
 // 的既有先例一致（tipOffsetSampleT 与 createPanelStrandGeometry 都在 latticeControlled
 // 时把这些强制为 0）—— lattice 面板的形状由控制网格直接决定，程序化形变不适用。
-// 0.2.135：新增 wrapRatio = 面板半宽 / 头皮球半径，喂给 panelHemisphereOffset 的
-// 「两侧后移」项。头皮半径取 PANEL_SCALP_RADIUS（= app.js 的 scalpSurface.radius），
-// 按用户要求是**常数**、不做真适配 —— 目的是「调了 Bulge Amount 就能快速出半球效果」。
-// wrapRatio 随 lock.width 变化，所以拉宽 width 会自动加强后移（这正是要的手感）。
-function panelHemisphereParams(lock) {
+function panelScalpConformParams(lock) {
   const amount = lock?.geometryType === "surface"
     ? 0
-    : THREE.MathUtils.clamp(Number(lock?.panelHemisphereAmount ?? 0), -1, 1);
-  const fullWidth = Math.max(0.01, Number(lock?.width ?? 0.62));
-  const halfWidth = fullWidth * 0.5;
+    : THREE.MathUtils.clamp(Number(lock?.panelScalpConformAmount ?? 0), -1, 1);
+  const proxySource = deps.scalpSurface || PANEL_SCALP_PROXY_FALLBACK;
+  // 椭球 → 单位球的三个轴缩放，与 scalp-builder 的 updateScalpSurface 同规则
+  // （`scalpSurfaceGroup.scale = radius * scaleXYZ`）。刻意**不读 Object3D 的 matrixWorld**：
+  // 几何重建时机比渲染早，那个矩阵可能是脏的；从纯数据推变换永远是当前值。
+  const radius = Math.max(0.001, Number(proxySource.radius ?? 1));
   return {
     amount,
-    width: THREE.MathUtils.clamp(Number(lock?.panelHemisphereWidth ?? 0.5), 0.05, 1),
-    center: THREE.MathUtils.clamp(Number(lock?.panelHemisphereCenter ?? 0.5), 0, 1),
-    rootAngle: THREE.MathUtils.clamp(
-      Number(lock?.panelHemisphereRootAngle ?? PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE),
-      0,
+    range: THREE.MathUtils.clamp(
+      Number(lock?.panelScalpConformRange ?? PANEL_SCALP_CONFORM_DEFAULTS.range),
+      0.05,
       1
     ),
-    wrapRatio: halfWidth / PANEL_SCALP_RADIUS,
-    scale: halfWidth
+    gap: THREE.MathUtils.clamp(
+      Number(lock?.panelScalpConformGap ?? PANEL_SCALP_CONFORM_DEFAULTS.gap),
+      0,
+      0.5
+    ),
+    cylinder: THREE.MathUtils.clamp(
+      Number(lock?.panelScalpConformCylinder ?? PANEL_SCALP_CONFORM_DEFAULTS.cylinder),
+      0,
+      3
+    ),
+    proxy: {
+      cx: Number(proxySource.x ?? 0),
+      cy: Number(proxySource.y ?? 0.9),
+      cz: Number(proxySource.z ?? 0),
+      sx: radius * Math.max(0.001, Number(proxySource.scaleX ?? 1)),
+      sy: radius * Math.max(0.001, Number(proxySource.scaleY ?? 1)),
+      sz: radius * Math.max(0.001, Number(proxySource.scaleZ ?? 1))
+    }
+  };
+}
+
+// 世界空间收缩位移：给一个**中面**世界点（shell = 0），返回该点朝头部代理收敛的 delta。
+// 调用方把同一个 delta 加到 front/back 两个 shell 上 —— **必须如此**，否则两壳各自收到
+// 同一张表面上、面板厚度被压成 0（这是本模型最容易踩的坑）。
+// 返回 null 表示无位移（amount==0 或权重为 0），让调用方走零分配路径。
+function panelScalpConformDelta(params, worldPoint, t) {
+  if (!params || params.amount === 0) return null;
+  const weight = panelScalpConformWeight(t, params.range);
+  if (weight <= 0) return null;
+  const { proxy } = params;
+  // 世界 → 单位球空间（椭球归一）
+  const lx = (worldPoint.x - proxy.cx) / proxy.sx;
+  const ly = (worldPoint.y - proxy.cy) / proxy.sy;
+  const lz = (worldPoint.z - proxy.cz) / proxy.sz;
+  const near = capsuleEndNearestSurface(lx, ly, lz, params.cylinder);
+  // 单位球空间 → 世界
+  const surfaceX = near.surface.x * proxy.sx + proxy.cx;
+  const surfaceY = near.surface.y * proxy.sy + proxy.cy;
+  const surfaceZ = near.surface.z * proxy.sz + proxy.cz;
+  const axisX = near.axis.x * proxy.sx + proxy.cx;
+  const axisY = near.axis.y * proxy.sy + proxy.cy;
+  const axisZ = near.axis.z * proxy.sz + proxy.cz;
+  // gap 沿**世界空间**的径向（轴上最近点 → 表面点）外推。在世界空间加 gap 而不是在单位球
+  // 空间加，是因为 gap 是「离头皮多远」的物理距离；非均匀 scaleXYZ 下单位球空间的等距
+  // 并不对应世界等距。
+  let gx = surfaceX - axisX;
+  let gy = surfaceY - axisY;
+  let gz = surfaceZ - axisZ;
+  const glen = Math.hypot(gx, gy, gz);
+  if (glen > 0.000001) { gx /= glen; gy /= glen; gz /= glen; }
+  else { gx = 0; gy = 0; gz = 1; }
+  const targetX = surfaceX + gx * params.gap;
+  const targetY = surfaceY + gy * params.gap;
+  const targetZ = surfaceZ + gz * params.gap;
+  // amount = 1 ⇒ 精确落到 target（可测恒等式）；amount < 0 ⇒ 朝反方向推离头皮。
+  const k = params.amount * weight;
+  return {
+    x: (targetX - worldPoint.x) * k,
+    y: (targetY - worldPoint.y) * k,
+    z: (targetZ - worldPoint.z) * k
   };
 }
 
@@ -522,28 +579,22 @@ function tipMainSectionPoint(lock, t, u, shell, bone, segmentIndex = -1, splits 
   const centerZ = lock.centerAsymmetricProfile && (bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve)
     ? (tipPanelWidthAt(lock, t, 1, bone, segmentIndex, splits) - tipPanelWidthAt(lock, t, -1, bone, segmentIndex, splits)) * 0.25
     : 0;
+  const lateralTerm = lateralU * halfWidth + lateralCenter + centerX * profileTopologyCenterWeight(u, -1, 1);
+  const normalTerm = camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1);
   const point = origin.clone()
-    .addScaledVector(frame.x, lateralU * halfWidth + lateralCenter + centerX * profileTopologyCenterWeight(u, -1, 1))
-    .addScaledVector(
-      frame.z,
-      camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1)
-    );
-  // 半球隆起沿 frame.z（camber 与 shell*thickness*0.5 骑的同一个基向量 = 面板法线）。
-  // amount == 0 时**完全不执行**这段，上面的表达式因此与半球引入前逐位相同。
-  const hemisphere = panelHemisphereParams(lock);
-  if (hemisphere.amount !== 0) {
-    point.addScaledVector(
-      frame.z,
-      panelHemisphereOffset(
-        t,
-        u,
-        hemisphere.amount,
-        hemisphere.width,
-        hemisphere.center,
-        hemisphere.wrapRatio,
-        hemisphere.rootAngle
-      ) * hemisphere.scale
-    );
+    .addScaledVector(frame.x, lateralTerm)
+    .addScaledVector(frame.z, normalTerm);
+  // Scalp Conform（0.2.136）：位移在**世界空间**朝头部代理收敛，不再是沿 frame.z 的标量偏移。
+  // **delta 必须从「中面点」算**（shell 项归零），再原样加到本 shell 上 —— 若两壳各自朝代理
+  // 表面收，它们会收到同一张表面上、面板厚度被压成 0。这是本模型最容易踩的坑。
+  // amount == 0 时整段不执行 ⇒ 与引入前逐位相同（零分配路径）。
+  const conform = panelScalpConformParams(lock);
+  if (conform.amount !== 0) {
+    const midPoint = origin.clone()
+      .addScaledVector(frame.x, lateralTerm)
+      .addScaledVector(frame.z, camber);
+    const delta = panelScalpConformDelta(conform, midPoint, t);
+    if (delta) point.set(point.x + delta.x, point.y + delta.y, point.z + delta.z);
   }
   return point;
 }
@@ -788,9 +839,9 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
   // 发尖子骨骼 rest 链沿主发片构建曲线在段中心的表面曲率生成（法线垂直于面板
   // 表面、含 camber/曲率），不再沿用主骨骼法线。rest 基准变化后，旧数据的
   // authored delta 会在新 rest 上重新叠加，无需改动 .ahs 文件。
-  // 半球隆起（panelHemisphereParams）**刻意不在此处再加一次**：restPointAt 取的是
-  // tipSurfaceFrameAt 的点，而它内部经 tipMainSectionPoint 已经含了隆起 ⇒ 这里再加
-  // 就会叠加两次。rest 链因此自动跟随隆起（与 camber 的处理方式逐条相同），发尖
+  // Scalp Conform（panelScalpConformParams）**刻意不在此处再加一次**：restPointAt 取的是
+  // tipSurfaceFrameAt 的点，而它内部经 tipMainSectionPoint 已经含了收缩位移 ⇒ 这里再加
+  // 就会叠加两次。rest 链因此自动跟随收缩（与 camber 的处理方式逐条相同），发尖
   // 的 authored delta 会在新 rest 上重新叠加，存量 .ahs 无需迁移。
   const restPointAt = (t) => tipSurfaceFrameAt(lock, t, centerU, segmentIndex, splits).point;
   const chain = materializeTipChain(splitBone?.tip || null, restPointAt, mainCount);
@@ -816,8 +867,8 @@ function createPanelStrandGeometry(lock) {
   const leftEdgeTrim = THREE.MathUtils.clamp(Number(lock.panelLeftEdgeTrim ?? 0), 0, 0.75);
   const rightEdgeTrim = THREE.MathUtils.clamp(Number(lock.panelRightEdgeTrim ?? 0), 0, 0.75);
   const tipCurve = latticeControlled ? 0 : THREE.MathUtils.clamp(Number(lock.panelTipCurve ?? 0), -1, 1);
-  // 半球隆起参数一次读好（panelHemisphereParams 是本文件的唯一定义点，surface 恒 0）。
-  const hemisphere = panelHemisphereParams(lock);
+  // 收缩参数一次读好（panelScalpConformParams 是本文件的唯一定义点，surface 恒 0）。
+  const conform = panelScalpConformParams(lock);
   const splitEnabled = lock.panelSplitEnabled !== false;
   const splits = splitEnabled
     ? deps.normalizePanelSplits(lock.panelSplits, lock.panelSplitHeight, widthLoops - 1).filter((split) => split.height > 0.005)
@@ -945,29 +996,22 @@ function createPanelStrandGeometry(lock) {
     const centerZ = lock.centerAsymmetricProfile && (bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve)
       ? (panelThicknessAt(sampleT, 1, bone) - panelThicknessAt(sampleT, -1, bone)) * 0.25
       : 0;
+    const lateralTerm = lateralU * halfWidth + lateralCenter + centerX * profileTopologyCenterWeight(u, -1, 1);
+    const normalTerm = camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1);
     const point = frame.point.clone()
-      .addScaledVector(frame.x, lateralU * halfWidth + lateralCenter + centerX * profileTopologyCenterWeight(u, -1, 1))
-      .addScaledVector(
-        frame.z,
-        camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1)
-      );
-    // 半球隆起沿 frame.z（面板法线，camber 与 shell*thickness*0.5 骑的同一个基向量）。
-    // amount == 0 时整段不执行 ⇒ 与半球引入前逐位相同（hemisphere 在函数外一次算好，
-    // 无参数变化时不分配）。sampleT 已含四个 Trim 的切向重参数化，半球因此活在与
-    // 扫掠面同一个参数空间里（t == 0 处 sampleT 也是 0，根部守卫依然成立）。
-    if (hemisphere.amount !== 0) {
-      point.addScaledVector(
-        frame.z,
-        panelHemisphereOffset(
-          sampleT,
-          u,
-          hemisphere.amount,
-          hemisphere.width,
-          hemisphere.center,
-          hemisphere.wrapRatio,
-          hemisphere.rootAngle
-        ) * hemisphere.scale
-      );
+      .addScaledVector(frame.x, lateralTerm)
+      .addScaledVector(frame.z, normalTerm);
+    // Scalp Conform（0.2.136）：世界空间朝头部代理收敛。**delta 从中面点算**（shell 项归零）
+    // 再原样加到本 shell —— 两壳各自收会把厚度压成 0（同步点：tipMainSectionPoint 同名注释）。
+    // amount == 0 时整段不执行 ⇒ 与引入前逐位相同（conform 在函数外一次算好，不分配）。
+    // sampleT 已含四个 Trim 的切向重参数化，收缩因此活在与扫掠面同一参数空间里
+    // （t == 0 处 sampleT 也是 0，根部守卫依然成立）。
+    if (conform.amount !== 0) {
+      const midPoint = frame.point.clone()
+        .addScaledVector(frame.x, lateralTerm)
+        .addScaledVector(frame.z, camber);
+      const delta = panelScalpConformDelta(conform, midPoint, sampleT);
+      if (delta) point.set(point.x + delta.x, point.y + delta.y, point.z + delta.z);
     }
     return point;
   };
@@ -1192,7 +1236,8 @@ function createPanelStrandGeometry(lock) {
     tipPanelFrameAt,
     // 半球参数/世界尺度的唯一定义点：导出供回归测试按**同一规则**推导期望值
     // （规范禁止把现场数值写死进测试，见 development-standards.md「验收脚本与真实存档解耦」）。
-    panelHemisphereParams,
+    panelScalpConformParams,
+    panelScalpConformDelta,
     tipMainSectionPoint,
     tipSurfaceFrameAt,
     tipChainFrameAt,
