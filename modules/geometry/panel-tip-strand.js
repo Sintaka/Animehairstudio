@@ -516,9 +516,20 @@ function panelScalpConformParams(lock) {
 // 恰好 **2.00×**（198 顶点 / 99 个去重 (row,u) 组合），故传一个 per-build 的 Map 即可无条件
 // 砍掉一半积分。**key 必须含 sampleT 本身** —— `sampleT` 在 tipCurve≠0 或左右 EdgeTrim 不等时
 // 是 u 的函数，用 (row, u) 之类的索引做 key 会把不同截面混成一份、静默给出错误几何。
-function panelScalpConformOffsets(params, sample, u, shellOffset, cache = null, cacheKey = null) {
+// `lateralAxis` = 该行的 frame.x（宽度方向，世界空间）。0.2.142 起用它把曲率按**宽度方向的
+// 水平度**缩放：`k_eff = k · (1 − (x̂·up)²) = k · cos²α`。
+// **为什么必须有这一项**：弯曲发生在面板自己的 (frame.x, frame.z) 平面内，等价于绕 frame.y
+// 转 —— 而 frame.y 是**面板切向**，只有发尖那种近竖直的地方才≈竖直轴。前额面板倾斜时轴也
+// 跟着倾，宽度一大，边缘就被拧挤（用户："前额那些又倾斜的地方在宽度较大的时候直接这样旋转
+// 会导致 sweep 边缘挤压"）。按柱面的 Euler 公式，绕**竖直**轴的柱面在偏离水平 α 的方向上
+// 法曲率是 `k·cos²α`，所以缩放系数就是宽度方向的水平度平方。
+// 发尖（x̂ 水平、α≈0）⇒ 系数≈1，保持你确认过的 tube 手感；倾斜处按余弦平方自动减弱。
+function panelScalpConformOffsets(params, sample, u, shellOffset, cache = null, cacheKey = null, lateralAxis = null) {
   if (!params || params.amount === 0) return null;
-  const k = params.amount / params.bendRadius;
+  // up 取世界 +Y：弯曲轴是竖直的（用户原话「头的中心那里有个竖着的 tube」）。
+  const vertical = lateralAxis ? lateralAxis.y : 0;
+  const horizontality = Math.max(0, 1 - vertical * vertical);
+  const k = (params.amount / params.bendRadius) * horizontality;
   let bent = cache && cacheKey !== null ? cache.get(cacheKey) : null;
   if (!bent) {
     bent = panelBendCrossSection(sample, u, k);
@@ -586,7 +597,9 @@ function tipMainSectionPoint(lock, t, u, shell, bone, segmentIndex = -1, splits 
   // **那条原表达式刻意写成 `mid.normal + shell*… + centerZ*…` 而不复用 shellOffset**：
   // 左结合顺序必须与 0.2.138 前逐字节一致，否则 `amount==0` 的逐位守恒契约会在末位破掉。
   const conform = panelScalpConformParams(lock);
-  const offsets = panelScalpConformOffsets(conform, midAt, u, shellOffset);
+  // 传 frame.x：曲率按宽度方向的水平度缩放（详见 panelScalpConformOffsets 头注释）。
+  // 把手侧无 per-build memo（ad-hoc 调用），故 cache/cacheKey 传 null。
+  const offsets = panelScalpConformOffsets(conform, midAt, u, shellOffset, null, null, frame.x);
   return origin.clone()
     .addScaledVector(frame.x, offsets ? offsets.lateral : mid.lateral)
     .addScaledVector(
@@ -1018,7 +1031,8 @@ function createPanelStrandGeometry(lock) {
       u,
       shellOffset,
       bendSectionCache,
-      `${sampleT}:${u}:${segment}:${boneToken(bone)}`
+      `${sampleT}:${u}:${segment}:${boneToken(bone)}`,
+      frame.x
     );
     return frame.point.clone()
       .addScaledVector(frame.x, offsets ? offsets.lateral : mid.lateral)

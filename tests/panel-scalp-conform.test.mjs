@@ -319,6 +319,36 @@ test("跨消费方一致：宽度把手的截面点与网格拿到同一份弯�
 
 // 用户明确选了"弧半径参考头皮半径"，所以弯曲半径必须**跟随注入的 scalpSurface**，
 // 不能是几何层写死的常数。判据：换非均匀椭球代理必须改变弯曲量。
+// 0.2.142：曲率按**宽度方向的水平度**缩放 `k·cos²α`。用户报告：「前额那些又倾斜的地方在
+// 宽度较大的时候直接这样旋转会导致 sweep 边缘挤压」—— 根因是弯曲等价于绕 frame.y（面板
+// 切向）转，而只有发尖那种近竖直处切向才≈竖直轴。判据取**纯函数层**（不依赖 harness 的
+// 常量 frame）：同一 lock、同一 u，把 lateralAxis 从水平转到竖直，弯曲量必须按 cos²α 递减。
+test("倾斜面板的曲率按宽度方向水平度缩放（k·cos²α，修 sweep 边缘挤压）", () => {
+  const lock = panelLock({ width: 5, panelScalpConformAmount: 1 });
+  const api = panelApi(lock);
+  const params = api.panelScalpConformParams(lock);
+  const sample = (v) => ({ lateral: v * 2.5, normal: 0 });
+  const bendAt = (axisY) => {
+    const offsets = api.panelScalpConformOffsets(params, sample, 1, 0, null, null, { x: Math.sqrt(Math.max(0, 1 - axisY * axisY)), y: axisY, z: 0 });
+    return Math.abs(offsets.normal);
+  };
+  const horizontal = bendAt(0);        // α = 0   ⇒ cos²α = 1（发尖，保持已确认的 tube 手感）
+  const tilted45 = bendAt(Math.SQRT1_2); // α = 45° ⇒ cos²α = 0.5
+  const vertical = bendAt(1);          // α = 90° ⇒ cos²α = 0（宽度沿竖直，绕竖直轴不产生弯曲）
+  assert.ok(horizontal > 0.1, `水平宽度方向必须完整弯曲，实测 ${horizontal}`);
+  assert.ok(tilted45 < horizontal, `45° 必须弱于水平：${tilted45} vs ${horizontal}`);
+  assert.ok(vertical < 1e-12, `宽度沿竖直时不得弯曲，实测 ${vertical}`);
+  // 未传 lateralAxis 时 horizontality = 1 ⇒ **退化为 0.2.141 的完整弯曲**（不是"不弯"）。
+  // 这是刻意选的默认：漏传参数时退回上一版已发布的 tube 手感，而不是静默把功能关掉
+  // （后者会让"看起来没生效"变成一个难查的静默失效）。本测试初版断言成"不弯"，那是错的 ——
+  // 我写断言时没核对自己刚写的默认值。
+  const missing = api.panelScalpConformOffsets(params, sample, 1, 0);
+  assert.ok(
+    Math.abs(Math.abs(missing.normal) - horizontal) < 1e-12,
+    `漏传 lateralAxis 必须等价于水平轴（完整弯曲）：${missing.normal} vs ${horizontal}`
+  );
+});
+
 test("弯曲半径跟随注入的 scalpSurface（水平轴，非写死常数）", () => {
   const lock = panelLock({ width: 5, panelScalpConformAmount: 1, panelScalpConformGap: 0 });
   const sphere = panelApi(lock, SPHERE_PROXY).panelScalpConformParams(lock);
