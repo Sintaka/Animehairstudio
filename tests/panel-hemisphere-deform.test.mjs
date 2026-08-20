@@ -153,6 +153,30 @@ test("amount 取负 = 向内凹陷（与正向严格反号）", () => {
 // 往后挪了, 而不是我手动去调整边缘曲线」。所以判据是**符号**（中间前凸/两侧后移）与
 // **单调性**（越宽越贴），而不是某个写死的数值。
 const WIDE_WRAP_RATIO = 2.5; // = 半宽 2.5 / 头皮半径 1，对应 UI 最宽 width=5
+const SCALP_RADIUS = 1;      // PANEL_SCALP_RADIUS 的受控副本（= app.js scalpSurface.radius）
+
+// amount = 1 的**物理语义**：边缘恰好落在半径 R 的头皮球面上（不是"差不多贴上"）。
+// 这条是构造性恒等式 —— recede 归一值 × 世界尺度（半宽）后半宽被约掉，剩下正是
+// R(1 − cos(s/R))。把它钉成测试的理由：它给了 Bulge Amount 明确刻度（1 = 精确贴合、
+// 0.5 = 贴一半），将来任何"简化"若破坏这个等式，滑杆就退化成没有物理含义的魔法系数，
+// 而形状看起来仍然"差不多"、行为测试未必发现。
+test("amount = 1 时边缘精确落在头皮球面上（构造性恒等式，给滑杆物理刻度）", () => {
+  let worst = 0;
+  for (const fullWidth of [0.62, 1, 2, 3, 5]) {
+    const halfWidth = fullWidth * 0.5;
+    const k = halfWidth / SCALP_RADIUS;
+    for (const u of [0.25, 0.5, 0.75, 1]) {
+      // 只留后移项：球冠支撑域之外（width 极小 + center 0）⇒ cap = 0；t = 1 ⇒ ramp = 1。
+      const normalized = -panelHemisphereOffset(1, u, 1, 0.05, 0, k, 1);
+      const recedeWorld = normalized * halfWidth; // 调用方的尺度约定
+      // 真球面：横向弧长 s = |u|·halfWidth 处相对中心切平面的后移。
+      const sphereRecede = SCALP_RADIUS * (1 - Math.cos((u * halfWidth) / SCALP_RADIUS));
+      worst = Math.max(worst, Math.abs(recedeWorld - sphereRecede));
+    }
+  }
+  // float64 舍入量级；实测 worst ≈ 1.11e-16。用 1e-12 而非 1e-6：这是恒等式，不是近似。
+  assert.ok(worst < 1e-12, `amount=1 必须精确贴合头皮球面，最大偏差 ${worst.toExponential(3)}`);
+});
 
 test("两侧后移：中线前凸、边缘后移，且后移随面板变宽而增强", () => {
   const ra = PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE;
