@@ -89,6 +89,34 @@
 > - **本组由主进程完成**：原派给子智能体，但它长时间零产出（`styles.css` mtime 未变），按规范
 >   「子智能体中途失败时主进程直接接手」接管，并 `interrupt_agent` 掉它以免回头覆写。
 
+## 最近更新（0.2.141：Bend 截面 memo —— 砍掉 shell 造成的重复积分）
+
+> 0.2.140 把步数从 16 降到 8 后，24×24 仍要 19.6ms、贴着 ~16ms 帧预算。本轮再砍一半。
+>
+> - **发现来自更正 devlog 时的副产品**：我原先声称"同一行截面对所有 shell、所有 u 都相同"。
+>   后半句是错的（已在 0.2.140 条目更正：`sampleT` 在 `tipCurve≠0` 或左右 EdgeTrim 不等时是
+>   `u` 的函数）；但**前半句是对的** —— `midAt` 不含 shell，厚度是在 `panelScalpConformOffsets`
+>   的结果之外才沿弯后法向加上的。而 `rawPanelPoint` 按 front/back 各调一次 ⇒ 同一
+>   `(sampleT, u)` 的积分跑了两遍。
+> - **实测确认重复倍数恰好 2.00×**（198 顶点 / 99 个去重 `(row, u)` 组合），所以这不是估算。
+> - **做法**：`panelScalpConformOffsets` 接受可选 `cache`/`cacheKey`；`createPanelStrandGeometry`
+>   建一个 **per-build 的 Map** 传进去。**key 用 `sampleT` 本身**而不是 row 索引 —— 这正是被
+>   更正的那条认知的直接应用：用索引会在 `tipCurve≠0` 或左右 Trim 不等时把不同截面混成一份、
+>   **静默给出错误几何**。key 还含 `segment` 与 `boneToken(bone)`（bone 是对象，用模块级
+>   WeakMap 发稳定 id：不污染 bone、bone 被回收时 token 一起消失）。
+> - **memo 只给几何路径**：宽度把手的 `tipMainSectionPoint` 是 ad-hoc 调用（不成批），没有
+>   per-build 生命周期可挂，传 null 走原路径。
+> - **`bendSectionCache` 必须每次重建新建**（`conform.amount === 0` 时干脆为 null，保持零分配
+>   早退路径）：截面依赖 lock 当前参数，跨重建复用会画出上一版几何。
+> - **实测（用户 Test 2）**：24×24 **19.57 → 14.13ms**（进帧预算）、默认 10×6 **3.94 → 2.97ms**。
+>   按**conform 归因成本**看更准：`ON−OFF` 从 12.57ms 降到 7.00ms，**−44%**，与 2× 预测吻合
+>   （memo 只能砍积分那部分，OFF 基线不受影响）。精度与形状判据不变：全量 378/378、
+>   跨度比值仍 0.968..1.002。
+> - **顺带修了一条自己写的空转风险**：`单一定义点` 测试用 `panelScalpConformOffsets\(conform,`
+>   数消费点，我把几何侧改成多行调用后它只数到 1 ⇒ 先误改成 `\(\s`（反过来漏掉单行的把手
+>   调用），最终用负向 lookbehind 排除定义、只数调用。**判据要问"有几个消费点"，不是"参数
+>   怎么排版"** —— 两版错法都留在注释里。
+
 ## 最近更新（0.2.140：Bend 积分步数从实测挑定 16 → 8）
 
 > 0.2.139 的弧长参数化在**每个顶点**上跑积分，步数 16 是我拍的、没量过。这是**几何热路径**

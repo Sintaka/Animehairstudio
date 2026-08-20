@@ -370,8 +370,13 @@ test("单一定义点：弯曲公式只在 curve-math.js，消费方只调用不
   assert.doesNotMatch(panelTip, /Math\.sin\([^)]*\)\s*\/\s*k/, "panel-tip-strand 不得重写弯曲公式");
   assert.doesNotMatch(panelTip, /1\s*-\s*Math\.cos\(/, "panel-tip-strand 不得重写弯曲公式");
   assert.doesNotMatch(app, /panelBendCrossSection/, "app.js 不得参与几何推导");
-  // 两个消费点（几何 + 宽度把手复刻）各调一次 panelScalpConformOffsets
-  assert.equal((panelTip.match(/panelScalpConformOffsets\(conform,/g) || []).length, 2);
+  // 两个消费点（几何 + 宽度把手复刻）各调一次 panelScalpConformOffsets。
+  // 正则**不锁参数写法**：0.2.141 给几何侧那处加了 memo 参数、换成多行调用，旧的
+  // `panelScalpConformOffsets\(conform,` 单行式因此漏掉一处（实测 1 ≠ 2）。判据要问的是
+  // 「有几个消费点」，不是「参数怎么排版」，所以只匹配函数名 + 左括号。
+  // 负向 lookbehind 排除**定义**那一处，其余即调用点。两版错误的写法留档：
+  // `…\(conform,` 漏掉多行调用；`…\(\s` 反过来漏掉单行调用（`(conform` 后无空白）。
+  assert.equal((panelTip.match(/(?<!function )panelScalpConformOffsets\(/g) || []).length, 2);
   // 被删的三代旧 API 不得复活
   for (const dead of ["capsuleEndNearestSurface", "panelScalpConformWeight", "panelHemisphereOffset"]) {
     assert.doesNotMatch(curveMath, new RegExp(`export function ${dead}\\(`), `${dead} 必须已删除`);

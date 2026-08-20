@@ -18,6 +18,22 @@ import {
 const PANEL_SCALP_PROXY_FALLBACK = Object.freeze({
   x: 0, y: 0.9, z: 0, radius: 1, scaleX: 1, scaleY: 1, scaleZ: 1
 });
+
+// 给 bone 对象一个**稳定 id**，用于 Bend 截面 memo 的 key。为什么需要它：截面依赖 bone 的
+// width/depth 曲线，不同 bone 必须命中不同缓存项；而 bone 是对象，无法直接进字符串 key。
+// 用 WeakMap 而不是给 bone 挂属性：不污染被缓存对象、bone 被回收时 token 一起消失。
+// null bone（主发片路径）返回 "-" 而不进 WeakMap —— WeakMap 不接受 null 键。
+const panelBoneTokens = new WeakMap();
+let panelBoneTokenNext = 0;
+function boneToken(bone) {
+  if (!bone) return "-";
+  let token = panelBoneTokens.get(bone);
+  if (token === undefined) {
+    token = String(panelBoneTokenNext += 1);
+    panelBoneTokens.set(bone, token);
+  }
+  return token;
+}
 import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260814-12";
 import { cloneSplitBones, segmentBoneHost } from "../bones/bone-model.js?v=20260901-1";
 import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260830-1";
@@ -495,10 +511,19 @@ function panelScalpConformParams(lock) {
 // `shellOffset` 是"中面之外"的部分（shell·thickness/2 + centerZ 权重），沿**弯后法向**
 // 放上去，因此厚度不被剪切。
 // 返回 null = 无弯曲（amount==0），让调用方走原表达式、保持逐位守恒。
-function panelScalpConformOffsets(params, sample, u, shellOffset) {
+// `cache`/`cacheKey` 可选：**弯后截面与 shell 无关**（shellOffset 在结果之外才加上），而
+// rawPanelPoint 按 front/back 各调一次 ⇒ 同一 (sampleT, u) 的积分本会跑两遍。实测重复倍数
+// 恰好 **2.00×**（198 顶点 / 99 个去重 (row,u) 组合），故传一个 per-build 的 Map 即可无条件
+// 砍掉一半积分。**key 必须含 sampleT 本身** —— `sampleT` 在 tipCurve≠0 或左右 EdgeTrim 不等时
+// 是 u 的函数，用 (row, u) 之类的索引做 key 会把不同截面混成一份、静默给出错误几何。
+function panelScalpConformOffsets(params, sample, u, shellOffset, cache = null, cacheKey = null) {
   if (!params || params.amount === 0) return null;
   const k = params.amount / params.bendRadius;
-  const bent = panelBendCrossSection(sample, u, k);
+  let bent = cache && cacheKey !== null ? cache.get(cacheKey) : null;
+  if (!bent) {
+    bent = panelBendCrossSection(sample, u, k);
+    if (cache && cacheKey !== null) cache.set(cacheKey, bent);
+  }
   return {
     lateral: bent.lateral - shellOffset * Math.sin(bent.angle),
     normal: bent.normal + shellOffset * Math.cos(bent.angle)
@@ -842,6 +867,9 @@ function createPanelStrandGeometry(lock) {
   const tipCurve = latticeControlled ? 0 : THREE.MathUtils.clamp(Number(lock.panelTipCurve ?? 0), -1, 1);
   // 收缩参数一次读好（panelScalpConformParams 是本文件的唯一定义点，surface 恒 0）。
   const conform = panelScalpConformParams(lock);
+  // 弯后截面的 per-build memo。**必须每次重建新建一个**：截面依赖 lock 的当前参数，跨重建
+  // 复用会拿到上一版几何。生命周期到本函数返回即止（局部变量，随之被 GC）。
+  const bendSectionCache = conform.amount === 0 ? null : new Map();
   const splitEnabled = lock.panelSplitEnabled !== false;
   const splits = splitEnabled
     ? deps.normalizePanelSplits(lock.panelSplits, lock.panelSplitHeight, widthLoops - 1).filter((split) => split.height > 0.005)
@@ -981,7 +1009,17 @@ function createPanelStrandGeometry(lock) {
     // 保弧长**。amount == 0 ⇒ offsets 为 null ⇒ 走原表达式（conform 在函数外一次算好，不分配）。
     // **原表达式刻意不复用 shellOffset**：左结合顺序必须与 0.2.138 前逐字节一致，否则
     // `amount==0` 的逐位守恒契约会在末位破掉。
-    const offsets = panelScalpConformOffsets(conform, midAt, u, shellOffset);
+    // 弯后截面与 shell 无关，而本函数按 front/back 各调一次 ⇒ 传 per-build 的 memo 砍掉一半
+    // 积分（实测重复恰好 2.00×）。key 含 sampleT 本身而非 row 索引：sampleT 在 tipCurve≠0 或
+    // 左右 EdgeTrim 不等时是 u 的函数，用索引会把不同截面混成一份、静默给出错误几何。
+    const offsets = panelScalpConformOffsets(
+      conform,
+      midAt,
+      u,
+      shellOffset,
+      bendSectionCache,
+      `${sampleT}:${u}:${segment}:${boneToken(bone)}`
+    );
     return frame.point.clone()
       .addScaledVector(frame.x, offsets ? offsets.lateral : mid.lateral)
       .addScaledVector(
