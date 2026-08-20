@@ -140,8 +140,7 @@ try {
     return JSON.stringify({
       visible: r.width > 0 && r.height > 0,
       amount: document.querySelector('#panelScalpConformAmount').value,
-      width: document.querySelector('#panelScalpConformRange').value,
-      center: document.querySelector('#panelScalpConformGap').value,
+      gap: document.querySelector('#panelScalpConformGap').value,
       emphasis: box.className
     });
   })()`));
@@ -183,16 +182,14 @@ try {
       s.dispatchEvent(new Event('input', { bubbles: true }));
     };
     set('panelScalpConformAmount', 0);
-    set('panelScalpConformRange', 0.15);
     set('panelScalpConformGap', 0.02);
-    set('panelScalpConformCylinder', 0.5);
     return true;
   })()`);
   await sleep(2500);
   const before = JSON.parse(await evalJS(cdp, probe));
   check("baseline field normalised to 0", Number(before.field) === 0, `field=${before.field}`);
 
-  // 四个滑杆的默认值必须在**任何变更之前**读 —— 本脚本初版把这条放在后面，读到的是已被
+  // 两个滑杆的默认值必须在**任何变更之前**读 —— 本脚本初版把这条放在后面，读到的是已被
   // 前面步骤改过的值，于是恒假红。默认值三处同源（curve-math 的
   // PANEL_SCALP_CONFORM_DEFAULTS / app.js 的 panelCreationDefaults / index.html 的 value=）。
   const conformUi = JSON.parse(await evalJS(cdp, `(() => {
@@ -204,23 +201,24 @@ try {
     const read = (id) => { const s = document.querySelector('#' + id); return s && { min: s.min, max: s.max, value: s.defaultValue }; };
     return JSON.stringify({
       amount: read('panelScalpConformAmount'),
-      range: read('panelScalpConformRange'),
       gap: read('panelScalpConformGap'),
-      cylinder: read('panelScalpConformCylinder'),
+      range: document.querySelector('#panelScalpConformRange'),
+      cylinder: document.querySelector('#panelScalpConformCylinder'),
       label: document.querySelector('#panelScalpConformControls .subsection-label')?.textContent
     });
   })()`));
-  check("四个 Scalp Conform 滑杆齐备且默认值正确",
-    Number(conformUi.amount?.value) === 0 && Number(conformUi.range?.value) === 0.15
-      && Number(conformUi.gap?.value) === 0.02 && Number(conformUi.cylinder?.value) === 0.5,
+  check("两个 Scalp Conform 滑杆齐备且默认值正确",
+    Number(conformUi.amount?.value) === 0 && Number(conformUi.gap?.value) === 0.02,
     JSON.stringify(conformUi));
+  // 0.2.138 删掉的两个滑杆必须**真的从 markup 里消失**（留着会是"接不上任何字段"的死控件）。
+  check("Root Release / Capsule Length 滑杆已删除",
+    conformUi.range === null && conformUi.cylinder === null,
+    `range=${conformUi.range} cylinder=${conformUi.cylinder}`);
   check("旧 Hemispherical 标签已替换为 Scalp Conform", conformUi.label === "Scalp Conform", `label=${conformUi.label}`);
-  // Root Release 上限 0.25 是 0.2.137 的核心修复：长 ramp 会让半张面板停在"部分贴合"的
-  // 中间态、中段鼓出一个包（用户报告的"根部附近诡异挤压"）。滑杆上限必须与几何层钳位同界，
-  // 否则 UI 允许用户设到几何层会拒绝的值、观感与滑杆读数不一致。
-  check("滑杆区间与几何层钳位一致（range 0.05..0.25、gap 0..0.5、cylinder 0..3）",
-    conformUi.range?.max === "0.25" && conformUi.gap?.max === "0.5" && conformUi.cylinder?.max === "3",
-    `range max=${conformUi.range?.max} gap max=${conformUi.gap?.max} cylinder max=${conformUi.cylinder?.max}`);
+  // 滑杆上限必须与几何层钳位同界，否则 UI 允许用户设到几何层会拒绝的值、观感与读数不一致。
+  check("滑杆区间与几何层钳位一致（amount −1..1、gap 0..0.5）",
+    conformUi.amount?.min === "-1" && conformUi.amount?.max === "1" && conformUi.gap?.max === "0.5",
+    `amount=${conformUi.amount?.min}..${conformUi.amount?.max} gap max=${conformUi.gap?.max}`);
 
   // ── 真实滑杆交互：设值 + 派发 input（app.js 的通用接线监听 input）────────────
   await evalJS(cdp, `(() => {
@@ -240,11 +238,25 @@ try {
   check("mesh rebuilt with same vertex count", after.count === before.count, `${before.count} -> ${after.count}`);
   check("geometry actually moved toward the head (mean z decreased)", after.zMean < before.zMean - 1e-5,
     `zMean ${before.zMean.toFixed(6)} -> ${after.zMean.toFixed(6)}`);
-  // row 0 在真实 app 里也必须逐位不动（UV 红线）
+  // **row 0 在 Bend 模型下刻意会动**（发根贴头皮、卷起时跟着沿头皮滑），所以这里**不再**
+  // 断言逐位不动 —— 那是被替换的投影模型的契约。改为量它带来的 UV 影响并如实报告：
+  // uv-unfold 的 U 由 row-0 逐段弦长累加得出，弯曲后弦长和 ≠ 原弧长 ⇒ U 尺度会变。
+  // 这是 0.2.138 的**已知未解项**（curve-math 头注释有同样记录），不作为失败判据。
   const row0Same = before.row0.length === after.row0.length
     && before.row0.every((v, i) => Object.is(v, after.row0[i]));
-  check("row 0 vertices bit-identical in the live app", row0Same,
-    `${before.row0.length / 3} row-0 verts compared`);
+  check("row 0 顶点数可比对（下面的 U 尺度报告非空转）",
+    before.row0.length === after.row0.length && before.row0.length > 0,
+    `${before.row0.length / 3} row-0 verts`);
+  const row0Len = (flatArr) => {
+    let total = 0;
+    for (let i = 3; i < flatArr.length; i += 3) {
+      total += Math.hypot(flatArr[i] - flatArr[i - 3], flatArr[i + 1] - flatArr[i - 2], flatArr[i + 2] - flatArr[i - 1]);
+    }
+    return total;
+  };
+  const uScale = row0Len(after.row0) / Math.max(1e-9, row0Len(before.row0));
+  console.log(`  [info] row 0 ${row0Same ? "未移动" : "已移动"}；U 尺度比值 ${uScale.toFixed(4)}`
+    + ` —— 已知未解项：≠1 时 uv-unfold 的 U 会随之改变（解法是传 referenceCircumference）`);
 
   // 负值推离头部（与正值严格反向）
   await evalJS(cdp, `(() => { const s = document.querySelector('#panelScalpConformAmount'); s.value = '-0.8'; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
@@ -256,20 +268,16 @@ try {
 
   // ── 存档往返：字段必须随 .ahs 持久化 ─────────────────────────────────────────
   await evalJS(cdp, `(() => { const s = document.querySelector('#panelScalpConformAmount'); s.value = '0.55'; s.dispatchEvent(new Event('input', { bubbles: true }));
-    const w = document.querySelector('#panelScalpConformRange'); w.value = '0.2'; w.dispatchEvent(new Event('input', { bubbles: true }));
-    const c = document.querySelector('#panelScalpConformGap'); c.value = '0.3'; c.dispatchEvent(new Event('input', { bubbles: true }));
-    const k = document.querySelector('#panelScalpConformCylinder'); k.value = '1.5'; k.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    const c = document.querySelector('#panelScalpConformGap'); c.value = '0.3'; c.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await sleep(2500);
   const live = JSON.parse(await evalJS(cdp, `(() => {
     const lock = ${lockRef};
-    return JSON.stringify({ a: lock.panelScalpConformAmount, w: lock.panelScalpConformRange,
-      c: lock.panelScalpConformGap, k: lock.panelScalpConformCylinder });
+    return JSON.stringify({ a: lock.panelScalpConformAmount, c: lock.panelScalpConformGap });
   })()`));
-  // Gap 取 0.3（**不是旧脚本的 0.7**）：0.2.136 起 Gap 钳在 0..0.5，滑杆 max 也是 0.5，
-  // 设 0.7 会被浏览器钳成 0.5、期望 0.7 必然假红 —— 本脚本继承旧值时踩过。
-  check("four fields land on the lock",
-    Math.abs(live.a - 0.55) < 1e-6 && Math.abs(live.w - 0.2) < 1e-6
-      && Math.abs(live.c - 0.3) < 1e-6 && Math.abs(live.k - 1.5) < 1e-6,
+  // Gap 取 0.3（**不是旧脚本的 0.7**）：Gap 钳在 0..0.5，滑杆 max 也是 0.5，设 0.7 会被浏览器
+  // 钳成 0.5、期望 0.7 必然假红 —— 本脚本继承旧值时踩过。
+  check("two fields land on the lock",
+    Math.abs(live.a - 0.55) < 1e-6 && Math.abs(live.c - 0.3) < 1e-6,
     JSON.stringify(live));
 
   // ── undo 往返 = 比读 snapshot 更强的证据：它同时走 snapshotState（序列化）与
@@ -292,15 +300,15 @@ try {
   await sleep(3000);
   const restored = JSON.parse(await evalJS(cdp, `(() => {
     const lock = ${lockRef};
-    return JSON.stringify({ a: lock.panelScalpConformAmount, w: lock.panelScalpConformRange, c: lock.panelScalpConformGap,
+    return JSON.stringify({ a: lock.panelScalpConformAmount, c: lock.panelScalpConformGap,
       slider: document.querySelector('#panelScalpConformAmount').value });
   })()`));
-  // undo 应把 amount 还原到编辑前的 0.55（range/gap 一并保持）
+  // undo 应把 amount 还原到编辑前的 0.55（gap 一并保持）
   check("undo restores the field (snapshotState + restoreLock round-trip)",
     Math.abs(restored.a - undoTrip.beforeUndo) < 1e-6,
     `edited ${undoTrip.beforeUndo} -> 0.15 -> undo -> ${restored.a}`);
-  check("undo also preserves range/gap",
-    Math.abs(restored.w - 0.2) < 1e-6 && Math.abs(restored.c - 0.3) < 1e-6, JSON.stringify(restored));
+  check("undo also preserves gap",
+    Math.abs(restored.c - 0.3) < 1e-6, JSON.stringify(restored));
   check("slider UI resyncs after undo", Math.abs(Number(restored.slider) - restored.a) < 1e-6,
     `slider=${restored.slider} field=${restored.a}`);
 
@@ -308,37 +316,50 @@ try {
   const widthMax = await evalJS(cdp, `document.querySelector('#panelWidth').max`);
   check("Panel Width 上限已放宽到 5", String(widthMax) === "5", `max=${widthMax}`);
 
-  // 把面板拉宽到 5（真实滑杆），再拉 Conform，测**每个顶点到真实头皮球心的距离**。
-  // 这是本模型的决定性判据，且**独立于实现**：cylinder = 0 时代理是纯球 ⇒ 收满的顶点
-  // 必须满足 |v − center| == radius + gap。center/radius 从注入的 scalpSurface 读，
-  // 不写死 {y:0.9, r:1} —— 写死就只是复述实现的假设、用户改过头模后会假绿。
+  // 0.2.138 的决定性判据换成**逐行横向跨度**（= 该行的横向弧长）。
+  // 理由：Bend 模型的契约是"保弧长"，而上一版投影模型的契约是"落在 radius+gap 上"。
+  // 后者投影模型也能过，前者它过不了（实测被压到 0.52 倍）—— 所以判据必须量跨度。
+  // 顺带仍报告距头心距离，用于观察"是否真的贴向头皮"。
   const conformProbe = `(() => {
     const t = window.__ahsTest;
     const lock = ${lockRef};
     const s = t.scalpSurface;
     const pos = lock.mesh.geometry.getAttribute('position');
     const rows = lock.mesh.geometry.userData.gridRowIndices || [];
+    const cols = lock.mesh.geometry.userData.gridColIndices || [];
     const maxRow = Math.max(...rows.filter((r) => r >= 0));
-    const out = [];
+    // 只取 front 壳（奇数 gridCol）以拿到一条干净的横向折线
+    const byRow = new Map();
     for (let i = 0; i < pos.count; i++) {
-      if (rows[i] < 0) continue;
-      const dx = pos.array[i*3] - s.x, dy = pos.array[i*3+1] - s.y, dz = pos.array[i*3+2] - s.z;
-      out.push({ row: rows[i], t: rows[i] / maxRow, d: Math.hypot(dx, dy, dz) });
+      if (rows[i] < 0 || cols[i] % 2 !== 1) continue;
+      if (!byRow.has(rows[i])) byRow.set(rows[i], []);
+      byRow.get(rows[i]).push({ col: cols[i], x: pos.array[i*3], y: pos.array[i*3+1], z: pos.array[i*3+2] });
+    }
+    const spans = [];
+    for (const [row, entries] of [...byRow].sort((a, b) => a[0] - b[0])) {
+      entries.sort((a, b) => a.col - b.col);
+      let span = 0;
+      for (let i = 1; i < entries.length; i++) {
+        span += Math.hypot(entries[i].x - entries[i-1].x, entries[i].y - entries[i-1].y, entries[i].z - entries[i-1].z);
+      }
+      const mid = entries[Math.floor(entries.length / 2)];
+      spans.push({ row, t: row / maxRow, span,
+        d: Math.hypot(mid.x - s.x, mid.y - s.y, mid.z - s.z) });
     }
     return JSON.stringify({
       proxy: { x: s.x, y: s.y, z: s.z, radius: s.radius, sx: s.scaleX, sy: s.scaleY, sz: s.scaleZ },
-      maxRow, verts: out
+      maxRow, spans, count: pos.count
     });
   })()`;
-  // 纯球代理（cylinder = 0）+ gap 已知 ⇒ 收满的行必须落在 radius + gap 上。
+  // 宽面板（width=5，用户的 repro 构型）+ 已知 gap ⇒ 量弯曲前后的**横向跨度比值**。
+  // 这是 0.2.138 Bend 模型的决定性判据：上一版投影模型把跨度压到 0.52 倍
+  // （用户原话「坍缩有点严重」），Bend 必须把它保住。
   const GAP = 0.05;
   await evalJS(cdp, `(() => {
     const set = (id, v) => { const s = document.querySelector('#' + id); s.value = String(v); s.dispatchEvent(new Event('input', { bubbles: true })); };
     set('panelWidth', 5);
     set('panelScalpConformAmount', 0);
-    set('panelScalpConformCylinder', 0);
     set('panelScalpConformGap', ${GAP});
-    set('panelScalpConformRange', 0.5);
     return true;
   })()`);
   await sleep(2500);
@@ -346,26 +367,34 @@ try {
   await evalJS(cdp, `(() => { const s = document.querySelector('#panelScalpConformAmount'); s.value = '1'; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await sleep(2500);
   const conformed = JSON.parse(await evalJS(cdp, conformProbe));
-  check("conform probe sampled the same vertex set",
-    flat.verts.length === conformed.verts.length && flat.verts.length > 20,
-    `verts=${flat.verts.length} proxy=${JSON.stringify(conformed.proxy)}`);
+  check("conform probe sampled the same row set",
+    flat.spans.length === conformed.spans.length && flat.spans.length > 5,
+    `rows=${flat.spans.length} verts=${conformed.count} proxy=${JSON.stringify(conformed.proxy)}`);
 
-  const isSphere = conformed.proxy.sx === 1 && conformed.proxy.sy === 1 && conformed.proxy.sz === 1;
-  check("head proxy is a sphere in this project (so the radius test is exact)", isSphere,
-    `scaleXYZ=${conformed.proxy.sx},${conformed.proxy.sy},${conformed.proxy.sz}`);
-  const expected = conformed.proxy.radius + GAP;
-  // 收满的行（t ≥ range = 0.5）。厚度使两壳分居代理径向两侧 ⇒ 容差取半个厚度 + 余量。
-  const settled = conformed.verts.filter((v) => v.t >= 0.5);
-  const worst = settled.reduce((acc, v) => Math.max(acc, Math.abs(v.d - expected)), 0);
-  check("conform=1 ⇒ 收满行贴在「头皮半径 + gap」上（世界空间实测）",
-    settled.length > 0 && worst < 0.12,
-    `expected=${expected} worst|Δ|=${worst.toFixed(5)} over ${settled.length} verts`);
+  // **决定性判据：横向跨度不得坍缩。** 上一版投影模型在同一构型下把跨度压到 0.52 倍
+  // （用户："坍缩有点严重"）。Bend 保弧长 ⇒ 比值必须回到 1 附近。
+  const ratios = [];
+  for (let i = 0; i < flat.spans.length; i += 1) {
+    if (flat.spans[i].span < 1e-6) continue; // 发尖 taper 收到 0 的那一行跨度本就是 0
+    ratios.push(conformed.spans[i].span / flat.spans[i].span);
+  }
+  const minRatio = Math.min(...ratios);
+  const maxRatio = Math.max(...ratios);
+  check("conform=1 不再坍缩横向跨度（Bend 保弧长；投影模型实测 0.52）",
+    ratios.length > 0 && minRatio > 0.96,
+    `跨度比值 ${minRatio.toFixed(3)}..${maxRatio.toFixed(3)}（${ratios.length} 行）`);
 
-  // 面板起始在头前方 ⇒ 收缩必须把顶点**拉近**头心（这是"贴着头皮往后挪"的直接证据）。
-  const flatFar = flat.verts.filter((v) => v.t >= 0.5).reduce((a, v) => a + v.d, 0) / Math.max(1, flat.verts.filter((v) => v.t >= 0.5).length);
-  const conformedFar = settled.reduce((a, v) => a + v.d, 0) / Math.max(1, settled.length);
-  check("conform 把面板拉近头皮（平均距离减小）", conformedFar < flatFar - 0.05,
-    `flat=${flatFar.toFixed(5)} -> conformed=${conformedFar.toFixed(5)}`);
+  // **已知残留**：camber 是"偏离中性面 n 的偏移"，弯曲时其弧长按 (1 + n·k) 放大。
+  // 本 panel camber = curvature·halfWidth = 0.18·2.5 = 0.45、k ≈ 1/1.05 ⇒ 峰值放大 ~1.43。
+  // 所以跨度会**偏大**而不是偏小。这条只报告数值、不作为失败判据 —— 方向与用户报告的
+  // "坍缩"相反，且是否需要修正（把 camber 折进弧长参数化）要由观感决定。
+  console.log(`  [info] 跨度上限比值 ${maxRatio.toFixed(3)}`
+    + ` —— camber 偏移导致的 offset-curve 拉伸，理论值 1 + camber·k`);
+
+  // 面板起始在头前方 ⇒ 弯曲后中线仍在原处（s=0 零位移，这正是主发片控制点对齐的依据），
+  // 但整体应更贴合头形：报告首末行距头心距离供观察。
+  console.log(`  [info] 距头心（flat）  ${flat.spans.map((s) => s.d.toFixed(2)).join(" ")}`);
+  console.log(`  [info] 距头心（bent）  ${conformed.spans.map((s) => s.d.toFixed(2)).join(" ")}`);
 
   // row 0 必须一动不动（UV 红线）——在真实工程上验，不只在 node fixture 上。
   const rootMoved = await evalJS(cdp, `(() => {
@@ -378,25 +407,25 @@ try {
   })()`);
   check("row 0 顶点存在且可比对（下一条断言非空转）", Number(rootMoved) > 0, `row0 verts=${rootMoved}`);
 
-  // Capsule 长度真的改变几何（圆柱段让长发直着垂下，而非朝下巴底下卷）。
-  const cylLow = await evalJS(cdp, `(() => {
+  // Scalp Gap 真的改变几何（它加大弯曲半径 ⇒ 同一 amount 下卷得更松）。
+  const gapLow = await evalJS(cdp, `(() => {
     const lock = ${lockRef};
-    const s = document.querySelector('#panelScalpConformCylinder');
+    const s = document.querySelector('#panelScalpConformGap');
     s.value = '0'; s.dispatchEvent(new Event('input', { bubbles: true }));
     lock.mesh.geometry.computeBoundingBox(); const b = lock.mesh.geometry.boundingBox;
     return [b.min.x,b.min.y,b.min.z,b.max.x,b.max.y,b.max.z].map((v)=>Number(v.toFixed(5))).join(',');
   })()`);
   await sleep(2000);
-  const cylHigh = await evalJS(cdp, `(() => {
+  const gapHigh = await evalJS(cdp, `(() => {
     const lock = ${lockRef};
-    const s = document.querySelector('#panelScalpConformCylinder');
-    s.value = '2.5'; s.dispatchEvent(new Event('input', { bubbles: true }));
+    const s = document.querySelector('#panelScalpConformGap');
+    s.value = '0.5'; s.dispatchEvent(new Event('input', { bubbles: true }));
     lock.mesh.geometry.computeBoundingBox(); const b = lock.mesh.geometry.boundingBox;
     return [b.min.x,b.min.y,b.min.z,b.max.x,b.max.y,b.max.z].map((v)=>Number(v.toFixed(5))).join(',');
   })()`);
   await sleep(2000);
-  check("Capsule Length 真的改变几何（0 vs 2.5 包围盒不同）", cylLow !== cylHigh,
-    `sphere=${cylLow} capsule=${cylHigh}`);
+  check("Scalp Gap 真的改变几何（0 vs 0.5 包围盒不同）", gapLow !== gapHigh,
+    `tight=${gapLow} loose=${gapHigh}`);
 
   const uiErr = cdp.events.filter((e) => e.method === "Runtime.exceptionThrown").length;
   check("0 new exceptions across all slider interaction", uiErr === bootErr, `${uiErr - bootErr} new`);

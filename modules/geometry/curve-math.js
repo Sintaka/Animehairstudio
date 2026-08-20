@@ -293,115 +293,73 @@ export function panelTipCurveParameter(t, u, tipCurve = 0, edgeTrim = 0) {
   );
 }
 
-// 根部守卫带宽：收缩权重在 t < 该值的区间内被 smoothstep 压回 0，t == 0 处恒为 0。
-// 取 0.05 ≈ 默认 panelLengthLoops(10) 行距 0.1 的一半 —— 在默认细分下只有 row 0
-// 落进守卫带，row 1(t=0.1) 已拿到完整权重，所以形变不会被"抹平在根部附近"；
-// 同时用 smoothstep 而非硬阶跃，让连续采样的消费方（发尖 rest 链、
-// tipSurfaceFrameAt 的差分求法线）不会在 t→0 处读到跳变而算出错误法线。
-const PANEL_SCALP_CONFORM_ROOT_GUARD = 0.05;
-
-// Scalp Conform 的四个参数默认值 —— **本文件是唯一定义点**，app.js 的
-// panelCreationDefaults 与 index.html 的 value= 都必须与此同值（不同源会让"没动过滑杆"
-// 的面板与默认几何不一致，这类三处漂移在本仓库有先例）。
-// amount 0 = 关闭（输出与引入前逐位相同）；range 0.6 = 从根部 60% 处收满；
-// gap 0.02 = 离头皮的世界空间余量（防止与头模 z-fighting）；
-// cylinder 0.5 = Capsule 圆柱段向下延伸的长度（单位球空间），让长刘海直着垂下来。
+// Scalp Conform 的参数默认值 —— **本文件是唯一定义点**，app.js 的 panelCreationDefaults
+// 与 index.html 的 value= 都必须与此同值（不同源会让"没动过滑杆"的面板与默认几何不一致，
+// 这类三处漂移在本仓库有先例）。
+// amount 0 = 不弯（输出与引入前逐位相同）、1 = 完整卷到头皮半径的圆柱上；
+// gap = 弯曲半径相对头皮半径的外扩量（世界单位），既防 z-fighting 又让用户微调贴合松紧。
+// **0.2.138 删掉了 range 与 cylinder**：Bend 模型下前者无意义（曲率插值本身处处光滑，
+// 不需要"根部释放带"），后者被竖直弯曲轴取代（竖直轴天然让长发直垂、不朝下巴底下卷）。
 export const PANEL_SCALP_CONFORM_DEFAULTS = Object.freeze({
   amount: 0,
-  range: 0.15,
-  gap: 0.02,
-  cylinder: 0.5
+  gap: 0.02
 });
 
-// range（Root Release）的上限 —— **刻意很小，这是几何约束不是审美选择**。
-// 0.2.136 初版把它当"艺术衰减"、上限 1、默认 0.6，实测是个陷阱：ramp 跨度内的行处于
-// **部分贴合**状态，顶点落在「原始构型」与「裹住头的构型】之间，而这两者差异极大 ⇒
-// 中间态不在任何光滑曲面上，表现为整片在根部到中段之间**鼓出一个包再收回去**
-// （用户报告的"诡异的挤压"）。实测（width=5 的夸张 panel、目标距头心 1.155）：
-//   range 0.91 ⇒ 各行距离 1.17→1.42→1.24，最大偏离目标 0.267（鼓包）
-//   range 0.40 ⇒ 跨度序列出现 3 次方向反转（原始形状只有 1 次）＝ 褶皱
-//   range 0.15 ⇒ 距离几乎恒定 1.17→1.24，最大偏离 0.083，反转次数与原始形状相同
-// 上限 **0.25 是扫出来的边界、不是拍的**（同一 panel 细扫 0.05→0.30）：
-//   0.05..0.25 ⇒ 跨度序列方向反转 1 次（与 conform 关闭时的原始形状相同）、最大偏离 ≤0.093
-//   0.30       ⇒ 反转跳到 3 次、最大偏离 0.104  ← 褶皱在此出现
-// 该边界与细分有关（默认 panelLengthLoops=10 ⇒ 行距 0.1，0.25 约等于"放开两行"），
-// 所以它是**经验上限**而非普适常数；改细分默认值时应重扫。
-// 它的职责只是**把根部那一两行平滑地放开**（row 0 被 UV 红线钉死，不给过渡会在根部留
-// 一个台阶），不是让半张面板长期停在中间态。
-export const PANEL_SCALP_CONFORM_MAX_RANGE = 0.25;
 
-// ── 面板「贴合头皮」Scalp Conform：世界空间收缩包裹（shrink-wrap）──────────────
+// ── 面板「贴合头皮」Scalp Conform：绕竖直轴的 Bend 变形（**保弧长**）─────────────
 //
-// 0.2.136 **替换**了 0.2.134/0.2.135 的「沿面板法线偏移」模型。用户诊断原文：
-// 「可能不能简单根据法线去弯折一个刘海, 因为那终究是单个刘海, 而非用户想贴着头皮的
-// 前额部分去弯折, 导致刘海会拱起来而且后推的边缘并没有很好的贴近它该有的位置」。
+// 0.2.138 **第三次**重写该模型。前两版都被用户驳回，原因值得留档：
+//   0.2.134/135「沿面板法线的球冠 + 两侧后移」：位移是沿 frame.z 的**局部标量**，
+//     不知道头皮在世界空间哪里 ⇒ 边缘落点与头皮无关、还会拱起。
+//   0.2.136/137「朝头部代理表面收缩」（逐顶点找最近表面点）：那是**投影**，
+//     投影**不保弧长** —— 实测 width=5 的面板横向跨度被压 5.0 → 2.4（ratio 0.52），
+//     用户原话「我们现在的实现是不保持长度的, 坍缩有点严重」。
 //
-// **根因确凿**：旧模型的位移是沿**面板自己的 frame.z** 的标量偏移 —— 纯局部量，
-// 完全不知道头皮在世界空间的哪里。边缘只是"沿自己法线退了一段公式算出来的距离"，
-// 落点与头皮实际位置无关；拱起同理（面板相对自己弯，而不是去贴一个外部曲面）。
-// 旁证：app.js 现有的 `outwardNormalAtPoint` 也只是「以世界原点为心的径向」，
-// 连 `scalpSurface` 的 y=0.9 都没用上 —— 旧模型建立在同一套错误认知上。
+// **本版模型（用户指定）**：「大概按照头的中心那里有个竖着的 tube 把平面的 panel 卷成
+// 圆柱的轨迹, 不是直接 ray 投射而是弯曲变形, 类似 bend, 这个是保持长度的」。
+// 即绕**通过头心的竖直轴**、把面板沿宽度方向卷到半径 R 的圆柱上：
+//   θ = k·s,  k = amount / R      （s = 沿宽度方向的弧长坐标，中线处 s = 0）
+//   P(s) = base + (sin θ / k)·T − ((1 − cos θ)/k)·N
+// T = 面板宽度方向单位向量，N = 由竖直轴指向 base 的**水平**径向（弯曲朝头心一侧）。
 //
-// **新模型**：每个顶点朝**真实头部代理表面**收敛，落点由几何决定而非公式。
-//   delta = (target − point) · amount · weight(t)
-// amount = 1 ⇒ 顶点**精确**落到 target（可测的恒等式）；amount < 0 ⇒ 推离头皮。
+// 三条由构造保证的性质（都有测试钉住）：
+// ① **保弧长**：|dP/ds| ≡ 1（下方推导），所以 width 不会被压缩 —— 这正是上一版的病根。
+// ② **k → 0 精确退化为平板**：sin(ks)/k → s、(1−cos ks)/k → 0，所以 amount=0 时逐位守恒。
+// ③ **插值的是曲率而非位置**：amount=0.5 就是"半径加倍的圆柱"，**中间态本身仍是光滑
+//    曲面** ⇒ 0.2.137 那种"部分贴合导致中段鼓包"的问题在本模型里不存在，因此
+//    `range`（Root Release）与 `cylinder`（Capsule Length）两个参数被**删除**。
 //
-// **头部代理 = Capsule 的一端**（用户建议）：单位球空间里 y ≥ 0 是半球、y < 0 是圆柱段。
-// 为什么不用纯球：长刘海垂到下巴时，纯球在赤道以下会让顶点**朝内卷**（往下巴底下收），
-// Capsule 的圆柱段让它直着垂下来 —— 这是纯球模型解决不了的。
-//
-// **本函数组不再需要 u**：形状来自头部几何，不来自"沿宽度方向的公式"。这是相对
-// 0.2.135 的实质简化（那时 cap/recede 都是 u 的函数）。
-// 沿 t 的收缩权重。**契约：t == 0 处恒为 0**，两条独立理由，缺一不可：
-// ① UV 红线：modules/io/uv-unfold.js 的 U 完全由 row 0 的环向弧长决定、V 纯行号，
-//    所以任何触到 t == 0 的位移都会改变 row 0 顶点、静默重排每一片面板的 UV
-//    （见 AGENT_QUICKSTART.md §2.4b「UV 红线」）。
-// ② 物理：面板根锚在头皮上 —— 发根那一圈**本来就贴着头**，无需再收；真正需要往回收的
-//    是往下走、绕过颅侧的部分。
-// 守卫写在本函数**内部**，任何消费方都无法忘记它。
-//
-// range = 根部释放带宽度（0.05..PANEL_SCALP_CONFORM_MAX_RANGE）。**刻意只能很短** ——
-// 它的职责是把被 UV 红线钉死的 row 0 平滑放开，不是"艺术衰减"。ramp 跨度内的行处于
-// 部分贴合状态，而部分贴合的顶点不在任何光滑曲面上（详见 MAX_RANGE 常量处的实测数据）。
-// 用 smoothstep 而非线性：两端一阶导为 0，避免在"刚收满"那一行出现折痕
-// （tipSurfaceFrameAt 靠差分求法线，折痕会让它算出错误法线）。
-export function panelScalpConformWeight(t, range = PANEL_SCALP_CONFORM_DEFAULTS.range) {
-  const along = clamp(Number(t) || 0, 0, 1);
-  if (along <= 0) return 0;
-  const span = clamp(Number(range) || 0, 0.05, PANEL_SCALP_CONFORM_MAX_RANGE);
-  const guardAmount = clamp(along / PANEL_SCALP_CONFORM_ROOT_GUARD, 0, 1);
-  const guard = guardAmount * guardAmount * (3 - 2 * guardAmount);
-  const ramp = clamp(along / span, 0, 1);
-  return guard * ramp * ramp * (3 - 2 * ramp);
-}
+// **row 0 会移动**：发根贴在头皮上，卷起来时根部跟着沿头皮滑 —— 几何上这是对的。
+// **但由此带来一个已知未解项（0.2.138 实测，勿据旧注释以为安全）**：uv-unfold 的 U 由 row 0
+// 的**逐段弦长累加**得出，而弯曲后弦长和≠原弧长（离散折线内接于圆弧，且 camber 偏移会按
+// (1+n·k) 放大）。真实工程实测 row-0 跨度比值 **1.046** —— 即 U 尺度变了 4.6%，不是 1.000。
+// 我曾在此断言"保弧长正好给出 UV 不变"，那是**错的**：连续意义上保弧长 ≠ 离散弦长和不变。
+// 可行的解法是给 uv-unfold 传**未弯曲**的 row-0 周长作 referenceCircumference（该参数已存在
+// 于 gridUvTable 签名里），把"几何动"与"UV 变"解耦；尚未实现，需先与用户确认观感取舍。
+// 单一定义点：本函数是弯曲公式的唯一实现，几何与控制器都必须经它取位移。
 
-// Capsule 一端的最近表面点（**单位球空间**：椭球已被调用方按 radius·scaleXYZ 归一）。
-// 轴 = 从原点沿 −y 到 (0, −cylinder, 0) 的线段；对轴上最近点取径向、外推单位半径。
-// y ≥ 0 ⇒ 轴上最近点是原点 ⇒ 退化为半球（头顶）；
-// y < −cylinder ⇒ 最近点是轴末端 ⇒ 又是半球（下巴以下的收口）；
-// 中间 ⇒ 最近点在轴内部 ⇒ 圆柱段：径向只在 xz 平面内 ⇒ **顶点不朝内卷、直着垂下来**。
-// 返回 { surface, axis }：surface 用于定位，axis 用于让调用方算径向（世界空间的 gap 方向）。
-// 纯函数、只吃数字，故可在无场景图的 node 测试里直接验证。
-export function capsuleEndNearestSurface(x, y, z, cylinder) {
-  const depth = Math.max(0, Number(cylinder) || 0);
-  // 轴上最近点：沿 −y 方向的行程钳在 [0, depth]，即 axisY = −clamp(−y, 0, depth)。
-  // **`travel === 0` 时必须回 +0 而不是 `-0`**：`-clamp(...)` 在 clamp 得 0 时产出负零，
-  // 对位置无影响（x + -0 === x），但 `Object.is(-0, 0) === false` 会让「y≥0 时轴上最近点
-  // 恰为原点」这类精确断言失败，也会让将来任何按符号分流的消费方产生歧义。
-  // （本仓库同一类坑有先例：0.2.134 的球冠 strength 为负时 `strength * … * 0` 得 -0。）
-  const travel = clamp(-(Number(y) || 0), 0, depth);
-  const axisY = travel === 0 ? 0 : -travel;
-  const dx = (Number(x) || 0) - 0;
-  const dy = (Number(y) || 0) - axisY;
-  const dz = (Number(z) || 0) - 0;
-  const length = Math.hypot(dx, dy, dz);
-  // 点恰在轴上时径向无定义 —— 取 +z（面部朝向）而不是任意轴，让退化情形仍朝脸前方推出。
-  const nx = length < 0.000001 ? 0 : dx / length;
-  const ny = length < 0.000001 ? 0 : dy / length;
-  const nz = length < 0.000001 ? 1 : dz / length;
+// Bend 的两个系数：把「沿宽度方向的弧长坐标 s」变成「沿 T 走多少 + 朝 N 收多少」。
+//   along  = sin(k·s) / k   （k → 0 时 → s）
+//   inward = (1 − cos(k·s)) / k   （k → 0 时 → 0）
+// 调用方：`P = base + along·T − inward·N`。返回系数而不是直接返回点，是为了让几何层与
+// 控制器层共用同一个公式却各自用自己的 T/N（纯函数、可在无场景图的 node 测试里验证）。
+//
+// **保弧长的推导**（这是本模型存在的理由，必须能复核）：
+//   dP/ds = cos(k·s)·T − sin(k·s)·N，而 T ⟂ N 且都是单位向量
+//   ⇒ |dP/ds|² = cos² + sin² = 1  ⇒ 弧长按 s 逐一对应，不被压缩。
+//
+// `k` 极小时走**解析退化分支**而不是硬算：`sin(k·s)/k` 在 k→0 时是 0/0，浮点上会先
+// 损失精度再放大。阈值 1e-9 远小于任何真实曲率（R=1、amount=1e-6 时 k=1e-6），
+// 所以正常参数永远走主分支；该分支只为「amount 恰好为 0」与极端小值兜底，
+// 且**必须逐位返回 s / 0**，否则 amount=0 的逐位守恒契约会破。
+export function panelBendCoefficients(s, curvature) {
+  const arc = Number(s) || 0;
+  const k = Number(curvature) || 0;
+  if (Math.abs(k) < 1e-9) return { along: arc, inward: 0 };
+  const theta = k * arc;
   return {
-    surface: { x: nx, y: axisY + ny, z: nz },
-    axis: { x: 0, y: axisY, z: 0 }
+    along: Math.sin(theta) / k,
+    inward: (1 - Math.cos(theta)) / k
   };
 }
 

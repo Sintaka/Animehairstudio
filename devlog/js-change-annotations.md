@@ -89,6 +89,47 @@
 > - **本组由主进程完成**：原派给子智能体，但它长时间零产出（`styles.css` mtime 未变），按规范
 >   「子智能体中途失败时主进程直接接手」接管，并 `interrupt_agent` 掉它以免回头覆写。
 
+## 最近更新（0.2.138：Scalp Conform 改为绕竖直轴的 Bend + 悬停高亮修复）
+
+> 用户三条反馈：① 「我拉宽 width 和 Conform, 橙色高亮选择仍然还是原来的 panel 默认的很窄的
+> 状态, 选择后高亮正常」；② 「主发片的控制点和控制器不会随着 Conform 拉高而跟着 geo 走, 但是
+> 子发尖的控制器会跟随……而且 WidthCurve 是无变化的」；③ 「不用直接改变切面, 而是变形切面……
+> 大概按照头的中心那里有个竖着的 tube 把平面的 panel 卷成圆柱的轨迹, 不是直接 ray 投射而是
+> 弯曲变形, 类似 bend, 这个是保持长度的. 我们现在的实现是不保持长度的, 坍缩有点严重」。
+>
+> - **bug① 根因（app.js `rebuildLockGeometry`）**：该函数只把 `selectionOutline.geometry` 重指向
+>   新几何、**漏了 `hoverOutline`**，而下一行就 `previousGeometry.dispose()`。两条轮廓由
+>   `createStrandSelectionOutline` 用**同一份 geometry 引用**创建 ⇒ hoverOutline 攥着已 dispose
+>   的旧几何。`dispose()` 只释放 GPU buffer、JS 侧属性数据仍在，下次渲染重新上传 ⇒ **画出旧
+>   形状**（不是消失，所以极易误判成"缓存没刷新"）。**与 Conform 无关**：任何几何重建都中招，
+>   只是 Conform 位移量大才显眼。修复一行 + dom-contract 三条断言（含顺序判据：两条重指向都
+>   必须在 dispose 之前）；变异测试确认咬（删掉那行 ⇒ 108/109）。
+> - **bug② 与 ③ 是同一个根因**，用户诊断准确：「控制器没跟着头皮走说明不是本质的程序化修改,
+>   可能程序化到生成的 geo 上去了」。旧模型逐顶点在世界空间投影 ⇒ 位移不进"形状定义"，凡从
+>   **参数**推导的东西（主发片控制点 `handle.position.copy(lock.points[index])`、WidthCurve）
+>   都看不见它；发尖控制器能跟随只是因为它恰好经 `tipSurfaceFrameAt → tipMainSectionPoint`。
+> - **新模型（Bend，保弧长）**：`θ = k·s`、`k = amount / bendRadius`、
+>   `P(s) = base + (sin θ/k)·T − ((1−cos θ)/k)·N`，唯一定义点 `panelBendCoefficients`
+>   （curve-math.js）。弯曲在面板**自己的 (frame.x, frame.z) 平面**内，厚度/camber 随弯曲旋转
+>   （实测两壳间距恒为 thickness，偏差 <1e-9）。**保弧长**由 `|dP/ds| ≡ 1` 保证（差分核验）；
+>   `k→0` **逐位**退化为平板；**插值曲率而非位置** ⇒ 中间态本身仍是光滑圆柱，因此 0.2.137 的
+>   `Root Release` 与 0.2.136 的 `Capsule Length` **两参数删除**（前者本是救"部分贴合鼓包"的
+>   补丁，后者被竖直轴取代）。四滑杆缩到两个：Conform + Scalp Gap。
+> - **bug② 的结构性修复**：`s = 0` ⇒ `along = 0, inward = 0` ⇒ **中线零位移**。主发片控制点落在
+>   授权曲线（中线）上，所以它们**本来就对齐**，无需给控制器另打补丁。有测试钉住"中线列逐位
+>   不动"。
+> - **实测（用户的 Scalp Conform Test 2.ahs，width=5、amount=0.87）**：横向跨度比值从投影模型的
+>   **0.52** 回到 **1.046..1.259**，坍缩消失。全量 378/378、浏览器 27/27。
+> - **两个已知未解项（如实记录，勿当已修）**：
+>   ㈠ **camber 导致跨度偏大**：camber = `curvature·halfWidth·(1−u²)` 是"偏离中性面 n 的偏移"，
+>      弯曲时其弧长按 `(1 + n·k)` 放大。Test 2 上 camber=0.45、k≈0.95 ⇒ 峰值 ~1.43，实测中面
+>      弧长 +26.5%。方向与用户报告的"坍缩"**相反**（偏大而非偏小），是否需要修正（把 camber
+>      折进弧长参数化，即用截面自身弧长而非横向坐标做 bend 参数）需由观感决定。
+>   ㈡ **row 0 会移动 ⇒ U 尺度变 4.6%**：uv-unfold 的 U 由 row-0 逐段**弦长**累加得出，而弯曲后
+>      弦长和 ≠ 原弧长（折线内接圆弧 + camber 放大）。我曾在 curve-math 注释里断言"保弧长正好
+>      给出 UV 不变"，**那是错的**（连续保弧长 ≠ 离散弦长和不变），已就地更正。解法是给
+>      `gridUvTable` 传未弯曲的 `referenceCircumference`（该参数已在签名里），尚未实现。
+
 ## 最近更新（0.2.137：修掉 Scalp Conform 的中段鼓包 —— Root Release 钳到 0.25）
 
 > 用户报告：「靠近尖端的部分完美的按照头皮类似胶囊半体来变形, 要的就是这种, 不过根部附近

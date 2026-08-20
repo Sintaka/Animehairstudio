@@ -3,7 +3,7 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-2";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-3";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
 import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-1";
@@ -106,11 +106,10 @@ import {
   twistRateUnitsFromDegrees,
   upperProfileArcIndices,
   uniformCurveParameters,
-  // Scalp Conform 的默认值与 Range 上限：**唯一定义点在 curve-math.js**。import 而不是抄写
-  // —— 抄写会让"根部释放带上限"变成多个定义点（本轮初版在此硬写过三处 0.3）。
-  PANEL_SCALP_CONFORM_DEFAULTS,
-  PANEL_SCALP_CONFORM_MAX_RANGE
-} from "./modules/geometry/curve-math.js?v=20260910-2";
+  // Scalp Conform 的默认值：**唯一定义点在 curve-math.js**。import 而不是抄写 —— 抄写会让
+  // 默认值变成多个定义点（0.2.137 初版在此硬写过三处上限，已改为 import）。
+  PANEL_SCALP_CONFORM_DEFAULTS
+} from "./modules/geometry/curve-math.js?v=20260910-3";
 import {
   curveLatticeLoopPointIndices,
   DEFAULT_CURVE_LATTICE_PLANE,
@@ -1514,14 +1513,13 @@ const panelCreationDefaults = {
   panelRightEdgeTrim: 0,
   panelTipCurve: 0,
   panelTipLoops: 0,
-  // Scalp Conform（世界空间收缩包裹）：四个默认值**直接取自** curve-math.js 的
-  // PANEL_SCALP_CONFORM_DEFAULTS（唯一定义点），不再抄写字面量 —— 抄写过的版本里
-  // 「Range 默认值」一度出现三处不同源。index.html 的 value= 仍是必须人工同步的第三处，
-  // 有测试钉住三者一致。amount 0 ⇒ 输出与引入前逐位相同。
+  // Scalp Conform（0.2.138 绕竖直轴的 Bend，保弧长）：两个默认值**直接取自** curve-math.js
+  // 的 PANEL_SCALP_CONFORM_DEFAULTS（唯一定义点），不抄写字面量。index.html 的 value= 是
+  // 必须人工同步的第三处，有测试钉住三者一致。amount 0 ⇒ 输出与引入前逐位相同。
+  // 0.2.138 删掉了 Range/Cylinder：Bend 下曲率插值处处光滑（不需要根部释放带），
+  // 竖直弯曲轴又天然让长发直垂（不需要 Capsule 圆柱段）。
   panelScalpConformAmount: PANEL_SCALP_CONFORM_DEFAULTS.amount,
-  panelScalpConformRange: PANEL_SCALP_CONFORM_DEFAULTS.range,
   panelScalpConformGap: PANEL_SCALP_CONFORM_DEFAULTS.gap,
-  panelScalpConformCylinder: PANEL_SCALP_CONFORM_DEFAULTS.cylinder,
   panelSplitEnabled: true,
   panelSplitSnapToLoops: true,
   panelSplitHeight: 0.3,
@@ -3370,15 +3368,11 @@ const panelScalpConformControls = document.querySelector("#panelScalpConformCont
 // 通用循环遍历不到，启动不会抛（其余既有键沿用原样，行为逐字节不变）。
 const panelScalpConformInputEntries = Object.entries({
   panelScalpConformAmount: document.querySelector("#panelScalpConformAmount"),
-  panelScalpConformRange: document.querySelector("#panelScalpConformRange"),
-  panelScalpConformGap: document.querySelector("#panelScalpConformGap"),
-  panelScalpConformCylinder: document.querySelector("#panelScalpConformCylinder")
+  panelScalpConformGap: document.querySelector("#panelScalpConformGap")
 }).filter(([, element]) => Boolean(element));
 const panelScalpConformValueEntries = Object.entries({
   panelScalpConformAmount: document.querySelector("#panelScalpConformAmountValue"),
-  panelScalpConformRange: document.querySelector("#panelScalpConformRangeValue"),
-  panelScalpConformGap: document.querySelector("#panelScalpConformGapValue"),
-  panelScalpConformCylinder: document.querySelector("#panelScalpConformCylinderValue")
+  panelScalpConformGap: document.querySelector("#panelScalpConformGapValue")
 }).filter(([, element]) => Boolean(element));
 const panelShapeInputs = {
   width: document.querySelector("#panelWidth"),
@@ -9329,29 +9323,16 @@ function addLock(presetName, overrides = {}, options = {}) {
     ? 0
     : THREE.MathUtils.clamp(Math.round(Number(base.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16);
   // Scalp Conform：amount 在 surface（lattice 控制）上恒 0，与上面 panelTipCurve /
-  // panelTipLoops 同规则；range/gap/cylinder 即使被忽略也无害，照常规范化以便 UI 显示稳定。
+  // panelTipLoops 同规则；gap 即使被忽略也无害，照常规范化以便 UI 显示稳定。
   lock.panelScalpConformAmount = lock.geometryType === "surface"
     ? 0
     : THREE.MathUtils.clamp(Number(base.panelScalpConformAmount ?? panelCreationDefaults.panelScalpConformAmount), -1, 1);
-  // Range 上限走 import 来的 PANEL_SCALP_CONFORM_MAX_RANGE（唯一定义点在 curve-math.js）：
-  // 长 ramp 会让半张面板停在"部分贴合"的中间态、鼓出一个包（用户报告的挤压根因）。
-  lock.panelScalpConformRange = THREE.MathUtils.clamp(
-    Number(base.panelScalpConformRange ?? panelCreationDefaults.panelScalpConformRange),
-    0.05,
-    PANEL_SCALP_CONFORM_MAX_RANGE
-  );
-  // Gap 上限 0.5：世界单位的"离头皮余量"，头皮球半径为 1，半个半径已经远超任何合理发厚。
-  // Cylinder 上限 3：Capsule 圆柱段向下延伸长度（单位球空间），3 倍半径足够覆盖到胸口。
-  // 两条钳位与 curve-math.js 的 panelScalpConformParams 同界（同步点：那里的同名钳位）。
+  // Gap 上限 0.5：世界单位的"弯曲半径相对头皮的外扩量"，头皮球半径为 1，半个半径已远超
+  // 任何合理发厚。同步点：panel-tip-strand.js 的 panelScalpConformParams 同名钳位。
   lock.panelScalpConformGap = THREE.MathUtils.clamp(
     Number(base.panelScalpConformGap ?? panelCreationDefaults.panelScalpConformGap),
     0,
     0.5
-  );
-  lock.panelScalpConformCylinder = THREE.MathUtils.clamp(
-    Number(base.panelScalpConformCylinder ?? panelCreationDefaults.panelScalpConformCylinder),
-    0,
-    3
   );
   lock.panelSplitEnabled = base.panelSplitEnabled !== false;
   lock.panelSplitSnapToLoops = base.panelSplitSnapToLoops !== false;
@@ -9516,16 +9497,15 @@ function createMirrorPartner(lock, options = {}) {
     panelRightEdgeTrim: lock.panelRightEdgeTrim,
     panelTipCurve: lock.panelTipCurve,
     panelTipLoops: lock.panelTipLoops,
-    // Scalp Conform：四个值镜像时**原样拷贝，不取反、不交换**。理由与旧的球冠模型不同 ——
-    // 收缩位移的方向来自**头部代理**而不是面板自己的公式：代理关于 X 对称（scalpSurface.x
-    // 默认 0），镜像后的顶点在世界空间自然找到镜像位置的表面点。四个参数（强度/沿 t 跨度/
-    // 离头余量/圆柱段长度）**都不按侧定义**，所以没有"左右"可换。
+    // Scalp Conform：两个值镜像时**原样拷贝，不取反、不交换**。0.2.138 Bend 模型下的理由
+    // （与被替换的投影模型不同，但结论相同）：弯曲是 `along(s)·T − inward(s)·N`，其中
+    // `along = sin(ks)/k` 在 s 上是**奇函数**、`inward = (1−cos ks)/k` 是**偶函数**。X 镜像
+    // 同时翻转横向坐标 s 与基向量 T 的符号 ⇒ 奇×奇 = 不变、偶项本就不受影响 ⇒ 形状严格镜像。
+    // gap 是标量半径外扩量，与左右无关。
     // 对比：panelTipCurve 要取负（它的 bowWeight 随 strength 符号在"边缘/中心"间切换），
     // panelLeftEdgeTrim/panelRightEdgeTrim 要左右互换（它们本身就是按侧定义的）。
     panelScalpConformAmount: lock.panelScalpConformAmount,
-    panelScalpConformRange: lock.panelScalpConformRange,
     panelScalpConformGap: lock.panelScalpConformGap,
-    panelScalpConformCylinder: lock.panelScalpConformCylinder,
     profileTrimLeft: lock.profileTrimRight,
     profileTrimRight: lock.profileTrimLeft,
     profileTrimRoundness: lock.profileTrimRoundness,
@@ -9700,29 +9680,17 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   partner.panelTipLoops = lock.geometryType === "surface"
     ? 0
     : THREE.MathUtils.clamp(Math.round(Number(lock.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16);
-  // Scalp Conform：四个值**原样拷贝，不取反、不交换**（与 createMirrorPartner 同规则，
-  // 同步点：那里的同名注释）。收缩方向来自头部代理而非面板公式，代理关于 X 对称 ⇒ 镜像后
-  // 的顶点自然找到镜像位置的表面点；四个参数都不按侧定义。
-  // 对比上面两条：panelTipCurve 取负、左右 EdgeTrim 互换 —— 收缩两者都不需要。
+  // Scalp Conform：两个值**原样拷贝，不取反、不交换**（与 createMirrorPartner 同规则，
+  // 同步点：那里的同名注释，推导写在那里 —— along 在 s 上是奇函数、inward 是偶函数，
+  // X 镜像同时翻转 s 与 T 的符号 ⇒ 形状严格镜像）。
+  // 对比上面两条：panelTipCurve 取负、左右 EdgeTrim 互换 —— 弯曲两者都不需要。
   partner.panelScalpConformAmount = lock.geometryType === "surface"
     ? 0
     : THREE.MathUtils.clamp(Number(lock.panelScalpConformAmount ?? panelCreationDefaults.panelScalpConformAmount), -1, 1);
-  partner.panelScalpConformRange = THREE.MathUtils.clamp(
-    Number(lock.panelScalpConformRange ?? panelCreationDefaults.panelScalpConformRange),
-    0.05,
-    PANEL_SCALP_CONFORM_MAX_RANGE
-  );
   partner.panelScalpConformGap = THREE.MathUtils.clamp(
     Number(lock.panelScalpConformGap ?? panelCreationDefaults.panelScalpConformGap),
     0,
     0.5
-  );
-  // Cylinder：同名 → 同名。收缩四值**全部原样拷贝** —— 头部代理关于 X 镜像对称
-  // （scalpSurface 的 x 默认 0），且这四个参数都不按侧定义。同步点：createMirrorPartner。
-  partner.panelScalpConformCylinder = THREE.MathUtils.clamp(
-    Number(lock.panelScalpConformCylinder ?? panelCreationDefaults.panelScalpConformCylinder),
-    0,
-    3
   );
   partner.profileTrimLeft = Number(lock.profileTrimRight ?? 0);
   partner.profileTrimRight = Number(lock.profileTrimLeft ?? 0);
@@ -9962,9 +9930,7 @@ function snapshotState() {
       panelTipCurve: Number(lock.panelTipCurve ?? panelCreationDefaults.panelTipCurve),
       panelTipLoops: Number(lock.panelTipLoops ?? panelCreationDefaults.panelTipLoops),
       panelScalpConformAmount: Number(lock.panelScalpConformAmount ?? panelCreationDefaults.panelScalpConformAmount),
-      panelScalpConformRange: Number(lock.panelScalpConformRange ?? panelCreationDefaults.panelScalpConformRange),
       panelScalpConformGap: Number(lock.panelScalpConformGap ?? panelCreationDefaults.panelScalpConformGap),
-      panelScalpConformCylinder: Number(lock.panelScalpConformCylinder ?? panelCreationDefaults.panelScalpConformCylinder),
       profileTrimLeft: Number(lock.profileTrimLeft ?? 0),
       profileTrimRight: Number(lock.profileTrimRight ?? 0),
       profileTrimRoundness: Number(lock.profileTrimRoundness ?? 1),
@@ -10642,30 +10608,18 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
       ? 0
       : THREE.MathUtils.clamp(Math.round(Number(snapshot.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16),
     // Scalp Conform：amount 在 surface 上恒 0（与上面 panelTipCurve/panelTipLoops 同规则）；
-    // range/gap/cylinder 照常钳位反序列化，旧档缺字段时回落到中性默认值。
+    // gap 照常钳位反序列化，旧档缺字段时回落到中性默认值。
+    // **旧档兼容**：0.2.135 及更早的 `panelHemisphere*`、以及 0.2.136/137 的
+    // `panelScalpConformRange` / `panelScalpConformCylinder` 都**刻意不迁移** —— 三代模型
+    // （法线球冠 / 世界空间投影 / 绕竖直轴 Bend）语义互不相通，把旧数值灌进新字段只会得到
+    // 与作者当年意图无关的形状。amount 与 gap 同名同义，照常读取；被删的两个字段直接忽略。
     panelScalpConformAmount: snapshot.geometryType === "surface"
       ? 0
       : THREE.MathUtils.clamp(Number(snapshot.panelScalpConformAmount ?? panelCreationDefaults.panelScalpConformAmount), -1, 1),
-    // 旧档里 0.2.136 初版的大 Range（上限曾是 1）在此被钳回 MAX_RANGE：那些值会让面板中段
-    // 鼓包，钳回是**刻意的形状变更**（变的方向是"不再鼓包"），不是静默丢数据。
-    panelScalpConformRange: THREE.MathUtils.clamp(
-      Number(snapshot.panelScalpConformRange ?? panelCreationDefaults.panelScalpConformRange),
-      0.05,
-      PANEL_SCALP_CONFORM_MAX_RANGE
-    ),
     panelScalpConformGap: THREE.MathUtils.clamp(
       Number(snapshot.panelScalpConformGap ?? panelCreationDefaults.panelScalpConformGap),
       0,
       0.5
-    ),
-    // 旧档兼容：0.2.135 及更早的 panelHemisphere* 四字段**刻意不迁移** —— 那套是「沿面板
-    // 法线的球冠 + 两侧后移」，与本模型（世界空间朝头部代理收缩）语义完全不同，把旧数值
-    // 灌进新字段会得到与作者当年意图无关的形状。旧档因此回落到默认（amount 0 = 关闭），
-    // 即"打开旧档看到的还是当年的几何，只是这个控件是关着的"，由用户自己决定要不要开。
-    panelScalpConformCylinder: THREE.MathUtils.clamp(
-      Number(snapshot.panelScalpConformCylinder ?? panelCreationDefaults.panelScalpConformCylinder),
-      0,
-      3
     ),
     panelSplitEnabled: snapshot.panelSplitEnabled !== false,
     panelSplitSnapToLoops: snapshot.panelSplitSnapToLoops !== false,
@@ -12607,7 +12561,14 @@ function rebuildLockGeometry(lock, options = {}) {
   const previousGeometry = lock.mesh.geometry;
   lock.mesh.geometry = strandGeometryApi.createHairGeometry(lock);
   branchBridge.applyBranchRootRegionCarving(lock, lock.mesh.geometry);
+  // 两条轮廓**都**要重指向新几何。它们由 createStrandSelectionOutline 用同一份 geometry
+  // 引用创建（modules/material/material-ui.js），而下一行就 dispose 掉旧几何 —— 漏掉任何
+  // 一条，它就攥着已 dispose 的旧几何。`dispose()` 只释放 GPU buffer、JS 侧属性数据仍在，
+  // 下次渲染会重新上传，于是**画出旧形状**（不是消失，所以很容易被当成"缓存没刷新"）。
+  // 症状：改 width 或任何影响几何的滑杆后，悬停高亮仍是旧轮廓，选中后才对
+  // —— 0.2.138 由用户在 Scalp Conform 上报告（位移量大才显眼），但**任何**几何重建都中招。
   if (lock.selectionOutline) lock.selectionOutline.geometry = lock.mesh.geometry;
+  if (lock.hoverOutline) lock.hoverOutline.geometry = lock.mesh.geometry;
   previousGeometry.dispose();
   if ((hairState.state.hairTopologyVisible || lock.proceduralParentHidden || lock.locked) && lock.wireOverlay) {
     lock.wireOverlay.geometry.dispose();

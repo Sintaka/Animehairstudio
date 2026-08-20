@@ -8,7 +8,7 @@ import {
   sampleTaperCurve,
   twistCurveDisplayRange,
   twistRateUnitsFromDegrees
-} from "./curve-math.js?v=20260910-2";
+} from "./curve-math.js?v=20260910-3";
 import {
   resolveSegmentSelection,
   segmentBoneHost,

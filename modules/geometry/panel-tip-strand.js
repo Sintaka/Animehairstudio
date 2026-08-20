@@ -3,15 +3,13 @@
 import * as THREE from "three";
 import {
   PANEL_SCALP_CONFORM_DEFAULTS,
-  PANEL_SCALP_CONFORM_MAX_RANGE,
-  capsuleEndNearestSurface,
-  panelScalpConformWeight,
+  panelBendCoefficients,
   panelTipCurveParameter,
   panelTipLoopParameters,
   profileTopologyCenterWeight,
   sampleArray,
   sampleAsymmetricTaperCurve
-} from "./curve-math.js?v=20260910-2";
+} from "./curve-math.js?v=20260910-3";
 
 // 头部代理的兜底参数：与 app.js 的 `scalpSurface = { x:0, y:0.9, z:0, radius:1, scaleXYZ:1 }`
 // 同值。**优先用注入的 deps.scalpSurface（真实运行时状态，跟随用户调整头模）**，
@@ -473,76 +471,41 @@ function panelScalpConformParams(lock) {
   const radius = Math.max(0.001, Number(proxySource.radius ?? 1));
   return {
     amount,
-    // range 上限走 PANEL_SCALP_CONFORM_MAX_RANGE（唯一定义点在 curve-math.js）：长 ramp 会让
-    // 半张面板停在"部分贴合"的中间态、鼓出一个包，是用户报告的挤压根因。旧档的大值在此被
-    // 钳回安全区（形状会变，但变的方向是"不再鼓包"）。
-    range: THREE.MathUtils.clamp(
-      Number(lock?.panelScalpConformRange ?? PANEL_SCALP_CONFORM_DEFAULTS.range),
-      0.05,
-      PANEL_SCALP_CONFORM_MAX_RANGE
-    ),
     gap: THREE.MathUtils.clamp(
       Number(lock?.panelScalpConformGap ?? PANEL_SCALP_CONFORM_DEFAULTS.gap),
       0,
       0.5
     ),
-    cylinder: THREE.MathUtils.clamp(
-      Number(lock?.panelScalpConformCylinder ?? PANEL_SCALP_CONFORM_DEFAULTS.cylinder),
-      0,
-      3
-    ),
-    proxy: {
-      cx: Number(proxySource.x ?? 0),
-      cy: Number(proxySource.y ?? 0.9),
-      cz: Number(proxySource.z ?? 0),
-      sx: radius * Math.max(0.001, Number(proxySource.scaleX ?? 1)),
-      sy: radius * Math.max(0.001, Number(proxySource.scaleY ?? 1)),
-      sz: radius * Math.max(0.001, Number(proxySource.scaleZ ?? 1))
-    }
+    // 弯曲半径 = 头皮**水平**平均半径 + gap。取水平（x/z）而不含 y：弯曲轴是竖直的
+    // （用户："按照头的中心那里有个竖着的 tube"），竖直方向的椭球缩放与卷绕无关。
+    // 用户明确选了"弧半径参考头皮半径"，所以这里读真实 scalpSurface 而不是常数。
+    bendRadius: Math.max(
+      0.05,
+      (radius * Math.max(0.001, Number(proxySource.scaleX ?? 1))
+        + radius * Math.max(0.001, Number(proxySource.scaleZ ?? 1))) * 0.5
+        + THREE.MathUtils.clamp(Number(lock?.panelScalpConformGap ?? PANEL_SCALP_CONFORM_DEFAULTS.gap), 0, 0.5)
+    )
   };
 }
 
-// 世界空间收缩位移：给一个**中面**世界点（shell = 0），返回该点朝头部代理收敛的 delta。
-// 调用方把同一个 delta 加到 front/back 两个 shell 上 —— **必须如此**，否则两壳各自收到
-// 同一张表面上、面板厚度被压成 0（这是本模型最容易踩的坑）。
-// 返回 null 表示无位移（amount==0 或权重为 0），让调用方走零分配路径。
-function panelScalpConformDelta(params, worldPoint, t) {
+// Bend 后的两个系数：把「原本要乘到 frame.x 的横向量 s」与「原本要乘到 frame.z 的法向量
+// normalOffset」一起变换成弯曲后的一对系数。调用方用法：
+//   point = origin + lateral·frame.x + normal·frame.z
+// 这样**弯曲发生在面板自己的 (frame.x, frame.z) 平面内** —— 正是用户要的「边缘按照宽度和
+// 主发片原本的法向构成一个 Capsule 面」。厚度/camber 项因此**随弯曲一起旋转**（乘的是
+// 旋转后的法向 sin θ·T + cos θ·N），不会被剪切成斜的。
+// 返回 null = 无弯曲（amount==0），让调用方走零分配路径并保持逐位守恒。
+function panelScalpConformOffsets(params, s, normalOffset) {
   if (!params || params.amount === 0) return null;
-  const weight = panelScalpConformWeight(t, params.range);
-  if (weight <= 0) return null;
-  const { proxy } = params;
-  // 世界 → 单位球空间（椭球归一）
-  const lx = (worldPoint.x - proxy.cx) / proxy.sx;
-  const ly = (worldPoint.y - proxy.cy) / proxy.sy;
-  const lz = (worldPoint.z - proxy.cz) / proxy.sz;
-  const near = capsuleEndNearestSurface(lx, ly, lz, params.cylinder);
-  // 单位球空间 → 世界
-  const surfaceX = near.surface.x * proxy.sx + proxy.cx;
-  const surfaceY = near.surface.y * proxy.sy + proxy.cy;
-  const surfaceZ = near.surface.z * proxy.sz + proxy.cz;
-  const axisX = near.axis.x * proxy.sx + proxy.cx;
-  const axisY = near.axis.y * proxy.sy + proxy.cy;
-  const axisZ = near.axis.z * proxy.sz + proxy.cz;
-  // gap 沿**世界空间**的径向（轴上最近点 → 表面点）外推。在世界空间加 gap 而不是在单位球
-  // 空间加，是因为 gap 是「离头皮多远」的物理距离；非均匀 scaleXYZ 下单位球空间的等距
-  // 并不对应世界等距。
-  let gx = surfaceX - axisX;
-  let gy = surfaceY - axisY;
-  let gz = surfaceZ - axisZ;
-  const glen = Math.hypot(gx, gy, gz);
-  if (glen > 0.000001) { gx /= glen; gy /= glen; gz /= glen; }
-  else { gx = 0; gy = 0; gz = 1; }
-  const targetX = surfaceX + gx * params.gap;
-  const targetY = surfaceY + gy * params.gap;
-  const targetZ = surfaceZ + gz * params.gap;
-  // amount = 1 ⇒ 精确落到 target（可测恒等式）；amount < 0 ⇒ 朝反方向推离头皮。
-  const k = params.amount * weight;
+  const k = params.amount / params.bendRadius;
+  const { along, inward } = panelBendCoefficients(s, k);
+  const theta = k * s;
   return {
-    x: (targetX - worldPoint.x) * k,
-    y: (targetY - worldPoint.y) * k,
-    z: (targetZ - worldPoint.z) * k
+    lateral: along + normalOffset * Math.sin(theta),
+    normal: -inward + normalOffset * Math.cos(theta)
   };
 }
+
 
 // Replicates the panel geometry's section point (rawPanelPoint) on the main panel
 // frame, so width controls land on the geometry's real edges (width + depth curves,
@@ -585,22 +548,15 @@ function tipMainSectionPoint(lock, t, u, shell, bone, segmentIndex = -1, splits 
     : 0;
   const lateralTerm = lateralU * halfWidth + lateralCenter + centerX * profileTopologyCenterWeight(u, -1, 1);
   const normalTerm = camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1);
-  const point = origin.clone()
-    .addScaledVector(frame.x, lateralTerm)
-    .addScaledVector(frame.z, normalTerm);
-  // Scalp Conform（0.2.136）：位移在**世界空间**朝头部代理收敛，不再是沿 frame.z 的标量偏移。
-  // **delta 必须从「中面点」算**（shell 项归零），再原样加到本 shell 上 —— 若两壳各自朝代理
-  // 表面收，它们会收到同一张表面上、面板厚度被压成 0。这是本模型最容易踩的坑。
-  // amount == 0 时整段不执行 ⇒ 与引入前逐位相同（零分配路径）。
+  // Scalp Conform（0.2.138 Bend）：把 (lateralTerm, normalTerm) 这一对系数整体变换成弯曲后的
+  // 一对，**弯曲发生在面板自己的 (frame.x, frame.z) 平面内**，所以厚度/camber 随弯曲一起
+  // 旋转、不被剪切。amount == 0 时 offsets 为 null ⇒ 走原表达式、与引入前逐位相同。
+  // 与上一版（世界空间投影）的关键差别：**保弧长**，因此 width 不会被压缩。
   const conform = panelScalpConformParams(lock);
-  if (conform.amount !== 0) {
-    const midPoint = origin.clone()
-      .addScaledVector(frame.x, lateralTerm)
-      .addScaledVector(frame.z, camber);
-    const delta = panelScalpConformDelta(conform, midPoint, t);
-    if (delta) point.set(point.x + delta.x, point.y + delta.y, point.z + delta.z);
-  }
-  return point;
+  const offsets = panelScalpConformOffsets(conform, lateralTerm, normalTerm);
+  return origin.clone()
+    .addScaledVector(frame.x, offsets ? offsets.lateral : lateralTerm)
+    .addScaledVector(frame.z, offsets ? offsets.normal : normalTerm);
 }
 
 // 发尖子骨骼表面帧：在段中心 u=centerU 处用面板几何（含 camber/曲率）计算真正
@@ -1002,22 +958,15 @@ function createPanelStrandGeometry(lock) {
       : 0;
     const lateralTerm = lateralU * halfWidth + lateralCenter + centerX * profileTopologyCenterWeight(u, -1, 1);
     const normalTerm = camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1);
-    const point = frame.point.clone()
-      .addScaledVector(frame.x, lateralTerm)
-      .addScaledVector(frame.z, normalTerm);
-    // Scalp Conform（0.2.136）：世界空间朝头部代理收敛。**delta 从中面点算**（shell 项归零）
-    // 再原样加到本 shell —— 两壳各自收会把厚度压成 0（同步点：tipMainSectionPoint 同名注释）。
-    // amount == 0 时整段不执行 ⇒ 与引入前逐位相同（conform 在函数外一次算好，不分配）。
-    // sampleT 已含四个 Trim 的切向重参数化，收缩因此活在与扫掠面同一参数空间里
-    // （t == 0 处 sampleT 也是 0，根部守卫依然成立）。
-    if (conform.amount !== 0) {
-      const midPoint = frame.point.clone()
-        .addScaledVector(frame.x, lateralTerm)
-        .addScaledVector(frame.z, camber);
-      const delta = panelScalpConformDelta(conform, midPoint, sampleT);
-      if (delta) point.set(point.x + delta.x, point.y + delta.y, point.z + delta.z);
-    }
-    return point;
+    // Scalp Conform（0.2.138 Bend）：把 (lateralTerm, normalTerm) 整体变换成弯曲后的一对，
+    // 弯曲在面板自己的 (frame.x, frame.z) 平面内 ⇒ 厚度/camber 随弯曲旋转、不被剪切。
+    // 同步点：tipMainSectionPoint 的同名注释（那里是宽度把手的截面复刻，必须同规则）。
+    // amount == 0 时 offsets 为 null ⇒ 走原表达式、与引入前逐位相同（conform 在函数外一次
+    // 算好，不分配）。**保弧长**，所以 width 不会被压缩（上一版投影模型的病根）。
+    const offsets = panelScalpConformOffsets(conform, lateralTerm, normalTerm);
+    return frame.point.clone()
+      .addScaledVector(frame.x, offsets ? offsets.lateral : lateralTerm)
+      .addScaledVector(frame.z, offsets ? offsets.normal : normalTerm);
   };
   const panelPoint = (row, u, shell, bone = null, segment = -1) => {
     const t = rowParameters[row];
@@ -1241,7 +1190,7 @@ function createPanelStrandGeometry(lock) {
     // 半球参数/世界尺度的唯一定义点：导出供回归测试按**同一规则**推导期望值
     // （规范禁止把现场数值写死进测试，见 development-standards.md「验收脚本与真实存档解耦」）。
     panelScalpConformParams,
-    panelScalpConformDelta,
+    panelScalpConformOffsets,
     tipMainSectionPoint,
     tipSurfaceFrameAt,
     tipChainFrameAt,
