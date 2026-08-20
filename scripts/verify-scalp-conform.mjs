@@ -384,12 +384,11 @@ try {
     ratios.length > 0 && minRatio > 0.96,
     `跨度比值 ${minRatio.toFixed(3)}..${maxRatio.toFixed(3)}（${ratios.length} 行）`);
 
-  // **已知残留**：camber 是"偏离中性面 n 的偏移"，弯曲时其弧长按 (1 + n·k) 放大。
-  // 本 panel camber = curvature·halfWidth = 0.18·2.5 = 0.45、k ≈ 1/1.05 ⇒ 峰值放大 ~1.43。
-  // 所以跨度会**偏大**而不是偏小。这条只报告数值、不作为失败判据 —— 方向与用户报告的
-  // "坍缩"相反，且是否需要修正（把 camber 折进弧长参数化）要由观感决定。
-  console.log(`  [info] 跨度上限比值 ${maxRatio.toFixed(3)}`
-    + ` —— camber 偏移导致的 offset-curve 拉伸，理论值 1 + camber·k`);
+  // 0.2.139 起 camber 已折进弧长参数化（曲率相加），所以跨度**两侧都**该贴近 1：
+  // 下限受离散折线内接圆弧影响（略小于 1），上限不应再明显大于 1。
+  // 0.2.138 曾因把 camber 当刚性偏移旋转而实测上限 1.259（offset curve 按 1+n·k 放大）。
+  check("跨度也不得反而变长（camber 已折进弧长参数化）", maxRatio < 1.02,
+    `跨度上限比值 ${maxRatio.toFixed(3)}（0.2.138 实测 1.259）`);
 
   // 面板起始在头前方 ⇒ 弯曲后中线仍在原处（s=0 零位移，这正是主发片控制点对齐的依据），
   // 但整体应更贴合头形：报告首末行距头心距离供观察。

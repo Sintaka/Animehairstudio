@@ -13,7 +13,7 @@ import {
   STRAND_SEGMENT_HOST
 } from "./bone-model.js?v=20260901-1";
 import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260901-1";
-import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260910-3";
+import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260910-4";
 import {
   strandTipClumpAxis,
   strandTipWidthControlPlacement,

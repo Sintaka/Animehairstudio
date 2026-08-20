@@ -9,7 +9,7 @@
 // 的左界是 splits[i-1]、右界是 splits[i]」，因此只要调用方先把高度取出来，这里的推导对
 // 两侧完全一致。
 import * as THREE from "three";
-import { sampleTaperCurve } from "./curve-math.js?v=20260910-3";
+import { sampleTaperCurve } from "./curve-math.js?v=20260910-4";
 // SPREAD_MAX 的唯一定义点在 bone-model（spread 的定义域上界）。此处真 import 而非复制
 // 0.99：tipClumpNarrowFraction 是 Tip Clump 收窄比例的单点定义，钳位必须与写入侧同界。
 // 无循环依赖：bone-model 只 import three。

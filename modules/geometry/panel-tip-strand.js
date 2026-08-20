@@ -3,13 +3,13 @@
 import * as THREE from "three";
 import {
   PANEL_SCALP_CONFORM_DEFAULTS,
-  panelBendCoefficients,
+  panelBendCrossSection,
   panelTipCurveParameter,
   panelTipLoopParameters,
   profileTopologyCenterWeight,
   sampleArray,
   sampleAsymmetricTaperCurve
-} from "./curve-math.js?v=20260910-3";
+} from "./curve-math.js?v=20260910-4";
 
 // 头部代理的兜底参数：与 app.js 的 `scalpSurface = { x:0, y:0.9, z:0, radius:1, scaleXYZ:1 }`
 // 同值。**优先用注入的 deps.scalpSurface（真实运行时状态，跟随用户调整头模）**，
@@ -488,21 +488,20 @@ function panelScalpConformParams(lock) {
   };
 }
 
-// Bend 后的两个系数：把「原本要乘到 frame.x 的横向量 s」与「原本要乘到 frame.z 的法向量
-// normalOffset」一起变换成弯曲后的一对系数。调用方用法：
-//   point = origin + lateral·frame.x + normal·frame.z
-// 这样**弯曲发生在面板自己的 (frame.x, frame.z) 平面内** —— 正是用户要的「边缘按照宽度和
-// 主发片原本的法向构成一个 Capsule 面」。厚度/camber 项因此**随弯曲一起旋转**（乘的是
-// 旋转后的法向 sin θ·T + cos θ·N），不会被剪切成斜的。
-// 返回 null = 无弯曲（amount==0），让调用方走零分配路径并保持逐位守恒。
-function panelScalpConformOffsets(params, s, normalOffset) {
+// Bend 后的一对系数（调用方用法：`point = origin + lateral·frame.x + normal·frame.z`）。
+// 0.2.139 起 **camber 折进截面曲线本身**：`sample(v)` 必须返回该 v 处的**中面**
+// `{ lateral, normal }`（含 camber、不含 shell 厚度），本函数把该截面曲线弯到额外曲率
+// `k = amount / bendRadius` 上并**严格保弧长**（离散逐段保长，见 curve-math 的推导）。
+// `shellOffset` 是"中面之外"的部分（shell·thickness/2 + centerZ 权重），沿**弯后法向**
+// 放上去，因此厚度不被剪切。
+// 返回 null = 无弯曲（amount==0），让调用方走原表达式、保持逐位守恒。
+function panelScalpConformOffsets(params, sample, u, shellOffset) {
   if (!params || params.amount === 0) return null;
   const k = params.amount / params.bendRadius;
-  const { along, inward } = panelBendCoefficients(s, k);
-  const theta = k * s;
+  const bent = panelBendCrossSection(sample, u, k);
   return {
-    lateral: along + normalOffset * Math.sin(theta),
-    normal: -inward + normalOffset * Math.cos(theta)
+    lateral: bent.lateral - shellOffset * Math.sin(bent.angle),
+    normal: bent.normal + shellOffset * Math.cos(bent.angle)
   };
 }
 
@@ -522,41 +521,55 @@ function tipMainSectionPoint(lock, t, u, shell, bone, segmentIndex = -1, splits 
     shell,
     t
   ));
-  let camber = Number(lock.panelCurvature ?? 0.18) * halfWidth * (1 - u * u);
-  // A segment's width is measured from ITS OWN center (the tip sub-bone): the lateral
-  // extent is (u - centerU) plus a constant alignment so the segment center sits where
-  // the main panel puts it (zipper walls stay flush). The camber stays on the GLOBAL
-  // profile, so the tip WidthCurve only changes the width (lateral), and dragging the
-  // control moves it along the tip sub-bone's width axis - not the main bone's line.
-  let lateralU = u;
-  let lateralCenter = 0;
-  if (segmentIndex >= 0 && splits && splits.length) {
-    const boundaries = [-1, ...splits.map((split) => split.position), 1];
-    if (segmentIndex < boundaries.length - 1) {
-      const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
-      const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
-      lateralU = u - centerU;
-      lateralCenter = centerU * fullWidth * tipWidthMultiplierAt(lock, t, centerU, null, -1, splits) * 0.5;
-      camber = Number(lock.panelCurvature ?? 0.18) * fullWidth * tipWidthMultiplierAt(lock, t, u, null, -1, splits) * 0.5 * (1 - u * u);
-    }
-  }
   const centerX = lock.centerAsymmetricProfile && (bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve)
     ? (tipPanelWidthAt(lock, t, 1, bone, segmentIndex, splits) - tipPanelWidthAt(lock, t, -1, bone, segmentIndex, splits)) * 0.25
     : 0;
   const centerZ = lock.centerAsymmetricProfile && (bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve)
     ? (tipPanelWidthAt(lock, t, 1, bone, segmentIndex, splits) - tipPanelWidthAt(lock, t, -1, bone, segmentIndex, splits)) * 0.25
     : 0;
-  const lateralTerm = lateralU * halfWidth + lateralCenter + centerX * profileTopologyCenterWeight(u, -1, 1);
-  const normalTerm = camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1);
-  // Scalp Conform（0.2.138 Bend）：把 (lateralTerm, normalTerm) 这一对系数整体变换成弯曲后的
-  // 一对，**弯曲发生在面板自己的 (frame.x, frame.z) 平面内**，所以厚度/camber 随弯曲一起
-  // 旋转、不被剪切。amount == 0 时 offsets 为 null ⇒ 走原表达式、与引入前逐位相同。
-  // 与上一版（世界空间投影）的关键差别：**保弧长**，因此 width 不会被压缩。
+  // 中面截面曲线（含 camber、**不含** shell 厚度），按 v 参数化 —— Scalp Conform 的弧长
+  // 参数化需要在 [0, u] 上采样它，所以这段逻辑必须是个函数而不是一次性表达式。
+  // A segment's width is measured from ITS OWN center (the tip sub-bone): the lateral
+  // extent is (u - centerU) plus a constant alignment so the segment center sits where
+  // the main panel puts it (zipper walls stay flush). The camber stays on the GLOBAL
+  // profile, so the tip WidthCurve only changes the width (lateral), and dragging the
+  // control moves it along the tip sub-bone's width axis - not the main bone's line.
+  const midAt = (v) => {
+    const halfWidthAtV = tipPanelWidthAt(lock, t, v, bone, segmentIndex, splits) * 0.5;
+    let camber = Number(lock.panelCurvature ?? 0.18) * halfWidthAtV * (1 - v * v);
+    let lateralU = v;
+    let lateralCenter = 0;
+    if (segmentIndex >= 0 && splits && splits.length) {
+      const boundaries = [-1, ...splits.map((split) => split.position), 1];
+      if (segmentIndex < boundaries.length - 1) {
+        const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
+        const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
+        lateralU = v - centerU;
+        lateralCenter = centerU * fullWidth * tipWidthMultiplierAt(lock, t, centerU, null, -1, splits) * 0.5;
+        camber = Number(lock.panelCurvature ?? 0.18) * fullWidth * tipWidthMultiplierAt(lock, t, v, null, -1, splits) * 0.5 * (1 - v * v);
+      }
+    }
+    return {
+      lateral: lateralU * halfWidthAtV + lateralCenter + centerX * profileTopologyCenterWeight(v, -1, 1),
+      normal: camber
+    };
+  };
+  const mid = midAt(u);
+  const shellOffset = shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1);
+  // Scalp Conform（0.2.139 弧长参数化 Bend）：camber 已折进 midAt 的截面曲线，弯曲**严格
+  // 保弧长**（离散逐段保长）。amount == 0 时 offsets 为 null ⇒ 走下面的原表达式。
+  // **那条原表达式刻意写成 `mid.normal + shell*… + centerZ*…` 而不复用 shellOffset**：
+  // 左结合顺序必须与 0.2.138 前逐字节一致，否则 `amount==0` 的逐位守恒契约会在末位破掉。
   const conform = panelScalpConformParams(lock);
-  const offsets = panelScalpConformOffsets(conform, lateralTerm, normalTerm);
+  const offsets = panelScalpConformOffsets(conform, midAt, u, shellOffset);
   return origin.clone()
-    .addScaledVector(frame.x, offsets ? offsets.lateral : lateralTerm)
-    .addScaledVector(frame.z, offsets ? offsets.normal : normalTerm);
+    .addScaledVector(frame.x, offsets ? offsets.lateral : mid.lateral)
+    .addScaledVector(
+      frame.z,
+      offsets
+        ? offsets.normal
+        : mid.normal + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1)
+    );
 }
 
 // 发尖子骨骼表面帧：在段中心 u=centerU 处用面板几何（含 camber/曲率）计算真正
@@ -934,39 +947,49 @@ function createPanelStrandGeometry(lock) {
     const frame = panelFrameAt(sampleT);
     const width = panelWidthAt(sampleT, u, bone, segment);
     const thickness = panelThicknessAt(sampleT, shell, bone);
-    const halfWidth = width * 0.5;
-    let camber = curvature * halfWidth * (1 - u * u);
-    // A segment's width is measured from ITS OWN center (the tip sub-bone): the lateral
-    // extent is (u - centerU) plus a constant alignment, and the camber stays on the
-    // GLOBAL profile, so width edits move the mesh edge along the tip's own width axis
-    // (not the main bone's line) without kinking at the zipper walls.
-    let lateralU = u;
-    let lateralCenter = 0;
-    if (segment >= 0 && segment < boundaries.length - 1) {
-      const centerU = (boundaries[segment] + boundaries[segment + 1]) * 0.5;
-      lateralU = u - centerU;
-      lateralCenter = centerU * fullWidth * tipWidthMultiplierAt(lock, sampleT, centerU, null, -1, splits) * 0.5;
-      // The camber stays on the GLOBAL profile: width edits change only the lateral
-      // extent (tip sub-bone), so the edge moves along the tip's width axis.
-      camber = curvature * fullWidth * tipWidthMultiplierAt(lock, sampleT, u, null, -1, splits) * 0.5 * (1 - u * u);
-    }
     const centerX = lock.centerAsymmetricProfile && (bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve)
       ? (panelWidthAt(sampleT, 1, bone, segment) - panelWidthAt(sampleT, -1, bone, segment)) * 0.25
       : 0;
     const centerZ = lock.centerAsymmetricProfile && (bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve)
       ? (panelThicknessAt(sampleT, 1, bone) - panelThicknessAt(sampleT, -1, bone)) * 0.25
       : 0;
-    const lateralTerm = lateralU * halfWidth + lateralCenter + centerX * profileTopologyCenterWeight(u, -1, 1);
-    const normalTerm = camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1);
-    // Scalp Conform（0.2.138 Bend）：把 (lateralTerm, normalTerm) 整体变换成弯曲后的一对，
-    // 弯曲在面板自己的 (frame.x, frame.z) 平面内 ⇒ 厚度/camber 随弯曲旋转、不被剪切。
-    // 同步点：tipMainSectionPoint 的同名注释（那里是宽度把手的截面复刻，必须同规则）。
-    // amount == 0 时 offsets 为 null ⇒ 走原表达式、与引入前逐位相同（conform 在函数外一次
-    // 算好，不分配）。**保弧长**，所以 width 不会被压缩（上一版投影模型的病根）。
-    const offsets = panelScalpConformOffsets(conform, lateralTerm, normalTerm);
+    // 中面截面曲线（含 camber、**不含** shell 厚度），按 v 参数化 —— 弧长参数化的 Bend 需要
+    // 在 [0, u] 上采样它。同步点：tipMainSectionPoint 的 midAt（宽度把手的截面复刻，同规则）。
+    // A segment's width is measured from ITS OWN center (the tip sub-bone): the lateral
+    // extent is (u - centerU) plus a constant alignment, and the camber stays on the
+    // GLOBAL profile, so width edits move the mesh edge along the tip's own width axis
+    // (not the main bone's line) without kinking at the zipper walls.
+    const midAt = (v) => {
+      const halfWidthAtV = panelWidthAt(sampleT, v, bone, segment) * 0.5;
+      let camber = curvature * halfWidthAtV * (1 - v * v);
+      let lateralU = v;
+      let lateralCenter = 0;
+      if (segment >= 0 && segment < boundaries.length - 1) {
+        const centerU = (boundaries[segment] + boundaries[segment + 1]) * 0.5;
+        lateralU = v - centerU;
+        lateralCenter = centerU * fullWidth * tipWidthMultiplierAt(lock, sampleT, centerU, null, -1, splits) * 0.5;
+        camber = curvature * fullWidth * tipWidthMultiplierAt(lock, sampleT, v, null, -1, splits) * 0.5 * (1 - v * v);
+      }
+      return {
+        lateral: lateralU * halfWidthAtV + lateralCenter + centerX * profileTopologyCenterWeight(v, -1, 1),
+        normal: camber
+      };
+    };
+    const mid = midAt(u);
+    const shellOffset = shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1);
+    // Scalp Conform（0.2.139 弧长参数化 Bend）：camber 已折进 midAt 的截面曲线，弯曲**严格
+    // 保弧长**。amount == 0 ⇒ offsets 为 null ⇒ 走原表达式（conform 在函数外一次算好，不分配）。
+    // **原表达式刻意不复用 shellOffset**：左结合顺序必须与 0.2.138 前逐字节一致，否则
+    // `amount==0` 的逐位守恒契约会在末位破掉。
+    const offsets = panelScalpConformOffsets(conform, midAt, u, shellOffset);
     return frame.point.clone()
-      .addScaledVector(frame.x, offsets ? offsets.lateral : lateralTerm)
-      .addScaledVector(frame.z, offsets ? offsets.normal : normalTerm);
+      .addScaledVector(frame.x, offsets ? offsets.lateral : mid.lateral)
+      .addScaledVector(
+        frame.z,
+        offsets
+          ? offsets.normal
+          : mid.normal + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1)
+      );
   };
   const panelPoint = (row, u, shell, bone = null, segment = -1) => {
     const t = rowParameters[row];

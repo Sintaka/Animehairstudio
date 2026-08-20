@@ -338,29 +338,59 @@ export const PANEL_SCALP_CONFORM_DEFAULTS = Object.freeze({
 // 于 gridUvTable 签名里），把"几何动"与"UV 变"解耦；尚未实现，需先与用户确认观感取舍。
 // 单一定义点：本函数是弯曲公式的唯一实现，几何与控制器都必须经它取位移。
 
-// Bend 的两个系数：把「沿宽度方向的弧长坐标 s」变成「沿 T 走多少 + 朝 N 收多少」。
-//   along  = sin(k·s) / k   （k → 0 时 → s）
-//   inward = (1 − cos(k·s)) / k   （k → 0 时 → 0）
-// 调用方：`P = base + along·T − inward·N`。返回系数而不是直接返回点，是为了让几何层与
-// 控制器层共用同一个公式却各自用自己的 T/N（纯函数、可在无场景图的 node 测试里验证）。
+// 把面板的**平截面曲线**弯到额外曲率 k 上，**严格保弧长**。
 //
-// **保弧长的推导**（这是本模型存在的理由，必须能复核）：
-//   dP/ds = cos(k·s)·T − sin(k·s)·N，而 T ⟂ N 且都是单位向量
-//   ⇒ |dP/ds|² = cos² + sin² = 1  ⇒ 弧长按 s 逐一对应，不被压缩。
+// 0.2.139 起 camber 被**折进截面曲线本身**（不再当作"沿法线的刚性偏移"）。上一版把
+// (lateral, camber) 当成一对系数整体旋转，那等价于弯一条 offset curve —— 偏离中性面 n 的
+// 部分弧长按 `(1 + n·k)` 放大，实测宽面板中面弧长 +26.5%（用户要的是"保持长度"）。
 //
-// `k` 极小时走**解析退化分支**而不是硬算：`sin(k·s)/k` 在 k→0 时是 0/0，浮点上会先
-// 损失精度再放大。阈值 1e-9 远小于任何真实曲率（R=1、amount=1e-6 时 k=1e-6），
-// 所以正常参数永远走主分支；该分支只为「amount 恰好为 0」与极端小值兜底，
-// 且**必须逐位返回 s / 0**，否则 amount=0 的逐位守恒契约会破。
-export function panelBendCoefficients(s, curvature) {
-  const arc = Number(s) || 0;
+// **做法：离散曲率相加**。把平截面在 [0, u] 上采成折线，逐段保长、只把每段方向按该段
+// 中点处的累计弧长旋转 `−k·σ`：
+//   σ 累计有符号弧长，seg' = rot(seg, −k·σ_mid)，P = C(0) + Σ seg'
+// **保弧长是逐段构造出来的**（每段长度一字不改，只转方向），不依赖积分精度 —— 这比
+// "连续意义上保弧长"强：离散折线长度也精确守恒，而 UV 的 U 正是逐段弦长累加。
+//
+// 与上一版的一致性：camber ≡ 0 时截面是直线，本式退化为
+// `along = sin(kσ)/k, inward = (1−cos kσ)/k`（n→∞），即上一版公式。
+//
+// `sample(v)` 返回该 v 处平截面的 `{ lateral, normal }`（面板自己的 frame.x / frame.z 分量）。
+// 返回 `{ lateral, normal, angle }`：弯后中面点 + 弯后切向角，调用方用 angle 把厚度沿
+// **弯后法向** `(−sin angle, cos angle)` 放上去（这样厚度不被剪切）。
+//
+// k 极小时**逐位返回 sample(u)**：amount==0 的逐位守恒契约建立在这上面（阈值 1e-9 远小于
+// 任何真实曲率，正常参数永远走主分支）。
+export function panelBendCrossSection(sample, u, curvature, steps = 16) {
+  const target = Number(u) || 0;
   const k = Number(curvature) || 0;
-  if (Math.abs(k) < 1e-9) return { along: arc, inward: 0 };
-  const theta = k * arc;
-  return {
-    along: Math.sin(theta) / k,
-    inward: (1 - Math.cos(theta)) / k
-  };
+  if (Math.abs(k) < 1e-9 || target === 0) {
+    const flat = sample(target);
+    return { lateral: flat.lateral, normal: flat.normal, angle: 0 };
+  }
+  const n = Math.max(4, Math.round(steps));
+  const direction = target < 0 ? -1 : 1;
+  let previous = sample(0);
+  let x = previous.lateral;
+  let z = previous.normal;
+  let sigma = 0;
+  let angle = 0;
+  for (let i = 1; i <= n; i += 1) {
+    const current = sample((target * i) / n);
+    const dx = current.lateral - previous.lateral;
+    const dz = current.normal - previous.normal;
+    const length = Math.hypot(dx, dz);
+    if (length > 0) {
+      // 该段中点处的累计有符号弧长 ⇒ 旋转角。负号让弯曲朝 −normal 一侧（贴向头皮）。
+      const rotation = -k * (sigma + direction * length * 0.5);
+      const cos = Math.cos(rotation);
+      const sin = Math.sin(rotation);
+      x += dx * cos - dz * sin;
+      z += dx * sin + dz * cos;
+      sigma += direction * length;
+      angle = Math.atan2(dz, dx) + rotation;
+    }
+    previous = current;
+  }
+  return { lateral: x, normal: z, angle };
 }
 
 export function panelTipLoopParameters(baseLoopCount, extraTipLoops = 0, tipStart = 0.55) {

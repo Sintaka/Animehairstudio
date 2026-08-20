@@ -3,7 +3,7 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-3";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-4";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
 import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-1";
@@ -109,7 +109,7 @@ import {
   // Scalp Conform 的默认值：**唯一定义点在 curve-math.js**。import 而不是抄写 —— 抄写会让
   // 默认值变成多个定义点（0.2.137 初版在此硬写过三处上限，已改为 import）。
   PANEL_SCALP_CONFORM_DEFAULTS
-} from "./modules/geometry/curve-math.js?v=20260910-3";
+} from "./modules/geometry/curve-math.js?v=20260910-4";
 import {
   curveLatticeLoopPointIndices,
   DEFAULT_CURVE_LATTICE_PLANE,
