@@ -1,4 +1,4 @@
-﻿# clump/procedural 迁出 — 函数引用图（批次 B6）
+# clump/procedural 迁出 — 函数引用图（批次 B6）
 
 > 只读盘点：2026-08-12 · 分支 `0.2.59-refactor` · **工作区 app.js 22,689 行**（FUNCTION_INDEX.json 快照 23,071 行已过时——B2-2 placement.js 正在工作区迁出未提交；本表已按当前工作区逐函数名重新锚定）。未改动 app.js/modules/*。
 > 口径：行号全部为当前工作区实测；毛行 = 函数体大括号精确匹配（含行内注释/空行，不含夹层）。

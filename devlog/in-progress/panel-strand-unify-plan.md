@@ -1,5 +1,27 @@
 # Panel ↔ 普通发丝统一（发尖子骨骼普适化）计划
 
+> ## 状态总览（0.2.126 更新）
+>
+> **Route 1 / Route 2 均已实现（0.2.62）**，此后统一工作又推进了三轮。**本文 §1–§5 是 0.2.62 的计划期内容**，读时注意下表：
+>
+> | 统一项 | 状态 | 落点 / 权威文档 |
+> |---|---|---|
+> | Route 1：普通发丝**单**尖端子骨骼 | ✅ 0.2.62 | `lock.strandTip`/`strandTipStart`；`modules/geometry/tip-sub-bone.js` |
+> | Route 2：split 发丝**每管**子骨骼 | ✅ 0.2.62 | `lock.strandSplitBones`（0.2.116 起 2 → N+1 管） |
+> | 段数 / 段骨骼 / 段号钳位的单一分派 | ✅ 0.2.125 | `bone-model.js` 的 `PANEL_SEGMENT_HOST`/`STRAND_SEGMENT_HOST` + `segmentBoneHost` + `resolveSegmentSelection` |
+> | 每段（每管）编辑 UI | ✅ 0.2.125 | `segment-control.js` 的 `syncSegmentControls(target, host)` + `segmentUi(host)` |
+> | 发尖 **WidthCurve** 曲线数学 | ✅ 0.2.125 | 共享层 `modules/geometry/tip-width-curve.js`（以相邻 zipper 高度为入参）+ 发丝侧 `strand-tip-width.js`；见 [strand-tip-width-ui-port-plan.md](strand-tip-width-ui-port-plan.md) |
+> | 发尖 **选中系统**（选中/悬停/gizmo/笔刷/把手） | ✅ 0.2.126 | `modules/bones/tip-sub-bone-host.js` 的 `resolveTipHost`；状态键 `tipSelection`/`tipHover`；见 [strand-tip-selection-port-plan.md](strand-tip-selection-port-plan.md) |
+>
+> **仍未做 / 刻意不做**：
+> - **统一骨骼 registry 收纳发尖**：`strandTip` 仍是顶层字段、未并入统一 registry（§5.2 末尾即如此计划，延后至今）。
+> - **§0 的 `scale` 占位字段删除**：计划写「顺手删除」，**未执行**——`bone-model.js` 中该字段仍在。删前需确认 USDA 导出不引用。
+> - **N>2 split 发丝的子发片桥接**：门控禁用（见 [strand-zipper-port-plan.md](strand-zipper-port-plan.md) Phase F）。
+> - **strand 拉链 snap-to-loops**：判定为非缺口（发丝无纵向 loop 拓扑可吸附）。
+> - **曲率收窄 `factors` 在发丝侧的把手复现**：刻意不做，取舍写在 strand-tip-width.js（`STRAND_TIP_WIDTH_FACTORS_APPROXIMATION = 1`）。
+>
+> 残余重复推导规则的审计见 [tip-subsystem-reuse-audit.md](tip-subsystem-reuse-audit.md)。
+
 > 分支：`0.2.62-panel-strand-unify`。本文件是「先统一 panel 和普通发丝，骨骼系统随普适化同步成型」的实施计划骨架，供接手 agent 补齐细节。
 > 前置评估（已落盘）：`devlog/in-progress/unified-bone-model.md` §6（panel/strand 兼容 + tip 迁移 + 骨骼统一）；app.js 瘦身结论见 `devlog/APPJS_SPLIT_GUIDE.md` §8（已判定不再瘦身）。
 

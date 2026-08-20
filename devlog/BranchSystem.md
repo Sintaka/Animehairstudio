@@ -1,4 +1,4 @@
-﻿# 子发片系统架构 / BRANCH SYSTEM ARCHITECTURE
+# 子发片系统架构 / BRANCH SYSTEM ARCHITECTURE
 
 > 3d-3（子发片桥接系统迁出）的前置梳理。子发片系统是 app.js 中最独立的大块（93 个核心函数），但内部深交织。本文档给出数据流、子系统划分、依赖清单与拆分方案。
 

@@ -6,6 +6,14 @@ import * as THREE from "three";
 
 const clamp = THREE.MathUtils.clamp;
 
+// 绿色 Tip Clump 手柄沿尖端切线方向的外推距离（世界单位）：让手柄落在 trim/curve 适配后的
+// 最尖端稍前方，避免与粉色/黄色发尖子骨骼手柄重合而难以拖拽。
+// **唯一定义点**（0.2.130 起）：此前只是 bone-view-handles.js 的一个模块局部常量，够用是
+// 因为 panel 的拖拽扫描刻意**不**含这个偏移（扫描基线在 panelSplitControlPoint 上）。发丝把
+// 偏移烘进了共享的 tipClumpAxis（绘制与扫描同一条线段，见 strand-tip-width.js），于是
+// 常量被两个模块消费 —— 放到几何原语层，两边都 import，不留第二份字面量。
+export const TIP_CLUMP_HANDLE_TANGENT_OFFSET = 0.08;
+
 function isValidTip(tip) {
   return Boolean(tip) && Array.isArray(tip.points) && tip.points.length >= 2;
 }
@@ -81,6 +89,22 @@ export function tipChainFrameAt(restTip, tip, t, referenceFrame) {
   z.normalize();
   const x = new THREE.Vector3().crossVectors(y, z).normalize();
   return { x, y, z };
+}
+
+// 「发尖链第一个暴露点」的**唯一定义点**（standards「一条推导规则只准有一个定义点」）。
+// floor 而非 round/ceil：fork 那一行本身属于暴露子链（0.2.119 结论，比旧的严格 t > forkT
+// 多一行），round 在 frac>0.5 时会让骨骼根落到自己第一个暴露子节点之上（6 个常见 zipper
+// 高度里 4 个会错）。下限钳到 1：index 0 是链根、钉在主链上，永远不能变成可编辑子骨骼点；
+// 上限钳到 count-1 保证 fork≥1（本侧完全锁死）时不越界，此时暴露区只剩末点。
+// 本函数替代了此前散在四处的同一表达式（视口把手 / 引导线 / gizmo translate / 笔刷），
+// 消费方清单（改这里必须回看全部）：
+//   - modules/bones/bone-view-handles.js  发尖链把手可见性 + 引导线切片
+//   - modules/bones/bone-interaction.js   gizmo translate 求解根 + 笔刷影响区间
+//   - modules/io/usda-export.js           splitChainLayout / splitParentMainIndex（同规则，
+//     那边按导出结构自行实现，行号见 development-standards 0.2.119 行；数值必须一致）
+export function firstExposedTipChainIndex(forkT, pointCount) {
+  const last = Math.max(1, Math.floor(Number(pointCount) || 0) - 1);
+  return Math.min(last, Math.max(1, Math.floor(Number(forkT) * last)));
 }
 
 // t-only geometry blend: 0 before tipStart, ramping linearly to 1 at the strand end.

@@ -1,4 +1,4 @@
-﻿// gen-let-inventory.js — inventory of app.js top-level `let` (global mutable state):
+// gen-let-inventory.js — inventory of app.js top-level `let` (global mutable state):
 // name / defineLine / readRefs / writeRefs / span / keyword bucket.
 // Emits devlog/GLOBAL_LET_INVENTORY.md + .json. Run: node scripts/gen-let-inventory.js
 const fs = require("fs");

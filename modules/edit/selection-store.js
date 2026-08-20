@@ -1,4 +1,4 @@
-﻿// selection-store.js — selection/outliner scene state (refactor stage 3b).
+// selection-store.js — selection/outliner scene state (refactor stage 3b).
 // Pairs with io/project-state.js createProjectSelectionSnapshot: selectionSnapshot()
 // returns exactly the fields that function expects.
 import { createSceneStore } from "../core/scene-store.js?v=20260809-1";

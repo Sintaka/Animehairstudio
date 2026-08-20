@@ -1,8 +1,23 @@
 // bone-interaction.js - Bone gizmo / handle drag / brush interaction (refactor bones B2).
 // Extracted from app.js; coupling injected via createXxxApi(deps).
 import * as THREE from "three";
-import { splitBonesFor, materializeSplitBones } from "./bone-model.js?v=20260813-1";
-import { materializeStrandSplitBones } from "./bone-model.js?v=20260813-1";
+import { materializeSplitBones } from "./bone-model.js?v=20260901-1";
+import {
+  materializeStrandSplitBones,
+  segmentBoneHost,
+  strandSplitsFor,
+  SPREAD_MAX,
+  STRAND_SEGMENT_HOST
+} from "./bone-model.js?v=20260901-1";
+import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260901-1";
+import { firstExposedTipChainIndex } from "../geometry/tip-sub-bone.js?v=20260830-1";
+import {
+  setStrandTipWidthCurveValue,
+  strandTipClumpAxis,
+  strandTipWidthControlPlacement,
+  strandTipWidthEdgePosition,
+  strandTipWidthMultiplierAt
+} from "../geometry/strand-tip-width.js?v=20260901-1";
 import { leafIndexAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { sculptTwistBrushDeltas, smoothSculptPointDeltas, resolveFrozenTwistStrokeWeights } from "../sculpt/sculpt-brush.js?v=20260814-12";
 import { solvePulledStrand } from "../geometry/strand-constraints.js?v=20260814-12";
@@ -20,60 +35,122 @@ import { solvePulledStrand } from "../geometry/strand-constraints.js?v=20260814-
 //   strandGeometryCurve/strandSplitProfileData/strandSplitControlPoint/panelSplitControlPoint).
 // Batch-fill point in app.js: after the taperEditorDeps batch (all deps defined).
 export function createBoneInteractionApi(deps) {
-function beginTipSubBoneRotate(handle) {
+// 发丝发尖 WidthCurve placement 的几何 dep 组。同规则同步点：
+// bone-view-handles.js 有一份同名同形的转发 —— 把手位置（那边）与拖拽基准/读值（这边）
+// 必须来自**同一条变换链**，否则一按下就会跳。改一处必须改两处。
+// strandSplitTipChains 是第五项（0.2.127）：把手要跟着被拖动的发尖子骨骼链走，链只能取
+// currentStrandSplitTipChains（0.2.120 物化空间真源）。
+function strandTipWidthGeoDeps() {
+  return {
+    strandGeometryCurve: deps.strandGeometryCurve,
+    strandGeometryFrameAt: deps.strandGeometryFrameAt,
+    strandProfileTopologyAt: deps.strandProfileTopologyAt,
+    strandSplitProfileData: deps.strandSplitProfileData,
+    strandSplitTipChains: (lock) => deps.currentStrandSplitTipChains(lock)
+  };
+}
+
+// 发尖子骨骼宿主适配器（见 tip-sub-bone-host.js）。同规则同步点：bone-view-handles.js 用
+// **同样的五项** deps 构造同一个 API —— 把手放置（那边）与编辑基准（这边）必须来自同一条
+// 变换链，否则一按下就跳。改一处必须改两处。
+// **五项都必须惰性求值**（getter / 箭头包一层）：本 API 在 app.js 顶部即被构造
+// （createBoneInteractionApi），deps 要到后面的 Object.assign 批次才填满，直接快照
+// `deps.panelTipStrand` 会存下 undefined，之后每次取 panel 发尖链都 TypeError。
+const { resolveTipHost } = createTipSubBoneHostApi({
+  get panelTipStrand() { return deps.panelTipStrand; },
+  clonePanelSplits: (...args) => deps.clonePanelSplits(...args),
+  currentStrandSplitTipChains: (lock) => deps.currentStrandSplitTipChains(lock),
+  strandGeometryCurve: (lock) => deps.strandGeometryCurve(lock),
+  strandGeometryFrameAt: (...args) => deps.strandGeometryFrameAt(...args)
+});
+
+// 发尖子骨骼编辑的公共前置（0.2.126）：解析宿主 → 取**活**骨骼 → 取**物化**发尖链。
+// 五条编辑路径共用（rotate 起始 / translate 起始 / gizmo 应用 / 视平面拖拽 / 笔刷），
+// 替代此前每条各写一遍的 panel 专用三连（clonePanelSplits + materializeSplitBones +
+// panelTipStrand.splitTipForSegment）—— 那三连对发丝是错的：clonePanelSplits 会凭空造出
+// 与真实 zipper 无关的假 panelSplits，materializeSplitBones 写的是 lock.splitBones（发丝
+// 的段骨骼在 lock.strandSplitBones）。
+// materialize: true 是必需的 —— 只读的 bonesFor 返回派生副本，写进去的 bone.tip 会被丢弃。
+function tipEditContext(handle) {
   const lock = deps.locks.find((item) => item.id === handle?.userData?.lockId);
-  const segment = handle?.userData?.panelTipIndex;
-  const point = handle?.userData?.panelTipPoint;
-  if (!lock || segment == null || point == null) return;
-  const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-  const bones = materializeSplitBones(lock);
-  const bone = bones[segment];
-  if (!bone) return;
-  const tip = deps.panelTipStrand.splitTipForSegment(lock, segment, splits, bone);
-  if (!tip || point >= tip.points.length) return;
-  // 确保有 authored tip 状态（与视平面拖拽相同：points/restPoints 快照）。
-  if (!bone.tip || !Array.isArray(bone.tip.points) || bone.tip.points.length !== tip.points.length) {
-    bone.tip = {
-      points: tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-      restPoints: tip.restPoints.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-      active: true
-    };
-  }
+  const segment = handle?.userData?.tipSegmentIndex;
+  const point = handle?.userData?.tipChainPoint;
+  if (!lock || segment == null || point == null) return null;
+  const host = resolveTipHost(lock, { materialize: true });
+  if (!host) return null;
+  const bone = host.bones?.[segment];
+  if (!bone) return null;
+  const tip = host.tipChainFor(segment);
+  if (!tip || !Array.isArray(tip.points) || !Array.isArray(tip.restPoints) || point >= tip.points.length) return null;
+  return { lock, host, segment, point, bone, tip };
+}
+
+// 拖拽起始快照的**唯一**取值口径（0.2.120 物化空间规则）：
+//   startPoints ← 物化链 tip.points（视口所画、也是 handle.position 所在的空间）
+//   restPoints  ← 物化链 tip.restPoints（同一次物化的 rest 基准）
+// 两者成对取自**同一次** materialize，所以「编辑后写回 authored.points=结果 /
+// authored.restPoints=这份 rest」是自洽的（delta 重叠加为恒等）。
+// **刻意不再读 bone.tip.points 当种子**（此前 panel 的 rotate/translate 都读它）：那是
+// **旧** rest 基准下的陈旧绝对坐标，而 handle.position / gizmo 增量都在物化空间 —— 两者混
+// 用时，只要 rest 自上次创作后动过（主链编辑、zipper 位置/高度、spread、面板宽度、发丝
+// Split Spacing 都会动 rest），一按下就会跳，跳回量恰等于 rest 位移（bug-fixes #16 同类）。
+// rest 未变时物化值与 authored 逐值相同，故对既有 panel 工程行为不变。
+function tipDragSnapshot(tip) {
+  return {
+    startPoints: tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+    restPoints: tip.restPoints.map((p) => ({ x: p.x, y: p.y, z: p.z }))
+  };
+}
+
+// 编辑结果写回 authored：points = 物化空间的编辑结果，restPoints = 同批 rest。
+// 这两行必须成对出现（单独改 points 会让 delta 相对旧 rest 被重新解释）。
+function writeTipEdit(bone, points, restPoints) {
+  bone.tip = {
+    ...(bone.tip || {}),
+    points: points.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+    restPoints: restPoints.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+    active: true
+  };
+}
+
+// 选中某段/管的发尖子骨骼，并把「当前段」指过去（0.2.126，两种几何共用一条路径）。
+// tipSelection 与 segmentIndexKey 的关系见 sculpt-edit-store.js 的注释：前者是视口选中
+// （可为 null），后者是右侧面板当前段（恒非 null）。段号写的是 host.segmentIndexKey
+// （panel → panelSegmentIndex / 发丝 → strandSegmentIndex），刻意不共用一个段号：两套段号
+// 必须能各自停在不同下标（0.2.125 结论）。
+// syncSegmentControlsForLock 由 segment-control.js 按 segmentBoneHost 再分派一次到对应
+// 的那组 DOM 控件，所以这里不需要 if(几何) 选 sync 函数。
+function selectTipSubBone(lock, segmentIndex) {
+  const host = segmentBoneHost(lock);
+  if (!host) return;
+  deps.sculptState.tipSelection = { lockId: lock.id, segmentIndex };
+  deps.sculptState[host.segmentIndexKey] = segmentIndex;
+  deps.syncSegmentControlsForLock(lock);
+}
+
+function beginTipSubBoneRotate(handle) {
+  const ctx = tipEditContext(handle);
+  if (!ctx) return;
+  const snapshot = tipDragSnapshot(ctx.tip);
   deps.sculptState.tipSubBoneRotateDrag = {
-    lockId: lock.id,
-    segmentIndex: segment,
-    tipPoint: point,
+    lockId: ctx.lock.id,
+    segmentIndex: ctx.segment,
+    tipPoint: ctx.point,
     startQuaternion: handle.quaternion.clone(),
-    startPoints: bone.tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z }))
+    ...snapshot
   };
 }
 
 function beginTipSubBoneTranslate(handle) {
-  const lock = deps.locks.find((item) => item.id === handle?.userData?.lockId);
-  const segment = handle?.userData?.panelTipIndex;
-  const point = handle?.userData?.panelTipPoint;
-  if (!lock || segment == null || point == null) return;
-  const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-  const bones = materializeSplitBones(lock);
-  const bone = bones[segment];
-  if (!bone) return;
-  const tip = deps.panelTipStrand.splitTipForSegment(lock, segment, splits, bone);
-  if (!tip || point >= tip.points.length) return;
-  // 确保有 authored tip 状态（与 rotate 相同：points/restPoints 快照）。
-  if (!bone.tip || !Array.isArray(bone.tip.points) || bone.tip.points.length !== tip.points.length) {
-    bone.tip = {
-      points: tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-      restPoints: tip.restPoints.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-      active: true
-    };
-  }
+  const ctx = tipEditContext(handle);
+  if (!ctx) return;
+  const snapshot = tipDragSnapshot(ctx.tip);
   deps.sculptState.tipSubBoneTranslateDrag = {
-    lockId: lock.id,
-    segmentIndex: segment,
-    tipPoint: point,
+    lockId: ctx.lock.id,
+    segmentIndex: ctx.segment,
+    tipPoint: ctx.point,
     startPosition: handle.position.clone(),
-    startPoints: bone.tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-    restPoints: (Array.isArray(bone.tip.restPoints) ? bone.tip.restPoints : tip.restPoints).map((p) => ({ x: p.x, y: p.y, z: p.z }))
+    ...snapshot
   };
 }
 
@@ -84,34 +161,33 @@ function applyTipSubBoneTransform(lock, handle) {
     handle.scale.setScalar(0.42);
     return;
   }
+  // 起始快照里的 startPoints/restPoints 已是**物化空间**（tipDragSnapshot），所以下面全程
+  // 只在该空间里算，最后成对写回 points/restPoints（writeTipEdit）。
+  // 几何分派全部经 tipEditContext → resolveTipHost：panel 段与发丝管走同一段代码。
+  const ctx = tipEditContext(handle);
+  if (!ctx) return;
+  const { segment, point, bone } = ctx;
   if (mode === "translate") {
     const drag = deps.sculptState.tipSubBoneTranslateDrag;
     if (!drag || drag.lockId !== lock.id) return;
-    const segment = handle.userData.panelTipIndex;
-    const point = handle.userData.panelTipPoint;
     if (drag.segmentIndex !== segment || drag.tipPoint !== point) return;
-    const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    const bones = materializeSplitBones(lock);
-    const bone = bones[segment];
-    if (!bone || !bone.tip || !Array.isArray(bone.tip.points) || bone.tip.points.length < 2) return;
+    if (drag.startPoints.length < 2) return;
     // fork 以下第一个暴露点：把暴露子链当整体做 Pull Strand 求解，根点钉在 fork 处。
-    const forkT = deps.panelTipStrand.splitForkT(lock, segment, splits);
-    // floor (not ceil): the fork row itself is exposed, matching the USDA export rule —
-    // one more editable tip point toward the root. Lower clamp stays 1 so the chain root
-    // (index 0, pinned on the main chain) is never pulled.
-    const firstBelow = Math.min(drag.restPoints.length - 1, Math.max(1, Math.floor(forkT * (drag.restPoints.length - 1))));
+    // 暴露判据走 firstExposedTipChainIndex（tip-sub-bone.js 唯一定义点，floor + 下限 1）。
+    const firstBelow = firstExposedTipChainIndex(ctx.host.forkTFor(segment), drag.restPoints.length);
     if (point < firstBelow) return;
     const exposedVecs = [];
-    for (let i = firstBelow; i < bone.tip.points.length; i += 1) {
+    for (let i = firstBelow; i < drag.startPoints.length; i += 1) {
       const src = drag.startPoints[i] || { x: 0, y: 0, z: 0 };
       exposedVecs.push(new THREE.Vector3(src.x, src.y, src.z));
     }
     const solved = solvePulledStrand(exposedVecs, point - firstBelow, handle.position, 0, deps.sculptState.pullRigidity);
-    for (let i = firstBelow; i < bone.tip.points.length; i += 1) {
+    const next = drag.startPoints.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+    for (let i = firstBelow; i < next.length; i += 1) {
       const v = solved[i - firstBelow];
-      bone.tip.points[i] = { x: v.x, y: v.y, z: v.z };
+      next[i] = { x: v.x, y: v.y, z: v.z };
     }
-    bone.tip.active = true;
+    writeTipEdit(bone, next, drag.restPoints);
     deps.updateLockGeometry(lock, { immediate: true });
     deps.updateCurveObjects(lock, { visible: true });
     deps.syncActiveMirror(lock, { deferGeometry: false });
@@ -121,26 +197,38 @@ function applyTipSubBoneTransform(lock, handle) {
   if (mode !== "rotate") return;
   const drag = deps.sculptState.tipSubBoneRotateDrag;
   if (!drag || drag.lockId !== lock.id) return;
-  const segment = handle.userData.panelTipIndex;
-  const point = handle.userData.panelTipPoint;
   if (drag.segmentIndex !== segment || drag.tipPoint !== point) return;
+  if (drag.startPoints.length < 2) return;
   const dq = drag.startQuaternion.clone().invert().multiply(handle.quaternion);
-  const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-  const bones = materializeSplitBones(lock);
-  const bone = bones[segment];
-  if (!bone || !bone.tip || !Array.isArray(bone.tip.points) || bone.tip.points.length < 2) return;
   const pivot = drag.startPoints[point];
   if (!pivot) return;
   const pivotVec = new THREE.Vector3(pivot.x, pivot.y, pivot.z);
-  for (let i = point; i < bone.tip.points.length; i += 1) {
+  const next = drag.startPoints.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+  for (let i = point; i < next.length; i += 1) {
     const src = drag.startPoints[i] || { x: 0, y: 0, z: 0 };
     const rotated = new THREE.Vector3(src.x, src.y, src.z).sub(pivotVec).applyQuaternion(dq).add(pivotVec);
-    bone.tip.points[i] = { x: rotated.x, y: rotated.y, z: rotated.z };
+    next[i] = { x: rotated.x, y: rotated.y, z: rotated.z };
   }
-  bone.tip.active = true;
+  writeTipEdit(bone, next, drag.restPoints);
   deps.updateLockGeometry(lock, { immediate: true });
   deps.updateCurveObjects(lock, { visible: true });
   deps.syncActiveMirror(lock, { deferGeometry: false });
+}
+
+// 当前可抓的绿色 Tip Clump 手柄（可见 + 本几何有段骨骼宿主）。**唯一定义点**：
+// beginPanelSplitHandleDrag 的命中列表与 prepareCurvePointSelection 的让位判据都读它，
+// 两处必须认同同一组对象，否则会出现「让位了但抓不到」或「抓得到却被抢走」。
+function visibleTipClumpHandles(lock) {
+  if (!lock || !Boolean(segmentBoneHost(lock)) || !lock.curveObjects?.group.visible) return [];
+  return (lock.curveObjects.tipClumpHandles || []).filter((handle) => handle.visible);
+}
+
+// 指针是否正落在某个绿色 Tip Clump 手柄上（射线命中球体本身，非屏幕半径）。
+// 用途见 prepareCurvePointSelection 里的让位注释。调用方需已设好 deps.raycaster。
+function pointerHitsTipClumpHandle(lock) {
+  const handles = visibleTipClumpHandles(lock);
+  if (!handles.length) return false;
+  return Boolean(deps.raycaster.intersectObjects(handles, false)[0]);
 }
 
 function beginPanelSplitHandleDrag(event) {
@@ -149,13 +237,20 @@ function beginPanelSplitHandleDrag(event) {
   const panelHandles = deps.isPanelGeometry(lock) && lock.curveObjects?.group.visible
     ? lock.curveObjects.panelSplitHandles || []
     : [];
-  const segmentHandles = deps.isPanelGeometry(lock) && lock.curveObjects?.group.visible
-    ? lock.curveObjects.panelSegmentHandles || []
-    : [];
-  const tipHandles = deps.isPanelGeometry(lock) && lock.curveObjects?.group.visible
-    ? lock.curveObjects.panelTipHandles || []
-    : [];
-  const tipWidthHandles = deps.isPanelGeometry(lock) && lock.curveObjects?.group.visible
+  // 绿色 Tip Clump 手柄：0.2.130 起 panel 段与 split strand 管**共用同一个数组与同一个
+  // userData 键**（tipClumpSegment），门控走 visibleTipClumpHandles（segmentBoneHost 非 null
+  // ⇔ panel/surface 或已分裂普通发丝），不再手写 isPanelGeometry。
+  const segmentHandles = visibleTipClumpHandles(lock);
+  // 发尖链把手与发尖 WidthCurve 把手：panel 段与 split strand 管**共用同一个数组与同一批
+  // userData 键**（bone-view-handles.js 的 allocateTipChainHandles / allocateTipWidthHandles），
+  // 所以命中列表只需要把发丝的门控并进来，而不是加一条平行分支。可见性本身已由更新阶段按
+  // 选中段/管过滤（下面还会 filter(handle.visible)）。
+  // 门控条件两处**必须同规则**：段发尖子骨骼存在 <=> segmentBoneHost(lock) 非 null，即
+  // panel/surface 或「strand 且 strandSplitEnabled」。用 segmentBoneHost 而不是手写
+  // geometryType 判断，就是为了不再新增第四处平行条件。
+  const tipHostGate = Boolean(segmentBoneHost(lock)) && lock.curveObjects?.group.visible;
+  const tipHandles = tipHostGate ? lock.curveObjects.tipChainHandles || [] : [];
+  const tipWidthHandles = tipHostGate
     ? (lock.curveObjects.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right])
     : [];
   const strandHandle = lock?.geometryType === "strand"
@@ -163,22 +258,20 @@ function beginPanelSplitHandleDrag(event) {
     && lock.curveObjects?.group.visible
     ? (lock.curveObjects.strandSplitHandles || []).filter((handle) => handle.visible)
     : [];
-  const strandSplitTipHandles = lock?.geometryType === "strand" && lock.strandSplitEnabled && lock.curveObjects?.group.visible
-    ? (lock.curveObjects.strandSplitTipHandles || [])
-    : [];
-  const handles = [...tipWidthHandles, ...panelHandles, ...segmentHandles, ...tipHandles, ...strandHandle, ...strandSplitTipHandles];
+  // 刻意不改（0.2.126）：原先并入的 strandSplitTipHandles（每管一个末点把手）已删除 ——
+  // 它的职责被 tipHandles 里该管链的最后一个链点手柄接走（位置逐值相同）。
+  const handles = [...tipWidthHandles, ...panelHandles, ...segmentHandles, ...tipHandles, ...strandHandle];
   if (!handles.length) return false;
   const hit = deps.raycaster.intersectObjects(handles.filter((handle) => handle.visible), false)[0];
   if (!hit) return false;
   // Ctrl+drag is the tip width asymmetric edit; it must not grab zipper/segment/tip handles.
   if (event.ctrlKey && hit.object.userData.tipWidthIndex == null) return false;
-  const gizmoTipIndex = hit.object.userData.panelTipIndex != null ? hit.object.userData.panelTipIndex : null;
+  const gizmoTipIndex = hit.object.userData.tipSegmentIndex != null ? hit.object.userData.tipSegmentIndex : null;
   if (gizmoTipIndex != null && ["move", "rotate", "scale"].includes(deps.sel.activeTool)) {
     // 移动/旋转/缩放工具：tip 手柄挂到 transform gizmo（与 strand 控制点一致），不做视平面
     // 拖拽；增量在 objectChange 的 applyTipSubBoneTransform 里应用。
-    deps.sculptState.panelTipSelection = { lockId: lock.id, segmentIndex: gizmoTipIndex };
-    deps.sculptState.panelSegmentIndex = gizmoTipIndex;
-    deps.syncPanelSegmentControls(lock);
+    // 0.2.126 起 panel 与发丝走同一条路径（selectTipSubBone 内部按 host 写段号）。
+    selectTipSubBone(lock, gizmoTipIndex);
     deps.transformControls.detach();
     deps.configureTransformControls(deps.sel.activeTool);
     deps.transformControls.attach(hit.object);
@@ -190,8 +283,8 @@ function beginPanelSplitHandleDrag(event) {
   }
   deps.pushUndoState();
   deps.transformControls.detach();
-  const tipIndex = hit.object.userData.panelTipIndex != null ? hit.object.userData.panelTipIndex : null;
-  const tipPoint = hit.object.userData.panelTipPoint != null ? hit.object.userData.panelTipPoint : null;
+  const tipIndex = hit.object.userData.tipSegmentIndex != null ? hit.object.userData.tipSegmentIndex : null;
+  const tipPoint = hit.object.userData.tipChainPoint != null ? hit.object.userData.tipChainPoint : null;
   const tipWidthIndex = hit.object.userData.tipWidthIndex != null ? hit.object.userData.tipWidthIndex : null;
   const tipWidthSegment = hit.object.userData.tipWidthSegment != null ? hit.object.userData.tipWidthSegment : null;
   const tipWidthSide = hit.object.userData.tipWidthSide != null ? hit.object.userData.tipWidthSide : null;
@@ -204,76 +297,104 @@ function beginPanelSplitHandleDrag(event) {
   let tipWidthStartClientY = null;
   let tipWidthStartEdgeScreenDist = null;
   let tipWidthBones = null;
-  let splitTipTube = null;
-  let splitTipStartWorld = null;
-  let splitTipPoint = null;
   if (tipIndex != null && tipPoint != null) {
     // Selecting a tip sub-bone: remember it and point the segment controls at it.
-    deps.sculptState.panelTipSelection = { lockId: lock.id, segmentIndex: tipIndex };
-    deps.sculptState.panelSegmentIndex = tipIndex;
-    deps.syncPanelSegmentControls(lock);
-    const tipSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    const tip = deps.panelTipStrand.splitTipForSegment(lock, tipIndex, tipSplits, splitBonesFor(lock)[tipIndex] || null);
+    selectTipSubBone(lock, tipIndex);
+    // 起始世界位置取**物化**链（视口所画）：拖拽把它当基准反投影，读 authored.points 会
+    // 让基准落在旧 rest 空间、一按下就跳（0.2.120 规则）。
+    const tipHost = resolveTipHost(lock);
+    const tip = tipHost?.tipChainFor(tipIndex);
     if (tip && tip.points[tipPoint]) tipStartWorld = new THREE.Vector3(tip.points[tipPoint].x, tip.points[tipPoint].y, tip.points[tipPoint].z);
   } else if (tipWidthSegment != null && tipWidthSide != null && tipWidthIndex != null) {
-    // Selecting a tip width control point also selects that tip sub-bone.
-    deps.sculptState.panelTipSelection = { lockId: lock.id, segmentIndex: tipWidthSegment };
-    deps.sculptState.panelSegmentIndex = tipWidthSegment;
-    deps.syncPanelSegmentControls(lock);
-    const tipSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    // 拖拽开始时只 materialize 一次（深克隆 + 双写 lock.splitBones/lock.bones），
-    // 拖拽期间复用同一数组，避免每个 pointermove 都重复深克隆全部骨骼。
-    tipWidthBones = materializeSplitBones(lock);
-    const tipBone = tipWidthBones[tipWidthSegment] || null;
-    const placement = deps.panelTipStrand.tipWidthControlPlacement(lock, tipWidthSegment, tipSplits, tipBone, tipWidthSide, tipWidthIndex);
+    // 发尖 WidthCurve 把手：起始状态按几何分派。两条分支产出**同一组** drag 字段
+    // （tipWidthT / StartWorld / StartLatOffset / StartMult / StartClientX/Y /
+    // StartEdgeScreenDist / Bones），因此 updatePanelSplitHandleDrag 的拖拽数学（世界
+    // 横向比、0.5 灵敏度、floorMult、上限 2、默认对称 / Ctrl 单侧）一行都不变。
+    let placement = null;
+    let tipBone = null;
+    let strandSplitsForWidth = null;
+    // 同规则同步点：下方 updatePanelSplitHandleDrag 的 tipWidth 分支用同一条
+    // segmentBoneHost 分派 —— 起始状态与移动写入必须落在同一侧，否则会用 panel 的
+    // 起始倍率去写发丝曲线。
+    if (segmentBoneHost(lock) !== STRAND_SEGMENT_HOST) {
+      // Selecting a tip width control point also selects that tip sub-bone.
+      selectTipSubBone(lock, tipWidthSegment);
+      const tipSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+      // 拖拽开始时只 materialize 一次（深克隆 + 双写 lock.splitBones/lock.bones），
+      // 拖拽期间复用同一数组，避免每个 pointermove 都重复深克隆全部骨骼。
+      tipWidthBones = materializeSplitBones(lock);
+      tipBone = tipWidthBones[tipWidthSegment] || null;
+      placement = deps.panelTipStrand.tipWidthControlPlacement(lock, tipWidthSegment, tipSplits, tipBone, tipWidthSide, tipWidthIndex);
+      if (placement) {
+        const boundaries = [-1, ...tipSplits.map((split) => split.position), 1];
+        const edgeU = boundaries[tipWidthSide < 0 ? tipWidthSegment : tipWidthSegment + 1];
+        const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
+        tipWidthStartMult = deps.panelTipStrand.tipPanelWidthAt(lock, placement.t, edgeU, tipBone, tipWidthSegment, tipSplits) / fullWidth;
+      }
+    } else {
+      // 0.2.126 起与 panel 同源：抓宽度控制点同样选中该管的发尖子骨骼（selectTipSubBone
+      // 内部按 host 写 strandSegmentIndex 并刷新 #strandSegmentControls）。
+      // 旧注释写「发丝没有 tipSelection 的等价物、改用 strandSegmentIndex」已作废 —— 那会让
+      // 宽度把手在未选中任何发尖时也常显（strandSegmentIndex 恒非 null），与 panel 不一致。
+      selectTipSubBone(lock, tipWidthSegment);
+      strandSplitsForWidth = strandSplitsFor(lock);
+      tipWidthBones = materializeStrandSplitBones(lock);
+      tipBone = tipWidthBones?.[tipWidthSegment] || null;
+      placement = strandTipWidthControlPlacement(
+        strandTipWidthGeoDeps(),
+        lock,
+        strandSplitsForWidth,
+        tipWidthSegment,
+        tipBone,
+        tipWidthSide,
+        tipWidthIndex
+      );
+      if (placement) {
+        // 起始倍率用**管内相对坐标**读：被拖那侧的极值点恒为 ±1（strandTubeSignedCoordinate
+        // 的定义），所以直接传 side 的符号即可 —— 不得传 raw profile.x（边缘管单符号 →
+        // 一侧永远读不到自己的曲线，0.2.80 死区同类）。panel 侧对应的是 edgeU。
+        tipWidthStartMult = strandTipWidthMultiplierAt(
+          lock,
+          placement.t,
+          tipWidthSide < 0 ? -1 : 1,
+          tipBone,
+          tipWidthSegment,
+          strandSplitsForWidth
+        );
+      }
+    }
     if (placement) {
       tipWidthT = placement.t;
       tipWidthStartWorld = placement.point.clone();
       // Stable drag basis: the edge's signed lateral distance and the current width
       // multiplier, so dragging scales width by a ratio (no feedback collapse).
       tipWidthStartLatOffset = placement.point.clone().sub(placement.center).dot(placement.lateral);
-      const boundaries = [-1, ...tipSplits.map((split) => split.position), 1];
-      const edgeU = boundaries[tipWidthSide < 0 ? tipWidthSegment : tipWidthSegment + 1];
-      const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
-      tipWidthStartMult = deps.panelTipStrand.tipPanelWidthAt(lock, placement.t, edgeU, tipBone, tipWidthSegment, tipSplits) / fullWidth;
       tipWidthStartClientX = event.clientX;
       tipWidthStartClientY = event.clientY;
       const rect = deps.renderer.domElement.getBoundingClientRect();
       tipWidthStartEdgeScreenDist = Math.max(0.0001, deps.sculptGeom.viewportPixelPoint(placement.center, rect).distanceTo(deps.sculptGeom.viewportPixelPoint(placement.point, rect)));
     }
   }
-  if (hit.object.userData.strandSplitTipTube != null) {
-    // Split-strand per-tube tip handle: anchor the drag on the tube tip chain's last
-    // point (view-plane move, same mapping as the panel tip branch).
-    const tube = hit.object.userData.strandSplitTipTube;
-    const chains = deps.currentStrandSplitTipChains(lock);
-    const chain = chains?.[tube];
-    if (chain && chain.points.length > 0) {
-      splitTipTube = tube;
-      const last = chain.points[chain.points.length - 1];
-      splitTipStartWorld = new THREE.Vector3(last.x, last.y, last.z);
-      splitTipPoint = chain.points.length - 1;
-    }
-  }
+  // 刻意不改（0.2.126）：原先此处有一个 strandSplitTipTube 分支（每管末点把手 → kind
+  // "strandTip"）。它连同那个把手一起删除了 —— 发丝现在与 panel 共用 kind "tip"：同一个
+  // tipSegmentIndex/tipChainPoint 命中、同一条视平面拖拽数学、同一条物化空间取值口径。
   deps.sculptState.panelSplitDrag = {
     pointerId: event.pointerId,
     lockId: lock.id,
-    kind: tipWidthIndex != null ? "tipWidth" : tipIndex != null ? "tip" : splitTipTube != null
-      ? "strandTip"
+    kind: tipWidthIndex != null ? "tipWidth" : tipIndex != null ? "tip"
       : hit.object.userData.strandSplitHandle
         ? "strand"
-        : hit.object.userData.panelSegmentIndex != null
+        : hit.object.userData.tipClumpSegment != null
           ? "segment"
           : "panel",
-    splitIndex: tipWidthSegment != null ? tipWidthSegment : tipIndex != null ? tipIndex : splitTipTube != null
-      ? splitTipTube
+    splitIndex: tipWidthSegment != null ? tipWidthSegment : tipIndex != null ? tipIndex
       : hit.object.userData.strandSplitHandle
         ? hit.object.userData.strandSplitIndex
-        : hit.object.userData.panelSegmentIndex != null
-          ? hit.object.userData.panelSegmentIndex
+        : hit.object.userData.tipClumpSegment != null
+          ? hit.object.userData.tipClumpSegment
           : hit.object.userData.panelSplitIndex,
-    tipPoint: splitTipPoint != null ? splitTipPoint : tipPoint,
-    tipStartWorld: splitTipStartWorld != null ? splitTipStartWorld : tipStartWorld,
+    tipPoint,
+    tipStartWorld,
     tipWidthSide,
     tipWidthIndex,
     tipWidthT,
@@ -357,8 +478,10 @@ function updatePanelSplitHandleDrag(event) {
     return;
   }
   if (deps.sculptState.panelSplitDrag.kind === "tip") {
-    // View-plane move of the segment's tip sub-bone control point: the pointer's NDC
-    // position at the tip's depth becomes the new tip point (length + direction).
+    // View-plane move of the segment's / tube's tip sub-bone control point: the pointer's
+    // NDC position at the tip's depth becomes the new tip point (length + direction).
+    // 0.2.126 起 panel 段与发丝管走这**一条**分支（此前发丝另有一条 kind "strandTip"，
+    // 逐行重复了同样的 NDC 映射与写回，只是骨骼/链取值函数不同）。
     const startWorld = deps.sculptState.panelSplitDrag.tipStartWorld;
     if (!startWorld) return;
     const startProj = startWorld.clone().project(deps.camera);
@@ -367,72 +490,16 @@ function updatePanelSplitHandleDrag(event) {
     const newWorld = new THREE.Vector3(ndcX, ndcY, startProj.z).unproject(deps.camera);
     const segment = deps.sculptState.panelSplitDrag.splitIndex;
     const point = deps.sculptState.panelSplitDrag.tipPoint;
-    const bones = materializeSplitBones(lock);
-    const bone = bones[segment];
+    const host = resolveTipHost(lock, { materialize: true });
+    const bone = host?.bones?.[segment];
     if (!bone) return;
-    const splitsForTip = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    const tip = deps.panelTipStrand.splitTipForSegment(lock, segment, splitsForTip, bone);
-    if (!tip || tip.restPoints.length < 1 || point == null || point >= tip.restPoints.length) return;
-    const rest = tip.restPoints;
-    // Preserve deltas on other chain points; only the dragged point moves.
-    const authored = (Array.isArray(bone.tip?.points) && bone.tip.points.length === rest.length)
-      ? bone.tip
-      : {
-        points: rest.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-        restPoints: rest.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-        active: true
-      };
-    const delta = newWorld.clone().sub(rest[point]);
-    authored.points[point] = {
-      x: rest[point].x + delta.x,
-      y: rest[point].y + delta.y,
-      z: rest[point].z + delta.z
-    };
-    authored.restPoints = rest.map((p) => ({ x: p.x, y: p.y, z: p.z }));
-    authored.active = true;
-    bone.tip = authored;
-    deps.updateLockGeometry(lock, { immediate: true });
-    deps.updateCurveObjects(lock, { visible: true });
-    deps.syncActiveMirror(lock, { deferGeometry: false });
-    deps.updateTopologyStats();
-    event.preventDefault();
-    return;
-  }
-  if (deps.sculptState.panelSplitDrag.kind === "strandTip") {
-    // Split-strand per-tube tip handle: view-plane move of the tube tip chain's last
-    // point (same NDC-at-depth mapping as the panel tip branch), written to
-    // bone.tip authored points.
-    const startWorld = deps.sculptState.panelSplitDrag.tipStartWorld;
-    if (!startWorld) return;
-    const startProj = startWorld.clone().project(deps.camera);
-    const ndcX = (2 * targetX) / rect.width - 1;
-    const ndcY = -((2 * targetY) / rect.height - 1);
-    const newWorld = new THREE.Vector3(ndcX, ndcY, startProj.z).unproject(deps.camera);
-    const tube = deps.sculptState.panelSplitDrag.splitIndex;
-    const point = deps.sculptState.panelSplitDrag.tipPoint;
-    const bones = materializeStrandSplitBones(lock);
-    const bone = bones?.[tube];
-    if (!bone) return;
-    const chains = deps.currentStrandSplitTipChains(lock);
-    const tip = chains?.[tube];
-    if (!tip || !tip.restPoints || point == null || point >= tip.restPoints.length) return;
-    const rest = tip.restPoints;
-    const authored = (Array.isArray(bone.tip?.points) && bone.tip.points.length === rest.length)
-      ? bone.tip
-      : {
-        points: rest.map((p) => ({ ...p })),
-        restPoints: rest.map((p) => ({ ...p })),
-        active: true
-      };
-    const delta = newWorld.clone().sub(new THREE.Vector3(rest[point].x, rest[point].y, rest[point].z));
-    authored.points[point] = {
-      x: rest[point].x + delta.x,
-      y: rest[point].y + delta.y,
-      z: rest[point].z + delta.z
-    };
-    authored.restPoints = rest.map((p) => ({ ...p }));
-    authored.active = true;
-    bone.tip = authored;
+    const tip = host.tipChainFor(segment);
+    if (!tip || !Array.isArray(tip.restPoints) || point == null || point >= tip.restPoints.length) return;
+    // 物化链的 points 是视口所画的位置、restPoints 是同一次物化的 rest 基准；被拖点写
+    // 「新世界位置」，其余点保留物化位置（= 保留各自 delta），最后两者成对写回。
+    const next = tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+    next[point] = { x: newWorld.x, y: newWorld.y, z: newWorld.z };
+    writeTipEdit(bone, next, tip.restPoints);
     deps.updateLockGeometry(lock, { immediate: true });
     deps.updateCurveObjects(lock, { visible: true });
     deps.syncActiveMirror(lock, { deferGeometry: false });
@@ -446,17 +513,31 @@ function updatePanelSplitHandleDrag(event) {
     const side = drag.tipWidthSide;
     const t = drag.tipWidthT;
     if (segment == null || side == null || t == null) return;
-    const splitsForWidth = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-    // 复用拖拽开始时 materialize 的骨骼数组（它就是 lock.splitBones，编辑持续生效）；
-    // 缺失或数量不对时回退重新 materialize，避免每个 pointermove 都深克隆全部骨骼。
+    // 读（边缘位置）与写（曲线）按几何分派，其余数学逐字共用。
+    // 分派点用 segmentBoneHost（bone-model 的单一分派：panel/surface → panel 段，
+    // strand + strandSplitEnabled → 管段），不写 `!isPanelGeometry` —— 后者把「既非
+    // panel 也非分裂发丝」的 lock 也算成发丝。
+    const strandWidth = segmentBoneHost(lock) === STRAND_SEGMENT_HOST;
+    const splitsForWidth = strandWidth
+      ? strandSplitsFor(lock)
+      : deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    // 复用拖拽开始时 materialize 的骨骼数组（它就是 lock.splitBones / lock.strandSplitBones，
+    // 编辑持续生效）；缺失或数量不对时回退重新 materialize，避免每个 pointermove 都深克隆
+    // 全部骨骼。两种几何的段数都是「拉链数 + 1」，故长度判据一致。
+    const materializeBones = () => (strandWidth ? materializeStrandSplitBones(lock) : materializeSplitBones(lock));
     const bones = Array.isArray(drag.tipWidthBones) && drag.tipWidthBones.length === splitsForWidth.length + 1
       ? drag.tipWidthBones
-      : materializeSplitBones(lock);
-    const bone = bones[segment];
+      : materializeBones();
+    const bone = bones?.[segment];
     if (!bone) return;
-    const tip = deps.panelTipStrand.splitTipForSegment(lock, segment, splitsForWidth, bone);
-    if (!tip || tip.points.length < 2) return;
-    const edge = deps.panelTipStrand.tipWidthEdgePosition(lock, segment, splitsForWidth, bone, side, t);
+    let edge = null;
+    if (strandWidth) {
+      edge = strandTipWidthEdgePosition(strandTipWidthGeoDeps(), lock, splitsForWidth, segment, bone, side, t);
+    } else {
+      const tip = deps.panelTipStrand.splitTipForSegment(lock, segment, splitsForWidth, bone);
+      if (!tip || tip.points.length < 2) return;
+      edge = deps.panelTipStrand.tipWidthEdgePosition(lock, segment, splitsForWidth, bone, side, t);
+    }
     if (!edge) return;
     const center = edge.center;
     const lateral = edge.lateral;
@@ -480,13 +561,19 @@ function updatePanelSplitHandleDrag(event) {
     // can thin the tip but not collapse it into a needle (repeated drags thin further).
     const floorMult = Math.max(0.08, (drag.tipWidthStartMult ?? 1) * 0.3);
     const newWidthMult = THREE.MathUtils.clamp(rawMult, floorMult, 2);
+    // 写入函数按几何分派；两者都建立在共享的 setTipWidthCurveValueFrom /
+    // buildTipWidthCurveFrom 之上（发丝版在 strand-tip-width.js），所以吸附规则、
+    // asymmetric 打开时机、「无处可写就跳过」的语义只有一份。
+    const writeWidth = (writeSide) => (strandWidth
+      ? setStrandTipWidthCurveValue(lock, splitsForWidth, segment, bone, writeSide, t, newWidthMult)
+      : deps.panelTipStrand.setTipWidthCurveValue(lock, segment, splitsForWidth, bone, writeSide, t, newWidthMult));
     if (event.ctrlKey) {
       // 按住 Ctrl = 非对称：只调被拖的一侧。
-      deps.panelTipStrand.setTipWidthCurveValue(lock, segment, splitsForWidth, bone, side, t, newWidthMult);
+      writeWidth(side);
     } else {
       // 默认 = 对称：两侧同一 t 设为同一个 multiplier（真正对称，不按起始比例）。
-      deps.panelTipStrand.setTipWidthCurveValue(lock, segment, splitsForWidth, bone, side, t, newWidthMult);
-      deps.panelTipStrand.setTipWidthCurveValue(lock, segment, splitsForWidth, bone, -side, t, newWidthMult);
+      writeWidth(side);
+      writeWidth(-side);
     }
     deps.updateLockGeometry(lock, { immediate: true });
     deps.updateCurveObjects(lock, { visible: true });
@@ -499,45 +586,86 @@ function updatePanelSplitHandleDrag(event) {
       && deps.sculptState.taperCurveEdit.segmentIndex === segment) {
       deps.taperEditor.renderTaperCurveEditor();
     }
-    // 右侧属性面板预览同步：该 lock 是当前选中/面板尖端选中时热更新。
-    if (deps.sculptState.panelTipSelection?.lockId === lock.id || deps.getSelectedLock()?.id === lock.id) {
-      deps.syncPanelSegmentControls(lock);
+    // 右侧属性面板预览同步：该 lock 是当前选中/面板尖端选中时热更新。按几何分派到
+    // 对应的段控件（发丝那组是 Phase C 的 #strandSegmentControls）。
+    if (deps.sculptState.tipSelection?.lockId === lock.id || deps.getSelectedLock()?.id === lock.id) {
+      if (strandWidth) deps.syncStrandSegmentControls(lock);
+      else deps.syncPanelSegmentControls(lock);
     }
     event.preventDefault();
     return;
   }
+  // ── 绿色 Tip Clump 手柄拖拽（kind === "segment"，UI 名 Tip Clump）─────────────────────
+  // 0.2.130 起 panel 与 split strand **共用这一个 kind**：命中字段（tipClumpSegment）、
+  // drag 记录（kind/splitIndex）、结束路径完全相同，只有「屏幕位置 → spread」的求解按几何
+  // 分派。刻意不新增 kind "strandSegment"：那会让 begin/end/可见性/高亮四处各长一条平行分支。
   if (deps.sculptState.panelSplitDrag.kind === "segment") {
-    const segmentSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const segment = deps.sculptState.panelSplitDrag.splitIndex;
-    const segBoundaries = [-1, ...segmentSplits.map((split) => split.position), 1];
-    if (segment < 0 || segment >= segBoundaries.length - 1) {
-      endPanelSplitHandleDrag(event);
-      return;
-    }
-    const span = Math.max(0.0001, segBoundaries[segment + 1] - segBoundaries[segment]);
-    let segmentBest = null;
-    for (let uStep = 0; uStep <= 48; uStep += 1) {
-      const u = THREE.MathUtils.lerp(segBoundaries[segment], segBoundaries[segment + 1], uStep / 48);
-      const projected = deps.panelSplitControlPoint(lock, { position: u, height: 0 }, 1, curve, segment).project(deps.camera);
-      if (projected.z < -1 || projected.z > 1) continue;
+    const strandClump = segmentBoneHost(lock) === STRAND_SEGMENT_HOST;
+    // 屏幕最近点求解：两条分支都是「沿一条参数线取 49 个探针、投影到屏幕、取最近」，
+    // 只有探针的世界位置来源不同（panel = 段顶边的 u 采样；发丝 = 共享的 Tip Clump 线段）。
+    let clumpBest = null;
+    const considerProbe = (worldPoint, tipClump) => {
+      const projected = worldPoint.clone().project(deps.camera);
+      if (projected.z < -1 || projected.z > 1) return;
       const x = (projected.x * 0.5 + 0.5) * rect.width;
       const y = (-projected.y * 0.5 + 0.5) * rect.height;
       const distanceSq = (x - targetX) ** 2 + (y - targetY) ** 2;
-      if (!segmentBest || distanceSq < segmentBest.distanceSq) segmentBest = { distanceSq, u };
-    }
-    if (!segmentBest) return;
-    const bones = materializeSplitBones(lock);
-    const bone = bones[segment];
-    if (bone) {
-      bone.spread = THREE.MathUtils.clamp(((segmentBest.u - segBoundaries[segment]) / span) * 0.99, 0, 0.99);
+      if (!clumpBest || distanceSq < clumpBest.distanceSq) clumpBest = { distanceSq, tipClump };
+    };
+    if (strandClump) {
+      // 发丝：探针位置来自 strandTipClumpAxis（**与绘制手柄同一条线段**，见该函数的说明），
+      // 所以指针落点与球心一致，不像 panel 那样有 tangentOffset 造成的固定偏差。
+      const strandSplits = strandSplitsFor(lock);
+      const axisBones = materializeStrandSplitBones(lock);
+      if (!axisBones || segment < 0 || segment >= axisBones.length) {
+        endPanelSplitHandleDrag(event);
+        return;
+      }
+      const axis = strandTipClumpAxis(strandTipWidthGeoDeps(), lock, strandSplits, segment, axisBones[segment] || null);
+      if (!axis) return;
+      for (let step = 0; step <= 48; step += 1) {
+        const tipClump = THREE.MathUtils.lerp(0, SPREAD_MAX, step / 48);
+        considerProbe(axis.pointAt(tipClump), tipClump);
+      }
+      if (!clumpBest) return;
+      const bone = axisBones[segment];
+      if (bone) bone.tipClump = THREE.MathUtils.clamp(clumpBest.tipClump, 0, SPREAD_MAX);
+    } else {
+      // panel：**逐字保留**既有的段顶边 u 扫描（探针 = panelSplitControlPoint(u, height 0, t 1)）
+      // 与 u → tipClump 的线性反演。刻意不改成走绘制用的 tipSurfaceFrameAt：那会同时改变
+      // panel 已验收的拖拽手感（扫描基线不含 tangentOffset 是既有取舍）。
+      const segmentSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+      const segBoundaries = [-1, ...segmentSplits.map((split) => split.position), 1];
+      if (segment < 0 || segment >= segBoundaries.length - 1) {
+        endPanelSplitHandleDrag(event);
+        return;
+      }
+      const span = Math.max(0.0001, segBoundaries[segment + 1] - segBoundaries[segment]);
+      for (let uStep = 0; uStep <= 48; uStep += 1) {
+        const u = THREE.MathUtils.lerp(segBoundaries[segment], segBoundaries[segment + 1], uStep / 48);
+        considerProbe(
+          deps.panelSplitControlPoint(lock, { position: u, height: 0 }, 1, curve, segment),
+          ((u - segBoundaries[segment]) / span) * SPREAD_MAX
+        );
+      }
+      if (!clumpBest) return;
+      const bones = materializeSplitBones(lock);
+      const bone = bones[segment];
+      if (bone) bone.tipClump = THREE.MathUtils.clamp(clumpBest.tipClump, 0, SPREAD_MAX);
     }
     deps.updateLockGeometry(lock, { immediate: true });
+    // updateCurveObjects（不是 rebuildCurveObjects）：拖拽中手柄数量不变，重建会销毁正在被
+    // 拖的那个球、当场中断拖拽。applyStrandSegmentSpread（滑杆路径）用 rebuild 是因为它不在
+    // 拖拽中，两处差异是有意的。
     deps.updateCurveObjects(lock, { visible: true });
     deps.syncActiveMirror(lock, { deferGeometry: false });
     deps.updateTopologyStats();
-    // 右侧属性面板预览同步：该 lock 是当前选中/面板尖端选中时热更新。
-    if (deps.sculptState.panelTipSelection?.lockId === lock.id || deps.getSelectedLock()?.id === lock.id) {
-      deps.syncPanelSegmentControls(lock);
+    // 右侧属性面板热同步：该 lock 是当前选中/发尖选中时刷新对应几何的那组段控件
+    // （与上方 tipWidth 分支同规则的按几何分派）。
+    if (deps.sculptState.tipSelection?.lockId === lock.id || deps.getSelectedLock()?.id === lock.id) {
+      if (strandClump) deps.syncStrandSegmentControls(lock);
+      else deps.syncPanelSegmentControls(lock);
     }
     event.preventDefault();
     return;
@@ -598,19 +726,22 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   // The brush is consumed even when no chain point is under the cursor, so a selected
   // sub-bone blocks main-bone edits until it is deselected. Scale/orient center on the
   // sub-bone's exposed root (first below-fork chain point).
-  const selection = deps.sculptState.panelTipSelection;
+  const selection = deps.sculptState.tipSelection;
   if (!selection) return false;
   const lock = deps.locks.find((item) => item.id === selection.lockId);
-  if (!lock || !deps.isPanelGeometry(lock) || lock.panelSplitEnabled === false) return false;
+  // 门控从「panel only」扩为「任何有段发尖子骨骼的几何」（0.2.126）：判据一律走
+  // resolveTipHost（内部 segmentBoneHost），**绝不**在这里对发丝调 clonePanelSplits ——
+  // 它会凭空造出与真实 zipper 无关的假 panelSplits，段数/fork 全错（本轮两次踩过）。
+  // 发丝的段划分只能来自 strandSplitsFor（resolveTipHost 已代为处理）。
+  const host = lock ? resolveTipHost(lock, { materialize: true }) : null;
+  if (!host) return false;
   const segmentIndex = selection.segmentIndex;
-  const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-  if (segmentIndex == null || segmentIndex < 0 || segmentIndex >= splits.length + 1) return true;
+  if (segmentIndex == null || segmentIndex < 0 || segmentIndex >= host.segmentCount) return true;
   if (!stroke.undoCaptured) { deps.pushUndoState(); stroke.undoCaptured = true; }
-  const bones = materializeSplitBones(lock);
-  const bone = bones[segmentIndex];
+  const bone = host.bones[segmentIndex];
   if (!bone) return true;
-  const tip = deps.panelTipStrand.splitTipForSegment(lock, segmentIndex, splits, bone);
-  if (!tip || tip.restPoints.length < 2) return true;
+  const tip = host.tipChainFor(segmentIndex);
+  if (!tip || !Array.isArray(tip.restPoints) || tip.restPoints.length < 2) return true;
   const rest = tip.restPoints;
   const authored = (Array.isArray(bone.tip?.points) && bone.tip.points.length === rest.length)
     ? bone.tip
@@ -644,11 +775,10 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   const strength = Number(deps.sculptBrushStrengthByTool[deps.effectiveSculptBrushTool()] ?? deps.sculptBrushStrengthInput.value);
   const reverse = Boolean(stroke.reverse);
   const tool = deps.effectiveSculptBrushTool();
-  const forkT = deps.panelTipStrand.splitForkT(lock, segmentIndex, splits);
-  // floor (not ceil): the fork row itself is exposed, matching the USDA export rule —
-  // the brush reaches one more row toward the root. Lower clamp stays 1 so the chain root
-  // (index 0, pinned on the main chain) stays out of the brush-editable range.
-  const firstBelow = Math.min(rest.length - 1, Math.max(1, Math.floor(forkT * (rest.length - 1))));
+  // fork 与暴露区间都按几何分派后走**唯一定义点** firstExposedTipChainIndex：笔刷能动的
+  // 区间必须与视口有把手的区间逐点相同（否则用户会看到"能刷动但抓不到"或反之）。
+  const forkT = host.forkTFor(segmentIndex);
+  const firstBelow = firstExposedTipChainIndex(forkT, rest.length);
   const scaleCenter = current[firstBelow] || current[0];
   const computeCursorWeights = () => {
     const computed = new Array(current.length).fill(0);
@@ -796,15 +926,19 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
 
 function updatePanelTipHover(event) {
   if (deps.pointerOverTaperEditor(event)) {
-    if (deps.sculptState.panelTipHover) {
-      deps.sculptState.panelTipHover = { lockId: null, segmentIndex: null };
+    if (deps.sculptState.tipHover) {
+      deps.sculptState.tipHover = { lockId: null, segmentIndex: null };
       deps.panelTipStrand.updateTipHighlight(deps.getSelectedLock());
     }
     return;
   }
   const lock = deps.getSelectedLock();
   let hover = { lockId: null, segmentIndex: null };
-  if (lock && deps.isPanelGeometry(lock) && lock.panelSplitEnabled !== false && Array.isArray(lock.panelSplits) && lock.panelSplits.length) {
+  // 门控扩到「任何有段发尖子骨骼的几何」（0.2.126）。命中测试本身**完全没变**：
+  // createSplitStrandGeometry 早就以与 panel 逐字段相同的 [mainJoint, leafIndex, weight]
+  // stride-3 格式写出 geometry.userData.leafWeights（strandSplitWeights 是同一数组的别名），
+  // 所以 leafWeightsValid + leafIndexAt 对发丝原样可用，segmentIndex 即命中的**管号**。
+  if (lock && resolveTipHost(lock)) {
     const rect = deps.renderer.domElement.getBoundingClientRect();
     const pointerNDC = new THREE.Vector2(
       ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -818,14 +952,34 @@ function updatePanelTipHover(event) {
       if (segment >= 0) hover = { lockId: lock.id, segmentIndex: segment };
     }
   }
-  const changed = deps.sculptState.panelTipHover?.lockId !== hover.lockId
-    || deps.sculptState.panelTipHover?.segmentIndex !== hover.segmentIndex;
-  deps.sculptState.panelTipHover = hover;
+  const changed = deps.sculptState.tipHover?.lockId !== hover.lockId
+    || deps.sculptState.tipHover?.segmentIndex !== hover.segmentIndex;
+  deps.sculptState.tipHover = hover;
   if (changed) deps.panelTipStrand.updateTipHighlight(lock);
 }
 
 function prepareCurvePointSelection(event) {
   if (event.button !== 0) return;
+  // ── 绿色 Tip Clump 手柄优先于曲线控制点（0.2.130）────────────────────────────────────
+  // 为什么必须有这条让位：控制点的拾取是**屏幕半径 12px**
+  // （STRAND_CONTROL_POINT_MIN_PICK_PIXELS，见 app.js strandControlPointHitFromEvent），而本
+  // 函数挂在 capture 阶段并在命中后 stopImmediatePropagation —— 主 pointerdown（
+  // beginPanelSplitHandleDrag 所在那个）于是根本不执行。普通发丝的**发尖控制点就落在管尖**，
+  // 与绿色 Tip Clump 手柄的实测屏幕距离只有 9.7–10px（真实工程 layered-side-bun 的
+  // Front Bangs 1，浏览器实测），因此绿手柄在真实使用中会完全抓不到 —— 移植到发丝时暴露的
+  // 真实缺陷，不是脚本假象。panel 侧此前没有暴露它，只因 panel 的控制点沿面板中心线走、
+  // 离段尖表面点较远（**不是**因为 panel 有豁免；同一相机角度下 panel 也可能重合）。
+  // 让位判据用**射线命中球体本身**（比 12px 屏幕半径窄，且与实际可拖对象逐一对应），
+  // 与既有的「gizmo 优先」让位（见下方 pointerHitsTransformGizmo）同一形状。
+  // 顺序：放在最前面，两种编辑模式（对象/组件）都让位 —— 绿手柄在两种模式下都可见可拖。
+  const clumpLock = deps.getSelectedLock();
+  if (visibleTipClumpHandles(clumpLock).length) {
+    const rect = deps.renderer.domElement.getBoundingClientRect();
+    deps.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    deps.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    deps.raycaster.setFromCamera(deps.pointer, deps.camera);
+    if (pointerHitsTipClumpHandle(clumpLock)) return;
+  }
   if (!deps.componentEditModeActive()) {
     // Object mode: a highlighted (hovered) control point still selects its strand, so
     // clicking a bone never falls through to the parent hair that sits underneath it.

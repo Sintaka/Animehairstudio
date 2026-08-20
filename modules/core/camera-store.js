@@ -1,4 +1,4 @@
-﻿// camera-store.js — viewport/camera UI state (refactor 3c-5). Preference-backed
+// camera-store.js — viewport/camera UI state (refactor 3c-5). Preference-backed
 // fields are assigned by app.js at their original init site (keeps normalize fns local).
 import { createSceneStore } from "./scene-store.js?v=20260809-1";
 export function createCameraStore() {

@@ -228,7 +228,7 @@ try {
   const before = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-    t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 3 };
+    t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 3 };
     t.sculptState.state.panelSegmentIndex = 3;
     t.updateCurveObjects(lock, { visible: true });
     const tipSplits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
@@ -245,7 +245,7 @@ try {
       curve: (bone.taperCurve || []).map((p) => ({ p: +p.position.toFixed(4), v: +p.value.toFixed(4) })),
       curve2: (bone.taperCurveSecondary || []).map((p) => ({ p: +p.position.toFixed(4), v: +p.value.toFixed(4) })),
       asymW: bone.asymmetricWidthCurve,
-      spread: bone.spread,
+      tipClump: bone.tipClump,
       edgeR06: edge(1, 0.60625), edgeR07: edge(1, 0.69375), edgeL07: edge(-1, 0.69375),
       widthR: +t.tipPanelWidthAt(lock, 0.69375, 1, bone, 3, tipSplits).toFixed(5),
       widthL: +t.tipPanelWidthAt(lock, 0.69375, -1, bone, 3, tipSplits).toFixed(5),
@@ -267,8 +267,8 @@ try {
     t.raycaster.setFromCamera(ndc, t.camera());
     const allHandles = [
       ...(lock.curveObjects.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right]),
-      ...(lock.curveObjects.panelTipHandles || []),
-      ...(lock.curveObjects.panelSegmentHandles || []),
+      ...(lock.curveObjects.tipChainHandles || []),
+      ...(lock.curveObjects.tipClumpHandles || []),
       ...(lock.curveObjects.panelSplitHandles || [])
     ];
     const hits = t.raycaster.intersectObjects(allHandles.filter((x) => x.visible), false).slice(0, 3)
@@ -347,7 +347,7 @@ try {
   // ---- 对照：seg1 band 内 +1 拖拽（用户称其它发尖正常） ----
   const pressInfo1 = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest; const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-    t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 1 };
+    t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 1 };
     t.sculptState.state.panelSegmentIndex = 1;
     t.updateCurveObjects(lock, { visible: true });
     const h = lock.curveObjects.tipWidthHandles[1].right[1];
@@ -392,7 +392,7 @@ try {
   {
     const pinfo = JSON.parse(await evalJS(cdp, `(() => {
       const t = window.__ahsTest; const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-      t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 3 };
+      t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 3 };
       t.sculptState.state.panelSegmentIndex = 3;
       t.updateCurveObjects(lock, { visible: true });
       const h = lock.curveObjects.tipWidthHandles[3].right[1];
@@ -442,7 +442,7 @@ try {
   {
     const pinfo = JSON.parse(await evalJS(cdp, `(() => {
       const t = window.__ahsTest; const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-      t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 3 };
+      t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 3 };
       t.updateCurveObjects(lock, { visible: true });
       const h = lock.curveObjects.tipWidthHandles[3].left[3];
       const rect = t.renderer.domElement.getBoundingClientRect();
@@ -464,8 +464,8 @@ try {
         const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
         const all = [
           ...(lock.curveObjects.tipWidthHandles || []).flatMap((s) => [...s.left, ...s.right]),
-          ...(lock.curveObjects.panelTipHandles || []),
-          ...(lock.curveObjects.panelSegmentHandles || []),
+          ...(lock.curveObjects.tipChainHandles || []),
+          ...(lock.curveObjects.tipClumpHandles || []),
           ...(lock.curveObjects.panelSplitHandles || [])
         ];
         const hits = t.raycaster.intersectObjects(all.filter((x) => x.visible), false).slice(0, 3).map((x) => ({ ud: x.object.userData, d: +x.distance.toFixed(3) }));
@@ -506,9 +506,9 @@ try {
   {
     const pinfo = JSON.parse(await evalJS(cdp, `(() => {
       const t = window.__ahsTest; const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-      t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 3 };
+      t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 3 };
       t.updateCurveObjects(lock, { visible: true });
-      const h = lock.curveObjects.panelSegmentHandles[3];
+      const h = lock.curveObjects.tipClumpHandles[3];
       const rect = t.renderer.domElement.getBoundingClientRect();
       const c = t.projectToClient(new t.THREE.Vector3(h.position.x, h.position.y, h.position.z));
       const meshHash = (() => { const a = lock.mesh.geometry.attributes.position.array; let hsh = 0; for (let i = 0; i < a.length; i++) hsh += Math.abs(a[i]) * (i + 1); return hsh.toFixed(6); })();
@@ -525,8 +525,8 @@ try {
         const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
         const all = [
           ...(lock.curveObjects.tipWidthHandles || []).flatMap((s) => [...s.left, ...s.right]),
-          ...(lock.curveObjects.panelTipHandles || []),
-          ...(lock.curveObjects.panelSegmentHandles || []),
+          ...(lock.curveObjects.tipChainHandles || []),
+          ...(lock.curveObjects.tipClumpHandles || []),
           ...(lock.curveObjects.panelSplitHandles || [])
         ];
         const hits = t.raycaster.intersectObjects(all.filter((x) => x.visible), false).slice(0, 3).map((x) => ({ ud: x.object.userData, d: +x.distance.toFixed(3) }));
@@ -556,7 +556,7 @@ try {
         const t = window.__ahsTest; const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
         const meshHash = (() => { const a = lock.mesh.geometry.attributes.position.array; let hsh = 0; for (let i = 0; i < a.length; i++) hsh += Math.abs(a[i]) * (i + 1); return hsh.toFixed(6); })();
         const bones = t.materializeSplitBones(lock);
-        return JSON.stringify({ meshHash, spread: bones[3].spread });
+        return JSON.stringify({ meshHash, tipClump: bones[3].tipClump });
       })()`));
       check("V3 seg3 spread-handle drag changes mesh", pinfo.meshHash !== res3.meshHash, `hash ${pinfo.meshHash} -> ${res3.meshHash} spread=${res3.spread}`);
     } else {

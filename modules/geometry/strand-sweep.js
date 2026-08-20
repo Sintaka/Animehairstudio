@@ -1,4 +1,4 @@
-﻿// strand-sweep.js — shared strand sweep kernel (0.2.59, P2).
+// strand-sweep.js — shared strand sweep kernel (0.2.59, P2).
 // Unifies the default strand sweep (createBaseHairGeometry strand path) and the
 // child-strand sweep (createBranchChildGeometry): both are "sweep a profile along a
 // curve with transported frames". Callers add caps/bridge + geometry metadata.

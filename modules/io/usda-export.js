@@ -1,7 +1,15 @@
 // 唯一外部依赖：发丝多拉链的「管 k 横向推开方向」唯一定义点（standards「一处派生」）。
 // bone-model.js 只依赖 three，不反向依赖 io/*，故无循环依赖；导出的骨骼横向偏移因此
 // 与 createSplitStrandGeometry 渲染出的管逐值一致。
-import { strandSplitDirection } from "../bones/bone-model.js?v=20260813-1";
+import { strandSplitTubeCenter } from "../bones/bone-model.js?v=20260901-1";
+// fork-T（`1 − max(相邻 zipper 高)`）的唯一定义点。本文件此前有 3 份独立算式
+// （strandForkTForTube + splitBoneLayout/splitChainLayout 的 panel 分支各一），0.2.133 折叠。
+// 两种缺侧语义各有一个入口：`?? 0` 版（发丝，splits 已归一化）与 guard 版（panel，读原始
+// lock.panelSplits）。tip-width-curve 只 import three / curve-math / bone-model ⇒ 无循环。
+import {
+  tipWidthCommonForkFromHeights,
+  tipWidthCommonForkFromPresentHeights
+} from "../geometry/tip-width-curve.js?v=20260901-1";
 
 function finiteNumber(value) {
   const number = Number(value);
@@ -534,20 +542,22 @@ function strandSplitsForExport(lock) {
     .sort((a, b) => a.position - b.position);
 }
 
-// 管 k 的 fork 深度：1 - max(相邻拉链高)，边缘段用单一相邻拉链。与 Phase B 的
-// sectionSplitStart 及 bone-model strandSplitForkTForSegment 一致。N=1 时 = 1 - strandSplitHeight。
+// 管 k 的 fork 深度：**委托** tip-width-curve 的唯一定义点（`1 − max(相邻拉链高)`）。
+// 边缘段的缺侧为 undefined ⇒ 共享层按 `?? 0` 处理，与此前本地 `?? 0` 写法逐值相同。
+// 与 Phase B 的 sectionSplitStart 及 bone-model strandSplitForkTForSegment 同一条规则。
+// N=1 时 = 1 - strandSplitHeight。
 function strandForkTForTube(splits, k) {
-  const leftHeight = splits[k - 1]?.height ?? 0;
-  const rightHeight = splits[k]?.height ?? 0;
-  return 1 - Math.max(leftHeight, rightHeight);
+  return tipWidthCommonForkFromHeights(splits[k - 1]?.height, splits[k]?.height);
 }
 
-// 管 k 的横向推开方向：沿管下标从 -1 单调递增到 +1（唯一定义点 = bone-model.js 的
-// strandSplitDirection，见那里的注释：单调性正是「每条缝都张开」的充要条件）。
+// 管 k 的横向**中心**（归一化 profile 坐标 ∈ [-1, 1]，唯一定义点 = bone-model.js 的
+// strandSplitTubeCenter：边界 [-1, ...position, 1] 的第 k 段中点）。
 // splits 由 strandSplitsForExport 归一化（与几何同规则：排序 + 钳制 + legacy 回退），
-// 所以同一个 k 在几何/骨骼/导出三处得到同一个 direction。N=1 时 k=0 -> -1、k=1 -> +1。
-export function strandDirectionForTube(splits, k) {
-  return strandSplitDirection(k, Array.isArray(splits) ? splits.length : 0);
+// 所以同一个 k 在骨骼与导出两处得到同一个中心。N=1 且 zipper 居中时 k=0 -> -0.5、k=1 -> +0.5。
+// 0.2.132：本函数取代了 strandDirectionForTube（横向推开方向）—— 那条规则只服务于已删除的
+// opening 平移；未创作发尖时该挂骨骼的地方是管自身的中心，不是「推开方向」。
+export function strandTubeCenterForTube(splits, k) {
+  return strandSplitTubeCenter(k, splits);
 }
 
 // split 骨骼根部锚定的主链索引：必须严格位于自己的第一个暴露链点之下（根不能与它的
@@ -568,9 +578,8 @@ export function splitParentMainIndex(forkT, mainCount) {
 // split 骨骼（split.N，暴露段）在数据流里 authored p 为 null、父级是根骨骼，导出时
 // 按此解析：fork 参数（暴露段起始处的主链位置）→ 父主骨骼索引 parentMainIndex，以及
 // 派生世界位置 p（面板/表面取 splitTipForSegment 的 tip 链末点，回退曲线末端；发丝取
-// 曲线末端 + 发丝宽度 × spread 沿 frame.x 方向偏移）。不适用时返回 null。
+// 曲线末端 + 发丝宽度 × 该管中心 沿 frame.x 方向偏移）。不适用时返回 null。
 export function splitBoneLayout(lock, bone, options = {}) {
-  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   if (!lock || !bone || typeof bone.name !== "string") return null;
   // 仅 split.N 主骨骼参与；tip 链关节（split.N.tip.M）排除。
   if (!bone.name.startsWith("split.") || bone.name.includes(".tip.")) return null;
@@ -583,12 +592,15 @@ export function splitBoneLayout(lock, bone, options = {}) {
   let p = null;
 
   if (lock.geometryType === "panel" || lock.geometryType === "surface") {
-    // 面板/表面分支：forkT = 1 - max(相邻段高)；无 panelSplits 时该 split 无意义。
+    // 面板/表面分支：forkT 走 tip-width-curve 的 guard 形式唯一定义点（只让在场的相邻
+    // 段高参与 max）。这里读的是**原始** lock.panelSplits（未经 normalizePanelSplits
+    // 钳制），guard 形式正是为此保留 —— 详见 tipWidthCommonForkFromPresentHeights。
+    // 无 panelSplits 时该 split 无意义。
     if (!Array.isArray(lock.panelSplits) || !lock.panelSplits.length) return null;
-    const heights = [lock.panelSplits[k - 1]?.height, lock.panelSplits[k]?.height]
-      .filter((h) => h != null)
-      .map(Number);
-    forkT = heights.length ? 1 - Math.max(...heights) : 1;
+    forkT = tipWidthCommonForkFromPresentHeights(
+      lock.panelSplits[k - 1]?.height,
+      lock.panelSplits[k]?.height
+    );
     if (typeof splitTipForSegment === "function") {
       try {
         const tip = splitTipForSegment(lock, k, lock.panelSplits, bone);
@@ -605,7 +617,14 @@ export function splitBoneLayout(lock, bone, options = {}) {
       if (Number.isFinite(tip?.x)) p = [tip.x, tip.y, tip.z];
     }
   } else if (lock.geometryType === "strand" && lock.strandSplitEnabled) {
-    // 发丝分支：per-tube forkT = 1 - max(相邻拉链高)；p = 曲线末端 + 宽度 × spread 侧向偏移。
+    // 发丝分支：per-tube forkT = 1 - max(相邻拉链高)；p = 曲线末端 + 该管**中心**的侧向偏移。
+    // 0.2.132：偏移原为 baseWidth × spread × direction（已删除的 opening 平移）。Tip Clump
+    // 现在只控制收窄、不再决定管挂在哪，所以派生位置改用管中心 —— 与几何真正的管心同侧同序。
+    // 量纲：管中心是**归一化** profile 坐标，而 profile 的 x 恰好也在 [-1, 1]（两个内置
+    // profile 都是；几何按 lerp(minX, maxX, position*0.5+0.5) 把 zipper position 映进 profile
+    // x，minX/maxX = ∓1 时该 lerp 就是恒等），世界横向 = profile.x × baseWidth × widthScale
+    // ⇒ 偏移 = baseWidth(含 widthScale) × 中心。刻意不乘发尖处的 taper 采样值：这是「未创作
+    // 发尖」时的派生锚点，取基础包络即可（创作过时走 splitChainLayout）。
     const splits = strandSplitsForExport(lock);
     forkT = strandForkTForTube(splits, k);
     try {
@@ -614,9 +633,7 @@ export function splitBoneLayout(lock, bone, options = {}) {
         const tip = curve.getPoint(1);
         if (frame?.x && tip && Number.isFinite(tip.x)) {
           const baseWidth = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1);
-          const spread = clamp(Number(bone.spread ?? lock.strandSplitGap ?? 0.12), 0, 0.99);
-          const direction = strandDirectionForTube(splits, k);
-          const offset = baseWidth * spread * direction;
+          const offset = baseWidth * strandTubeCenterForTube(splits, k);
           p = [tip.x + frame.x.x * offset, tip.y + frame.x.y * offset, tip.z + frame.x.z * offset];
         }
       }
@@ -644,7 +661,6 @@ export function splitBoneLayout(lock, bone, options = {}) {
 // parentMainIndex。不适用（无 split、无 tip 链、链过短）时返回 null；
 // splitBoneLayout 仍是调用方的回退。
 export function splitChainLayout(lock, bone, options = {}) {
-  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   if (!lock || !bone || typeof bone.name !== "string") return null;
   // 仅 split.N 主骨骼参与；tip 链关节（split.N.tip.M）排除。
   if (!bone.name.startsWith("split.") || bone.name.includes(".tip.")) return null;
@@ -664,12 +680,13 @@ export function splitChainLayout(lock, bone, options = {}) {
   let chain = null;
 
   if (lock.geometryType === "panel" || lock.geometryType === "surface") {
-    // 面板/表面分支：forkT = 1 - max(相邻段高)；tip 链由 splitTipForSegment 提供。
+    // 面板/表面分支：forkT 走与 splitBoneLayout 同一个 guard 形式定义点（同上，读原始
+    // panelSplits）；tip 链由 splitTipForSegment 提供。
     if (!Array.isArray(lock.panelSplits) || !lock.panelSplits.length) return null;
-    const heights = [lock.panelSplits[k - 1]?.height, lock.panelSplits[k]?.height]
-      .filter((h) => h != null)
-      .map(Number);
-    forkT = heights.length ? 1 - Math.max(...heights) : 1;
+    forkT = tipWidthCommonForkFromPresentHeights(
+      lock.panelSplits[k - 1]?.height,
+      lock.panelSplits[k]?.height
+    );
     if (typeof splitTipForSegment === "function") {
       try {
         chain = splitTipForSegment(lock, k, lock.panelSplits, bone);
@@ -678,30 +695,26 @@ export function splitChainLayout(lock, bone, options = {}) {
       }
     }
   } else if (lock.geometryType === "strand" && lock.strandSplitEnabled) {
-    // 发丝分支：per-tube forkT = 1 - max(相邻拉链高)；tip 链 = 主链曲线 + 宽度 × spread
-    // 沿 frame.x 侧向偏移（per-tube direction），smoothstep 从 fork 平滑展开。
+    // 发丝分支：per-tube forkT = 1 - max(相邻拉链高)；rest 链 = 主链曲线 + 该管**中心**的
+    // 侧向偏移（沿 frame.x，量纲同 splitBoneLayout 的派生 p，见那里的说明）。
+    // 0.2.132：原为 baseWidth × spread × smoothstep(t, fork, 1) × direction，即已删除的
+    // opening 平移。管现在**不随 Tip Clump 平移**，其中心沿全长恒定（band 是等宽裁剪），所以
+    // 偏移不再需要沿 t 斜升 —— smoothstep 与 splitStart 随之删除。
     const splits = strandSplitsForExport(lock);
     forkT = strandForkTForTube(splits, k);
     try {
       if (curve && typeof curve.getPoint === "function"
         && typeof strandGeometryFrameAt === "function"
         && typeof materializeTipChain === "function") {
-        const splitStart = forkT;
         const baseWidth = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1);
-        const spread = clamp(Number(bone.spread ?? lock.strandSplitGap ?? 0.12), 0, 0.99);
-        const direction = strandDirectionForTube(splits, k);
-        const smoothstep = (x, min, max) => {
-          const t = clamp((x - min) / Math.max(0.0001, max - min), 0, 1);
-          return t * t * (3 - 2 * t);
-        };
+        const offset = baseWidth * strandTubeCenterForTube(splits, k);
         const restPointAt = (t) => {
           const frame = strandGeometryFrameAt(lock, curve, t);
           const point = curve.getPoint(t);
-          const opening = t <= splitStart ? 0 : baseWidth * spread * smoothstep(t, splitStart, 1) * direction;
           return {
-            x: point.x + frame.x.x * opening,
-            y: point.y + frame.x.y * opening,
-            z: point.z + frame.x.z * opening
+            x: point.x + frame.x.x * offset,
+            y: point.y + frame.x.y * offset,
+            z: point.z + frame.x.z * offset
           };
         };
         chain = materializeTipChain(bone?.tip || null, restPointAt, Math.max(2, mainCount));

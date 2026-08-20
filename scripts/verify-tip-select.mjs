@@ -119,14 +119,14 @@ try {
     const pos = geo.attributes.position; const w = geo.userData.panelWeights;
     // Simulate the selected state so the width handles are visible during the search
     // (they would otherwise be hidden and the chosen point could overlap one after selection).
-    t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 0 };
+    t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 0 };
     t.updateCurveObjects(lock, { visible: true });
     const allHandles = [
-      ...(lock.curveObjects?.panelTipHandles || []),
+      ...(lock.curveObjects?.tipChainHandles || []),
       ...(lock.curveObjects?.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right]),
       ...(lock.curveObjects?.handles || []),
       ...(lock.curveObjects?.panelSplitHandles || []),
-      ...(lock.curveObjects?.panelSegmentHandles || [])
+      ...(lock.curveObjects?.tipClumpHandles || [])
     ].filter((h) => h && h.visible);
     const rect = t.renderer.domElement.getBoundingClientRect();
     const v = new t.THREE.Vector3();
@@ -138,7 +138,7 @@ try {
         t.raycaster.setFromCamera(ndc, t.camera());
         const handleHit = t.raycaster.intersectObjects(allHandles, false)[0];
         if (!handleHit) {
-          t.sculptState.state.panelTipSelection = null;
+          t.sculptState.state.tipSelection = null;
           t.updateCurveObjects(lock, { visible: true });
           return JSON.stringify({ x: Math.min(Math.max(c.x, rect.left + 4), rect.right - 4), y: Math.min(Math.max(c.y, rect.top + 4), rect.bottom - 4), vertex: i });
         }
@@ -152,15 +152,15 @@ try {
   // Move the mouse to the panel body so a real hover would register, then set hover as it would.
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: clickPt.x, y: clickPt.y });
   await sleep(300);
-  const hoverAfterMove = await evalJS(cdp, `(() => { const t = window.__ahsTest; return JSON.stringify(t.sculptState.state.panelTipHover); })()`);
+  const hoverAfterMove = await evalJS(cdp, `(() => { const t = window.__ahsTest; return JSON.stringify(t.sculptState.state.tipHover); })()`);
   // Force hover for the click (a real hover is confirmed working; CDP mouseMoved fidelity varies).
-  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipHover = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 0 }; return true; })()`);
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.tipHover = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 0 }; return true; })()`);
 
   // Click #1 -> select tip sub-bone
   await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: clickPt.x, y: clickPt.y, button: "left", clickCount: 1 });
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: clickPt.x, y: clickPt.y, button: "left", clickCount: 1 });
   await sleep(500);
-  const selAfter = JSON.parse(await evalJS(cdp, `(() => { const s = window.__ahsTest.sculptState.state; return JSON.stringify({ sel: s.panelTipSelection, seg: s.panelSegmentIndex, label: document.querySelector('#panelSegmentLabel')?.textContent }); })()`));
+  const selAfter = JSON.parse(await evalJS(cdp, `(() => { const s = window.__ahsTest.sculptState.state; return JSON.stringify({ sel: s.tipSelection, seg: s.panelSegmentIndex, label: document.querySelector('#panelSegmentLabel')?.textContent }); })()`));
   check("click selects tip sub-bone (toggle on)", !!(selAfter.sel && selAfter.sel.lockId === lockId && selAfter.sel.segmentIndex === 0), `sel=${JSON.stringify(selAfter)}`);
 
   const hl = JSON.parse(await evalJS(cdp, `(() => {
@@ -178,7 +178,7 @@ try {
   const dual = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-    t.sculptState.state.panelTipHover = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 1 };
+    t.sculptState.state.tipHover = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 1 };
     t.updateTipHighlight(lock);
     const m = lock.curveObjects.tipHighlightMesh;
     const w = lock.mesh.geometry.userData.panelWeights;
@@ -202,11 +202,11 @@ try {
   const brush = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-    const visHandles = (lock.curveObjects?.panelTipHandles || []).filter((h) => h.visible).length;
-    const visLines = (lock.curveObjects?.panelTipLines || []).filter((l) => l.visible).length;
+    const visHandles = (lock.curveObjects?.tipChainHandles || []).filter((h) => h.visible).length;
+    const visLines = (lock.curveObjects?.tipChainLines || []).filter((l) => l.visible).length;
     return JSON.stringify({
       tool: t.sel.state.activeTool,
-      selection: t.sculptState.state.panelTipSelection,
+      selection: t.sculptState.state.tipSelection,
       groupVisible: lock.curveObjects?.group.visible,
       highlightVisible: lock.curveObjects?.tipHighlightMesh?.visible,
       visHandles,
@@ -228,14 +228,14 @@ try {
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const geo = lock.mesh.geometry;
     const pos = geo.attributes.position; const w = geo.userData.panelWeights;
-    t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 0 };
+    t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 0 };
     t.updateCurveObjects(lock, { visible: true });
     const allHandles = [
-      ...(lock.curveObjects?.panelTipHandles || []),
+      ...(lock.curveObjects?.tipChainHandles || []),
       ...(lock.curveObjects?.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right]),
       ...(lock.curveObjects?.handles || []),
       ...(lock.curveObjects?.panelSplitHandles || []),
-      ...(lock.curveObjects?.panelSegmentHandles || [])
+      ...(lock.curveObjects?.tipClumpHandles || [])
     ].filter((h) => h && h.visible);
     const rect = t.renderer.domElement.getBoundingClientRect();
     const v = new t.THREE.Vector3();
@@ -254,12 +254,12 @@ try {
   })()`));
   console.log("TOGGLE-PT", togglePt);
   if (togglePt) {
-    await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipHover = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 0 }; return true; })()`);
+    await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.tipHover = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 0 }; return true; })()`);
     await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: togglePt.x, y: togglePt.y, button: "left", clickCount: 1 });
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: togglePt.x, y: togglePt.y, button: "left", clickCount: 1 });
     await sleep(500);
   }
-  const selOff = await evalJS(cdp, `(() => { const s = window.__ahsTest.sculptState.state; return JSON.stringify(s.panelTipSelection); })()`);
+  const selOff = await evalJS(cdp, `(() => { const s = window.__ahsTest.sculptState.state; return JSON.stringify(s.tipSelection); })()`);
   check("second click toggles back to main selection", togglePt != null && selOff === "null", `sel=${selOff} pt=${JSON.stringify(togglePt)}`);
   // ============ Issue 1: every segment (incl. boundary) exposes a tip chain ============
   const allSegs = JSON.parse(await evalJS(cdp, `(() => {
@@ -268,20 +268,20 @@ try {
     const res = [];
     const count = lock.panelSplits.length + 1;
     for (let seg = 0; seg < count; seg++) {
-      t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: seg };
+      t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: seg };
       t.updateCurveObjects(lock, { visible: true });
       let handles = 0;
-      lock.curveObjects.panelTipHandles.forEach((h) => { if (h.visible && h.userData.panelTipIndex === seg) handles++; });
+      lock.curveObjects.tipChainHandles.forEach((h) => { if (h.visible && h.userData.tipSegmentIndex === seg) handles++; });
       res.push({ seg, handles });
     }
-    t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 0 };
+    t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 0 };
     return JSON.stringify({ count, res });
   })()`));
   const allSegsOk = allSegs.res.length === allSegs.count && allSegs.res.every((r) => r.handles > 0);
   check("every segment exposes tip handles (boundary seg fixed)", allSegsOk, `all=${JSON.stringify(allSegs)}`);
 
   // ============ Issue 2: scale brush = uniform radial transform (not move) ============
-  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 1 }; return true; })()`);
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.tipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 1 }; return true; })()`);
   await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="sculpt-scale"]'); if (btn) btn.click(); return true; })()`);
   await sleep(400);
   const scaleBefore = JSON.parse(await evalJS(cdp, `(() => {
@@ -431,7 +431,7 @@ try {
   const normalImproved = orientInfo.normalToCamDeg != null && Number(normalBefore) - orientInfo.normalToCamDeg > 0.5;
   check("orient rolls tip section toward viewport (chain unchanged)", orientChainMoved === false && orientInfo.nonZero > 0 && normalImproved === true, `orient=${JSON.stringify(orientInfo)} before=${Number(normalBefore).toFixed(1)} chainMoved=${orientChainMoved}`);
   // undo
-  const undoSelBefore = await evalJS(cdp, `(() => { const t = window.__ahsTest; return JSON.stringify(t.sculptState.state.panelTipSelection); })()`);
+  const undoSelBefore = await evalJS(cdp, `(() => { const t = window.__ahsTest; return JSON.stringify(t.sculptState.state.tipSelection); })()`);
   await evalJS(cdp, `(() => { const btn = document.querySelector('#undoAction'); if (btn && !btn.disabled) btn.click(); return true; })()`);
   await sleep(600);
   const undoCheck = JSON.parse(await evalJS(cdp, `(() => {
@@ -452,13 +452,13 @@ try {
     const restoredTip = bone2 && bone2.tip ? bone2.tip.points.map((p) => ({ x: p.x, y: p.y, z: p.z })) : null;
     const hasSplitBones = Array.isArray(lock.splitBones) && lock.splitBones.length === splits.length + 1;
     const hasRegistryBones = Array.isArray(lock.bones) && lock.bones.length > 0;
-    return JSON.stringify({ reverted, maxDiff, sel: t.sculptState.state.panelTipSelection, hasSplitBones, hasRegistryBones, restoredTip });
+    return JSON.stringify({ reverted, maxDiff, sel: t.sculptState.state.tipSelection, hasSplitBones, hasRegistryBones, restoredTip });
   })()`));
 
   check("undo reverts only the tip stroke (selection survives)", undoCheck.reverted === true && undoCheck.sel && undoCheck.sel.segmentIndex === 1, `undo=${JSON.stringify(undoCheck)}`);
 
   // ============ Issue 5: push brush moves a selected tip chain ============
-  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 1 }; return true; })()`);
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.tipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 1 }; return true; })()`);
   await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="sculpt-push"]'); if (btn) btn.click(); return true; })()`);
   await sleep(400);
   const pushBefore = JSON.parse(await evalJS(cdp, `(() => {
@@ -501,7 +501,7 @@ try {
   check("push brush moves selected tip chain", pushMax > 1e-4, `pushMax=${pushMax.toFixed(5)}`);
 
   // ============ Issue 4: bones-only view during brush with no tip selected ============
-  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipSelection = null; t.sculptState.state.panelTipHover = { lockId: null, segmentIndex: null }; return true; })()`);
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.tipSelection = null; t.sculptState.state.tipHover = { lockId: null, segmentIndex: null }; return true; })()`);
   await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="sculpt-scale"]'); if (btn) btn.click(); return true; })()`);
   await sleep(400);
   const bonesOnly = JSON.parse(await evalJS(cdp, `(() => {
@@ -514,15 +514,15 @@ try {
   check("brush bones-only: group+line visible, main handles hidden", bonesOnly.group === true && bonesOnly.line === true && bonesOnly.mainHandlesVisible === 0, `bones=${JSON.stringify(bonesOnly)}`);
 
   // ============ Issue 5: alt+click on a hovered tip switches tip selection ============
-  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipHover = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 2 }; return true; })()`);
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.tipHover = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 2 }; return true; })()`);
   await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: clickPt.x, y: clickPt.y, button: "left", modifiers: 1, clickCount: 1 });
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: clickPt.x, y: clickPt.y, button: "left", modifiers: 1, clickCount: 1 });
   await sleep(400);
-  const altTip = JSON.parse(await evalJS(cdp, `(() => { const t = window.__ahsTest; return JSON.stringify(t.sculptState.state.panelTipSelection); })()`));
+  const altTip = JSON.parse(await evalJS(cdp, `(() => { const t = window.__ahsTest; return JSON.stringify(t.sculptState.state.tipSelection); })()`));
   check("alt+click switches to hovered tip segment", !!(altTip && altTip.lockId === lockId && altTip.segmentIndex === 2), `altTip=${JSON.stringify(altTip)}`);
 
   // ============ Issue 2+3: tip width control points replace the green controller ============
-  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 2 }; t.updateCurveObjects(t.locks.find((l) => l.id === ${JSON.stringify(lockId)}), { visible: true }); return true; })()`);
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.tipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 2 }; t.updateCurveObjects(t.locks.find((l) => l.id === ${JSON.stringify(lockId)}), { visible: true }); return true; })()`);
   await sleep(300);
   const widthVis = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
@@ -543,7 +543,7 @@ try {
     const leftLen = lineLen(lines ? lines.left : null);
     const rightLen = lineLen(lines ? lines.right : null);
     const handleColor = seg && seg.left[0] ? '#' + seg.left[0].material.color.getHexString() : null;
-    const greenVis = (lock.curveObjects.panelSegmentHandles || []).filter((h) => h.visible).length;
+    const greenVis = (lock.curveObjects.tipClumpHandles || []).filter((h) => h.visible).length;
     const widthEdgeVis = (lock.curveObjects.widthEdgeLines || []).filter((e) => e.visible).length;
     return JSON.stringify({ leftVis, rightVis, leftLine: !!lines && lines.left.visible, rightLine: !!lines && lines.right.visible, leftLen: Number(leftLen.toFixed(4)), rightLen: Number(rightLen.toFixed(4)), handleColor, greenVis, widthEdgeVis });
   })()`));
@@ -552,7 +552,7 @@ try {
   // drag a right-side width handle (select tool; brush tools consume pointerdown)
   await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="select"]'); if (btn) btn.click(); return true; })()`);
   await sleep(300);
-  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 2 }; t.updateCurveObjects(t.locks.find((l) => l.id === ${JSON.stringify(lockId)}), { visible: true }); return true; })()`);
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.tipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 2 }; t.updateCurveObjects(t.locks.find((l) => l.id === ${JSON.stringify(lockId)}), { visible: true }); return true; })()`);
   const widthDrag = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
@@ -740,7 +740,7 @@ try {
   check("tip width Reset: all points 1 (both fork points included)", resetCheck.allOne === true && resetCheck.hasBothForks === true && resetCheck.hasTip === true && resetCheck.count <= 9, `reset=${JSON.stringify(resetCheck)}`);
 
   // ============ 8.22: Ctrl+drag = asymmetric (only the dragged side changes) ============
-  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 2 }; t.updateCurveObjects(t.locks.find((l) => l.id === ${JSON.stringify(lockId)}), { visible: true }); return true; })()`);
+  await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.tipSelection = { lockId: ${JSON.stringify(lockId)}, segmentIndex: 2 }; t.updateCurveObjects(t.locks.find((l) => l.id === ${JSON.stringify(lockId)}), { visible: true }); return true; })()`);
   const ctrlDrag = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
@@ -815,7 +815,7 @@ try {
   const previewCheck = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-    t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 2 };
+    t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 2 };
     t.updateCurveObjects(lock, { visible: true });
     t.syncPanelSegmentControls(lock);
     const d0 = document.querySelector('#segmentTaperPreview').getAttribute('d') || '';
@@ -942,15 +942,15 @@ try {
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const bone = t.materializeSplitBones(lock)[2] || null;
-    const origSpread = bone.spread;
-    bone.spread = 0;
+    const origSpread = bone.tipClump;
+    bone.tipClump = 0;
     const p0 = t.tipWidthEdgePosition(lock, 2, splits, bone, 1, 1).point.clone();
-    bone.spread = 1; // above max: the defensive clamp must keep it equal to 0.99 (no degenerate collapse)
+    bone.tipClump = 1; // above max: the defensive clamp must keep it equal to 0.99 (no degenerate collapse)
     const p1 = t.tipWidthEdgePosition(lock, 2, splits, bone, 1, 1).point.clone();
     const gapOne = t.tipWidthSpreadGap(lock, 2, splits, bone, 1, 1);
-    bone.spread = 0.99;
+    bone.tipClump = 0.99;
     const gapMax = t.tipWidthSpreadGap(lock, 2, splits, bone, 1, 1);
-    bone.spread = origSpread;
+    bone.tipClump = origSpread;
     const gapAtTip = t.tipWidthSpreadGap(lock, 2, splits, bone, 1, 1);
     const sliderMax = document.querySelector('#panelSegmentSpread') ? document.querySelector('#panelSegmentSpread').max : null;
     return JSON.stringify({ moved: Number(p0.distanceTo(p1).toFixed(4)), gapOne: Number(gapOne.toFixed(6)), gapMax: Number(gapMax.toFixed(6)), clampOk: Math.abs(gapOne - gapMax) < 1e-9, gapAtTip: Number(gapAtTip.toFixed(4)), sliderMax });
@@ -964,16 +964,16 @@ try {
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const bone = t.materializeSplitBones(lock)[0] || null;
     if (!bone) return JSON.stringify({ missingBone: true });
-    const origSpread = bone.spread;
-    bone.spread = 0;
+    const origSpread = bone.tipClump;
+    bone.tipClump = 0;
     const gap0Outer = t.tipWidthSpreadGap(lock, 0, splits, bone, 1, -1);
     const gap0Zipper = t.tipWidthSpreadGap(lock, 0, splits, bone, 1, 1);
     const e0 = t.tipWidthEdgePosition(lock, 0, splits, bone, -1, 1);
-    bone.spread = 0.7;
+    bone.tipClump = 0.7;
     const gap7Outer = t.tipWidthSpreadGap(lock, 0, splits, bone, 1, -1);
     const gap7Zipper = t.tipWidthSpreadGap(lock, 0, splits, bone, 1, 1);
     const e7 = t.tipWidthEdgePosition(lock, 0, splits, bone, -1, 1);
-    bone.spread = origSpread;
+    bone.tipClump = origSpread;
     return JSON.stringify({
       gap0Outer: Number(gap0Outer.toFixed(6)),
       gap0Zipper: Number(gap0Zipper.toFixed(6)),
@@ -1000,14 +1000,14 @@ try {
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const bone = t.materializeSplitBones(lock)[2] || null;
-    const origSpread = bone.spread;
-    bone.spread = 1; // authored above max
+    const origSpread = bone.tipClump;
+    bone.tipClump = 1; // authored above max
     const gapOne = t.tipWidthSpreadGap(lock, 2, splits, bone, 1, 1);
-    const reRead = t.materializeSplitBones(lock)[2]?.spread; // SPREAD_MAX clamps 1 -> 0.99 on re-read
+    const reRead = t.materializeSplitBones(lock)[2]?.tipClump; // SPREAD_MAX clamps 1 -> 0.99 on re-read
     const live = t.materializeSplitBones(lock)[2] || null;
-    live.spread = 0.99;
+    live.tipClump = 0.99;
     const gapMax = t.tipWidthSpreadGap(lock, 2, splits, live, 1, 1);
-    live.spread = origSpread;
+    live.tipClump = origSpread;
     t.materializeSplitBones(lock); // restore normalized lock state
     return JSON.stringify({ gapOne: Number(gapOne.toFixed(6)), gapMax: Number(gapMax.toFixed(6)), clampOk: Math.abs(gapOne - gapMax) < 1e-9, reRead });
   })()`));
@@ -1072,8 +1072,8 @@ try {
   const rotPick = JSON.parse(await evalJS(cdp, `(() => {
     const t = window.__ahsTest;
     const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-    if (!lock || !Array.isArray(lock.curveObjects?.panelTipHandles)) return JSON.stringify({ noHandle: true });
-    t.sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: 0 };
+    if (!lock || !Array.isArray(lock.curveObjects?.tipChainHandles)) return JSON.stringify({ noHandle: true });
+    t.sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: 0 };
     t.updateCurveObjects(lock, { visible: true });
     t.scene.updateMatrixWorld(true);
     const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
@@ -1081,8 +1081,8 @@ try {
     const allHandles = [
       ...(lock.curveObjects?.tipWidthHandles || []).flatMap((seg) => [...seg.left, ...seg.right]),
       ...(lock.curveObjects?.panelSplitHandles || []),
-      ...(lock.curveObjects?.panelSegmentHandles || []),
-      ...(lock.curveObjects?.panelTipHandles || []),
+      ...(lock.curveObjects?.tipClumpHandles || []),
+      ...(lock.curveObjects?.tipChainHandles || []),
       ...(lock.curveObjects?.strandSplitHandles || [])
     ].filter((h) => h && h.visible);
     const rect = t.renderer.domElement.getBoundingClientRect();
@@ -1090,10 +1090,10 @@ try {
     const world = new t.THREE.Vector3();
     const identityQ = new t.THREE.Quaternion();
     const gizmoPicker = t.transformControls?._gizmo?.picker?.[t.transformControls.mode] || null;
-    for (const h of lock.curveObjects.panelTipHandles) {
+    for (const h of lock.curveObjects.tipChainHandles) {
       if (!h.visible) continue;
-      const seg = h.userData.panelTipIndex;
-      const point = h.userData.panelTipPoint;
+      const seg = h.userData.tipSegmentIndex;
+      const point = h.userData.tipChainPoint;
       const tip = t.splitTipForSegment(lock, seg, splits, bones[seg] || null);
       if (!tip || !Array.isArray(tip.points) || point >= tip.points.length) continue;
       const chainT = point / Math.max(1, tip.points.length - 1);
@@ -1131,7 +1131,7 @@ try {
     const rotAssert = JSON.parse(await evalJS(cdp, `(() => {
       const t = window.__ahsTest;
       const lock = t.locks.find((l) => l.id === ${JSON.stringify(lockId)});
-      const h = lock.curveObjects.panelTipHandles.find((x) => x.userData.panelTipIndex === ${rotPick.seg} && x.userData.panelTipPoint === ${rotPick.point});
+      const h = lock.curveObjects.tipChainHandles.find((x) => x.userData.tipSegmentIndex === ${rotPick.seg} && x.userData.tipChainPoint === ${rotPick.point});
       if (!h) return JSON.stringify({ noHandle: true });
       const splits = t.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
       const bones = t.materializeSplitBones(lock);
@@ -1275,7 +1275,7 @@ try {
       const c = t.projectToClient(new t.THREE.Vector3(last.x, last.y, last.z));
       return JSON.stringify({ x: c.x, y: c.y });
     })()`));
-    await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipHover = { lockId: null, segmentIndex: null }; t.updateStrandBrushHover({ clientX: ${selPt.x}, clientY: ${selPt.y} }); return true; })()`);
+    await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.tipHover = { lockId: null, segmentIndex: null }; t.updateStrandBrushHover({ clientX: ${selPt.x}, clientY: ${selPt.y} }); return true; })()`);
     await sleep(200);
     const selHover = JSON.parse(await evalJS(cdp, `(() => {
       const t = window.__ahsTest;
@@ -1300,7 +1300,7 @@ try {
     return lock ? lock.id : null;
   })()`);
   if (otherId) {
-    await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.panelTipHover = { lockId: null, segmentIndex: null }; return true; })()`);
+    await evalJS(cdp, `(() => { const t = window.__ahsTest; t.sculptState.state.tipHover = { lockId: null, segmentIndex: null }; return true; })()`);
     await evalJS(cdp, `(() => { const btn = document.querySelector('.tool-button[data-tool="sculpt-move"]'); if (btn) btn.click(); return true; })()`);
     await sleep(300);
     const otherPt = JSON.parse(await evalJS(cdp, `(() => {

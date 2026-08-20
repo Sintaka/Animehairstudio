@@ -1,4 +1,4 @@
-﻿# 骨骼弯曲防重叠 +（可选）Delta Mush 平滑 — 实施计划
+# 骨骼弯曲防重叠 +（可选）Delta Mush 平滑 — 实施计划
 
 > 状态：**主任务已实现（0.2.66，codex/0.2.66-sweep-corner-smooth）**；Delta Mush 仍为可选辅助（未实现）。原目标版本 `0.1.4-Sintaka.0.2.60+`。
 > 关联：bone-system-roadmap.md、AnimeHairStudio_Tech_Architecture_and_DCC_Reference.md。

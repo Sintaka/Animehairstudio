@@ -1,4 +1,4 @@
-﻿// draw-store.js — draw / poly-brush scene state (refactor 3c-2).
+// draw-store.js — draw / poly-brush scene state (refactor 3c-2).
 import { createSceneStore } from "../core/scene-store.js?v=20260809-1";
 import { readStoredBooleanPreference } from "../core/preference-storage.js?v=20260814-12";
 

@@ -1,4 +1,4 @@
-﻿// scene-store.js — minimal mutable-state container with change-trace hooks.
+// scene-store.js — minimal mutable-state container with change-trace hooks.
 // The convergence target for app.js global `let` state (refactor stage 3).
 // `state` is a Proxy so assignments can be traced/middlewared; snapshot/restore
 // support project save/load and undo.

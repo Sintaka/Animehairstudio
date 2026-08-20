@@ -1,33 +1,35 @@
 import { createScalpBuilderApi } from "./modules/scalp/scalp-builder.js?v=20260814-12";
 import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260814-12";
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
-import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260814-12";
-import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260814-12";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260815-4";
-import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260814-12";
+import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
+import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260901-1";
+import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
-import { createSegmentControlApi } from "./modules/bones/segment-control.js?v=20260814-12";
-import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260814-12";
+import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-1";
+import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-1";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260814-1";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260814-12";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260814-12";
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260814-8";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260814-12";
-import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip, strandSplitBonesFor, materializeStrandSplitBones, strandSplitBonesToData, strandSplitBonesFromData, mirrorStrandSplitBones, strandSplitForkTForSegment, strandSplitDirectionForSegment } from "./modules/bones/bone-model.js?v=20260813-1";
-import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260813-1";
-import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260814-12";
+import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip, strandSplitBonesFor, materializeStrandSplitBones, strandSplitBonesToData, strandSplitBonesFromData, mirrorStrandSplitBones, strandSplitsFor, segmentBoneHost, SPREAD_MAX, STRAND_SEGMENT_HOST } from "./modules/bones/bone-model.js?v=20260901-1";
+// 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
+import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
+import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
+import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-1";
 import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-3";
-import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260814-12";
-import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260814-12";
+import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260829-1";
+import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260901-1";
 import { createPresetLibraryApi } from "./modules/io/preset-library.js?v=20260812-1";
-import { createDrawFlowApi } from "./modules/geometry/draw-flow.js?v=20260814-12";
+import { createDrawFlowApi } from "./modules/geometry/draw-flow.js?v=20260901-1";
 import { createRadialMenuApi } from "./modules/geometry/radial-menu.js?v=20260814-12";
 import { createPlacementApi } from "./modules/geometry/placement.js?v=20260814-12";
 import { createProceduralDuplicateApi } from "./modules/geometry/procedural-duplicate.js?v=20260814-12";
 import { createClumpProceduralApi } from "./modules/geometry/clump-procedural.js?v=20260814-12";
 import { createReferenceHeadApi } from "./modules/scene/reference-head.js?v=20260814-12";
 import { createMiscStore } from "./modules/core/misc-store.js?v=20260814-12";
-import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260814-12";
+import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260830-1";
 import { createScalpStore } from "./modules/scalp/scalp-store.js?v=20260809-10";
 import { createProjectStore } from "./modules/io/project-store.js?v=20260809-9";
 import { createHairStore } from "./modules/core/hair-store.js?v=20260816-7";
@@ -42,7 +44,7 @@ import { createReferenceStore } from "./modules/edit/reference-store.js?v=202608
 import { createDrawStore } from "./modules/edit/draw-store.js?v=20260814-12";
 import { createBranchStore } from "./modules/branch/branch-store.js?v=20260814-12";
 import { createSelectionStore } from "./modules/edit/selection-store.js?v=20260809-2";
-import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260817-1";
+import { createProjectSaveApi } from "./modules/io/project-files.js?v=20260901-1";
 // Wind preview wiring: store + pure wind math (both modules are built in parallel; until
 // they land these imports 404 — expected, coordinated at merge).
 import { createWindStore } from "./modules/core/wind-store.js?v=20260817-2";
@@ -141,7 +143,7 @@ import {
   scaleCapsuleRadialLoops
 } from "./modules/geometry/capsule-curve.js?v=20260814-12";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./modules/io/obj-export.js?v=20260814-12";
-import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260816-20";
+import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260901-1";
 import {
   fileActionFormat,
   fileNameForAction,
@@ -254,7 +256,7 @@ import {
   DEFAULT_LANGUAGE,
   LANGUAGE_STORAGE_KEY,
   normalizeLanguage
-} from "./modules/data/localization.js?v=20260814-12";
+} from "./modules/data/localization.js?v=20260901-1";
 import {
   emptyToolPresetLibrary,
   normalizeToolPresetLibrary,
@@ -283,7 +285,7 @@ import {
 import {
   createClumpBrushTemplate,
   normalizeClumpBrushTemplate
-} from "./modules/data/clump-brush-presets.js?v=20260814-12";
+} from "./modules/data/clump-brush-presets.js?v=20260901-1";
 import { createMaterialUiApi } from "./modules/material/material-ui.js?v=20260813-1";
 import { createIoTailApi } from "./modules/io/io-tail.js?v=20260813-2";
 
@@ -1049,7 +1051,7 @@ transformControls.addEventListener("dragging-changed", (event) => {
   // Tip 子骨骼手柄：rotate 拖拽开始时记录 startQuaternion/startPoints（objectChange
   // 里按总旋转增量应用，避免累积），translate 记录 startPosition/startPoints，结束时
   // 清理；scale 工具只附着、不应用。
-  if (transformControls.object?.userData.panelTipIndex != null) {
+  if (transformControls.object?.userData.tipSegmentIndex != null) {
     if (event.value && transformControls.mode === "rotate") {
       pushUndoState();
       bonesApi.beginTipSubBoneRotate(transformControls.object);
@@ -1180,7 +1182,7 @@ transformControls.addEventListener("objectChange", () => {
   }
   const lock = locks.find((item) => item.id === handle.userData.lockId);
   if (!lock) return;
-  if (handle.userData.panelTipIndex != null) {
+  if (handle.userData.tipSegmentIndex != null) {
     // Tip 子骨骼手柄：旋转增量应用到 tip 链（scale 暂不应用）。
     bonesApi.applyTipSubBoneTransform(lock, handle);
     return;
@@ -1459,7 +1461,6 @@ const strandCreationDefaults = {
   strandSplitEnabled: false,
   strandSplitPosition: 0,
   strandSplitHeight: 0.3,
-  strandSplitGap: 0.12,
   strandTipStart: 0.75,
   curlCount: 4,
   curlDisplacement: 0.18,
@@ -3373,13 +3374,15 @@ const panelShapeValues = {
   panelTipCurve: document.querySelector("#panelTipCurveValue"),
   panelTipLoops: document.querySelector("#panelTipLoopsValue")
 };
+// 0.2.132：全局 Split Spacing 滑杆（#strandSplitGap）已删除 —— 它承载的「segment separate
+// / 整管横向平移」语义被整体移除，发尖聚合改由每管 Tip Clump（#strandSegmentSpread）表达。
+// 两个字典**刻意保留**（不塌缩成单个 checkbox 常量）：下方的 setMixedControl 多选同步与
+// input 处理器都按 Object.entries 遍历它们，将来再加 split 级标量控件时无需重接线。
+// strandSplitValues 现为空：strandSplitEnabled 是复选框、没有读数 output。
 const strandSplitInputs = {
-  strandSplitEnabled: document.querySelector("#strandSplitEnabled"),
-  strandSplitGap: document.querySelector("#strandSplitGap")
+  strandSplitEnabled: document.querySelector("#strandSplitEnabled")
 };
-const strandSplitValues = {
-  strandSplitGap: document.querySelector("#strandSplitGapValue")
-};
+const strandSplitValues = {};
 const strandTipInputs = {
   strandTipEnabled: document.querySelector("#strandTipEnabled"),
   strandTipStart: document.querySelector("#strandTipStart")
@@ -3406,6 +3409,14 @@ const panelSegmentSpread = document.querySelector("#panelSegmentSpread");
 const panelSegmentSpreadValue = document.querySelector("#panelSegmentSpreadValue");
 const segmentTaperPreview = document.querySelector("#segmentTaperPreview");
 const segmentDepthPreview = document.querySelector("#segmentDepthPreview");
+const strandSegmentControls = document.querySelector("#strandSegmentControls");
+const strandSegmentLabel = document.querySelector("#strandSegmentLabel");
+const previousStrandSegmentButton = document.querySelector("#previousStrandSegment");
+const nextStrandSegmentButton = document.querySelector("#nextStrandSegment");
+const strandSegmentSpread = document.querySelector("#strandSegmentSpread");
+const strandSegmentSpreadValue = document.querySelector("#strandSegmentSpreadValue");
+const strandSegmentTaperPreview = document.querySelector("#strandSegmentTaperPreview");
+const strandSegmentDepthPreview = document.querySelector("#strandSegmentDepthPreview");
 const groupInputs = {
   lengthScale: document.querySelector("#groupLengthScale"),
   widthScale: document.querySelector("#groupWidthScale"),
@@ -7551,10 +7562,22 @@ function removeGuideObjects(guide) {
   if (guide.loopPickersGroup) guideSurfaceGroup.remove(guide.loopPickersGroup);
 }
 
-function strandRadiusAt(lock, t, axis, radiusScale = 1, signedCoordinate = 1) {
-  const shapeCurve = axis === "z" ? lock.depthCurve : lock.taperCurve;
-  const secondaryCurve = axis === "z" ? lock.depthCurveSecondary : lock.taperCurveSecondary;
-  const asymmetric = axis === "z" ? lock.asymmetricDepthCurve : lock.asymmetricWidthCurve;
+// curveOverride（可选，默认 null ⇒ 行为逐字节不变）：把「曲线来源 + 采样用的带符号
+// 横向坐标 + 混合带宽」整体替换掉，供分裂发丝的**每管发尖 WidthCurve** 使用。
+// 形状：{ curve, secondary, asymmetric, signedCoordinate, blendZone }。
+// 为什么连 signedCoordinate 一起换：管的 profile 被 clipStrandProfileBand 裁过，**每根管
+// 的 raw x 只有一个符号**（边缘管全负 / 全正），拿 raw x 当左右判据会让边缘管整管只采到
+// 一侧曲线、另一侧永不生效 —— 与 panel 在 0.2.80 修掉的「不跨 0 段曲线动了发丝不动」
+// 是同一类死区。所以调用方必须传**管内相对坐标**（单一定义点见
+// modules/geometry/strand-tip-width.js 的 strandTubeSignedCoordinate）。
+// blendZone 同理随之而来：panel 的发尖采样用 0.25（tipWidthMultiplierAt 末参），发丝要
+// 与之同构就必须能覆盖默认的 1。
+function strandRadiusAt(lock, t, axis, radiusScale = 1, signedCoordinate = 1, curveOverride = null) {
+  const shapeCurve = curveOverride?.curve ?? (axis === "z" ? lock.depthCurve : lock.taperCurve);
+  const secondaryCurve = curveOverride?.secondary ?? (axis === "z" ? lock.depthCurveSecondary : lock.taperCurveSecondary);
+  const asymmetric = curveOverride ? curveOverride.asymmetric : (axis === "z" ? lock.asymmetricDepthCurve : lock.asymmetricWidthCurve);
+  const coordinate = curveOverride ? curveOverride.signedCoordinate : signedCoordinate;
+  const blendZone = curveOverride?.blendZone ?? 1;
   const axisScale = axis === "z" ? Number(lock.depthScale ?? 1) : Number(lock.widthScale ?? 1);
   const baseDimension = axis === "z"
     ? Number(lock.depth ?? 0.16)
@@ -7562,26 +7585,73 @@ function strandRadiusAt(lock, t, axis, radiusScale = 1, signedCoordinate = 1) {
   return Math.max(
     0,
     baseDimension
-      * sampleAsymmetricTaperCurve(shapeCurve, secondaryCurve, asymmetric, signedCoordinate, t)
+      * sampleAsymmetricTaperCurve(shapeCurve, secondaryCurve, asymmetric, coordinate, t, blendZone)
       * axisScale
       * radiusScale
   );
 }
 
+// widthOverride（可选，默认 null ⇒ 行为逐字节不变）：每个 profile 点的 x 半径改用该
+// override 采样（见 strandRadiusAt 的 curveOverride）。签名为 (profile, index) => override
+// | null，因为管内相对坐标逐点不同。z（depth）本轮刻意不接：发尖曲线只做宽度。
+//
+// **override 的缩放中心 = override.centerX（管中心），不是 profile 原点 x = 0**（0.2.128 修）：
+// 默认路径 `x_out = x · R` 是绕**全局** x = 0 的缩放，位移 `x · (m − 1)` 正比于 |raw x|。
+// 管的 band 一般不以 0 为中心，于是同一个**对称** multiplier 在一根管的两侧产生完全不同的
+// 位移；N = 1（默认拉链，真实工程的形态）时缝侧恰在 x = 0 ⇒ 位移**恒为 0**，即用户报告的
+// 「一侧位移很小」的极端形式（曲线面板两侧正常 ⇒ 写入没问题，错在消费）。
+// 这与 panel 在 0.2.80 之后修掉的是**同一条**规则：段宽度必须以**段中心**为参考，而不是
+// 主骨骼中心 u = 0（devlog/in-progress/panel-split-tip-bones.md §8.20 「改造为 tip-relative」）。
+// 公式（pivot = 管中心在**基础**曲线下的像，与 multiplier 无关 ⇒ 缩放不掺平移）：
+//   x_out = (x · R_override(x) + pivotX · (R0(pivotX) − R_override(x))) · scaleX
+//         ≡ (pivotX · R0(pivotX) + (x − pivotX) · R_override(x)) · scaleX   （代数等价）
+// **刻意写成第一式**：R_override === R0 时 `R0 − R_override` 恰为 0、`pivotX · 0` 恰为 0，
+// 于是逐位化简回老式 `x · R0`（第二式在浮点下只是近似相等，会让 m = 1 的 byte-identity
+// 断言必须放宽到容差）。改写此式前先想清楚这条恒等式还成不成立。
+// 两条性质（由此构造性成立）：
+//   ① m = 1 恒等：R_override === R0 ⇒ **逐位**等于改动前的 x · R0 · scaleX。
+//   ② 对称性：位移 = (x − pivotX) · (R_override − R0(pivotX))，(x − pivotX) 在管的两侧等值
+//     反号 ⇒ 同一 multiplier 下两侧位移大小恒等、方向相反。
+// centerX 缺省（非有限值，例如 strandTipWidthMultiplierAt 那条不带 band 的读值路径）时
+// pivot 退化回 0 = 老公式，保持向后兼容。
 function strandProfileTopologyAt(
   lock,
   t,
   profilePoints,
   scaleX = 1,
   scaleZ = 1,
-  boundsProfilePoints = profilePoints
+  boundsProfilePoints = profilePoints,
+  widthOverride = null
 ) {
   if (!profilePoints?.length) return [];
-  const transformed = profilePoints.map((profile) => ({
-    x: profile.x * strandRadiusAt(lock, t, "x", 1, profile.x) * scaleX,
+  const overrideAt = (profile, index) => (widthOverride ? widthOverride(profile, index) : null);
+  // pivot 半径按 pivotX 记忆化：一次调用里同一根管的所有点共享同一个 centerX，逐点重采
+  // 全局曲线只是白跑。单槽缓存足够（band 在一次调用内不变），且 null 初值 !== 0 所以
+  // 「管中心恰在 0」也会被正确求值一次。
+  let pivotCacheX = null;
+  let pivotCacheRadius = 0;
+  const pivotRadiusAt = (pivotX) => {
+    if (pivotCacheX !== pivotX) {
+      pivotCacheX = pivotX;
+      pivotCacheRadius = strandRadiusAt(lock, t, "x", 1, pivotX);
+    }
+    return pivotCacheRadius;
+  };
+  const warpedX = (profile, index) => {
+    const override = overrideAt(profile, index);
+    const radius = strandRadiusAt(lock, t, "x", 1, profile.x, override);
+    const pivotX = Number(override?.centerX);
+    if (!override || !Number.isFinite(pivotX)) return profile.x * radius * scaleX;
+    return (profile.x * radius + pivotX * (pivotRadiusAt(pivotX) - radius)) * scaleX;
+  };
+  const transformed = profilePoints.map((profile, index) => ({
+    x: warpedX(profile, index),
     z: profile.z * strandRadiusAt(lock, t, "z", 1, profile.z) * scaleZ
   }));
-  if (!lock.centerAsymmetricProfile) return transformed;
+  // 发尖宽度必须只做**缩放**、绝不平移（张开是 opening/direction 的职责）。
+  // centerAsymmetricProfile 分支按变换后 x 极值把 profile 重新居中 = 整管平移，override
+  // 生效时若让它参与，改宽度就会把管推开、缝跟着错位。故 override 路径直接返回缩放结果。
+  if (!lock.centerAsymmetricProfile || widthOverride) return transformed;
   const boundsTransformed = boundsProfilePoints.map((profile) => ({
     x: profile.x * strandRadiusAt(lock, t, "x", 1, profile.x) * scaleX,
     z: profile.z * strandRadiusAt(lock, t, "z", 1, profile.z) * scaleZ
@@ -8539,9 +8609,10 @@ const shapePresets = createShapePresetsApi({
   syncShapePresetSelects: presetLibraryApi.syncShapePresetSelects,
   getSelectedLock,
   segmentCurveTargetForWrite: taperEditor.segmentCurveTargetForWrite,
+  selectedSegmentIndex: taperEditor.selectedSegmentIndex,
   updateLockGeometry,
   syncActiveMirror,
-  syncPanelSegmentControls: segmentApi.syncPanelSegmentControls,
+  syncSegmentControlsForLock: segmentApi.syncSegmentControlsForLock,
   renderTaperCurveEditor: taperEditor.renderTaperCurveEditor,
   SHAPE_PRESETS,
   strandCreationDefaults,
@@ -8594,6 +8665,8 @@ Object.assign(taperEditorDeps, {
   taperPreviewPaths,
   segmentTaperPreview,
   segmentDepthPreview,
+  strandSegmentTaperPreview,
+  strandSegmentDepthPreview,
   strandTwistCurvePreview,
   proceduralBranchLengthCurvePreview,
   proceduralBranchShapeCurvePreview,
@@ -8653,6 +8726,14 @@ Object.assign(segmentControlDeps, {
   panelSegmentSpreadValue,
   segmentTaperPreview,
   segmentDepthPreview,
+  strandSegmentControls,
+  strandSegmentLabel,
+  previousStrandSegmentButton,
+  nextStrandSegmentButton,
+  strandSegmentSpread,
+  strandSegmentSpreadValue,
+  strandSegmentTaperPreview,
+  strandSegmentDepthPreview,
   panelShapeInputs,
   panelShapeValues,
   panelSplitCountValue,
@@ -8690,6 +8771,12 @@ Object.assign(boneInteractionDeps, {
   panelTipStrand,
   sculptGeom,
   syncPanelSegmentControls: segmentApi.syncPanelSegmentControls,
+  // 发丝管的发尖 WidthCurve 拖拽同步的是 Phase C 的 #strandSegmentControls（每管
+  // spread + 曲线预览），不是 panel 那组。
+  syncStrandSegmentControls: segmentApi.syncStrandSegmentControls,
+  // 选中发尖子骨骼后刷新「当前段」控件：按 segmentBoneHost 自动分派到上面两组之一，
+  // 所以发尖选择路径不需要自己 if(几何) 选 sync 函数（0.2.126）。
+  syncSegmentControlsForLock: segmentApi.syncSegmentControlsForLock,
   locks,
   renderer,
   camera,
@@ -8727,6 +8814,12 @@ Object.assign(boneInteractionDeps, {
   syncStrandSplitLegacyFields,
   snapPanelSplitHeight,
   strandGeometryCurve,
+  // 发丝发尖 WidthCurve 的拖拽基准（strandTipWidthEdgePosition）与 bone-view-handles 的
+  // 把手放置共用同一条变换链，两处必须转发同样的五项：strandGeometryCurve /
+  // strandGeometryFrameAt / strandProfileTopologyAt / strandSplitProfileData /
+  // currentStrandSplitTipChains（把手跟随被拖动的发尖链，0.2.127）。
+  strandGeometryFrameAt,
+  strandProfileTopologyAt,
   strandSplitProfileData,
   strandSplitControlPoint,
   currentStrandSplitTipChains,
@@ -9135,7 +9228,9 @@ function addLock(presetName, overrides = {}, options = {}) {
   lock.strandSplitEnabled = Boolean(base.strandSplitEnabled);
   lock.strandSplitPosition = THREE.MathUtils.clamp(Number(base.strandSplitPosition ?? 0), -0.8, 0.8);
   lock.strandSplitHeight = THREE.MathUtils.clamp(Number(base.strandSplitHeight ?? 0.3), 0.02, 0.8);
-  lock.strandSplitGap = THREE.MathUtils.clamp(Number(base.strandSplitGap ?? 0.12), 0, 0.5);
+  // 0.2.132：strandSplitGap 已删除（全局 Split Spacing 滑杆 + segment separate 语义一并移除）。
+  // 旧档里的该字段**刻意不迁移**到每管 Tip Clump：它记的是横向平移量，与收窄比例不同义，
+  // 迁过去只会把旧数值当成新语义用。旧档加载后每管取 DEFAULT_STRAND_TIP_CLUMP。
   lock.strandTipStart = THREE.MathUtils.clamp(Number(base.strandTipStart ?? strandCreationDefaults.strandTipStart ?? 0.75), 0.2, 0.95);
   lock.strandTip = Array.isArray(base.strandTip?.points) ? strandTipFromData(base.strandTip, lock) : null;
   lock.strandSplitBones = Array.isArray(base.strandSplitBones) ? strandSplitBonesFromData(base.strandSplitBones, lock) : null;
@@ -9363,8 +9458,11 @@ function createMirrorPartner(lock, options = {}) {
     strandSplitEnabled: Boolean(lock.strandSplitEnabled),
     strandSplitPosition: -Number(lock.strandSplitPosition ?? 0),
     strandSplitHeight: Number(lock.strandSplitHeight ?? 0.3),
-    strandSplitGap: Number(lock.strandSplitGap ?? 0.12),
-    strandSplits: (lock.strandSplits || []).map((s) => ({ position: -s.position, height: s.height, order: s.order })),
+    // 与 syncMirrorPartnerFromLock 的镜像写入同规则（clone → negate → sort）：取负翻转左右
+    // 次序，不排序则 addLock 内的 syncStrandSplitLegacyFields 会把错误那条的 height 写进标量。
+    strandSplits: cloneStrandSplits(lock.strandSplits, lock.strandSplitPosition, lock.strandSplitHeight, STRAND_SPLIT_MAX)
+      .map((split) => ({ ...split, position: -split.position }))
+      .sort((a, b) => a.position - b.position),
     strandTipStart: Number(lock.strandTipStart ?? 0.75),
     strandTip: mirrorStrandTip(lock.strandTip),
     strandSplitBones: mirrorStrandSplitBones(lock.strandSplitBones),
@@ -9534,8 +9632,14 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   partner.strandSplitEnabled = Boolean(lock.strandSplitEnabled);
   partner.strandSplitPosition = -Number(lock.strandSplitPosition ?? 0);
   partner.strandSplitHeight = Number(lock.strandSplitHeight ?? 0.3);
-  partner.strandSplitGap = Number(lock.strandSplitGap ?? 0.12);
-  partner.strandSplits = (lock.strandSplits || []).map((s) => ({ position: -s.position, height: s.height, order: s.order }));
+  // 取负后必须重新排序：X 镜像把左右次序整个翻转，而 syncStrandSplitLegacyFields 读的是
+  // strandSplits[0]（最左侧拉链）作为 legacy 标量真源。不排序就会把「原最左」的 height 写成
+  // 「镜像后最左」的 height —— 该标量参与 save/load，且是新增拉链高度的种子，不会自愈。
+  // 走 cloneStrandSplits 而不是裸 .map：顺带拿到 position/height 钳位、order 去重与
+  // 「数组为空时按 legacy 标量回退成 1 条」的保证。与下方 panelSplits 的 clone→negate→sort 同形。
+  partner.strandSplits = cloneStrandSplits(lock.strandSplits, lock.strandSplitPosition, lock.strandSplitHeight, STRAND_SPLIT_MAX)
+    .map((split) => ({ ...split, position: -split.position }))
+    .sort((a, b) => a.position - b.position);
   syncStrandSplitLegacyFields(partner);
   partner.strandTipStart = Number(lock.strandTipStart ?? 0.75);
   partner.strandTip = mirrorStrandTip(lock.strandTip);
@@ -9765,7 +9869,6 @@ function snapshotState() {
       strandSplitEnabled: Boolean(lock.strandSplitEnabled),
       strandSplitPosition: Number(lock.strandSplitPosition ?? 0),
       strandSplitHeight: Number(lock.strandSplitHeight ?? 0.3),
-      strandSplitGap: Number(lock.strandSplitGap ?? 0.12),
       strandSplits: cloneStrandSplits(lock.strandSplits, lock.strandSplitPosition, lock.strandSplitHeight, STRAND_SPLIT_MAX),
       strandTipStart: Number(lock.strandTipStart ?? 0.75),
       strandTip: lock.strandTip ? strandTipToData(lock.strandTip) : null,
@@ -10322,7 +10425,6 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     strandSplitEnabled: Boolean(snapshot.strandSplitEnabled),
     strandSplitPosition: THREE.MathUtils.clamp(Number(snapshot.strandSplitPosition ?? 0), -0.8, 0.8),
     strandSplitHeight: THREE.MathUtils.clamp(Number(snapshot.strandSplitHeight ?? 0.3), 0.02, 0.8),
-    strandSplitGap: THREE.MathUtils.clamp(Number(snapshot.strandSplitGap ?? 0.12), 0, 0.5),
     strandSplits: cloneStrandSplits(
       snapshot.strandSplits,
       THREE.MathUtils.clamp(Number(snapshot.strandSplitPosition ?? 0), -0.8, 0.8),
@@ -10926,16 +11028,21 @@ function applyAltClickCandidate(candidate) {
   if (!candidate) return false;
   if (candidate.kind === "tip") {
     const lock = locks.find((item) => item.id === candidate.lockId);
-    if (!lock || !isPanelGeometry(lock) || lock.panelSplitEnabled === false) return false;
-    const altCur = sculptState.state.panelTipSelection;
+    // 几何门控走 segmentBoneHost（0.2.126）：panel/surface 与开启 split 的普通发丝都可以
+    // Alt+点击快速切换到悬停的发尖子骨骼。段号写 host.segmentIndexKey，刷新交给
+    // syncSegmentControlsForLock 再分派 —— 与 bone-interaction.js 的 selectTipSubBone 同规则
+    // （两处都是「写 tipSelection + 写对应段号 + 刷新对应控件」，改一处要看另一处）。
+    const host = lock ? segmentBoneHost(lock) : null;
+    if (!host) return false;
+    const altCur = sculptState.state.tipSelection;
     if (altCur && altCur.lockId === lock.id && altCur.segmentIndex === candidate.segmentIndex) {
-      sculptState.state.panelTipSelection = null;
+      sculptState.state.tipSelection = null;
     } else {
-      sculptState.state.panelTipSelection = { lockId: lock.id, segmentIndex: candidate.segmentIndex };
-      sculptState.state.panelSegmentIndex = candidate.segmentIndex;
+      sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: candidate.segmentIndex };
+      sculptState.state[host.segmentIndexKey] = candidate.segmentIndex;
     }
     updateCurveObjects(lock, { visible: true });
-    segmentApi.syncPanelSegmentControls(lock);
+    segmentApi.syncSegmentControlsForLock(lock);
     return true;
   }
   if (candidate.kind === "strand") {
@@ -11831,8 +11938,12 @@ function updateCurveObjects(lock, options = {}) {
     && sculptState.state.viewportEditMode === "strand";
   // Keep the tip sub-bone UI (highlight + handles + guide lines) visible while a brush
   // tool is active when a tip sub-bone is selected, so the user can see what they edit.
-  const tipUiActive = isPanelGeometry(lock)
-    && sculptState.state.panelTipSelection?.lockId === lock.id;
+  // 门控用 segmentBoneHost（bone-model 单一分派）而不是 isPanelGeometry：0.2.126 起普通
+  // 发丝的管也能选中发尖子骨骼，tipUiActive 必须同样为真，否则发丝在笔刷激活时会把刚选中
+  // 的发尖 UI 整组藏掉。segmentBoneHost 对未开启 split 的发丝返回 null，所以非 split 发丝
+  // 与此前逐字节同为 false。
+  const tipUiActive = Boolean(segmentBoneHost(lock))
+    && sculptState.state.tipSelection?.lockId === lock.id;
   // During a brush, show only the selected strand's bone (guide line); the control
   // handles, width edges and split/segment helpers stay hidden (bones-only view).
   const brushBonesOnly = sculptBrushHelpersSuppressed && lock.id === sel.state.selectedId;
@@ -12171,6 +12282,9 @@ Object.assign(boneViewHandlesDeps, {
   strandSplitProfileData,
   strandGeometryCurve,
   strandGeometryFrameAt,
+  // 发丝发尖 WidthCurve 把手的 placement 变换链需要它（与几何 sweep 同一函数）；
+  // 同规则同步点：boneInteractionDeps 也必须转发同一项，拖拽读值才与把手同源。
+  strandProfileTopologyAt,
   currentStrandSplitTipChains
 });
 
@@ -12881,11 +12995,15 @@ function selectLock(id, options = {}) {
   // Switching the main selection invalidates any tip sub-bone selection/hover that
   // belonged to the previously selected lock (e.g. alt+click switching to another
   // panel or strand), so its emphasis highlight does not linger.
-  if (sculptState.state.panelTipSelection && sculptState.state.panelTipSelection.lockId !== id) {
-    sculptState.state.panelTipSelection = null;
+  // 0.2.126 起这一条同时覆盖 panel 段与普通发丝管（tipSelection 已是几何无关键），因此
+  // **只有这一处**清理路径 —— 不要为发丝再加第二处。
+  // 注意与 resolveSegmentSelection 的分工：这里清的是「换 lock 后指向旧 lock 的悬空选择」；
+  // 「同一 lock 内删段/删管后残留的越界段号」由 resolveSegmentSelection 的钳位负责。
+  if (sculptState.state.tipSelection && sculptState.state.tipSelection.lockId !== id) {
+    sculptState.state.tipSelection = null;
   }
-  if (sculptState.state.panelTipHover && sculptState.state.panelTipHover.lockId !== id) {
-    sculptState.state.panelTipHover = null;
+  if (sculptState.state.tipHover && sculptState.state.tipHover.lockId !== id) {
+    sculptState.state.tipHover = null;
   }
   if (sculptState.state.panelSplitSelection && sculptState.state.panelSplitSelection.lockId !== id) {
     sculptState.state.panelSplitSelection = null;
@@ -13233,12 +13351,11 @@ function syncResponsiveSidebarDock() {
 function syncStrandSplitInputs(target = taperEditor.activeStrandShapeTarget()) {
   if (!target || target.geometryType && target.geometryType !== "strand") return;
   strandSplitInputs.strandSplitEnabled.checked = Boolean(target.strandSplitEnabled);
-  const gap = Number(target.strandSplitGap ?? strandCreationDefaults.strandSplitGap);
-  strandSplitInputs.strandSplitGap.value = gap;
-  strandSplitInputs.strandSplitGap.disabled = !target.strandSplitEnabled;
-  strandSplitValues.strandSplitGap.textContent = gap.toFixed(2);
   syncStrandSplitControls(target);
   syncStrandSplitTipInputs(target);
+  // 与 syncPanelShapeInputs 末尾调用 syncPanelSegmentControls 同构：段数随 zipper 增删
+  // 变化，段控件必须跟着同一入口刷新（否则段号会停在已不存在的段上）。
+  segmentApi.syncStrandSegmentControls(target);
 }
 
 // 同步 strand Zipper Controls 计数 + 边界禁用（mirror syncPanelShapeInputs 的 zipper 部分）。
@@ -13249,7 +13366,14 @@ function syncStrandSplitControls(target = taperEditor.activeStrandShapeTarget())
   if (strandSplitCountValue) strandSplitCountValue.textContent = String(splits.length);
   // 分裂发丝至少保留 1 个拉链：<=1 时禁用移除（用 Split Geometry 开关归零）。
   if (removeStrandSplitButton) removeStrandSplitButton.disabled = !enabled || splits.length <= 1;
-  if (addStrandSplitButton) addStrandSplitButton.disabled = !enabled || splits.length >= STRAND_SPLIT_MAX;
+  // 除了条数上限，还要门控「最宽段是否放得下新拉链」——判据由 segment-control 的
+  // canFitAnotherStrandSplit 单点定义（changeStrandSplitCount 的插入守卫消费同一个函数），
+  // 这里刻意不复制边界/跨度算术：两边各算一遍时 N=7 会出现「按钮 enabled 但点击是静默 no-op」。
+  if (addStrandSplitButton) {
+    addStrandSplitButton.disabled = !enabled
+      || splits.length >= STRAND_SPLIT_MAX
+      || !canFitAnotherStrandSplit(splits);
+  }
 }
 
 function currentStrandTipChain(target) {
@@ -13290,12 +13414,8 @@ function currentStrandSplitTipChains(lock) {
   const curlSegments = lock.curlEnabled ? Math.ceil(Number(lock.curlCount ?? 4) * 14) : 0;
   const lengthSegments = THREE.MathUtils.clamp(Math.max(Math.round(lock.lengthSegments || 26), curlSegments), 4, 256);
   const parameters = strandCurveParameters(lock, curve, lengthSegments);
-  const frames = [];
-  let previousFrame = null;
-  for (const t of parameters) {
-    previousFrame = strandGeometryFrameAt(lock, curve, t, previousFrame);
-    frames.push(previousFrame);
-  }
+  // 0.2.132：这里原本还要预算逐行 frame，只为给已删除的 opening 提供 frame.x（横向平移方向）。
+  // rest 现在只需要曲线点或环心，两者都不用帧，故整趟 frame 预算随之删除。
   const storedRestCenters = lock.mesh?.geometry?.userData?.strandSplitRestCenters;
   const tubeRestCenters = Array.isArray(storedRestCenters)
     && storedRestCenters.length === bones.length
@@ -13310,28 +13430,20 @@ function currentStrandSplitTipChains(lock) {
     ))
     ? storedRestCenters
     : null;
-  const baseWidth = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1);
-  const defaultSpread = THREE.MathUtils.clamp(Number(lock.strandSplitGap ?? 0.12), 0, 0.99);
   return bones.map((bone, tubeIndex) => {
-    const spread = bone.spread ?? defaultSpread;
-    // 多拉链：叉口深度与推开方向都按段取（与 createSplitStrandGeometry 同规则）；
-    // 单拉链时退化为旧的 1-strandSplitHeight 与 -1/+1，行为不变。
-    const splitStart = strandSplitForkTForSegment(lock, tubeIndex);
-    const direction = strandSplitDirectionForSegment(lock, tubeIndex);
     const restPointAt = (t) => {
+      // 真源：几何写出的每管扫掠环心（strandSplitRestCenters）。0.2.120 物化空间要求视口
+      // 与几何用**同一条** rest，所以只要环心可用就一律走它。
       if (tubeRestCenters) {
         const center = sampleCenterlinePoint(tubeRestCenters[tubeIndex], parameters, t);
         if (center) return new THREE.Vector3(center.x, center.y, center.z);
       }
-      let row = 0;
-      let bestDistance = Infinity;
-      for (let r = 0; r < parameters.length; r += 1) {
-        const distance = Math.abs(parameters[r] - t);
-        if (distance < bestDistance) { bestDistance = distance; row = r; }
-      }
-      const frame = frames[row];
-      const opening = t <= splitStart ? 0 : baseWidth * spread * THREE.MathUtils.smoothstep(t, splitStart, 1) * direction;
-      return curve.getPoint(t).addScaledVector(frame.x, opening);
+      // 回退（环心尚未写出：刚加完 zipper、长度还不匹配的那一帧）= 主脊柱本身。
+      // 0.2.132 前这里加的是 opening（baseWidth·spread·smoothstep·direction，即已删除的
+      // 「整管横向平移」）；该语义移除后脊柱就是最接近管心的可得近似 —— 真正的管心还差一个
+      // band 中心的横向偏移，但那需要 profile 多边形，这条回退路径拿不到。偏差无害：
+      // materializeTipChain 会把 authored delta 重新叠加到新 rest 上（rest 变动本就是常态）。
+      return curve.getPoint(t);
     };
     const count = Math.max(2, Array.isArray(lock.points) ? lock.points.length : 2);
     return materializeTipChain(bone.tip || null, restPointAt, count);
@@ -16126,7 +16238,9 @@ document.querySelector("#resetSweepProfile").addEventListener("click", () => {
   branchSweep.applySweepProfileEdit();
 });
 editTaperCurveButtons.forEach((button) => button.addEventListener("click", () => {
-  if (button.closest("[data-segment-curve]")) segmentApi.openPanelSegmentCurveEditor(button.dataset.curveKey);
+  // 段曲线容器（panel 段 / 发丝管段两块共用 data-segment-curve）：目标由几何分派，
+  // 两块互斥可见，故无需按容器 id 分流。
+  if (button.closest("[data-segment-curve]")) segmentApi.openSegmentCurveEditor(button.dataset.curveKey);
   else taperEditor.openTaperCurveEditor(button.dataset.curveKey);
 }));
 document.querySelector("#closeTaperCurve").addEventListener("click", taperEditor.closeTaperCurveEditor);
@@ -16285,13 +16399,27 @@ document.querySelector("#resetTaperCurve").addEventListener("click", () => {
     && (sculptState.state.taperCurveEdit.curveKey === "taperCurve"
       || sculptState.state.taperCurveEdit.curveKey === "taperCurveSecondary")
     && editedLock;
+  // 段宽度曲线的 Reset 必须按几何取 splits：发丝管走 strandTipWidthResetCurve（真实
+  // strandSplits），panel 段走 panelTipStrand.tipWidthResetCurve。**不得**对发丝调
+  // clonePanelSplits —— 它回退出假 panelSplits，Reset 会按错误的网格写点，于是曲线里
+  // 出现没有把手的点（破「曲线里有 ⇔ 有把手」不变式）。同规则同步点：
+  // taper-editor.js renderTaperCurveEditor 的 segmentSplits 分派。
+  const segmentWidthResetCurveFor = (side) => (
+    segmentBoneHost(editedLock) === STRAND_SEGMENT_HOST
+      ? strandTipWidthResetCurve(
+          strandSplitsFor(editedLock),
+          sculptState.state.taperCurveEdit.segmentIndex,
+          side
+        )
+      : panelTipStrand.tipWidthResetCurve(
+          editedLock,
+          sculptState.state.taperCurveEdit.segmentIndex,
+          clonePanelSplits(editedLock.panelSplits, editedLock.panelSplitHeight),
+          side
+        )
+  );
   const defaultCurve = segmentWidthReset
-    ? panelTipStrand.tipWidthResetCurve(
-        editedLock,
-        sculptState.state.taperCurveEdit.segmentIndex,
-        clonePanelSplits(editedLock.panelSplits, editedLock.panelSplitHeight),
-        sculptState.state.taperCurveEdit.side === "secondary" ? -1 : 1
-      )
+    ? segmentWidthResetCurveFor(sculptState.state.taperCurveEdit.side === "secondary" ? -1 : 1)
     : sculptState.state.taperCurveEdit.curveKey === "twistCurve"
     ? DEFAULT_TWIST_CURVE
     : sculptState.state.taperCurveEdit.curveKey === "proceduralBranchShapeCurve"
@@ -16309,16 +16437,7 @@ document.querySelector("#resetTaperCurve").addEventListener("click", () => {
     const otherKey = sculptState.state.taperCurveEdit.side === "secondary" ? "taperCurve" : "taperCurveSecondary";
     if (bone) {
       if (!bone[otherKey]) bone[otherKey] = [];
-      bone[otherKey].splice(
-        0,
-        bone[otherKey].length,
-        ...panelTipStrand.tipWidthResetCurve(
-          editedLock,
-          sculptState.state.taperCurveEdit.segmentIndex,
-          clonePanelSplits(editedLock.panelSplits, editedLock.panelSplitHeight),
-          otherSide
-        )
-      );
+      bone[otherKey].splice(0, bone[otherKey].length, ...segmentWidthResetCurveFor(otherSide));
       bone[otherKey] = normalizeTaperCurve(bone[otherKey]);
     }
   }
@@ -16973,10 +17092,14 @@ Object.entries(strandSplitInputs).forEach(([key, input]) => {
       : sel.state.activeTool === "draw" ? strandCreationDefaults : null;
     if (!target) return;
     const value = input.type === "checkbox" ? input.checked : Number(input.value);
+    // 0.2.132：这里原本有「strandSplitGap 写标量后再刷进每根管」的全局刷分支
+    // （applyStrandSplitGapToTubes）。该滑杆与其「segment separate」语义已整体删除，
+    // 剩下的键（strandSplitEnabled）只有纯标量语义，所以 mutator 回到单行写入。
+    const writeTo = (item) => { item[key] = value; };
     if (selected?.geometryType === "strand") {
-      editSelectedLocks((item) => { item[key] = value; }, { immediate: true });
+      editSelectedLocks(writeTo, { immediate: true });
     } else {
-      target[key] = value;
+      writeTo(target);
     }
     syncStrandSplitInputs(target);
     if (sculptState.state.drawStrandStroke?.outputType === "strand" && target === strandCreationDefaults) {
@@ -17231,24 +17354,14 @@ addPanelSplitButton?.addEventListener("click", () => segmentApi.changePanelSplit
 removePanelSplitButton?.addEventListener("click", () => segmentApi.changePanelSplitCount(-1));
 addStrandSplitButton?.addEventListener("click", () => segmentApi.changeStrandSplitCount(1));
 removeStrandSplitButton?.addEventListener("click", () => segmentApi.changeStrandSplitCount(-1));
-previousPanelSegmentButton?.addEventListener("click", () => {
-  const selected = getSelectedLock();
-  const target = isPanelGeometry(selected) ? selected : taperEditor.activeStrandShapeTarget();
-  if (!target) return;
-  const { index } = segmentApi.selectedPanelSegment(target);
-  sculptState.state.panelSegmentIndex = Math.max(0, index - 1);
-  segmentApi.syncPanelSegmentControls(target);
-  taperEditor.retargetOpenSegmentTaperEditor?.(target, sculptState.state.panelSegmentIndex);
-});
-nextPanelSegmentButton?.addEventListener("click", () => {
-  const selected = getSelectedLock();
-  const target = isPanelGeometry(selected) ? selected : taperEditor.activeStrandShapeTarget();
-  if (!target) return;
-  const { index, count } = segmentApi.selectedPanelSegment(target);
-  sculptState.state.panelSegmentIndex = Math.min(count - 1, index + 1);
-  segmentApi.syncPanelSegmentControls(target);
-  taperEditor.retargetOpenSegmentTaperEditor?.(target, sculptState.state.panelSegmentIndex);
-});
+previousPanelSegmentButton?.addEventListener("click", () => segmentApi.stepPanelSegment(-1));
+nextPanelSegmentButton?.addEventListener("click", () => segmentApi.stepPanelSegment(1));
+previousStrandSegmentButton?.addEventListener("click", () => segmentApi.stepStrandSegment(-1));
+nextStrandSegmentButton?.addEventListener("click", () => segmentApi.stepStrandSegment(1));
+if (strandSegmentSpread) {
+  bindUndoCapture(strandSegmentSpread);
+  strandSegmentSpread.addEventListener("input", () => segmentApi.applyStrandSegmentSpread(strandSegmentSpread.value));
+}
 if (panelSegmentSpread) {
   bindUndoCapture(panelSegmentSpread);
   panelSegmentSpread.addEventListener("input", () => {
@@ -17259,8 +17372,8 @@ if (panelSegmentSpread) {
     if (!target) return;
     const bones = materializeSplitBones(target);
     const { index } = segmentApi.selectedPanelSegment(target);
-    const value = THREE.MathUtils.clamp(Number(panelSegmentSpread.value || 0), 0, 0.99);
-    if (bones[index]) bones[index].spread = value;
+    const value = THREE.MathUtils.clamp(Number(panelSegmentSpread.value || 0), 0, SPREAD_MAX);
+    if (bones[index]) bones[index].tipClump = value;
     if (panelSegmentSpreadValue) panelSegmentSpreadValue.textContent = value.toFixed(2);
     if (isPanelGeometry(selected)) {
       updateLockGeometry(selected, { immediate: true });
@@ -20157,8 +20270,10 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     // significant movement applies it, so alt+drag navigation never triggers it.
     const altLock = getSelectedLock();
     let altCandidate = null;
-    if (altLock && isPanelGeometry(altLock) && altLock.panelSplitEnabled !== false) {
-      const altHover = sculptState.state.panelTipHover;
+    // 与 applyAltClickCandidate 的门控同规则（segmentBoneHost）：候选记录与实际应用必须
+    // 认同同一组几何，否则会记下一个永远被拒绝的候选、Alt+点击看起来"没反应"。
+    if (altLock && segmentBoneHost(altLock)) {
+      const altHover = sculptState.state.tipHover;
       if (altHover && altHover.lockId === altLock.id && altHover.segmentIndex != null) {
         altCandidate = { kind: "tip", lockId: altLock.id, segmentIndex: altHover.segmentIndex };
       }
@@ -20188,29 +20303,39 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     // region again to return to the main-hair selection). Only split panels while the
     // main hair is selected.
     const selectedLockNow = getSelectedLock();
-    const isPanel = selectedLockNow && isPanelGeometry(selectedLockNow) && selectedLockNow.panelSplitEnabled !== false
-      && Array.isArray(selectedLockNow.panelSplits) && selectedLockNow.panelSplits.length > 0;
-    const hover = sculptState.state.panelTipHover;
-    const hoverSeg = isPanel && hover && hover.lockId === selectedLockNow.id ? hover.segmentIndex : null;
-    const selected = sculptState.state.panelTipSelection;
-    if (isPanel && hoverSeg != null) {
+    // 门控走 segmentBoneHost（0.2.126）：panel 段与开启 split 的普通发丝管都支持「点本体
+    // 选中悬停的发尖子骨骼、再点同一处取消」。此前是 panel 专属，所以普通发丝的分裂子发尖
+    // 完全无法选中（用户报告的主症状）。
+    // segmentBoneHost 已含「panel 且 panelSplitEnabled 未关」的等价语义？——**不含**，
+    // 它只看 geometryType；panel 的 panelSplitEnabled 与发丝的 strandSplitEnabled 分别由
+    // 下面这两条补齐（strand 那条已在 segmentBoneHost 内部）。
+    const tipHost = selectedLockNow && selectedLockNow.panelSplitEnabled !== false
+      ? segmentBoneHost(selectedLockNow)
+      : null;
+    // 还要求真的已经分裂出多段：未分裂时整根头发只有一段，"选中某段"没有意义（panel 原
+    // 判据是 panelSplits.length > 0，发丝的等价物是段数 > 1，由 host.segmentCount 给出）。
+    const hasSegments = Boolean(tipHost) && tipHost.segmentCount(selectedLockNow) > 1;
+    const hover = sculptState.state.tipHover;
+    const hoverSeg = hasSegments && hover && hover.lockId === selectedLockNow.id ? hover.segmentIndex : null;
+    const selected = sculptState.state.tipSelection;
+    if (hasSegments && hoverSeg != null) {
       if (selected && selected.lockId === selectedLockNow.id && selected.segmentIndex === hoverSeg) {
-        sculptState.state.panelTipSelection = null; // click again -> back to main selection
+        sculptState.state.tipSelection = null; // click again -> back to main selection
       } else {
-        sculptState.state.panelTipSelection = { lockId: selectedLockNow.id, segmentIndex: hoverSeg };
-        sculptState.state.panelSegmentIndex = hoverSeg;
+        sculptState.state.tipSelection = { lockId: selectedLockNow.id, segmentIndex: hoverSeg };
+        sculptState.state[tipHost.segmentIndexKey] = hoverSeg;
       }
       updateCurveObjects(selectedLockNow, { visible: true });
-      segmentApi.syncPanelSegmentControls(selectedLockNow);
+      segmentApi.syncSegmentControlsForLock(selectedLockNow);
       // 子发尖段切换：浮动面板开着且正在编辑该 lock 时热刷新到新段。
       taperEditor.retargetOpenSegmentTaperEditor?.(selectedLockNow, hoverSeg);
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
     } else if (selected && selected.lockId === selectedLockNow?.id) {
-      sculptState.state.panelTipSelection = null;
+      sculptState.state.tipSelection = null;
       updateCurveObjects(selectedLockNow, { visible: true });
-      segmentApi.syncPanelSegmentControls(selectedLockNow);
+      segmentApi.syncSegmentControlsForLock(selectedLockNow);
     }
   }
   if (sel.state.activeTool === "draw-capsule-guide") {
@@ -20633,6 +20758,10 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     windState: windStore.state,
     updateCurveObjects,
     transformControls,
+    // guideState：验证脚本需要能清掉 hoveredControlPoint。合成 pointerdown 时若它有残留，
+    // capture 阶段的 prepareCurvePointSelection 会 stopImmediatePropagation，主 pointerdown
+    // 根本不执行（真实用户走 pointermove 不会有这个残留）。见 scripts/verify-tip-clump.mjs。
+    guideState,
     beginTipSubBoneRotate: bonesApi.beginTipSubBoneRotate,
     beginTipSubBoneTranslate: bonesApi.beginTipSubBoneTranslate,
     updateTipHighlight: panelTipStrand.updateTipHighlight,
@@ -20667,6 +20796,9 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     splitForkT: panelTipStrand.splitForkT,
     clonePanelSplits,
     materializeSplitBones,
+    // 发丝段骨骼的物化入口：验证脚本要在与拖拽写入**同一空间**里取基线（派生视图未固化时
+    // lock.strandSplitBones 是空的）。见 scripts/verify-tip-clump.mjs。
+    materializeStrandSplitBones,
     strandVisibleForDisplay,
     isPanelGeometry,
     projectToClient(world) {

@@ -58,7 +58,6 @@ export function createCreationPresetsApi(deps) {
       strandSplitEnabled: Boolean(source.strandSplitEnabled),
       strandSplitPosition: presetNumber(source.strandSplitPosition, 0),
       strandSplitHeight: presetNumber(source.strandSplitHeight, 0.3),
-      strandSplitGap: presetNumber(source.strandSplitGap, 0.12),
       strandSplits: Array.isArray(source.strandSplits) ? source.strandSplits.map((s) => ({ ...s })) : null,
       profileOffset: presetNumber(source.profileOffset, 0),
       rootScalpOffset: presetNumber(source.rootScalpOffset, 0),
@@ -184,7 +183,7 @@ export function createCreationPresetsApi(deps) {
   function applyCreationPresetSnapshot(target, snapshot, type) {
     const keys = [
       "width", "depth", "widthScale", "depthScale", "profileTrimLeft", "profileTrimRight", "profileTrimRoundness", "hairCard",
-      "strandSplitEnabled", "strandSplitPosition", "strandSplitHeight", "strandSplitGap", "strandSplits", "profileOffset", "rootScalpOffset", "strandRotation", "twist",
+      "strandSplitEnabled", "strandSplitPosition", "strandSplitHeight", "strandSplits", "profileOffset", "rootScalpOffset", "strandRotation", "twist",
       "hairLayer", "dynamicDensity", "densityAggression", "twistDensity", "curlCount", "curlDisplacement",
       "braidMeshPreset", "braidWidth", "braidDepth", "braidSegmentLength", "braidRotation",
       "asymmetricWidthCurve", "asymmetricDepthCurve", "centerAsymmetricProfile"

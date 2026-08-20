@@ -1,4 +1,4 @@
-﻿// scalp-store.js — scalp guide/builder/paint state (refactor 3c-final, scalp).
+// scalp-store.js — scalp guide/builder/paint state (refactor 3c-final, scalp).
 import { createSceneStore } from "../core/scene-store.js?v=20260809-1";
 export function createScalpStore() {
   const store = createSceneStore({

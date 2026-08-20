@@ -8,8 +8,14 @@ import * as THREE from "three";
 import { leafWeightAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActionFormat } from "./file-actions.js?v=20260816-13";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260814-12";
-import { exportAnimeHairUsda, usdIdentifier, quatToMat3, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName, smoothMainPair, tipChainNearestIndex } from "./usda-export.js?v=20260817-1";
-import { materializeTipChain, tipChainFrameAt as strandTipChainFrameAt } from "../geometry/tip-sub-bone.js?v=20260813-1";
+import { exportAnimeHairUsda, usdIdentifier, quatToMat3, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName, smoothMainPair, tipChainNearestIndex } from "./usda-export.js?v=20260901-1";
+import { materializeTipChain, tipChainFrameAt as strandTipChainFrameAt } from "../geometry/tip-sub-bone.js?v=20260830-1";
+// fork-T（`1 − max(相邻 zipper 高)`）的唯一定义点。本文件此前在 tipIdxFor 同一函数内有
+// 两份独立算式（panel guard 形式 + strand `?? 0` 形式），0.2.133 折叠到共享层。
+import {
+  tipWidthCommonForkFromHeights,
+  tipWidthCommonForkFromPresentHeights
+} from "../geometry/tip-width-curve.js?v=20260901-1";
 import { createHairProject } from "./project-schema.js?v=20260814-12";
 import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260817-1";
 import { applyBridgeBoneCapture, mergeBranchFamilyMeshes } from "./bridge-export.js?v=20260817-2";
@@ -728,9 +734,10 @@ export function createProjectSaveApi(deps) {
       let forkT;
       if (isPanel) {
         if (!splits.length || lock.panelSplitEnabled === false) return null;
-        const heights = [splits[segment - 1]?.height, splits[segment]?.height]
-          .filter((h) => h != null).map(Number);
-        forkT = heights.length ? 1 - Math.max(...heights) : 1;
+        // forkT 走 tip-width-curve 的 guard 形式唯一定义点（与 usda-export 的
+        // splitBoneLayout / splitChainLayout panel 分支同一入口）。这里同样读**原始**
+        // lock.panelSplits，guard 形式即为此保留。
+        forkT = tipWidthCommonForkFromPresentHeights(splits[segment - 1]?.height, splits[segment]?.height);
       } else {
         if (!lock.strandSplitEnabled) return null;
         // Per-tube forkT = 1 - max(相邻拉链高)（与 createSplitStrandGeometry /
@@ -745,9 +752,8 @@ export function createProjectSaveApi(deps) {
             height: clampSplit(Number(split?.height ?? 0.3), 0.02, 0.8)
           }))
           .sort((a, b) => a.position - b.position);
-        const leftHeight = strandSplits[segment - 1]?.height ?? 0;
-        const rightHeight = strandSplits[segment]?.height ?? 0;
-        forkT = 1 - Math.max(leftHeight, rightHeight);
+        // 同上唯一定义点的 `?? 0` 版（strandSplits 已在上方归一化到 [0.02, 0.8]）。
+        forkT = tipWidthCommonForkFromHeights(strandSplits[segment - 1]?.height, strandSplits[segment]?.height);
       }
       const t = rowTAt(vertex, gridRowIndices, rows);
       const { index, i0 } = tipChainNearestIndex(t, mainCount, forkT);

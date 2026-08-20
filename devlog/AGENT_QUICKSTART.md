@@ -1,8 +1,8 @@
 # 新 Agent 快速入口 / AGENT QUICKSTART
 
-> 目的：让一个新 agent（或新开发者）在几分钟内知道「本 fork 改了哪些代码、哪些**必须保留**、当时的**决策**是什么」，避免从头通读 ≈0.9MB（20,183 行）的 `app.js` 或 106KB 的 `js-change-annotations.md`。
+> 目的：让一个新 agent（或新开发者）在几分钟内知道「本 fork 改了哪些代码、哪些**必须保留**、当时的**决策**是什么」，避免从头通读 ≈0.9MB（**约 2 万行；具体值现场统计,勿引用本页数字**）的 `app.js` 或 52KB 的 `js-change-annotations.md`（索引 + 6 个 `annotations-*.md` 专题）。
 > 维护：功能分支合入 / daily build +1 时，如涉及本页列出的保留代码或决策，请同步更新本页；详细条目仍按主题追加到各专题文件，本页只做摘要与指针。
-> 版本基准：0.2.110（DHS/develop，de8588a 起）。
+> 版本基准：0.2.129（DHS/develop）。**行数/文件数/store 数一律现场统计**（`node scripts/gen-function-index.js` 会顺带刷新 app.js 行数与文件数），本页历史上写死过 3 组过期计数。
 
 ## 0. 先读什么（建议顺序）
 
@@ -10,12 +10,12 @@
 2. `devlog/README.md` —— devlog 索引字典（各专题文件入口）
 3. `devlog/development-standards.md` —— 开发规范 + 「持续修改功能」清单（main 更新后要优先同步的本地功能）+ 许可证
 4. `devlog/main-sync-conflicts.md` —— 与 main 合并的全部决策（Local 选项移除、桥接区与 compound 并存策略、17 处冲突分类）
-5. 按需跳读：`devlog/APPJS_SPLIT_GUIDE.md`（**从原版拆分指引**：历程/当前架构/拆分模式/每批执行模板/踩坑/定位字典，新 agent 必读）、`devlog/js-change-annotations.md`（子系统索引表 + 指向 6 个 `annotations-*.md` 专题文件）、`devlog/FUNCTION_INDEX.md`（机器生成，当前 2,131 函数 / 99 文件）、`devlog/STATE_MANAGEMENT.md`（**状态管理架构：17 个 store 清单 + 替换验证 9 点**）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）、`devlog/in-progress/wind-preview-plan.md`（**吹风预览已实施；仅碰撞路线图未实施**）、`devlog/in-progress/uv-pack-parallel-plan.md`（UV 打包并行，0.2.110 已实施，Phase 2 未做）
+5. 按需跳读：`devlog/APPJS_SPLIT_GUIDE.md`（**从原版拆分指引**：历程/当前架构/拆分模式/每批执行模板/踩坑/定位字典，新 agent 必读）、`devlog/js-change-annotations.md`（子系统索引表 + 指向 6 个 `annotations-*.md` 专题文件）、`devlog/FUNCTION_INDEX.md`（机器生成，0.2.126 重新生成：2,293 函数 / 105 文件；**过期就跑 `node scripts/gen-function-index.js`**，勿手改）、`devlog/STATE_MANAGEMENT.md`（**状态管理架构：18 个 store 清单 + 发尖选中键 §2.1 + 替换验证 9 点**）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）、`devlog/in-progress/wind-preview-plan.md`（**吹风预览已实施；仅碰撞路线图未实施**）、`devlog/in-progress/uv-pack-parallel-plan.md`（UV 打包并行，0.2.110 已实施，Phase 2 未做）
 
 ## 1. 仓库结构速览
 
-- `app.js`（20,183 行 ≈0.9MB，编排层）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 等业务逻辑已按子系统迁入 modules（见 `APPJS_SPLIT_GUIDE.md` §2）。**原版 main 是 39,207 行的扁平大文件，本地已拆分（−49%），不要在 app.js 里堆业务逻辑，新逻辑进 modules/<domain>/ 后经 createXxxApi 注入**。
-- `modules/*.js` —— 按域分目录（core/data/geometry/io/edit/sculpt/material/branch/scalp/bones/scene，共 98 个文件，app.js 计入则 99）；**全局状态已收敛到 17 个 store，全局 let 只剩 camera**（main 0.1.5 移植新增 multiCameraState/recovery，见 `devlog/STATE_MANAGEMENT.md`），不要再新增 app.js 全局 let。
+- `app.js`（≈0.9MB，编排层；行数现场统计）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 等业务逻辑已按子系统迁入 modules（见 `APPJS_SPLIT_GUIDE.md` §2）。**原版 main 是 39,207 行的扁平大文件，本地已拆分（约 −47%），不要在 app.js 里堆业务逻辑，新逻辑进 modules/<domain>/ 后经 createXxxApi 注入**。
+- `modules/*.js` —— 按域分目录（core/data/geometry/io/edit/sculpt/material/branch/scalp/bones/scene，0.2.129 实测 104 个文件、42,120 行，app.js 计入则 105；**这两个数字每轮都在变,引用前请现场统计**）；**全局状态已收敛到 18 个 store，全局 let 只剩 camera**（main 0.1.5 移植新增 multiCameraState/recovery，0.2.112 新增 windState，见 `devlog/STATE_MANAGEMENT.md`），不要再新增 app.js 全局 let。
 - `index.html` / `styles.css` —— UI（顶部菜单栏含 Preview 菜单 `#previewMenu`，Turntable 等预览开关在此；缓存号 `?v=` 定点刷新，**不要全局替换**，见 §5 坑）。
 - `server.js` —— main 带来的静态文件服务；`/api/save-project` 已是**死代码**（三个 Local 选项已移除，勿再调用）。
 - `devlog/` —— 全部开发记录（本页所在）。
@@ -41,6 +41,18 @@
 - `createSplitStrandGeometry` 生成 authored `triangleEdgeMasks`；`createHairTopologyGeometry` 优先读 authoredEdgeMasks。
 - `createPanelStrandGeometry` **绕序翻转后必须同步交换 masks [1]/[2]**（0.2.56 真正根因）。
 - `addQuad` 跳过退化（角点重合）/反射折叠（两三角法线点积 < -0.999）quad（0.2.55）——**保留**（防 NaN/翻折）。
+
+### 2.4b 发尖子系统：panel 与普通发丝共用（0.2.123 共享网格 / 0.2.125 WidthCurve / 0.2.126 选中系统）
+- **共享层** `modules/geometry/tip-width-curve.js`（0.2.125 新增，纯函数）：控制网格、按侧暴露判据、build/reset/write 的曲线数学。**签名以「相邻 zipper 高度 / fork 标量」为入参，不接受 `(lock, segmentIndex, splits)`** —— panel 的 `panelSplits` 与发丝的 `strandSplits` 字段名不同但条目形状与邻居规则相同，参数化掉 lock 才能真正共用一份。改这里要同时看 panel 与发丝两侧的适配器。
+- **panel 侧** `panel-tip-strand.js`：ribbon 专属部分（`tipWidthEdgePosition`/`tipPanelWidthAt`/`tipWidthControlPlacement`/`tipWidthSpreadGap`）留在此处，曲线数学改为薄适配器委托共享层。0.2.125 抽取经 36 用例逐字节等价验证。
+- **发丝侧** `modules/geometry/strand-tip-width.js`（0.2.125 新增）：**管内相对坐标 `strandTubeSignedCoordinate` 是本模块的核心，也是唯一定义点**。⚠️ **不要用 raw `profile.x` 判定管的左右侧**：`clipStrandProfileBand` 裁剪后每根管的 raw x 只有一个符号（边缘管全负/全正），用它当判据会让一侧曲线永不生效——这正是 panel 在 0.2.80 修掉的死区。
+- **选中系统共享层** `modules/bones/tip-sub-bone-host.js`（0.2.126 新增）：`resolveTipHost(lock, {materialize})` 一次分派出该几何的发尖链 / splits / 骨骼 / fork / 帧，替代此前「`clonePanelSplits` + `materializeSplitBones` + `splitTipForSegment`」的 panel 专用三连。状态键 `panelTipSelection`/`panelTipHover` 已改名为几何无关的 **`tipSelection`/`tipHover`**（单键，见 STATE_MANAGEMENT.md §2.1）。
+- **几何门控一律用 `segmentBoneHost(lock) === STRAND_SEGMENT_HOST`，不要写 `!isPanelGeometry`**（0.2.126 定论）：后者会把「既非 panel 也非 split 发丝」的几何一并卷入。`segmentBoneHost` 对未开启 split 的发丝返回 null。
+- **`clonePanelSplits` 红线**：发丝路径**绝不**调它——会造出与真实 zipper 无关的假 `panelSplits`，段数/fork 全错（0.2.126 之前已踩过两次）。
+- **单点定义速查**（禁止就地重写这些表达式）：fork `strandSplitForkTForSegment`(bone-model) / `strandTubeForkT`(strand-tip-width) / `tipWidthSideForkFromHeights`(tip-width-curve)；**Tip Clump 收窄比例 `tipClumpNarrowFraction`**(tip-width-curve，panel 与发丝共用)；**管中心 `strandSplitTubeCenter`**(bone-model)；管内相对坐标 `strandTubeSignedCoordinate`；按侧暴露 `tipWidthSideExposesTAt`；首个暴露链索引 `firstExposedTipChainIndex`(tip-sub-bone)；段数/索引钳位 `resolveSegmentSelection`；链长 `tipChainPointCount`。**残余重复站点与处置建议见 `in-progress/tip-subsystem-reuse-audit.md`。**
+- **Tip Clump（0.2.132）**：字段是 **`bone.tipClump`**（不是 `spread` —— 那是 main 的**发丝聚簇**参数，同名不同物；读取回退只在 normalize 层做一次）。语义 = 发尖相对**自身宽度**的整体收窄，panel 与发丝**同义**。「整管横向平移分离」（segment separate / 全局 Split Spacing 滑杆）**已删除**，分离靠拉 zipper。术语对照见 `APPJS_SPLIT_GUIDE.md §7.2b`。
+- **UV 红线**：发尖宽度只准缩放 `t > fork` 的顶点。**row 0 顶点位置不得改变**（`uv-unfold` 的 U 完全由 row 0 环向弧长决定，V 纯行号）。因此曲率收窄预趟**刻意不传** width override **与 Tip Clump 收窄**（其 factors 全行共享且经 falloff 会把位移传到 row 0），`strandProfileTopologyAt` 的 `centerAsymmetricProfile` 重居中分支在 override 生效时也**刻意跳过**（重居中 = 整管平移，宽度只能缩放）。这几处不对称是**有意的，勿"顺手统一"**。
+- **发尖处的 taper 通常是 0**（`DEFAULT_TAPER_CURVE` 末点 `value: 0`，真实工程亦然）：任何「取 t = 1 处几何量」的把手/放置逻辑都会在那里退化成一个点。手柄跨度基准必须与 taper 无关（见 `strandTipClumpAxis` 的标称管宽，与 bug-fixes.md #25）。**测试 fixture 至少要有一个 taper 收到 0 的构型**，否则这类退化在 node 侧永远绿。
 
 ### 2.5 Panel Split 子骨骼 / 统一骨骼模型（0.2.59 起）
 - `lock.splitBones`：每 split 段一个完整变换骨骼（P/orient 四元数/spread + 每段 Width/Depth 曲线）；**混合持久化**——旧档无字段时内存派生、编辑后整体落盘；镜像段序反转 mirrorSplitBones。
@@ -89,7 +101,7 @@
 - **分支**：统一开发分支 `DHS/develop`（日常开发/修复直接提交）；大更改开临时 `feat/<描述>` 分支，merge 回 `DHS/develop` 后**立即删除**；发布时 `DHS/develop` merge 进 `branch-deployment`；禁止直接 merge main（上游镜像，更新按功能移植）；合并/冲突处理由主进程负责。
 - **查代码**：先用 `Select-String` / `git grep` 按函数名定点搜（第 2 节已列关键函数名），**不要整文件读**。
 - **记 devlog**：每 commit 一句话 + 指向详细文件；新条目追加到对应专题文件，不重复全文。
-- **验证**：`node scripts/verify-smoke.mjs assets/presets/layered-side-bun.ahs`（当前基线 9/11：export 对话框标题 + branch-bridge 数据依赖为已知环境差异）；`node --test tests/*.test.mjs`（dom-contract 0.2.111 起应全绿；其余测试以输出为准）；真实工程 UV 打包端到端用 `node scripts/verify-uv-pack-real.mjs`（headless Chrome + CDP，加载 `D:/Downloads/Sussurro_v1_0046.ahs`，7/7 基线）；或静态服务器 `127.0.0.1:8080` + `D:/Downloads/Sussurro_v1_004*.ahs`（当前常用 0046）；不要用 `file://` 打开。
+- **验证**：`node scripts/verify-smoke.mjs assets/presets/layered-side-bun.ahs`（当前基线 9/11：export 对话框标题 + branch-bridge 数据依赖为已知环境差异）；`node --test tests/*.test.mjs`（dom-contract 0.2.111 起应全绿；其余测试以输出为准）。⚠️ **`uv-pack-async` 是负载相关 flake**：Worker 池单条最慢约 14s、该文件约 35s，并行跑多个子智能体时可能超时报出**恰好 1 条** `fail`，单独跑与降载重跑都绿——见到这种形态**先重跑**再怀疑代码（0.2.125 实测复现过一次）；真实工程 UV 打包端到端用 `node scripts/verify-uv-pack-real.mjs`（headless Chrome + CDP，加载 `D:/Downloads/Sussurro_v1_0046.ahs`，7/7 基线）；或静态服务器 `127.0.0.1:8080` + `D:/Downloads/Sussurro_v1_004*.ahs`（当前常用 0046）；不要用 `file://` 打开。
 - **版本/缓存号**：改 `modules/core/app-config.js` 的 `APP_VERSION` 与 `index.html` 缓存号 `?v=YYYYMMDD-N`，与 devlog「最近版本」保持一致。
 
 ## 5. 常见坑（吸取过的教训）

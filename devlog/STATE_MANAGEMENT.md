@@ -19,7 +19,7 @@
 |---|---|---|---|
 | —（基类） | core/scene-store.js | — | Proxy 状态容器 |
 | `sel` | edit/selection-store.js | 24 | 选择集 + outliner/工具（selectedId、activeTool、lockIndex…） |
-| `sculptState` | edit/sculpt-edit-store.js | 72 | 雕刻/编辑/拖拽/工具/重复放置/分支面板拖拽 |
+| `sculptState` | edit/sculpt-edit-store.js | 79 | 雕刻/编辑/拖拽/工具/重复放置/分支面板拖拽/发尖选中（见 §2.1） |
 | `hairState` | core/hair-store.js | 20 | 发丝/材质/拓扑显示、radial 菜单 |
 | `projectState` | io/project-store.js | 17 | 保存/导出/预设/项目名（含 8 个 IO deps） |
 | `scalpState` | scalp/scalp-store.js | 35 | 头皮引导/构建/绘制 |
@@ -36,6 +36,21 @@
 | `multiCameraState` | core/multi-camera-store.js | 6 | 多相机四视图（main 0.1.5 移植，实验性，运行时状态不入档） |
 | `recovery` | io/recovery-store.js | 11 | 自动保存/崩溃恢复调度状态（main 0.1.5 移植） |
 | `windState` | core/wind-store.js | 13 | 吹风预览 10 个持久化参数 + 运行时 active/playing/time（0.2.112 新增；预览缓存走 WeakMap，不入 .ahs） |
+
+### 2.1 发尖子骨骼选中 / 段号（sculptState 内，0.2.126 起几何无关）
+
+> 本节只列「容易被当成两套 panel/strand 键」的 4 个键，其余 75 个键读 store 定义处的注释。
+
+| 键 | 形状 | 语义 |
+|---|---|---|
+| `tipSelection` | `{ lockId, segmentIndex } \| null` | 视口里选中了哪个发尖子骨骼；`null` = 未选中（点同一处再点即取消） |
+| `tipHover` | `{ lockId, segmentIndex } \| null` | 同上，悬停态 |
+| `panelSegmentIndex` | number（恒非 null） | 右侧面板当前显示 panel 的哪一段 |
+| `strandSegmentIndex` | number（恒非 null） | 同上，普通发丝的哪一根管（0.2.125 新增） |
+
+- **`tipSelection`/`tipHover` 是单键，不是两套**（0.2.126 由 `panelTipSelection`/`panelTipHover` 改名）：`segmentIndex` 在 panel 上是段号、在普通发丝上是管号，**含义由 `segmentBoneHost(lock)` 决定**。选单键的理由写在 store 定义处——清理路径（`selectLock`）、表面高亮（`updateTipHighlight`）、笔刷门控（`applySubBoneBrushSample`）、`tipUiActive` 各自只有一份实现；两套键会让这四处都长出 `if(几何)` 分叉。**不要为发丝再加一套。**
+- **段号刻意是两个独立键**（`panelSegmentIndex` / `strandSegmentIndex`）：两套段号必须能各自停在不同下标，复用一个会让切换选中对象时互相污染。钳位的唯一定义点是 `bone-model.js` 的 `resolveSegmentSelection`。
+- 段号与选中键职责不同，**都要留**：段号恒非 null 且被钳进 `[0, 段数−1]`（删管后不会悬空）；选中键可为 null，切 lock 时由 `selectLock` 统一清理。
 
 ## 3. 剩余全局 let（仅 1 个，app.js）
 

@@ -167,3 +167,76 @@
    - **三处必须同步**（本 bug 的真正教训）：该规则此前被**复制成三份**——`strand-geometry.js`、`bone-model.js` 的 `strandSplitDirectionForSegment`、`usda-export.js` 的 `strandDirectionForTube`。只改几何会让**骨骼与 USDA 导出的横向偏移和渲染出来的管错位**。按 0.2.121 规范抽成单一定义点后另两处**真 import**（已核实无循环：bone-model 只 import three；usda-export 原零 import，新增后 usda-export → bone-model → three，浏览器 importmap 与 node 测试均覆盖）。**这条规则是在「单一定义点」规范之前被抄三份的，所以 bug 藏得住**——移植功能时若把某条推导抄进新模块，必须当场抽函数。
    - 顺带修：`index.html` L1191 的 Split Spacing tooltip（「how far apart the **two** tip branches open」自多 zipper 起过时；该字符串无 localization key）。
    - 验证：新增 5 测试——N=1 恒 `[-1,1]`（legacy 一致）；**严格递增使每条缝都开**（旧离散规则在 N=2 得 `[-1,-1,1]` 会失败此断言，即本 bug 的回归守卫）；对称不侧漂；**三消费方对同一 lock 每根管逐值一致**（跨消费方一致性断言）；几何级「N+1 根管在 tip 处全部横向分离」。Node 全量 293/293、真实 `Sussurro_v1_0060.ahs` 130/130。**待浏览器验收**：视口里加 2+ zipper 目视确认每条缝都张开（本轮为纯函数/几何级验证）。
+
+18. **N≥2 拉链时第 3 根管及以后没有发尖把手（0.2.125 修复，0.2.116 N-泛化遗留）**
+   - 问题：普通发丝加到 2 个以上 zipper（≥3 管）后，**第 3 根管起既看不到黄色发尖手柄、也看不到引导线**，那些管的发尖子骨骼无法拖动。
+   - 根因（`modules/bones/bone-view-handles.js`）：创建块与更新块**双双写死 2**（`for (let tubeIndex = 0; tubeIndex < 2; ...)`），注释也还写着「one per tube (0/1)」。0.2.116 把管数泛化成 N+1 时漏了这两个循环。**写入侧早已泛化**（`app.js` 的 Tip Length / Reset Split Tips 都是 `chains.forEach`），所以数据能改、把手看不见——纯遗漏，修它不改任何用户可见设计。
+   - 修复：创建按 `lock.strandSplits.length + 1`（刚被 `cloneStrandSplits` 归一化过，与 `strandSplitBonesFor` 同真源，三方恒等）；更新遍历**实际分配的数组长度**并与骨骼数组求交（`placeableTubeCount`）——遍历交集会让骨骼数组缩短时残留把手永久可见，故循环用数组长度、放置用交集，越界不可能发生。**刻意不用** `strandSplitBonesFor(lock)?.length`：它对未启用 split 的发丝返回 null，会分配 0 个把手，而创建只在 `rebuildCurveObjects` 跑一次、启用 split 后不再重分配。
+   - 顺带修 `bone-model.js` 两处与下方代码矛盾的旧契约注释（「length 2」「exactly two tubes」）。
+   - 验证：源码断言（模块 THREE/DOM 耦合、node 不可执行，与既有同类断言同理）+ 行为断言（N=2 → 3 管 = `strandSplitBonesFor` 长度）+ **「文件内不再存在 `tubeIndex < 2` 字面量」计数断言**；负向对照实测：还原两个字面量 → 1 fail。
+
+19. **X 镜像把每根管的发尖姿态贴到错误的管上（0.2.125 修复）**
+   - 问题：`mirrorStrandSplitBones` 只翻转每根管的横向分量，**不反转管顺序**，旧注释称「两管左右对称所以保持顺序」。
+   - 根因：管下标 = 从左到右的横向次序，这由 `strandSplitDirection(k, N) = (2k − N)/N` 的**单调性**决定（本仓库唯一定义点）。绕 X 镜像把最左管映到最右管，故源管 k 的创作数据在镜像体里属于下标 **N−k**。panel 侧的 `mirrorSplitBones` 早就 `.reverse()`，`mirrorBones` 对全 split registry 也 reverse——**三条镜像路径里只有发丝这条漏了**。
+   - 修复：`bones.slice().reverse().map(...)`（先 slice：两个调用点都直接传 `lock.strandSplitBones`，原地反转会破坏源 lock）。派生字段处置**一分为二**：`name` 置 null 交由 normalize 按新下标重派生（继承会让下标 k 的骨骼叫 `split.${N-k}`，USDA 关节名与骨骼层级错位）；`parentParam` **刻意保留**——① 它在 reverse 下恒等：镜像 splits = 源 splits 取反 position 后重排 = heights 数组整体反转，故 `forkT'(k) = 1 − max(h'[k−1], h'[k]) = forkT(N−k)`，正是随管携带过来的值（主进程逐管实测 4/4 成立）；② 置 null 反而**损坏存档**：镜像路径直接赋值 `partner.strandSplitBones`、**不经** materialize，保存时 `strandSplitBonesToData` 的 `?? 0.5` 会把 null 永久写成 0.5、摧毁叉口深度。
+   - 验证：N=2 三管各带可区分的 tip x 与 twist，断言下标 k 拿到源 N−k 的数据且横向取反、y/z 不变；**负向对照**断言未反转结果不成立（实测删掉 `.reverse()` → 2 fail）；另测 N=1 legacy 与空/null 输入。
+
+20. **Split Spacing 滑杆在骨骼 materialize 之后完全失效（0.2.125 修复）**
+   - 问题：普通发丝的 Split Spacing（`#strandSplitGap`）拖动只改读数、**不改网格**。触发条件是任何一次 +/−、Tip Length、Reset Split Tips 或拖发尖——即正常使用几步之内必然发生。
+   - 根因：几何优先读 `bone.spread`（`strand-geometry.js` 的 `splitBones[i]?.spread ?? defaultSplitSpread`），而 `defaultStrandSplitSpread(lock)` 只在 `bone.spread == null` 时才被查（`bone-model.js`）。materialize 后每根管都持有显式数值，全局标量再也到不了网格。滑杆处理器只写标量。主进程实测：materialize 前 0.12→0.4 生效；materialize 后改 0.05 被忽略、spread 卡在 0.4。
+   - 修复（**用户已确认语义**）：Split Spacing 是**全局刷子——写入每一根管**，与其既有 tooltip「the default spread for every split tube」一致；代价是它会覆盖用每管滑杆单独调过的 spread（panel 侧没有这个全局滑杆，故无此权衡）。新增单点定义 `applyStrandSplitGapToTubes(target)`（`segment-control.js`，与 `applyStrandSegmentSpread` 相邻并**共用** `SPREAD_MAX = 0.99`，顺带消除了后者内联的 0.99）。接线只在共享处理器里加一行 key 条件，写入放进 mutator 内部 → 多选与镜像同步复用 `editSelectedLocks` 既有的「几何 → 曲线对象 → 镜像 → 统计」序列，不新增第二条重建路径。滑杆 UI range 仍是 0..0.5（未动），但写入按 spread 定义域钳到 0.99——两者差异已在注释中说明。
+   - 验证：主进程独立实测（真实导出函数）——中间管先authored 成 0.77，改 gap 后三管齐变 0.05、gap=5 钳到 0.99、非 split 发丝返回 null 不动；子智能体测试含**负向对照**（旧行为得 `[0.4, 0.77, 0.4]`，修复后 `[0.05, 0.05, 0.05]`）。
+
+21. **X 镜像未排序 → 把错误 zipper 的高度写进 legacy 标量（0.2.125 修复）**
+   - 问题：镜像伴生体的 `strandSplits` 由 `map(position → −position)` 得到、**不重新排序**，随后 `syncStrandSplitLegacyFields` 取 `strandSplits[0]` 回写 legacy 标量——那已不是最左的那条 zipper。
+   - 主进程实测：源 `[{−0.5, h=0.7}, {0.2, h=0.25}]` → 伴生体数组 `[{0.5, h=0.7}, {−0.2, h=0.25}]`，写出 `position=0.5, height=0.7`，而排序后首条应是 `−0.2 / 0.25` —— **写错了高度**。这不是「下次重建会自愈」：legacy 标量是 N=1 的真源、参与 save/load，并且（见下）曾是新增 zipper 的继承来源。
+   - 附带：裸 `.map` 绕过了 `cloneStrandSplits`，丢掉 position/height 钳位、`order` 去重与「空数组按 legacy 标量回退成 1 条」的保证。
+   - 修复：两处镜像站点（live mirror 与 snapshot）统一 `cloneStrandSplits(...)` → negate → `.sort()`，与紧邻下方 panel 的 clone→negate→sort **同形**。snapshot 那处原本靠 `addLock` 下游重新归一化而**侥幸正确**，仍一并改正——依赖下游重排来掩盖局部错误的数组，正是规范点名的漂移来源。
+   - 验证：断言伴生体数组升序、legacy 标量等于排序后首条（用 0.7/0.25 非对称 fixture 使错序可被检出），并断言裸 negate 写法已绝迹。
+
+22. **panel 发尖 gizmo（rotate/translate）拖拽种子取自陈旧创作空间 → rest 动过之后一按下就跳（0.2.126 修复；与 #16 同类，当年只修了笔刷没查 gizmo）**
+   - 问题（**panel 侧潜伏 bug**，非普通发丝专属）：选中发尖子骨骼后用 W/E gizmo 拖动，若该发丝的 rest 链自上次创作后移动过，**一按下发尖就跳一段**，跳量恰等于 rest 位移。
+   - 发现经过：本轮移植「发尖选中系统」到普通发丝、给 gizmo 分派几何时读到该路径，发现它把 `bone.tip.points` 当拖拽种子。
+   - 根因（0.2.120 物化空间规则的又一处违反）：`handle.position` 与 gizmo 增量都在**物化空间**（`materializeTipChain` 的 `points[i] = rest[i] + (authored.points[i] − authored.restPoints[i])`，即视口所画），而 `authored.points` 是**旧 rest 基准**下的陈旧绝对坐标。两者混用时，只要 rest 动过（主链编辑 / zipper 位置或高度 / spread / 面板宽度 / 发丝 Split Spacing 都会动 rest），种子与把手位置就差了一个 rest 位移。
+   - **为什么长期没被发现**：只有「先让 rest 动过、再用 gizmo 拖发尖」才复现；单独调 gizmo 不动 rest，值恰好相同。#16（笔刷）当年修的是同一条规则的另一个消费方，但没有回头审计 gizmo —— 印证规范里那条「一条推导规则只准有一个定义点」：种子取值当时在笔刷/rotate/translate 各写了一遍。
+   - 修复：取种子与写回集中成两个单点定义 —— `tipDragSnapshot(tip)`（`startPoints` ← 物化链 `points`、`restPoints` ← **同一次物化**的 `restPoints`，成对取值）与 `writeTipEdit(bone, points, restPoints)`（写回 `points` = 物化空间编辑结果、`restPoints` = 同批 rest；**两行必须成对**，单独改 `points` 会让 delta 相对旧 rest 被重新解释）。笔刷/rotate/translate 三条路径统一走这两个函数。
+   - **对既有 panel 工程无影响（主进程实测，非推断）**：探针直接调 `materializeTipChain` —— ① rest **未动**时物化值与 `authored.points` **逐值相同**（max 差 `0.000000000000`）⇒ 种子切换是恒等；② rest 移动 y+0.2 时，物化值与 authored 的偏差在**全部 4 个链点上恰为 (0, 0.200000, 0)** ⇒ 正是旧写法会产生的跳变量；③ 创作 delta（点 2 的 +0.5 x）在 rest 移动后仍被保留。
+   - 教训：修某条规则的违反时，必须**把该规则的全部消费方列出来逐个查**，而不是只修报告出来的那一个。#16 只修笔刷，导致同一条规则在 gizmo 上又躺了 6 个版本。
+
+23. **普通发丝发尖 WidthCurve：对称编辑却只有一侧动（0.2.128 修复；与 panel 在 0.2.80 后修的是同一条规则）**
+   - 问题（用户报告）：拖普通发丝发尖 WidthCurve 的绿色控制点调宽度，「两侧不对称，一侧位移很小，但右边曲线面板里又是正常的」。面板正常 ⇒ **写入没问题**，错在**消费**（几何）。
+   - 根因：`app.js` `strandProfileTopologyAt` 的 `x_out = profile.x · strandRadiusAt(...)` 是绕**全局 profile 原点 x = 0** 的缩放，位移 `profile.x · (m − 1)` **正比于 |raw x|**。管（tube）的 band 一般**不以 0 为中心**，于是同一个对称 multiplier 在一根管的两侧落在差别很大的 |x| 上、位移差别很大。
+   - 实测（16 边形 profile、对称 m = 1.5，`scripts/tmp-asym-probe.mjs`）：
+
+     | N | 管 | band | 中心 | 低侧位移 | 高侧位移 | 老式不对称比 | 绕管中心 |
+     |---|---|---|---|---|---|---|---|
+     | 1 | 0 | [−1.000, 0.000] | −0.500 | −0.500000 | **0.000000** | **∞** | 1.00× |
+     | 1 | 1 | [0.000, 1.000] | +0.500 | **0.000000** | 0.500000 | **∞** | 1.00× |
+     | 2 | 0 | [−1.000, −0.400] | −0.700 | −0.500000 | −0.200000 | 2.50× | 1.00× |
+     | 2 | 1 | [−0.400, 0.400] | −0.000 | −0.200000 | 0.200000 | 1.00× | 1.00× |
+     | 2 | 2 | [0.400, 1.000] | +0.700 | 0.200000 | 0.500000 | 2.50× | 1.00× |
+
+     **N = 1（默认拉链，真实工程的形态）时缝侧位移恰为 0** —— 那个绿把手拖了网格一动不动，即「一侧位移很小」的极端形式。只有**奇数**拉链的中间管恰好跨 0 才碰巧对称，所以现象看起来时有时无。
+   - 修复：override 生效时绕**管中心**缩放（与 panel 在 `panel-split-tip-bones.md` §8.20 改成 tip-relative 的**同一条规则**：段宽度以段中心为参考，不是主骨骼中心 u = 0）。
+     `x_out = (x · R_override(x) + pivotX · (R0(pivotX) − R_override(x))) · scaleX`，`pivotX = override.centerX`（管中心，profile 局部空间）。
+     - **为什么这样写而不用代数等价的 `pivotX·R0 + (x − pivotX)·R_override`**：`R_override === R0` 时 `R0 − R_override` 恰为 0、`pivotX · 0` 恰为 0，于是 **m = 1 逐位**化简回老式 `x · R0`。第二式在浮点下只是近似相等，会让 byte-identity 断言必须放宽到容差。
+     - pivot 半径取**基础**曲线在管中心处的值（与 multiplier 无关）⇒ 宽度编辑仍是**纯缩放、不掺平移**（红线 4）。
+     - `centerX` 由 `strand-tip-width.js` 的 `boneCurveOverride` 随 override 载荷下传（几何路径必传）；纯读值路径 `strandTipWidthMultiplierAt` 不带 band ⇒ `centerX` 为 undefined ⇒ app.js 退回绕 0 缩放，与缩放中心无关，不受影响。
+   - **总量不变，只改分布**：发尖行总宽度仍恰好按 multiplier 缩放（测试里以无量纲的 span 比断言）。N = 1、m = 0.4 时老式是「外缘 +0.12 / 缝 0.00」，修后是「外缘 +0.06 / 缝 −0.06」—— 同样的收窄量，不再全压在一侧。
+   - **UV / row 0 契约**：override 在 `t <= fork` 恒为 null，row 0（t = 0）永不进入本分支 ⇒ row 0 逐位不动，`unfoldHairMesh` 的 uv 逐值相等（既有断言继续通过；真实工程 7/7 浏览器校验 0 异常）。
+   - 缝顶点**应该**动：拉链两侧的管各自绕自己的中心缩放，缝侧是管的切面。对称编辑的定义就是两侧位移等值反号，缝侧不动才是 bug（那正是老式行为）。
+   - 验证：新增 3 条断言（偏心管等值反号 + 总量不变、N = 1 缝侧位移 ±0.06、m = 1 逐位恒等）。**反向对照**：把 pivot 项置 0 后前两条立刻红（高侧/缝侧位移 `got 0`），source-text 守卫同时红（证明不是空跑）；恢复后全绿。
+   - panel 侧**逐字节未动**：`panel-tip-strand.js` 不调用 `strandProfileTopologyAt`，其发尖宽度早已以段中心为参考。
+
+24. **普通发丝正中间管的 Tip Clump 是死控件（0.2.132 修复；自 0.2.116 多拉链移植起就存在）**
+   - 问题：偶数拉链数时**正中间那根管**（N=2 的管 1）拖绿手柄、拉右侧 Tip Clump 滑杆，读数会变但**网格一动不动**。
+   - 根因：Tip Clump（当时叫 `bone.spread`）在发丝几何里**只**经 `opening = baseWidth · spread · smoothstep(t, fork, 1) · direction` 生效，而 `direction = strandSplitDirection(k, N) = (2k − N)/N`。`k = N/2` 时该系数恰为 **0** ⇒ 整个 opening 恒为 0 ⇒ 该管对任何 Tip Clump 取值都无响应。这一点当年是**知情的**（`strandTipClumpAxis` 的 DEGENERATE 注释把它记作「已知几何行为，不是本函数的 bug」），但它其实是个用户可见的死控件。
+   - 修复：Tip Clump 语义整体改为「绕**本管 band 中心**的相对收窄」（与 panel 同义，共享 `tipClumpNarrowFraction`），不再乘任何方向系数 ⇒ **每一根管都必然响应**。同轮删除 opening 平移语义本身（用户决策：分离改由拉 zipper 实现）。
+   - 验证：新增测试「中间管的 Tip Clump 现在会动网格」——断言 Tip Clump 0 → 0.8 使该管发尖行 span 严格变小，且两侧极值**中点逐值不动**（证明是绕管心缩放、不掺平移）；旧实现下这两个 span 逐位相同（死区）。
+
+25. **绿色 Tip Clump 手柄在真实工程里拖不动（0.2.132 当轮引入并修复；node 测试全绿、真实浏览器抓到）**
+   - 问题：把 Tip Clump 轴的跨度基准改成「t = 1 处该管的真实网格边缘」后，手柄轴长恒为 0 —— 视口里拖不动，且 N+1 个手柄重叠成一个、无法分辨在拖哪根管。
+   - 根因：**`DEFAULT_TAPER_CURVE` 的末点 `value` 恰为 0**（`app-config.js`；真实工程 layered-side-bun 的 Front Bangs 逐值相同）。于是 t = 1 处每根管的宽度都是 0、两侧边缘塌到脊柱同一点。旧实现的轴跨度来自已删除的 opening（与 taper 无关），所以此前不暴露。
+   - **为什么 node 测试没抓到**：`split-tip-geometry.test.mjs` 的 fixture 用恒 1 的 `FLAT_CURVE`，管在 t = 1 仍是满宽 —— 掩盖了真实工程的形状。教训：**凡「取发尖处几何量」的把手/放置逻辑，fixture 必须至少有一个 taper 收到 0 的构型**。
+   - 修复：轴跨度改用**标称管宽**（band 的 profile 极值 × baseWidth × widthScale × 该行 pointScales.x，**与 taper 无关**），正对应 panel 用「不随 taper 收缩的段 boundaries」建 handleU。taper 恒 1 时标称跨度与真实边缘重合。同时保住仿射性（两端点都不含 Tip Clump，它只作 lerp 系数）——拖拽端 49 探针反演的前提。
+   - 验证：`scripts/verify-tip-clump.mjs` 真实浏览器从 16/17 → **17/17**（`lowToHigh` 由 0 变为 0.146）；补 node 回归「taper(1)=0 时轴仍可拖 + 每管手柄互不重合」，并在该测试里先断言「真实边缘确实横向退化」作为前提确认。

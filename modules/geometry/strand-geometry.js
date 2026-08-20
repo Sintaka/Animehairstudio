@@ -19,7 +19,12 @@ import {
   compoundProfileBridgePlan
 } from "./compound-strand.js?v=20260814-12";
 import { DEFAULT_SWEEP_PROFILE, ROUND_SWEEP_PROFILE } from "../core/app-config.js?v=20260815-4";
-import { strandSplitBonesFor, strandSplitDirection, strandTipFor } from "../bones/bone-model.js?v=20260813-1";
+import { defaultStrandTipClump, strandSplitBonesFor, strandTipFor } from "../bones/bone-model.js?v=20260901-1";
+import {
+  strandTipClumpNarrowedProfile,
+  strandTipWidthProfileOverride,
+  strandTubeBandExtents
+} from "./strand-tip-width.js?v=20260901-1";
 import {
   materializeTipChain,
   sampleCenterlinePoint,
@@ -28,8 +33,11 @@ import {
   tipCaptureWeightAt,
   tipChainFrameAt,
   tipWeightAt
-} from "./tip-sub-bone.js?v=20260813-1";
+} from "./tip-sub-bone.js?v=20260830-1";
 import { SWEEP_OVERLAP_DEFAULTS } from "./strand-sweep.js?v=20260813-3";
+// fork-T（`1 − max(相邻 zipper 高)`）的唯一定义点。本文件此前自写一份 sectionSplitStart，
+// 0.2.133 折叠。无新依赖边：strand-tip-width.js 已 import 同一模块。
+import { tipWidthCommonForkFromHeights } from "./tip-width-curve.js?v=20260901-1";
 
 export function createStrandGeometryApi(deps) {
   // deps: api objects (branchSweep/strandSweep/branchBridge/curveSurfaceCreate/panelTipStrand/
@@ -127,17 +135,29 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     const highX = boundaryXs[i + 1];
     const points = clipStrandProfileBand(polygon, lowX, highX);
     if (points.length < 3) continue;
-    // Lateral spread direction: strictly increasing along the tube index, -1 .. +1.
-    // Single definition point: strandSplitDirection in modules/bones/bone-model.js
-    // (see the comment there for why monotonicity is what makes EVERY seam open;
-    // the old discrete ±1/0 rule left all but one seam shut). N=1 -> -1/+1, legacy.
-    const direction = strandSplitDirection(i, splitCount);
-    // Each section opens where its adjacent split(s) are deepest (shallowest opening
+    // Each section narrows where its adjacent split(s) are deepest (shallowest clump
     // start row). Edge sections use their single adjacent split.
     const leftSplit = splits[i - 1];
     const rightSplit = splits[i];
-    const sectionHeight = Math.max(leftSplit?.height ?? 0, rightSplit?.height ?? 0);
-    sections.push({ points, direction, sectionSplitStart: 1 - sectionHeight });
+    // Tip Clump 的**每侧**斜坡起点：本侧 zipper 高度（无 zipper 的外侧镜像对侧，与 panel
+    // 的 tipWidthSpreadGap 邻居规则逐字同构 —— 边缘段外侧自动补全、不展示 UI）。两侧高度
+    // 不同时收窄斜坡起点不同，这正是 panel 既有行为。
+    const leftClumpHeight = leftSplit?.height ?? rightSplit?.height ?? null;
+    const rightClumpHeight = rightSplit?.height ?? leftSplit?.height ?? null;
+    // band = 该管裁剪后的实际 x 跨度（profile 局部空间），发尖 WidthCurve 的**管内相对
+    // 坐标**由它归一化。这里一次算好挂在 section 上，避免 sweep 循环里逐行重算；
+    // splitXs 直接传入，保证 band 边界与上面的裁剪用**同一批**数值（同一条 lerp 公式）。
+    const band = strandTubeBandExtents(polygon, splits, i, splitXs);
+    sections.push({
+      points,
+      // fork-T 走 tip-width-curve 的唯一定义点（此前这里是 `1 - Math.max(...)` 的第 4 份
+      // 副本）。splits 已在上方归一化（height 钳到 [0.02, 0.8]），缺侧为 undefined ⇒ 与
+      // 共享层的 `?? 0` 缺侧语义一致，逐值不变。
+      sectionSplitStart: tipWidthCommonForkFromHeights(leftSplit?.height, rightSplit?.height),
+      band,
+      leftClumpHeight,
+      rightClumpHeight
+    });
   }
   // A degenerate (<3 pt) section would cascade into a broken mesh / null UV table;
   // bail out like the legacy guard rather than emit it.
@@ -170,12 +190,14 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
   // capture/tip weighting and the fused-grid splitStartRow). At N=1 both sections share
   // the same start, so this equals the legacy 1 - strandSplitHeight.
   const splitStart = Math.min(...sections.map((section) => section.sectionSplitStart));
-  // Route 2: per-tube spread comes from each split bone (relative semantics); the
-  // legacy absolute splitGap only derives the default spread so old files keep the
-  // same look (default 0.12 -> spread 0.12; opening = baseWidth * spread).
-  const baseWidth = Number(lock.baseWidth ?? lock.width ?? 0.16) * Number(lock.widthScale ?? 1);
+  // Route 2: per-tube Tip Clump comes from each split bone (bone.tipClump). 语义**只有**
+  // 「该管发尖相对自身宽度收窄多少」——相对缩放，绕本管 band 中心。0.2.132 前这里还有一份
+  // 「整管沿 frame.x 平移」的 opening（继承自 main 的 segment separate / Split Spacing），
+  // 已按用户决定**整体删除**：管的横向分离由 zipper 决定，收窄本身就会让相邻管尖张开。
   const splitBones = strandSplitBonesFor(lock);
-  const defaultSplitSpread = THREE.MathUtils.clamp(Number(lock.strandSplitGap ?? 0.12), 0, 0.99);
+  // 未创作过的管的兜底（strandSplitBonesFor 已把 authored 骨骼归一化过，这里只覆盖
+  // 「splitBones 为 null」与「该管 tipClump 缺失」两种边角；单点定义在 bone-model）。
+  const tubeClumpDefault = defaultStrandTipClump(lock);
   const strandSplitWeights = splitBones ? [] : null;
   // Per-vertex leaf weights use the unified [mainJoint, leafIndex, weight] format;
   // mainJoint indexes the main strand bone point nearest to the vertex row (leaf = tube).
@@ -206,6 +228,17 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
     const scaleZ = sampleScale(lock.pointScales, t, "z");
     let rowRadius = 0;
     sections.forEach((section) => {
+      // 刻意**不**在这一趟传发尖 WidthCurve override（与下方 sweep 的同名调用差且仅差这
+      // 一个参数，属已知的、必须保留的不对称，勿「顺手统一」）。三条理由：
+      // ① 本趟产出的是**全行共享**的曲率收窄响应（radii → sweepCurvatureResponse →
+      //    factors[row] 乘到该行**所有管**的顶点上）。把某一管的创作宽度喂进去，会让该管
+      //    的曲线改动跨管污染其他管的位置。
+      // ② factors 经 falloff 在行间扩散，发尖处 radii 变小可传播到 row 0 → row 0 顶点位移
+      //    → uv-unfold 的 U（只由 row 0 弧长决定）改变 = 破 UV 契约（红线，见
+      //    devlog/in-progress/strand-tip-width-ui-port-plan.md §3）。
+      // ③ 语义上曲率收窄响应的是发丝**基础包络有多粗**（防自穿插），发尖 WidthCurve 是
+      //    其后的美术缩放；喂回去会形成「收窄→更细→少收窄→更粗」的非线性反馈，创作值
+      //    与最终宽度不再成正比。
       const warpedSection = deps.strandProfileTopologyAt(lock, t, section.points, scaleX, scaleZ, polygon);
       for (let column = 0; column < section.points.length; column += 1) {
         const warped = warpedSection[column];
@@ -232,27 +265,46 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
       const frame = frames[row];
       const scaleX = sampleScale(lock.pointScales, t, "x");
       const scaleZ = sampleScale(lock.pointScales, t, "z");
+      const sectionSplitStart = section.sectionSplitStart;
+      // 每管发尖 WidthCurve：仅在「有段骨骼 + 该段创作过 taperCurve + t 已过本段 fork」
+      // 时才是非 null（判据本体在 strand-tip-width.js，勿在此复制）。今天所有真实工程
+      // 都没有创作过的 strandSplitBones 曲线 → 恒 null → 与改动前逐字节一致、零分配。
+      const tipWidthOverride = splitBones
+        ? strandTipWidthProfileOverride({
+          lock,
+          bone: splitBones[sectionIndex] || null,
+          splits,
+          tubeIndex: sectionIndex,
+          t,
+          sectionSplitStart,
+          band: section.band
+        })
+        : null;
+      // Tip Clump 收窄：**先**把 profile x 绕本管 band 中心收进来，**再**送去 warp ——
+      // 与 panel「先把列的 u 收进 [uStart,uEnd]、再用该 u 采样宽度曲线」同序（理由与
+      // 坐标空间见 strandTipClumpNarrowedProfile）。Tip Clump = 0 时返回原数组本身、零分配。
+      const clumpedPoints = strandTipClumpNarrowedProfile(
+        section.points,
+        section.band,
+        splitBones ? (splitBones[sectionIndex]?.tipClump ?? tubeClumpDefault) : tubeClumpDefault,
+        t,
+        section.leftClumpHeight,
+        section.rightClumpHeight
+      );
       const warpedSection = deps.strandProfileTopologyAt(
         lock,
         t,
-        section.points,
+        clumpedPoints,
         scaleX,
         scaleZ,
-        polygon
+        polygon,
+        tipWidthOverride
       );
       const color = deps.strandInfluenceColor(lock, t);
-      const tubeSpread = splitBones
-        ? (splitBones[sectionIndex]?.spread ?? defaultSplitSpread)
-        : defaultSplitSpread;
-      const sectionSplitStart = section.sectionSplitStart;
-      const opening = t <= sectionSplitStart
-        ? 0
-        : baseWidth * tubeSpread * THREE.MathUtils.smoothstep(t, sectionSplitStart, 1) * section.direction;
       section.points.forEach((profile, column) => {
         const warped = warpedSection[column];
         const ringPoint = frame.x.clone().multiplyScalar(warped.x * factors[row]);
         ringPoint.add(frame.z.clone().multiplyScalar(warped.z * factors[row]));
-        ringPoint.addScaledVector(frame.x, opening);
         vertices.push(point.x + ringPoint.x, point.y + ringPoint.y, point.z + ringPoint.z);
         tangents.push(frame.y.x, frame.y.y, frame.y.z, 1);
         uvs.push(column / ringSize, t);

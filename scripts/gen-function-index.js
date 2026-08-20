@@ -1,4 +1,4 @@
-﻿// gen-function-index.js — scan app.js + modules/*.js, emit a machine-readable
+// gen-function-index.js — scan app.js + modules/*.js, emit a machine-readable
 // function directory (name / line / kind / exported / call-count) used by agents
 // for fast lookup. Run:  node scripts/gen-function-index.js
 const fs = require("fs");

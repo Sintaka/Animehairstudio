@@ -1,4 +1,4 @@
-﻿// ui-store.js — viewport/panel UI state (refactor 3c-3b).
+// ui-store.js — viewport/panel UI state (refactor 3c-3b).
 import { createSceneStore } from "./scene-store.js?v=20260809-1";
 import { readStoredBooleanPreference } from "./preference-storage.js?v=20260814-12";
 

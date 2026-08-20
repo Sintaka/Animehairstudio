@@ -1,4 +1,4 @@
-﻿# 迁移方法论 / MIGRATION GUIDE
+# 迁移方法论 / MIGRATION GUIDE
 
 > 从 3d 阶段（app.js 瘦身：creation/shape preset + 子发片系统 5 模块）总结的迁移小技巧与注意事项。
 > 适用：从 app.js 单体把函数迁到 modules/ 时。
