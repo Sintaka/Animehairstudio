@@ -258,6 +258,74 @@ try {
   console.log(`  [info] row 0 ${row0Same ? "未移动" : "已移动"}；U 尺度比值 ${uScale.toFixed(4)}`
     + ` —— 已知未解项：≠1 时 uv-unfold 的 U 会随之改变（解法是传 referenceCircumference）`);
 
+  // ── 用户 bug② 的**活体**证据：主发片控制点与几何的关系不得因 Conform 而改变 ─────────
+  // 用户原话：「主发片的控制点和控制器不会随着 Conform 拉高而跟着 geo 走」。
+  // Bend 模型下中线（s=0）位移恒为 0 ⇒ 控制点（落在授权曲线上）与 u=0 那一列的相对关系
+  // **应当逐位不变**。判据取「每个 handle 到 u=0 列最近顶点的距离」在 conform 前后的差：
+  // 若几何动了而 handle 没动，这个距离就会变 —— 那正是用户报告的症状。
+  // 注意**不能**断言 handle 恰好落在 u=0 列上：那一列含 camber 偏移（peak camber），
+  // 两者本来就差一个 camber，重点是这个差不因 Conform 而变。
+  const handleProbe = `(() => {
+    const lock = ${lockRef};
+    const pos = lock.mesh.geometry.getAttribute('position');
+    const cols = lock.mesh.geometry.userData.gridColIndices || [];
+    const rows = lock.mesh.geometry.userData.gridRowIndices || [];
+    const maxCol = Math.max(...cols.filter((c) => c >= 0));
+    const midCol = Math.round(maxCol / 2);
+    const handles = lock.curveObjects?.handles || [];
+    const out = [];
+    for (const h of handles) {
+      let best = Infinity;
+      for (let i = 0; i < pos.count; i++) {
+        if (rows[i] < 0 || cols[i] !== midCol) continue;
+        const d = Math.hypot(pos.array[i*3] - h.position.x, pos.array[i*3+1] - h.position.y, pos.array[i*3+2] - h.position.z);
+        if (d < best) best = d;
+      }
+      out.push({ hx: h.position.x, hy: h.position.y, hz: h.position.z, d: best });
+    }
+    // 同时取**边缘列**（col 0）的顶点：用于证明几何真的动了 —— 否则"中线没动"这条断言
+    // 在"Conform 完全没生效"的构建上也会通过（空转）。
+    const edge = [];
+    for (let i = 0; i < pos.count; i++) {
+      if (rows[i] < 0 || cols[i] !== 0) continue;
+      edge.push(pos.array[i*3], pos.array[i*3+1], pos.array[i*3+2]);
+    }
+    return JSON.stringify({ handles: out, midCol, edge });
+  })()`;
+  await evalJS(cdp, `(() => { const s = document.querySelector('#panelScalpConformAmount'); s.value = '0'; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await sleep(2500);
+  const handlesOff = JSON.parse(await evalJS(cdp, handleProbe));
+  await evalJS(cdp, `(() => { const s = document.querySelector('#panelScalpConformAmount'); s.value = '1'; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await sleep(2500);
+  const handlesOn = JSON.parse(await evalJS(cdp, handleProbe));
+  check("主发片控制点存在且可比对（下一条断言非空转）",
+    handlesOff.handles.length > 1 && handlesOff.handles.length === handlesOn.handles.length,
+    `handles=${handlesOff.handles.length} midCol=${handlesOff.midCol}`);
+  let worstHandleDrift = 0;
+  let worstHandleMove = 0;
+  for (let i = 0; i < handlesOff.handles.length; i += 1) {
+    const a = handlesOff.handles[i];
+    const b = handlesOn.handles[i];
+    worstHandleDrift = Math.max(worstHandleDrift, Math.abs(b.d - a.d));
+    worstHandleMove = Math.max(worstHandleMove, Math.hypot(b.hx - a.hx, b.hy - a.hy, b.hz - a.hz));
+  }
+  // **先证明几何真的动了**，否则下一条"中线没动"在「Conform 完全没生效」的构建上也会通过。
+  // 取边缘列（col 0）的位移：Bend 下边缘必然大幅移动，而中线恒不动 —— 两条一起才有意义。
+  let worstEdgeMove = 0;
+  for (let i = 0; i + 2 < Math.min(handlesOff.edge.length, handlesOn.edge.length); i += 3) {
+    worstEdgeMove = Math.max(worstEdgeMove, Math.hypot(
+      handlesOn.edge[i] - handlesOff.edge[i],
+      handlesOn.edge[i + 1] - handlesOff.edge[i + 1],
+      handlesOn.edge[i + 2] - handlesOff.edge[i + 2]
+    ));
+  }
+  check("边缘列确实被 Conform 移动了（证明下一条断言非空转）", worstEdgeMove > 0.05,
+    `边缘最大位移 ${worstEdgeMove.toFixed(4)}`);
+  check("控制点与几何的关系不因 Conform 改变（用户 bug② 的活体判据）",
+    worstHandleDrift < 1e-4,
+    `handle↔u=0列 距离漂移 ${worstHandleDrift.toExponential(2)}`
+      + `（handle 自身位移 ${worstHandleMove.toExponential(2)}，同一次形变下边缘动了 ${worstEdgeMove.toFixed(4)}）`);
+
   // 负值推离头部（与正值严格反向）
   await evalJS(cdp, `(() => { const s = document.querySelector('#panelScalpConformAmount'); s.value = '-0.8'; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await sleep(2500);
