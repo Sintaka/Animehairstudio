@@ -2,7 +2,7 @@
 // Extracted from app.js; coupling injected via createCurveSurfaceCreateApi(deps).
 import * as THREE from "three";
 import { DEFAULT_HAIR_COLOR } from "../core/app-config.js?v=20260815-4";
-import { eightWayScreenDelta } from "./curve-math.js?v=20260910-1";
+import { eightWayScreenDelta } from "./curve-math.js?v=20260910-2";
 import {
   buildConnectedCurveCardGrid,
   buildCurveSurfaceGrid,

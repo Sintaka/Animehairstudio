@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anime Hair Studio</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=20260910-1" />
+    <link rel="stylesheet" href="./styles.css?v=20260910-2" />
   </head>
   <body>
     <main class="studio-shell">
@@ -1109,7 +1109,7 @@
             <div id="panelScalpConformControls" class="control-emphasis control-emphasis--blue">
               <div class="subsection-label">Scalp Conform</div>
               <label class="topology-control" title="Wraps the panel onto the head itself: every row is pulled toward the real scalp surface in world space, so a wide flat panel snaps onto the forehead and its sides land where the skull actually is. 1 = sitting exactly on the scalp, negative pushes away from the head, 0 = off. The root never moves.">Conform <input id="panelScalpConformAmount" type="range" min="-1" max="1" step="0.01" value="0" /><output id="panelScalpConformAmountValue" class="slider-value">0.00</output></label>
-              <label class="topology-control" title="How far down the panel the wrap reaches full strength. Small values grab the head right below the root; 1 ramps all the way to the tip.">Falloff <input id="panelScalpConformRange" type="range" min="0.05" max="1" step="0.01" value="0.6" /><output id="panelScalpConformRangeValue" class="slider-value">0.60</output></label>
+              <label class="topology-control" title="Width of the release band at the root, where the wrap eases in from the fixed root row. Keep it short: rows inside this band sit half-wrapped and bulge outward, which reads as a crease. Raise it only if the root itself looks pinched.">Root Release <input id="panelScalpConformRange" type="range" min="0.05" max="0.25" step="0.01" value="0.15" /><output id="panelScalpConformRangeValue" class="slider-value">0.15</output></label>
               <label class="topology-control" title="Clearance kept between the panel and the scalp, in world units. Raise it if the hair intersects the head mesh.">Scalp Gap <input id="panelScalpConformGap" type="range" min="0" max="0.5" step="0.005" value="0.02" /><output id="panelScalpConformGapValue" class="slider-value">0.020</output></label>
               <label class="topology-control" title="Extends the head proxy downward into a capsule, measured in head radii. Raise it so long hair hangs straight past the jaw instead of curling in under the chin; 0 makes the proxy a plain sphere.">Capsule Length <input id="panelScalpConformCylinder" type="range" min="0" max="3" step="0.05" value="0.5" /><output id="panelScalpConformCylinderValue" class="slider-value">0.50</output></label>
             </div>
@@ -2414,6 +2414,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260910-1"></script>
+    <script type="module" src="./app.js?v=20260910-2"></script>
   </body>
 </html>

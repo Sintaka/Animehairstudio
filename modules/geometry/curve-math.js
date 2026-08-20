@@ -308,10 +308,27 @@ const PANEL_SCALP_CONFORM_ROOT_GUARD = 0.05;
 // cylinder 0.5 = Capsule 圆柱段向下延伸的长度（单位球空间），让长刘海直着垂下来。
 export const PANEL_SCALP_CONFORM_DEFAULTS = Object.freeze({
   amount: 0,
-  range: 0.6,
+  range: 0.15,
   gap: 0.02,
   cylinder: 0.5
 });
+
+// range（Root Release）的上限 —— **刻意很小，这是几何约束不是审美选择**。
+// 0.2.136 初版把它当"艺术衰减"、上限 1、默认 0.6，实测是个陷阱：ramp 跨度内的行处于
+// **部分贴合**状态，顶点落在「原始构型」与「裹住头的构型】之间，而这两者差异极大 ⇒
+// 中间态不在任何光滑曲面上，表现为整片在根部到中段之间**鼓出一个包再收回去**
+// （用户报告的"诡异的挤压"）。实测（width=5 的夸张 panel、目标距头心 1.155）：
+//   range 0.91 ⇒ 各行距离 1.17→1.42→1.24，最大偏离目标 0.267（鼓包）
+//   range 0.40 ⇒ 跨度序列出现 3 次方向反转（原始形状只有 1 次）＝ 褶皱
+//   range 0.15 ⇒ 距离几乎恒定 1.17→1.24，最大偏离 0.083，反转次数与原始形状相同
+// 上限 **0.25 是扫出来的边界、不是拍的**（同一 panel 细扫 0.05→0.30）：
+//   0.05..0.25 ⇒ 跨度序列方向反转 1 次（与 conform 关闭时的原始形状相同）、最大偏离 ≤0.093
+//   0.30       ⇒ 反转跳到 3 次、最大偏离 0.104  ← 褶皱在此出现
+// 该边界与细分有关（默认 panelLengthLoops=10 ⇒ 行距 0.1，0.25 约等于"放开两行"），
+// 所以它是**经验上限**而非普适常数；改细分默认值时应重扫。
+// 它的职责只是**把根部那一两行平滑地放开**（row 0 被 UV 红线钉死，不给过渡会在根部留
+// 一个台阶），不是让半张面板长期停在中间态。
+export const PANEL_SCALP_CONFORM_MAX_RANGE = 0.25;
 
 // ── 面板「贴合头皮」Scalp Conform：世界空间收缩包裹（shrink-wrap）──────────────
 //
@@ -343,13 +360,15 @@ export const PANEL_SCALP_CONFORM_DEFAULTS = Object.freeze({
 //    是往下走、绕过颅侧的部分。
 // 守卫写在本函数**内部**，任何消费方都无法忘记它。
 //
-// range = 从根部到"收满"的跨度（0.05..1）。range 小 ⇒ 很快收满（贴得紧）；
-// range = 1 ⇒ 一路线性增强到发尖。用 smoothstep 而非线性：两端一阶导为 0，避免在
-// "刚收满"那一行出现折痕（tipSurfaceFrameAt 靠差分求法线，折痕会让它算出错误法线）。
+// range = 根部释放带宽度（0.05..PANEL_SCALP_CONFORM_MAX_RANGE）。**刻意只能很短** ——
+// 它的职责是把被 UV 红线钉死的 row 0 平滑放开，不是"艺术衰减"。ramp 跨度内的行处于
+// 部分贴合状态，而部分贴合的顶点不在任何光滑曲面上（详见 MAX_RANGE 常量处的实测数据）。
+// 用 smoothstep 而非线性：两端一阶导为 0，避免在"刚收满"那一行出现折痕
+// （tipSurfaceFrameAt 靠差分求法线，折痕会让它算出错误法线）。
 export function panelScalpConformWeight(t, range = PANEL_SCALP_CONFORM_DEFAULTS.range) {
   const along = clamp(Number(t) || 0, 0, 1);
   if (along <= 0) return 0;
-  const span = clamp(Number(range) || 0, 0.05, 1);
+  const span = clamp(Number(range) || 0, 0.05, PANEL_SCALP_CONFORM_MAX_RANGE);
   const guardAmount = clamp(along / PANEL_SCALP_CONFORM_ROOT_GUARD, 0, 1);
   const guard = guardAmount * guardAmount * (3 - 2 * guardAmount);
   const ramp = clamp(along / span, 0, 1);

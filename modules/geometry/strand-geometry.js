@@ -9,7 +9,7 @@ import {
   smoothSweepFrames,
   sweepCurvatureResponse,
   upperProfileArcIndices
-} from "./curve-math.js?v=20260910-1";
+} from "./curve-math.js?v=20260910-2";
 import { buildConnectedCurveCardGrid, DEFAULT_CURVE_SURFACE_ROWS } from "./curve-surface.js?v=20260814-12";
 import { polyMeshBuffers } from "./poly-topology.js?v=20260814-12";
 import {

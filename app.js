@@ -3,7 +3,7 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-1";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-2";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
 import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-1";
@@ -105,8 +105,12 @@ import {
   twistRateDegreesFromUnits,
   twistRateUnitsFromDegrees,
   upperProfileArcIndices,
-  uniformCurveParameters
-} from "./modules/geometry/curve-math.js?v=20260910-1";
+  uniformCurveParameters,
+  // Scalp Conform 的默认值与 Range 上限：**唯一定义点在 curve-math.js**。import 而不是抄写
+  // —— 抄写会让"根部释放带上限"变成多个定义点（本轮初版在此硬写过三处 0.3）。
+  PANEL_SCALP_CONFORM_DEFAULTS,
+  PANEL_SCALP_CONFORM_MAX_RANGE
+} from "./modules/geometry/curve-math.js?v=20260910-2";
 import {
   curveLatticeLoopPointIndices,
   DEFAULT_CURVE_LATTICE_PLANE,
@@ -1510,14 +1514,14 @@ const panelCreationDefaults = {
   panelRightEdgeTrim: 0,
   panelTipCurve: 0,
   panelTipLoops: 0,
-  // Scalp Conform（0.2.136 世界空间收缩包裹）：四个默认值是
-  // curve-math.js 的 PANEL_SCALP_CONFORM_DEFAULTS 的**受控副本**（app.js 不 import 几何
-  // 常量）。那里是唯一定义点；三处（那里 / 此处 / index.html 的 value=）不同源会让
-  // 「没动过滑杆的面板」与默认几何不一致。amount 0 ⇒ 输出与引入前逐位相同。
-  panelScalpConformAmount: 0,
-  panelScalpConformRange: 0.6,
-  panelScalpConformGap: 0.02,
-  panelScalpConformCylinder: 0.5,
+  // Scalp Conform（世界空间收缩包裹）：四个默认值**直接取自** curve-math.js 的
+  // PANEL_SCALP_CONFORM_DEFAULTS（唯一定义点），不再抄写字面量 —— 抄写过的版本里
+  // 「Range 默认值」一度出现三处不同源。index.html 的 value= 仍是必须人工同步的第三处，
+  // 有测试钉住三者一致。amount 0 ⇒ 输出与引入前逐位相同。
+  panelScalpConformAmount: PANEL_SCALP_CONFORM_DEFAULTS.amount,
+  panelScalpConformRange: PANEL_SCALP_CONFORM_DEFAULTS.range,
+  panelScalpConformGap: PANEL_SCALP_CONFORM_DEFAULTS.gap,
+  panelScalpConformCylinder: PANEL_SCALP_CONFORM_DEFAULTS.cylinder,
   panelSplitEnabled: true,
   panelSplitSnapToLoops: true,
   panelSplitHeight: 0.3,
@@ -9329,10 +9333,12 @@ function addLock(presetName, overrides = {}, options = {}) {
   lock.panelScalpConformAmount = lock.geometryType === "surface"
     ? 0
     : THREE.MathUtils.clamp(Number(base.panelScalpConformAmount ?? panelCreationDefaults.panelScalpConformAmount), -1, 1);
+  // Range 上限走 import 来的 PANEL_SCALP_CONFORM_MAX_RANGE（唯一定义点在 curve-math.js）：
+  // 长 ramp 会让半张面板停在"部分贴合"的中间态、鼓出一个包（用户报告的挤压根因）。
   lock.panelScalpConformRange = THREE.MathUtils.clamp(
     Number(base.panelScalpConformRange ?? panelCreationDefaults.panelScalpConformRange),
     0.05,
-    1
+    PANEL_SCALP_CONFORM_MAX_RANGE
   );
   // Gap 上限 0.5：世界单位的"离头皮余量"，头皮球半径为 1，半个半径已经远超任何合理发厚。
   // Cylinder 上限 3：Capsule 圆柱段向下延伸长度（单位球空间），3 倍半径足够覆盖到胸口。
@@ -9704,7 +9710,7 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   partner.panelScalpConformRange = THREE.MathUtils.clamp(
     Number(lock.panelScalpConformRange ?? panelCreationDefaults.panelScalpConformRange),
     0.05,
-    1
+    PANEL_SCALP_CONFORM_MAX_RANGE
   );
   partner.panelScalpConformGap = THREE.MathUtils.clamp(
     Number(lock.panelScalpConformGap ?? panelCreationDefaults.panelScalpConformGap),
@@ -10640,10 +10646,12 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     panelScalpConformAmount: snapshot.geometryType === "surface"
       ? 0
       : THREE.MathUtils.clamp(Number(snapshot.panelScalpConformAmount ?? panelCreationDefaults.panelScalpConformAmount), -1, 1),
+    // 旧档里 0.2.136 初版的大 Range（上限曾是 1）在此被钳回 MAX_RANGE：那些值会让面板中段
+    // 鼓包，钳回是**刻意的形状变更**（变的方向是"不再鼓包"），不是静默丢数据。
     panelScalpConformRange: THREE.MathUtils.clamp(
       Number(snapshot.panelScalpConformRange ?? panelCreationDefaults.panelScalpConformRange),
       0.05,
-      1
+      PANEL_SCALP_CONFORM_MAX_RANGE
     ),
     panelScalpConformGap: THREE.MathUtils.clamp(
       Number(snapshot.panelScalpConformGap ?? panelCreationDefaults.panelScalpConformGap),

@@ -24,6 +24,7 @@ import * as THREE from "three";
 import { createPanelTipStrandApi } from "../modules/geometry/panel-tip-strand.js";
 import {
   PANEL_SCALP_CONFORM_DEFAULTS,
+  PANEL_SCALP_CONFORM_MAX_RANGE,
   capsuleEndNearestSurface,
   panelScalpConformWeight
 } from "../modules/geometry/curve-math.js";
@@ -147,7 +148,7 @@ test("Capsule 一端：y≥0 是半球、中段是圆柱、轴下方又是半球
 });
 
 test("收缩权重：t==0 恒为 0（UV 红线），随 t 单调不减，range 越小收得越快", () => {
-  for (const range of [0.05, 0.3, 0.6, 1]) {
+  for (const range of [0.05, 0.1, 0.15, PANEL_SCALP_CONFORM_MAX_RANGE]) {
     assert.equal(panelScalpConformWeight(0, range), 0, `t=0 必须恒为 0：range=${range}`);
     let previous = -Infinity;
     for (let step = 0; step <= 40; step += 1) {
@@ -160,9 +161,17 @@ test("收缩权重：t==0 恒为 0（UV 红线），随 t 单调不减，range �
   }
   // range 越小 ⇒ 同一 t 处权重越大（收得越快）。负向对照：若忽略 range 则两者相等。
   assert.ok(
-    panelScalpConformWeight(0.3, 0.3) > panelScalpConformWeight(0.3, 1),
+    panelScalpConformWeight(0.1, 0.1) > panelScalpConformWeight(0.1, PANEL_SCALP_CONFORM_MAX_RANGE),
     "range 小必须在同一 t 处收得更多"
   );
+  // **range 必须被钳到 MAX_RANGE**：超过上限的值（0.2.136 初版上限是 1）会让半张面板停在
+  // 部分贴合的中间态、鼓出一个包 —— 这是用户报告的"诡异挤压"的直接成因。
+  assert.equal(
+    panelScalpConformWeight(0.4, PANEL_SCALP_CONFORM_MAX_RANGE),
+    panelScalpConformWeight(0.4, 1),
+    "超过 MAX_RANGE 的 range 必须与 MAX_RANGE 等效（已钳位）"
+  );
+  assert.equal(panelScalpConformWeight(0.4, 0.91), panelScalpConformWeight(0.4, PANEL_SCALP_CONFORM_MAX_RANGE));
 });
 test("amount == 0 ⇒ 顶点位置逐位守恒（含其余三参数被改动的情况）", () => {
   const baseline = buildPanel(panelLock());
@@ -218,7 +227,7 @@ test("amount == 1 ⇒ 发尖行精确落在「球代理表面 + gap」上（独�
     panelScalpConformAmount: 1,
     panelScalpConformGap: gap,
     panelScalpConformCylinder: 0,
-    panelScalpConformRange: 0.6
+    panelScalpConformRange: PANEL_SCALP_CONFORM_MAX_RANGE
   }));
   const expected = SPHERE_PROXY.radius + gap;
   const center = new THREE.Vector3(SPHERE_PROXY.x, SPHERE_PROXY.y, SPHERE_PROXY.z);
@@ -226,7 +235,7 @@ test("amount == 1 ⇒ 发尖行精确落在「球代理表面 + gap」上（独�
   let worst = 0;
   for (let vertex = 0; vertex < probe.count; vertex += 1) {
     // 只查权重已收满的行（t ≥ range ⇒ weight == 1）。row/LENGTH_LOOPS 是该行的 t。
-    if (probe.rows[vertex] / LENGTH_LOOPS < 0.6) continue;
+    if (probe.rows[vertex] / LENGTH_LOOPS < PANEL_SCALP_CONFORM_MAX_RANGE) continue;
     const v = vertexAt(probe, vertex);
     const distance = new THREE.Vector3(v.x, v.y, v.z).sub(center).length();
     worst = Math.max(worst, Math.abs(distance - expected));
@@ -245,7 +254,7 @@ test("amount == 1 ⇒ 中面精确落在「球代理表面 + gap」上（恒等�
     panelScalpConformAmount: 1,
     panelScalpConformGap: gap,
     panelScalpConformCylinder: 0,
-    panelScalpConformRange: 0.5
+    panelScalpConformRange: PANEL_SCALP_CONFORM_MAX_RANGE
   });
   const api = panelApi(lock);
   const expected = SPHERE_PROXY.radius + gap;
@@ -262,6 +271,80 @@ test("amount == 1 ⇒ 中面精确落在「球代理表面 + gap」上（恒等�
   assert.ok(checked > 0, "sanity：确实采过中面点");
   // 纯 float64 路径（未经 Float32Array 存储）⇒ 这是恒等式，用 1e-12 而非 1e-6。
   assert.ok(worst < 1e-12, `中面必须精确落在 radius+gap 上，最大偏差 ${worst.toExponential(3)}`);
+});
+
+// ── 0.2.137：中段不得鼓包（用户报告的"根部附近诡异挤压"的直接回归）──────────────
+// **为什么判据是"剖面无内部极大值"而不是"距离在合理区间内"**：位移是 flat 与 target 之间的
+// 线性插值，所以鼓包时的 1.42 **本来就落在** flat(1.50) 与 target(1.155) 之间 —— 区间判据
+// 抓不到。真正的病征是**形状**：clearance 沿 t 先升到一个峰再落回去（糖纹褶皱），而
+// flat 剖面本身是单调的、target 是常数。所以判据 = 方向反转次数不得超过 flat 剖面。
+//
+// 成因（已修）：`range`（Root Release）曾被设计成"艺术衰减"、上限 1、默认 0.6。ramp 跨度内
+// 的行处于**部分贴合**，顶点落在「原始构型」与「裹住头的构型」之间，而两者差异极大 ⇒
+// 中间态不在任何光滑曲面上。实测：range 0.91 ⇒ 峰值偏离目标 0.267；range ≤0.25 ⇒ ≤0.093。
+test("中段不得鼓包：clearance 超出 gap 的幅度 < flat 跨度的 10%（宽面板，amount=1）", () => {
+  // fixture 必须复刻用户 repro 的**三个**关键性质，缺一则鼓包不出现、这条测试就变成空转
+  // （本测试初版只满足前两条，实测**在 bug 存在时也通过** —— 用变异测试抓到的）：
+  //   ① 很宽（远大于头径）；
+  //   ② 授权曲线逐渐远离头部（根部近、发尖远）；
+  //   ③ **clearance 的上升是"前重"的** —— 前 1/3 就涨掉大半，之后趋平。
+  // ③ 才是鼓包的成因：conformed = flat + (gap − flat)·w，早期 w 还小 ⇒ conformed 跟着
+  // flat 猛涨；等 w 追上来才被拽回 gap ⇒ 中途出现一个局部极大。若 flat 匀速上升，
+  // 两个效应互相抵消、剖面保持单调，鼓包不会显形。
+  // 点位按球坐标构造（头心 (0,0.9,0)、R=1）：φ 从 25° 扫到 115°，clearance 0.02→0.48 前重。
+  const wide = {
+    width: 5,
+    // camber 必须为 0：它是 `curvature × width × 0.5`，在 width=5 上高达 0.45，而本 harness
+    // 的 frame.z 是**常量 +Z** ⇒ 那 0.45 会整体平移中面、把上面精心构造的 clearance 剖面淹掉，
+    // 于是鼓包不显形、这条测试变成空转（初版实测：bug 存在时也通过，靠变异测试才抓到）。
+    // 关 camber 后中面点**恰好等于曲线点**，球坐标构造精确成立。
+    panelCurvature: 0,
+    points: [
+      { x: 0, y: 1.824, z: 0.431 }, // φ=25°  clearance 0.02
+      { x: 0, y: 1.646, z: 1.065 }, // φ=55°  clearance 0.30  ← 前 1/3 就涨掉大半
+      { x: 0, y: 1.024, z: 1.415 }, // φ=85°  clearance 0.42
+      { x: 0, y: 0.275, z: 1.341 }  // φ=115° clearance 0.48
+    ]
+  };
+  const clearanceProfile = (overrides) => {
+    const lock = panelLock({ ...wide, ...overrides });
+    const api = panelApi(lock);
+    const centre = new THREE.Vector3(SPHERE_PROXY.x, SPHERE_PROXY.y, SPHERE_PROXY.z);
+    const out = [];
+    for (let row = 0; row <= LENGTH_LOOPS; row += 1) {
+      const mid = api.tipMainSectionPoint(lock, row / LENGTH_LOOPS, 0, 0, null, -1, null);
+      out.push(mid.distanceTo(centre) - SPHERE_PROXY.radius);
+    }
+    return out;
+  };
+  const GAP = 0.05;
+  const flat = clearanceProfile({ panelScalpConformAmount: 0 });
+  const flatSpan = Math.max(...flat) - Math.min(...flat);
+  // **判据是"鼓包幅度"而不是"有没有反转"**：任何非零长度的释放带都会在带内留下一个极小的
+  // 反转（实测 range=0.15 时 0.020→0.059→0.050，overshoot 仅 0.009），那是正常的、不是病。
+  // 病征是**幅度**：range=0.91 且无钳位时 overshoot 达 0.267（相对 flat 跨度 0.61 = 43%）。
+  // 用 flat 跨度归一后，两者相差一个数量级以上，阈值 10% 干净分开（实测 2% vs 43%）。
+  for (const range of [0.05, 0.15, PANEL_SCALP_CONFORM_MAX_RANGE, 0.91, 1]) {
+    const conformed = clearanceProfile({
+      panelScalpConformAmount: 1,
+      panelScalpConformGap: GAP,
+      panelScalpConformCylinder: 0,
+      panelScalpConformRange: range
+    });
+    const overshoot = Math.max(0, Math.max(...conformed) - GAP);
+    assert.ok(
+      overshoot / flatSpan < 0.1,
+      `range=${range} 中段鼓包过大：overshoot=${overshoot.toFixed(4)}`
+        + `（flat 跨度 ${flatSpan.toFixed(4)} 的 ${((overshoot / flatSpan) * 100).toFixed(1)}%）`
+        + `，剖面 ${conformed.map((v) => v.toFixed(3)).join(" ")}`
+    );
+    // 且收满的行必须真的贴在 gap 上（否则"无鼓包"可能只是因为整片没动）。
+    const saturated = conformed.filter((_, row) => row / LENGTH_LOOPS >= PANEL_SCALP_CONFORM_MAX_RANGE);
+    assert.ok(saturated.length > 0, "sanity：存在收满的行");
+    for (const clearance of saturated) {
+      assert.ok(Math.abs(clearance - 0.05) < 1e-9, `收满行必须贴在 gap 上，实测 clearance=${clearance}`);
+    }
+  }
 });
 
 test("面板厚度守恒：两壳拿同一份 delta（若各自朝表面收会被压成 0）", () => {

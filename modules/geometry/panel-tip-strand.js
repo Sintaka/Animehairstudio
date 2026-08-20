@@ -3,6 +3,7 @@
 import * as THREE from "three";
 import {
   PANEL_SCALP_CONFORM_DEFAULTS,
+  PANEL_SCALP_CONFORM_MAX_RANGE,
   capsuleEndNearestSurface,
   panelScalpConformWeight,
   panelTipCurveParameter,
@@ -10,7 +11,7 @@ import {
   profileTopologyCenterWeight,
   sampleArray,
   sampleAsymmetricTaperCurve
-} from "./curve-math.js?v=20260910-1";
+} from "./curve-math.js?v=20260910-2";
 
 // 头部代理的兜底参数：与 app.js 的 `scalpSurface = { x:0, y:0.9, z:0, radius:1, scaleXYZ:1 }`
 // 同值。**优先用注入的 deps.scalpSurface（真实运行时状态，跟随用户调整头模）**，
@@ -472,10 +473,13 @@ function panelScalpConformParams(lock) {
   const radius = Math.max(0.001, Number(proxySource.radius ?? 1));
   return {
     amount,
+    // range 上限走 PANEL_SCALP_CONFORM_MAX_RANGE（唯一定义点在 curve-math.js）：长 ramp 会让
+    // 半张面板停在"部分贴合"的中间态、鼓出一个包，是用户报告的挤压根因。旧档的大值在此被
+    // 钳回安全区（形状会变，但变的方向是"不再鼓包"）。
     range: THREE.MathUtils.clamp(
       Number(lock?.panelScalpConformRange ?? PANEL_SCALP_CONFORM_DEFAULTS.range),
       0.05,
-      1
+      PANEL_SCALP_CONFORM_MAX_RANGE
     ),
     gap: THREE.MathUtils.clamp(
       Number(lock?.panelScalpConformGap ?? PANEL_SCALP_CONFORM_DEFAULTS.gap),

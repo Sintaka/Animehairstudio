@@ -146,7 +146,18 @@ try {
     });
   })()`));
   check("Scalp Conform controls visible on a panel", uiState.visible === true, JSON.stringify(uiState));
-  check("sliders default to neutral (amount 0)", Number(uiState.amount) === 0, `amount=${uiState.amount}`);
+  // 滑杆值必须与**选中 lock 的字段**一致（UI 同步判据）。刻意**不断言它等于 0** ——
+  // 那只在全新场景成立；用户的 repro 文件带着 amount=1 存盘，断言"默认中性"会恒假红
+  // （实测踩过）。"index.html 的授权默认值"由下方读 defaultValue 的那条断言负责。
+  const uiMatchesLock = JSON.parse(await evalJS(cdp, `(() => {
+    const lock = ${lockRef};
+    return JSON.stringify({
+      slider: Number(document.querySelector('#panelScalpConformAmount').value),
+      field: Number(lock.panelScalpConformAmount)
+    });
+  })()`));
+  check("滑杆读数与选中 lock 的字段一致（UI 同步）",
+    Math.abs(uiMatchesLock.slider - uiMatchesLock.field) < 1e-6, JSON.stringify(uiMatchesLock));
 
   // 基线几何：row 0 顶点 + 整体包围盒
   const probe = `(() => {
@@ -162,14 +173,35 @@ try {
       bb: [bb.min.x, bb.min.y, bb.min.z, bb.max.x, bb.max.y, bb.max.z],
       field: lock.panelScalpConformAmount });
   })()`;
+  // **先把四个字段归位到默认值再取基线**。否则脚本只在"全新场景"里成立：用户的 repro 文件
+  // 带着 amount=1 存盘，基线就已经是收缩后的几何，于是后面所有"方向"断言（朝头收 / 负值
+  // 推离）都在拿收缩态当参照、恒假红（实测踩过）。走真实滑杆 + input 事件，确保 lock 同步。
+  await evalJS(cdp, `(() => {
+    const set = (id, v) => {
+      const s = document.querySelector('#' + id);
+      s.value = String(v);
+      s.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    set('panelScalpConformAmount', 0);
+    set('panelScalpConformRange', 0.15);
+    set('panelScalpConformGap', 0.02);
+    set('panelScalpConformCylinder', 0.5);
+    return true;
+  })()`);
+  await sleep(2500);
   const before = JSON.parse(await evalJS(cdp, probe));
-  check("baseline field is 0", Number(before.field) === 0, `field=${before.field}`);
+  check("baseline field normalised to 0", Number(before.field) === 0, `field=${before.field}`);
 
   // 四个滑杆的默认值必须在**任何变更之前**读 —— 本脚本初版把这条放在后面，读到的是已被
   // 前面步骤改过的值，于是恒假红。默认值三处同源（curve-math 的
   // PANEL_SCALP_CONFORM_DEFAULTS / app.js 的 panelCreationDefaults / index.html 的 value=）。
   const conformUi = JSON.parse(await evalJS(cdp, `(() => {
-    const read = (id) => { const s = document.querySelector('#' + id); return s && { min: s.min, max: s.max, value: s.value }; };
+    // 读 **defaultValue**（= index.html 的 value= 属性）而不是 value（= 当前状态）。
+    // 判据要问的是"index.html 里写死的默认值是否与几何层同源"，那是文件属性；读 value 会
+    // 被**已加载工程的实际取值**污染 —— 用户的 repro 文件就带着 amount=1，于是恒假红
+    // （本脚本实测踩过）。三处同源：curve-math 的 PANEL_SCALP_CONFORM_DEFAULTS /
+    // app.js 的 panelCreationDefaults / index.html 的 value=。
+    const read = (id) => { const s = document.querySelector('#' + id); return s && { min: s.min, max: s.max, value: s.defaultValue }; };
     return JSON.stringify({
       amount: read('panelScalpConformAmount'),
       range: read('panelScalpConformRange'),
@@ -179,13 +211,16 @@ try {
     });
   })()`));
   check("四个 Scalp Conform 滑杆齐备且默认值正确",
-    Number(conformUi.amount?.value) === 0 && Number(conformUi.range?.value) === 0.6
+    Number(conformUi.amount?.value) === 0 && Number(conformUi.range?.value) === 0.15
       && Number(conformUi.gap?.value) === 0.02 && Number(conformUi.cylinder?.value) === 0.5,
     JSON.stringify(conformUi));
   check("旧 Hemispherical 标签已替换为 Scalp Conform", conformUi.label === "Scalp Conform", `label=${conformUi.label}`);
-  check("滑杆区间与几何层钳位一致（gap 0..0.5、cylinder 0..3）",
-    conformUi.gap?.max === "0.5" && conformUi.cylinder?.max === "3",
-    `gap max=${conformUi.gap?.max} cylinder max=${conformUi.cylinder?.max}`);
+  // Root Release 上限 0.25 是 0.2.137 的核心修复：长 ramp 会让半张面板停在"部分贴合"的
+  // 中间态、中段鼓出一个包（用户报告的"根部附近诡异挤压"）。滑杆上限必须与几何层钳位同界，
+  // 否则 UI 允许用户设到几何层会拒绝的值、观感与滑杆读数不一致。
+  check("滑杆区间与几何层钳位一致（range 0.05..0.25、gap 0..0.5、cylinder 0..3）",
+    conformUi.range?.max === "0.25" && conformUi.gap?.max === "0.5" && conformUi.cylinder?.max === "3",
+    `range max=${conformUi.range?.max} gap max=${conformUi.gap?.max} cylinder max=${conformUi.cylinder?.max}`);
 
   // ── 真实滑杆交互：设值 + 派发 input（app.js 的通用接线监听 input）────────────
   await evalJS(cdp, `(() => {
@@ -221,7 +256,7 @@ try {
 
   // ── 存档往返：字段必须随 .ahs 持久化 ─────────────────────────────────────────
   await evalJS(cdp, `(() => { const s = document.querySelector('#panelScalpConformAmount'); s.value = '0.55'; s.dispatchEvent(new Event('input', { bubbles: true }));
-    const w = document.querySelector('#panelScalpConformRange'); w.value = '0.35'; w.dispatchEvent(new Event('input', { bubbles: true }));
+    const w = document.querySelector('#panelScalpConformRange'); w.value = '0.2'; w.dispatchEvent(new Event('input', { bubbles: true }));
     const c = document.querySelector('#panelScalpConformGap'); c.value = '0.3'; c.dispatchEvent(new Event('input', { bubbles: true }));
     const k = document.querySelector('#panelScalpConformCylinder'); k.value = '1.5'; k.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await sleep(2500);
@@ -233,7 +268,7 @@ try {
   // Gap 取 0.3（**不是旧脚本的 0.7**）：0.2.136 起 Gap 钳在 0..0.5，滑杆 max 也是 0.5，
   // 设 0.7 会被浏览器钳成 0.5、期望 0.7 必然假红 —— 本脚本继承旧值时踩过。
   check("four fields land on the lock",
-    Math.abs(live.a - 0.55) < 1e-6 && Math.abs(live.w - 0.35) < 1e-6
+    Math.abs(live.a - 0.55) < 1e-6 && Math.abs(live.w - 0.2) < 1e-6
       && Math.abs(live.c - 0.3) < 1e-6 && Math.abs(live.k - 1.5) < 1e-6,
     JSON.stringify(live));
 
@@ -265,7 +300,7 @@ try {
     Math.abs(restored.a - undoTrip.beforeUndo) < 1e-6,
     `edited ${undoTrip.beforeUndo} -> 0.15 -> undo -> ${restored.a}`);
   check("undo also preserves range/gap",
-    Math.abs(restored.w - 0.35) < 1e-6 && Math.abs(restored.c - 0.3) < 1e-6, JSON.stringify(restored));
+    Math.abs(restored.w - 0.2) < 1e-6 && Math.abs(restored.c - 0.3) < 1e-6, JSON.stringify(restored));
   check("slider UI resyncs after undo", Math.abs(Number(restored.slider) - restored.a) < 1e-6,
     `slider=${restored.slider} field=${restored.a}`);
 

@@ -1,5 +1,5 @@
-import jaDictionary from "./loc-ja.js?v=20260910-1";
-import zhDictionary from "./loc-zh.js?v=20260910-1";
+import jaDictionary from "./loc-ja.js?v=20260910-2";
+import zhDictionary from "./loc-zh.js?v=20260910-2";
 
 export const SUPPORTED_LANGUAGES = Object.freeze([
   { id: "en", label: "English" },
