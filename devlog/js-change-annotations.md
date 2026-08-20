@@ -164,6 +164,17 @@
 > - **顺带发现、刻意未改**：两个镜像站点对 `panelLeftEdgeTrim`/`panelRightEdgeTrim` 的处理**本就不
 >   一致** —— `createMirrorPartner`（约 L9491）原样拷贝，`syncMirrorPartnerFromLock`（约 L9669）左右
 >   互换。这是本轮之前就存在的差异，与半球无关；按「修 bug 不夹带设计变更」**不动**，仅在此记录。
+> - **scripts/verify-hemisphere-ui.mjs（新增，18/18，主进程补）**：上面那些都是 node 层，**滑杆接线
+>   在真实浏览器里从未验过** —— 而那正是用户实际会碰的东西。本脚本在真实工程 Sussurro_v1_0060.ahs
+>   的 panel（Front Bangs 1）上驱动真实滑杆：控件在 panel 上可见且带蓝框、默认中性 0、派发 `input`
+>   后 `lock.panelHemisphereAmount` 写入 0.8、`<output>` 显示 0.80、网格**重建后顶点数不变**（918）
+>   而平均 z 从 0.966 → 1.126（**真的鼓起来了**）、**row 0 的 20 个顶点在活应用里逐位不动**（UV 红线
+>   在真实管线上成立，不只在测试 fixture 上）、负值反向凹（+0.8: +0.1595 / −0.8: −0.1596）、三个字段
+>   都落到 lock 上，以及 **undo 往返**（0.55 → 0.15 → undo → 0.55，width/center 一并保持、滑杆 UI
+>   重新同步）—— 后者比读 snapshot 更强，因为它同时跑 `snapshotState` 与 `restoreLock` 两条真实路径，
+>   等于把「随 .ahs 持久化」也一并证了，且无需为此加宽 `__AHS_TEST_SEAM__`。全程 0 page exception。
+>   **踩坑**：`bindUndoCapture` 监听 `pointerdown`/`keydown` 而非 `input`，只派发裸 `input` 不会产生
+>   undo 步（初版因此拿不到快照、看着像持久化坏了）；已写进 AGENT_QUICKSTART §5。
 
 ## 最近更新（0.2.132）
 
