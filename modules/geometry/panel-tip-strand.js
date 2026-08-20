@@ -2,12 +2,13 @@
 // Extracted from app.js; coupling injected via createPanelTipStrandApi(deps).
 import * as THREE from "three";
 import {
+  panelHemisphereOffset,
   panelTipCurveParameter,
   panelTipLoopParameters,
   profileTopologyCenterWeight,
   sampleArray,
   sampleAsymmetricTaperCurve
-} from "./curve-math.js?v=20260813-3";
+} from "./curve-math.js?v=20260909-2";
 import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260814-12";
 import { cloneSplitBones, segmentBoneHost } from "../bones/bone-model.js?v=20260901-1";
 import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260830-1";
@@ -439,6 +440,30 @@ function tipPanelFrameAt(lock, t) {
   return { point, x, y, z };
 }
 
+// 半球隆起的 lock 读取 + 世界尺度：**本文件内唯一定义点**，rawPanelPoint（几何）与
+// tipMainSectionPoint（宽度把手的截面复刻）都必须经它取参数，否则网格鼓起来而把手
+// 留在原处（该 bug 类见 devlog/bug-fixes.md #25）。
+// 世界尺度取 fullWidth * 0.5（面板半宽）：amount 因此是「相对面板自身尺寸」的比例，
+// 同一个滑杆值在大小不同的面板上给出同样的观感；用绝对世界单位会让宽面板隆起不足、
+// 窄面板炸开。fullWidth 的下限 0.01 与 createPanelStrandGeometry / tipMainSectionPoint
+// 现有的 `Math.max(0.01, Number(lock.width ?? 0.62))` 同规则（同步点：本函数是那条
+// 规则在半球尺度上的唯一消费点）。
+// geometryType === "surface"（lattice 控制）恒 0：与 panelTipCurve / panelLeftEdgeTrim
+// 的既有先例一致（tipOffsetSampleT 与 createPanelStrandGeometry 都在 latticeControlled
+// 时把这些强制为 0）—— lattice 面板的形状由控制网格直接决定，程序化形变不适用。
+function panelHemisphereParams(lock) {
+  const amount = lock?.geometryType === "surface"
+    ? 0
+    : THREE.MathUtils.clamp(Number(lock?.panelHemisphereAmount ?? 0), -1, 1);
+  const fullWidth = Math.max(0.01, Number(lock?.width ?? 0.62));
+  return {
+    amount,
+    width: THREE.MathUtils.clamp(Number(lock?.panelHemisphereWidth ?? 0.5), 0.05, 1),
+    center: THREE.MathUtils.clamp(Number(lock?.panelHemisphereCenter ?? 0.5), 0, 1),
+    scale: fullWidth * 0.5
+  };
+}
+
 // Replicates the panel geometry's section point (rawPanelPoint) on the main panel
 // frame, so width controls land on the geometry's real edges (width + depth curves,
 // camber and asymmetric centers included).
@@ -478,12 +503,22 @@ function tipMainSectionPoint(lock, t, u, shell, bone, segmentIndex = -1, splits 
   const centerZ = lock.centerAsymmetricProfile && (bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve)
     ? (tipPanelWidthAt(lock, t, 1, bone, segmentIndex, splits) - tipPanelWidthAt(lock, t, -1, bone, segmentIndex, splits)) * 0.25
     : 0;
-  return origin.clone()
+  const point = origin.clone()
     .addScaledVector(frame.x, lateralU * halfWidth + lateralCenter + centerX * profileTopologyCenterWeight(u, -1, 1))
     .addScaledVector(
       frame.z,
       camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1)
     );
+  // 半球隆起沿 frame.z（camber 与 shell*thickness*0.5 骑的同一个基向量 = 面板法线）。
+  // amount == 0 时**完全不执行**这段，上面的表达式因此与半球引入前逐位相同。
+  const hemisphere = panelHemisphereParams(lock);
+  if (hemisphere.amount !== 0) {
+    point.addScaledVector(
+      frame.z,
+      panelHemisphereOffset(t, u, hemisphere.amount, hemisphere.width, hemisphere.center) * hemisphere.scale
+    );
+  }
+  return point;
 }
 
 // 发尖子骨骼表面帧：在段中心 u=centerU 处用面板几何（含 camber/曲率）计算真正
@@ -514,6 +549,9 @@ function tipSurfaceFrameAt(lock, t, centerU = null, segmentIndex = -1, splits = 
   const y = panel.y;
   // 沿 u 差分采样面板表面点（front face）得到截面切线 dP/du；camber 会让截面
   // 切线偏离 frame.x，从而法线也相应倾斜，贴合实际面板曲面。
+  // 半球隆起**刻意不在此处显式处理**：两个差分点都走 tipMainSectionPoint，隆起已
+  // 含在其中 ⇒ 球冠沿 u 的变化自动进入 dP/du，法线随隆起倾斜（这正是想要的：
+  // 拱起后的表面法线应垂直于拱面）。在此另加一项等于把隆起算两次。
   const step = THREE.MathUtils.clamp((boundaries[1] - boundaries[0]) * 0.2, 0.01, 0.04);
   const lower = tipMainSectionPoint(lock, sampleT, THREE.MathUtils.clamp(center - step, -1, 1), 1, null, segmentIndex, splits);
   const upper = tipMainSectionPoint(lock, sampleT, THREE.MathUtils.clamp(center + step, -1, 1), 1, null, segmentIndex, splits);
@@ -551,6 +589,10 @@ function tipChainFrameAt(lock, tip, restTip, t, segmentIndex = -1, splits = null
 // transform (rest identity preserved). The width is measured from the TIP sub-bone
 // chain (the segment center), so the handle sits on the mesh edge AND moves along the
 // tip's own lateral when the width changes - not along the main-bone line.
+// 半球隆起**刻意不在本函数（及 tipWidthControlPlacement）里显式处理**：把手位置的基准
+// 是 splitTipForSegment 的链点，而该链的 rest 已由 tipSurfaceFrameAt → tipMainSectionPoint
+// 含入隆起 ⇒ 绿色宽度把手自动落在拱起后的真实边缘上。在此另加一项会把隆起算两次、
+// 让把手浮到面板表面之外（该 bug 类见 devlog/bug-fixes.md #25）。
 function tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t) {
   const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
   if (!tip || tip.points.length < 2 || !tip.restPoints || tip.restPoints.length < 2) return null;
@@ -719,6 +761,10 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
   // 发尖子骨骼 rest 链沿主发片构建曲线在段中心的表面曲率生成（法线垂直于面板
   // 表面、含 camber/曲率），不再沿用主骨骼法线。rest 基准变化后，旧数据的
   // authored delta 会在新 rest 上重新叠加，无需改动 .ahs 文件。
+  // 半球隆起（panelHemisphereParams）**刻意不在此处再加一次**：restPointAt 取的是
+  // tipSurfaceFrameAt 的点，而它内部经 tipMainSectionPoint 已经含了隆起 ⇒ 这里再加
+  // 就会叠加两次。rest 链因此自动跟随隆起（与 camber 的处理方式逐条相同），发尖
+  // 的 authored delta 会在新 rest 上重新叠加，存量 .ahs 无需迁移。
   const restPointAt = (t) => tipSurfaceFrameAt(lock, t, centerU, segmentIndex, splits).point;
   const chain = materializeTipChain(splitBone?.tip || null, restPointAt, mainCount);
   return { restPoints: chain.restPoints, points: chain.points, twists: chain.twists, active: chain.active };
@@ -743,6 +789,8 @@ function createPanelStrandGeometry(lock) {
   const leftEdgeTrim = THREE.MathUtils.clamp(Number(lock.panelLeftEdgeTrim ?? 0), 0, 0.75);
   const rightEdgeTrim = THREE.MathUtils.clamp(Number(lock.panelRightEdgeTrim ?? 0), 0, 0.75);
   const tipCurve = latticeControlled ? 0 : THREE.MathUtils.clamp(Number(lock.panelTipCurve ?? 0), -1, 1);
+  // 半球隆起参数一次读好（panelHemisphereParams 是本文件的唯一定义点，surface 恒 0）。
+  const hemisphere = panelHemisphereParams(lock);
   const splitEnabled = lock.panelSplitEnabled !== false;
   const splits = splitEnabled
     ? deps.normalizePanelSplits(lock.panelSplits, lock.panelSplitHeight, widthLoops - 1).filter((split) => split.height > 0.005)
@@ -870,12 +918,23 @@ function createPanelStrandGeometry(lock) {
     const centerZ = lock.centerAsymmetricProfile && (bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve)
       ? (panelThicknessAt(sampleT, 1, bone) - panelThicknessAt(sampleT, -1, bone)) * 0.25
       : 0;
-    return frame.point.clone()
+    const point = frame.point.clone()
       .addScaledVector(frame.x, lateralU * halfWidth + lateralCenter + centerX * profileTopologyCenterWeight(u, -1, 1))
       .addScaledVector(
         frame.z,
         camber + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1)
       );
+    // 半球隆起沿 frame.z（面板法线，camber 与 shell*thickness*0.5 骑的同一个基向量）。
+    // amount == 0 时整段不执行 ⇒ 与半球引入前逐位相同（hemisphere 在函数外一次算好，
+    // 无参数变化时不分配）。sampleT 已含四个 Trim 的切向重参数化，半球因此活在与
+    // 扫掠面同一个参数空间里（t == 0 处 sampleT 也是 0，根部守卫依然成立）。
+    if (hemisphere.amount !== 0) {
+      point.addScaledVector(
+        frame.z,
+        panelHemisphereOffset(sampleT, u, hemisphere.amount, hemisphere.width, hemisphere.center) * hemisphere.scale
+      );
+    }
+    return point;
   };
   const panelPoint = (row, u, shell, bone = null, segment = -1) => {
     const t = rowParameters[row];
@@ -1096,6 +1155,9 @@ function createPanelStrandGeometry(lock) {
     buildTipWidthCurve,
     setTipWidthCurveValue,
     tipPanelFrameAt,
+    // 半球参数/世界尺度的唯一定义点：导出供回归测试按**同一规则**推导期望值
+    // （规范禁止把现场数值写死进测试，见 development-standards.md「验收脚本与真实存档解耦」）。
+    panelHemisphereParams,
     tipMainSectionPoint,
     tipSurfaceFrameAt,
     tipChainFrameAt,

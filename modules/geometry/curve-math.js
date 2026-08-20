@@ -293,6 +293,51 @@ export function panelTipCurveParameter(t, u, tipCurve = 0, edgeTrim = 0) {
   );
 }
 
+// 根部守卫带宽：半球在 t < 该值的区间内被 smoothstep 压回 0，t == 0 处恒为 0。
+// 取 0.05 ≈ 默认 panelLengthLoops(10) 行距 0.1 的一半 —— 在默认细分下只有 row 0
+// 落进守卫带，row 1(t=0.1) 已拿到完整隆起，所以半球不会被"抹平在根部附近"；
+// 同时用 smoothstep 而非硬阶跃，让连续采样的消费方（发尖 rest 链、
+// tipSurfaceFrameAt 的差分求法线）不会在 t→0 处读到跳变而算出错误法线。
+const PANEL_HEMISPHERE_ROOT_GUARD = 0.05;
+
+// 面板半球隆起（沿面板法线的球冠位移），是四个 Trim 控件的**法线方向对位物**：
+// 它们重参数化 sampleT（切向），本函数返回法线方向的标量位移，调用方乘以世界尺度。
+//
+// 契约 —— 返回值在 t == 0 处**恒为 0**，两条独立理由，缺一不可：
+// ① UV 红线：modules/io/uv-unfold.js 的 U 完全由 row 0 的环向弧长决定、V 纯行号，
+//    所以任何触到 t == 0 的位移都会改变 row 0 顶点、静默重排每一片面板的 UV
+//    （见 AGENT_QUICKSTART.md §2.4b「UV 红线」）。
+// ② 物理：面板根锚在头皮上，根部位移本身就是错的（发根会离开头皮）。
+// 守卫写在本函数**内部**，任何消费方都无法忘记它。
+//
+// 剖面 = 真球冠（不是任意凸包）：dt = (t − center)/width，r = hypot(dt, u)，
+// offset = amount·sqrt(1 − r²) （r < 1），r ≥ 1 处**精确为 0**。u 已由面板参数化
+// 归一到 [-1, 1]。面板自己的 panelCurvature（camber，沿 u 的抛物线）是**另一个**
+// 艺术控件，两者刻意不合并：camber 描述截面弧度、本函数描述沿 t 的球冠。
+export function panelHemisphereOffset(t, u, amount = 0, width = 0.5, center = 0.5) {
+  const strength = clamp(Number(amount) || 0, -1, 1);
+  // amount == 0 必须逐位守恒（先例：SWEEP_OVERLAP_DEFAULTS「全部关到 0 时输出
+  // 逐位守恒」），所以在触碰任何坐标之前就返回。
+  if (Math.abs(strength) < 0.000001) return 0;
+  const along = clamp(Number(t) || 0, 0, 1);
+  // t == 0 提前归零，让上面的契约「恒为 0」**字面成立**，而不是依赖下面 guard 的乘积
+  // 恰好为零：strength 为负时 `strength * … * 0` 得到的是 **-0**。-0 对位置无影响
+  // （x + -0 === x，故 row 0 逐位守恒本来就成立），但 Object.is(-0, 0) === false，
+  // 会让「精确为 0」的断言和将来任何按符号分流的消费方产生歧义。顺带省掉根部的 sqrt。
+  if (along <= 0) return 0;
+  const lateral = clamp(Number(u) || 0, -1, 1);
+  // width 下限 0.05 与 UI 滑杆同值：再小的半跨度会让球冠窄到落在两行之间、
+  // 采样不到（视觉上"滑块无效"），因此在数值层就钳住而不是靠 UI 约定。
+  const halfExtent = clamp(Number(width) || 0, 0.05, 1);
+  const apex = clamp(Number(center) || 0, 0, 1);
+  const dt = (along - apex) / halfExtent;
+  const radiusSquared = dt * dt + lateral * lateral;
+  if (radiusSquared >= 1) return 0;
+  const guardAmount = clamp(along / PANEL_HEMISPHERE_ROOT_GUARD, 0, 1);
+  const guard = guardAmount * guardAmount * (3 - 2 * guardAmount);
+  return strength * Math.sqrt(1 - radiusSquared) * guard;
+}
+
 export function panelTipLoopParameters(baseLoopCount, extraTipLoops = 0, tipStart = 0.55) {
   const baseLoops = Math.max(1, Math.round(Number(baseLoopCount) || 1));
   const extraLoops = Math.max(0, Math.min(16, Math.round(Number(extraTipLoops) || 0)));

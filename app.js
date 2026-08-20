@@ -3,7 +3,7 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260901-1";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260909-2";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
 import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-1";
@@ -31,7 +31,7 @@ import { createReferenceHeadApi } from "./modules/scene/reference-head.js?v=2026
 import { createMiscStore } from "./modules/core/misc-store.js?v=20260814-12";
 import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260830-1";
 import { createScalpStore } from "./modules/scalp/scalp-store.js?v=20260809-10";
-import { createProjectStore } from "./modules/io/project-store.js?v=20260809-9";
+import { createProjectStore } from "./modules/io/project-store.js?v=20260909-2";
 import { createHairStore } from "./modules/core/hair-store.js?v=20260816-7";
 import { createGuideStore } from "./modules/core/guide-store.js?v=20260809-8";
 import { createCameraStore } from "./modules/core/camera-store.js?v=20260809-8";
@@ -106,7 +106,7 @@ import {
   twistRateUnitsFromDegrees,
   upperProfileArcIndices,
   uniformCurveParameters
-} from "./modules/geometry/curve-math.js?v=20260813-3";
+} from "./modules/geometry/curve-math.js?v=20260909-2";
 import {
   curveLatticeLoopPointIndices,
   DEFAULT_CURVE_LATTICE_PLANE,
@@ -1510,6 +1510,11 @@ const panelCreationDefaults = {
   panelRightEdgeTrim: 0,
   panelTipCurve: 0,
   panelTipLoops: 0,
+  // 半球隆起（法线方向的球冠）：四个 Trim 控件的法线方向对位物。默认全部为中性
+  // （amount 0 ⇒ 输出与引入前逐位相同）。
+  panelHemisphereAmount: 0,
+  panelHemisphereWidth: 0.5,
+  panelHemisphereCenter: 0.5,
   panelSplitEnabled: true,
   panelSplitSnapToLoops: true,
   panelSplitHeight: 0.3,
@@ -3350,6 +3355,22 @@ const surfaceLatticeRowsInput = document.querySelector("#surfaceLatticeRows");
 const surfaceLatticeRowsValue = document.querySelector("#surfaceLatticeRowsValue");
 const panelCurvatureControl = document.querySelector("#panelCurvatureControl");
 const panelTipCurveControl = document.querySelector("#panelTipCurveControl");
+const panelHemisphereControls = document.querySelector("#panelHemisphereControls");
+// 半球隆起的三个滑杆走**已有**的 panelShapeInputs 通用接线（bindUndoCapture + input
+// 监听 + setMixedControl 多选同步各只有一份实现），因此这里只需把键补进字典。
+// 但通用接线对元素做 `input.addEventListener` 时**不判空**，而本文件被 index.html
+// 加载时该 markup 可能尚未存在 —— 所以先滤掉缺失项：缺失时这三个键根本不进字典，
+// 通用循环遍历不到，启动不会抛（其余既有键沿用原样，行为逐字节不变）。
+const panelHemisphereInputEntries = Object.entries({
+  panelHemisphereAmount: document.querySelector("#panelHemisphereAmount"),
+  panelHemisphereWidth: document.querySelector("#panelHemisphereWidth"),
+  panelHemisphereCenter: document.querySelector("#panelHemisphereCenter")
+}).filter(([, element]) => Boolean(element));
+const panelHemisphereValueEntries = Object.entries({
+  panelHemisphereAmount: document.querySelector("#panelHemisphereAmountValue"),
+  panelHemisphereWidth: document.querySelector("#panelHemisphereWidthValue"),
+  panelHemisphereCenter: document.querySelector("#panelHemisphereCenterValue")
+}).filter(([, element]) => Boolean(element));
 const panelShapeInputs = {
   width: document.querySelector("#panelWidth"),
   panelThickness: document.querySelector("#panelThickness"),
@@ -3361,7 +3382,8 @@ const panelShapeInputs = {
   panelTipCurve: document.querySelector("#panelTipCurve"),
   panelTipLoops: document.querySelector("#panelTipLoops"),
   panelSplitEnabled: document.querySelector("#panelSplitEnabled"),
-  panelSplitSnapToLoops: document.querySelector("#panelSplitSnapToLoops")
+  panelSplitSnapToLoops: document.querySelector("#panelSplitSnapToLoops"),
+  ...Object.fromEntries(panelHemisphereInputEntries)
 };
 const panelShapeValues = {
   width: document.querySelector("#panelWidthValue"),
@@ -3372,7 +3394,8 @@ const panelShapeValues = {
   panelLeftEdgeTrim: document.querySelector("#panelLeftEdgeTrimValue"),
   panelRightEdgeTrim: document.querySelector("#panelRightEdgeTrimValue"),
   panelTipCurve: document.querySelector("#panelTipCurveValue"),
-  panelTipLoops: document.querySelector("#panelTipLoopsValue")
+  panelTipLoops: document.querySelector("#panelTipLoopsValue"),
+  ...Object.fromEntries(panelHemisphereValueEntries)
 };
 // 0.2.132：全局 Split Spacing 滑杆（#strandSplitGap）已删除 —— 它承载的「segment separate
 // / 整管横向平移」语义被整体移除，发尖聚合改由每管 Tip Clump（#strandSegmentSpread）表达。
@@ -3511,6 +3534,9 @@ miscState.state.groupDefaultsWarningAcknowledged = localStorage.getItem("anime-h
 const panelSplitSnapWarning = document.querySelector("#panelSplitSnapWarning");
 const confirmPanelSplitSnapDisable = document.querySelector("#confirmPanelSplitSnapDisable");
 const cancelPanelSplitSnapDisable = document.querySelector("#cancelPanelSplitSnapDisable");
+const newProjectWarning = document.querySelector("#newProjectWarning");
+const confirmNewProjectButton = document.querySelector("#confirmNewProject");
+const cancelNewProjectButton = document.querySelector("#cancelNewProject");
 const scalpInputs = {
   x: document.querySelector("#scalpX"),
   y: document.querySelector("#scalpY"),
@@ -9293,6 +9319,21 @@ function addLock(presetName, overrides = {}, options = {}) {
   lock.panelTipLoops = lock.geometryType === "surface"
     ? 0
     : THREE.MathUtils.clamp(Math.round(Number(base.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16);
+  // 半球隆起：amount 在 surface（lattice 控制）上恒 0，与上面 panelTipCurve / panelTipLoops
+  // 同规则；width/center 是纯剖面参数，即使被忽略也无害，照常规范化以便 UI 显示稳定。
+  lock.panelHemisphereAmount = lock.geometryType === "surface"
+    ? 0
+    : THREE.MathUtils.clamp(Number(base.panelHemisphereAmount ?? panelCreationDefaults.panelHemisphereAmount), -1, 1);
+  lock.panelHemisphereWidth = THREE.MathUtils.clamp(
+    Number(base.panelHemisphereWidth ?? panelCreationDefaults.panelHemisphereWidth),
+    0.05,
+    1
+  );
+  lock.panelHemisphereCenter = THREE.MathUtils.clamp(
+    Number(base.panelHemisphereCenter ?? panelCreationDefaults.panelHemisphereCenter),
+    0,
+    1
+  );
   lock.panelSplitEnabled = base.panelSplitEnabled !== false;
   lock.panelSplitSnapToLoops = base.panelSplitSnapToLoops !== false;
   lock.panelSplitHeight = Number(base.panelSplitHeight ?? panelCreationDefaults.panelSplitHeight);
@@ -9451,6 +9492,14 @@ function createMirrorPartner(lock, options = {}) {
     panelRightEdgeTrim: lock.panelRightEdgeTrim,
     panelTipCurve: lock.panelTipCurve,
     panelTipLoops: lock.panelTipLoops,
+    // 半球隆起：三个值镜像时**原样拷贝，不取反、不交换**。理由：球冠剖面
+    // r = hypot(dt, u) 在 u 上是**偶函数**（关于 u=0 对称），镜像只翻转 u 的符号 ⇒
+    // 形状不变；而 panelHemisphereCenter/Width 都沿 t（长度方向）度量，镜像不动 t。
+    // 对比：panelTipCurve 要取负（它的 bowWeight 随 strength 符号在"边缘/中心"间切换），
+    // panelLeftEdgeTrim/panelRightEdgeTrim 要左右互换（它们本身就是按侧定义的）。
+    panelHemisphereAmount: lock.panelHemisphereAmount,
+    panelHemisphereWidth: lock.panelHemisphereWidth,
+    panelHemisphereCenter: lock.panelHemisphereCenter,
     profileTrimLeft: lock.profileTrimRight,
     profileTrimRight: lock.profileTrimLeft,
     profileTrimRoundness: lock.profileTrimRoundness,
@@ -9625,6 +9674,23 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   partner.panelTipLoops = lock.geometryType === "surface"
     ? 0
     : THREE.MathUtils.clamp(Math.round(Number(lock.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16);
+  // 半球隆起：三个值**原样拷贝，不取反、不交换**（与 createMirrorPartner 同规则，
+  // 同步点：那里的同名注释）。球冠剖面 r = hypot(dt, u) 在 u 上是偶函数 ⇒ X 镜像
+  // 翻转 u 的符号后形状不变；width/center 沿 t 度量，镜像不动 t。
+  // 对比上面两条：panelTipCurve 取负、左右 EdgeTrim 互换 —— 半球两者都不需要。
+  partner.panelHemisphereAmount = lock.geometryType === "surface"
+    ? 0
+    : THREE.MathUtils.clamp(Number(lock.panelHemisphereAmount ?? panelCreationDefaults.panelHemisphereAmount), -1, 1);
+  partner.panelHemisphereWidth = THREE.MathUtils.clamp(
+    Number(lock.panelHemisphereWidth ?? panelCreationDefaults.panelHemisphereWidth),
+    0.05,
+    1
+  );
+  partner.panelHemisphereCenter = THREE.MathUtils.clamp(
+    Number(lock.panelHemisphereCenter ?? panelCreationDefaults.panelHemisphereCenter),
+    0,
+    1
+  );
   partner.profileTrimLeft = Number(lock.profileTrimRight ?? 0);
   partner.profileTrimRight = Number(lock.profileTrimLeft ?? 0);
   partner.profileTrimRoundness = Number(lock.profileTrimRoundness ?? 1);
@@ -9862,6 +9928,9 @@ function snapshotState() {
       panelRightEdgeTrim: Number(lock.panelRightEdgeTrim ?? panelCreationDefaults.panelRightEdgeTrim),
       panelTipCurve: Number(lock.panelTipCurve ?? panelCreationDefaults.panelTipCurve),
       panelTipLoops: Number(lock.panelTipLoops ?? panelCreationDefaults.panelTipLoops),
+      panelHemisphereAmount: Number(lock.panelHemisphereAmount ?? panelCreationDefaults.panelHemisphereAmount),
+      panelHemisphereWidth: Number(lock.panelHemisphereWidth ?? panelCreationDefaults.panelHemisphereWidth),
+      panelHemisphereCenter: Number(lock.panelHemisphereCenter ?? panelCreationDefaults.panelHemisphereCenter),
       profileTrimLeft: Number(lock.profileTrimLeft ?? 0),
       profileTrimRight: Number(lock.profileTrimRight ?? 0),
       profileTrimRoundness: Number(lock.profileTrimRoundness ?? 1),
@@ -10367,6 +10436,59 @@ function restoreState(state, {
   }
 }
 
+// File > New：把场景重置回**应用自己的初始状态**。
+// 做法是复用 restoreState 而不是另写一条清空路径：restoreState 已经是「整场景换掉」的
+// 唯一入口（打开项目 / undo / redo 都走它），它内部的 resetEditableSceneForStateRestore
+// 已处理吹风预览互斥 + disposeAllEditableObjects + 清 locks/selectionSets/guides
+// （见那里的注释，其中已把 "new project" 列为该路径的既定用例之一）。
+// 基准取自 boot 时抓的 pristineProjectSnapshot（存的是 JSON 字符串，每次 New 重新
+// parse 出全新对象，避免上一次 New 的还原过程污染基准）。
+function startNewProject() {
+  const pristine = projectState.state.pristineProjectSnapshot;
+  if (!pristine) return false;
+  try {
+    restoreState(JSON.parse(pristine));
+  } catch (error) {
+    console.error("New project could not reset the scene", error);
+    presetLibraryStatus.textContent = "Could not start a new project";
+    return false;
+  }
+  // 头模 / 头皮引导资产**不在** snapshotState 里（它们随 .ahs 的 headAsset /
+  // scalpGuideAsset 单独走），所以必须显式复位 —— 否则 New 之后仍留着上一个项目导入
+  // 的自定义头模。这两段与 openHairProjectFile 处理「项目未带资产」时同规则（同步点：
+  // modules/io/io-tail.js 的 headAssetOmitted / hasOwnProperty("scalpGuideAsset") 分支）。
+  if (head.state.importedHeadAsset) {
+    head.state.importedHeadAsset = null;
+    referenceHeadApi.loadDefaultGuideModel().catch((error) => {
+      console.warn("Could not restore the default head mesh", error);
+    });
+    document.querySelector("#importHeadMesh").title = "Import head mesh from an OBJ file";
+    document.querySelector("#importFullBodyMesh").title = "Import a full body OBJ, scale it to seven head heights, and align its top to the scalp guide";
+  }
+  if (scalpState.state.importedScalpGuideAsset) {
+    scalpState.state.importedScalpGuideAsset = null;
+    scalpBuilder.setScalpGuideSource("default");
+  }
+  // New 是一条**新的 undo 基准**，不是一个可撤销的步骤（与 openHairProjectFile 的
+  // 同名处理逐条一致）：否则 Ctrl+Z 会把用户拖回一个已被 dispose 的半场景。
+  undoHistory.clear();
+  redoHistory.clear();
+  updateHistoryButtons();
+  // 快速保存/快速导出的文件句柄必须**忘掉**：留着会让 New 之后的 Ctrl+S 静默覆盖
+  // 上一个项目的文件（本功能最高风险项）。名字一并回到默认，避免另存对话框预填旧名。
+  projectState.state.currentProjectName = "Untitled Hair Project";
+  projectState.state.quickSaveFileHandle = null;
+  projectState.state.quickSaveFileName = null;
+  projectState.state.lastExport = null;
+  projectState.state.quickExportFileHandle = null;
+  presetLibraryStatus.textContent = "New project started";
+  // 崩溃恢复快照：New 之后场景已与快照无关，清掉以免下次启动提示恢复一个用户刚丢弃的项目。
+  clearAcknowledgedRecovery().catch((error) => {
+    console.warn("Could not clear project recovery data", error);
+  });
+  return true;
+}
+
 function disposeAllEditableObjects() {
   restoreUvCheckerPreview();
   referenceHeadApi.clearReferenceImages();
@@ -10485,6 +10607,21 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     panelTipLoops: snapshot.geometryType === "surface"
       ? 0
       : THREE.MathUtils.clamp(Math.round(Number(snapshot.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16),
+    // 半球隆起：amount 在 surface 上恒 0（与上面 panelTipCurve/panelTipLoops 同规则）；
+    // width/center 是纯剖面参数，照常钳位反序列化，旧档缺字段时回落到中性默认值。
+    panelHemisphereAmount: snapshot.geometryType === "surface"
+      ? 0
+      : THREE.MathUtils.clamp(Number(snapshot.panelHemisphereAmount ?? panelCreationDefaults.panelHemisphereAmount), -1, 1),
+    panelHemisphereWidth: THREE.MathUtils.clamp(
+      Number(snapshot.panelHemisphereWidth ?? panelCreationDefaults.panelHemisphereWidth),
+      0.05,
+      1
+    ),
+    panelHemisphereCenter: THREE.MathUtils.clamp(
+      Number(snapshot.panelHemisphereCenter ?? panelCreationDefaults.panelHemisphereCenter),
+      0,
+      1
+    ),
     panelSplitEnabled: snapshot.panelSplitEnabled !== false,
     panelSplitSnapToLoops: snapshot.panelSplitSnapToLoops !== false,
     panelSplitHeight: Number(snapshot.panelSplitHeight ?? panelCreationDefaults.panelSplitHeight),
@@ -13554,6 +13691,10 @@ function updateAttributeEditorMode() {
   surfaceLatticeControls.hidden = !selectedSurface;
   panelCurvatureControl.hidden = Boolean(selectedSurface);
   panelTipCurveControl.hidden = Boolean(selectedSurface);
+  // 半球隆起容器与 panelTipCurveControl 同规则隐藏（lattice 面板不适用程序化形变）。
+  // 可选链：本文件加载时该 markup 可能尚未存在，缺失不得在启动路径上抛。
+  panelHemisphereControls?.classList.toggle("hidden", Boolean(selectedSurface));
+  if (panelHemisphereControls) panelHemisphereControls.hidden = Boolean(selectedSurface);
   compoundBridgeLoopsControl.classList.toggle("hidden", !selectedCompound);
   compoundBridgeSmoothingControl.classList.toggle("hidden", !selectedCompound);
   if (selectedSurface) {
@@ -16122,6 +16263,18 @@ cancelPanelSplitSnapDisable.addEventListener("click", () => {
 });
 panelSplitSnapWarning.addEventListener("cancel", () => {
   ui.state.panelSplitSnapWarningContinuation = null;
+});
+// File > New：先确认再清场景。刻意**不做**「不再提示」勾选（对比 groupDefaultsWarning）：
+// 这一步会丢弃未保存的全部工作且不可撤销（New 会清 undo 栈），不给静默跳过的开关。
+document.querySelector("#newHairProject").addEventListener("click", () => {
+  if (!newProjectWarning.open) newProjectWarning.showModal();
+});
+confirmNewProjectButton.addEventListener("click", () => {
+  newProjectWarning.close();
+  startNewProject();
+});
+cancelNewProjectButton.addEventListener("click", () => {
+  newProjectWarning.close();
 });
 editSweepProfileButtons.forEach((button) => button.addEventListener("click", branchSweep.openSweepProfileEditor));
 document.querySelector("#closeSweepProfile").addEventListener("click", branchSweep.closeSweepProfileEditor);
@@ -20730,6 +20883,11 @@ updateAttributeEditorMode();
 setSideNamingPerspective(miscState.state.sideNamingPerspective, { persist: false });
 setAutosaveInterval(recovery.state.autosaveIntervalSeconds, { persist: false });
 setAutosaveEnabled(recovery.state.autosaveEnabled, { persist: false });
+// File > New 的空场景基准：必须在 offerRecoverySnapshot() **之前**抓 —— 恢复流程会把
+// 上一次崩溃的场景灌进来，抓晚了基准就变成"上次的项目"而不是空项目。
+// 存 JSON 字符串（不是对象）：restoreState 会就地消费还原出的集合，留对象引用会让
+// 第二次 New 拿到被污染的基准。字段说明见 modules/io/project-store.js。
+projectState.state.pristineProjectSnapshot = JSON.stringify(snapshotState());
 offerRecoverySnapshot();
 resize();
 animate();
@@ -20762,6 +20920,12 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     // capture 阶段的 prepareCurvePointSelection 会 stopImmediatePropagation，主 pointerdown
     // 根本不执行（真实用户走 pointermove 不会有这个残留）。见 scripts/verify-tip-clump.mjs。
     guideState,
+    // projectState：File > New 的验收要断言「快速保存/快速导出句柄被忘掉」。这些值只存在
+    // 于 projectState store —— fileApi **只导出函数**（那些 currentProjectName /
+    // quickSaveFileHandle getter 在传进 createProjectSaveApi 的 deps 对象上，不在返回值上），
+    // 从 fileApi 读会拿到 undefined、写会凭空造出一个同名属性，断言因此会假绿/假红
+    // （scripts/verify-new-project.mjs 初版实测踩过）。见该脚本。
+    projectState,
     beginTipSubBoneRotate: bonesApi.beginTipSubBoneRotate,
     beginTipSubBoneTranslate: bonesApi.beginTipSubBoneTranslate,
     updateTipHighlight: panelTipStrand.updateTipHighlight,

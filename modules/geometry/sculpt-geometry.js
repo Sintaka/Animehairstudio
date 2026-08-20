@@ -12,7 +12,7 @@ import {
   smoothSculptPointDeltas,
   smoothSculptTwistDeltas
 } from "../sculpt/sculpt-brush.js?v=20260814-12";
-import { sampleArray } from "./curve-math.js?v=20260813-3";
+import { sampleArray } from "./curve-math.js?v=20260909-2";
 import {
   DEFAULT_SURFACE_LATTICE_COLUMNS,
   DEFAULT_SURFACE_LATTICE_ROWS,

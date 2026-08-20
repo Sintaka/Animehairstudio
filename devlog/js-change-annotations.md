@@ -22,6 +22,149 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（File > New，0.2.134）
+
+> **左上角 File 菜单新增 New**（main 无此项）。做法是**复用 `restoreState`**，不另写清空路径。
+>
+> - **app.js `startNewProject()`**（紧邻 `restoreState`）：`restoreState` 已是「整场景换掉」的唯一
+>   入口（打开项目 / undo / redo 都走它），其 `resetEditableSceneForStateRestore` 内部已处理吹风预览
+>   互斥 + `disposeAllEditableObjects` + 清 `locks`/`selectionSets`/`guides` —— 那里的注释**早已把
+>   "new project" 列为该路径的既定用例之一**，本轮只是把它真正接上。
+> - **基准 = boot 时抓的 `snapshotState()`**，存在 `projectState.pristineProjectSnapshot`。两个要点：
+>   ① **必须抓在 `offerRecoverySnapshot()` 之前** —— 恢复流程会把上次崩溃的场景灌进来，抓晚了基准
+>   就变成「上次的项目」；② **存 JSON 字符串而非对象** —— `restoreState` 会就地消费还原出的集合
+>   （`locks` 被 `restoreLock` 吃掉），留同一份对象引用会让**第二次 New** 拿到已污染的基准。于是 New
+>   与「刚打开应用」逐字段一致，不必另外维护一份「空项目」定义（那必然与 boot 漂移）。
+> - **头模 / 头皮引导资产不在 `snapshotState()` 里**（随 .ahs 的 `headAsset`/`scalpGuideAsset` 单独
+>   走），必须显式复位，否则 New 之后仍留着上一个项目的自定义头模。两段与 `openHairProjectFile`
+>   处理「项目未带资产」时**同规则**（同步点：`modules/io/io-tail.js` 的 `headAssetOmitted` /
+>   `hasOwnProperty("scalpGuideAsset")` 分支）。
+> - **最高风险项：四个快速保存/导出句柄必须忘掉**（`quickSaveFileHandle`/`quickSaveFileName`/
+>   `lastExport`/`quickExportFileHandle`）。留着 ⇒ New 之后按 Ctrl+S **静默覆盖上一个项目文件**。
+>   项目名一并回 `"Untitled Hair Project"`，免得另存对话框预填旧名。
+> - **undo/redo 栈清空**：New 是**新的 undo 基准**、不是可撤销步骤（与 `openHairProjectFile` 的同名
+>   处理逐条一致），否则 Ctrl+Z 会把用户拖回一个已被 dispose 的半场景。崩溃恢复快照亦清掉。
+> - **确认对话框** `#newProjectWarning`（沿用 `panelSplitSnapWarning` 的 warning-dialog 形状）。
+>   **刻意不做「不再提示」勾选**（对比 `groupDefaultsWarning`）：这一步丢弃全部未保存工作且不可
+>   撤销，不给静默跳过的开关。
+> - **`__AHS_TEST_SEAM__` 新增 `projectState`**：验收要断言句柄被忘掉，而这些值只在 store 里 ——
+>   `fileApi` **只导出函数**，那些 getter 在传进 `createProjectSaveApi` 的 deps 对象上、不在返回值上；
+>   从 `fileApi` 读会得到 `undefined`、写会凭空造出同名属性（初版实测 3 条断言因此假绿/假红）。
+> - **验收** `scripts/verify-new-project.mjs`（新增，**21/21**）：真实 Sussurro_v1_0060.ahs 上
+>   locks 26→0、场景图 Mesh 2398→137、Cancel 路径逐项不变、四句柄全忘、undo 栈空、**二次 New 仍干净**
+>   （证明基准未被污染）、全程 0 page exception。
+> - **顺带修掉 `scripts/verify-smoke.mjs` 的取参 bug**：`args.indexOf("--port")` 缺失时返回 −1 ⇒
+>   `args[-1+1]` 读到**第一个位置参数**（.ahs 路径）⇒ `Number(路径)=NaN` ⇒ `ERR_SOCKET_BAD_PORT`，
+>   即**照 AGENT_QUICKSTART 里写的命令跑就崩**（看着像环境坏了，其实是取参 bug）。两个脚本都换成
+>   先判 flag 存在的 `optNumber`；新脚本勿再复制旧写法。
+
+## 最近更新（控件组强调框，0.2.134）
+
+> **纯装饰**，把三组相关控件从周围的普通滑杆里视觉分出来（用户：「不用改太多只是想让它看起来
+> 不太一样」）。无 JS 改动，只有 `styles.css` + `index.html` 的 wrapper。
+>
+> - **styles.css**：一个基类 `.control-emphasis`（半透明底 + 6px 圆角 + 1px 描边 + padding）+ 三个
+>   修饰类 `--red` / `--green` / `--blue` 只改描边色。参照同文件既有的 `.visibility-filter-box`
+>   （同为「框起一组」的组件），不新造版式体系。
+> - **底色用半透明白叠加 `rgba(255,255,255,0.035)` 而非字面浅灰**：本主题是纯暗色（`:root` 的
+>   `color-scheme: dark`、面板底 `#19181d`），字面浅灰会变成一块突兀亮斑。
+> - **三色 alpha 刻意不等**（红 .5 / 绿 .45 / 蓝 .62）：暗底上蓝色天生显得更弱，等 alpha 会让
+>   「深蓝」几乎看不见；按**感知重量**配平而不是按数值统一。
+> - **`#sweepOverlapPanel` 加内层 wrapper `#sweepSmoothGroup`，不直接给它套类**：`.panel-section`
+>   自带 `padding/margin/border-bottom`，直接套会与盒子版式冲突。另两组新增 `#panelEdgeLengthGroup`
+>   （蓝，四个 Trim）与 `#panelZipperGroup`（绿，Split Segments + 发尖 Width/Depth Curve + Split Tip）。
+>   `#panelHemisphereControls` 也给蓝框（与 Trim 同族的程序化变形）。
+> - **红框圈的是全部 5 个滑杆**：用户说「那四个」，但 `#sweepOverlapPanel` 的 5 个参数
+>   （Strength/Threshold/EdgeSmooth/Falloff/TangentSmooth）是**同一个系统**（AGENT_QUICKSTART §2.6
+>   即按 5 参数系统记录），任意排除一个都无依据，故整块圈起。
+> - **插 wrapper 前的依赖审计**（最可能引入回归的地方）：`.panel-shape-controls` 在 panel 上下文会变
+>   `display: contents`，其子级由 `#strandShapePanel` 直接布局 —— 若那是 grid/flex，wrapper 会把整组
+>   塌成一个格子。实测 `#strandShapePanel` **只设 `order`、是普通块容器**；`.sliders` 无裸规则、其全部
+>   规则用的都是**后代**（非子）选择器，故 wrapper 安全。JS 侧全部按 id 取元素，无
+>   `.children`/`parentElement`/兄弟遍历依赖；`hairCardIncompatibleControls` 只含 `#strandSplitControls`
+>   （在 wrapper 之外）。
+> - **`.hidden` 仍然生效**（`display: none !important`，全局定义）：真实浏览器实测隐藏时盒子塌成
+>   **0×0**，不留残余描边/padding。**红框只在选中普通发丝时可见** —— panel 选中时 app.js 本就隐藏
+>   `#sweepOverlapPanel`，所以视觉核验必须换选一根 strand，否则永远报 `visible: false`（本轮踩过）。
+> - **本组由主进程完成**：原派给子智能体，但它长时间零产出（`styles.css` mtime 未变），按规范
+>   「子智能体中途失败时主进程直接接手」接管，并 `interrupt_agent` 掉它以免回头覆写。
+
+## 最近更新（Hemispherical Deform，仅 panel，0.2.134）
+
+> **面板「半球隆起」= 四个 Trim 控件的法线方向对位物**。动机（用户原文）：把额头/刘海做成
+> **一整片**大面板时，它必须「在法线方向往前拱出一个半球」，因为额头是凸的；手绘半圆进
+> sweep profile 或 depth 曲线不现实，所以必须程序化。**普通发丝刻意未实现**（用户明确延后）。
+>
+> - **modules/geometry/curve-math.js**：新增 `panelHemisphereOffset(t, u, amount, width, center)`
+>   —— 球冠位移的**唯一定义点**（紧邻 `panelTipCurveParameter`）。剖面是**真球冠**而非泛化凸包：
+>   `dt = (t − center)/width`、`r = hypot(dt, u)`、`offset = amount·sqrt(1 − r²)`（`r < 1`），
+>   `r ≥ 1` 处**精确为 0**；返回标量，世界尺度由调用方乘。与四个 Trim 的分工：它们重参数化
+>   `sampleT`（**切向**），本函数只管**法线方向**。面板自己的 `panelCurvature`（camber，沿 u 的
+>   抛物线）刻意**不与之合并** —— camber 描述截面弧度、本函数描述沿 t 的球冠，是两个艺术控件。
+> - **根部守卫（UV 红线）**：`if (along <= 0) return 0` + 常量 `PANEL_HEMISPHERE_ROOT_GUARD = 0.05`
+>   的 smoothstep 斜坡，**写在纯函数内部**，任何消费方都无法忘记。两条独立理由：① `uv-unfold` 的
+>   U 完全由 row 0 环向弧长决定、V 纯行号 ⇒ 触到 t=0 会静默重排每片面板的 UV；② 面板根锚在头皮，
+>   根部位移物理上就是错的。带宽取 0.05 ≈ 默认 `panelLengthLoops`(10) 行距的一半 ⇒ 默认细分下
+>   **只有 row 0** 落进守卫带、row 1 已拿到完整隆起，所以半球不会被"抹平在根部附近"；用 smoothstep
+>   而非硬阶跃，是因为 `tipSurfaceFrameAt` 靠**差分**求法线，t→0 处的跳变会让它算出错误法线。
+>   **`along <= 0` 提前归零不是冗余**：`strength` 为负时 `strength·…·0` 得到的是 **-0**，虽然对位置
+>   无影响（`x + -0 === x`），但 `Object.is(-0, 0) === false` 会让「精确为 0」的断言与将来按符号
+>   分流的消费方产生歧义。
+> - **modules/geometry/panel-tip-strand.js**：新增 `panelHemisphereParams(lock)` —— 本文件内
+>   lock 读取 + 钳位 + **世界尺度**的唯一定义点，并**导出供测试按同一规则推导期望值**（规范禁止把
+>   现场数值写死进测试）。世界尺度 = `fullWidth * 0.5`（面板半宽），使控件**与面板尺寸无关**：同一
+>   滑杆值在大小不同的面板上观感一致；用绝对世界单位会让宽面板隆起不足、窄面板炸开。
+>   `geometryType === "surface"`（lattice 控制）恒 0，与 `panelTipCurve`/`panelLeftEdgeTrim` 既有先例
+>   一致。两个消费点各加一段沿 `frame.z`（camber 与 `shell*thickness*0.5` 骑的同一基向量）的
+>   `addScaledVector`：① `rawPanelPoint`（几何本身，传**已含 Trim 重参数化的 `sampleT`**，所以半球
+>   活在与扫掠面同一参数空间）；② `tipMainSectionPoint`（宽度把手的截面复刻）。**`amount == 0` 时
+>   两处都整段不执行** ⇒ 与引入前逐位相同（先例：`SWEEP_OVERLAP_DEFAULTS`「全部关到 0 时输出逐位守恒」）。
+> - **消费方审计（只改了上面两处，其余顺着链自动继承）**：`tipSurfaceFrameAt` → `splitTipForSegment`
+>   （发尖 rest 链）→ `tipWidthEdgePosition` / `tipWidthControlPlacement`（绿色宽度把手）→
+>   `usda-export.js` 的 `splitBoneLayout`/`splitChainLayout`（panel 分支取的就是注入的
+>   `splitTipForSegment` 的链点）**全部经由 `tipMainSectionPoint` 取点，故无需各自改动**；漏改
+>   `tipMainSectionPoint` 会让网格鼓起而把手留在原处，该 bug 类见 bug-fixes.md #25。
+> - **app.js**：纯接线，**不参与推导**（有测试断言 app.js 不出现 `panelHemisphereOffset`）。三个字段
+>   `panelHemisphereAmount`(-1..1, 默认 0) / `panelHemisphereWidth`(0.05..1, 默认 0.5) /
+>   `panelHemisphereCenter`(0..1, 默认 0.5) 覆盖 `panelCreationDefaults`、lock normalize、snapshot
+>   序列化/反序列化、镜像伙伴、preset/clone 全部路径。滑杆复用**已有**的 `panelShapeInputs` 通用
+>   接线（`bindUndoCapture` + input 监听 + `setMixedControl` 多选同步各只有一份实现），因此只往字典
+>   补键、不手搓监听器；但通用循环对元素**不判空**，故先 `.filter` 掉缺失元素 —— markup 缺失时这三个
+>   键根本不进字典，启动不会抛。
+> - **镜像语义（与 panelTipCurve / EdgeTrim 都不同）**：三个值**原样拷贝，不取反、不交换**。理由：
+>   球冠剖面 `r = hypot(dt, u)` 在 u 上是**偶函数** ⇒ X 镜像翻转 u 的符号后形状不变；而
+>   `center`/`width` 沿 **t**（长度方向）度量，镜像不动 t。对比：`panelTipCurve` 要取负（其 `bowWeight`
+>   随 strength 符号在"边缘/中心"间切换），左右 `EdgeTrim` 要互换（本身按侧定义）。两个镜像站点
+>   （`createMirrorPartner` / `syncMirrorPartnerFromLock`）的注释互指为同步点。
+> - **tests/panel-hemisphere-deform.test.mjs**（新增，14 条）：`amount==0` 逐位守恒（含 width/center
+>   被改动、含 zipper 路径）、row 0 对任意参数逐位不动（含最恶劣的 `width=1 center=0` 与 zipper 路径）、
+>   `t==0` 纯函数恒 0 的穷举、球冠剖面（`r≥1` 精确 0 / 朝顶点单调 / u 上对称）、负 amount 严格反号、
+>   中段行位移 == `panelHemisphereOffset × fullWidth × 0.5`（**峰值**亦逐值核对）、**跨消费方一致性**
+>   （把手截面点位移 == 网格位移，规范要求的形式）、surface 恒 0 + 尺度正比于面板宽度、以及
+>   **单一定义点的源码级守卫**（球冠公式只在 curve-math.js；panel-tip-strand 恰好 2 个调用点；
+>   app.js 不出现该函数名）。fixture 的 taper 末点为 0，满足 §2.4b「至少一个 taper 收到 0 的构型」。
+>   **另 2 条是 app.js 接线的源码文本断言**：app.js 顶层就 `querySelector`/`new THREE.Scene`，node 里
+>   无法 import 执行（`dom-contract` 全篇同样只读源码文本），所以按本仓库既有惯例把 7 类接线路径
+>   逐条钉住（defaults / DOM 引用含缺失过滤 / normalize / snapshot 序列化 / 反序列化 / 隐藏 + 可选链），
+>   并把**镜像语义**单独立一条：三值在两个镜像站点都「同名→同名」，且带**负向对照**（断言
+>   `panelTipCurve` 确实取负、EdgeTrim 确实互换，证明那两种写法在本文件里写得出来 ⇒ 半球的
+>   「不取反/不互换」断言不是空转）。**这不能替代浏览器验证**，只能防"少接一条路径"。
+> - **「空操作路径」那条为什么必须是源码断言（变异测试结论）**：「`amount==0` 空操作路径不分配」这条要求
+>   **行为测试原理上逮不到** —— `amount==0 ⇒ strength==0 ⇒ offset 恒为 +0`，而 `x + 分量*0 === x`
+>   逐位成立，所以把两处 `hemisphere.amount !== 0` 门控和纯函数早退全部拿掉，输出仍然逐位相同
+>   （实测：该变异体是 **equivalent mutant**）。故只能用源码断言钉住「纯函数早退 1 处 + 消费点门控
+>   恰好 2 处」；少了它，将来有人"简化"掉早退不会有任何测试变红，但每次重建面板都会白算球冠并多
+>   clone 一个 Vector3。
+> - **断言承重性已用变异测试验证**（改**临时副本**、不碰生产文件；探针跑完即删，两个生产文件事后
+>   SHA256 与基线逐位相同）：① 从 `tipMainSectionPoint` 摘掉半球 → 跨消费方断言逮到（最大偏差
+>   1.7e-1，正是 bug-fixes.md #25 那类把手漂移）；② 摘掉根部守卫 → row 0 断言逮到；③ 球冠改成抛物线
+>   （`sqrt(1−r²)` → `1−r²`）→ 量值断言逮到（偏差 5.8e-2）—— 这条证明「峰值 == amount × scale」不是
+>   只要"动了"就通过；④ 取消早退 → 行为判据放过（equivalent mutant，见上条），源码判据逮到。
+>   合计 4/5 被逮，唯一漏网者已证明为等价变异体。
+> - **顺带发现、刻意未改**：两个镜像站点对 `panelLeftEdgeTrim`/`panelRightEdgeTrim` 的处理**本就不
+>   一致** —— `createMirrorPartner`（约 L9491）原样拷贝，`syncMirrorPartnerFromLock`（约 L9669）左右
+>   互换。这是本轮之前就存在的差异，与半球无关；按「修 bug 不夹带设计变更」**不动**，仅在此记录。
+
 ## 最近更新（0.2.132）
 
 > **Tip Clump 语义统一 + 删除继承来的「segment separate」（分支 DHS/develop）**。用户决策原文：

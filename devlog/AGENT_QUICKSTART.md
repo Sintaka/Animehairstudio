@@ -2,7 +2,7 @@
 
 > 目的：让一个新 agent（或新开发者）在几分钟内知道「本 fork 改了哪些代码、哪些**必须保留**、当时的**决策**是什么」，避免从头通读 ≈0.9MB（**约 2 万行；具体值现场统计,勿引用本页数字**）的 `app.js` 或 52KB 的 `js-change-annotations.md`（索引 + 6 个 `annotations-*.md` 专题）。
 > 维护：功能分支合入 / daily build +1 时，如涉及本页列出的保留代码或决策，请同步更新本页；详细条目仍按主题追加到各专题文件，本页只做摘要与指针。
-> 版本基准：0.2.129（DHS/develop）。**行数/文件数/store 数一律现场统计**（`node scripts/gen-function-index.js` 会顺带刷新 app.js 行数与文件数），本页历史上写死过 3 组过期计数。
+> 版本基准：0.2.134（DHS/develop）。**行数/文件数/store 数一律现场统计**（`node scripts/gen-function-index.js` 会顺带刷新 app.js 行数与文件数），本页历史上写死过 3 组过期计数。
 
 ## 0. 先读什么（建议顺序）
 
@@ -113,4 +113,7 @@
 - 删除子发片要**重算挖洞**（程序化流程 + 文件保存数据都要处理）；直接桥接要跟随 region 中心（rootRow=round((rowMin+rowMax)/2)）。
 - 浮动面板 / 3D 选区标记对 null surface（split 父回退时）必须安全。
 - **UV 打包 Worker 坑（0.2.110）**：worker 传 boxes 必须用 **Float64Array**——Float32 相对误差 ~6e-8 会让占位栅格 `ceil((w·k+gap)/cell)` 在边界翻转 fitsAt 布尔值 → 采样 k 整步跳变，破坏「异步与同步逐位一致」；node 测试注入 worker_threads 必须传 **URL 对象**（`file://` 字符串抛 ERR_WORKER_PATH，会静默走回退路径让测试假绿，加「池真实使用」断言防）。
-- **?v= 缓存号必须定点刷新，不要全局替换（0.2.110 教训）**：dom-contract 测试冻结了 app.js/index.html 里的具体版本串，全局刷新会一次打挂 89 条断言。只在本次改动链上 bump（如 project-files→uv-pack/uv-pack-async、app.js→project-files、index.html→app.js）。
+- **?v= 缓存号必须定点刷新，不要全局替换（0.2.110 教训）**：dom-contract 测试冻结了 app.js/index.html 里的具体版本串，全局刷新会一次打挂 89 条断言。只在本次改动链上 bump（如 project-files→uv-pack/uv-pack-async、app.js→project-files、index.html→app.js）。**做法（0.2.134 补）**：替换串必须**按模块名限定**（`curve-math.js?v=<旧>` → `…?v=<新>`），绝不按日期串替换——`?v=20260901-1` 被多个模块共用，其中 `clump-brush-presets.js` / `localization.js` 两个**被测试冻结**。另注意 **ESM 的失效是链接期的**：若给 app.js 换了新号而它 import 的模块没换，回访用户会用缓存里的旧模块去解析新增的 named export，直接 `SyntaxError` 整个应用打不开——所以**新增 export 的模块，其全部 import 站点都要一起 bump**（curve-math 有 13 处）。
+- **探针/验收脚本的容差要匹配存储精度（0.2.134 教训）**：`BufferAttribute` 的 position 是 **Float32Array**，`float32(z+d)` 与 `float32(z−d)` 的舍入差在 0.25 量级上就有 ~1.5e-8。用 1e-12 之类的「看起来很严」的容差断言对称性/镜像性会**假红**（本轮实测报了一次 FAIL，实为探针自己的错）。float32 的 eps 尺度约为 `|value| × 1.2e-7`，逐位断言只在「同一条代码路径产出同一个值」时才成立（如 `amount==0` 与基线对比），跨符号/跨路径请用 1e-6。
+- **`fileApi` 只导出函数，别从它读状态（0.2.134 教训）**：`currentProjectName` / `quickSaveFileHandle` / `lastExport` 这些 getter 在**传进** `createProjectSaveApi` 的 deps 对象上，**不在返回值上**。从 `fileApi` 读得到 `undefined`（`JSON.stringify` 还会把它整个字段丢掉，看起来像"字段不存在"），写则凭空造出一个同名普通属性、读回来还是你写进去的值——于是「句柄被清掉了吗」这类断言会**假绿**。要读真实状态请走 `projectState.state`（已挂在 `__AHS_TEST_SEAM__` 上）。
+- **DOM 计数类断言先确认它非平凡（0.2.134 教训）**：outliner 的发丝行（`.lock-item`）**只在分组展开时才渲染**，所以「New 之后行数为 0」在加载了 26 根发丝时**同样为 0**，断言恒真、抓不到回归。这类断言要么改成断言前后**差值**，要么换一个用户真正看得见的量（本轮改用 `scene.traverse` 数 Mesh：2398 → 137）。
