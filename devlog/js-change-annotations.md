@@ -161,9 +161,17 @@
 >   （`sqrt(1−r²)` → `1−r²`）→ 量值断言逮到（偏差 5.8e-2）—— 这条证明「峰值 == amount × scale」不是
 >   只要"动了"就通过；④ 取消早退 → 行为判据放过（equivalent mutant，见上条），源码判据逮到。
 >   合计 4/5 被逮，唯一漏网者已证明为等价变异体。
-> - **顺带发现、刻意未改**：两个镜像站点对 `panelLeftEdgeTrim`/`panelRightEdgeTrim` 的处理**本就不
->   一致** —— `createMirrorPartner`（约 L9491）原样拷贝，`syncMirrorPartnerFromLock`（约 L9669）左右
->   互换。这是本轮之前就存在的差异，与半球无关；按「修 bug 不夹带设计变更」**不动**，仅在此记录。
+> - **~~顺带发现：两个镜像站点对 EdgeTrim 处理不一致~~（已实测证伪，勿据此"修 bug"）**：曾记为
+>   「`createMirrorPartner`（L9491）原样拷贝、`syncMirrorPartnerFromLock`（L9669）左右互换，疑为潜伏
+>   镜像 bug」。**这个结论是错的，只读了对象字面量、没跟控制流**：`createMirrorPartner` 在 `return`
+>   之前的 **L9563 无条件调用 `syncMirrorPartnerFromLock(lock, mirrored)`**，而它的守卫
+>   `if (!lock || !partner || partner === lock) return null` 对两个不同 lock 必然通过 ⇒ **互换总是最后
+>   执行、必然生效**，L9491–9492 的字面量是**死值**（被立刻覆盖）。**真实浏览器实测**（走 outliner 右键
+>   Mirror Instance 的真实路径，源 left/right = 0.5/0）：partner 得到 **0/0.5**，互换生效、镜像正确。
+>   **教训**：判断「同一字段在两处赋值哪个生效」必须跟到控制流，不能只对比两处字面量 —— 尤其当其中
+>   一处是构造函数、另一处是它自己在返回前调用的同步函数时。**由此推论也适用于半球三值**：它们在
+>   `syncMirrorPartnerFromLock` 里同样有一份「原样拷贝」，那份才是最终生效的（字面量那份是死值），
+>   两处写法一致所以结论不变。
 > - **scripts/verify-hemisphere-ui.mjs（新增，18/18，主进程补）**：上面那些都是 node 层，**滑杆接线
 >   在真实浏览器里从未验过** —— 而那正是用户实际会碰的东西。本脚本在真实工程 Sussurro_v1_0060.ahs
 >   的 panel（Front Bangs 1）上驱动真实滑杆：控件在 panel 上可见且带蓝框、默认中性 0、派发 `input`

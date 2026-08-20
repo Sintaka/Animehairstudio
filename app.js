@@ -9488,6 +9488,11 @@ function createMirrorPartner(lock, options = {}) {
     panelLengthLoops: lock.panelLengthLoops,
     panelWidthLoops: lock.panelWidthLoops,
     panelCurvature: lock.panelCurvature,
+    // 注意：本对象字面量里的 panel 字段大多是**死值** —— 本函数在 return 前的
+    // `syncMirrorPartnerFromLock(lock, mirrored)`（见下方，无条件调用）会把它们全部重写，
+    // 那里才是镜像语义的真源。左右 EdgeTrim 在那里是**互换**的（本处看起来"没互换"因此
+    // 不是 bug，已用真实浏览器实测确认：源 0.5/0 ⇒ partner 0/0.5）。
+    // 勿据本处字面量判断镜像行为，也勿"顺手把这里改成互换"——那会变成互换两次。
     panelLeftEdgeTrim: lock.panelLeftEdgeTrim,
     panelRightEdgeTrim: lock.panelRightEdgeTrim,
     panelTipCurve: lock.panelTipCurve,
