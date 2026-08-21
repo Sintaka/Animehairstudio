@@ -89,6 +89,52 @@
 > - **本组由主进程完成**：原派给子智能体，但它长时间零产出（`styles.css` mtime 未变），按规范
 >   「子智能体中途失败时主进程直接接手」接管，并 `interrupt_agent` 掉它以免回头覆写。
 
+## 最近更新（0.2.143：Scalp Conform 第四版模型 —— 逐行绕头部胶囊轴的同心 wrap）
+
+> 替换 0.2.138–0.2.142 那一版（弯曲发生在面板自己的 `(frame.x, frame.z)` 平面内、
+> `bendRadius` 为全局标量）。根因、全部实测数据、8 点验收判据见
+> `in-progress/scalp-conform-bend-v4-plan.md`（权威文档），本条目只描述两个改动文件里
+> 实际改了什么。
+>
+> - **`modules/geometry/curve-math.js`**：只改了 `panelBendCrossSection` 上方的注释块
+>   （模型说明、四条由构造保证的性质、Houdini Bend SOP 实测的外部佐证），**函数本体
+>   一字未改** —— 它本来就是「吃一个 2D 截面采样器 + 一个曲率标量，返回逐段保长弯曲后的
+>   `{lateral, normal, angle}`」的平面无关内核，选哪张平面是调用方的事，换轴不需要动它。
+>   `PANEL_SCALP_CONFORM_DEFAULTS` 未变（仍是 `{amount: 0, gap: 0.02}`）。
+> - **`modules/geometry/panel-tip-strand.js`**：
+>   - `panelScalpConformParams(lock)` 不再返回 `bendRadius`（那是「水平平均半径 + gap」的
+>     单一全局标量，根因 B），改为返回 `center`（头部代理中心，`THREE.Vector3`，世界空间）；
+>     `amount`/`gap` 字段不变。`scaleX`/`scaleY`/`scaleZ` 不再在本函数里出现（卷绕半径已是
+>     逐行实测距离，代理缩放通过「面板落在 center 什么相对位置」隐式生效）。
+>   - `panelScalpConformOffsets(params, sample, u, shellOffset, cache, cacheKey, frame)`
+>     的最后一个参数从 `lateralAxis`（该行 `frame.x`）改为 `frame`（该行完整的
+>     `{point, x, y, z}`）。函数体内逐行推导：胶囊轴最近点
+>     `A = (center.x, min(center.y, frame.point.y), center.z)`（中心高度以上退化为球冠、
+>     以下是竖直线，即圆柱）、径向 `radialHat`、法向 `normalHat`（与 `frame.z` 同侧）、
+>     宽度方向投影到切平面得到 `lateralHat`、曲率 `k = params.amount / (radius + params.gap)`、
+>     弯曲轴 `axisHat = lateralHat × normalHat`。用一个内部适配器 `sample2` 把
+>     `sample(v)` 原本在 `(frame.x, frame.z)` 里的一对系数转换到 `(lateralHat, normalHat)`
+>     基上，再调用**未改动的** `panelBendCrossSection`；沿 `axisHat` 的分量原样携带
+>     （bend 的定义：点只在垂直于弯曲轴的平面内移动）。返回值从 `{lateral, normal}`
+>     变成一个世界空间 `THREE.Vector3` 偏移（起点为 `frame.point`），因此两个调用点也从
+>     `origin.addScaledVector(frame.x, offsets.lateral)...` 改成了
+>     `frame.point.clone().add(offsets)`。
+>   - **两道早退门**：`params.amount === 0` 与 `u === 0`（新增，第四版起）都直接
+>     `return null`，调用方走原表达式。旧版只有前一道门；`u===0` 这道门是新模型「换基
+>     再还原」这条路径特有的，没有它会在浮点往返里给中线留下噪声。
+>   - 缓存策略不变（同一个 per-build `Map`，key 仍含 `sampleT`），只是缓存的内容从
+>     `{lateral, normal}`（那对系数）换成了 `{offset, shellDirection}`（世界空间向量 +
+>     弯后法向单位向量），`shellOffset` 仍在缓存之外通过 `shellDirection` 叠加。
+>   - 两个消费点 `rawPanelPoint`（`createPanelStrandGeometry` 内）与
+>     `tipMainSectionPoint`（宽度把手截面复刻）都已改为传整个 `frame` 并用
+>     `offsets ? origin.clone().add(offsets) : <原表达式>` 的形状，两处逐字节同构。
+>   - **`k·cos²α`（0.2.142 引入的水平度衰减）已删除**，连同它依赖的 `lateralAxis` 参数
+>     一起被 `frame` 取代；新模型下衰减是投影 `x̂_t = normalize(frame.x − (frame.x·n̂)n̂)`
+>     的自然结果（宽度方向指向头心时退化为零向量），不再需要额外系数。
+> - **测试**：`tests/panel-scalp-conform.test.mjs` 按第四版模型整体重写（断言参见文件头
+>   注释的八条不变式）；`scripts/probe-conform-diagnosis.mjs` 等诊断/实验脚本按计划文档
+>   §10 属临时件。版本号三件套已 bump 到 `0.2.143`。
+
 ## 最近更新（0.2.142：曲率按宽度方向的水平度缩放 —— 修倾斜面板的 sweep 边缘挤压）
 
 > 用户确认 tube 弯曲本身是对的（「尤其是末端, 记住就这么处理」），但报告：「整个发片有点只是

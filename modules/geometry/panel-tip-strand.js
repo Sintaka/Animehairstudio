@@ -465,14 +465,25 @@ function tipPanelFrameAt(lock, t) {
   return { point, x, y, z };
 }
 
-// 半球隆起的 lock 读取 + 世界尺度：**本文件内唯一定义点**，rawPanelPoint（几何）与
-// tipMainSectionPoint（宽度把手的截面复刻）都必须经它取参数，否则网格鼓起来而把手
+// Scalp Conform 的 lock/deps 读取：**本文件内唯一定义点**，rawPanelPoint（几何）与
+// tipMainSectionPoint（宽度把手的截面复刻）都必须经它取参数，否则网格弯了而把手
 // 留在原处（该 bug 类见 devlog/bug-fixes.md #25）。
-// 世界尺度取 fullWidth * 0.5（面板半宽）：amount 因此是「相对面板自身尺寸」的比例，
-// 同一个滑杆值在大小不同的面板上给出同样的观感；用绝对世界单位会让宽面板隆起不足、
-// 窄面板炸开。fullWidth 的下限 0.01 与 createPanelStrandGeometry / tipMainSectionPoint
-// 现有的 `Math.max(0.01, Number(lock.width ?? 0.62))` 同规则（同步点：本函数是那条
-// 规则在半球尺度上的唯一消费点）。
+// **第四版删掉了那个全局弯曲半径标量**（根因 B）：它曾是
+// `(radius·scaleX + radius·scaleZ)/2 + gap` 这个**单一值**、对所有行通用，而各行到头心的
+// 真实距离实测是 1.021..1.440 ⇒ 外侧行按过小的半径过度卷绕、直接扎进头皮
+// （amount=0.87 最深穿透 +0.235）。半径现在改为**逐行**在 panelScalpConformOffsets 里取
+// 「该行到胶囊轴的真实距离」，所以本函数只需交出 `center`。
+// **`scaleX`/`scaleY`/`scaleZ` 与 `radius` 因此也不再被读取**，于是不必再决定哪些轴参与平均
+// （旧版取水平平均、刻意排除 scaleY，那套取舍随该标量一起没了）。
+// **⚠️ 实测口径：代理的缩放与半径对 conform 结果的影响是「零」，不是「间接」**（勿写成间接 ——
+// 本轮逐位实测：scaleX=1.4 / scaleZ=1.6 / scaleY=0.5 / 三轴=2.0 / radius=2.0 / radius=0.3
+// **全部逐位相同**，maxDiff = 0；同一探针里只把 center.y 从 0.9 挪到 0.2 就变了 5.729e-1）。
+// 成因：卷绕半径 R = 该行到胶囊轴的真实距离，而**行的位置来自授权数据 `lock.points`**、不来自
+// 代理 ⇒ 缩放代理既不移动面板也不移动 center，也就不改变任何东西。
+// **这是相对 0.2.138–142 的用户可见变化**（那版 scaleX/scaleZ 直接进弯曲半径，放大头会让卷绕变松），
+// 属本模型的固有语义：conform 卷的是「过面板自身的同心面」（amount=1 ⇒ 弧半径恰为 R+gap），
+// 而不是「贴到头皮表面上」。所以放大头模不会让面板跟着让开 —— 若这不是想要的手感，要改的是
+// 模型（把 R 改成到代理**表面**的距离），不是在这里补一个缩放系数。
 // geometryType === "surface"（lattice 控制）恒 0：与 panelTipCurve / panelLeftEdgeTrim
 // 的既有先例一致（tipOffsetSampleT 与 createPanelStrandGeometry 都在 latticeControlled
 // 时把这些强制为 0）—— lattice 面板的形状由控制网格直接决定，程序化形变不适用。
@@ -481,10 +492,6 @@ function panelScalpConformParams(lock) {
     ? 0
     : THREE.MathUtils.clamp(Number(lock?.panelScalpConformAmount ?? 0), -1, 1);
   const proxySource = deps.scalpSurface || PANEL_SCALP_PROXY_FALLBACK;
-  // 椭球 → 单位球的三个轴缩放，与 scalp-builder 的 updateScalpSurface 同规则
-  // （`scalpSurfaceGroup.scale = radius * scaleXYZ`）。刻意**不读 Object3D 的 matrixWorld**：
-  // 几何重建时机比渲染早，那个矩阵可能是脏的；从纯数据推变换永远是当前值。
-  const radius = Math.max(0.001, Number(proxySource.radius ?? 1));
   return {
     amount,
     gap: THREE.MathUtils.clamp(
@@ -492,53 +499,117 @@ function panelScalpConformParams(lock) {
       0,
       0.5
     ),
-    // 弯曲半径 = 头皮**水平**平均半径 + gap。取水平（x/z）而不含 y：弯曲轴是竖直的
-    // （用户："按照头的中心那里有个竖着的 tube"），竖直方向的椭球缩放与卷绕无关。
-    // 用户明确选了"弧半径参考头皮半径"，所以这里读真实 scalpSurface 而不是常数。
-    bendRadius: Math.max(
-      0.05,
-      (radius * Math.max(0.001, Number(proxySource.scaleX ?? 1))
-        + radius * Math.max(0.001, Number(proxySource.scaleZ ?? 1))) * 0.5
-        + THREE.MathUtils.clamp(Number(lock?.panelScalpConformGap ?? PANEL_SCALP_CONFORM_DEFAULTS.gap), 0, 0.5)
+    // 头部代理中心（**世界空间**），胶囊轴由它推出。刻意**不读 Object3D 的 matrixWorld**：
+    // 几何重建时机比渲染早，那个矩阵可能是脏的；从纯数据推变换永远是当前值。
+    center: new THREE.Vector3(
+      Number(proxySource.x ?? 0),
+      Number(proxySource.y ?? 0.9),
+      Number(proxySource.z ?? 0)
     )
   };
 }
 
-// Bend 后的一对系数（调用方用法：`point = origin + lateral·frame.x + normal·frame.z`）。
-// 0.2.139 起 **camber 折进截面曲线本身**：`sample(v)` 必须返回该 v 处的**中面**
-// `{ lateral, normal }`（含 camber、不含 shell 厚度），本函数把该截面曲线弯到额外曲率
-// `k = amount / bendRadius` 上并**严格保弧长**（离散逐段保长，见 curve-math 的推导）。
+// 逐行绕**头部胶囊轴**的同心 wrap：**唯一定义点**，弯曲平面与曲率都在这里从头部代理推出。
+// 返回值是**世界空间的 `THREE.Vector3` 偏移，起点为 `frame.point`**（调用方用法：
+// `point = frame.point.clone().add(offsets)`）。为什么不能再返回 `{lateral, normal}`：那对
+// 系数隐含基 = `(frame.x, frame.z)`，而弯曲平面已不再是那张平面 —— 这是一次**受控 API 变更**，
+// 影响**恰好 2 个消费点**（几何 `rawPanelPoint`、宽度把手复刻 `tipMainSectionPoint`），两处
+// 必须同步改，否则绿色宽度把手会浮在面板外（bug-fixes.md #25 那一类），有跨消费方一致性测试咬住。
+//
+// 逐行推导（`frame` = 该行的完整 frame，`params.center` = 头部代理中心）：
+//   胶囊轴最近点 A = (C.x, min(C.y, P.y), C.z)、半径 R = |P − A|、径向 r̂ = (P − A)/R；
+//   弯曲平面 = (x̂_t, n̂)、弯曲轴 â = x̂_t × n̂ —— **完全由头部几何决定，与曲线切线无关**。
+// `camber` 已折进 `sample(v)` 返回的**中面**截面（0.2.139，含 camber、不含 shell 厚度），
+// 本函数把它弯到 `k = amount / (R + gap)` 上并**严格保弧长**（离散逐段保长，见 curve-math）。
 // `shellOffset` 是"中面之外"的部分（shell·thickness/2 + centerZ 权重），沿**弯后法向**
 // 放上去，因此厚度不被剪切。
-// 返回 null = 无弯曲（amount==0），让调用方走原表达式、保持逐位守恒。
+//
+// **两道早退门都是契约，不是优化**：`amount === 0` ⇒ 逐位等于平板（调用方走原表达式）；
+// `u === 0` ⇒ **中线逐位不动**，这是主发片控制点（落在授权曲线上）天然对齐的**结构性**依据。
+// 没有 `u===0` 那道门，「换基再还原」（世界 → (x̂_t, n̂, â) → 世界）的浮点往返会在中线上留下
+// 噪声、把该契约破在末位。
 // `cache`/`cacheKey` 可选：**弯后截面与 shell 无关**（shellOffset 在结果之外才加上），而
 // rawPanelPoint 按 front/back 各调一次 ⇒ 同一 (sampleT, u) 的积分本会跑两遍。实测重复倍数
 // 恰好 **2.00×**（198 顶点 / 99 个去重 (row,u) 组合），故传一个 per-build 的 Map 即可无条件
 // 砍掉一半积分。**key 必须含 sampleT 本身** —— `sampleT` 在 tipCurve≠0 或左右 EdgeTrim 不等时
 // 是 u 的函数，用 (row, u) 之类的索引做 key 会把不同截面混成一份、静默给出错误几何。
-// `lateralAxis` = 该行的 frame.x（宽度方向，世界空间）。0.2.142 起用它把曲率按**宽度方向的
-// 水平度**缩放：`k_eff = k · (1 − (x̂·up)²) = k · cos²α`。
-// **为什么必须有这一项**：弯曲发生在面板自己的 (frame.x, frame.z) 平面内，等价于绕 frame.y
-// 转 —— 而 frame.y 是**面板切向**，只有发尖那种近竖直的地方才≈竖直轴。前额面板倾斜时轴也
-// 跟着倾，宽度一大，边缘就被拧挤（用户："前额那些又倾斜的地方在宽度较大的时候直接这样旋转
-// 会导致 sweep 边缘挤压"）。按柱面的 Euler 公式，绕**竖直**轴的柱面在偏离水平 α 的方向上
-// 法曲率是 `k·cos²α`，所以缩放系数就是宽度方向的水平度平方。
-// 发尖（x̂ 水平、α≈0）⇒ 系数≈1，保持你确认过的 tube 手感；倾斜处按余弦平方自动减弱。
-function panelScalpConformOffsets(params, sample, u, shellOffset, cache = null, cacheKey = null, lateralAxis = null) {
+// **第四版起缓存的是「加 shell 之前」的世界向量**（步骤 1–12），与旧版同构：`shellOffset` 仍在
+// 缓存之外才加。**既有 key 无需扩充**：新引入的 `frame`（进而 A / R / x̂_t / â / k）是 `sampleT`
+// 的**确定性函数**（`panelFrameAt(sampleT)` 纯由 frames 链插值得出），已被 key 里的 sampleT 覆盖。
+// `frame` = 该行的完整 frame（`{point, x, y, z}`，世界空间）。**必须传整个 frame 而不是 frame.x**：
+// 弯曲平面要由 `frame.point` 相对头心的位置推出，只给宽度轴推不出半径与径向。
+// **0.2.142 的 `k·cos²α` 已删除**：那是对**错误轴**（= 曲线切线）的症状补偿 —— 它让倾斜处少弯，
+// 代价是该贴合的地方也不贴。删除的正当理由是**轴已经对了、不需要补偿**：`x̂_t` 的职责是把弯曲
+// **平面**定到同心面的切平面上，它不是一个幅度衰减项。
+// **⚠️ 计划 §5.3「若宽度方向直指头心则 x̂_t → 0、弯曲自行消失」是错的（本轮实测证伪，勿据此
+// 以为有内建衰减）**：`x̂_t` 在**归一化之前**确实趋于 0，但它**被归一化**，所以弯曲平面始终良定义。
+// 实测把宽度轴从切向转到径向（α: 0→89.999°），位移量恒为 1.75144（β=0）/1.74259（β=25°）/
+// 1.71994（β=55°）—— **全程不衰减**，到 α=90° 才由下面的 `1e-12` 守卫落到 flat 分支。
+// 那个恒定值本身是**对的**：截面落在 `span{frame.x, frame.z}` 内，在该平面内滚动 frame 只是给
+// 同一条几何曲线换坐标标签，与「弯曲取自头、不取自 frame」的不变式一致。
+// **已知限制**：α 恰为 90°（宽度轴与径向平行）时守卫返回 null ⇒ 位移从 ~1.75 跳到 0。该构型是
+// 零测集（守卫只在距 90° 约 1e-6 rad 内触发），浮点上基本不可达，故本轮不处理；要处理属设计
+// 决策（「edge-on 面板该弯成什么样」），不是实现细节。
+function panelScalpConformOffsets(params, sample, u, shellOffset, cache = null, cacheKey = null, frame = null) {
   if (!params || params.amount === 0) return null;
-  // up 取世界 +Y：弯曲轴是竖直的（用户原话「头的中心那里有个竖着的 tube」）。
-  const vertical = lateralAxis ? lateralAxis.y : 0;
-  const horizontality = Math.max(0, 1 - vertical * vertical);
-  const k = (params.amount / params.bendRadius) * horizontality;
-  let bent = cache && cacheKey !== null ? cache.get(cacheKey) : null;
-  if (!bent) {
-    bent = panelBendCrossSection(sample, u, k);
-    if (cache && cacheKey !== null) cache.set(cacheKey, bent);
+  const target = Number(u) || 0;
+  if (target === 0) return null;
+  if (!frame) return null;
+  let cached = cache && cacheKey !== null ? cache.get(cacheKey) : null;
+  if (!cached) {
+    // 胶囊轴上的最近点：头心高度**以上**退化为 center 本身（球冠 ⇒ 根部得到纬度式包裹）、
+    // **以下**是过 center 的竖直线（圆柱 ⇒ 长发直垂，不朝下巴底下卷）。min 而非 clamp：
+    // 胶囊向下无限延伸，长发再长也仍绕同一根竖直轴。
+    const axisPoint = new THREE.Vector3(
+      params.center.x,
+      Math.min(params.center.y, frame.point.y),
+      params.center.z
+    );
+    const radial = frame.point.clone().sub(axisPoint);
+    const radius = radial.length();
+    if (radius < 1e-6) return null; // 行落在轴上 ⇒ 径向无定义，不弯（而不是除零炸开）
+    const radialHat = radial.divideScalar(radius);
+    // 让径向与面板自己的法向同侧：正的 amount 因此**恒朝头部方向**弯，与面板被翻到哪一面无关。
+    const normalHat = frame.z.dot(radialHat) < 0 ? radialHat.clone().negate() : radialHat.clone();
+    // 宽度方向投影到该同心球/圆柱的切平面。长度退化 ⇒ 宽度方向直指头心，没有可卷的分量。
+    const lateralHat = frame.x.clone().addScaledVector(normalHat, -frame.x.dot(normalHat));
+    if (lateralHat.lengthSq() < 1e-12) return null;
+    lateralHat.normalize();
+    const k = params.amount / (radius + params.gap);
+    const axisHat = new THREE.Vector3().crossVectors(lateralHat, normalHat);
+    // 适配层：把平截面从 (frame.x, frame.z) 换到 (x̂_t, n̂) 这张平面里，再交给**未改动的**内核。
+    const sample2 = (v) => {
+      const flat = sample(v);
+      const displacement = frame.x.clone().multiplyScalar(flat.lateral).addScaledVector(frame.z, flat.normal);
+      return { lateral: displacement.dot(lateralHat), normal: displacement.dot(normalHat) };
+    };
+    const bent = panelBendCrossSection(sample2, target, k);
+    // 沿弯曲轴的分量**原样携带** —— 这就是 bend 的定义（点只在垂直于轴的平面内移动）。
+    // 保长后果：内核逐段保**面内**长度，而 residual(v) 弯前弯后逐位相同 ⇒ 每段的完整 3D 长度
+    // `sqrt(面内² + Δresidual²)` 在**内核自己的分段**上守恒。
+    // **但这不等于「UV 的 U 不变」，勿据此以为 U 是安全的**：同一条错误在 0.2.138 的注释里已经
+    // 犯过一次（那处已自我更正，见 curve-math「我曾在此断言…那是**错的**」）。uv-unfold 的 U 由
+    // **row 0 在网格顶点之间**的弦长累加得出，而网格顶点间距是内核分段的**再一次**离散化：本轮
+    // 实测 row-0 弦长和比值 amount=0.5 ⇒ 0.9994、0.87 ⇒ 0.9947、**1 ⇒ 0.9925**，不是 1.000000。
+    // U 尺度确实会漂；解法（给 gridUvTable 传**未弯曲**的 referenceCircumference，该参数已在
+    // 签名里）属 devlog 已知未解项，本轮不做。
+    const flatTarget = sample(target);
+    const displacementTarget = frame.x.clone().multiplyScalar(flatTarget.lateral)
+      .addScaledVector(frame.z, flatTarget.normal);
+    const residual = displacementTarget.dot(axisHat);
+    cached = {
+      offset: lateralHat.clone().multiplyScalar(bent.lateral)
+        .addScaledVector(normalHat, bent.normal)
+        .addScaledVector(axisHat, residual),
+      // 弯后法向（`angle` = 弯后切向角），厚度沿它放置。
+      shellDirection: normalHat.clone().multiplyScalar(Math.cos(bent.angle))
+        .addScaledVector(lateralHat, -Math.sin(bent.angle))
+    };
+    if (cache && cacheKey !== null) cache.set(cacheKey, cached);
   }
-  return {
-    lateral: bent.lateral - shellOffset * Math.sin(bent.angle),
-    normal: bent.normal + shellOffset * Math.cos(bent.angle)
-  };
+  // `shellDirection` 是单位向量（n̂ ⟂ x̂_t 且 cos² + sin² = 1）⇒ front/back 两壳间距恒为
+  // thickness，厚度不被剪切成斜的。
+  return cached.offset.clone().addScaledVector(cached.shellDirection, shellOffset);
 }
 
 
@@ -597,16 +668,15 @@ function tipMainSectionPoint(lock, t, u, shell, bone, segmentIndex = -1, splits 
   // **那条原表达式刻意写成 `mid.normal + shell*… + centerZ*…` 而不复用 shellOffset**：
   // 左结合顺序必须与 0.2.138 前逐字节一致，否则 `amount==0` 的逐位守恒契约会在末位破掉。
   const conform = panelScalpConformParams(lock);
-  // 传 frame.x：曲率按宽度方向的水平度缩放（详见 panelScalpConformOffsets 头注释）。
+  // 传**整个 frame**（不是 frame.x）：弯曲平面与半径要由 frame.point 相对头心的位置推出。
   // 把手侧无 per-build memo（ad-hoc 调用），故 cache/cacheKey 传 null。
-  const offsets = panelScalpConformOffsets(conform, midAt, u, shellOffset, null, null, frame.x);
+  const offsets = panelScalpConformOffsets(conform, midAt, u, shellOffset, null, null, frame);
+  if (offsets) return origin.clone().add(offsets);
   return origin.clone()
-    .addScaledVector(frame.x, offsets ? offsets.lateral : mid.lateral)
+    .addScaledVector(frame.x, mid.lateral)
     .addScaledVector(
       frame.z,
-      offsets
-        ? offsets.normal
-        : mid.normal + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1)
+      mid.normal + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1)
     );
 }
 
@@ -1022,9 +1092,11 @@ function createPanelStrandGeometry(lock) {
     // 保弧长**。amount == 0 ⇒ offsets 为 null ⇒ 走原表达式（conform 在函数外一次算好，不分配）。
     // **原表达式刻意不复用 shellOffset**：左结合顺序必须与 0.2.138 前逐字节一致，否则
     // `amount==0` 的逐位守恒契约会在末位破掉。
-    // 弯后截面与 shell 无关，而本函数按 front/back 各调一次 ⇒ 传 per-build 的 memo 砍掉一半
-    // 积分（实测重复恰好 2.00×）。key 含 sampleT 本身而非 row 索引：sampleT 在 tipCurve≠0 或
-    // 左右 EdgeTrim 不等时是 u 的函数，用索引会把不同截面混成一份、静默给出错误几何。
+    // 弯后（加 shell 之前的）世界偏移与 shell 无关，而本函数按 front/back 各调一次 ⇒ 传
+    // per-build 的 memo 砍掉一半积分（实测重复恰好 2.00×）。key 含 sampleT 本身而非 row 索引：
+    // sampleT 在 tipCurve≠0 或左右 EdgeTrim 不等时是 u 的函数，用索引会把不同截面混成一份、
+    // 静默给出错误几何。新引入的 frame 不必进 key —— 它是 panelFrameAt(sampleT) 的确定性函数。
+    // 传**整个 frame**（不是 frame.x）：弯曲平面与半径由 frame.point 相对头心的位置推出。
     const offsets = panelScalpConformOffsets(
       conform,
       midAt,
@@ -1032,15 +1104,14 @@ function createPanelStrandGeometry(lock) {
       shellOffset,
       bendSectionCache,
       `${sampleT}:${u}:${segment}:${boneToken(bone)}`,
-      frame.x
+      frame
     );
+    if (offsets) return frame.point.clone().add(offsets);
     return frame.point.clone()
-      .addScaledVector(frame.x, offsets ? offsets.lateral : mid.lateral)
+      .addScaledVector(frame.x, mid.lateral)
       .addScaledVector(
         frame.z,
-        offsets
-          ? offsets.normal
-          : mid.normal + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1)
+        mid.normal + shell * thickness * 0.5 + centerZ * profileTopologyCenterWeight(shell, -1, 1)
       );
   };
   const panelPoint = (row, u, shell, bone = null, segment = -1) => {
