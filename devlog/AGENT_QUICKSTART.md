@@ -12,6 +12,8 @@
 4. `devlog/main-sync-conflicts.md` —— 与 main 合并的全部决策（Local 选项移除、桥接区与 compound 并存策略、17 处冲突分类）
 5. 按需跳读：`devlog/APPJS_SPLIT_GUIDE.md`（**从原版拆分指引**：历程/当前架构/拆分模式/每批执行模板/踩坑/定位字典，新 agent 必读）、`devlog/js-change-annotations.md`（子系统索引表 + 指向 6 个 `annotations-*.md` 专题文件）、`devlog/FUNCTION_INDEX.md`（机器生成，0.2.126 重新生成：2,293 函数 / 105 文件；**过期就跑 `node scripts/gen-function-index.js`**，勿手改）、`devlog/STATE_MANAGEMENT.md`（**状态管理架构：18 个 store 清单 + 发尖选中键 §2.1 + 替换验证 9 点**）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）、`devlog/in-progress/wind-preview-plan.md`（**吹风预览已实施；仅碰撞路线图未实施**）、`devlog/in-progress/uv-pack-parallel-plan.md`（UV 打包并行，0.2.110 已实施，Phase 2 未做）
 
+> **收尾必做**：本轮结束前必须走一遍 `devlog/agent-retrospective.md` §1 的复盘清单。
+
 ## 1. 仓库结构速览
 
 - `app.js`（≈0.9MB，编排层；行数现场统计）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 等业务逻辑已按子系统迁入 modules（见 `APPJS_SPLIT_GUIDE.md` §2）。**原版 main 是 39,207 行的扁平大文件，本地已拆分（约 −47%），不要在 app.js 里堆业务逻辑，新逻辑进 modules/<domain>/ 后经 createXxxApi 注入**。

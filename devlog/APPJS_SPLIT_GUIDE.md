@@ -102,7 +102,7 @@
 3. **store 代理双重 .state 检查**：deps 传 `.state` 代理时模块内必须 `deps.X.y`，不能 `deps.X.state.y`（完整 store 对象 projectState/scalpState/head 例外，走 `deps.X.state.y`）。
 4. **引导期 deps 时序审计**：列出批填前的顶层 `api.X(` 调用，其传递闭包 deps 必须调用行前已填；批填生效行 = `});` 行。
 5. **跨批次重接**：其它 deps 批填引用了本批函数名的改 `api.X`；seam（`__AHS_TEST_SEAM`）引用了本批函数名的必须挂 `api.X` 重导出。
-6. **编码**：UTF-8 无 BOM、CRLF、中文逐字节一致（非 ASCII 总量守恒，允许 ±1 文件头注释字符）。⚠️ `write` 与 `edit` 工具**都会静默剥掉 BOM**（0.2.125/0.2.129 共中 6 次，`index.html` 与 `dom-contract.test.mjs` 有 BOM，改这两个文件后必须字节级复核并还原）。
+6. **编码**：UTF-8 无 BOM、CRLF、中文逐字节一致（非 ASCII 总量守恒，允许 ±1 文件头注释字符）。**现状（0.2.131 起，本条已核实与 `tests/encoding-contract.test.mjs` 一致）：全仓库无 BOM，`index.html` 与 `tests/dom-contract.test.mjs` 也已无 BOM，由该测试的「无 tracked 文件带 BOM（白名单为空）」断言守住 —— 改这两个文件后**不要**再去"还原 BOM"，那会把 encoding-contract 测试改红**。历史成因（为什么这条曾经写着要还原）：`write`/`edit` 工具**确实会静默剥掉 BOM**（0.2.125/0.2.129 共中 6 次），当时这两个文件还带 BOM，所以每次改动都要人工补回；0.2.131 起改为全仓库直接去 BOM（`node scripts/strip-utf8-bom.mjs`）并用测试守住，工具剥 BOM 的行为不再是问题——没有 BOM 就没有可剥的对象。
 7. **语法**：`Copy-Item app.js $env:TEMP\app_check.mjs -Force; node --check $env:TEMP\app_check.mjs` + `node --check <模块>`；**再以 .mjs 副本权威解析**。原因：仓库根 `package.json` **没有** `type: module`，`node --check` 会把 app.js 当 CommonJS 解析而静默放行部分非法 ESM 语法（`modules/package.json` 有 `type: module`，故模块文件本身按 ESM 解析）。
 8. **回归**：
    - `node --test "tests/*.test.mjs"` → **350 pass / 0 fail**（16 文件；dom-contract **108/108**）。⚠️ `uv-pack-async` 是**负载相关 flake**（Worker 池单条最慢 ≈14s、该文件 ≈35s）：并行跑多个子智能体时可能报**恰好 1 条** fail，单独跑或降载重跑即绿——见到这个形态**先重跑**再怀疑代码。
@@ -131,7 +131,7 @@
 - **`?v=` 缓存号必须定点 bump，不要全局替换**（0.2.110 教训）：`dom-contract.test.mjs` 冻结了具体版本串。**0.2.129 实测该文件有 10 条 `?v=` 断言**（`app.js` ×3、`styles.css`、`localization`、`surface-lattice`、`sculpt-brush`、`clump-brush-presets`、preset 资源 ×2）——旧文档写的「一次打挂 89 条」是 0.2.110 当时的滞后失败总数，不是缓存号断言数，勿据此估算影响面。只 bump 本次改动链（如 `strand-tip-width`→`strand-geometry`→`app.js`→`index.html`）。
 - **朴素 grep 找不全冻结断言**（0.2.125 教训）：测试里写的是转义正则 `localization\.js\?v=`，`Select-String "localization.js?v="` **漏掉了真实存在的那一条**；照那个结论 bump 会让套件变红。要用**解析式审计**（反转义 dom-contract 里的正则 + 收集全树实际 tag + 交叉比对 + 报「同一模块被多个 tag 导入」）——该审计 0.2.125 是临时脚本、**未入库**，需要时重写。已入库的相关工具是 `scripts/check-stale-cache-params.mjs`，但它做的是**另一件事**：按被 import 文件的最后提交日期判断 `?v=` 是否过期，**不检查 dom-contract 的冻结断言**。
 - **`check-stale-cache-params.mjs` 的两个坑（0.2.134 实测）**：① 它**硬编码** `const ROOT = "D:/code/dev/web/Animehairstudio"`（L6），所以在 worktree 里跑、或用绝对路径指向另一个 checkout 的副本跑，**扫的仍是主树** —— 我据此做过一次「baseline vs HEAD」对比，两边都得 57、以为是"无变化"，其实是**同一次扫描重复了两遍**，结论无效。要比两个版本必须自己按 `git show <rev>:<file>` 重算，`lastMod` 也要带上 `<rev>`（`git log -1 <rev> -- <file>`），否则日期取的是当前 HEAD 的。② 它报的 57 条是**长期存量**，不是当轮回归：成因是 0.2.131（全仓库去 BOM）那类**广泛触碰文件**的提交把大量模块的 last-commit 日期推到今天，而没人做过 `?v=` 的**传递闭包**刷新。**判据**（0.2.134 实测口径）：真正会让回访用户打不开应用的只有一种情形 —— **新文件 import 旧依赖而旧依赖没有那个新增 export**（ESM 是链接期解析，直接 `SyntaxError`）。所以 bump 后要验的不是"57 条清零"，而是**新增 export 的那条链是否端到端全新**（本轮实测：`index.html`→`app.js`→`panel-tip-strand.js`→`curve-math.js` 全部 `?v=20260909-2`，且新增 export 只被 `panel-tip-strand.js` 跨文件 import）。其余「旧文件 import 旧依赖」的组合**自洽、不会崩**，只是浏览器多留一份旧模块。本轮 baseline 58 → HEAD 57、**新增 0 条**（curve-math 的 13 个消费方一起 bump 反而清掉 1 条存量）。
-- **BOM**：`write` 与 `edit` **都会**静默剥 BOM；**PowerShell 的 BOM 审计会说谎**（`Get-Content -Encoding Byte` 把带 BOM 的文件报成无 BOM，`>` 重定向 git 输出按 UTF-16 写盘凭空造出 `FF FE`）。用 node 读字节判定。
+- **BOM（结论已按 pwsh 7 更新，勿照旧条执行）**：仍然有效的只有一条方法论 —— **判 BOM 用 node 读 Buffer 前三字节**（`EF BB BF`）；`Get-Content -Encoding Byte` 与 .NET `ReadAllText` **都会在读取/解码时吞掉 BOM**，据此下结论会得到反的答案。已失效的两条：① 「`write`/`edit` 会剥 BOM」—— 事实仍成立，但全仓库已无 BOM（0.2.131），没有可剥的对象，不再需要每轮字节级复验；② 「`>` 重定向按 UTF-16 写盘凭空造出 `FF FE`」—— 那是 **pwsh 5.1** 的行为，pwsh 7（本仓库硬要求，实测 7.6.5）已修复，且 `Set-Content`/`Out-File`/`>` **不带 `-Encoding` 时默认就是 UTF-8 无 BOM**（本轮三种写法均实测）。
 - **PowerShell→node stdin 中文损坏**：管道会丢中文（变 ??）；文档写入一律 `[IO.File]::WriteAllLines($path,$lines,(New-Object System.Text.UTF8Encoding($false)))` 或用 node/工具写。
 - **信任前缀必须是命令首 token**：`git`/`node` 不在第一位就被沙箱拦（0.2.125 主进程踩了 4 次）；用 workdir 参数代替 `cd`。
 - **批量改名/替换脚本要写成文件再跑，别用 `node -e` 内联（0.2.136 教训）**：内联脚本里的正则字符类、模板串、多行解构会被 PowerShell 的引号解析吃掉，症状是**静默什么都没做**（退出码 0、无输出），照它的"成功"继续走会基于错误前提。本轮一次 `node -e` 改名脚本零输出、52 处旧标识符一个没换。写成 `scripts/tmp-*.mjs` 再 `node scripts/tmp-x.mjs`，并让脚本**逐文件打印替换数 + 回读校验**（0.2.57 有过"批量脚本 lines.join 覆盖丢失替换"的先例）；跑完即删。
@@ -159,7 +159,7 @@
 - **模块需要新的 app.js 依赖**：走 deps 注入（模块内 `deps.X`，app.js 批填 `X: 引用`），不要改成模块内裸引用。
 - **新函数要暴露给 app.js**：加进模块 return 对象，app.js 调用点改 `api.X`。
 - **改完必验证**：node --check（.mjs 副本）+ `node --test "tests/*.test.mjs"`（350/350）+ verify-smoke（9/11 基线）+ seam/契约 CDP（涉及 tip/bone 时）。
-- **编码铁律**：改任何含中文的文件都用 UTF-8 无 BOM 写入（`index.html`/`dom-contract.test.mjs` 例外，它们**有** BOM 且必须保留）；不要用 PowerShell 管道把中文喂给 node stdin。
+- **编码铁律**：改任何含中文的文件都用 UTF-8 无 BOM 写入。**⚠️ 原先此处写「`index.html`/`dom-contract.test.mjs` 例外，它们有 BOM 且必须保留」—— 该例外自 0.2.131 起已作废，且照做会把 `tests/encoding-contract.test.mjs` 改红**（现全仓库无 BOM、白名单为空；实测这两个文件前三字节分别是 `3c 21 64` / `69 6d 70`，均无 BOM）。详见本文件 §6「编码」条与 `development-standards.md`「编码统一」条。不要用 PowerShell 管道把中文喂给 node stdin（这条与 BOM 无关，仍然有效）。
 
 ### 7.2 「我要找 X 功能」→ 文件
 

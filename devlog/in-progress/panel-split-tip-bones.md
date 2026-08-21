@@ -442,7 +442,7 @@ splitBone.tip = {
 8. **一次性跳变**：8.17 帧不一致（UI 用 strandFrameAt、mesh 用 panelFrameAt）→ 新增 `tipPanelFrameAt` 复刻几何帧；8.18 烘焙未拖侧误切副曲线 → 取「编辑前有效曲线」。
 
 ### 工具链类
-9. **PowerShell 写中文/CRLF 会破坏文件**：`Set-Content -Encoding UTF8` 会加 BOM/改行尾；`| node -` 管道会乱中文。**教训：一律用 Node 读写（UTF-8 无 BOM + CRLF），或用临时 .cjs 文件执行。**
+9. **PowerShell 写中文/CRLF 会破坏文件（pwsh 5.1 时代的结论，历史记录保留）**：`Set-Content -Encoding UTF8` 会加 BOM/改行尾；`| node -` 管道会乱中文。**当时的教训：一律用 Node 读写（UTF-8 无 BOM + CRLF），或用临时 .cjs 文件执行。**本仓库已升级到 **pwsh 7+**（2026-08-19），行为已变——pwsh 7 下 `Set-Content`/`Out-File` 不带 `-Encoding` 时默认即 UTF-8 无 BOM（实测），`-Encoding UTF8` 在 pwsh 7 语义也已改为无 BOM（与 5.1 相反）。**现行口径见 `development-standards.md`**「中文文件写盘约定」「环境硬性要求：pwsh 7+」两条：仍优先用 `write`/`edit` 工具（避免 codepage 破坏中文），必须用 pwsh 时先检测 `$PSVersionTable.PSVersion.Major -ge 7`，不满足就停手报告。「`| node -` 管道会乱中文」这条不受版本影响，依然成立，不要用管道喂中文给 node stdin。
 10. **模板字符串内嵌反引号会破坏 .cjs 脚本**：devlog 内容含 markdown 反引号时，写进模板字符串会提前闭合。**教训：把长内容写进临时 .txt，脚本读取再插入。**
 
 
