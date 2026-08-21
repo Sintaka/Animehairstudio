@@ -547,6 +547,11 @@ function panelScalpConformParams(lock) {
 // 1.71994（β=55°）—— **全程不衰减**，到 α=90° 才由下面的 `1e-12` 守卫落到 flat 分支。
 // 那个恒定值本身是**对的**：截面落在 `span{frame.x, frame.z}` 内，在该平面内滚动 frame 只是给
 // 同一条几何曲线换坐标标签，与「弯曲取自头、不取自 frame」的不变式一致。
+// **一处补充（主进程复核时实测，S1 的表只覆盖了直截面）**：这个「恒定」**只对直截面成立**。
+// 含 camber 的截面实测随 α 变化（β=0 时 1.68364 → 1.19638 → 1.12581，α=0/60/89）。
+// 成因不矛盾、反而印证上面那句：`sample(v)` 是在 `frame.x`/`frame.z` 上表达的，滚动 frame 会
+// 换掉**被弯的那条几何曲线**；而直截面恰好例外 —— `sample2` 退化成弯曲平面内长度恒为 `2.5v`、
+// 倾角 α 的直线，**弧长与 α 无关**，内核按弧长工作，故结果不变。⇒ 引用「恒定」时必须说明是直截面。
 // **已知限制**：α 恰为 90°（宽度轴与径向平行）时守卫返回 null ⇒ 位移从 ~1.75 跳到 0。该构型是
 // 零测集（守卫只在距 90° 约 1e-6 rad 内触发），浮点上基本不可达，故本轮不处理；要处理属设计
 // 决策（「edge-on 面板该弯成什么样」），不是实现细节。
@@ -571,7 +576,9 @@ function panelScalpConformOffsets(params, sample, u, shellOffset, cache = null, 
     const radialHat = radial.divideScalar(radius);
     // 让径向与面板自己的法向同侧：正的 amount 因此**恒朝头部方向**弯，与面板被翻到哪一面无关。
     const normalHat = frame.z.dot(radialHat) < 0 ? radialHat.clone().negate() : radialHat.clone();
-    // 宽度方向投影到该同心球/圆柱的切平面。长度退化 ⇒ 宽度方向直指头心，没有可卷的分量。
+    // 宽度方向投影到该同心球/圆柱的切平面。**投影的作用是把弯曲平面定住，不是衰减幅度**
+    // （见上方 ⚠️：归一化之后没有内建衰减）。下面的 `1e-12` 守卫处理的是**退化**
+    // ——宽度轴与径向平行时切平面内没有方向可取，此时退回 flat 分支而不是除零。
     const lateralHat = frame.x.clone().addScaledVector(normalHat, -frame.x.dot(normalHat));
     if (lateralHat.lengthSq() < 1e-12) return null;
     lateralHat.normalize();
