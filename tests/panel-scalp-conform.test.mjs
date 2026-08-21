@@ -834,6 +834,62 @@ test("⑥d camber 边界：默认 curvature 不穿透；极端 curvature 会（�
   );
 });
 
+// ── ⑥e 厚度守恒（**网格路径 / 带缓存**）──────────────────────────────────────
+// **为什么已有的厚度测试不够**：那条走 `tipMainSectionPoint`（`cache=null`、且返回的是
+// float64），而**几何路径共用一份 per-build memo**，key 是 `(sampleT, u, segment, bone)`
+// —— **两个壳共享同一条缓存记录**（shellOffset 在缓存之外才叠加）。若哪天把「已叠加壳厚的
+// 向量」写进缓存，front 的值就会被 back 复用 ⇒ **两壳塌到同一张面上、厚度归零**，
+// 而已有测试完全看不见（它压根不走缓存）。本条直接量**网格顶点**，把该失效模式钉住。
+//
+// **容差必须是 1e-6，不能是 1e-9**：`BufferAttribute` 是 Float32Array，|p|≈2 处相对精度
+// ~2.4e-7。**负向对照**（`amount=0`，根本不进弯曲路径）实测同样落在 1e-7 量级 ⇒ 证明这点
+// 残差是**存储精度**而非 conform 引入。这正是计划 §8 判据 6 那条「跨路径比较用 1e-6，
+// 逐位断言只用于同一条代码路径同一个值」。
+test("⑥e 厚度守恒（网格路径，带缓存）：两壳不得塌到一起", () => {
+  const THICKNESS = 0.08;
+  const deviations = [];
+  for (const amount of [0, 0.5, 0.87, 1, -1]) {
+    const built = buildPanel(panelLock({ width: 5, panelThickness: THICKNESS, panelScalpConformAmount: amount }));
+    const front = new Map();
+    const back = new Map();
+    for (let vertex = 0; vertex < built.count; vertex += 1) {
+      const row = built.rows[vertex];
+      if (row < 0) continue;
+      const key = `${row}:${Math.floor(built.cols[vertex] / 2)}`;
+      (built.cols[vertex] % 2 === 1 ? front : back).set(key, vertexAt(built, vertex));
+    }
+    let worst = 0;
+    let coincident = 0;
+    let pairs = 0;
+    for (const [key, f] of front) {
+      const b = back.get(key);
+      if (!b) continue;
+      pairs += 1;
+      const separation = f.distanceTo(b);
+      worst = Math.max(worst, Math.abs(separation - THICKNESS));
+      // 塌到一起 = 缓存泄漏的直接症状。门限取 thickness 的一半，远离浮点噪声。
+      if (separation < THICKNESS * 0.5) coincident += 1;
+    }
+    assert.ok(pairs > 50, `sanity：amount=${amount} 应比较到足够多的壳对，实测 ${pairs}`);
+    assert.equal(coincident, 0, `amount=${amount}：有 ${coincident}/${pairs} 对两壳塌到一起（疑似缓存把壳厚写进了共享记录）`);
+    assert.ok(
+      worst < 1e-6,
+      `amount=${amount}：网格上两壳间距应恒为 thickness，最大偏差 ${worst.toExponential(3)}（容差 1e-6，float32 存储精度）`
+    );
+    deviations.push({ amount, worst });
+  }
+  // **负向对照的用法**：弯曲各档的偏差必须与 `amount=0`（不进弯曲路径）**同量级**。
+  // 若 conform 真的剪切了厚度，弯曲档会比对照高出一个数量级，这条就会红。
+  const control = deviations.find((entry) => entry.amount === 0).worst;
+  for (const entry of deviations) {
+    if (entry.amount === 0) continue;
+    assert.ok(
+      entry.worst < Math.max(control * 8, 1e-6),
+      `amount=${entry.amount} 的偏差 ${entry.worst.toExponential(3)} 应与对照 ${control.toExponential(3)} 同量级`
+    );
+  }
+});
+
 test("⑥c 面积比：抓坍缩而非固有行距损失（门限 0.75，被驳回的投影模型约 0.5）", () => {
   const flat = totalArea(buildPanel(panelLock({ width: 5 })));
   assert.ok(flat > 0, "sanity：平板面积必须为正");
