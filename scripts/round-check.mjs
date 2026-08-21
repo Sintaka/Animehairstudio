@@ -18,6 +18,28 @@
 //
 // ROOT 从 git 仓库根或脚本自身位置推导，绝不硬编码绝对路径（历史教训见
 // scripts/check-stale-cache-params.mjs 的硬编码 ROOT 坑）。
+//
+// ---------------------------------------------------------------------------
+// 默认静默（原话，来自另一仓库的实测结论，照抄进本注释）：
+// 「这个检查每轮收尾都要跑，通过时它的输出对主脑毫无信息量，只是白烧上下文。
+// 有问题就报，没问题不吭声——退出码是给机器看的，文字是给人看的，通过时没有
+// 人需要读任何东西。」
+// 因此：默认模式下全部判据通过 ⇒ 标准输出零字节，exit 0；只在失败时打印失败
+// 条目。传 --verbose 才恢复完整明细输出。
+//
+// VACUOUS 空集防护（原话，来自本仓库这一轮的实测教训，照抄进本注释）：
+// 「空集比对永远返回"没问题"。校验脚本必须先断言基准集非空。」
+// 本仓库这一轮已经四次栽在"判据因错误的原因变绿"上，其中就包括"空输出被
+// 误读为干净"。因此每个子命令都先断言自己的基准集非空；基准集为空时报
+// VACUOUS，即使在静默模式下也必须打印——"什么都没检查到"不构成通过。
+//
+// 四态 exit code 约定：
+//   0 = 干净（静默）
+//   1 = 发现问题（打印问题）
+//   2 = VACUOUS，基准集为空，不构成通过（始终打印）
+//   3 = 工具自身失败（git 没跑起来、文件读不到、用法错误等），这不是卫生结论
+//       （始终打印）
+// ---------------------------------------------------------------------------
 
 import { execSync } from "node:child_process";
 import fs from "node:fs";
@@ -54,6 +76,28 @@ function extractExports(source) {
 }
 
 // ---------------------------------------------------------------------------
+// Result helpers：每个子命令不再直接 console.log，而是把结构化结果收集起来，
+// 由 main()/renderResult() 统一决定"到底要不要打印、打印哪些行"。
+//   verboseLines  — --verbose 下打印的完整明细（等价于改造前的全部输出）
+//   problemLines  — 默认模式下失败(code=1)时才打印的定位信息子集
+//   alwaysLines   — VACUOUS(2) / ERROR(3) 的公告，默认模式与 --verbose 下都打印
+//   warnLines     — 不改变 exit code 的主动提示（目前只有 hygiene 的体积触发线），
+//                   默认模式与 --verbose 下都打印
+// ---------------------------------------------------------------------------
+function passResult(verboseLines) {
+  return { code: 0, ok: true, verboseLines, problemLines: [], alwaysLines: [], warnLines: [] };
+}
+function failResult(verboseLines, problemLines) {
+  return { code: 1, ok: false, verboseLines, problemLines, alwaysLines: [], warnLines: [] };
+}
+function vacuousResult(message, verboseLines = []) {
+  return { code: 2, ok: false, verboseLines, problemLines: [], alwaysLines: [`[VACUOUS] ${message}`], warnLines: [] };
+}
+function errorResult(message) {
+  return { code: 3, ok: false, verboseLines: [], problemLines: [], alwaysLines: [`[ERROR] ${message}`], warnLines: [] };
+}
+
+// ---------------------------------------------------------------------------
 // comment-only [--rev <rev>] <path...>
 // ---------------------------------------------------------------------------
 function cmdCommentOnly(args) {
@@ -64,12 +108,15 @@ function cmdCommentOnly(args) {
     else paths.push(args[i]);
   }
   if (paths.length === 0) {
-    console.log("[FAIL] comment-only: 未提供 <path...>");
-    return false;
+    // 用法错误：连基准集都没法建立，这是工具自身失败，不是卫生结论。
+    return errorResult("comment-only: 未提供 <path...>");
   }
 
+  let overallTotalChanged = 0;
   let overallNonComment = 0;
   let overallExportMismatch = false;
+  const verboseLines = [];
+  const problemLines = [];
 
   for (const rawPath of paths) {
     const rel = rawPath.replace(/\\/g, "/");
@@ -90,16 +137,19 @@ function cmdCommentOnly(args) {
       nonCommentLines.push(line);
     }
 
-    console.log(`--- ${rel} (rev=${rev}) ---`);
-    console.log(`totalChanged=${totalChanged}`);
+    verboseLines.push(`--- ${rel} (rev=${rev}) ---`);
+    verboseLines.push(`totalChanged=${totalChanged}`);
     if (totalChanged === 0) {
-      console.log(`WARN: diff 为空——无法据此判定"纯注释"，请确认路径/rev 正确`);
+      verboseLines.push(`WARN: diff 为空——无法据此判定"纯注释"，请确认路径/rev 正确`);
     }
-    console.log(`nonComment=${nonComment}`);
+    verboseLines.push(`nonComment=${nonComment}`);
     if (nonComment > 0) {
-      console.log("非注释改动行:");
-      nonCommentLines.forEach((l) => console.log("  " + l));
+      verboseLines.push("非注释改动行:");
+      nonCommentLines.forEach((l) => verboseLines.push("  " + l));
+      problemLines.push(`${rel}: 非注释改动 ${nonComment} 行 (rev=${rev})`);
+      nonCommentLines.forEach((l) => problemLines.push(`  ${rel}: ${l}`));
     }
+    overallTotalChanged += totalChanged;
     overallNonComment += nonComment;
 
     const headContent = gitOrEmpty(`show "${rev}:${rel}"`);
@@ -115,19 +165,32 @@ function cmdCommentOnly(args) {
     const added = nowExports.filter((x) => !headExports.includes(x));
     const removed = headExports.filter((x) => !nowExports.includes(x));
 
-    console.log(`exports: ${rev}=${headExports.length}, now=${nowExports.length}, identical=${identical}`);
-    if (added.length) console.log(`  added: ${added.join(", ")}`);
-    if (removed.length) console.log(`  removed: ${removed.join(", ")}`);
-    if (!identical) overallExportMismatch = true;
+    verboseLines.push(`exports: ${rev}=${headExports.length}, now=${nowExports.length}, identical=${identical}`);
+    if (added.length) verboseLines.push(`  added: ${added.join(", ")}`);
+    if (removed.length) verboseLines.push(`  removed: ${removed.join(", ")}`);
+    if (!identical) {
+      overallExportMismatch = true;
+      problemLines.push(
+        `${rel}: export 集合不一致 (rev=${rev}) added=[${added.join(", ")}] removed=[${removed.join(", ")}]`
+      );
+    }
+  }
+
+  // VACUOUS：基准集（改动行总数）为空——空 diff 恒真地"看起来没问题"，必须先拦截。
+  if (overallTotalChanged === 0) {
+    return vacuousResult(
+      `comment-only: 相对 ${rev} 的 diff 改动行总数为 0（paths=${paths.join(", ")}），无法据此判定"纯注释"`,
+      verboseLines
+    );
   }
 
   const fail = overallNonComment > 0 || overallExportMismatch;
-  console.log(
+  verboseLines.push(
     fail
       ? `[FAIL] comment-only: nonComment=${overallNonComment}, exportMismatch=${overallExportMismatch}`
       : `[PASS] comment-only: 纯注释改动，export 集合未变`
   );
-  return !fail;
+  return fail ? failResult(verboseLines, problemLines) : passResult(verboseLines);
 }
 
 function escapeRegExp(s) {
@@ -176,6 +239,15 @@ function extractModuleVersionFromContent(content, moduleBasename) {
   return m ? m[3] || null : undefined; // undefined = no import found at all
 }
 
+function gitTryShow(rev, rel) {
+  try {
+    execSync(`git show "${rev}:${rel}"`, { cwd: ROOT, encoding: "utf8" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function cmdExports(args) {
   let rev = "HEAD";
   for (let i = 0; i < args.length; i++) {
@@ -187,6 +259,15 @@ function cmdExports(args) {
     .map((s) => s.trim())
     .filter((s) => s && (/^modules\/.*\.js$/.test(s) || s === "app.js"));
 
+  // VACUOUS：基准集是"相对 rev 有改动的 .js 文件数"。为空 ⇒ VACUOUS。
+  // 注意区分：基准集非空、但没有任何模块新增 export，是正常通过（下方 PASS 分支），
+  // 不是 VACUOUS——这两种情况的判据来源不同，绝不能混为一谈。
+  if (changed.length === 0) {
+    return vacuousResult(`exports: 相对 ${rev} 有改动的 .js 文件数为 0，基准集为空`);
+  }
+
+  const verboseLines = [];
+  const problemLines = [];
   const modulesWithNewExports = [];
   for (const rel of changed) {
     const headContent = gitOrEmpty(`show "${rev}:${rel}"`);
@@ -205,17 +286,17 @@ function cmdExports(args) {
   }
 
   if (modulesWithNewExports.length === 0) {
-    console.log("no new exports; cache bump not required on this ground");
-    console.log("[PASS] exports: 无新增 export");
-    return true;
+    verboseLines.push("no new exports; cache bump not required on this ground");
+    verboseLines.push("[PASS] exports: 无新增 export");
+    return passResult(verboseLines);
   }
 
   let fail = false;
   for (const mod of modulesWithNewExports) {
-    console.log(`--- module ${mod.file} 新增 export: ${mod.added.join(", ")} ---`);
+    verboseLines.push(`--- module ${mod.file} 新增 export: ${mod.added.join(", ")} ---`);
     const sites = findImportSites(mod.basename);
     if (sites.length === 0) {
-      console.log("  (未找到 import 站点)");
+      verboseLines.push("  (未找到 import 站点)");
       continue;
     }
     const unchanged = [];
@@ -228,7 +309,7 @@ function cmdExports(args) {
       const updated = oldVal === undefined ? true : oldVal !== newVal;
       if (!updated) unchanged.push(site);
       else changedVals.add(newVal);
-      console.log(
+      verboseLines.push(
         `  ${site.file}:${site.lineNo}  old=${oldVal === undefined ? "N/A(new)" : oldVal ?? "(none)"} now=${newVal ?? "(none)"}  ${updated ? "updated" : "UNCHANGED"}`
       );
     }
@@ -236,31 +317,28 @@ function cmdExports(args) {
     const moduleOk = unchanged.length === 0 && uniformNewValue;
     if (!moduleOk) {
       fail = true;
-      console.log(`  [FAIL] ${mod.basename}: 未更新站点数=${unchanged.length}, 新值是否统一=${uniformNewValue}`);
+      verboseLines.push(`  [FAIL] ${mod.basename}: 未更新站点数=${unchanged.length}, 新值是否统一=${uniformNewValue}`);
+      problemLines.push(
+        `${mod.file} 新增 export [${mod.added.join(", ")}]: 未更新站点数=${unchanged.length}, 新值是否统一=${uniformNewValue}`
+      );
       if (unchanged.length) {
-        console.log("  未更新站点列表:");
-        unchanged.forEach((s) => console.log(`    ${s.file}:${s.lineNo}`));
+        verboseLines.push("  未更新站点列表:");
+        unchanged.forEach((s) => {
+          verboseLines.push(`    ${s.file}:${s.lineNo}`);
+          problemLines.push(`  未更新: ${s.file}:${s.lineNo}`);
+        });
       }
     } else {
-      console.log(`  [PASS] ${mod.basename}: 全部 import 站点已同步更新到统一新值`);
+      verboseLines.push(`  [PASS] ${mod.basename}: 全部 import 站点已同步更新到统一新值`);
     }
   }
 
-  console.log(
+  verboseLines.push(
     fail
       ? "[FAIL] exports: 存在新增 export 但未同步 bump 缓存号的 import 站点，回访用户可能白屏"
       : "[PASS] exports: 全部新增 export 的模块 import 站点已同步更新"
   );
-  return !fail;
-}
-
-function gitTryShow(rev, rel) {
-  try {
-    execSync(`git show "${rev}:${rel}"`, { cwd: ROOT, encoding: "utf8" });
-    return true;
-  } catch {
-    return false;
-  }
+  return fail ? failResult(verboseLines, problemLines) : passResult(verboseLines);
 }
 
 // ---------------------------------------------------------------------------
@@ -290,9 +368,15 @@ function findLinesInText(text, re) {
 }
 
 function cmdVersion() {
-  const appConfig = fs.readFileSync(path.join(ROOT, "modules/core/app-config.js"), "utf8");
-  const indexHtml = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
-  const domContract = fs.readFileSync(path.join(ROOT, "tests/dom-contract.test.mjs"), "utf8");
+  let appConfig, indexHtml, domContract;
+  try {
+    appConfig = fs.readFileSync(path.join(ROOT, "modules/core/app-config.js"), "utf8");
+    indexHtml = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+    domContract = fs.readFileSync(path.join(ROOT, "tests/dom-contract.test.mjs"), "utf8");
+  } catch (e) {
+    // 三个源文件本身读不到：工具自身失败，不是卫生结论。
+    return errorResult(`version: 读取源文件失败: ${e && e.message ? e.message : e}`);
+  }
 
   const appVersionMatch = appConfig.match(/APP_VERSION\s*=\s*["']([^"']+)["']/);
   const appVersion = appVersionMatch ? appVersionMatch[1] : null;
@@ -315,16 +399,27 @@ function cmdVersion() {
   const domAppJsHits = findLinesInText(domContract, /app\\\.js\\\?v=([\w-]+)/);
   const domStylesCssHits = findLinesInText(domContract, /styles\\\.css\\\?v=([\w-]+)/);
 
-  console.log(`APP_VERSION (app-config.js): ${appVersion}`);
-  console.log(`index.html styles.css?v=: ${cssV}`);
-  console.log(`index.html app.js?v=: ${appJsV}`);
-  console.log(
+  // VACUOUS：dom-contract.test.mjs 整个文件匹配到 0 行（三类断言合计为 0），说明
+  // 该文件读不到有效内容或结构已彻底变样，无法作为基准集，不构成"数量判据 FAIL"。
+  if (domAppVersionHits.length === 0 && domAppJsHits.length === 0 && domStylesCssHits.length === 0) {
+    return vacuousResult(
+      "version: tests/dom-contract.test.mjs 中未匹配到任何冻结断言（APP_VERSION/app.js/styles.css 合计 0 行），基准集为空"
+    );
+  }
+
+  const verboseLines = [];
+  const problemLines = [];
+
+  verboseLines.push(`APP_VERSION (app-config.js): ${appVersion}`);
+  verboseLines.push(`index.html styles.css?v=: ${cssV}`);
+  verboseLines.push(`index.html app.js?v=: ${appJsV}`);
+  verboseLines.push(
     `dom-contract 冻结断言：APP_VERSION ${domAppVersionHits.length} 处 / app.js?v= ${domAppJsHits.length} 处 / styles.css?v= ${domStylesCssHits.length} 处`
   );
-  domAppVersionHits.forEach((h) => console.log(`  [APP_VERSION] L${h.line}: captured=${h.captured}  (${h.text})`));
-  domAppJsHits.forEach((h) => console.log(`  [app.js]       L${h.line}: captured=${h.captured}  (${h.text})`));
-  domStylesCssHits.forEach((h) => console.log(`  [styles.css]   L${h.line}: captured=${h.captured}  (${h.text})`));
-  console.log(
+  domAppVersionHits.forEach((h) => verboseLines.push(`  [APP_VERSION] L${h.line}: captured=${h.captured}  (${h.text})`));
+  domAppJsHits.forEach((h) => verboseLines.push(`  [app.js]       L${h.line}: captured=${h.captured}  (${h.text})`));
+  domStylesCssHits.forEach((h) => verboseLines.push(`  [styles.css]   L${h.line}: captured=${h.captured}  (${h.text})`));
+  verboseLines.push(
     "注意：modules/** 下各模块自己的 ?v= 缓存号（如 20260730-1 / 20260901-1 / 20260814-12 等）刻意排除在一致性判断之外——" +
       "本仓库规范要求这些缓存号按模块定点刷新，本来就应该与入口 app.js/styles.css 不同，不是本判据的比对对象。"
   );
@@ -332,13 +427,21 @@ function cmdVersion() {
   // 判据①：数量断言，恰好 1 / 3 / 1，缺一不可（否则"全部相等"在空集上恒真）。
   const countsOk =
     domAppVersionHits.length === 1 && domAppJsHits.length === 3 && domStylesCssHits.length === 1;
-  console.log(
+  verboseLines.push(
     `[判据①-数量] APP_VERSION=${domAppVersionHits.length}(期望1) app.js=${domAppJsHits.length}(期望3) styles.css=${domStylesCssHits.length}(期望1)  ${countsOk ? "OK" : "FAIL"}`
   );
+  if (!countsOk) {
+    problemLines.push(
+      `判据①-数量 FAIL: APP_VERSION=${domAppVersionHits.length}(期望1) app.js=${domAppJsHits.length}(期望3) styles.css=${domStylesCssHits.length}(期望1)`
+    );
+  }
 
   // 判据②：一致性。
   const cssAppMatch = cssV !== null && cssV === appJsV;
-  console.log(`[判据②-index.html 内部一致] styles.css?v=${cssV} vs app.js?v=${appJsV}  ${cssAppMatch ? "OK" : "FAIL"}`);
+  verboseLines.push(`[判据②-index.html 内部一致] styles.css?v=${cssV} vs app.js?v=${appJsV}  ${cssAppMatch ? "OK" : "FAIL"}`);
+  if (!cssAppMatch) {
+    problemLines.push(`判据②-index.html 内部一致 FAIL: styles.css?v=${cssV} vs app.js?v=${appJsV}`);
+  }
 
   const appVersionMismatches = domAppVersionHits.filter((h) => h.captured !== appVersion);
   const appJsMismatches = domAppJsHits.filter((h) => h.captured !== appJsV);
@@ -346,133 +449,285 @@ function cmdVersion() {
   const consistencyOk =
     appVersionMismatches.length === 0 && appJsMismatches.length === 0 && stylesCssMismatches.length === 0;
 
-  console.log(
+  verboseLines.push(
     `[判据②-dom-contract 与源头一致] APP_VERSION 不一致=${appVersionMismatches.length} app.js 不一致=${appJsMismatches.length} styles.css 不一致=${stylesCssMismatches.length}  ${consistencyOk ? "OK" : "FAIL"}`
   );
-  appVersionMismatches.forEach((h) => console.log(`  APP_VERSION 不一致 L${h.line}: captured=${h.captured} expected=${appVersion}`));
-  appJsMismatches.forEach((h) => console.log(`  app.js 不一致 L${h.line}: captured=${h.captured} expected=${appJsV}`));
-  stylesCssMismatches.forEach((h) => console.log(`  styles.css 不一致 L${h.line}: captured=${h.captured} expected=${cssV}`));
+  appVersionMismatches.forEach((h) => {
+    verboseLines.push(`  APP_VERSION 不一致 L${h.line}: captured=${h.captured} expected=${appVersion}`);
+    problemLines.push(`tests/dom-contract.test.mjs:${h.line}: APP_VERSION captured=${h.captured} expected=${appVersion}`);
+  });
+  appJsMismatches.forEach((h) => {
+    verboseLines.push(`  app.js 不一致 L${h.line}: captured=${h.captured} expected=${appJsV}`);
+    problemLines.push(`tests/dom-contract.test.mjs:${h.line}: app.js?v= captured=${h.captured} expected=${appJsV}`);
+  });
+  stylesCssMismatches.forEach((h) => {
+    verboseLines.push(`  styles.css 不一致 L${h.line}: captured=${h.captured} expected=${cssV}`);
+    problemLines.push(`tests/dom-contract.test.mjs:${h.line}: styles.css?v= captured=${h.captured} expected=${cssV}`);
+  });
 
   const ok = countsOk && cssAppMatch && consistencyOk;
-  console.log(
+  verboseLines.push(
     ok
       ? "[PASS] version: APP_VERSION / index.html / dom-contract 5 条冻结断言数量与取值一致"
       : "[FAIL] version: 数量断言或一致性判据未通过（见上方差异列表）"
   );
-  return ok;
+  return ok ? passResult(verboseLines) : failResult(verboseLines, problemLines);
 }
 
 // ---------------------------------------------------------------------------
 // hygiene
 // ---------------------------------------------------------------------------
-function listDirTmp(dir, prefix) {
-  const abs = path.join(ROOT, dir);
-  if (!fs.existsSync(abs)) return [];
-  return fs
-    .readdirSync(abs, { withFileTypes: true })
-    .filter((e) => e.name.startsWith(prefix))
-    .map((e) => path.join(dir, e.name).replace(/\\/g, "/"));
-}
-
-function findMutantPaths() {
+// 残留临时/探针文件扫描：统一基于 `git ls-files --others --exclude-standard`
+// 取"未跟踪文件"清单再过滤，而不是像早期实现那样只手工枚举 scripts/tmp-*、
+// tests/tmp-*、./tmp-* 几个固定目录。
+//
+// 实测教训（本轮真实发现的判据缺口）：并行子智能体在仓库**根目录**留下的
+// `count-bold.mjs` 不落在 scripts/ 下，旧实现只扫那几个固定目录，完全漏检——
+// `hygiene` 会在根目录正躺着一堆探针脚本时仍报"无残留临时文件"，属于典型的
+// "判据因错误的原因变绿"。改用 `git ls-files --others` 是因为它天然只返回未跟踪
+// 文件：已提交/已跟踪的正常交付物（如本脚本自身 scripts/round-check.mjs、以及
+// scripts/check-devlog-debt.mjs）永远不会出现在这份清单里，不需要额外白名单。
+//
+// 三条规则（对应用户验收要求）：
+//   1. 仓库根目录一层（不递归）的未跟踪 *.mjs/*.cjs/*.js —— 本仓库脚本都在
+//      scripts/ 下，根目录出现新散装脚本本身就是残留信号。
+//   2. 任何位置（含子目录，不限于 scripts/tests/根目录）的未跟踪文件，只要
+//      路径任一段以 "tmp-" 开头，或整个相对路径包含 ".MUTANT."。
+//   3. 只看未跟踪文件；已跟踪文件天然被排除，不会被误报。
+function findResidualUntrackedFiles(untrackedPaths) {
   const hits = [];
-  (function walk(dir) {
-    let entries;
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      if (e.name === "node_modules" || e.name === ".git") continue;
-      const p = path.join(dir, e.name);
-      if (p.includes(".MUTANT.")) hits.push(path.relative(ROOT, p).replace(/\\/g, "/"));
-      if (e.isDirectory()) walk(p);
-    }
-  })(ROOT);
+  for (const raw of untrackedPaths) {
+    const rel = raw.replace(/\\/g, "/").trim();
+    if (!rel) continue;
+    const segments = rel.split("/");
+    const basename = segments[segments.length - 1];
+    const isRootLevel = segments.length === 1;
+    const isLooseRootScript = isRootLevel && /\.(mjs|cjs|js)$/i.test(basename);
+    const hasTmpSegment = segments.some((seg) => seg.startsWith("tmp-"));
+    const isMutant = rel.includes(".MUTANT.");
+    if (isLooseRootScript || hasTmpSegment || isMutant) hits.push(rel);
+  }
   return hits;
 }
 
-function cmdHygiene() {
-  const status = gitOrEmpty("status --porcelain");
-  console.log("git status --porcelain:");
-  console.log(status ? status.replace(/\n$/, "") : "(空)");
+// in-progress 体积触发线：文件数 > 20 或总 KB > 400 或单文件 > 50KB ⇒ WARN。
+// 只是主动提示"到线了"，具体该不该搬/搬哪个由人判断，因此不改变 exit code。
+// 目录若不存在（例如正被并行子智能体清空/重命名过程中的一个瞬间状态），跳过，
+// 不报错、不 VACUOUS——这条检查本身是可选的体积提示，不是必须存在的基准集。
+const IN_PROGRESS_FILE_COUNT_LIMIT = 20;
+const IN_PROGRESS_TOTAL_KB_LIMIT = 400;
+const IN_PROGRESS_SINGLE_FILE_KB_LIMIT = 50;
 
-  const tmpHits = [
-    ...listDirTmp("scripts", "tmp-"),
-    ...listDirTmp("tests", "tmp-"),
-    ...listDirTmp(".", "tmp-"),
-    ...findMutantPaths(),
-  ];
+function checkInProgressVolume() {
+  const dir = "devlog/in-progress";
+  const abs = path.join(ROOT, dir);
+  if (!fs.existsSync(abs)) return { warnLines: [] };
+
+  let entries;
+  try {
+    entries = fs.readdirSync(abs, { withFileTypes: true }).filter((e) => e.isFile());
+  } catch {
+    return { warnLines: [] };
+  }
+
+  const files = entries.map((e) => {
+    const p = path.join(abs, e.name);
+    let sizeKb = 0;
+    try {
+      sizeKb = fs.statSync(p).size / 1024;
+    } catch {
+      sizeKb = 0;
+    }
+    return { name: e.name, sizeKb };
+  });
+
+  const fileCount = files.length;
+  const totalKb = files.reduce((sum, f) => sum + f.sizeKb, 0);
+  const oversizedSingle = files.some((f) => f.sizeKb > IN_PROGRESS_SINGLE_FILE_KB_LIMIT);
+
+  const triggered =
+    fileCount > IN_PROGRESS_FILE_COUNT_LIMIT ||
+    totalKb > IN_PROGRESS_TOTAL_KB_LIMIT ||
+    oversizedSingle;
+
+  if (!triggered) return { warnLines: [] };
+
+  const warnLines = [];
+  warnLines.push(
+    `[WARN] hygiene: devlog/in-progress/ 已到体积触发线 —— 文件数=${fileCount}(线20) 总KB=${totalKb.toFixed(1)}(线400) 单文件超50KB=${oversizedSingle}`
+  );
+  const top = files
+    .slice()
+    .sort((a, b) => b.sizeKb - a.sizeKb)
+    .slice(0, 10);
+  top.forEach((f) => warnLines.push(`  ${dir}/${f.name}  ${f.sizeKb.toFixed(1)}KB`));
+  return { warnLines };
+}
+
+function cmdHygiene() {
+  let filesListed;
+  try {
+    filesListed = git("ls-files").split("\n").filter(Boolean);
+  } catch (e) {
+    return errorResult(`hygiene: git ls-files 失败: ${e && e.message ? e.message : e}`);
+  }
+
+  // VACUOUS：git ls-files 返回的受版本控制文件总数为 0（或扫描的文件总数为 0），
+  // 说明这不是一个正常仓库工作树，卫生检查在空集上无意义。
+  if (filesListed.length === 0) {
+    return vacuousResult("hygiene: git ls-files 返回文件总数为 0，基准集为空");
+  }
+
+  const verboseLines = [];
+  const problemLines = [];
+
+  const status = gitOrEmpty("status --porcelain");
+  verboseLines.push("git status --porcelain:");
+  verboseLines.push(status ? status.replace(/\n$/, "") : "(空)");
+
+  const untracked = gitOrEmpty("ls-files --others --exclude-standard")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const tmpHits = findResidualUntrackedFiles(untracked);
 
   const branch = gitOrEmpty("rev-parse --abbrev-ref HEAD").trim();
   const sb = gitOrEmpty("status -sb").split("\n")[0] || "";
   const aheadMatch = sb.match(/ahead (\d+)/);
   const ahead = aheadMatch ? aheadMatch[1] : "0";
 
-  console.log(`branch: ${branch}`);
-  console.log(`status -sb: ${sb}  (ahead=${ahead})`);
+  verboseLines.push(`branch: ${branch}`);
+  verboseLines.push(`status -sb: ${sb}  (ahead=${ahead})`);
 
   if (status) {
-    console.log("注意：工作树非空（不计入失败，仅提示）");
+    verboseLines.push("注意：工作树非空（不计入失败，仅提示）");
   }
 
   if (tmpHits.length) {
-    console.log(`残留临时文件 (${tmpHits.length} 个):`);
-    tmpHits.forEach((h) => console.log(`  ${h}`));
+    verboseLines.push(`残留临时文件 (${tmpHits.length} 个):`);
+    tmpHits.forEach((h) => verboseLines.push(`  ${h}`));
+    tmpHits.forEach((h) => problemLines.push(`残留临时/mutant 文件: ${h}`));
   }
 
   const fail = tmpHits.length > 0;
-  console.log(
+  verboseLines.push(
     fail
       ? "[FAIL] hygiene: 存在残留临时/mutant 文件"
       : "[PASS] hygiene: 无残留临时文件"
   );
-  return !fail;
+
+  const { warnLines } = checkInProgressVolume();
+  verboseLines.push(...warnLines);
+
+  const result = fail ? failResult(verboseLines, problemLines) : passResult(verboseLines);
+  result.warnLines = warnLines;
+  return result;
 }
 
 // ---------------------------------------------------------------------------
 // dispatcher
 // ---------------------------------------------------------------------------
 function cmdAll() {
-  console.log("=== version ===");
-  const v = cmdVersion();
-  console.log("\n=== exports ===");
-  const e = cmdExports([]);
-  console.log("\n=== hygiene ===");
-  const h = cmdHygiene();
-  console.log("\n=== summary ===");
-  console.log(`version:${v ? "PASS" : "FAIL"}  exports:${e ? "PASS" : "FAIL"}  hygiene:${h ? "PASS" : "FAIL"}`);
-  const ok = v && e && h;
-  console.log(ok ? "[PASS] all" : "[FAIL] all");
-  return ok;
+  const results = {
+    version: cmdVersion(),
+    exports: cmdExports([]),
+    hygiene: cmdHygiene(),
+  };
+
+  // all 的合成规则：任一子命令 code=3(ERROR) 优先冒泡；否则任一 code=2(VACUOUS)
+  // 冒泡；否则任一 code=1(FAIL) 冒泡；否则 0。
+  const codes = Object.values(results).map((r) => r.code);
+  const code = codes.includes(3) ? 3 : codes.includes(2) ? 2 : codes.includes(1) ? 1 : 0;
+
+  const verboseLines = [];
+  const problemLines = [];
+  const alwaysLines = [];
+  const warnLines = [];
+  for (const [name, r] of Object.entries(results)) {
+    verboseLines.push(`=== ${name} ===`);
+    verboseLines.push(...r.verboseLines);
+    verboseLines.push("");
+    if (r.problemLines.length) {
+      problemLines.push(`--- ${name} ---`);
+      problemLines.push(...r.problemLines);
+    }
+    if (r.alwaysLines.length) {
+      alwaysLines.push(`--- ${name} ---`);
+      alwaysLines.push(...r.alwaysLines);
+    }
+    if (r.warnLines && r.warnLines.length) {
+      warnLines.push(...r.warnLines);
+    }
+  }
+  const summary = `version:${statusWord(results.version)}  exports:${statusWord(results.exports)}  hygiene:${statusWord(results.hygiene)}`;
+  verboseLines.push("=== summary ===");
+  verboseLines.push(summary);
+
+  return { code, ok: code === 0, verboseLines, problemLines, alwaysLines, warnLines };
+}
+
+function statusWord(r) {
+  if (r.code === 3) return "ERROR";
+  if (r.code === 2) return "VACUOUS";
+  if (r.code === 1) return "FAIL";
+  return "PASS";
+}
+
+// ---------------------------------------------------------------------------
+// 统一渲染：默认模式(problem+always+warn) vs --verbose(verbose+always+warn)
+// ---------------------------------------------------------------------------
+function renderAndExit(result, verbose) {
+  const lines = [];
+  if (verbose) {
+    lines.push(...result.verboseLines);
+  } else if (result.code === 1) {
+    lines.push(...result.problemLines);
+  }
+  // alwaysLines（VACUOUS/ERROR 公告）与 warnLines（体积触发线）无论静默与否都打印。
+  lines.push(...result.alwaysLines);
+  if (!verbose) lines.push(...result.warnLines);
+  const text = lines.filter((l) => l !== undefined).join("\n");
+  if (text.length) {
+    if (result.code === 0) {
+      // 只有 warnLines 时（PASS + WARN）走标准输出即可，不是问题。
+      console.log(text);
+    } else {
+      console.error(text);
+    }
+  }
+  process.exit(result.code);
 }
 
 function main() {
-  const [, , sub, ...rest] = process.argv;
-  let ok;
+  const argv = process.argv.slice(2);
+  const verbose = argv.includes("--verbose");
+  const rest = argv.filter((a) => a !== "--verbose");
+  const [sub, ...tail] = rest;
+
+  let result;
   switch (sub) {
     case "comment-only":
-      ok = cmdCommentOnly(rest);
+      result = cmdCommentOnly(tail);
       break;
     case "exports":
-      ok = cmdExports(rest);
+      result = cmdExports(tail);
       break;
     case "version":
-      ok = cmdVersion();
+      result = cmdVersion();
       break;
     case "hygiene":
-      ok = cmdHygiene();
+      result = cmdHygiene();
       break;
     case "all":
     case undefined:
-      ok = cmdAll();
+      result = cmdAll();
       break;
     default:
       console.error(`未知子命令: ${sub}`);
-      process.exit(2);
+      process.exit(3);
+      return;
   }
-  process.exit(ok ? 0 : 1);
+  renderAndExit(result, verbose);
 }
 
 main();
