@@ -25,7 +25,7 @@
 | 0.2.108–0.2.114 | 导出骨骼/打包异步化、吹风预览、USDA 桥接家族融合 | app.js → 20,183 |
 | 0.2.115–0.2.129（发尖/拉链子系统） | panel 的 zipper / WidthCurve / 选中系统移植到普通发丝，并把三份重复推导收成单点定义；新增 5 个模块 | app.js → 20,828；modules 98→104 |
 
-> 两个延续计划的批次表、函数清单、执行记录在 `devlog/in-progress/geometry-bones-extraction-plan.md` 与 `devlog/in-progress/appjs-slim-remaining-plan.md`（及其各自的 `<batch>-refactor-map.md` 引用图）。
+> 两个延续计划的批次表、函数清单、执行记录在 `devlog/archive/geometry-bones-extraction-plan.md` 与 `devlog/archive/appjs-slim-remaining-plan.md`（及其各自的 `<batch>-refactor-map.md` 引用图）。
 > 0.2.115 之后不再有「拆 app.js」批次：新增代码直接进 modules，app.js 只增接线。上表最后一行的 +645 行几乎全是接线与 store 键，不是新业务逻辑。
 
 ## 2. 当前架构（功能 → 文件字典）

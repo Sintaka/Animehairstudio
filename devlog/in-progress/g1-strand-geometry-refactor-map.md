@@ -3,7 +3,7 @@
 > 生成：2026-08-12 · 分支 `0.2.59-refactor` · 仓库 `D:\code\dev\web\Animehairstudio`
 > 约束：仅分析 `app.js`（30,840 行）+ `modules/*.js`，未做任何修改；唯一产出本文档。
 > 行号口径：`devlog/FUNCTION_INDEX.json`（2026-08-12 快照，app.js 30,841 行）与当前 app.js 逐函数核对一致；函数体边界用括号配对（跳过参数表、字符串、模板、注释）实测。
-> 依据：devlog/in-progress/geometry-bones-extraction-plan.md 的 G1 行（Godel 盘点区间 L8272–9250、L11488–11566 为 G4/G7 前 32,530 行口径，本表已按当前文件按函数名重定位）。
+> 依据：devlog/archive/geometry-bones-extraction-plan.md 的 G1 行（Godel 盘点区间 L8272–9250、L11488–11566 为 G4/G7 前 32,530 行口径，本表已按当前文件按函数名重定位）。
 
 ## 1. 结论速览（TL;DR）
 

@@ -3,7 +3,7 @@
 > 生成：2026-08-12 · 分支 `0.2.59-refactor` · 仓库 `D:\code\dev\web\Animehairstudio`
 > 约束：只读分析 app.js + modules/*.js，未做任何修改；唯一产出本文档。
 > 口径（重要）：工作树已包含**未提交的 G1 迁出**（`modules/geometry/panel-tip-strand.js` + app.js +65/−1024，git status 可见）。当前 app.js = 29,099 内容行（`__AHS_TEST_SEAM` 已移至 L29043）。`devlog/FUNCTION_INDEX.json`（07:20 UTC 生成）是 **G1 迁出前**快照，行号全部过时；本文所有行号以 2026-08-12 冻结快照实测（括号配对函数体 + 全量 grep）为准。
-> 依据：devlog/in-progress/geometry-bones-extraction-plan.md 的 G2/G3 行；G1 map（devlog/in-progress/g1-strand-geometry-refactor-map.md）确认的边界：clipStrandProfilePolygon/pushOrientedTriangle/triangulatePolygon3D/createSplitStrandGeometry 不属 G1、createBaseHairGeometry 调 G1、pushOrientedTriangle 被 G2+G3 共用、triangulatePolygon3D 疑似死代码（本批顺带核实 ✅）。
+> 依据：devlog/archive/geometry-bones-extraction-plan.md 的 G2/G3 行；G1 map（devlog/in-progress/g1-strand-geometry-refactor-map.md）确认的边界：clipStrandProfilePolygon/pushOrientedTriangle/triangulatePolygon3D/createSplitStrandGeometry 不属 G1、createBaseHairGeometry 调 G1、pushOrientedTriangle 被 G2+G3 共用、triangulatePolygon3D 疑似死代码（本批顺带核实 ✅）。
 
 ## 1. 结论速览（TL;DR）
 

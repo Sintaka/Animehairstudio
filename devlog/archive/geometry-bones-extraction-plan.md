@@ -2,7 +2,7 @@
 
 > 状态：**完成**（2026-08-12，几何 G1-G7 + 骨骼 B0-B3 全部落地，9 个 commit；app.js 32,530→26,288 行）。
 > 动机：app.js 32,530 行仍是单文件上限压力；几何（~5.4k 行）与骨骼（~1.0k 行）是其中最大、且边界最清晰的两块，拆出并分开后，未来 bone roadmap（lock.bones/架空）与 delta mush 的改动都落在模块内。
-> 关联：本计划是 devlog/in-progress/appjs-slim-remaining-plan.md 的聚焦子集（几何=其中的 A1/B1/G 类批次；骨骼=新增域）。
+> 关联：本计划是 devlog/archive/appjs-slim-remaining-plan.md 的聚焦子集（几何=其中的 A1/B1/G 类批次；骨骼=新增域）。
 > 基于只读盘点（2026-08-12，FUNCTION_INDEX + app.js 实测），行数为毛估（净减≈毛行×0.75，扣 deps 脚手架）。
 
 ## 域设计（分开的关键）

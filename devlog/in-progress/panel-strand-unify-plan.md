@@ -23,7 +23,7 @@
 > 残余重复推导规则的审计见 [tip-subsystem-reuse-audit.md](tip-subsystem-reuse-audit.md)。
 
 > 分支：`0.2.62-panel-strand-unify`。本文件是「先统一 panel 和普通发丝，骨骼系统随普适化同步成型」的实施计划骨架，供接手 agent 补齐细节。
-> 前置评估（已落盘）：`devlog/in-progress/unified-bone-model.md` §6（panel/strand 兼容 + tip 迁移 + 骨骼统一）；app.js 瘦身结论见 `devlog/APPJS_SPLIT_GUIDE.md` §8（已判定不再瘦身）。
+> 前置评估（已落盘）：`devlog/archive/unified-bone-model.md` §6（panel/strand 兼容 + tip 迁移 + 骨骼统一）；app.js 瘦身结论见 `devlog/APPJS_SPLIT_GUIDE.md` §8（已判定不再瘦身）。
 
 ## 0. 排序决策（已定）
 
