@@ -2,8 +2,18 @@
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = "D:/code/dev/web/Animehairstudio";
+// ROOT: 优先取 git 仓库根，避免在 worktree / 其他 checkout 副本里跑时误扫主树
+// （历史坑：曾据硬编码 ROOT 做 baseline vs HEAD 对比，两边都得 57，误判"无变化"，
+// 实为同一次扫描重复了两遍，结论无效）。
+const ROOT = (() => {
+  try {
+    return execSync("git rev-parse --show-toplevel", { encoding: "utf8" }).trim();
+  } catch {
+    return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  }
+})();
 const files = [];
 (function walk(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
