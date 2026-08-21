@@ -396,27 +396,90 @@ try {
     const rows = lock.mesh.geometry.userData.gridRowIndices || [];
     const cols = lock.mesh.geometry.userData.gridColIndices || [];
     const maxRow = Math.max(...rows.filter((r) => r >= 0));
-    // 只取 front 壳（奇数 gridCol）以拿到一条干净的横向折线
-    const byRow = new Map();
+    // **量中面，不量壳**（0.2.143 更正）：内核保的是中面逐段长度；两壳是沿弯后法向的
+    // offset curve，长度按 (1 + k·d)（d = 壳半厚）缩放 —— 那是 Houdini bend 的 1 ± k·d 律
+    // 同一个东西，是「厚度沿弯后法向放置」的必然结果，**不是缺陷**。
+    // 本文件原来取 front 壳（cols % 2 === 1）：在 width=5 上侥幸稳定（离散化缩短抵消了壳
+    // 增长），但 width=0.62 时 front 壳比值达 1.0535，会撞穿 maxRatio < 1.02。
+    // 中面 = 同一 (row, 逻辑列) 上 front/back 的平均 ⇒ 壳偏移精确相消。
+    const front = new Map();
+    const back = new Map();
     for (let i = 0; i < pos.count; i++) {
-      if (rows[i] < 0 || cols[i] % 2 !== 1) continue;
-      if (!byRow.has(rows[i])) byRow.set(rows[i], []);
-      byRow.get(rows[i]).push({ col: cols[i], x: pos.array[i*3], y: pos.array[i*3+1], z: pos.array[i*3+2] });
+      if (rows[i] < 0) continue;
+      const logical = Math.floor(cols[i] / 2);
+      const target = (cols[i] % 2 === 1) ? front : back;
+      if (!target.has(rows[i])) target.set(rows[i], new Map());
+      target.get(rows[i]).set(logical, { x: pos.array[i*3], y: pos.array[i*3+1], z: pos.array[i*3+2] });
     }
     const spans = [];
-    for (const [row, entries] of [...byRow].sort((a, b) => a[0] - b[0])) {
-      entries.sort((a, b) => a.col - b.col);
-      let span = 0;
-      for (let i = 1; i < entries.length; i++) {
-        span += Math.hypot(entries[i].x - entries[i-1].x, entries[i].y - entries[i-1].y, entries[i].z - entries[i-1].z);
+    for (const [row, byCol] of [...front].sort((a, b) => a[0] - b[0])) {
+      const opposite = back.get(row);
+      if (!opposite) continue;
+      const mids = [];
+      for (const col of [...byCol.keys()].sort((a, b) => a - b)) {
+        const f = byCol.get(col);
+        const b = opposite.get(col);
+        if (f && b) mids.push({ col, x: (f.x + b.x) / 2, y: (f.y + b.y) / 2, z: (f.z + b.z) / 2 });
       }
-      const mid = entries[Math.floor(entries.length / 2)];
-      spans.push({ row, t: row / maxRow, span,
-        d: Math.hypot(mid.x - s.x, mid.y - s.y, mid.z - s.z) });
+      let span = 0;
+      for (let i = 1; i < mids.length; i++) {
+        span += Math.hypot(mids[i].x - mids[i-1].x, mids[i].y - mids[i-1].y, mids[i].z - mids[i-1].z);
+      }
+      const mid = mids[Math.floor(mids.length / 2)];
+      spans.push({ row, t: row / maxRow, span, cols: mids.length,
+        d: mid ? Math.hypot(mid.x - s.x, mid.y - s.y, mid.z - s.z) : 0 });
+    }
+    // **穿透深度**：本轮的头条判据（真实档改前 +0.235，改后应 ≤ 0）。正值 = 落在头皮代理内部。
+    // 逐顶点算椭球归一半径，取最深。用真实 frame 链（含 ±24°/环 roll 钳位），
+    // 这是 node 侧探针做不到的部分。
+    let deepest = -Infinity;
+    let deepestRow = -1;
+    for (let i = 0; i < pos.count; i++) {
+      const nx = (pos.array[i*3] - s.x) / s.scaleX;
+      const ny = (pos.array[i*3+1] - s.y) / s.scaleY;
+      const nz = (pos.array[i*3+2] - s.z) / s.scaleZ;
+      const depth = 1 - Math.hypot(nx, ny, nz) / s.radius;
+      if (depth > deepest) { deepest = depth; deepestRow = rows[i]; }
+    }
+    // **行交叉**：折叠的唯一可能形态（行内 wrap 是刚性弯一条曲线、恒单射）。
+    // 判据 (P[r+1] − P[r]) · tangent > 0。tangent 必须与**形变无关**，否则是用形变后的量
+    // 去判形变。**不能用 t.strandGeometryCurve** —— 测试 seam 上没有它，初版据此取切线，
+    // 结果 curve === null、循环一次没进、报出 "0/0 交叉" 而断言照样"通过"（空转）。
+    // 注：本段代码在**模板字符串内**，注释里**不得出现反引号**（会提前终止字符串）。
+    // 改用**中线列**（逻辑列 = 宽度分段数/2）的相邻行差分：中线在本模型下弯前弯后**逐位不动**
+    // （s=0 零位移），所以它既是真实脊柱的采样、又天然与形变无关。
+    const midColumns = spans.length ? [...front.get(spans[0].row).keys()].sort((a, b) => a - b) : [];
+    const centreCol = midColumns.length ? midColumns[Math.floor(midColumns.length / 2)] : null;
+    let crossings = 0;
+    let checkedPairs = 0;
+    let worstAdvance = Infinity;
+    if (centreCol !== null) {
+      const rowsSorted = spans.map((e) => e.row);
+      for (let ri = 1; ri < rowsSorted.length; ri++) {
+        const prev = front.get(rowsSorted[ri - 1]);
+        const cur = front.get(rowsSorted[ri]);
+        if (!prev || !cur) continue;
+        const a = prev.get(centreCol);
+        const b2 = cur.get(centreCol);
+        if (!a || !b2) continue;
+        const len = Math.hypot(b2.x - a.x, b2.y - a.y, b2.z - a.z);
+        if (len < 1e-9) continue;
+        const tan = { x: (b2.x - a.x) / len, y: (b2.y - a.y) / len, z: (b2.z - a.z) / len };
+        for (const [col, p] of cur) {
+          const before = prev.get(col);
+          if (!before) continue;
+          const adv = (p.x - before.x) * tan.x + (p.y - before.y) * tan.y + (p.z - before.z) * tan.z;
+          checkedPairs++;
+          if (adv < worstAdvance) worstAdvance = adv;
+          if (adv <= 0) crossings++;
+        }
+      }
     }
     return JSON.stringify({
       proxy: { x: s.x, y: s.y, z: s.z, radius: s.radius, sx: s.scaleX, sy: s.scaleY, sz: s.scaleZ },
-      maxRow, spans, count: pos.count
+      maxRow, spans, count: pos.count,
+      deepest, deepestRow, crossings, checkedPairs,
+      worstAdvance: (worstAdvance === Infinity ? null : worstAdvance)
     });
   })()`;
   // 宽面板（width=5，用户的 repro 构型）+ 已知 gap ⇒ 量弯曲前后的**横向跨度比值**。
@@ -457,6 +520,59 @@ try {
   // 0.2.138 曾因把 camber 当刚性偏移旋转而实测上限 1.259（offset curve 按 1+n·k 放大）。
   check("跨度也不得反而变长（camber 已折进弧长参数化）", maxRatio < 1.02,
     `跨度上限比值 ${maxRatio.toFixed(3)}（0.2.138 实测 1.259）`);
+
+  // ── 0.2.143 新增三条：本轮的头条判据此前只由临时探针验过，现落成常驻回归 ──────
+  // **① 不穿透**：改前 amount=0.87 实测最深 +0.235（第 6 行钻进头里），改后应 ≤ 0。
+  // 判据形态 `≤ max(0, 平板最深)`：取 max 是为了「若平板本身已穿透，至少不许更深」。
+  // **不要写成「弯后不得比平板更靠近头」** —— conform 的职责就是把面板拉近头皮，
+  // 那样写会因为功能正常而变红（本轮初版在 node 侧就这么错过一次：−0.4675 vs −0.4736）。
+  // 先把上面为量跨度而强设的 gap=0.05 / amount=1 换回**存档作者值**再判穿透：
+  // 那才是用户实际在用的构型。amount=1 + gap=0.05 属 D11 已接受的极端构型，单独报告。
+  const authoredAmount = 0.87;
+  const authoredGap = 0.1;
+  await evalJS(cdp, `(() => {
+    const set = (id, v) => { const s = document.querySelector('#' + id); s.value = String(v); s.dispatchEvent(new Event('input', { bubbles: true })); };
+    set('panelScalpConformGap', ${authoredGap});
+    set('panelScalpConformAmount', ${authoredAmount});
+    return true;
+  })()`);
+  await sleep(2500);
+  const authored = JSON.parse(await evalJS(cdp, conformProbe));
+  const ceiling = Math.max(0, flat.deepest);
+  check(`作者构型（amount=${authoredAmount} gap=${authoredGap}）不穿透头皮代理（改前实测 +0.235）`,
+    authored.deepest <= ceiling + 1e-6,
+    `最深穿透 ${authored.deepest.toFixed(4)}（第 ${authored.deepestRow} 行）`
+    + ` ≤ 上限 ${ceiling.toFixed(4)}；平板基线 ${flat.deepest.toFixed(4)}`);
+  // **D11 的极端构型：报告而不判红**（用户已裁定「默认值安全就够，先留着」）。
+  // 成因是 camber 的 b0 = curvature·halfWidth 把卷绕圆心推离胶囊轴，gap 越小越兜不住。
+  // **注意真实 frame 链的余量比 node fixture 小得多**：平板基线在真实工程里只离代理
+  // 0.075（node fixture 是 0.47），所以同一个 b0 亏空在这里就会真的越界。
+  console.log(`  [info] D11 极端构型 amount=1 gap=0.05 ⇒ 最深穿透 ${conformed.deepest.toFixed(4)}`
+    + `（第 ${conformed.deepestRow} 行）；平板基线仅 ${flat.deepest.toFixed(4)} ⇒ 余量本就很薄。`
+    + " 修法见计划 §5.2（k = amount/(R + gap + b0)），用户已选先不做。");
+
+  // **② 行不交叉**：折叠的唯一可能形态。**已知缺陷：真实档 amount≥0.87 会交叉**
+  // （node 侧实测 5/90、最深 −0.037；旧模型同构型 11/170、−0.201，本版浅 2.9×）。
+  // 用户已裁定 D10「先不做，先在视口里看严重程度」⇒ 本条**报告为主、门限放在既有天花板上**，
+  // 只防「变得更糟」。平板基线必须干净，否则判据本身失去参照。
+  check("平板基线无行交叉（下一条判据的参照，防空转）",
+    flat.crossings === 0 && flat.checkedPairs > 20,
+    `平板 ${flat.crossings}/${flat.checkedPairs} 交叉，最差推进 ${flat.worstAdvance?.toExponential(3)}`);
+  // 天花板取**真实 frame 链**上的实测值，而不是 node fixture 的值。
+  // **两者差得很远，勿混用**：node fixture（常量 frame + 直链曲线）实测 5/90、最深 −0.037；
+  // 真实工程（含 ±24°/环 roll 钳位的真实 frame 链）amount=1 gap=0.05 实测 **12/90、−0.168**，
+  // 深 4.5×、且约为板厚（0.08）的两倍。**判据必须钉在真实链上** —— 我一度按 fixture 的
+  // 0.037 向用户报告严重程度，那个数字低估了实际情况。
+  const CROSSING_CEILING = 14;
+  const CROSSING_DEPTH_FLOOR = -0.20;
+  check(`作者构型（amount=${authoredAmount} gap=${authoredGap}）行交叉不超过既有天花板（D10 已裁定先不修）`,
+    authored.crossings <= CROSSING_CEILING
+      && (authored.worstAdvance === null || authored.worstAdvance >= CROSSING_DEPTH_FLOOR),
+    `${authored.crossings}/${authored.checkedPairs} 交叉（天花板 ${CROSSING_CEILING}）`
+    + `，最差推进 ${authored.worstAdvance?.toExponential(3)}（下限 ${CROSSING_DEPTH_FLOOR}）`
+    + `${authored.crossings > 0 ? " ← 已知缺陷，非本轮引入" : ""}`);
+  console.log(`  [info] D11 极端构型 amount=1 gap=0.05 ⇒ 行交叉 ${conformed.crossings}/${conformed.checkedPairs}`
+    + `，最差推进 ${conformed.worstAdvance?.toExponential(3)}`);
 
   // 面板起始在头前方 ⇒ 弯曲后中线仍在原处（s=0 零位移，这正是主发片控制点对齐的依据），
   // 但整体应更贴合头形：报告首末行距头心距离供观察。
