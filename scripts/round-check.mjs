@@ -521,9 +521,19 @@ function findResidualUntrackedFiles(untrackedPaths) {
 // 只是主动提示"到线了"，具体该不该搬/搬哪个由人判断，因此不改变 exit code。
 // 目录若不存在（例如正被并行子智能体清空/重命名过程中的一个瞬间状态），跳过，
 // 不报错、不 VACUOUS——这条检查本身是可选的体积提示，不是必须存在的基准集。
-const IN_PROGRESS_FILE_COUNT_LIMIT = 20;
-const IN_PROGRESS_TOTAL_KB_LIMIT = 400;
-const IN_PROGRESS_SINGLE_FILE_KB_LIMIT = 50;
+// 这三个数字是量出来的，不是拍的。第一版取 20 / 400 / 50，而实测 in-progress 的不可压缩
+// 地板是 19 份 / 675KB —— 那 19 份被 modules/*.js 与 app.js 的代码注释直接引用（"完整 deps
+// 清单在哪查"的活指针），只要引用还在就不能归档。也就是说第一版的线永远满足不了、每轮必报，
+// 而永远报警的线等于装饰，会被忽略（同一缺陷本轮已在下方 exports 上犯过一次）。
+// 现在把线设在地板之上留余量，让它对增长报警而非对稳态报警。与 check-devlog-debt.mjs 同源，
+// 改一处要改两处；若将来代码注释被清掉、地板下降，应把线一起下调。
+// 拍错两次的留档：20/400 低于被代码钉住的 19 份/675KB；25/800 仍低于真实稳态 —— 实测当前
+// 29 份里 28 份搬不走（12 份既被钉住又有未收口项、7 份仅被钉住、9 份仅有未收口项），
+// 稳态是 839.6KB。两次同一个错：拿"理想状态"当地板，而不是拿"今天实际搬不走的量"当地板。
+// 现按实测稳态 + 余量。改完必须确认三条当前都不触发，否则它又在报稳态。
+const IN_PROGRESS_FILE_COUNT_LIMIT = 35;
+const IN_PROGRESS_TOTAL_KB_LIMIT = 950;
+const IN_PROGRESS_SINGLE_FILE_KB_LIMIT = 100;
 
 function checkInProgressVolume() {
   const dir = "devlog/in-progress";
@@ -561,7 +571,9 @@ function checkInProgressVolume() {
 
   const warnLines = [];
   warnLines.push(
-    `[WARN] hygiene: devlog/in-progress/ 已到体积触发线 —— 文件数=${fileCount}(线20) 总KB=${totalKb.toFixed(1)}(线400) 单文件超50KB=${oversizedSingle}`
+    `[WARN] hygiene: devlog/in-progress/ 已到体积触发线 —— 文件数=${fileCount}(线${IN_PROGRESS_FILE_COUNT_LIMIT})`
+    + ` 总KB=${totalKb.toFixed(1)}(线${IN_PROGRESS_TOTAL_KB_LIMIT})`
+    + ` 单文件超${IN_PROGRESS_SINGLE_FILE_KB_LIMIT}KB=${oversizedSingle}`
   );
   const top = files
     .slice()
