@@ -140,22 +140,42 @@ const vertexAt = (built, index) => new THREE.Vector3(
   built.positions[index * 3 + 2]
 );
 
-// 逐行横向跨度（同一行相邻顶点距离之和 = 该行的横向弧长）。**保弧长判据的核心量**。
+// 逐行横向跨度 = 该行的横向弧长。**保弧长判据的核心量**。
+//
+// **必须量中面，不能量壳（本函数初版量的是 front 壳，那是错的，导致测试"因错误的原因变绿"）**：
+// 内核积分保的是**中面**截面的逐段长度；两壳是沿弯后法向的 **offset curve**，其长度按
+// `(1 + k·d)`（d = thickness/2）缩放 —— 那正是 §1.5 在 Houdini 上实测到的同一条律，
+// 是「厚度沿弯后法向放置」的必然结果，**不是缺陷**。
+// 实测对照（amount=1）：
+//   width=0.62 ⇒ front 壳 1.0535..，back 壳 1.0324..，**中面 0.9994..1.0000**
+//   width=5    ⇒ front 壳 0.9925..，back 壳 0.9840..，**中面 0.9875..1.0000**
+// 即壳在窄面板上**增长 5.3%**（k 大 ⇒ offset 效应强），在宽面板上被离散化缩短抵消掉。
+// 初版恰好只测 width=5 ⇒ 抵消掉了 ⇒ 绿。中面取「同一 (row, 逻辑列) 上 front/back 的平均」，
+// 这样壳偏移**精确相消**（两壳沿同一法向、等距反向）。
 function rowSpans(built) {
-  const byRow = new Map();
+  const front = new Map();
+  const back = new Map();
   for (let vertex = 0; vertex < built.count; vertex += 1) {
     const row = built.rows[vertex];
     if (row < 0) continue;
-    // 只取 front 壳（奇数 gridCol）以拿到一条干净的横向折线。
-    if (built.cols[vertex] % 2 !== 1) continue;
-    if (!byRow.has(row)) byRow.set(row, []);
-    byRow.get(row).push({ col: built.cols[vertex], point: vertexAt(built, vertex) });
+    const logicalColumn = Math.floor(built.cols[vertex] / 2);
+    const target = built.cols[vertex] % 2 === 1 ? front : back;
+    if (!target.has(row)) target.set(row, new Map());
+    target.get(row).set(logicalColumn, vertexAt(built, vertex));
   }
   const spans = new Map();
-  for (const [row, entries] of byRow) {
-    entries.sort((a, b) => a.col - b.col);
+  for (const [row, byColumn] of front) {
+    const opposite = back.get(row);
+    if (!opposite) continue;
+    const columns = [...byColumn.keys()].sort((a, b) => a - b);
+    const midPoints = [];
+    for (const column of columns) {
+      const f = byColumn.get(column);
+      const b = opposite.get(column);
+      if (f && b) midPoints.push(f.clone().add(b).multiplyScalar(0.5));
+    }
     let total = 0;
-    for (let i = 1; i < entries.length; i += 1) total += entries[i - 1].point.distanceTo(entries[i].point);
+    for (let i = 1; i < midPoints.length; i += 1) total += midPoints[i - 1].distanceTo(midPoints[i]);
     spans.set(row, total);
   }
   return spans;
@@ -225,25 +245,80 @@ test("panelBendCrossSection：k→0 逐位退化、**保弧长**（含 camber �
 // ── 本版存在的理由：保弧长 ────────────────────────────────────────────────────
 // 上一版（逐顶点投影）把 width=5 的面板横向跨度压到 0.52 倍，用户报告"坍缩有点严重"。
 // **判据直接量每一行的横向跨度**，而不是量"离头皮多远"—— 后者上一版也能过。
-test("保弧长：每一行的横向跨度在 conform 前后守恒（宽面板，amount=1）", () => {
-  const WIDE = 5;
-  const flat = buildPanel(panelLock({ width: WIDE }));
-  const bent = buildPanel(panelLock({ width: WIDE, panelScalpConformAmount: 1 }));
-  assert.equal(bent.count, flat.count);
-  const flatSpans = rowSpans(flat);
-  const bentSpans = rowSpans(bent);
-  let worstRatio = 1;
-  for (const [row, flatSpan] of flatSpans) {
-    if (flatSpan < 1e-6) continue; // 发尖 taper 收到 0 的那一行跨度本就是 0
-    const ratio = bentSpans.get(row) / flatSpan;
-    worstRatio = Math.min(worstRatio, ratio);
+// **本条初版"因错误的原因变绿"，三处都要留档（0.2.143 教训，与仓库既有"回归测试写完必须
+// 用变异测试确认它咬"同一条，只是这次是子智能体在复核中抓到的）**：
+//   ① 量的是 **front 壳**而非中面 —— 壳是 offset curve，长度按 `(1 + k·d)` 缩放；
+//   ② `min` 与 `max` 两个界**都断在 `worstRatio`（= min）上** ⇒ `< 1.001` 近乎恒真；
+//   ③ 只建了 **width=5** —— 恰好是离散化缩短抵消掉壳增长的那个宽度。
+// 实测：width=0.62 时 front 壳 min 就是 **1.0535**，初版的 `< 1.001` 本该**变红**。
+// 现改为：量**中面**、**min/max 分别断言**、**两个宽度都建**。
+test("保弧长：逐行中面横向跨度在 conform 前后守恒（min/max 双侧，两个宽度）", () => {
+  for (const width of [PANEL_WIDTH, 5]) {
+    const flat = buildPanel(panelLock({ width }));
+    const bent = buildPanel(panelLock({ width, panelScalpConformAmount: 1 }));
+    assert.equal(bent.count, flat.count);
+    const flatSpans = rowSpans(flat);
+    const bentSpans = rowSpans(bent);
+    let lowest = Infinity;
+    let highest = -Infinity;
+    let checked = 0;
+    for (const [row, flatSpan] of flatSpans) {
+      // 发尖 taper 收到 0 的那一行跨度本就是 0（比值无意义，实测会到 800×）。
+      // 判据用**相对**门限而不是绝对 1e-6：宽度不同则跨度量级不同。
+      if (flatSpan < 1e-3 * width) continue;
+      const ratio = bentSpans.get(row) / flatSpan;
+      lowest = Math.min(lowest, ratio);
+      highest = Math.max(highest, ratio);
+      checked += 1;
+    }
+    assert.ok(checked >= 8, `sanity：width=${width} 应比较到多行，实测仅 ${checked} 行`);
+    // **下界容差有推导，不是拍的**：网格是内接折线，弯曲后弦长比真实弧长短
+    // `ratio = 2·sin(Δθ/2)/Δθ`。width=5、R≈1.5、amount=1 ⇒ 半跨 θ≈1.65 rad，
+    // 6 个宽度分段 ⇒ Δθ≈0.55 ⇒ 理论下限 `2·sin(0.275)/0.55 ≈ 0.987`。
+    // 取 0.96 留余量；被驳回的投影模型是 0.52，差一个数量级 ⇒ 判据能分开两者。
+    assert.ok(lowest > 0.96, `width=${width}：中面跨度不得被压缩，最小比值 ${lowest.toFixed(6)}`);
+    // **上界断在 max 上**（初版断在 min 上，等于没断）。中面弯曲**不会**变长 ——
+    // 逐段保长 + 内接折线只可能变短，所以 1.001 是紧的。
+    assert.ok(highest < 1.001, `width=${width}：中面跨度不得变长，最大比值 ${highest.toFixed(6)}`);
   }
-  // **容差有推导，不是拍的**：网格是内接折线，弯曲后折线弦长比真实弧长短
-  // ratio = 2·sin(Δθ/2)/Δθ。width=5、bendRadius≈1.02、amount=1 ⇒ 半跨 θ=2.45 rad，
-  // 6 个宽度分段 ⇒ Δθ≈0.816 ⇒ 理论下限 2·sin(0.408)/0.816 ≈ 0.973。
-  // 所以 0.96 是"离散化误差之内"，而上一版的 0.52 差了一个数量级 —— 判据能分开两者。
-  assert.ok(worstRatio > 0.96, `横向跨度必须守恒（保弧长），最差比值 ${worstRatio.toFixed(4)}`);
-  assert.ok(worstRatio < 1.001, `跨度不得反而变长，最差比值 ${worstRatio.toFixed(4)}`);
+});
+
+// 壳跨度按 `(1 + k·d)` 增长是**设计的一部分**（厚度沿弯后法向放置的必然结果，
+// 与 §1.5 在 Houdini 上实测的 offset-curve 律同源），不是缺陷。
+// 本条把它**显式钉住**，这样：① 上一条改量中面后，壳的行为仍有测试覆盖；
+// ② 谁要是"顺手把壳也弄成保长"，会立刻变红并读到这段说明。
+test("壳跨度按 offset-curve 律增长（设计如此，非缺陷）", () => {
+  const shellSpans = (built) => {
+    const byRow = new Map();
+    for (let vertex = 0; vertex < built.count; vertex += 1) {
+      const row = built.rows[vertex];
+      if (row < 0 || built.cols[vertex] % 2 !== 1) continue; // front 壳
+      if (!byRow.has(row)) byRow.set(row, new Map());
+      byRow.get(row).set(Math.floor(built.cols[vertex] / 2), vertexAt(built, vertex));
+    }
+    const out = new Map();
+    for (const [row, byColumn] of byRow) {
+      const ordered = [...byColumn.keys()].sort((a, b) => a - b).map((c) => byColumn.get(c));
+      let total = 0;
+      for (let i = 1; i < ordered.length; i += 1) total += ordered[i - 1].distanceTo(ordered[i]);
+      out.set(row, total);
+    }
+    return out;
+  };
+  // 窄面板：R 小 ⇒ k 大 ⇒ offset 效应最明显，实测 front 壳最小比值 1.0535。
+  const flat = shellSpans(buildPanel(panelLock({ width: PANEL_WIDTH })));
+  const bent = shellSpans(buildPanel(panelLock({ width: PANEL_WIDTH, panelScalpConformAmount: 1 })));
+  let lowest = Infinity;
+  for (const [row, flatSpan] of flat) {
+    if (flatSpan < 1e-3 * PANEL_WIDTH) continue;
+    lowest = Math.min(lowest, bent.get(row) / flatSpan);
+  }
+  // 壳**必须**比中面长（`1 + k·d`，d = thickness/2 = 0.04 > 0）。
+  // 若有人把壳也做成保长，这条会变红 —— 那时要改的是本注释，而不是把它删掉。
+  assert.ok(
+    lowest > 1.001,
+    `窄面板 front 壳跨度应按 offset-curve 律增长（实测应约 1.05），最小比值 ${lowest.toFixed(6)}`
+  );
 });
 
 test("amount == 0 ⇒ 顶点位置逐位守恒（含 gap 被改动的情况）", () => {
