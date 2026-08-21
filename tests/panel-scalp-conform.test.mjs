@@ -803,6 +803,12 @@ test("⑥b 行交叉：amount ≤ 0.5 不得交叉；更高 amount 记录天花�
 // −0.040000。**未采用**：它改变含 camber 面板的曲率语义 = 设计变更，需用户确认。
 // 本测试因此断言「默认 curvature 安全」+「极端 curvature 会穿透」，两条都是**当前事实**；
 // 若将来采用修法，第二条会变红 —— 那时**应当**更新它，而不是当作回归。
+// **⚠️ 本条的"安全"只在本 fixture 的余量下成立，勿外推到真实工程**（CDP 扫描实测更正）：
+// 常量 frame 的 fixture 把面板 seat 在距代理 **0.47** 处，而真实 frame 链（含 ±24°/环 roll
+// 钳位）只有 **0.075** —— 同一个 `b0` 亏空在这里兜得住、在真实工程里兜不住。
+// 真实链实测（gap=0.1、curvature=0.18 默认）：amount ≤ 0.87 时最深 −0.021（安全），
+// 但 **amount = 1.0 时穿透 +0.249**。所以「默认 curvature 安全」这句话**只覆盖到 0.87**。
+// 真实档的把关在 `scripts/verify-scalp-conform.mjs`（按存档作者值判），本条只守纯函数不变式。
 test("⑥d camber 边界：默认 curvature 不穿透；极端 curvature 会（当前已知限制）", () => {
   const equalWidth = {
     taperCurve: CONSTANT_CURVE.map((point) => ({ ...point })),
