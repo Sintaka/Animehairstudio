@@ -250,8 +250,9 @@ function gitTryShow(rev, rel) {
 
 function cmdExports(args) {
   let rev = "HEAD";
+  let revExplicit = false;
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--rev") rev = args[++i];
+    if (args[i] === "--rev") { rev = args[++i]; revExplicit = true; }
   }
 
   const changed = gitOrEmpty(`diff --name-only ${rev}`)
@@ -259,11 +260,17 @@ function cmdExports(args) {
     .map((s) => s.trim())
     .filter((s) => s && (/^modules\/.*\.js$/.test(s) || s === "app.js"));
 
-  // VACUOUS：基准集是"相对 rev 有改动的 .js 文件数"。为空 ⇒ VACUOUS。
-  // 注意区分：基准集非空、但没有任何模块新增 export，是正常通过（下方 PASS 分支），
-  // 不是 VACUOUS——这两种情况的判据来源不同，绝不能混为一谈。
+  // 「零改动」在这里是正常状态，不是 VACUOUS —— 主脑当初的规格写错了，已更正：
+  // exports 是一次**扫描**（"这轮有没有新增 export 而漏 bump 缓存号"），干净树上答案就是
+  // "没有"，那是合法通过。若把它判成 VACUOUS，收尾命令在正常状态下每次都报非零，
+  // 而一个在正常状态下喊狼来了的判据必然被忽略 —— 与"不咬的判据"一样坏。
+  // 真正的 VACUOUS 只有一种：调用方**显式**传了 --rev，却取不到任何改动文件
+  // ——那多半是 rev 给错了，此时"没发现问题"确实不能当结论。
   if (changed.length === 0) {
-    return vacuousResult(`exports: 相对 ${rev} 有改动的 .js 文件数为 0，基准集为空`);
+    if (revExplicit) {
+      return vacuousResult(`exports: 显式指定 --rev ${rev}，但相对它有改动的 .js 文件数为 0（rev 是否给错？）`);
+    }
+    return passResult([`exports: 相对 ${rev} 无 .js 改动 ⇒ 无新增 export，缓存号无需 bump`]);
   }
 
   const verboseLines = [];
