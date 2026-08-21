@@ -84,7 +84,17 @@
 | 新增 export vs 缓存号漂移(守的是回访用户白屏:ESM 链接期解析,缓存旧模块解析新增 export 会直接 SyntaxError) | `scripts/round-check.mjs exports` | 已固化 |
 | 版本号/缓存号一致性 | `scripts/round-check.mjs version` | 已固化 |
 | 收尾体检(脏树 + 残留 tmp 文件) | `scripts/round-check.mjs hygiene` | 已固化 |
-| 提交信息临时文件的 write→commit -F→delete 三步循环 | 待固化 | 待固化 |
+| 提交信息临时文件的 write→commit -F→delete 三步循环 | **已消除**：pwsh 7 下直接 `git commit -m '…' -m '…'`（**必须单引号**） | 已实测 |
+
+**中文提交信息不再需要临时文件（本轮实测，三步变一步）**：pwsh 7 默认 UTF-8，`git commit -m`
+直传中文**逐字节无损** —— `§`、`「」`、全角括号、em dash 全部原样入库（实测提交 `0184e00`）。
+**但必须用单引号**，这条是实测出来的、不是推理：
+- 双引号：`` `git diff -U0` `` 的反引号被 pwsh **静默吃掉**，`$PSVersionTable` 被展开成
+  `System.Management.Automation.PSVersionHashTable`；
+- 单引号：反引号与 `$` 全部字面保留。
+⇒ 提交信息里凡含反引号或 `$`（本仓库几乎每条都有），**用单引号 `-m`**；多段用多个 `-m`。
+文中若含单引号，才回退到 `write` + `commit -F`。规范里"中文提交信息必须写临时文件"
+那条的成因是 **pwsh 5.1**，pwsh 7 下已不成立。
 
 **⚠️ 截至 8ce8a9f 提交时，上表四条 `round-check.mjs` 的状态实为「待验收」**：脚本当时仍在
 子智能体手里、未提交、变异验证未回报。**登记时就写"已固化"是一次抢跑**（本轮主管自己犯的
