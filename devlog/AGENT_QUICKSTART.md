@@ -1,70 +1,71 @@
 # 新 Agent 快速入口 / AGENT QUICKSTART
 
-> 目的：让一个新 agent（或新开发者）在几分钟内知道「本 fork 改了哪些代码、哪些**必须保留**、当时的**决策**是什么」，避免从头通读 ≈0.9MB（**约 2 万行；具体值现场统计,勿引用本页数字**）的 `app.js` 或 52KB 的 `js-change-annotations.md`（索引 + 6 个 `annotations-*.md` 专题）。
+> 目的：让一个新 agent（或新开发者）在几分钟内知道本 fork 改了哪些代码、哪些必须保留、当时的决策是什么，避免从头通读 ≈0.9MB（约 2 万行，行数现场统计）的 `app.js` 或 52KB 的 `js-change-annotations.md`（索引 + 6 个 `annotations-*.md` 专题）。
 > 维护：功能分支合入 / daily build +1 时，如涉及本页列出的保留代码或决策，请同步更新本页；详细条目仍按主题追加到各专题文件，本页只做摘要与指针。
-> 版本基准：0.2.137（DHS/develop）。**行数/文件数/store 数一律现场统计**（`node scripts/gen-function-index.js` 会顺带刷新 app.js 行数与文件数），本页历史上写死过 3 组过期计数。
+> 版本基准：0.2.137（DHS/develop）。行数/文件数/store 数一律现场统计（`node scripts/gen-function-index.js` 会顺带刷新 app.js 行数与文件数），本页历史上写死过 3 组过期计数，勿引用本页数字。
 
 ## 0. 先读什么（建议顺序）
 
-1. **本页** —— 保留代码 + 决策总览（读完约 2 分钟）
+1. 本页 —— 保留代码 + 决策总览（读完约 2 分钟）
 2. `devlog/README.md` —— devlog 索引字典（各专题文件入口）
 3. `devlog/development-standards.md` —— 开发规范 + 「持续修改功能」清单（main 更新后要优先同步的本地功能）+ 许可证
 4. `devlog/main-sync-conflicts.md` —— 与 main 合并的全部决策（Local 选项移除、桥接区与 compound 并存策略、17 处冲突分类）
-5. 按需跳读：`devlog/APPJS_SPLIT_GUIDE.md`（**从原版拆分指引**：历程/当前架构/拆分模式/每批执行模板/踩坑/定位字典，新 agent 必读）、`devlog/js-change-annotations.md`（子系统索引表 + 指向 6 个 `annotations-*.md` 专题文件）、`devlog/FUNCTION_INDEX.md`（机器生成，0.2.126 重新生成：2,293 函数 / 105 文件；**过期就跑 `node scripts/gen-function-index.js`**，勿手改）、`devlog/STATE_MANAGEMENT.md`（**状态管理架构：18 个 store 清单 + 发尖选中键 §2.1 + 替换验证 9 点**）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）、`devlog/in-progress/wind-preview-plan.md`（**吹风预览已实施；仅碰撞路线图未实施**）、`devlog/in-progress/uv-pack-parallel-plan.md`（UV 打包并行，0.2.110 已实施，Phase 2 未做）
+5. 按需跳读：`devlog/APPJS_SPLIT_GUIDE.md`（从原版拆分指引：历程/当前架构/拆分模式/每批执行模板/踩坑/定位字典，新 agent 必读）、`devlog/js-change-annotations.md`（子系统索引表 + 指向 6 个 `annotations-*.md` 专题文件）、`devlog/FUNCTION_INDEX.md`（机器生成，0.2.126 重新生成：2,293 函数 / 105 文件；过期就跑 `node scripts/gen-function-index.js`，勿手改）、`devlog/STATE_MANAGEMENT.md`（状态管理架构：18 个 store 清单 + 发尖选中键 §2.1 + 替换验证 9 点）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）、`devlog/in-progress/wind-preview-plan.md`（吹风预览已实施，仅碰撞路线图未实施）、`devlog/in-progress/uv-pack-parallel-plan.md`（UV 打包并行，0.2.110 已实施，Phase 2 未做）
+6. 要派活给子智能体时 → 读 `devlog/SUBAGENT_BRIEF.md`。
 
-> **收尾必做**：本轮结束前必须走一遍 `devlog/agent-retrospective.md` §1 的复盘清单。
+> 复盘（仅用户说「复盘」时做）：清单见 `devlog/agent-retrospective.md` §1。
 
 ## 1. 仓库结构速览
 
-- `app.js`（≈0.9MB，编排层；行数现场统计）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 等业务逻辑已按子系统迁入 modules（见 `APPJS_SPLIT_GUIDE.md` §2）。**原版 main 是 39,207 行的扁平大文件，本地已拆分（约 −47%），不要在 app.js 里堆业务逻辑，新逻辑进 modules/<domain>/ 后经 createXxxApi 注入**。
-- `modules/*.js` —— 按域分目录（core/data/geometry/io/edit/sculpt/material/branch/scalp/bones/scene，0.2.129 实测 104 个文件、42,120 行，app.js 计入则 105；**这两个数字每轮都在变,引用前请现场统计**）；**全局状态已收敛到 18 个 store，全局 let 只剩 camera**（main 0.1.5 移植新增 multiCameraState/recovery，0.2.112 新增 windState，见 `devlog/STATE_MANAGEMENT.md`），不要再新增 app.js 全局 let。
-- `index.html` / `styles.css` —— UI（顶部菜单栏含 Preview 菜单 `#previewMenu`，Turntable 等预览开关在此；缓存号 `?v=` 定点刷新，**不要全局替换**，见 §5 坑）。
-- `server.js` —— main 带来的静态文件服务；`/api/save-project` 已是**死代码**（三个 Local 选项已移除，勿再调用）。
+- `app.js`（≈0.9MB，编排层；行数现场统计）—— 主逻辑；子发片系统的桥接 / 挖洞 / Region 面板 / 根骨骼 gizmo 等业务逻辑已按子系统迁入 modules（见 `APPJS_SPLIT_GUIDE.md` §2）。原版 main 是 39,207 行的扁平大文件，本地已拆分（约 −47%）。不要在 app.js 里堆业务逻辑，新逻辑进 modules/<domain>/ 后经 createXxxApi 注入。
+- `modules/*.js` —— 按域分目录（core/data/geometry/io/edit/sculpt/material/branch/scalp/bones/scene，0.2.129 实测 104 个文件、42,120 行，app.js 计入则 105；这两个数字每轮都在变，引用前请现场统计）。全局状态已收敛到 18 个 store，全局 let 只剩 camera（main 0.1.5 移植新增 multiCameraState/recovery，0.2.112 新增 windState，见 `devlog/STATE_MANAGEMENT.md`），不要再新增 app.js 全局 let。
+- `index.html` / `styles.css` —— UI（顶部菜单栏含 Preview 菜单 `#previewMenu`，Turntable 等预览开关在此；缓存号 `?v=` 定点刷新，不要全局替换，见 §5 坑）。
+- `server.js` —— main 带来的静态文件服务；`/api/save-project` 已是死代码（三个 Local 选项已移除，勿再调用）。
 - `devlog/` —— 全部开发记录（本页所在）。
 
 ## 2. 必须保留的本地代码（Keep list）
 
-> 相对 main 的持续修改/新增。**main 更新后优先同步这些，不要被 main 覆盖**；main 已原生支持的标 `deprecated`。清单与状态见 `development-standards.md`「持续修改功能」，判定依据见 `main-sync-conflicts.md`。
+> 相对 main 的持续修改/新增。main 更新后优先同步这些，不要被 main 覆盖；main 已原生支持的标 `deprecated`。清单与状态见 `development-standards.md`「持续修改功能」，判定依据见 `main-sync-conflicts.md`。
 
 ### 2.1 子发片拓扑衔接系统（本 fork 最大特性，main 完全没有）
-- **入口分流**：`createHairGeometry` → `if (lock.branchRootRegion && parentSupportsTopologyConnect) createBranchChildGeometry`，否则 `createBaseHairGeometry`（退回直接扫掠）。
-- **父发片挖洞**：`applyBranchRootRegionCarving`（程序化删面 + **同步裁剪 `triangleEdgeMasks`**）。
-- **桥接几何**：`buildBranchBridgeGeometry`（≈751 行）+ `modules/geometry/branch-connect.js`（`squareChildRing` / `holeBoundary` / `connectSide` / `connectBoundaryToRing`）。
-- **Region 选区**：`branchRootRegion`（u/v 数据模型）、`normalizeBranchRootRegion` / `syncBranchRootRegionOffsets` / `updateBranchRootRegionCenter` / `branchRootRegionSurface` / `branchRootRegionFromParam`（旧档回填）、`branchRegionNavAction`（面板导航）。
-- **根骨骼工作流**：`captureBranchLocalState`（记住横向偏移）、H 模式刚性移动 + 曲率摆动、gizmo 携带 twist、sweep 起始黄色手柄。
-- **Region 同步速度**：Sync L/R（默认 0.45）/ Sync U/D（默认 1.0）滑杆。
+- 入口分流：`createHairGeometry` → `if (lock.branchRootRegion && parentSupportsTopologyConnect) createBranchChildGeometry`，否则 `createBaseHairGeometry`（退回直接扫掠）。
+- 父发片挖洞：`applyBranchRootRegionCarving`（程序化删面，同步裁剪 `triangleEdgeMasks`）。
+- 桥接几何：`buildBranchBridgeGeometry`（≈751 行）+ `modules/geometry/branch-connect.js`（`squareChildRing` / `holeBoundary` / `connectSide` / `connectBoundaryToRing`）。
+- Region 选区：`branchRootRegion`（u/v 数据模型）、`normalizeBranchRootRegion` / `syncBranchRootRegionOffsets` / `updateBranchRootRegionCenter` / `branchRootRegionSurface` / `branchRootRegionFromParam`（旧档回填）、`branchRegionNavAction`（面板导航）。
+- 根骨骼工作流：`captureBranchLocalState`（记住横向偏移）、H 模式刚性移动 + 曲率摆动、gizmo 携带 twist、sweep 起始黄色手柄。
+- Region 同步速度：Sync L/R（默认 0.45）/ Sync U/D（默认 1.0）滑杆。
 
 ### 2.2 split（Split Geometry）父发片兼容
-- **0.2.49**：父无 `gridRows`/`quadFaces` → 子发片退回直接生成（`parentSupportsTopologyConnect` 守卫），父发片不挖洞。
-- **0.2.50–0.2.51**：索引侧拼接 `splitFusedGrid`（`geometry.userData.splitFusedGrid`，`gridIndexAt`/`faceToRendered`），**保留两管渲染**；非跨缝桥接干净、跨缝「暴力粘」（顶部带少量重叠边，可接受）。
-- **0.2.54**：挖洞后同步裁剪 masks（与 2.1 同一类坑）。
+- 0.2.49：父无 `gridRows`/`quadFaces` → 子发片退回直接生成（`parentSupportsTopologyConnect` 守卫），父发片不挖洞。
+- 0.2.50–0.2.51：索引侧拼接 `splitFusedGrid`（`geometry.userData.splitFusedGrid`，`gridIndexAt`/`faceToRendered`），保留两管渲染；非跨缝桥接干净、跨缝「暴力粘」（顶部带少量重叠边，可接受）。
+- 0.2.54：挖洞后同步裁剪 masks（与 2.1 同一类坑）。
 
 ### 2.3 刘海 / 面板线框三角面修复（显示层，导出数据一直是四边面）
 - `createSplitStrandGeometry` 生成 authored `triangleEdgeMasks`；`createHairTopologyGeometry` 优先读 authoredEdgeMasks。
-- `createPanelStrandGeometry` **绕序翻转后必须同步交换 masks [1]/[2]**（0.2.56 真正根因）。
-- `addQuad` 跳过退化（角点重合）/反射折叠（两三角法线点积 < -0.999）quad（0.2.55）——**保留**（防 NaN/翻折）。
+- `createPanelStrandGeometry` 绕序翻转后必须同步交换 masks [1]/[2]（0.2.56 真正根因）。
+- `addQuad` 跳过退化（角点重合）/反射折叠（两三角法线点积 < -0.999）quad（0.2.55），保留此逻辑防 NaN/翻折。
 
 ### 2.4b 发尖子系统：panel 与普通发丝共用（0.2.123 共享网格 / 0.2.125 WidthCurve / 0.2.126 选中系统）
-- **共享层** `modules/geometry/tip-width-curve.js`（0.2.125 新增，纯函数）：控制网格、按侧暴露判据、build/reset/write 的曲线数学。**签名以「相邻 zipper 高度 / fork 标量」为入参，不接受 `(lock, segmentIndex, splits)`** —— panel 的 `panelSplits` 与发丝的 `strandSplits` 字段名不同但条目形状与邻居规则相同，参数化掉 lock 才能真正共用一份。改这里要同时看 panel 与发丝两侧的适配器。
-- **panel 侧** `panel-tip-strand.js`：ribbon 专属部分（`tipWidthEdgePosition`/`tipPanelWidthAt`/`tipWidthControlPlacement`/`tipWidthSpreadGap`）留在此处，曲线数学改为薄适配器委托共享层。0.2.125 抽取经 36 用例逐字节等价验证。
-- **发丝侧** `modules/geometry/strand-tip-width.js`（0.2.125 新增）：**管内相对坐标 `strandTubeSignedCoordinate` 是本模块的核心，也是唯一定义点**。⚠️ **不要用 raw `profile.x` 判定管的左右侧**：`clipStrandProfileBand` 裁剪后每根管的 raw x 只有一个符号（边缘管全负/全正），用它当判据会让一侧曲线永不生效——这正是 panel 在 0.2.80 修掉的死区。
-- **选中系统共享层** `modules/bones/tip-sub-bone-host.js`（0.2.126 新增）：`resolveTipHost(lock, {materialize})` 一次分派出该几何的发尖链 / splits / 骨骼 / fork / 帧，替代此前「`clonePanelSplits` + `materializeSplitBones` + `splitTipForSegment`」的 panel 专用三连。状态键 `panelTipSelection`/`panelTipHover` 已改名为几何无关的 **`tipSelection`/`tipHover`**（单键，见 STATE_MANAGEMENT.md §2.1）。
+- 共享层 `modules/geometry/tip-width-curve.js`（0.2.125 新增，纯函数）：控制网格、按侧暴露判据、build/reset/write 的曲线数学。签名以「相邻 zipper 高度 / fork 标量」为入参，**不接受 `(lock, segmentIndex, splits)`**——panel 的 `panelSplits` 与发丝的 `strandSplits` 字段名不同但条目形状与邻居规则相同，参数化掉 lock 才能真正共用一份。改这里要同时看 panel 与发丝两侧的适配器。
+- panel 侧 `panel-tip-strand.js`：ribbon 专属部分（`tipWidthEdgePosition`/`tipPanelWidthAt`/`tipWidthControlPlacement`/`tipWidthSpreadGap`）留在此处，曲线数学改为薄适配器委托共享层。0.2.125 抽取经 36 用例逐字节等价验证。
+- 发丝侧 `modules/geometry/strand-tip-width.js`（0.2.125 新增）：管内相对坐标 `strandTubeSignedCoordinate` 是本模块的核心，也是唯一定义点。**不要用 raw `profile.x` 判定管的左右侧**：`clipStrandProfileBand` 裁剪后每根管的 raw x 只有一个符号（边缘管全负/全正），用它当判据会让一侧曲线永不生效——这正是 panel 在 0.2.80 修掉的死区。
+- 选中系统共享层 `modules/bones/tip-sub-bone-host.js`（0.2.126 新增）：`resolveTipHost(lock, {materialize})` 一次分派出该几何的发尖链 / splits / 骨骼 / fork / 帧，替代此前「`clonePanelSplits` + `materializeSplitBones` + `splitTipForSegment`」的 panel 专用三连。状态键 `panelTipSelection`/`panelTipHover` 已改名为几何无关的单键 `tipSelection`/`tipHover`（见 STATE_MANAGEMENT.md §2.1）。
 - **几何门控一律用 `segmentBoneHost(lock) === STRAND_SEGMENT_HOST`，不要写 `!isPanelGeometry`**（0.2.126 定论）：后者会把「既非 panel 也非 split 发丝」的几何一并卷入。`segmentBoneHost` 对未开启 split 的发丝返回 null。
-- **`clonePanelSplits` 红线**：发丝路径**绝不**调它——会造出与真实 zipper 无关的假 `panelSplits`，段数/fork 全错（0.2.126 之前已踩过两次）。
-- **单点定义速查**（禁止就地重写这些表达式）：fork `strandSplitForkTForSegment`(bone-model) / `strandTubeForkT`(strand-tip-width) / `tipWidthSideForkFromHeights`(tip-width-curve)；**Tip Clump 收窄比例 `tipClumpNarrowFraction`**(tip-width-curve，panel 与发丝共用)；**管中心 `strandSplitTubeCenter`**(bone-model)；管内相对坐标 `strandTubeSignedCoordinate`；按侧暴露 `tipWidthSideExposesTAt`；首个暴露链索引 `firstExposedTipChainIndex`(tip-sub-bone)；段数/索引钳位 `resolveSegmentSelection`；链长 `tipChainPointCount`。**残余重复站点与处置建议见 `in-progress/tip-subsystem-reuse-audit.md`。**
-- **Tip Clump（0.2.132）**：字段是 **`bone.tipClump`**（不是 `spread` —— 那是 main 的**发丝聚簇**参数，同名不同物；读取回退只在 normalize 层做一次）。语义 = 发尖相对**自身宽度**的整体收窄，panel 与发丝**同义**。「整管横向平移分离」（segment separate / 全局 Split Spacing 滑杆）**已删除**，分离靠拉 zipper。术语对照见 `APPJS_SPLIT_GUIDE.md §7.2b`。
-- **UV 红线**：发尖宽度只准缩放 `t > fork` 的顶点。**row 0 顶点位置不得改变**（`uv-unfold` 的 U 完全由 row 0 环向弧长决定，V 纯行号）。因此曲率收窄预趟**刻意不传** width override **与 Tip Clump 收窄**（其 factors 全行共享且经 falloff 会把位移传到 row 0），`strandProfileTopologyAt` 的 `centerAsymmetricProfile` 重居中分支在 override 生效时也**刻意跳过**（重居中 = 整管平移，宽度只能缩放）。这几处不对称是**有意的，勿"顺手统一"**。
-- **发尖处的 taper 通常是 0**（`DEFAULT_TAPER_CURVE` 末点 `value: 0`，真实工程亦然）：任何「取 t = 1 处几何量」的把手/放置逻辑都会在那里退化成一个点。手柄跨度基准必须与 taper 无关（见 `strandTipClumpAxis` 的标称管宽，与 bug-fixes.md #25）。**测试 fixture 至少要有一个 taper 收到 0 的构型**，否则这类退化在 node 侧永远绿。
+- `clonePanelSplits` 红线：发丝路径**绝不**调它——会造出与真实 zipper 无关的假 `panelSplits`，段数/fork 全错（0.2.126 之前已踩过两次）。
+- 单点定义速查（禁止就地重写这些表达式）：fork `strandSplitForkTForSegment`(bone-model) / `strandTubeForkT`(strand-tip-width) / `tipWidthSideForkFromHeights`(tip-width-curve)；Tip Clump 收窄比例 `tipClumpNarrowFraction`(tip-width-curve，panel 与发丝共用)；管中心 `strandSplitTubeCenter`(bone-model)；管内相对坐标 `strandTubeSignedCoordinate`；按侧暴露 `tipWidthSideExposesTAt`；首个暴露链索引 `firstExposedTipChainIndex`(tip-sub-bone)；段数/索引钳位 `resolveSegmentSelection`；链长 `tipChainPointCount`。残余重复站点与处置建议见 `in-progress/tip-subsystem-reuse-audit.md`。
+- Tip Clump（0.2.132）：字段是 `bone.tipClump`（**不是** `spread`——那是 main 的发丝聚簇参数，同名不同物；读取回退只在 normalize 层做一次）。语义 = 发尖相对自身宽度的整体收窄，panel 与发丝同义。「整管横向平移分离」（segment separate / 全局 Split Spacing 滑杆）已删除，分离靠拉 zipper。术语对照见 `APPJS_SPLIT_GUIDE.md §7.2b`。
+- **UV 红线**：发尖宽度只准缩放 `t > fork` 的顶点，**row 0 顶点位置不得改变**（`uv-unfold` 的 U 完全由 row 0 环向弧长决定，V 纯行号）。因此曲率收窄预趟刻意不传 width override 与 Tip Clump 收窄（其 factors 全行共享且经 falloff 会把位移传到 row 0），`strandProfileTopologyAt` 的 `centerAsymmetricProfile` 重居中分支在 override 生效时也刻意跳过（重居中 = 整管平移，宽度只能缩放）。这几处不对称是有意的，勿"顺手统一"。
+- 发尖处的 taper 通常是 0（`DEFAULT_TAPER_CURVE` 末点 `value: 0`，真实工程亦然）：任何「取 t = 1 处几何量」的把手/放置逻辑都会在那里退化成一个点，手柄跨度基准必须与 taper 无关（见 `strandTipClumpAxis` 的标称管宽，与 bug-fixes.md #25）。测试 fixture 至少要有一个 taper 收到 0 的构型，否则这类退化在 node 侧永远绿。
 
-### 2.4c Scalp Conform（面板贴合头皮，**仅 panel**，第四版模型 0.2.143）
-- **第四版**：逐行绕**头部胶囊轴**的同心 wrap（轴与半径都从头部代理逐行推导，与面板 frame、全局常数均无关），「不穿透」由构造保证。唯一定义点 `panelScalpConformOffsets`（`panel-tip-strand.js`）+ 平面无关的弯曲内核 `panelBendCrossSection`（`curve-math.js`，本轮**未改动**）。前三版驳回原因、全部实测数据、8 点验收判据见 `in-progress/scalp-conform-bend-v4-plan.md`（权威文档，**勿在本页复述实现细节**）。
+### 2.4c Scalp Conform（面板贴合头皮，仅 panel，第四版模型 0.2.143）
+- 第四版：逐行绕头部胶囊轴的同心 wrap（轴与半径都从头部代理逐行推导，与面板 frame、全局常数均无关），「不穿透」由构造保证。唯一定义点 `panelScalpConformOffsets`（`panel-tip-strand.js`）+ 平面无关的弯曲内核 `panelBendCrossSection`（`curve-math.js`，本轮未改动）。前三版驳回原因、全部实测数据、8 点验收判据见 `in-progress/scalp-conform-bend-v4-plan.md`（权威文档，勿在本页复述实现细节）。
 
 ### 2.5 Panel Split 子骨骼 / 统一骨骼模型（0.2.59 起）
-- `lock.splitBones`：每 split 段一个完整变换骨骼（P/orient 四元数/spread + 每段 Width/Depth 曲线）；**混合持久化**——旧档无字段时内存派生、编辑后整体落盘；镜像段序反转 mirrorSplitBones。
+- `lock.splitBones`：每 split 段一个完整变换骨骼（P/orient 四元数/spread + 每段 Width/Depth 曲线）；混合持久化——旧档无字段时内存派生、编辑后整体落盘；镜像段序反转 mirrorSplitBones。
 - `modules/bones/bone-model.js`：`bonesFor(lock)` 统一骨骼视图（main/split/child 命名空间，主骨骼有子骨骼才架空）；`splitBonesFor`/`materializeSplitBones`。
-- `createPanelStrandGeometry`：段内局部 u' + 每段曲线 + **相对缩放**（恒 uStart≤uEnd 根除 crossover），删除 trim/gap 位移；**zipper 水密拓扑保留**（墙 quad/端盖/snap-to-loops/退化跳过/焊接/法线平滑）。
+- `createPanelStrandGeometry`：段内局部 u' + 每段曲线 + 相对缩放（恒 uStart≤uEnd 根除 crossover），删除 trim/gap 位移；zipper 水密拓扑保留（墙 quad/端盖/snap-to-loops/退化跳过/焊接/法线平滑）。
 - 子发片扫掠统一：`modules/geometry/strand-sweep.js`（`sweepSide`），`createBranchChildGeometry` = 默认扫掠 + 桥接 + 根部移动优化。
-- **0.2.60**：发尖（segment）宽度/深度曲线编辑统一到普通曲线 UI——右侧面板 Width/Depth Curve 预设 select + 右上角小铅笔（替代 Edit Segment Width Curve/Depth Curve 大按钮），预设作用于当前段 split bone；浮动面板随子发尖切换热刷新；浮动面板非对称显示跟随两侧曲线实际差异（默认对称、Ctrl 视口拖拽=非对称）；Reset 保持 fork 连续（zipper 端点不裂）。
+- 0.2.60：发尖（segment）宽度/深度曲线编辑统一到普通曲线 UI——右侧面板 Width/Depth Curve 预设 select + 右上角小铅笔（替代 Edit Segment Width Curve/Depth Curve 大按钮），预设作用于当前段 split bone；浮动面板随子发尖切换热刷新；浮动面板非对称显示跟随两侧曲线实际差异（默认对称、Ctrl 视口拖拽=非对称）；Reset 保持 fork 连续（zipper 端点不裂）。
 
 
 ### 2.6 Sweep 转角收窄 + 边缘平滑（0.2.66）
@@ -75,15 +76,15 @@
 - 0.2.67：急弯过渡扩散——`sweepCurvatureResponse` 新增 `falloff`（默认 3），收窄系数沿脊柱传播（`#sweepOverlapPanel` 第 4 个滑块 Sweep Overlap Falloff 0–8），消除被处理边附近未收缩环的突兀/缺口。
 - 0.2.68：`smoothSweepFrames` 切线后处理平滑（按曲率热度，`#sweepOverlapPanel` 第 5 个滑块 Sweep Tangent Smooth，默认 0.3）；5 个平滑参数（Strength/Threshold/EdgeSmooth/Falloff/TangentSmooth）已接入镜像系统（createMirrorPartner + syncMirrorPartnerFromLock + 滑块 syncActiveMirror），左右对称对象自动同步。
 
-### 2.7 导出拆 UV（0.2.69–0.2.79 规则；**0.2.110 打包多线程化**）
+### 2.7 导出拆 UV（0.2.69–0.2.79 规则；0.2.110 打包多线程化）
 - `modules/io/uv-unfold.js`：导出时按 `geometry.userData.gridRowIndices/gridColIndices` 生成矩形 UV 的纯函数核心——`gridDimensions` / `gridUvTable`（弧长表：row-0 环向边宽累计 u + referenceCircumference/uOffset·uScale 两种归一 + seamEndU）/ `gridUvAt` / `childUTopologyScale`（子发片 U 拓扑对齐缩放：环顶面弧长↔洞顶 u 跨度）/ `unfoldHairMesh`（closed/split/open/compound/child 五类展开，seam 双副本不丢面、passthrough 多副本、leafWeights 复制）。
-- `modules/io/uv-pack.js`（0.2.82 起；**0.2.110 两段式重构**）：`packFamilies` 纯函数 + 新增 `preparePack`/`sampleMaxK`/`refineMaxK`/`applyPackResult` 导出（并行择优拆开）；`alpacaPackOccupancy` 内部**行区间表**（替代栅格+积分图，逐格等价，同步 2.5×）；`PACK_GAP=10/4096`、不旋转只位移、`uvisland` 岛编号；旧实现 `maxRectsPack`/`alpacaPackTurbo`/`alpacaPack` 注释保留可切回。算法细节与参考文献见 `uv-unfold.md` §10–§11。
-- **`modules/io/uv-pack-async.js` + `uv-pack-worker.js`（0.2.110 新增，导出/UV checker 默认走这里）**：`packFamiliesAsync` Worker 池并行（8 seed×8 块 sample + 8 refine 任务，与同步**逐位一致**，Float64Array 传 boxes，无 Worker 自动回退同步）；`buildUnfoldedMeshes`/`buildHairObj`/`buildHairUsda`/`packUnfoldedUv` **全部 async**（调用点必须 await）；真实工程实测 4.0s→约 456ms（≈9×）。验证工具：`scripts/verify-uv-pack-real.mjs`（headless Chrome + CDP 端到端）、`check-uv-bitidentity.mjs`、`diff-occupancy.mjs`。
+- `modules/io/uv-pack.js`（0.2.82 起；0.2.110 两段式重构）：`packFamilies` 纯函数 + 新增 `preparePack`/`sampleMaxK`/`refineMaxK`/`applyPackResult` 导出（并行择优拆开）；`alpacaPackOccupancy` 内部行区间表（替代栅格+积分图，逐格等价，同步 2.5×）；`PACK_GAP=10/4096`、不旋转只位移、`uvisland` 岛编号；旧实现 `maxRectsPack`/`alpacaPackTurbo`/`alpacaPack` 注释保留可切回。算法细节与参考文献见 `uv-unfold.md` §10–§11。
+- `modules/io/uv-pack-async.js` + `uv-pack-worker.js`（0.2.110 新增，导出/UV checker 默认走这里）：`packFamiliesAsync` Worker 池并行（8 seed×8 块 sample + 8 refine 任务，与同步逐位一致，Float64Array 传 boxes，无 Worker 自动回退同步）；`buildUnfoldedMeshes`/`buildHairObj`/`buildHairUsda`/`packUnfoldedUv` 全部 async（调用点必须 await）；真实工程实测 4.0s→约 456ms（≈9×）。验证工具：`scripts/verify-uv-pack-real.mjs`（headless Chrome + CDP 端到端）、`check-uv-bitidentity.mjs`、`diff-occupancy.mjs`。
 - `modules/io/project-files.js`：`kindForLock` / `childSeamCol` / `buildUnfoldedMeshes`（两遍：父表 + 展开；child 传 seamCol/childVStart/childVLength/childVSweepStart/uOffset/uScale/bridgeUvAt/passthroughCopyCount/passthroughSide；末尾 `packUnfoldedUv` 打包）；buildHairObj/buildHairUsda 走展开数据；USDA 输出 `primvars:uvisland`（usda-export.js）。
 - `modules/geometry/branch-bridge.js`：桥接 UV 锚点（每桥接顶点 `{ring,hole,t,band}`，8 处 pushBoundary）+ `userData.bridgeUvAnchors/bridgeSeamCol/bridgeBoundaryParentIndices`。
-- `modules/geometry/strand-geometry.js`：各几何类型 gridRow/gridCol 写入（split 用**管局部列+全局偏移**、无 −1；弃 colToSection.findIndex）。
+- `modules/geometry/strand-geometry.js`：各几何类型 gridRow/gridCol 写入（split 用管局部列+全局偏移、无 −1；弃 colToSection.findIndex）。
 - `modules/geometry/panel-tip-strand.js`：panel 模拟 row/col（gridRowsArr/gridColsArr 经 weldPanelGeometryData 重映射）。
-- 规则/理念/踩坑全集：`devlog/uv-unfold.md`（**必读**，9 条踩坑含「wrap quad 丢弃→poly 缺失」「split x=0 共享点→父表 null」「bottom 自然展开与 side fill 冲突→意外 seam」）。
+- 规则/理念/踩坑全集：`devlog/uv-unfold.md`（必读，9 条踩坑含「wrap quad 丢弃→poly 缺失」「split x=0 共享点→父表 null」「bottom 自然展开与 side fill 冲突→意外 seam」）。
 
 ### 2.4 日常本地适配
 - ZH 语言、Houdini 导航、自定义雕刻笔刷（Slide/Scale·Cut-Extend/Push/Orient + Smooth twist）、S+左键调笔刷大小、Quick Save/Save as/Quick Export（File System Access API 直写盘）、浮动面板跟随、材质删除、Ctrl+Z 修复、`start-dev-server.cmd`。
@@ -93,43 +94,43 @@
 
 | 决策 | 内容 | 为什么 | 详见 |
 |---|---|---|---|
-| 桥接坐标方向 | 底部按位；侧面/顶部按**世界侧**（网格 left/right 在世界相反）；顶部 2src↔2dst + 中间分段 + smoothstep | 2.4l/2.4r 两次方向反了的教训 | annotations-bridge.md（2.4l / 2.4r） |
-| 折痕接缝 | 区域列是**虚拟列**，需从父 `quadFaces` 推导 skipCol 映射到真实网格列 | linear 控制点让某列重合、无面起始 | annotations-bridge.md（2.4o / 2.4q） |
+| 桥接坐标方向 | 底部按位；侧面/顶部按世界侧（网格 left/right 在世界相反）；顶部 2src↔2dst + 中间分段 + smoothstep | 2.4l/2.4r 两次方向反了的教训 | annotations-bridge.md（2.4l / 2.4r） |
+| 折痕接缝 | 区域列是虚拟列，需从父 `quadFaces` 推导 skipCol 映射到真实网格列 | linear 控制点让某列重合、无面起始 | annotations-bridge.md（2.4o / 2.4q） |
 | 直接 vs 间接桥接 | 直接：直接封闭、无需侧面填充；间接：侧面填充从直接桥接向洞顶/底 1:1 填 quad 条带 | 避免三角面；顶/底分开处理互不干扰 | 2.4t / 2.4u、0.2.43–0.2.44 |
 | split 父退回直接生成 | 父无拓扑衔接能力时子发片从根部扫掠 | 避免无效挖洞 | 0.2.49 |
-| main 合并策略 | 桥接区**保留本地** + 按需吸收 main 预设；`createHairGeometry` 按 branchRootRegion 分流；材质双面条件合并 | 两套代码同插入点但无功能重叠（约 1000 行大冲突=误读） | main-sync-conflicts.md |
+| main 合并策略 | 桥接区保留本地 + 按需吸收 main 预设；`createHairGeometry` 按 branchRootRegion 分流；材质双面条件合并 | 两套代码同插入点但无功能重叠（约 1000 行大冲突=误读） | main-sync-conflicts.md |
 | Local 选项移除 | 三个 Local dev 选项删除，统一快速保存/导出 | 功能等价且本地方案更优 | main-sync-conflicts.md |
 | 版本号 | `0.1.5-Sintaka.0.2.<dailybuild>`；主版本与上游对齐 | 避免与上游版本误判 | development-standards.md |
 
 ## 4. 工作方式（省 token 且合规）
 
-- **分支**：统一开发分支 `DHS/develop`（日常开发/修复直接提交）；大更改开临时 `feat/<描述>` 分支，merge 回 `DHS/develop` 后**立即删除**；发布时 `DHS/develop` merge 进 `branch-deployment`；禁止直接 merge main（上游镜像，更新按功能移植）；合并/冲突处理由主进程负责。
-- **查代码**：先用 `Select-String` / `git grep` 按函数名定点搜（第 2 节已列关键函数名），**不要整文件读**。
-- **记 devlog**：每 commit 一句话 + 指向详细文件；新条目追加到对应专题文件，不重复全文。
-- **验证**：`node scripts/verify-smoke.mjs assets/presets/layered-side-bun.ahs`（当前基线 9/11：export 对话框标题 + branch-bridge 数据依赖为已知环境差异）；`node --test tests/*.test.mjs`（dom-contract 0.2.111 起应全绿；其余测试以输出为准）。⚠️ **`uv-pack-async` 是负载相关 flake**：Worker 池单条最慢约 14s、该文件约 35s，并行跑多个子智能体时可能超时报出**恰好 1 条** `fail`，单独跑与降载重跑都绿——见到这种形态**先重跑**再怀疑代码（0.2.125 实测复现过一次）；真实工程 UV 打包端到端用 `node scripts/verify-uv-pack-real.mjs`（headless Chrome + CDP，加载 `D:/Downloads/Sussurro_v1_0046.ahs`，7/7 基线）；或静态服务器 `127.0.0.1:8080` + `D:/Downloads/Sussurro_v1_004*.ahs`（当前常用 0046）；不要用 `file://` 打开。
-- **版本/缓存号**：改 `modules/core/app-config.js` 的 `APP_VERSION` 与 `index.html` 缓存号 `?v=YYYYMMDD-N`，与 devlog「最近版本」保持一致。
+- 分支：统一开发分支 `DHS/develop`（日常开发/修复直接提交）；大更改开临时 `feat/<描述>` 分支，merge 回 `DHS/develop` 后立即删除；发布时 `DHS/develop` merge 进 `branch-deployment`；禁止直接 merge main（上游镜像，更新按功能移植）；合并/冲突处理由主进程负责。
+- 查代码：先用 `Select-String` / `git grep` 按函数名定点搜（第 2 节已列关键函数名），不要整文件读。
+- 记 devlog：每 commit 一句话 + 指向详细文件；新条目追加到对应专题文件，不重复全文。
+- 验证：`node scripts/verify-smoke.mjs assets/presets/layered-side-bun.ahs`（当前基线 9/11：export 对话框标题 + branch-bridge 数据依赖为已知环境差异）；`node --test tests/*.test.mjs`（dom-contract 0.2.111 起应全绿；其余测试以输出为准）。`uv-pack-async` 是负载相关 flake：Worker 池单条最慢约 14s、该文件约 35s，并行跑多个子智能体时可能超时报出恰好 1 条 `fail`，单独跑与降载重跑都绿——见到这种形态先重跑再怀疑代码（0.2.125 实测复现过一次）；真实工程 UV 打包端到端用 `node scripts/verify-uv-pack-real.mjs`（headless Chrome + CDP，加载 `D:/Downloads/Sussurro_v1_0046.ahs`，7/7 基线）；或静态服务器 `127.0.0.1:8080` + `D:/Downloads/Sussurro_v1_004*.ahs`（当前常用 0046）；不要用 `file://` 打开。
+- 版本/缓存号：改 `modules/core/app-config.js` 的 `APP_VERSION` 与 `index.html` 缓存号 `?v=YYYYMMDD-N`，与 devlog「最近版本」保持一致。
 
 ## 5. 常见坑（吸取过的教训）
 
-- 桥接 masks 与三角形绕序必须**同步交换**，否则线框画 quad 对角线（0.2.54 / 0.2.56 两次踩坑）。
-- 拆 UV 的坑（详见 uv-unfold.md §7）：闭合环切开**必须用顶点复制（seam 双副本）而非丢 wrap quad**（丢面=USDA poly 缺失）；split 网格列不要用 colToSection.findIndex（x=0 共享点会产出多余 −1 → 父表整体 null → 桥接 UV 接线全关）；桥接底部不要用「自然展开」与 side fill 混用洞侧 UV（洞底角冲突 → 意外 seam）；子发片 U 缩放用**拓扑对齐**（环顶面弧长↔洞顶 u 跨度）而非刚性倍率。
+- 桥接 masks 与三角形绕序必须同步交换，否则线框画 quad 对角线（0.2.54 / 0.2.56 两次踩坑）。
+- 拆 UV 的坑（详见 uv-unfold.md §7）：闭合环切开必须用顶点复制（seam 双副本）而非丢 wrap quad（丢面=USDA poly 缺失）；split 网格列不要用 colToSection.findIndex（x=0 共享点会产出多余 −1 → 父表整体 null → 桥接 UV 接线全关）；桥接底部不要用「自然展开」与 side fill 混用洞侧 UV（洞底角冲突 → 意外 seam）；子发片 U 缩放用拓扑对齐（环顶面弧长↔洞顶 u 跨度）而非刚性倍率。
 - 不要直接把 main 的多发丝预设（马尾/复合发丝）当子发片：索引与段数对不上会出错误拓扑；子发片目前只走单发丝默认预设。
-- 根骨骼 gizmo 热更新只作**起始基准**，用户手调 diff 必须保留（offset 记忆），否则 W 重进 / H 开关会跳变。
-- 删除子发片要**重算挖洞**（程序化流程 + 文件保存数据都要处理）；直接桥接要跟随 region 中心（rootRow=round((rowMin+rowMax)/2)）。
+- 根骨骼 gizmo 热更新只作起始基准，用户手调 diff 必须保留（offset 记忆），否则 W 重进 / H 开关会跳变。
+- 删除子发片要重算挖洞（程序化流程 + 文件保存数据都要处理）；直接桥接要跟随 region 中心（rootRow=round((rowMin+rowMax)/2)）。
 - 浮动面板 / 3D 选区标记对 null surface（split 父回退时）必须安全。
-- **UV 打包 Worker 坑（0.2.110）**：worker 传 boxes 必须用 **Float64Array**——Float32 相对误差 ~6e-8 会让占位栅格 `ceil((w·k+gap)/cell)` 在边界翻转 fitsAt 布尔值 → 采样 k 整步跳变，破坏「异步与同步逐位一致」；node 测试注入 worker_threads 必须传 **URL 对象**（`file://` 字符串抛 ERR_WORKER_PATH，会静默走回退路径让测试假绿，加「池真实使用」断言防）。
-- **?v= 缓存号必须定点刷新，不要全局替换（0.2.110 教训）**：dom-contract 测试冻结了 app.js/index.html 里的具体版本串，全局刷新会一次打挂 89 条断言。只在本次改动链上 bump（如 project-files→uv-pack/uv-pack-async、app.js→project-files、index.html→app.js）。**做法（0.2.134 补）**：替换串必须**按模块名限定**（`curve-math.js?v=<旧>` → `…?v=<新>`），绝不按日期串替换——`?v=20260901-1` 被多个模块共用，其中 `clump-brush-presets.js` / `localization.js` 两个**被测试冻结**。另注意 **ESM 的失效是链接期的**：若给 app.js 换了新号而它 import 的模块没换，回访用户会用缓存里的旧模块去解析新增的 named export，直接 `SyntaxError` 整个应用打不开——所以**新增 export 的模块，其全部 import 站点都要一起 bump**（curve-math 有 13 处）。
-- **回归测试写完必须用变异测试确认它"咬"，而且判据要选幅度而非存在性（0.2.137 教训，同一条测试改了两轮）**：为"中段鼓包"写的第一版判据是「clearance 剖面的方向反转次数不多于 flat」，**把 bug 改回去它仍然绿** —— 原因是 fixture 的 camber（`curvature×width×0.5`，宽面板上高达 0.45）在测试 harness 的**常量 frame.z** 上整体平移中面，把精心构造的剖面淹掉了（修法：fixture 里关掉 `panelCurvature`，此时中面点恰好等于曲线点）。修完 fixture 后判据**又太严**：任何非零长度的渐变带都会在带内留下一个极小反转（overshoot 仅 0.009），那是正常现象。最终判据 = **鼓包幅度** `overshoot / flat跨度 < 10%`，正常 2% vs 病态 39.8%，相差一个数量级、干净分开。**两条通用结论**：① 判据选**幅度**不选**存在性**——"有没有出现 X"会把正常现象与病态混为一谈；② **fixture 必须复刻病征的全部成因**，少一条就空转（本例三条：宽度远大于代理、曲线逐渐远离代理、且 clearance 上升"前重"；第三条最易漏，而它才是鼓包的成因）。
-- **探针/验收脚本的容差要匹配存储精度（0.2.134 教训）**：`BufferAttribute` 的 position 是 **Float32Array**，`float32(z+d)` 与 `float32(z−d)` 的舍入差在 0.25 量级上就有 ~1.5e-8。用 1e-12 之类的「看起来很严」的容差断言对称性/镜像性会**假红**（本轮实测报了一次 FAIL，实为探针自己的错）。float32 的 eps 尺度约为 `|value| × 1.2e-7`，逐位断言只在「同一条代码路径产出同一个值」时才成立（如 `amount==0` 与基线对比），跨符号/跨路径请用 1e-6。
-- **`fileApi` 只导出函数，别从它读状态（0.2.134 教训）**：`currentProjectName` / `quickSaveFileHandle` / `lastExport` 这些 getter 在**传进** `createProjectSaveApi` 的 deps 对象上，**不在返回值上**。从 `fileApi` 读得到 `undefined`（`JSON.stringify` 还会把它整个字段丢掉，看起来像"字段不存在"），写则凭空造出一个同名普通属性、读回来还是你写进去的值——于是「句柄被清掉了吗」这类断言会**假绿**。要读真实状态请走 `projectState.state`（已挂在 `__AHS_TEST_SEAM__` 上）。
-- **DOM 计数类断言先确认它非平凡（0.2.134 教训）**：outliner 的发丝行（`.lock-item`）**只在分组展开时才渲染**，所以「New 之后行数为 0」在加载了 26 根发丝时**同样为 0**，断言恒真、抓不到回归。这类断言要么改成断言前后**差值**，要么换一个用户真正看得见的量（本轮改用 `scene.traverse` 数 Mesh：2398 → 137）。
-- **不要在"差异极大的两个构型"之间做位置线性插值（0.2.137 教训，用户报告的"诡异挤压"）**：`delta = (target − point) · weight` 这种写法，当 weight 处在 0 与 1 之间时，顶点落在「原始构型」与「贴合构型」的连线上 —— 而这条线**不在任何光滑曲面上**，表现为中段鼓出一个包再收回去（糖纸褶皱）。实测：面板目标距头心 1.155，长 ramp 让中段停在 1.42（既没贴上头也不是原始形状）。**判据**：权重渐变带只能**很短**（本例扫出的安全边界是 0.25，≈两行细分），职责是"把被硬约束钉死的那一两行平滑放开"，**不能当艺术衰减用**。若确实需要长距离渐变，要插值的是**形变参数**（如弯曲半径），不是插值**结果位置**。**症状定位法**：若"一端正确、另一端错"，先看两端的权重差异 —— 权重饱和处正确、渐变处出错，几乎必然是这个坑，而不是模型本身错。
-- **「让 A 贴合 B」必须在世界空间朝 B 的真实表面收敛，不能沿 A 自己的法线偏移（0.2.136 教训，一个被用户驳回的模型）**：0.2.134/0.2.135 的面板半球隆起是沿 `frame.z` 的**标量偏移** —— 纯局部量，**不知道头皮在世界空间的哪里**，于是"后推的边缘"只是沿自己法线退了一段公式算出来的距离、落点与头皮实际位置无关，形状还会"拱起来"。**判据**：凡需求里出现"贴合/包住/跟随某个外部形体"，位移就必须是 `(target − point)` 形式、`target` 取自那个形体的真实几何；只要位移量是"某个公式算出的标量 × 局部基向量"，落点就一定与外部形体无关。**代理形状选择**：头部用 **Capsule 一端**而非纯球 —— 纯球在赤道以下会让顶点朝内卷（长发往下巴底下收），Capsule 的圆柱段让它直着垂下。**代理参数要跟随运行时状态**（注入 `scalpSurface` 对象本体），别为了"手感稳定"写死常数；但**别传 Object3D**：几何重建早于渲染，`matrixWorld` 可能是脏的，从纯数据推变换永远是当前值。**双壳几何的坑**：delta 必须从"壳厚归零的中面点"算再原样加到两壳，否则两壳各自收到同一张表面上、厚度被压成 0。
-- **判断「同字段两处赋值哪个生效」必须跟控制流，不能只比字面量（0.2.134 教训，已实测证伪一个"bug"）**：`createMirrorPartner` 的对象字面量里 `panelLeftEdgeTrim` 看似**没互换**，而 `syncMirrorPartnerFromLock` 里**互换**了 —— 看起来是潜伏的镜像 bug，本轮一度这么记录。**实为误判**：`createMirrorPartner` 在 `return` 前的 L9563 **无条件调用** `syncMirrorPartnerFromLock`，其守卫对两个不同 lock 必然通过，所以**互换总是最后执行**，字面量那份是**死值**。真实浏览器实测（走 outliner 右键 Mirror Instance）：源 left/right=0.5/0 ⇒ partner **0/0.5**，镜像正确。**推论**：那个对象字面量里的 panel 字段大多是死值，读它判断镜像语义会得出反的结论；也**别"顺手把字面量改成互换"**，那会互换两次。已在该处加注释。
-- **合成滑杆交互要分清两条监听（0.2.134 教训）**：值变化走 **`input`**，而 undo 基线由 `bindUndoCapture` 在 **`pointerdown`/`keydown`** 上捕获。只派发裸 `input` ⇒ 值改了但**没有 undo 步**（`#undoAction` 仍 disabled），于是「undo 能还原吗」这类断言拿不到快照、看起来像持久化坏了（本轮初版实测踩过）。要验 undo 往返就先 `pointerdown` 再改 `value` 再 `input`。**顺带一条更通用的**：想验「字段真的进了存档」时，**undo 往返比读 snapshot 更强** —— 它同时跑 `snapshotState`（序列化）与 `restoreLock`（反序列化）两条真实路径，且不需要为此加宽 `__AHS_TEST_SEAM__`。
-- **Houdini 的 Bend SOP 是 Barr 1984 的轴向空间形变，认清这一点能一次性平息一个反复出现的疑问（0.2.143 教训，Houdini 22.0.368 活实例实测）**：它只在**脊柱**上保长，偏离脊柱、沿弯曲径向偏移 d 的纤维长度按**精确律** `1 − k·d` 缩放（实测七个 offset 全部吻合到 5 位小数）；垂直于弯曲平面的方向**逐位不变**（圆柱可展）。capture 区实测是**分段常曲率**（区内 22.5°/单位、区外 0），即**插值的是变换/转角，不是位置**——与本页既有的「不要在两个构型之间插值位置」结论**同一条**，这次由 SideFX 自己的设计独立佐证。**对本仓库的推论**：`panelBendCrossSection` 不是空间形变，在宽度方向比 Houdini bend 更强（逐段保长，偏离中性面的部分也不缩放）；0.2.138 的 camber 跨度 bug（实测比值 1.259）正是 `1 + k·d` 律在起作用，用它反算得到同量级同方向的数字。
-- **探针里用来验证被测代码的几何拟合器，必须自带自检，否则它自己的 bug 会伪装成被测代码的 bug（0.2.143 教训）**：一个圆的三点拟合圆心（circumcentre）辅助函数把两个分子项写反，结果拟合出的圆心被镜像、报告的径向方向也跟着反了——七组本来正确的测量因此全部报"NO"。修法不是改完公式就收工，而是**加一条对已知解的断言**（`(0,0,0)/(1,1,0)/(2,0,0)` ⇒ 圆心必须是 `(1,0,0)`），断言不过就拒绝输出结果。
-- **"数负号翻转的四边形个数"不是折叠判据（0.2.143 教训，与已有"判据选幅度不选存在性"同一条规则，这次连知道规则的人自己都先踩了一次）**：某个投影下整张网格的绕序本来就一致为负，30° 弯曲、什么都没折叠时就报 1600/1600——基线本身不是非平凡的零，判据因此恒真。改成**差分**判据（相对静止姿态的符号是否翻转）才在正确的角度区间抓到首次折叠；干净的搭档是**幅度**判据（最短行长度比，与 `1 − k·d` 精确吻合）。
-- **「量壳还是量中面」会让保弧长测试整条失效，而且失效方式是**变绿**（0.2.143 教训，由子智能体在复核中抓到，不是我自己发现的）**：面板是双壳几何，弯曲内核保的是**中面**截面的逐段长度；两壳是沿弯后法向的 **offset curve**，长度按 `(1 + k·d)`（d = 壳半厚）缩放 —— 那是 Houdini bend 那条 `1 ± k·d` 律的同一个东西，是「厚度沿弯后法向放置」的必然结果，**不是缺陷**。保弧长测试初版量的是 **front 壳**，于是同时犯了三个错：① 量错了面；② `min` 与 `max` 两个界**都断在同一个 `min` 变量上** ⇒ 上界近乎恒真；③ 只建了 `width=5` —— 恰好是离散化缩短抵消掉壳增长的那个宽度。实测：`width=0.62` 时 front 壳最小比值就是 **1.0535**，那条自己写的 `< 1.001` 本该**当场变红**；换到中面后是 **0.9994..1.0000**。**三条通用结论**：① 双壳/带厚度几何上量任何「长度守恒」，先问**量的是哪张面**，中面 = 同一 (row, 逻辑列) 上两壳的平均（壳偏移精确相消）；② `min`/`max` 双侧界必须断在**各自**的量上，写完回读一遍断言里的变量名；③ **同一测试至少跑两个尺度**（本例窄/宽两个 width），单一尺度极易正好落在两种误差互相抵消的点上。另：把「壳确实按 offset-curve 律增长」也**单独写成一条测试**，否则改量中面后壳就完全没人看着了。
-- **Houdini 的几个几何坑，建几何前先用 bounding box 断言钉住轴映射与图元类型（0.2.143 教训）**：`grid` SOP 在 `orient=yz` 下把 `sizex` 映到 **Z**、`sizey` 映到 **Y**（与直觉相反）；`tube` 默认 `type = 0 : prim`（NURBS），此时 `rows`/`cols` 参数**不生效**（`grid`/`line` 默认才是 poly）。两条都在本轮的探针脚本里踩过（前者被 bbox 断言当场抓到，后者是设了 `rows=40` 却毫无反应才发现）。
-- **平的面板不可能等距贴到球面（Gauss's Theorema Egregium），宽面板必须诚实承认这一点、不能声称两个方向都保长（0.2.143 教训）**：理论正确的映射是测地极坐标（方位等距），径向精确、周向压缩系数为 `sin(ρ/R)/(ρ/R)`。本仓库真实档 `ρ/R` 达 1.7–2.2 ⇒ 系数只有 0.41–0.53——这正是 0.2.136/137 被驳回时实测的 0.52 坍缩比例：那一版其实是在做等距映射该做的周向压缩，只是压在了用户不接受的方向上。**结论**：只能二选一——宽度精确（畸变落到行距/行间剪切上）或行距精确（宽度按 sinc 压缩到约一半），不存在两者都保的方案，选哪个必须诚实告知代价。「窄条带能无拉伸地贴合曲面」这条结论只对**窄**条带成立，本面板不窄，不能套用。
+- UV 打包 Worker 坑（0.2.110）：worker 传 boxes 必须用 **Float64Array**——Float32 相对误差 ~6e-8 会让占位栅格 `ceil((w·k+gap)/cell)` 在边界翻转 fitsAt 布尔值 → 采样 k 整步跳变，破坏「异步与同步逐位一致」；node 测试注入 worker_threads 必须传 **URL 对象**（`file://` 字符串抛 ERR_WORKER_PATH，会静默走回退路径让测试假绿，加「池真实使用」断言防）。
+- **?v= 缓存号必须定点刷新，绝不全局替换（0.2.110 教训）**：dom-contract 测试冻结了 app.js/index.html 里的具体版本串，全局刷新会一次打挂 89 条断言。只在本次改动链上 bump（如 project-files→uv-pack/uv-pack-async、app.js→project-files、index.html→app.js）。做法（0.2.134 补）：替换串**必须按模块名限定**（`curve-math.js?v=<旧>` → `…?v=<新>`），绝不按日期串替换——`?v=20260901-1` 被多个模块共用，其中 `clump-brush-presets.js` / `localization.js` 两个被测试冻结。另注意 ESM 的失效是链接期的：若给 app.js 换了新号而它 import 的模块没换，回访用户会用缓存里的旧模块去解析新增的 named export，直接 `SyntaxError` 整个应用打不开——所以新增 export 的模块，**其全部 import 站点都要一起 bump**（curve-math 有 13 处）。
+- 回归测试写完必须用变异测试确认它"咬"，且判据要选幅度而非存在性（0.2.137 教训，同一条测试改了两轮）：为"中段鼓包"写的第一版判据是「clearance 剖面的方向反转次数不多于 flat」，把 bug 改回去它仍然绿——原因是 fixture 的 camber（`curvature×width×0.5`，宽面板上高达 0.45）在测试 harness 的常量 frame.z 上整体平移中面，把精心构造的剖面淹掉了（修法：fixture 里关掉 `panelCurvature`，此时中面点恰好等于曲线点）。修完 fixture 后判据又太严：任何非零长度的渐变带都会在带内留下一个极小反转（overshoot 仅 0.009），那是正常现象。最终判据 = 鼓包幅度 `overshoot / flat跨度 < 10%`，正常 2% vs 病态 39.8%，相差一个数量级、干净分开。**两条通用结论**：① 判据选幅度不选存在性——"有没有出现 X"会把正常现象与病态混为一谈；② fixture 必须复刻病征的全部成因，少一条就空转（本例三条：宽度远大于代理、曲线逐渐远离代理、且 clearance 上升"前重"；第三条最易漏，而它才是鼓包的成因）。
+- 探针/验收脚本的容差要匹配存储精度（0.2.134 教训）：`BufferAttribute` 的 position 是 **Float32Array**，`float32(z+d)` 与 `float32(z−d)` 的舍入差在 0.25 量级上就有 ~1.5e-8。用 1e-12 之类看起来很严的容差断言对称性/镜像性会假红（本轮实测报了一次 FAIL，实为探针自己的错）。float32 的 eps 尺度约为 `|value| × 1.2e-7`，逐位断言只在同一条代码路径产出同一个值时才成立（如 `amount==0` 与基线对比），跨符号/跨路径请用 1e-6。
+- `fileApi` 只导出函数，别从它读状态（0.2.134 教训）：`currentProjectName` / `quickSaveFileHandle` / `lastExport` 这些 getter **在传进** `createProjectSaveApi` 的 deps 对象上，**不在返回值上**。从 `fileApi` 读得到 `undefined`（`JSON.stringify` 还会把它整个字段丢掉，看起来像"字段不存在"），写则凭空造出一个同名普通属性、读回来还是你写进去的值——于是「句柄被清掉了吗」这类断言会假绿。要读真实状态请走 `projectState.state`（已挂在 `__AHS_TEST_SEAM__` 上）。
+- DOM 计数类断言先确认它非平凡（0.2.134 教训）：outliner 的发丝行（`.lock-item`）只在分组展开时才渲染，所以「New 之后行数为 0」在加载了 26 根发丝时同样为 0，断言恒真、抓不到回归。这类断言要么改成断言前后差值，要么换一个用户真正看得见的量（本轮改用 `scene.traverse` 数 Mesh：2398 → 137）。
+- 不要在差异极大的两个构型之间做位置线性插值（0.2.137 教训，用户报告的"诡异挤压"）：`delta = (target − point) · weight` 这种写法，当 weight 处在 0 与 1 之间时，顶点落在「原始构型」与「贴合构型」的连线上，而这条线不在任何光滑曲面上，表现为中段鼓出一个包再收回去（糖纸褶皱）。实测：面板目标距头心 1.155，长 ramp 让中段停在 1.42（既没贴上头也不是原始形状）。判据：**权重渐变带只能很短（本例安全边界 0.25，≈两行细分）**，职责是把被硬约束钉死的那一两行平滑放开，**不能当艺术衰减用**。若确实需要长距离渐变，要插值的是形变参数（如弯曲半径），不是插值结果位置。症状定位法：若"一端正确、另一端错"，先看两端的权重差异——权重饱和处正确、渐变处出错，几乎必然是这个坑，而不是模型本身错。
+- 「让 A 贴合 B」必须在世界空间朝 B 的真实表面收敛，**不能沿 A 自己的法线偏移**（0.2.136 教训，一个被用户驳回的模型）：0.2.134/0.2.135 的面板半球隆起是沿 `frame.z` 的标量偏移——纯局部量，不知道头皮在世界空间的哪里，于是"后推的边缘"只是沿自己法线退了一段公式算出来的距离、落点与头皮实际位置无关，形状还会"拱起来"。判据：凡需求里出现"贴合/包住/跟随某个外部形体"，位移就必须是 `(target − point)` 形式、`target` 取自那个形体的真实几何；只要位移量是"某个公式算出的标量 × 局部基向量"，落点就一定与外部形体无关。代理形状选择：头部用 Capsule 一端而非纯球——纯球在赤道以下会让顶点朝内卷（长发往下巴底下收），Capsule 的圆柱段让它直着垂下。代理参数要跟随运行时状态（注入 `scalpSurface` 对象本体），别为了"手感稳定"写死常数；但**别传 Object3D**：几何重建早于渲染，`matrixWorld` 可能是脏的，从纯数据推变换永远是当前值。双壳几何的坑：delta 必须从"壳厚归零的中面点"算再原样加到两壳，否则两壳各自收到同一张表面上、厚度被压成 0。
+- 判断「同字段两处赋值哪个生效」必须跟控制流，不能只比字面量（0.2.134 教训，已实测证伪一个"bug"）：`createMirrorPartner` 的对象字面量里 `panelLeftEdgeTrim` 看似没互换，而 `syncMirrorPartnerFromLock` 里互换了——看起来是潜伏的镜像 bug，本轮一度这么记录。实为误判：`createMirrorPartner` 在 `return` 前的 L9563 无条件调用 `syncMirrorPartnerFromLock`，其守卫对两个不同 lock 必然通过，所以互换总是最后执行，字面量那份是死值。真实浏览器实测（走 outliner 右键 Mirror Instance）：源 left/right=0.5/0 ⇒ partner 0/0.5，镜像正确。推论：那个对象字面量里的 panel 字段大多是死值，读它判断镜像语义会得出反的结论；也**别"顺手把字面量改成互换"**，那会互换两次。已在该处加注释。
+- 合成滑杆交互要分清两条监听（0.2.134 教训）：值变化走 `input`，而 undo 基线由 `bindUndoCapture` 在 `pointerdown`/`keydown` 上捕获。只派发裸 `input` ⇒ 值改了但没有 undo 步（`#undoAction` 仍 disabled），于是「undo 能还原吗」这类断言拿不到快照、看起来像持久化坏了（本轮初版实测踩过）。要验 undo 往返就先 `pointerdown` 再改 `value` 再 `input`。顺带一条更通用的：想验「字段真的进了存档」时，undo 往返比读 snapshot 更强——它同时跑 `snapshotState`（序列化）与 `restoreLock`（反序列化）两条真实路径，且不需要为此加宽 `__AHS_TEST_SEAM__`。
+- Houdini 的 Bend SOP 是 Barr 1984 的轴向空间形变，认清这一点能一次性平息一个反复出现的疑问（0.2.143 教训，Houdini 22.0.368 活实例实测）：它只在脊柱上保长，偏离脊柱、沿弯曲径向偏移 d 的纤维长度按精确律 `1 − k·d` 缩放（实测七个 offset 全部吻合到 5 位小数）；垂直于弯曲平面的方向逐位不变（圆柱可展）。capture 区实测是分段常曲率（区内 22.5°/单位、区外 0），即插值的是变换/转角、不是位置——与本页既有的「不要在两个构型之间插值位置」结论同一条，这次由 SideFX 自己的设计独立佐证。对本仓库的推论：`panelBendCrossSection` 不是空间形变，在宽度方向比 Houdini bend 更强（逐段保长，偏离中性面的部分也不缩放）；0.2.138 的 camber 跨度 bug（实测比值 1.259）正是 `1 + k·d` 律在起作用，用它反算得到同量级同方向的数字。
+- 探针里用来验证被测代码的几何拟合器，必须自带自检，否则它自己的 bug 会伪装成被测代码的 bug（0.2.143 教训）：一个圆的三点拟合圆心（circumcentre）辅助函数把两个分子项写反，结果拟合出的圆心被镜像、报告的径向方向也跟着反了——七组本来正确的测量因此全部报"NO"。修法不是改完公式就收工，而是加一条对已知解的断言（`(0,0,0)/(1,1,0)/(2,0,0)` ⇒ 圆心必须是 `(1,0,0)`），断言不过就拒绝输出结果。
+- "数负号翻转的四边形个数"不是折叠判据（0.2.143 教训，与已有"判据选幅度不选存在性"同一条规则，这次连知道规则的人自己都先踩了一次）：某个投影下整张网格的绕序本来就一致为负，30° 弯曲、什么都没折叠时就报 1600/1600——基线本身不是非平凡的零，判据因此恒真。改成差分判据（相对静止姿态的符号是否翻转）才在正确的角度区间抓到首次折叠；干净的搭档是幅度判据（最短行长度比，与 `1 − k·d` 精确吻合）。
+- 「量壳还是量中面」会让保弧长测试整条失效，而且**失效方式是变绿**（0.2.143 教训，由子智能体在复核中抓到，不是我自己发现的）：面板是双壳几何，弯曲内核保的是中面截面的逐段长度；两壳是沿弯后法向的 offset curve，长度按 `(1 + k·d)`（d = 壳半厚）缩放——那是 Houdini bend 那条 `1 ± k·d` 律的同一个东西，是「厚度沿弯后法向放置」的必然结果，不是缺陷。保弧长测试初版量的是 front 壳，于是同时犯了三个错：① 量错了面；② `min` 与 `max` 两个界都断在同一个 `min` 变量上 ⇒ 上界近乎恒真；③ 只建了 `width=5`——恰好是离散化缩短抵消掉壳增长的那个宽度。实测：`width=0.62` 时 front 壳最小比值就是 1.0535，那条自己写的 `< 1.001` 本该当场变红；换到中面后是 0.9994..1.0000。**三条通用结论**：① 双壳/带厚度几何上量任何「长度守恒」，先问量的是哪张面，中面 = 同一 (row, 逻辑列) 上两壳的平均（壳偏移精确相消）；② `min`/`max` 双侧界必须断在各自的量上，写完回读一遍断言里的变量名；③ 同一测试至少跑两个尺度（本例窄/宽两个 width），单一尺度极易正好落在两种误差互相抵消的点上。另：把「壳确实按 offset-curve 律增长」也单独写成一条测试，否则改量中面后壳就完全没人看着了。
+- Houdini 的几个几何坑，建几何前先用 bounding box 断言钉住轴映射与图元类型（0.2.143 教训）：`grid` SOP 在 `orient=yz` 下把 `sizex` 映到 Z、`sizey` 映到 Y（与直觉相反）；`tube` 默认 `type = 0 : prim`（NURBS），此时 `rows`/`cols` 参数不生效（`grid`/`line` 默认才是 poly）。两条都在本轮的探针脚本里踩过（前者被 bbox 断言当场抓到，后者是设了 `rows=40` 却毫无反应才发现）。
+- 平的面板不可能等距贴到球面（Gauss's Theorema Egregium），宽面板必须诚实承认这一点、不能声称两个方向都保长（0.2.143 教训）：理论正确的映射是测地极坐标（方位等距），径向精确、周向压缩系数为 `sin(ρ/R)/(ρ/R)`。本仓库真实档 `ρ/R` 达 1.7–2.2 ⇒ 系数只有 0.41–0.53——这正是 0.2.136/137 被驳回时实测的 0.52 坍缩比例：那一版其实是在做等距映射该做的周向压缩，只是压在了用户不接受的方向上。**结论**：只能二选一——宽度精确（畸变落到行距/行间剪切上）或行距精确（宽度按 sinc 压缩到约一半），不存在两者都保的方案，选哪个必须诚实告知代价。「窄条带能无拉伸地贴合曲面」这条结论只对窄条带成立，本面板不窄，不能套用。
