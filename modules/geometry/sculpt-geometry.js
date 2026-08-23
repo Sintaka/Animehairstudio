@@ -30,8 +30,7 @@ export function createSculptGeometryApi(deps) {
   //   proportionalRadiusInput/proportionalFalloffInput) + app.js helper functions (24 incl.
   //   applySubBoneBrushSample (B2)/effectiveSculptBrushTool/sculptBrushToolActive/
   //   sculptBrushSelectionAllows/mirrorPartnerFor/mirroredVector/syncLockFromCurve/
-  //   updateCurveObjects/rebuildLockGeometry/flushPendingLockGeometryUpdates/undoHistory/
-  //   full list: devlog/in-progress/g6-sculpt-geometry-refactor-map.md section 3.
+  //   updateCurveObjects/rebuildLockGeometry/flushPendingLockGeometryUpdates/undoHistory).
   // Batch-fill point in app.js: after the G4 curveSurfaceCreateDeps batch (all deps defined).
 
 const sculptBrushCurveClippingPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);

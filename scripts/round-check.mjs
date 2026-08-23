@@ -530,10 +530,14 @@ function findResidualUntrackedFiles(untrackedPaths) {
 // 拍错两次的留档：20/400 低于被代码钉住的 19 份/675KB；25/800 仍低于真实稳态 —— 实测当前
 // 29 份里 28 份搬不走（12 份既被钉住又有未收口项、7 份仅被钉住、9 份仅有未收口项），
 // 稳态是 839.6KB。两次同一个错：拿"理想状态"当地板，而不是拿"今天实际搬不走的量"当地板。
+// 第三次调整（0.2.145，与 check-devlog-debt.mjs 同步）：地板真的降了——钉住 15 份
+// refactor-map 的 32 处代码注释指针被清掉（27 处纯冗余、5 处已内联），15 份归档进
+// devlog/archive/。实测新地板：15 份 / 416KB，单份最大 74.86KB。按同一余量比例拍线：
+// 文件数 15→20、总量 416→480KB、单份 75→90KB。
 // 现按实测稳态 + 余量。改完必须确认三条当前都不触发，否则它又在报稳态。
-const IN_PROGRESS_FILE_COUNT_LIMIT = 35;
-const IN_PROGRESS_TOTAL_KB_LIMIT = 950;
-const IN_PROGRESS_SINGLE_FILE_KB_LIMIT = 100;
+const IN_PROGRESS_FILE_COUNT_LIMIT = 20;
+const IN_PROGRESS_TOTAL_KB_LIMIT = 480;
+const IN_PROGRESS_SINGLE_FILE_KB_LIMIT = 90;
 
 function checkInProgressVolume() {
   const dir = "devlog/in-progress";

@@ -1,6 +1,6 @@
 # 拆 UV 规则 / 实现理念 / 踩坑记录（0.2.69–0.2.79，分支 0.2.69-bugfix）
 
-> 本文记录**导出时**给扫掠发丝生成矩形 UV 的完整规则与踩坑。入口见 README.md 索引；
+> 本文记录**导出时**给扫掠发丝生成矩形 UV 的完整规则与踩坑。入口见 AGENT_QUICKSTART.md（新 agent 必读）；文档路由表见 README.md；
 > 版本时间线见 local-adaptation-log.md 0.2.69–0.2.79 条目，bug 编号见 bug-fixes.md。
 
 ## 1. 实现理念 / Goals

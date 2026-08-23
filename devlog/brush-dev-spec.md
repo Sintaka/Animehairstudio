@@ -1,6 +1,6 @@
 # 修改型笔刷开发规范
 
-<!-- 本文件由 devlog 拆分而来；入口见 README.md 索引 -->
+<!-- 本文件由 devlog 拆分而来；入口见 AGENT_QUICKSTART.md（新 agent 必读）；文档路由表见 README.md -->
 
 ## 修改型笔刷开发规范 / Modification brush dev spec
 

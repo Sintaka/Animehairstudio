@@ -44,8 +44,7 @@ export function createStrandGeometryApi(deps) {
   // branchRootBone) + locks data + app.js helper functions (strandCurveParameters/
   // strandProfileTopologyAt/strandGeometryFrameAt/strandInfluenceColor/strandGeometryCurve/
   // gridProfileSkipCol/outwardNormalAtPoint/proceduralBranchWorldPoints/
-  // proceduralBranchTemplatesForGuide/createBraidGeometry); full list:
-  // devlog/in-progress/g2-g3-strand-geometry-refactor-map.md section 3.3.
+  // proceduralBranchTemplatesForGuide/createBraidGeometry).
   // Batch-fill point in app.js: after outwardNormalAtPoint (next to the G1 deps batch).
 
 function clipStrandProfilePolygon(points, splitX, keepLeft) {
@@ -234,8 +233,9 @@ function createSplitStrandGeometry(lock, curve, profilePoints) {
       //    factors[row] 乘到该行**所有管**的顶点上）。把某一管的创作宽度喂进去，会让该管
       //    的曲线改动跨管污染其他管的位置。
       // ② factors 经 falloff 在行间扩散，发尖处 radii 变小可传播到 row 0 → row 0 顶点位移
-      //    → uv-unfold 的 U（只由 row 0 弧长决定）改变 = 破 UV 契约（红线，见
-      //    devlog/in-progress/strand-tip-width-ui-port-plan.md §3）。
+      //    → uv-unfold 的 U（只由 row 0 弧长决定）改变 = 破 UV 契约（红线）。
+      //    UV 契约已实测：uv-unfold.js 的 U 只累计每根管 row 0 的顶点弧长、V 只看行号索引；
+      //    本函数位移只发生在 t>fork（fork 恒 >0），天然不碰 row 0，故不改变任何现有 UV 值。
       // ③ 语义上曲率收窄响应的是发丝**基础包络有多粗**（防自穿插），发尖 WidthCurve 是
       //    其后的美术缩放；喂回去会形成「收窄→更细→少收窄→更粗」的非线性反馈，创作值
       //    与最终宽度不再成正比。

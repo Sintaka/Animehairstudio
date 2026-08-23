@@ -34,7 +34,7 @@ export function createClumpProceduralApi(deps) {
   //   selectedLocksInOrder/setLocksOutlinerVisibility/createOutlinerStrandButton/
   //   createOutlinerVisibilityToggle/handleOutlinerRenameClick/showOutlinerContextMenu).
   // Batch-fill point in app.js: after the proceduralDuplicateDeps batch (all const/let deps defined)
-  // and before the bootstrap init; see devlog/in-progress/clump-procedural-refactor-map.md.
+  // and before the bootstrap init.
 
 function nextClumpName() {
   const used = new Set(deps.locks.map((lock) => lock.clumpName).filter(Boolean));

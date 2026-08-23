@@ -15,8 +15,7 @@ import {
 export function createPolyToolsApi(deps) {
   // deps: store state proxies (sel/draw/sculptState/hairState) + shared objects (locks/curveGroup/renderer/
   // raycaster/undoHistory/lastPointer/polyRelaxProjectionRaycaster/guideApi) + DOM elements (viewportDrawLayerInput/
-  // polyBrushWidthInput/polyBrushSpacingInput/polyBrushSurfaceOffsetInput) + app.js helper functions; full list:
-  // devlog/in-progress/g7-poly-refactor-map.md section 4.
+  // polyBrushWidthInput/polyBrushSpacingInput/polyBrushSurfaceOffsetInput) + app.js helper functions.
 
 function selectedPolyMesh() {
   const lock = deps.getSelectedLock();

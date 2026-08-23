@@ -2,7 +2,7 @@
 
 > 目的：让一个新 agent（或新开发者）在几分钟内知道本 fork 改了哪些代码、哪些必须保留、当时的决策是什么，避免从头通读 ≈0.9MB（约 2 万行，行数现场统计）的 `app.js` 或 52KB 的 `js-change-annotations.md`（索引 + 6 个 `annotations-*.md` 专题）。
 > 维护：功能分支合入 / daily build +1 时，如涉及本页列出的保留代码或决策，请同步更新本页；详细条目仍按主题追加到各专题文件，本页只做摘要与指针。
-> 版本基准：0.2.137（DHS/develop）。行数/文件数/store 数一律现场统计（`node scripts/gen-function-index.js` 会顺带刷新 app.js 行数与文件数），本页历史上写死过 3 组过期计数，勿引用本页数字。
+> 版本基准：以 `modules/core/app-config.js` 的 `APP_VERSION` 为准（本页不复写版本号）。行数/文件数/store 数一律现场统计（`node scripts/gen-function-index.js` 会顺带刷新 app.js 行数与文件数），本页历史上写死过 3 组过期计数，勿引用本页数字。
 
 ## 0. 先读什么（建议顺序）
 
@@ -57,8 +57,10 @@
 - **UV 红线**：发尖宽度只准缩放 `t > fork` 的顶点，**row 0 顶点位置不得改变**（`uv-unfold` 的 U 完全由 row 0 环向弧长决定，V 纯行号）。因此曲率收窄预趟刻意不传 width override 与 Tip Clump 收窄（其 factors 全行共享且经 falloff 会把位移传到 row 0），`strandProfileTopologyAt` 的 `centerAsymmetricProfile` 重居中分支在 override 生效时也刻意跳过（重居中 = 整管平移，宽度只能缩放）。这几处不对称是有意的，勿"顺手统一"。
 - 发尖处的 taper 通常是 0（`DEFAULT_TAPER_CURVE` 末点 `value: 0`，真实工程亦然）：任何「取 t = 1 处几何量」的把手/放置逻辑都会在那里退化成一个点，手柄跨度基准必须与 taper 无关（见 `strandTipClumpAxis` 的标称管宽，与 bug-fixes.md #25）。测试 fixture 至少要有一个 taper 收到 0 的构型，否则这类退化在 node 侧永远绿。
 
-### 2.4c Scalp Conform（面板贴合头皮，仅 panel，第四版模型 0.2.143）
-- 第四版：逐行绕头部胶囊轴的同心 wrap（轴与半径都从头部代理逐行推导，与面板 frame、全局常数均无关），「不穿透」由构造保证。唯一定义点 `panelScalpConformOffsets`（`panel-tip-strand.js`）+ 平面无关的弯曲内核 `panelBendCrossSection`（`curve-math.js`，本轮未改动）。前三版驳回原因、全部实测数据、8 点验收判据见 `in-progress/scalp-conform-bend-v4-plan.md`（权威文档，勿在本页复述实现细节）。
+### 2.4c Scalp Conform（面板贴合头皮，仅 panel，当前第五版模型 0.2.144）
+- 当前是**第五版（椭球纬线 + 拟合椭球密切圆心）**：**第四版（胶囊轴、球冠/圆柱二分同心 wrap）已被取代，「球冠/圆柱二分」概念已废除**。第五版改为逐行取竖直纬线轴 + 水平径向（去掉第四版病根 `min(C.y, P.y)`），有效半径改由拟合椭球（新增全局参数 `scalpConformFit`，与可视头皮解耦）推导密切圆心；同时修了 NaN 静默摊平（新增 `isFinite` 守卫 + 极点钳位）。唯一定义点仍是 `panelScalpConformOffsets`（`panel-tip-strand.js`）。
+- **必读两条警告**：(1) **D11 三难**——「发尖逐位不变」「头尺寸/高度影响 conform」「amount=1 时同心面/不穿透由构造保证」三者最多同时成立两条，已选前两者放弃第二条（球构型下纬线截面是圆，密切圆心=圆心，半径与高度代数无关）；(2) **两条椭球已知限制**——非球构型下「不穿透」不再由构造保证，且椭球下包裹松紧随方位角明显不对称（均记为已知限制，非 bug）。
+- 全部实测数据、决策记录（D1–D11）、8 点验收判据见权威文档 `in-progress/scalp-conform-ellipsoid-v5-plan.md`（勿在本页复述实现细节）；第四版历史决策与前三版驳回理由见 `in-progress/scalp-conform-bend-v4-plan.md`。**CDP 真实链验收（`scripts/verify-scalp-conform.mjs`）尚未跑**，现有判据数字来自近似 frame 探针，真实链数字会有偏移。
 
 ### 2.5 Panel Split 子骨骼 / 统一骨骼模型（0.2.59 起）
 - `lock.splitBones`：每 split 段一个完整变换骨骼（P/orient 四元数/spread + 每段 Width/Depth 曲线）；混合持久化——旧档无字段时内存派生、编辑后整体落盘；镜像段序反转 mirrorSplitBones。

@@ -8,8 +8,12 @@ import { DEFAULT_LAYER_OFFSETS, DEFAULT_SWEEP_PROFILE, ROOT_SCALP_OFFSET_DISTANC
 
 
 export function createScalpBuilderApi(deps) {
-  // deps: store state proxies (scalpState/sculptState/sel/guideState) + app.js functions/consts;
-  // full injected-dep list: devlog/in-progress/scalp-refactor-map.md section 3
+  // deps: store state proxies (scalpState/sculptState/sel/guideState) + app.js functions/consts.
+  // ⚠️ 已知潜在裸引用 bug（非本次改动引入，**勿顺手"修对"**，用户已拍板本轮只记录不修）：
+  // deps.editedScalpSurfaceMesh / deps.editedScalpRegions / deps.importedScalpGuideAsset
+  // 在 app.js 顶层没有同名变量可批填 —— 只有 scalpState.state.X 存在，这三个 dep 实际恒为
+  // undefined（见本文件 L306/L617/L618）。完整依赖清单直接读 app.js 的
+  // Object.assign(scalpBuilderDeps,{...}) 批填点（约 157 项）。
 
 async function createAuthoredScalpGeometry() {
   const materialRegions = {

@@ -70,8 +70,7 @@ function tipChainPointsAsVectors(points) {
 export function createPanelTipStrandApi(deps) {
   // deps: store proxy (sculptState.state) + app.js helper functions (clonePanelSplits/
   // normalizePanelSplits/strandGeometryCurve/strandGeometryFrameAt/strandInfluenceColor/
-  // isPanelGeometry/outwardNormalAtPoint); full list:
-  // devlog/in-progress/g1-strand-geometry-refactor-map.md section 4.3.
+  // isPanelGeometry/outwardNormalAtPoint).
   // Batch-fill point in app.js: after outwardNormalAtPoint (all deps defined).
 
 function smoothCoincidentPanelNormals(geometry, tolerance = 0.0001) {

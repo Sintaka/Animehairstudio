@@ -294,12 +294,12 @@ import { createIoTailApi } from "./modules/io/io-tail.js?v=20260813-2";
 
 // Material UI api (refactor batch A6): deps filled in one batch after the renderLockList
 // definition; created early so the drawFlowDeps batch can reference materialApi.* without a
-// TDZ issue; see devlog/in-progress/material-io-refactor-map.md.
+// TDZ issue.
 const materialDeps = {};
 const materialApi = createMaterialUiApi(materialDeps);
 // IO tail api (refactor batch C1): deps filled in one batch after dataToVector; created early
 // so scalpBuilderDeps/proceduralDuplicateDeps/fileApi wiring can reference ioApi.* without a
-// TDZ issue; see devlog/in-progress/material-io-refactor-map.md.
+// TDZ issue.
 const ioDeps = {};
 const ioApi = createIoTailApi(ioDeps);
 function saveLanguage(language) {
@@ -1730,7 +1730,7 @@ const scalpBuilderDeps = {
   transformControls
 };
 // Remaining deps are filled in-place before the early module-eval calls and in one batch
-// after the last dep is defined (advancedLatticeButton); see devlog/in-progress/scalp-refactor-map.md.
+// after the last dep is defined (advancedLatticeButton).
 const scalpBuilder = createScalpBuilderApi(scalpBuilderDeps);
 try {
   scalpState.state.defaultScalpGeometryData = await scalpBuilder.createAuthoredScalpGeometry();
@@ -1815,58 +1815,54 @@ scalpBuilderGroup.renderOrder = 14;
 scene.add(scalpBuilderGroup);
 
 // Guide / curve system api (refactor 3d batch 5): deps filled in-place before boot-time guide calls
-// and in one batch after the last dep is defined; see devlog/in-progress/curve-guide-refactor-map.md.
+// and in one batch after the last dep is defined.
 const guideDeps = {};
 const guideApi = createGuideSystemApi(guideDeps);
 
 // Curve Surface / Surface Lattice create api (refactor 3d batch G4): deps filled in-place before boot-time
-// calls and in one batch after the last dep is defined; see devlog/in-progress/g4-refactor-map.md.
+// calls and in one batch after the last dep is defined.
 const curveSurfaceCreateDeps = {};
 const curveSurfaceCreate = createCurveSurfaceCreateApi(curveSurfaceCreateDeps);
 
 // Draw / creation flow api (refactor batch B2-1): deps filled in one batch after the
 // boneInteractionDeps block (all const/let deps defined) and before the preset-library boot;
-// no boot-time draw-flow calls before the batch, see
-// devlog/in-progress/draw-creation-refactor-map.md.
+// no boot-time draw-flow calls before the batch.
 const drawFlowDeps = {};
 const drawFlowApi = createDrawFlowApi(drawFlowDeps);
 // Placement flow api (refactor batch B2-2): deps filled in one batch after the drawFlowDeps
 // block (all const/let deps defined) and before the preset-library boot; no boot-time
-// placement calls before the batch, see devlog/in-progress/draw-creation-refactor-map.md.
+// placement calls before the batch.
 const placementDeps = {};
 const placementApi = createPlacementApi(placementDeps);
 
 // Procedural duplicate api (refactor batch B6b / plan A3): deps filled in one batch after the
-// placementDeps block (all const/let deps defined); no boot-time calls before the batch, see
-// devlog/in-progress/clump-procedural-refactor-map.md.
+// placementDeps block (all const/let deps defined); no boot-time calls before the batch.
 const proceduralDuplicateDeps = {};
 const proceduralDuplicateApi = createProceduralDuplicateApi(proceduralDuplicateDeps);
 
 // Clump / procedural api (refactor batch B6a / plan B6): deps filled in one batch after the
 // proceduralDuplicateDeps block (all const/let deps defined); no boot-time calls before the
-// batch, see devlog/in-progress/clump-procedural-refactor-map.md.
+// batch.
 const clumpProceduralDeps = {};
 const clumpProceduralApi = createClumpProceduralApi(clumpProceduralDeps);
 
 // Radial menu api (refactor batch A2): deps filled in one batch after the
 // referenceHeadApi block (all const/let deps defined); no boot-time calls before
-// the batch, see devlog/in-progress/radial-menu-refactor-map.md.
+// the batch.
 const radialMenuDeps = {};
 const radialMenuApi = createRadialMenuApi(radialMenuDeps);
 
 // Poly topology editing api (refactor 3d batch G7): deps filled in one batch after the last dep is
-// defined; no boot-time calls before the batch, see devlog/in-progress/g7-poly-refactor-map.md.
+// defined; no boot-time calls before the batch.
 const polyToolsDeps = {};
 
 // Taper curve editor api (refactor 3d batch G5): deps filled in one batch after the last dep is
-// defined (after createShapePresetsApi); no boot-time calls before the batch, see
-// devlog/in-progress/g5-taper-refactor-map.md.
+// defined (after createShapePresetsApi); no boot-time calls before the batch.
 const taperEditorDeps = {};
 const taperEditor = createTaperEditorApi(taperEditorDeps);
 const polyToolsApi = createPolyToolsApi(polyToolsDeps);
 // Panel/tip strand geometry api (refactor 3d batch G1): deps filled in one batch after the last
-// dep (outwardNormalAtPoint) is defined; no boot-time calls before the batch, see
-// devlog/in-progress/g1-strand-geometry-refactor-map.md.
+// dep (outwardNormalAtPoint) is defined; no boot-time calls before the batch.
 const panelTipStrandDeps = {};
 const panelTipStrand = createPanelTipStrandApi(panelTipStrandDeps);
 // Strand geometry api (refactor 3d batches G2+G3): deps filled in one batch after the last
@@ -1887,14 +1883,13 @@ const presetLibraryApi = createPresetLibraryApi(presetLibraryDeps);
 
 // Segment control / bone interaction api (refactor bones B1+B2): deps filled in one batch after
 // the taperEditorDeps batch (all deps incl. shapePresets defined); no boot-time calls before the
-// batch, see devlog/in-progress/b1-b2-bones-refactor-map.md.
+// batch.
 const segmentControlDeps = {};
 const segmentApi = createSegmentControlApi(segmentControlDeps);
 const boneInteractionDeps = {};
 const bonesApi = createBoneInteractionApi(boneInteractionDeps);
 // Bone view handle api (refactor bones B3): deps filled in one batch after the
-// strandGeometryDeps batch (all deps defined); no boot-time calls before the batch,
-// see devlog/in-progress/b3-bones-handle-refactor-map.md.
+// strandGeometryDeps batch (all deps defined); no boot-time calls before the batch.
 const boneViewHandlesDeps = {};
 const boneViewHandles = createBoneViewHandlesApi(boneViewHandlesDeps);
 const scalpBuilderTemplateOverlay = new THREE.Group();
@@ -3654,8 +3649,7 @@ const head = createHeadStore();
 
 // Reference + head/body api (refactor batch A4): deps filled in one batch after the
 // scalpBuilderDeps block (all const/let deps defined) and before the default-guide boot
-// callback (OBJLoader async, fires after full script evaluation) runs; see
-// devlog/in-progress/reference-head-refactor-map.md.
+// callback (OBJLoader async, fires after full script evaluation) runs.
 const referenceHeadDeps = {};
 const referenceHeadApi = createReferenceHeadApi(referenceHeadDeps);
 
@@ -7655,7 +7649,7 @@ function strandRadiusAt(lock, t, axis, radiusScale = 1, signedCoordinate = 1, cu
 // 位移；N = 1（默认拉链，真实工程的形态）时缝侧恰在 x = 0 ⇒ 位移**恒为 0**，即用户报告的
 // 「一侧位移很小」的极端形式（曲线面板两侧正常 ⇒ 写入没问题，错在消费）。
 // 这与 panel 在 0.2.80 之后修掉的是**同一条**规则：段宽度必须以**段中心**为参考，而不是
-// 主骨骼中心 u = 0（devlog/in-progress/panel-split-tip-bones.md §8.20 「改造为 tip-relative」）。
+// 主骨骼中心 u = 0（历史依据：panel 侧 0.2.59 修过同一 bug —— 旧实现按绝对 u 分界，宽度编辑时手柄沿错误方向偏转，实测最大 113°）。
 // 公式（pivot = 管中心在**基础**曲线下的像，与 multiplier 无关 ⇒ 缩放不掺平移）：
 //   x_out = (x · R_override(x) + pivotX · (R0(pivotX) − R_override(x))) · scaleX
 //         ≡ (pivotX · R0(pivotX) + (x − pivotX) · R_override(x)) · scaleX   （代数等价）
@@ -11055,8 +11049,9 @@ function createCurvePoints(lock) {
 
 
 // Placement flow (cluster E, refactor batch B2-2) extracted to modules/geometry/placement.js
-// (createPlacementApi); all app.js call sites below rewired to placementApi.*; see
-// devlog/in-progress/draw-creation-refactor-map.md "B2-2 execution record".
+// (createPlacementApi); all app.js call sites below rewired to placementApi.*.
+// 提取记录（历史参考，非活契约）：scalpActiveVertexIndices 迁出前在 app.js 是裸引用，迁移时
+// 改为 deps.scalpState 实时读取，属顺带修复而非本批目标。
 
 function deselectStrands() {
   guideApi.clearMultiPointSelection();

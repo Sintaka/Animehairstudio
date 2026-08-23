@@ -41,8 +41,8 @@ export function createTaperEditorApi(deps) {
   //   strandSegmentDepthPreview/strandTwistCurvePreview/
   //   proceduralBranchLengthCurvePreview/proceduralBranchShapeCurvePreview/sweepProfileEditor/sweepProfileTarget/
   //   groupDefaultsWarning) + app.js helper functions (including visibleTaperMeshCurveEdits for the
-  //   Move tool viewport curve controls); full list: devlog/in-progress/g5-taper-refactor-map.md
-  //   section 5. Batch-fill point in app.js: after createShapePresetsApi (all deps defined).
+  //   Move tool viewport curve controls).
+  //   Batch-fill point in app.js: after createShapePresetsApi (all deps defined).
 
 function activeStrandShapeTarget() {
   return deps.getSelectedLock() || (deps.creationToolActive() ? deps.activeCreationShapeDefaults() : null);

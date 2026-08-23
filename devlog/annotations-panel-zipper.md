@@ -1,6 +1,6 @@
 # Panel（Front Bangs）zipper 拓扑调研
 
-> 调研记录（0.2.58，分支 0.2.58-panel-split-refactor；仅产出本文档，无代码改动）。入口见 devlog/README.md。
+> 调研记录（0.2.58，分支 0.2.58-panel-split-refactor；仅产出本文档，无代码改动）。入口见 [AGENT_QUICKSTART.md](AGENT_QUICKSTART.md)（新 agent 必读）；文档路由表见 [README.md](README.md)。
 
 > 相关函数/关键词：createPanelStrandGeometry、addQuad、addPatch、splitOpening、snapPanelSplitHeight、weldPanelGeometryData、smoothCoincidentPanelNormals、panelSplitControlPoint、beginPanelSplitHandleDrag / updatePanelSplitHandleDrag / endPanelSplitHandleDrag、strandGeometryCurve、panelSplits、Front Bangs、Sussurro_v1_0044
 

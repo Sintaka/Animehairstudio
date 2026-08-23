@@ -1,6 +1,6 @@
 # 根骨骼 gizmo / twist / H 模式
 
-> 由 devlog/js-change-annotations.md 拆分而来；入口见 devlog/README.md。
+> 由 devlog/js-change-annotations.md 拆分而来；入口见 [AGENT_QUICKSTART.md](AGENT_QUICKSTART.md)（新 agent 必读）；文档路由表见 [README.md](README.md)。
 
 > 相关函数/关键词：captureBranchLocalState、pointerHitsTransformGizmo、branchRootGizmoFrame、strandControlPointFrame、applyBranchRigidRootMove、扫掠起始手柄、twist / H 模式
 

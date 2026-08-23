@@ -1,6 +1,6 @@
 # 日常适配（保存/导出、语言、导航、笔刷、拖放、材质、快捷键等）
 
-> 由 devlog/js-change-annotations.md 拆分而来；入口见 devlog/README.md。
+> 由 devlog/js-change-annotations.md 拆分而来；入口见 [AGENT_QUICKSTART.md](AGENT_QUICKSTART.md)（新 agent 必读）；文档路由表见 [README.md](README.md)。
 
 > 相关函数/关键词：saveHairProjectQuickly、exportHairProjectQuickly、File System Access API、localization.js、Navigation style、sculpt-brush.js、server.js、快捷键
 

@@ -1,7 +1,7 @@
 # Main 同步冲突记录 / Main sync conflict log
 
 > 本文件专门管理「main 上游更新 ↔ 本地 fork」之间的冲突、决策与合并记录。
-> 新增 main 同步/合并工作时，把决策与冲突处理追加到本文件，并在 devlog/README.md 索引补一行。
+> 新增 main 同步/合并工作时，把决策与冲突处理追加到本文件，并在 devlog/README.md 索引补一行。版本摘要不要再往 README 追加，追加到 local-adaptation-log.md。
 
 
 ## Main 更新移植原则（2026-08-13）

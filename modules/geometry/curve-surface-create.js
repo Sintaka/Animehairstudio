@@ -27,8 +27,7 @@ import {
 
 export function createCurveSurfaceCreateApi(deps) {
   // deps: store proxies (sculptState/miscState/sel) + shared objects (renderer/raycaster/panelCreationDefaults/
-  // scalpBuilder/STRAIGHT_CUT_PANEL_CURVE) + DOM elements + app.js helper functions; full list:
-  // devlog/in-progress/g4-refactor-map.md section 5.
+  // scalpBuilder/STRAIGHT_CUT_PANEL_CURVE) + DOM elements + app.js helper functions.
 function curveSurfaceControllerCurves(lock) {
   const rows = Math.max(2, Math.round(Number(lock?.curveSurfaceRows) || DEFAULT_CURVE_SURFACE_ROWS));
   const columns = Math.max(1, Math.round(Number(lock?.curveSurfaceColumns) || 1));

@@ -1,6 +1,6 @@
 # 开发规范 / 持续修改功能 / 许可证
 
-<!-- 本文件由 devlog 拆分而来；入口见 README.md 索引 -->
+<!-- 本文件由 devlog 拆分而来；入口见 AGENT_QUICKSTART.md（新 agent 必读）；文档路由表见 README.md -->
 
 ## 开发规范 / Development guidelines
 

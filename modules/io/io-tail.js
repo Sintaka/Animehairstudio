@@ -32,7 +32,7 @@ export function createIoTailApi(deps) {
   // IO DOM element refs (presetLibraryStatus/hairProjectFileInput/recentProjectsSubmenu/
   //   preferencesAndPresetsFile/preferencesBackupStatus/dropImport*).
   // Batch-fill point in app.js: after dataToVector (last dep; openHairProjectFile also needs
-  // fileApi + restoreState defined earlier); see devlog/in-progress/material-io-refactor-map.md.
+  // fileApi + restoreState defined earlier).
 function rootAttachmentFrame(lock, normal) {
   const tangent = lock.placementFrame?.flow?.clone()
     || lock.points?.[1]?.clone().sub(lock.points[0])

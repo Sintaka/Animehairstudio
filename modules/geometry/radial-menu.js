@@ -30,8 +30,7 @@ export function createRadialMenuApi(deps) {
   //   updateInteractionLocks/setViewportEditMode/setViewportSelectionMode/hideOutlinerContextMenu/
   //   selection/outliner/duplicate helpers), preference const RADIAL_MENUS_PREFERENCE_KEY.
   // Batch-fill point in app.js: after the referenceHeadApi block (all const/let deps defined)
-  // and before the bootstrap init (setRadialMenusEnabled); see
-  // devlog/in-progress/radial-menu-refactor-map.md.
+  // and before the bootstrap init (setRadialMenusEnabled).
 
 let strandRadialSubmenuActions = [];
 

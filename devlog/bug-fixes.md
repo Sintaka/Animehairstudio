@@ -1,6 +1,6 @@
 # Bug 修复 / 已知问题
 
-<!-- 本文件由 devlog 拆分而来；入口见 README.md 索引 -->
+<!-- 本文件由 devlog 拆分而来；入口见 AGENT_QUICKSTART.md（新 agent 必读）；文档路由表见 README.md -->
 
 ## 已知问题 / Known issues
 
@@ -240,3 +240,8 @@
    - **为什么 node 测试没抓到**：`split-tip-geometry.test.mjs` 的 fixture 用恒 1 的 `FLAT_CURVE`，管在 t = 1 仍是满宽 —— 掩盖了真实工程的形状。教训：**凡「取发尖处几何量」的把手/放置逻辑，fixture 必须至少有一个 taper 收到 0 的构型**。
    - 修复：轴跨度改用**标称管宽**（band 的 profile 极值 × baseWidth × widthScale × 该行 pointScales.x，**与 taper 无关**），正对应 panel 用「不随 taper 收缩的段 boundaries」建 handleU。taper 恒 1 时标称跨度与真实边缘重合。同时保住仿射性（两端点都不含 Tip Clump，它只作 lerp 系数）——拖拽端 49 探针反演的前提。
    - 验证：`scripts/verify-tip-clump.mjs` 真实浏览器从 16/17 → **17/17**（`lowToHigh` 由 0 变为 0.146）；补 node 回归「taper(1)=0 时轴仍可拖 + 每管手柄互不重合」，并在该测试里先断言「真实边缘确实横向退化」作为前提确认。
+
+26. **`scalp-builder.js` 三个 `deps.X` 裸引用恒为 undefined（0.2.145 发现，已知未修）**
+   - 问题：`modules/scalp/scalp-builder.js` 里 `deps.editedScalpSurfaceMesh` / `deps.editedScalpRegions` / `deps.importedScalpGuideAsset` 三处依赖在 `app.js` 顶层没有同名变量可批填，实际恒为 `undefined`。使用点：L306（`deps.importedScalpGuideAsset`）、L617/L618（`editingAuthoredScalp ? deps.editedScalpSurfaceMesh : deps.scalpState.customScalpSurfaceMesh` 这类三元表达式）——即「编辑内置头皮」（`editingAuthoredScalp` 为真）分支恒取到 `undefined`。
+   - 正确字段应在 `scalpState.state` 上：`modules/scalp/scalp-store.js:13` 有 `editedScalpSurfaceMesh: null`，正确写法应为 `deps.scalpState.editedScalpSurfaceMesh`（`editedScalpRegions`/`importedScalpGuideAsset` 同理）。
+   - **状态：已知未修**（0.2.145 发现，用户拍板本轮只记录不修）。修它属于行为变更，需先确认 `editingAuthoredScalp` 分支的预期行为（编辑内置头皮时是否真的要落到 `editedScalpSurfaceMesh` 而非 `customScalpSurfaceMesh`）。代码侧已在 `scalp-builder.js` 顶部（L12–16）注释标注「勿顺手修对」。

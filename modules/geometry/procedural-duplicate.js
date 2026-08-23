@@ -45,7 +45,7 @@ export function createProceduralDuplicateApi(deps) {
   //   createRootAttachment/layerOffsetForLock/layerRootOffsetFactor/rayFromViewportEvent/
   //   viewPlaneNormal/selectedLocksInOrder).
   // Batch-fill point in app.js: after the placementDeps batch (all const/let deps defined) and
-  // before the bootstrap init; see devlog/in-progress/clump-procedural-refactor-map.md.
+  // before the bootstrap init.
 
 function duplicatePlacementTarget(event, placement) {
   const ray = deps.rayFromViewportEvent(event);

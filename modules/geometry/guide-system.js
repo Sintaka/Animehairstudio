@@ -9,7 +9,7 @@ import { curveDeformedCapsulePoints, polylineLength, sampleCapsuleRadialProfile 
 export function createGuideSystemApi(deps) {
   // deps: store state proxies (guideState/sel/sculptState/scalpState) + shared objects (guides/locks/
   // guideSurfaceGroup/scalpSurfaceGroup/transformControls/camera/pointer/raycaster/capsuleGuideLoopHandle/
-  // renderer) + DOM elements + app.js helper functions; full list: devlog/in-progress/curve-guide-refactor-map.md section 5.
+  // renderer) + DOM elements + app.js helper functions.
 
 function guideHeadBounds(model) {
   const box = new THREE.Box3();

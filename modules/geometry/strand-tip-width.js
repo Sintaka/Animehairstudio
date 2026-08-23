@@ -39,10 +39,8 @@ export const STRAND_TIP_WIDTH_BLEND_ZONE = 0.25;
 // 拉链在 profile 局部 x 上的落点：THREE.MathUtils.lerp(minX, maxX, position * 0.5 + 0.5)。
 // 几何用它裁剪，本模块用它求管的 band 边界，两处必须同规则，否则 signedCoordinate 会相对
 // 错误的管中心归一化。
-// **已知重复（不要读成「同步点清单」）**：strand-geometry.js createSplitStrandGeometry
-// （~L120 的 splitXs）**并不调用本函数**，而是自写同一条 lerp —— 即这条规则目前有两副本，
-// 也正是本导出在仓库里没有外部 importer 的原因。收敛跟踪于
-// devlog/in-progress/tip-subsystem-reuse-audit.md，勿在改本文件时顺手合并。
+// 已知的刻意重复：strand-geometry.js 的 createSplitStrandGeometry 不调用本函数，而是自写同一条 lerp 公式。
+// 两处必须同步改，禁止顺手合并成一处（合并方案已评估，收益不抵跨模块耦合成本）。
 // 实际调用方只有一处：本文件 strandTubeBandExtents 的缺省分支（几何段循环里已算好 splitXs
 // 时会直接传入，避免第二次求值 —— 那条路径下两边用的是**同一批**数值，不是两次求值）。
 export function strandSplitBandXs(splits, minX, maxX) {

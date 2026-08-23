@@ -1,6 +1,6 @@
 # 子发片桥接几何 / 父发片挖洞
 
-> 由 devlog/js-change-annotations.md 拆分而来；入口见 devlog/README.md。
+> 由 devlog/js-change-annotations.md 拆分而来；入口见 [AGENT_QUICKSTART.md](AGENT_QUICKSTART.md)（新 agent 必读）；文档路由表见 [README.md](README.md)。
 
 > 相关函数/关键词：buildBranchBridgeGeometry、createBranchChildGeometry、applyBranchRootRegionCarving、holeBoundary、connectSide、2.4a→2.4t、桥接/挖洞/环形
 
