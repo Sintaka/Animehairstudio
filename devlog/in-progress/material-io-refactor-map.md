@@ -1,7 +1,7 @@
 # material + IO 收尾（rootAttachment + createProjectSaveApi 收敛）重构引用图
 
 > 只读盘点（2026-08-12，分支 0.2.59-refactor）。依据 devlog/FUNCTION_INDEX.json（generatedAt 2026-08-12，app.js 21,401 行 / 673 函数）与 Select-String 实扫。
-> 对应 devlog/in-progress/appjs-slim-remaining-plan.md 的 A6（material）与 C1（IO 遗留 + rootAttachment）。
+> 对应 devlog/archive/appjs-slim-remaining-plan.md 的 A6（material）与 C1（IO 遗留 + rootAttachment）。
 > Godel 旧区间 L10351-10661 / L12779-13973（32,530 行口径）已按当前 21,400 行重定位为下方表格行号（与 app.js 实际函数行一致，已逐个 Select-String 核对）。
 > 未修改 app.js / modules/*；本文件为唯一新增/可写文件。
 

@@ -21,7 +21,14 @@ export function createProjectStore() {
     lastExport: null,
     quickExportFileHandle: null,
     quickExportInProgress: false,
-    pendingFileAction: null
+    pendingFileAction: null,
+    // File > New 的空场景基准：boot 结束时（在 offerRecoverySnapshot 之前）由 app.js
+    // 用 snapshotState() 抓一次并**存成 JSON 字符串**。存字符串而不是对象，是因为
+    // restoreState 会把还原出的数组/对象接进场景并就地改写（locks 会被 restoreLock
+    // 消费），留着同一份对象引用会让第二次 New 拿到已被污染的基准。
+    // 抓取时机 = 应用自己的初始状态，所以 New 与「刚打开应用」逐字段一致，不必另外
+    // 维护一份「空项目」定义（那必然与 boot 漂移）。
+    pristineProjectSnapshot: null
   });
   return { state: store.state, snapshot: store.snapshot, restore: store.restore };
 }

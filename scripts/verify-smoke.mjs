@@ -16,8 +16,17 @@ const args = process.argv.slice(2);
 const VALUE_OPTS = new Set(["--port", "--cdp-port"]);
 const ahsFiles = [];
 for (let i = 0; i < args.length; i++) { if (args[i].startsWith("--")) { if (VALUE_OPTS.has(args[i])) i++; continue; } ahsFiles.push(args[i]); }
-const port = Number(args[args.indexOf("--port") + 1] || 8080);
-const cdpPort = Number(args[args.indexOf("--cdp-port") + 1] || 9223);
+// 取值型参数必须先判断 flag 是否存在：indexOf 缺失时返回 -1，`args[-1 + 1]` 会读到
+// **第一个位置参数**（即 .ahs 路径），Number(路径) = NaN ⇒ listen 抛 ERR_SOCKET_BAD_PORT。
+// 症状是「按 AGENT_QUICKSTART 里写的命令跑就崩」，看起来像环境坏了，其实是这里的取参 bug。
+const optNumber = (flag, fallback) => {
+  const at = args.indexOf(flag);
+  if (at < 0) return fallback;
+  const value = Number(args[at + 1]);
+  return Number.isFinite(value) ? value : fallback;
+};
+const port = optNumber("--port", 8080);
+const cdpPort = optNumber("--cdp-port", 9223);
 const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const THREE_VENDOR = path.join(os.tmpdir(), "ahs-verify-three", "vendor");
 const profileDir = path.join(os.tmpdir(), "ahs-smoke-profile-" + cdpPort);

@@ -12,66 +12,60 @@ This repository is a local adaptation of the original project. My own changes us
 
 ## Local deployment (Python)
 
-1. Install Python 3.
-2. In the project root, run `python -m http.server 8080 --bind 127.0.0.1`.
-3. Open `http://127.0.0.1:8080/` in your browser.
-4. Or just double-click `start-dev-server.cmd` (it opens the browser automatically).
-5. Don't open `index.html` directly via `file://` — browser security restrictions block module loading.
+1. Install Python 3, run `python -m http.server 8080 --bind 127.0.0.1` in the project root, and open `http://127.0.0.1:8080/` in your browser.
+2. Or just double-click `start-dev-server.cmd` (it opens the browser automatically).
+3. Don't open `index.html` directly via `file://` — browser security restrictions block module loading.
 
 Alternatively (requires Node.js): the built-in static server also doubles as a proxy for the native save dialog — run `node server.js` in the project root and open `http://127.0.0.1:5173/` (change the port with `PORT=xxxx node server.js`, or `$env:PORT=xxxx; node server.js` in Windows PowerShell). You can also use the generic npm static server: `npx http-server . -p 8080`.
 
 ## What's new in this repository (summary)
 
-- **Simplified Chinese UI** (Settings → Language, 3D terms kept in English), on top of the original English/Japanese.
-- **Five custom sculpt brushes** (Slide / Scale·Cut-Extend / Push / Orient / **Twist**) + Smooth twist; Ctrl = reverse — the Scale brush grows by default and shrinks with Ctrl; Cut·Extend extends by default and cuts with Ctrl.
-- **Twist Brush** — manual axial roll around the strand tangent, camera-independent (drag right / drag left roll opposite ways, Ctrl reverses again); it rotates orientation only and never moves points; in H mode child bones roll along while their positions stay pinned; the affected point set is locked at mouse-down.
-- **Tip Clump: one meaning on panels and ordinary strands (unified in 0.2.132)** — drag **Tip Clump** (or the little green ball in the viewport) to narrow this segment's / this tube's **tip as a fraction of its own width**, ramping linearly from 0 at the zipper to the full value at the tip. **This is how you get a simple fork now**: place a zipper to decide where the seam is and how deep it opens, then use Tip Clump to gather each tube's tip, and the seam opens toward the tip. The green width control points are **linked to Tip Clump** (they sit on the actually-narrowed edge). The old ordinary-strand **Split Spacing slider is gone** — it translated whole tubes sideways, which is a different thing from narrowing and overlapped the zipper's job. Existing files open unchanged; their old value seeds each tube's initial Tip Clump.
-- **Panel split sub-bones + tip sub-bones** — each split segment gets a full transform bone (P / orient / Tip Clump + per-segment Width/Depth curves); viewport tip chain handles / highlight / normal arrows; rotate and scale attach to the gizmo; tip WidthCurve (green control points, independent per side, zipper-truncated, Tip Clump 0–0.99, Reset to all-1); per-vertex skin weights [mainJoint, segment, weight] + USDA SkelBindingAPI skinning.
-- **Multiple zippers on ordinary strands** — upgraded from a single zipper to many (N zippers → N+1 tubes); the strand panel gains +/− **Zipper Controls** (up to 8), each zipper has its own position/height and can be dragged straight in the viewport; geometry, UV unwrapping, bones and USDA export all follow. Existing single-zipper files open unchanged.
-- **Ordinary-strand sub-tips can now be selected and controlled (new in 0.2.126)** — previously the sub-tips a zipper splits off on an ordinary strand **could not be selected at all**: each tube offered a single draggable dot at its very tip and nothing more, while panels had the whole toolkit. Strands now mirror panel's operating model exactly: click a sub-tip to select it (**click again to return to the main selection**), hover a tube to highlight it, get **a handle on every chain point** (not just the tip — 3 tubes × 4 chain points = 12), see per-point normal arrows in rotate mode, attach the **W/E/R gizmo** for direct transforms, and have the **brush sculpt only the selected tube** (never other tubes or the main strand), plus alt+click quick-switch and automatic cleanup when you change selection. The segment index and the selection state stay independent and never pollute each other.
-- **Per-tube editing on ordinary strands (new in 0.2.125)** — the strand panel gains a **Split Segments** stepper (`‹ 1 ›`) plus **Tip Clump** (how far this one tube's tip narrows, 0–0.99; called Segment Spread before 0.2.130, and made panel-identical in 0.2.132) and the current tube's **Width / Depth Curve** preview and pencil editor. Together with the tip WidthCurve below, each tube's tip thickness is now tunable on its own. The block only appears once Split Geometry is on.
-- **Panel tip gizmo jump fixed (0.2.126)** — selecting a tip sub-bone and dragging it with the W/E gizmo made it **jump on mouse-down** whenever that strand's rest chain had moved since the last edit (editing the main chain, a zipper's position or height, spread, panel width, or a strand's Split Spacing all move it). This was a long-standing panel issue with the same root cause as the brush jump fixed in 0.2.120 — only the brush was fixed back then. Projects whose rest never moved behave value-for-value identically.
-- **Tip WidthCurve now works on ordinary strands (new in 0.2.125)** — the tip width curve that used to be panel-only is ported to strand split tubes: above its own zipper each tube uses its own curve, below it the strand's global curve still applies (continuous at the switch, no split). Both sides share one set of control parameters (identical spacing), and **how many are exposed follows each side's zipper height** — deeper side more, shallower side fewer. UVs are unaffected: the width only scales the tip, and the root row never moves.
-- ~~**Split Spacing fix (0.2.125)**~~ — **that slider was removed entirely in 0.2.132** (see the Tip Clump entry above); this line is kept for history only. The 0.2.125 fix had turned it into a global brush writing into every tube; separation is now the zipper's job and tip narrowing is per-tube Tip Clump.
-- **Multi-tube tip handle fix (0.2.125)** — with 2 or more zippers (3+ tubes), the third tube onward had no yellow tip handle and could not be dragged. Every tube has one now.
-- **Mirror fixes (0.2.125)** — mirroring a strand applied each tube's tip pose to the **wrong tube** (the left-most tube's pose landed on the mirror's left-most tube, which actually corresponds to the source's right-most). Mirrored zippers were also left unsorted, so the "first zipper height" recorded in the file was taken from the wrong one. Both fixed.
-- **New zipper depth (0.2.125 behavior change)** — a zipper added with `+` used to always take the **left-most** zipper's height (so once you dragged that one shallow, every new zipper inherited it); it now follows **the zipper next to the segment being subdivided**.
-- **Zipper editing quality-of-life** — zippers carry a creation order, so `−` removes the **most recently added** one (not the right-most); click a zipper handle to select it (it highlights) and press **Del** to delete just that zipper; dragging never deletes. Adding a zipper makes both halves **inherit the original segment's tip pose**, and deleting one keeps the merged segment close to its existing pose.
-- **Tip width curve fix** — when two zippers had different heights, one green width control point on the shallower zipper's side could not be grabbed, leaving a dent in the tip width. All control points are now reachable on both sides.
-- **One more tip bone exposed** — each zipper height now exposes one additional tip bone, and the bone root always anchors below its first exposed point; the viewport and the USDA export now agree on exactly which rows are exposed.
-- **Brush no longer snaps tip poses** — sculpting a tip sub-bone with a brush used to make it jump back to its pre-edit position (most visible right after adding a zipper). Fixed.
-- **Quick Save / Export** — Ctrl+S quick-saves to the last project file (remembered file handle), Ctrl+Shift+S saves as, Ctrl+Alt+S quick-exports a replay of the last export (prefers the File System Access API to write directly to disk, avoiding download "(1)" suffixes).
-- The File menu **removes** the 3 Local dev options (Local Save / Local Export to OBJ / Local Export to USDA, previously routed through the `server.js` local service); save/export is unified under the three shortcuts above. The shortcuts help has a dedicated "Sintaka Fork" section.
+### Tip system
+
+- **Tip Clump (tip narrowing, panel/strand semantics unified in 0.2.132)** — drag the slider (or the little green ball in the viewport) to narrow the tip as a fraction of its own width, ramping linearly from 0 at the zipper to the full value at the tip. Combined with a zipper this gives a simple fork: the zipper decides the seam, Tip Clump gathers the tip so the seam opens, and the green width control points move with it. The old Split Spacing slider (overlapped the zipper's job) is gone; existing files' old values seed each tube's initial Tip Clump.
+- **Panel split sub-bones + tip sub-bones** — each split segment gets a full transform bone (P / orient / Tip Clump + per-segment Width/Depth curves), tip chain handles / highlight / normal arrows, rotate/scale attached to the gizmo, tip WidthCurve (independent per side, zipper-truncated, Tip Clump 0–0.99, Reset to all-1), per-vertex skin weights + USDA SkelBindingAPI skinning.
+- **Ordinary-strand sub-tips selectable and controllable (0.2.126)** — mirrors panel exactly: click to select / click again to deselect, hover to highlight, a handle on every chain point, normal arrows in rotate mode, W/E/R gizmo, brush sculpts only the selected tube, alt+click quick-switch, automatic cleanup on selection change; segment index and selection state stay independent. The same release also added the Split Segments stepper + per-tube Tip Clump (formerly Segment Spread) + Width/Depth Curve editing (0.2.125, appears only with Split Geometry on), plus the tip WidthCurve ported to ordinary strands: above its own zipper each tube uses its own curve, below it the global curve applies (continuous at the switch), both sides share one parameter grid with exposed-point count following each side's zipper height, affecting only the tip's width, not UVs.
+- **Assorted tip / zipper fixes** — the panel tip gizmo jump (0.2.126, dragging W/E jumped once the rest chain had moved, same root cause as the 0.2.120 brush jump), 3+ tubes with no tip handle from the third on, mirroring applying tip poses to the wrong tube with unsorted zippers, and an unreachable control point on the shallower side when zipper heights differ — all fixed; each zipper height exposes one more tip bone with the root anchored below its first exposed point; sculpting a tip no longer snaps back to its pre-edit position.
+
+### Child strands & bridging
+
 - **Child strands** (low-poly watertight bridge + carved parent + Region selection + root-bone gizmo/twist/H mode + Bridge Smooth).
-- **Sculpt brush selection mask** — with nothing selected, only visible hair is sculpted; with a selection, only the selected hair is sculpted (invisible hair is never sculpted).
-- **Viewport navigation styles** — Anime Hair Studio (default) / Blender / Houdini, switchable in Settings → Preferences → Navigation style.
-- **S + left-drag to resize the brush** (sculpt brushes included); Delete removes extra materials; Ctrl+Z undo fixed (works outside text inputs).
-- **Drag & drop a .ahs / .animehair.json file to open the project**; floating panels follow the selection.
+
+### Geometry & deformation
+
+- **Multiple zippers on ordinary strands** — upgraded from a single zipper to many (N zippers → N+1 tubes); the strand panel gains +/− Zipper Controls (up to 8), see "Zipper editing" below for the interaction model; geometry, UV unwrapping, bones and USDA export all follow, and existing single-zipper files open unchanged.
+
+### UV & export
+
+- **Export UV auto-layout + UV Checker preview** — on export, each island is scaled to uniform texel density and packed into UDIM 1001; the UV Checker window can preview the final layout, see "Export UV layout" below.
+- **USDA skeleton / skin export** — a complete USD Skeleton plus SkelBindingAPI skin binding, ready for USD Character Import in Houdini, see "USDA skeleton / skin export" below.
+
+### UI & interaction
+
+- **Simplified Chinese UI** (Settings → Language, 3D terms kept in English); **five custom sculpt brushes** (Slide / Scale·Cut-Extend / Push / Orient / Twist) + Smooth twist, see "Sculpt brushes" below; sculpt brush selection mask — with nothing selected, only visible hair is sculpted, with a selection, only the selected hair is sculpted.
+- **Quick Save / Export** — Ctrl+S quick-saves to the last project file (remembered file handle), Ctrl+Shift+S saves as, Ctrl+Alt+S quick-exports a replay of the last export (prefers the File System Access API to write directly to disk, avoiding download "(1)" suffixes); the File menu removes the 3 Local dev options that used to route through `server.js`, and the shortcuts help has a dedicated "Sintaka Fork" section.
+- **Viewport navigation styles** — Anime Hair Studio (default) / Blender / Houdini, switchable in Settings → Preferences → Navigation style; S + left-drag to resize the brush; Delete removes extra materials; Ctrl+Z undo fixed (works outside text inputs); drag & drop a .ahs/.animehair.json file to open the project; floating panels follow the selection.
 - **Wind Preview** — open the floating window from the Preview menu; 10 parameters (direction / strength / frequency / turbulence / gust / root exponent / per-strand randomness / seed and more) preview wind-blown hair live, with roots pinned and the largest sway at the tips. Closing the window restores the hair bit-for-bit and nothing is written to the project file.
-- **Export UV auto-layout + UV Checker preview** — on export, each island (`uvisland`: one per "parent + child" family / whole panel sheet) is scaled to uniform texel density and packed into UDIM 1001 with an alpaca occupancy-grid L-shape scan (square bbox, no overlap, uniform scale without normalizing, no rotation); USDA writes `primvars:uvisland`. The **⟳ button at the top of the UV Checker window** runs the same export unwrap in one click and previews the final packed layout in the viewport checker + 2D UV Inspector — no DCC round-trip needed. Packing is multi-threaded, so large projects export noticeably faster.
-- **USDA skeleton / skin export** — a complete USD Skeleton plus SkelBindingAPI skin binding, ready for USD Character Import in Houdini (see below).
 
 ## Sculpt brushes
 
 Five custom sculpt brushes:
 
-- **Slide** — moves control points along the curve trajectory (tangent direction), restricted to the tangent/normal plane, without changing the curve's length proportion.
-- **Push** — pushes along the local up direction (normal / away from the surface), restricted to normal-direction movement.
-- **Orient** — rolls the section around the tangent, turning the section's normal (up direction) toward the viewport-orthogonal direction (changes tangent roll).
+- **Slide** — moves control points along the curve tangent direction, restricted to the tangent/normal plane, without changing the curve's length proportion.
+- **Push** — pushes along the local normal direction, restricted to normal-direction movement.
+- **Orient** — rolls the section around the tangent, turning the section's normal toward the viewport-orthogonal direction.
 - **Scale** — two modes: **Scale** — root-anchored uniform radial scaling of the whole hair sheet (no movement); **Cut·Extend** — uniform parameter scaling of the whole sheet preserving point spacing (factor < 1 cuts, factor > 1 extends along the end tangent).
 - **Twist** — manual roll around the tangent axis; it changes orientation only and never moves points (see the next section).
 
 Ctrl = reverse on all brushes: Scale defaults to growing, Ctrl shrinks; Cut·Extend defaults to extending, Ctrl cuts.
 
-## Twist Brush
+### Twist
 
-Twist is a manual axial-roll brush: hold the left button and **drag left or right**, and the strands inside the brush roll around their own tangent direction. Use it to hand-tune how a hair sheet faces without changing its shape.
+A manual axial-roll brush: hold the left button and drag left or right, and the strands inside the brush roll around their own tangent direction. Use it to hand-tune how a hair sheet faces without changing its shape.
 
-How it behaves:
-
-- **Camera-independent** — the angle comes from the horizontal drag only, so **dragging right and dragging left are two opposite directions** and Ctrl reverses them again. That is the real difference from Orient: Orient rolls the section normal toward the current viewport direction, so the same drag flips once you orbit; Twist does not, and drag-right stays the same roll direction after you orbit.
+- **Camera-independent** — the angle comes from the horizontal drag only, so dragging right and dragging left are two opposite directions and Ctrl reverses them again. That is the real difference from Orient: Orient rolls the section normal toward the current viewport direction, so the same drag flips once you orbit; Twist does not.
 - **Rotates orientation only, never moves points** — geometry positions stay put; only the roll angle of the swept section changes.
-- **Hierarchy (H) mode** — the roll carries to downstream child bones, but their **positions stay pinned**; the whole sub-chain rolls rigidly. This differs from an ordinary hierarchical rotate, which swings positions around a pivot as well.
+- **Hierarchy (H) mode** — the roll carries to downstream child bones, but their positions stay pinned; the whole sub-chain rolls rigidly (unlike an ordinary hierarchical rotate, which swings positions around a pivot as well).
 - **Affected point set is locked at mouse-down** — this is the only brush that freezes its influence at the start of the stroke: the moment you press the left button, which points are affected and how strongly is fixed, and moving the cursor no longer changes the range until you release. Every other brush follows the cursor live.
 
 **No hotkey is assigned to Twist** — it is reachable only from its brush button in the tool dock.
@@ -82,28 +76,62 @@ How it behaves:
 
 Each split segment gets its own tip sub-bone. Selecting one in the viewport shows that segment's tip chain handles, highlight, and normal arrows. The green control points are the segment's tip WidthCurve — they only affect the width of the current tip; the upper part of the zipper follows the main bone (no splitting). Segment Spread controls how much the tip converges (0–0.99, which also prevents degenerate faces). Skin weights are divided along the top diagonal of the zipper on each side, so the Scale brush doesn't tear the low-zipper side apart. Under rotate (E) / scale (R) the tip sub-bone is attached to the transform gizmo.
 
-When the two zippers have different heights, the green control points **share one set of parameter positions across both sides (identical spacing)**, but each side only exposes the ones below its own zipper — so the deeper zipper's side has more control points and the shallower side has fewer, the count following the zipper heights dynamically rather than both sides being padded to the same number. Every visible control point can be grabbed and does affect that side's width (older versions left one unreachable point on the shallower side, which pulled a dent into the width). Sculpting a tip with a brush no longer jumps back to its pre-edit position either.
+When the two zippers have different heights, the green control points share one set of parameter positions across both sides (identical spacing), but each side only exposes the ones below its own zipper — the deeper zipper's side has more control points, the shallower side fewer, following the zipper heights dynamically. Every visible control point can be grabbed and does affect that side's width (older versions left one unreachable point on the shallower side, causing a dent, now fixed).
 
 ## Zipper editing
 
-Both panels and ordinary strands support multiple zippers: **N zippers cut the sheet into N+1 tubes**. Add and remove them with `+` / `−` under **Zipper Controls** in the matching panel (up to 8 on a strand). Each zipper has its own position and height and its handle can be dragged directly in the viewport.
+Both panels and ordinary strands support multiple zippers: **N zippers cut the sheet into N+1 tubes**. Add and remove them with `+` / `−` under Zipper Controls in the matching panel (up to 8 on a strand). Each zipper has its own position and height and its handle can be dragged directly in the viewport.
 
-- `+` subdivides the **currently selected segment** first; both halves it creates **inherit the original segment's tip pose** instead of snapping back to a default.
-- `−` removes the **most recently added** zipper (not the right-most one), so a carefully placed zipper doesn't get deleted by accident; the large tip left after a merge also stays close to its existing pose.
-- Click a zipper handle to **select** it (the handle grows and brightens), then press **Del** to delete just that zipper; Del only deletes the whole hair when no zipper is selected. **Dragging a handle never deletes** anything.
+- `+` subdivides the currently selected segment first, taking the height of the zipper next to the segment being subdivided (since 0.2.125, before it always took the left-most zipper's height); both halves it creates inherit the original segment's tip pose. Deleting one keeps the merged segment close to its existing pose.
+- `−` removes the most recently added zipper (not the right-most one), so a carefully placed zipper doesn't get deleted by accident; dragging a handle never deletes anything. Click a zipper handle to select it (the handle grows and brightens), then press **Del** to delete just that zipper; Del only deletes the whole hair when no zipper is selected.
 - Each zipper height exposes one more tip bone, and the bone root always anchors below its first exposed point; the viewport and the USDA export agree on which rows are exposed.
 - Geometry, UV unwrapping, bones and USDA export all follow the multi-zipper setup. Existing single-zipper files open unchanged.
 
+## Scalp Conform (latitude axis + fitted ellipsoid)
+
+![Front fringe fitted to the scalp hemisphere](devlog/assets/scalp-conform-fringe-hemisphere-fit.png)
+
+A single front fringe panel wrapped onto the scalp hemisphere: green/purple is the scalp proxy cage, and the cyan row lines show how the panel follows the fitted ellipsoid's latitudes — every row bends around a **vertical** axis, so the edges sweep backwards along the scalp instead of curling over the crown.
+
+Bends a flat panel onto the scalp while **preserving arc length** — the panel keeps its authored width instead of collapsing. The main use case is building **the anime trident forehead fringe as one single panel**: widen it, dial in some Conform, and the whole sheet wraps back across the forehead and temples; then cut the trident partings with zippers. No hand-tuning edge curves, no assembling three separate panels.
+
+### Mathematical model
+
+The bend does **not** rotate around the panel's own tangent (that curls the edges of forehead-tilted rows into the scalp). Instead the bend axis is derived per row from a **fitted ellipsoid**:
+
+- Slice the ellipsoid with a horizontal plane to get that row's **latitude ellipse**: semi-axes `A = ax·c`, `B = az·c`, where `c = √(1 − h²)` and `h = (P.y − center.y) / ay`. The **latitude centre rises with height and always stays in its horizontal cross-section** (offset toward the north pole).
+- Take the **osculating circle centre** `O_osc` of that latitude ellipse at the row's azimuth and run a **vertical** bend axis through it; `Reff = |P − O_osc|`, curvature `k = amount / (Reff + gap)`.
+- A permanently vertical axis means vertices only move within their horizontal plane, so edges **sweep backwards** rather than curling downwards — long hair still hangs straight.
+- Arc length is preserved by **per-segment length preservation** (each segment is only rotated, never rescaled), so material off the neutral surface is not stretched either.
+
+When the ellipsoid degenerates to a sphere the osculating centre lands exactly on the latitude centre (a circle's osculating centre *is* its centre), so results are **bit-identical to the previous version on the default head**.
+
+### Controls
+
+| Control | Range | Effect |
+|---|---|---|
+| **Conform** | −1 … 1 | Conform strength. 0 = no bend (bit-identical to flat), 1 = fully rolled onto the `Reff + gap` arc, negative curls the other way. **Per panel.** |
+| **Scalp Gap** | 0 … 0.5 | Grows the bend radius in world units. Prevents z-fighting and doubles as the looser/tighter knob. **Per panel.** |
+| **Fit Width** | 0.5 … 1.5 | Left-right half-axis of the fitted ellipsoid. **Global** (shared by every panel). |
+| **Fit Depth** | 0.5 … 1.5 | Front-back half-axis of the fitted ellipsoid. **Global.** |
+
+Fit Width / Fit Depth are **deliberately independent** of the visible scalp proxy's size sliders: the visible scalp also carries lattice and segmented shaping, so the best-fit ellipsoid never equals those slider values anyway — keeping them separate is what makes the approximation tunable. The ellipsoid is only an **approximation**; it does not try to match the lattice-deformed scalp mesh.
+
+### Known limitations
+
+- In a spherical configuration (Fit Width == Fit Depth) the head's **overall size and height do not affect** conform — a circle's osculating centre is independent of its radius, so both cancel algebraically. Use Scalp Gap for wrap tightness and the scalp proxy's Center X/Z to move the vertical axis.
+- In a **non-spherical** configuration (Fit Width ≠ Fit Depth) "edges stay outside the scalp" is no longer guaranteed by construction (the ellipse's horizontal radius at other azimuths can exceed `Reff`), and front-versus-side wrap tightness becomes uneven, flipping direction with the relative size of the two half-axes. Spherical configurations are unaffected.
+- At Conform **1.0** the edges of a cambered panel penetrate the scalp slightly; the practical range is **≤ 0.87**.
+- Lattice-driven surface panels are excluded (their shape comes straight from the control cage).
+
 ## Shortcuts
 
-- **Alt + Left-click** — quick-switch the selection to the hovered tip sub-bone segment (or hovered strand) without deselecting first. Same habit as ZBrush (Alt+click to pick / quick-switch the hovered target).
-- **Ctrl + Left-drag** (green tip WidthCurve control point) — asymmetric edit: only the dragged side moves; without Ctrl both sides mirror equally.
-- **Ctrl + Left-drag** (elsewhere) — special / reverse: sculpt brushes act in reverse (Scale grows by default and shrinks with Ctrl; Cut·Extend extends by default and cuts with Ctrl), and the select tool removes from the selection.
+- **Alt + Left-click** — quick-switch the selection to the hovered tip sub-bone segment (or hovered strand) without deselecting first. Same habit as ZBrush.
+- **Ctrl + Left-drag** — on a green tip WidthCurve control point, asymmetric edit (only the dragged side moves; without Ctrl both sides mirror equally); elsewhere, sculpt brushes act in reverse (Scale grows by default and shrinks with Ctrl; Cut·Extend extends by default and cuts with Ctrl), and the select tool removes from the selection.
 - **Save / export** — Ctrl+S quick-saves to the last project file (remembered handle, overwrites the same file); Ctrl+Shift+S saves as; Ctrl+Alt+S quick-exports a replay of the last export.
 - **Del** — deletes only the selected zipper when one is selected; deletes the focused material when the material panel has focus; otherwise deletes the current hair selection.
 - **Other custom shortcuts** — S + left-drag to resize the brush, Delete to remove extra materials, H for hierarchy editing (root-bone workflow), Ctrl+Z undo (works outside text inputs).
-- **Viewport navigation** — the default Anime Hair Studio style is Alt+Left to orbit / Alt+Right to pan / scroll wheel to zoom; the Houdini style is Alt+Left to orbit / Alt+Middle to pan / Alt+Right to zoom / scroll wheel to zoom. Switch in Settings → Preferences → Navigation style.
-- The full list lives in the app under Help → Shortcuts (everything added by this repository is grouped in the "Sintaka Fork" section).
+- **Viewport navigation** — the default Anime Hair Studio style is Alt+Left to orbit / Alt+Right to pan / scroll wheel to zoom; the Houdini style is Alt+Left to orbit / Alt+Middle to pan / Alt+Right to zoom / scroll wheel to zoom, switchable in Settings → Preferences → Navigation style. The full list lives in the app under Help → Shortcuts (everything added by this repository is grouped in the "Sintaka Fork" section).
 
 ## Coordinate system & gizmo axes
 
@@ -117,7 +145,7 @@ Three important axes (colors match the screenshot): **Green = Tangent (Y)** — 
 
 ![Low-poly child strand base mesh](devlog/assets/lowpoly-child-strand-basemesh.png)
 
-The parent sheet is carved open and the child is joined through a low-poly watertight bridge (parent-hole boundary → child root ring → top/bottom bands + side quads): parent-surface Region selection (2D u/v panel + 3D markers), direct/indirect bridging, uniform smoothing (Strength/Detail); a child root-bone workflow (gizmo-carried twist, rigid Hierarchy (H) moves, region-anchored center). When the parent does not use topology connect (e.g. Split Geometry), the child falls back to direct generation (sweep from its root). **UV layout is solved** (export-time unwrap + island packing into UDIM 1001, see "Export UV layout" below).
+The parent sheet is carved open and the child is joined through a low-poly watertight bridge (parent-hole boundary → child root ring → top/bottom bands + side quads): parent-surface Region selection (2D u/v panel + 3D markers), direct/indirect bridging, uniform smoothing (Strength/Detail); a child root-bone workflow (gizmo-carried twist, rigid Hierarchy (H) moves, region-anchored center). When the parent does not use topology connect (e.g. Split Geometry), the child falls back to direct generation. **UV layout is solved** (export-time unwrap + island packing into UDIM 1001, see "Export UV layout" below).
 
 ## Export UV layout (unwrapping)
 
@@ -125,11 +153,8 @@ The parent sheet is carved open and the child is joined through a low-poly water
 
 On export (OBJ/USDA), rectangular UVs are generated from the sweep grid's `gridRow/gridCol` attributes (V-negative = hair tangent, so hair runs straight down), then each "parent + child / whole panel sheet" is treated as an island (`uvisland` index), scaled to uniform texel density, and packed into UDIM 1001 ([0,1]²) with an **alpaca occupancy-grid L-shape scan**:
 
-- **Algorithm**: rasterize the tile (256 cells per UV unit) + integral-image O(1) occupancy test; a growing `scanLine` keeps a square frontier, with two-phase placement (first an L-shape scan along the top + right edges to fill interior gaps, then expand the frontier only when nothing fits); then fit-to-tile (uniform scale + center, preserving aspect ratio, no normalize, no rotation).
-- **Multi-start selection**: 8 deterministic shuffled orders, pick the best (≈+7% fill vs a single greedy pass).
-- **Result**: panels and ordinary strands packed together, near-square bbox (U/V both nearly full), no overlap and no fallback, ~0.76–0.81 fill.
-- **Preview**: the ⟳ button at the top of the UV Checker window runs the same export pipeline to preview the final layout in the viewport checker + 2D UV Inspector, no DCC import needed.
-- **Speed**: packing is multi-threaded (worker pool), cutting export time substantially on large projects; browsers without worker support fall back to single-threaded automatically with identical results.
+- **Algorithm**: rasterize the tile (256 cells per UV unit) + integral-image O(1) occupancy test; a growing `scanLine` keeps a square frontier, with two-phase placement (first an L-shape scan to fill interior gaps, then expand the frontier only when nothing fits); then fit-to-tile (uniform scale + center, no normalize, no rotation). 8 deterministic shuffled orders pick the best (≈+7% fill vs a single greedy pass), giving panels and ordinary strands packed together, near-square bbox, no overlap and no fallback, ~0.76–0.81 fill.
+- **Preview & speed**: the ⟳ button at the top of the UV Checker window runs the same export pipeline to preview the final layout in the viewport checker + 2D UV Inspector, no DCC import needed; packing is multi-threaded (worker pool), cutting export time substantially on large projects, and browsers without worker support fall back to single-threaded automatically with identical results.
 
 References:
 
@@ -142,26 +167,22 @@ References:
 
 Tick **Bones & Capture Mesh** in the USDA export dialog (on by default) and you get a complete, usable USD rig:
 
-- A single `def SkelRoot "Character"` holding one `def Skeleton "Hair_Skel"` and all skinned meshes — in Houdini, one `skelrootpath` in `USD Character Import` brings in the whole character at once.
-- One empty `Hair_Root` joint as the single skeleton root (x = 0 centerline, positioned at the average of all hair roots); every strand's root joint hangs under it, forming one connected joint tree.
-- Each strand's joints are named after **the strand** (`${strandName}_${index}` / `_split_${k}` / `_split_${k}_tip_${j}`), with automatic de-duplication for same-named strands.
-- Meshes carry `SkelBindingAPI`: `rel skel:skeleton` + `int[] primvars:skel:jointIndices` / `float[] primvars:skel:jointWeights` (with `elementSize`); panel segments use two influences, ordinary strands one, and bridged child-strand families 4-influence capture.
-- `int[] primvars:uvisland` is written alongside (one island id per face), so a DCC can select islands by `@uvisland==k`.
+- A single `def SkelRoot "Character"` holding one `def Skeleton "Hair_Skel"` and all skinned meshes — in Houdini, one `skelrootpath` in `USD Character Import` brings in the whole character at once; one empty `Hair_Root` joint is the single skeleton root (x = 0 centerline, positioned at the average of all hair roots), every strand's root joint hangs under it forming one connected joint tree, and joints are named after **the strand** (`${strandName}_${index}` / `_split_${k}` / `_split_${k}_tip_${j}`) with automatic de-duplication for same-named strands.
+- Meshes carry `SkelBindingAPI`: `rel skel:skeleton` + `int[] primvars:skel:jointIndices` / `float[] primvars:skel:jointWeights` (with `elementSize`); panel segments use two influences, ordinary strands one, and bridged child-strand families 4-influence capture. `int[] primvars:uvisland` is written alongside (one island id per face, so a DCC can select islands by `@uvisland==k`).
 - The dialog also offers a Path Prefix (the root name persists and is reused by quick export). OBJ shares the same pipeline but has no primvar mechanism, so it carries neither bones nor uvisland.
 
 This rig has been validated in Houdini (joint hierarchy and names, rest vs bind transforms, skinned joint indices and weights).
 
 ## Known limitations
 
-- **UV**: export UV is unwrapped and packed into UDIM 1001; the packer is greedy (alpaca occupancy-grid L-shape scan + multi-start seed selection), fill ~0.76–0.81, no rotation (keeps the strand anisotropy direction); hairCard / curve-surface and other open/compound types are not packed yet.
-- **Child bridging combined with multiple zippers**: when the parent is an ordinary strand cut into **3 or more tubes** (that is, 2 or more zippers), the child no longer uses the carved watertight bridge and safely falls back to direct generation (sweep from its root). Panels and strands with at most 2 tubes (≤1 zipper) are unaffected.
-- **Still missing for multi-zipper strands**: snap-to-loops for zipper positions (a strand has no lengthwise loop topology to snap to, so this may stay unimplemented). The per-segment spread UI and the tip WidthCurve **shipped in 0.2.125** and are no longer gaps.
-- **Tip WidthCurve after Reset**: Reset makes the whole curve 1, so if the strand's global width curve is not 1 at the fork, a width step appears where the curve takes over. On a closed tube that can read as slight seam misalignment. Panels have always had the same tradeoff; changing it would be a design decision, so it is left as-is pending visual review.
+- **UV**: the packer is greedy (alpaca occupancy-grid L-shape scan + multi-start seed selection), fill ~0.76–0.81, no rotation (keeps the strand anisotropy direction); hairCard / curve-surface and other open/compound types are not packed yet.
+- **Child bridging combined with multiple zippers**: when the parent is an ordinary strand cut into 3 or more tubes (2 or more zippers), the child no longer uses the carved watertight bridge and safely falls back to direct generation. Panels and strands with at most 2 tubes (≤1 zipper) are unaffected.
+- **Still missing for multi-zipper strands**: snap-to-loops for zipper positions (a strand has no lengthwise loop topology to snap to, so this may stay unimplemented). The per-segment spread UI and the tip WidthCurve shipped in 0.2.125 and are no longer gaps.
+- **Tip WidthCurve after Reset**: Reset makes the whole curve 1, so if the strand's global width curve is not 1 at the fork, a width step appears where the curve takes over. On a closed tube that can read as slight seam misalignment. Panels have always had the same tradeoff; changing it would be a design decision, so it is left as-is.
 
 ## Developer documentation
 
-- New agent onboarding: [devlog/AGENT_QUICKSTART.md](devlog/AGENT_QUICKSTART.md)
-- Full devlog index: [devlog/README.md](devlog/README.md)
+- New agent onboarding: [devlog/AGENT_QUICKSTART.md](devlog/AGENT_QUICKSTART.md); full devlog index: [devlog/README.md](devlog/README.md)
 
 ## License
 

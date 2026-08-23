@@ -17,10 +17,558 @@
 | split 父发片兼容 | `splitFusedGrid` / `parentSupportsTopologyConnect` / `createSplitStrandGeometry` | 0.2.49–0.2.51 | [annotations-split.md](annotations-split.md) |
 | 刘海 / 面板线框三角面显示修复 | `createPanelStrandGeometry` / `addQuad` / `triangleEdgeMasks` / `authoredEdgeMasks` | 0.2.54–0.2.56 | [annotations-display-fixes.md](annotations-display-fixes.md) |
 | 日常适配（保存/导出、语言、导航、笔刷、拖放、材质、快捷键等） | `saveHairProjectQuickly` / `exportHairProjectQuickly` / `localization.js` / Navigation style / `sculpt-brush.js` / `server.js` | 顶部条目、v0.1.4 迁移、0.2.48 | [annotations-adapt.md](annotations-adapt.md) |
-| Panel Split 骨骼化 / 尖端子骨骼 / 统一骨骼模型 / 子发片扫掠 | `lock.splitBones` / `bonesFor` / `sweepStrandGeometry` / `createPanelStrandGeometry` / `createBranchChildGeometry` | 0.2.59 已实施（P1/P2 与 Phase A/B/C 落地）；**发尖子系统的当前状态见 0.2.123/0.2.125/0.2.126 三轮条目**，panel-split-tip-bones.md 只到 0.2.65 | [in-progress/panel-split-tip-bones.md](in-progress/panel-split-tip-bones.md)（**历史实施记录，止于 0.2.65** §8.5–§8.30）+ [in-progress/strand-tip-selection-port-plan.md](in-progress/strand-tip-selection-port-plan.md)（0.2.126 选中系统）+ [in-progress/strand-tip-width-ui-port-plan.md](in-progress/strand-tip-width-ui-port-plan.md)（0.2.125 WidthCurve）+ [in-progress/bone-system-roadmap.md](in-progress/bone-system-roadmap.md) + [in-progress/split-bone-refactor-plan.md](in-progress/split-bone-refactor-plan.md) + [in-progress/unified-bone-model.md](in-progress/unified-bone-model.md) + [in-progress/child-sweep-unification.md](in-progress/child-sweep-unification.md) |
+| Panel Split 骨骼化 / 尖端子骨骼 / 统一骨骼模型 / 子发片扫掠 | `lock.splitBones` / `bonesFor` / `sweepStrandGeometry` / `createPanelStrandGeometry` / `createBranchChildGeometry` | 0.2.59 已实施（P1/P2 与 Phase A/B/C 落地）；**发尖子系统的当前状态见 0.2.123/0.2.125/0.2.126 三轮条目**，panel-split-tip-bones.md 只到 0.2.65 | [in-progress/panel-split-tip-bones.md](in-progress/panel-split-tip-bones.md)（**历史实施记录，止于 0.2.65** §8.5–§8.30）+ [in-progress/strand-tip-selection-port-plan.md](in-progress/strand-tip-selection-port-plan.md)（0.2.126 选中系统）+ [in-progress/strand-tip-width-ui-port-plan.md](in-progress/strand-tip-width-ui-port-plan.md)（0.2.125 WidthCurve）+ [archive/bone-system-roadmap.md](archive/bone-system-roadmap.md) + [archive/split-bone-refactor-plan.md](archive/split-bone-refactor-plan.md) + [archive/unified-bone-model.md](archive/unified-bone-model.md) + [in-progress/child-sweep-unification.md](in-progress/child-sweep-unification.md) |
 | **导出拆 UV（0.2.69–0.2.79）** | `unfoldHairMesh` / `gridUvTable` / `gridUvAt` / `childUTopologyScale` / `buildUnfoldedMeshes` / `bridgeUvAnchors` / `bridgeSeamCol` / `gridRowIndices` | 0.2.69–0.2.79（规则/理念/9 条踩坑见右） | [uv-unfold.md](uv-unfold.md) |
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
+
+## 最近更新（File > New，0.2.134）
+
+> **左上角 File 菜单新增 New**（main 无此项）。做法是**复用 `restoreState`**，不另写清空路径。
+>
+> - **app.js `startNewProject()`**（紧邻 `restoreState`）：`restoreState` 已是「整场景换掉」的唯一
+>   入口（打开项目 / undo / redo 都走它），其 `resetEditableSceneForStateRestore` 内部已处理吹风预览
+>   互斥 + `disposeAllEditableObjects` + 清 `locks`/`selectionSets`/`guides` —— 那里的注释**早已把
+>   "new project" 列为该路径的既定用例之一**，本轮只是把它真正接上。
+> - **基准 = boot 时抓的 `snapshotState()`**，存在 `projectState.pristineProjectSnapshot`。两个要点：
+>   ① **必须抓在 `offerRecoverySnapshot()` 之前** —— 恢复流程会把上次崩溃的场景灌进来，抓晚了基准
+>   就变成「上次的项目」；② **存 JSON 字符串而非对象** —— `restoreState` 会就地消费还原出的集合
+>   （`locks` 被 `restoreLock` 吃掉），留同一份对象引用会让**第二次 New** 拿到已污染的基准。于是 New
+>   与「刚打开应用」逐字段一致，不必另外维护一份「空项目」定义（那必然与 boot 漂移）。
+> - **头模 / 头皮引导资产不在 `snapshotState()` 里**（随 .ahs 的 `headAsset`/`scalpGuideAsset` 单独
+>   走），必须显式复位，否则 New 之后仍留着上一个项目的自定义头模。两段与 `openHairProjectFile`
+>   处理「项目未带资产」时**同规则**（同步点：`modules/io/io-tail.js` 的 `headAssetOmitted` /
+>   `hasOwnProperty("scalpGuideAsset")` 分支）。
+> - **最高风险项：四个快速保存/导出句柄必须忘掉**（`quickSaveFileHandle`/`quickSaveFileName`/
+>   `lastExport`/`quickExportFileHandle`）。留着 ⇒ New 之后按 Ctrl+S **静默覆盖上一个项目文件**。
+>   项目名一并回 `"Untitled Hair Project"`，免得另存对话框预填旧名。
+> - **undo/redo 栈清空**：New 是**新的 undo 基准**、不是可撤销步骤（与 `openHairProjectFile` 的同名
+>   处理逐条一致），否则 Ctrl+Z 会把用户拖回一个已被 dispose 的半场景。崩溃恢复快照亦清掉。
+> - **确认对话框** `#newProjectWarning`（沿用 `panelSplitSnapWarning` 的 warning-dialog 形状）。
+>   **刻意不做「不再提示」勾选**（对比 `groupDefaultsWarning`）：这一步丢弃全部未保存工作且不可
+>   撤销，不给静默跳过的开关。
+> - **`__AHS_TEST_SEAM__` 新增 `projectState`**：验收要断言句柄被忘掉，而这些值只在 store 里 ——
+>   `fileApi` **只导出函数**，那些 getter 在传进 `createProjectSaveApi` 的 deps 对象上、不在返回值上；
+>   从 `fileApi` 读会得到 `undefined`、写会凭空造出同名属性（初版实测 3 条断言因此假绿/假红）。
+> - **验收** `scripts/verify-new-project.mjs`（新增，**21/21**）：真实 Sussurro_v1_0060.ahs 上
+>   locks 26→0、场景图 Mesh 2398→137、Cancel 路径逐项不变、四句柄全忘、undo 栈空、**二次 New 仍干净**
+>   （证明基准未被污染）、全程 0 page exception。
+> - **顺带修掉 `scripts/verify-smoke.mjs` 的取参 bug**：`args.indexOf("--port")` 缺失时返回 −1 ⇒
+>   `args[-1+1]` 读到**第一个位置参数**（.ahs 路径）⇒ `Number(路径)=NaN` ⇒ `ERR_SOCKET_BAD_PORT`，
+>   即**照 AGENT_QUICKSTART 里写的命令跑就崩**（看着像环境坏了，其实是取参 bug）。两个脚本都换成
+>   先判 flag 存在的 `optNumber`；新脚本勿再复制旧写法。
+
+## 最近更新（控件组强调框，0.2.134）
+
+> **纯装饰**，把三组相关控件从周围的普通滑杆里视觉分出来（用户：「不用改太多只是想让它看起来
+> 不太一样」）。无 JS 改动，只有 `styles.css` + `index.html` 的 wrapper。
+>
+> - **styles.css**：一个基类 `.control-emphasis`（半透明底 + 6px 圆角 + 1px 描边 + padding）+ 三个
+>   修饰类 `--red` / `--green` / `--blue` 只改描边色。参照同文件既有的 `.visibility-filter-box`
+>   （同为「框起一组」的组件），不新造版式体系。
+> - **底色用半透明白叠加 `rgba(255,255,255,0.035)` 而非字面浅灰**：本主题是纯暗色（`:root` 的
+>   `color-scheme: dark`、面板底 `#19181d`），字面浅灰会变成一块突兀亮斑。
+> - **三色 alpha 刻意不等**（红 .5 / 绿 .45 / 蓝 .62）：暗底上蓝色天生显得更弱，等 alpha 会让
+>   「深蓝」几乎看不见；按**感知重量**配平而不是按数值统一。
+> - **`#sweepOverlapPanel` 加内层 wrapper `#sweepSmoothGroup`，不直接给它套类**：`.panel-section`
+>   自带 `padding/margin/border-bottom`，直接套会与盒子版式冲突。另两组新增 `#panelEdgeLengthGroup`
+>   （蓝，四个 Trim）与 `#panelZipperGroup`（绿，Split Segments + 发尖 Width/Depth Curve + Split Tip）。
+>   `#panelHemisphereControls` 也给蓝框（与 Trim 同族的程序化变形）。
+> - **红框圈的是全部 5 个滑杆**：用户说「那四个」，但 `#sweepOverlapPanel` 的 5 个参数
+>   （Strength/Threshold/EdgeSmooth/Falloff/TangentSmooth）是**同一个系统**（AGENT_QUICKSTART §2.6
+>   即按 5 参数系统记录），任意排除一个都无依据，故整块圈起。
+> - **插 wrapper 前的依赖审计**（最可能引入回归的地方）：`.panel-shape-controls` 在 panel 上下文会变
+>   `display: contents`，其子级由 `#strandShapePanel` 直接布局 —— 若那是 grid/flex，wrapper 会把整组
+>   塌成一个格子。实测 `#strandShapePanel` **只设 `order`、是普通块容器**；`.sliders` 无裸规则、其全部
+>   规则用的都是**后代**（非子）选择器，故 wrapper 安全。JS 侧全部按 id 取元素，无
+>   `.children`/`parentElement`/兄弟遍历依赖；`hairCardIncompatibleControls` 只含 `#strandSplitControls`
+>   （在 wrapper 之外）。
+> - **`.hidden` 仍然生效**（`display: none !important`，全局定义）：真实浏览器实测隐藏时盒子塌成
+>   **0×0**，不留残余描边/padding。**红框只在选中普通发丝时可见** —— panel 选中时 app.js 本就隐藏
+>   `#sweepOverlapPanel`，所以视觉核验必须换选一根 strand，否则永远报 `visible: false`（本轮踩过）。
+> - **本组由主进程完成**：原派给子智能体，但它长时间零产出（`styles.css` mtime 未变），按规范
+>   「子智能体中途失败时主进程直接接手」接管，并 `interrupt_agent` 掉它以免回头覆写。
+
+## 最近更新（0.2.144：Scalp Conform 第五版 —— 纬线轴 + 拟合椭球密切圆心，删掉那个 `min`）
+
+> 用户驳回第四版的**根部**手感：「由于根部是切线方向bend, 会导致视图弯进头皮中, 而不是根据头皮走向往后弯」，
+> 给出模型「纬线的中心也是偏移球中心而往北极去而保持在一个横切面中, 这正是现在欠缺的地方」，
+> 并要求「刘海的后半部分(靠近尖端)和现在效果差不多」。
+>
+> - **根因就是一个 `min`**：`axisPoint = (C.x, min(C.y, P.y), C.z)`。`P.y < C.y` 时取 `P.y` ⇒ 径向纯水平
+>   ⇒ **本来就是纬线包裹**（发尖手感对的原因）；`P.y > C.y` 时取 `C.y` ⇒ 轴塌成**头心一点** ⇒ 变成过头顶的大圆、
+>   轴倾斜。用户那句「纬线圆心往北极偏移」= 去掉这个 `min`。真实档（发根 `y=1.8326`、7 点中 4 点在 `y>C.y`）实测：
+>   发根轴 `(0,−0.407,0.913)`、边缘 `Δy = −1.578`、行逆序 **4/6**。
+> - **新模型**：纬线椭圆半轴 `A=ax·c`/`B=az·c`（`c=√(1−h²)`），取该方位**密切圆心** `O_osc = Pe + ρ·n̂ₑ`、
+>   `Reff = |P−O_osc|`、`k = amount/(Reff+gap)`、轴 `â` **恒竖直**。`panelBendCrossSection` **一字未改**（本就平面无关）。
+> - **球退化精确**：`ax==az` ⇒ 圆的密切圆心即圆心 ⇒ `Reff = hypot(dx,dz)` ⇒ **`scale` 全 1 且 `P.y<C.y` 时与第四版
+>   逐位相同**（`maxDiff = 6.9e-18`）。「尖端不变」是**结构性保证**，不是调参凑的。
+> - **三个"软化"变体被驳回**（L2 法曲率 / L3 双侧混合 / L4 单侧混合）：「这几版的效果不行, 还是过于偏向切线偏折」
+>   ⇒ 任何朝三维半径的混合**不许再提**。发根包裹角 111°→**241°** 是接受的结果（延续 D8「就要包这么宽」）。
+>   ⚠️ 探针恒定 `halfWidth=2.5`、**忽略 widthCurve** ⇒ 241° 是**上界**。
+> - **修掉 NaN 静默摊平**（真实缺陷）：`h=±1` ⇒ `A=B=0` ⇒ `ρ=0/0=NaN`，而内核首行 `Number(curvature)||0`
+>   **把 NaN 当 falsy 变 0** ⇒ 该行摊平成直线、不报错；旧守卫 `radius<1e-6` 抓不到（`NaN<1e-6` 为 false）。
+>   修法：`h` 钳到 `|h|≤1−1e-3` + 守卫扩成 `!Number.isFinite(reff) || reff<1e-6`。
+> - **新增全局 `scalpConformFit = {fitScaleX, fitScaleZ}`**（`0.5–1.5`，默认 1，滑杆 Fit Width/Fit Depth）。
+>   与可视头模**解耦**（用户「椭球只是近似模型, 暴露数据给用户简单调一下近似即可」；可视头皮被 lattice +
+>   `artistShape` 变形过）。**全局非逐 lock**（用户「D10用全局」）⇒ 改滑杆走全量 `rebuildLockGeometry`。
+> - **为什么只 2 个参数**：灵敏度实测发现球构型下 `fitRadius`/`fitScaleY`/`C.y` 的影响 **`maxDiff` 精确为 0**
+>   （半径与竖直半轴被代数消掉）⇒ 4 个里 2 个是**死控件**。`ay` 与整体半径写死 1，这是**明确取值**（它们在
+>   `ax≠az` 时有效，7.68e-3 / 8.12e-3）。代价：球构型下移动头心高度**不再改变** conform（相对第四版的回退，
+>   用户知情接受）；两条测试断言已从「移头心必变」重写成「移 `C.x/C.z` 必变 + `C.y` 仅 `ax≠az` 时变」的双向断言。
+> - **两条已知限制（椭球是近似的代价，勿当回归修掉）**：㈠ 非球构型下「不穿透」**不再由构造保证**（椭圆其它方位角
+>   的水平半径可 > `Reff`，实测边缘深度 P5 **−0.668**）；㈡ 包裹松紧随方位角不对称（y=1.4 处正面 69° vs 侧面 173°，
+>   **2.5×**，方向随 `ax/az` 翻转）。球构型均不受影响。
+> - 顺手修了条潜伏 bug：`dom-contract.test.mjs:4471` 用写死 `"\r\n}\r\n"` 切函数体 ⇒ 只在 CRLF checkout 下成立，
+>   LF 检出下静默切空串、**断言空转**。改成 `\r?\n` + 边界非空断言（`split-tip-geometry.test.mjs:3035` 早有同坑记录）。
+> - 验收：全量 **394/394**（基线 387 + 新增 7）、专项 **27/27**、变异验证 7 组全部确认变红后还原。
+>   **CDP 真实链（`verify-scalp-conform.mjs`）尚未跑**（沙箱无 Chrome，需 Windows 侧补），且它 4 条硬编码阈值
+>   按第四版钉的，**必须重新实测**。详见 `in-progress/scalp-conform-ellipsoid-v5-plan.md`。
+
+## 最近更新（0.2.143：Scalp Conform 第四版模型 —— 逐行绕头部胶囊轴的同心 wrap）
+
+> 替换 0.2.138–0.2.142 那一版（弯曲发生在面板自己的 `(frame.x, frame.z)` 平面内、
+> `bendRadius` 为全局标量）。根因、全部实测数据、8 点验收判据见
+> `in-progress/scalp-conform-bend-v4-plan.md`（权威文档），本条目只描述两个改动文件里
+> 实际改了什么。
+>
+> - **`modules/geometry/curve-math.js`**：只改了 `panelBendCrossSection` 上方的注释块
+>   （模型说明、四条由构造保证的性质、Houdini Bend SOP 实测的外部佐证），**函数本体
+>   一字未改** —— 它本来就是「吃一个 2D 截面采样器 + 一个曲率标量，返回逐段保长弯曲后的
+>   `{lateral, normal, angle}`」的平面无关内核，选哪张平面是调用方的事，换轴不需要动它。
+>   `PANEL_SCALP_CONFORM_DEFAULTS` 未变（仍是 `{amount: 0, gap: 0.02}`）。
+> - **`modules/geometry/panel-tip-strand.js`**：
+>   - `panelScalpConformParams(lock)` 不再返回 `bendRadius`（那是「水平平均半径 + gap」的
+>     单一全局标量，根因 B），改为返回 `center`（头部代理中心，`THREE.Vector3`，世界空间）；
+>     `amount`/`gap` 字段不变。`scaleX`/`scaleY`/`scaleZ` 不再在本函数里出现（卷绕半径已是
+>     逐行实测距离，代理缩放通过「面板落在 center 什么相对位置」隐式生效）。
+>   - `panelScalpConformOffsets(params, sample, u, shellOffset, cache, cacheKey, frame)`
+>     的最后一个参数从 `lateralAxis`（该行 `frame.x`）改为 `frame`（该行完整的
+>     `{point, x, y, z}`）。函数体内逐行推导：胶囊轴最近点
+>     `A = (center.x, min(center.y, frame.point.y), center.z)`（中心高度以上退化为球冠、
+>     以下是竖直线，即圆柱）、径向 `radialHat`、法向 `normalHat`（与 `frame.z` 同侧）、
+>     宽度方向投影到切平面得到 `lateralHat`、曲率 `k = params.amount / (radius + params.gap)`、
+>     弯曲轴 `axisHat = lateralHat × normalHat`。用一个内部适配器 `sample2` 把
+>     `sample(v)` 原本在 `(frame.x, frame.z)` 里的一对系数转换到 `(lateralHat, normalHat)`
+>     基上，再调用**未改动的** `panelBendCrossSection`；沿 `axisHat` 的分量原样携带
+>     （bend 的定义：点只在垂直于弯曲轴的平面内移动）。返回值从 `{lateral, normal}`
+>     变成一个世界空间 `THREE.Vector3` 偏移（起点为 `frame.point`），因此两个调用点也从
+>     `origin.addScaledVector(frame.x, offsets.lateral)...` 改成了
+>     `frame.point.clone().add(offsets)`。
+>   - **两道早退门**：`params.amount === 0` 与 `u === 0`（新增，第四版起）都直接
+>     `return null`，调用方走原表达式。旧版只有前一道门；`u===0` 这道门是新模型「换基
+>     再还原」这条路径特有的，没有它会在浮点往返里给中线留下噪声。
+>   - 缓存策略不变（同一个 per-build `Map`，key 仍含 `sampleT`），只是缓存的内容从
+>     `{lateral, normal}`（那对系数）换成了 `{offset, shellDirection}`（世界空间向量 +
+>     弯后法向单位向量），`shellOffset` 仍在缓存之外通过 `shellDirection` 叠加。
+>   - 两个消费点 `rawPanelPoint`（`createPanelStrandGeometry` 内）与
+>     `tipMainSectionPoint`（宽度把手截面复刻）都已改为传整个 `frame` 并用
+>     `offsets ? origin.clone().add(offsets) : <原表达式>` 的形状，两处逐字节同构。
+>   - **`k·cos²α`（0.2.142 引入的水平度衰减）已删除**，连同它依赖的 `lateralAxis` 参数
+>     一起被 `frame` 取代；新模型下衰减是投影 `x̂_t = normalize(frame.x − (frame.x·n̂)n̂)`
+>     的自然结果（宽度方向指向头心时退化为零向量），不再需要额外系数。
+> - **测试**：`tests/panel-scalp-conform.test.mjs` 按第四版模型整体重写（断言参见文件头
+>   注释的八条不变式）；`scripts/probe-conform-diagnosis.mjs` 等诊断/实验脚本按计划文档
+>   §10 属临时件。版本号三件套已 bump 到 `0.2.143`。
+
+## 最近更新（0.2.142：曲率按宽度方向的水平度缩放 —— 修倾斜面板的 sweep 边缘挤压）
+
+> 用户确认 tube 弯曲本身是对的（「尤其是末端, 记住就这么处理」），但报告：「整个发片有点只是
+> 沿着切线和一个曲率去旋转, 这在发尖这种一般比较垂直的地方还行得通, 但是前额那些又倾斜的
+> 地方在宽度较大的时候直接这样旋转会导致 sweep 边缘挤压」。
+>
+> - **根因**：弯曲发生在面板自己的 `(frame.x, frame.z)` 平面内 = **绕 `frame.y` 转**，而 `frame.y`
+>   是**面板切向** —— 只有发尖那种近竖直处它才≈竖直轴。前额面板倾斜时轴跟着倾，宽度一大，
+>   边缘就被拧挤。这与前两轮同一类错误：**拿局部基向量当全局轴用**。
+> - **修法**：按柱面的 Euler 公式，绕**竖直**轴的柱面在偏离水平 α 的方向上法曲率是 `k·cos²α`，
+>   所以把曲率缩放为 `k_eff = k · (1 − (x̂·up)²)`（`x̂` = 该行的 `frame.x`，up = 世界 +Y）。
+>   发尖（x̂ 水平）⇒ 系数 1，保持用户已确认的手感；倾斜处按余弦平方自动减弱。
+>   两个消费点各传自己那一行的 `frame.x`（把手侧无 memo，故 cache 参数传 null）。
+> - **默认值刻意选"完整弯曲"**：漏传 `lateralAxis` 时 `horizontality = 1`，退回 0.2.141 的行为，
+>   而不是静默把功能关掉 —— 后者会让"看起来没生效"变成难查的静默失效。
+> - **验证的诚实边界**：浏览器 31/31 的三个数字（边缘位移 2.6226、跨度比值 0.970..1.002）与修正
+>   **前完全相同** ⇒ 在 Test 2 那个面板上本修正是**空操作**（其宽度方向已接近水平，cos²α≈1），
+>   所以 31/31 **不构成**倾斜修正的证据。真正钉住新行为的是 node 测试：同一 lock、同一 u，
+>   把 `lateralAxis` 从水平转到竖直，弯曲量必须按 cos²α 递减（水平 > 45° > 竖直≈0）。
+>   全量 379/379。
+> - **测试初版断言错了**：我写成"漏传 lateralAxis ⇒ 不弯"，而代码默认是**完整弯曲** ——
+>   写断言时没核对自己刚写的默认值。已改为断言"等价于水平轴"并留档成因。
+
+## 最近更新（0.2.141：Bend 截面 memo —— 砍掉 shell 造成的重复积分）
+
+> 0.2.140 把步数从 16 降到 8 后，24×24 仍要 19.6ms、贴着 ~16ms 帧预算。本轮再砍一半。
+>
+> - **发现来自更正 devlog 时的副产品**：我原先声称"同一行截面对所有 shell、所有 u 都相同"。
+>   后半句是错的（已在 0.2.140 条目更正：`sampleT` 在 `tipCurve≠0` 或左右 EdgeTrim 不等时是
+>   `u` 的函数）；但**前半句是对的** —— `midAt` 不含 shell，厚度是在 `panelScalpConformOffsets`
+>   的结果之外才沿弯后法向加上的。而 `rawPanelPoint` 按 front/back 各调一次 ⇒ 同一
+>   `(sampleT, u)` 的积分跑了两遍。
+> - **实测确认重复倍数恰好 2.00×**（198 顶点 / 99 个去重 `(row, u)` 组合），所以这不是估算。
+> - **做法**：`panelScalpConformOffsets` 接受可选 `cache`/`cacheKey`；`createPanelStrandGeometry`
+>   建一个 **per-build 的 Map** 传进去。**key 用 `sampleT` 本身**而不是 row 索引 —— 这正是被
+>   更正的那条认知的直接应用：用索引会在 `tipCurve≠0` 或左右 Trim 不等时把不同截面混成一份、
+>   **静默给出错误几何**。key 还含 `segment` 与 `boneToken(bone)`（bone 是对象，用模块级
+>   WeakMap 发稳定 id：不污染 bone、bone 被回收时 token 一起消失）。
+> - **memo 只给几何路径**：宽度把手的 `tipMainSectionPoint` 是 ad-hoc 调用（不成批），没有
+>   per-build 生命周期可挂，传 null 走原路径。
+> - **`bendSectionCache` 必须每次重建新建**（`conform.amount === 0` 时干脆为 null，保持零分配
+>   早退路径）：截面依赖 lock 当前参数，跨重建复用会画出上一版几何。
+> - **实测（用户 Test 2）**：24×24 **19.57 → 14.13ms**（进帧预算）、默认 10×6 **3.94 → 2.97ms**。
+>   按**conform 归因成本**看更准：`ON−OFF` 从 12.57ms 降到 7.00ms，**−44%**，与 2× 预测吻合
+>   （memo 只能砍积分那部分，OFF 基线不受影响）。精度与形状判据不变：全量 378/378、
+>   跨度比值仍 0.968..1.002。
+> - **顺带修了一条自己写的空转风险**：`单一定义点` 测试用 `panelScalpConformOffsets\(conform,`
+>   数消费点，我把几何侧改成多行调用后它只数到 1 ⇒ 先误改成 `\(\s`（反过来漏掉单行的把手
+>   调用），最终用负向 lookbehind 排除定义、只数调用。**判据要问"有几个消费点"，不是"参数
+>   怎么排版"** —— 两版错法都留在注释里。
+
+## 最近更新（0.2.140：Bend 积分步数从实测挑定 16 → 8）
+
+> 0.2.139 的弧长参数化在**每个顶点**上跑积分，步数 16 是我拍的、没量过。这是**几何热路径**
+> （用户实时拖滑杆），所以补了性能实测。
+>
+> - **实测超预算**：24×24 细分的单发片重建 conform ON **29.2ms**（OFF 6.6ms，3.4–4.5×），
+>   超过 ~16ms 帧预算；默认 10×6 为 5.99ms（OFF 1.76ms）。
+> - **步数从精度曲线挑，不再拍**（同一 panel 扫 4→32，判据 = 弯后折线长度 / 弯前）：
+>   4 步 1.18% ／ 6 步 0.51% ／ **8 步 0.29%** ／ 16 步 0.066% ／ 32 步 0.011%。
+>   测试容差 2% ⇒ 8 步仍有 7× 余量，而 16 步是精度需求的 2 倍多。
+> - **改后**：24×24 降到 **19.6ms**（−33%），默认 10×6 降到 **3.94ms**（−34%）。精度实测仍
+>   0.29%，全套 378/378、跨度比值判据（0.968..1.002）不变。
+> - **仍未做的优化（已知未解项），但适用条件比我最初写的窄 —— 已更正**：我曾断言"同一行的
+>   截面对所有 shell、所有 u 都相同，按行建前缀和表可再降一个数量级"。**前半句只在特定条件下
+>   成立**：`rawPanelPoint` 收到的是 `sampleT = panelTipCurveParameter(t, u, tipCurve, edgeTrim)`，
+>   而 ① `tipCurve ≠ 0` 时它显式含 `u²`（curve-math L284 的 `edgeWeight`）；② 即使
+>   `tipCurve == 0`，它仍返回 `along · (1 − edgeTrim)`，而调用点喂进去的 edgeTrim 是
+>   `lerp(leftEdgeTrim, rightEdgeTrim, (u+1)/2)` —— 左右 Trim 不等时**每个 u 的 sampleT 都不同**，
+>   于是每个顶点的截面（`midAt` 闭包）也不同，表无法跨行内顶点共享。
+>   **所以该优化只在 `tipCurve == 0 且左右 EdgeTrim 相等` 时有效**（这确实是常见默认，用户的两个
+>   repro 文件都满足），一般情形要退化回逐顶点积分。做之前必须先按这两个条件分流，
+>   否则会静默给出错误几何。shell 那半句是对的：厚度不进 `midAt`，同一 (row, u) 的两壳共用。
+
+## 最近更新（0.2.139：camber 折进弧长参数化 —— Bend 真正保长）
+
+> 用户在 0.2.138 的两个已知未解项里选了「折进弧长参数化（数学上真正保长）」，UV 那项选
+> 「先不管，等形状定下来」。
+>
+> - **0.2.138 为什么还没保住长度**：它把 `(lateral, camber)` 当**一对系数整体旋转**，等价于
+>   弯一条 **offset curve**。偏离中性面 `n` 的部分其弧长按 `(1 + n·k)` 放大 —— camber 恰恰就是
+>   那个 `n`（`curvature·halfWidth·(1−u²)`，Test 2 上峰值 0.45），`k≈0.95` ⇒ 峰值放大 ~1.43。
+>   实测中面弧长 **+26.5%**、逐行跨度比值 1.046..1.259。方向与用户报告的"坍缩"相反，但同样
+>   是"面板尺寸变了"，所以不能算达标。
+> - **新做法：离散曲率相加**（`panelBendCrossSection`，curve-math.js 唯一定义点）。把中面截面
+>   （**含 camber**）在 `[0, u]` 上采成折线，**逐段保长**、只把每段方向按该段中点处的累计弧长
+>   旋转 `−k·σ`：`seg' = rot(seg, −k·σ_mid)`，`P = C(0) + Σ seg'`。
+>   **保弧长因此是逐段构造出来的**（每段长度一字不改，只转方向），不依赖积分精度 ——
+>   这比"连续意义上保弧长"更强：**离散折线长度也精确守恒**，而 UV 的 U 正是逐段弦长累加。
+>   一致性：camber ≡ 0 时截面是直线，本式退化为 0.2.138 的 `sin(kσ)/k, (1−cos kσ)/k`。
+> - **厚度不被剪切**：函数额外返回弯后切向角 `angle`，调用方把 `shell·thickness/2 + centerZ·w`
+>   沿 `(−sin angle, cos angle)` 放上去。实测两壳间距恒为 thickness，偏差 <1e-9。
+> - **两个消费点各自的 camber 逻辑收成了一个 `midAt(v)` 采样器**（`tipMainSectionPoint` 与
+>   `rawPanelPoint` 各一份，互为同步点）。**`amount==0` 的原表达式刻意不复用 `shellOffset`**：
+>   左结合顺序必须与引入前逐字节一致，否则逐位守恒契约会在末位破掉。
+> - **实测（用户的 Scalp Conform Test 2.ahs）**：逐行跨度比值 **0.968..1.002**
+>   （投影模型 0.52 → 0.2.138 的 1.046..1.259 → 现在贴住 1）。下限略小于 1 是折线内接圆弧的
+>   离散效应，有推导：`ratio = 2·sin(Δθ/2)/Δθ`，6 段宽度分段下理论下限 ≈0.973。
+> - **暴露出一个非本轮引入的不一致，但我最初的归因是错的（0.2.141 实测更正）**：
+>   曾记为「`tipPanelWidthAt` 与 `panelWidthAt` 在 `t=1` 处取值不同」。**读码即可证伪**：两者是
+>   **同一公式、同一 `fullWidth`**（`max(0.0001, fullWidth × tipWidthMultiplierAt(...))`，
+>   L389-393 与 L939-943），frame 也由同一个循环构建。**实测拆开来看**（发尖边缘列，
+>   `TAPER_TO_ZERO`）：
+>     row 9  ：网格与把手**逐位一致**（差 1.9e-8）
+>     row 10 ：**中面都恰好 1.5**（一致），但半程厚度 网格 ±0.0400 / 把手 ±0.0379
+>   ⇒ 差的是**壳厚方向**，不是宽度：比值 0.0379/0.04 = **0.9475 = cos(18.8°)**，即两个消费方在
+>   `t=1` 算出了不同的 `angle`。成因是 `t=1` 处 taper 收到 0、截面退化成一个点，此时"弯后切向"
+>   本身无定义 —— 网格侧拿到 `angle=0`（逐段循环一次都没进），把手侧拿到非零值。
+>   `splits=null` vs `splits=[]` 实测**无差别**（都 1.30e-2），所以与调用约定无关。
+>   测试跳过该行并注明；修它要给"退化截面"定义一个确定的切向，属独立改动。
+> - 全量 378/378、浏览器 28/28。
+
+## 最近更新（0.2.138：Scalp Conform 改为绕竖直轴的 Bend + 悬停高亮修复）
+
+> 用户三条反馈：① 「我拉宽 width 和 Conform, 橙色高亮选择仍然还是原来的 panel 默认的很窄的
+> 状态, 选择后高亮正常」；② 「主发片的控制点和控制器不会随着 Conform 拉高而跟着 geo 走, 但是
+> 子发尖的控制器会跟随……而且 WidthCurve 是无变化的」；③ 「不用直接改变切面, 而是变形切面……
+> 大概按照头的中心那里有个竖着的 tube 把平面的 panel 卷成圆柱的轨迹, 不是直接 ray 投射而是
+> 弯曲变形, 类似 bend, 这个是保持长度的. 我们现在的实现是不保持长度的, 坍缩有点严重」。
+>
+> - **bug① 根因（app.js `rebuildLockGeometry`）**：该函数只把 `selectionOutline.geometry` 重指向
+>   新几何、**漏了 `hoverOutline`**，而下一行就 `previousGeometry.dispose()`。两条轮廓由
+>   `createStrandSelectionOutline` 用**同一份 geometry 引用**创建 ⇒ hoverOutline 攥着已 dispose
+>   的旧几何。`dispose()` 只释放 GPU buffer、JS 侧属性数据仍在，下次渲染重新上传 ⇒ **画出旧
+>   形状**（不是消失，所以极易误判成"缓存没刷新"）。**与 Conform 无关**：任何几何重建都中招，
+>   只是 Conform 位移量大才显眼。修复一行 + dom-contract 三条断言（含顺序判据：两条重指向都
+>   必须在 dispose 之前）；变异测试确认咬（删掉那行 ⇒ 108/109）。
+> - **bug② 与 ③ 是同一个根因**，用户诊断准确：「控制器没跟着头皮走说明不是本质的程序化修改,
+>   可能程序化到生成的 geo 上去了」。旧模型逐顶点在世界空间投影 ⇒ 位移不进"形状定义"，凡从
+>   **参数**推导的东西（主发片控制点 `handle.position.copy(lock.points[index])`、WidthCurve）
+>   都看不见它；发尖控制器能跟随只是因为它恰好经 `tipSurfaceFrameAt → tipMainSectionPoint`。
+> - **新模型（Bend，保弧长）**：`θ = k·s`、`k = amount / bendRadius`、
+>   `P(s) = base + (sin θ/k)·T − ((1−cos θ)/k)·N`，唯一定义点 `panelBendCoefficients`
+>   （curve-math.js）。弯曲在面板**自己的 (frame.x, frame.z) 平面**内，厚度/camber 随弯曲旋转
+>   （实测两壳间距恒为 thickness，偏差 <1e-9）。**保弧长**由 `|dP/ds| ≡ 1` 保证（差分核验）；
+>   `k→0` **逐位**退化为平板；**插值曲率而非位置** ⇒ 中间态本身仍是光滑圆柱，因此 0.2.137 的
+>   `Root Release` 与 0.2.136 的 `Capsule Length` **两参数删除**（前者本是救"部分贴合鼓包"的
+>   补丁，后者被竖直轴取代）。四滑杆缩到两个：Conform + Scalp Gap。
+> - **bug② 的结构性修复**：`s = 0` ⇒ `along = 0, inward = 0` ⇒ **中线零位移**。主发片控制点落在
+>   授权曲线（中线）上，所以它们**本来就对齐**，无需给控制器另打补丁。有测试钉住"中线列逐位
+>   不动"。
+> - **实测（用户的 Scalp Conform Test 2.ahs，width=5、amount=0.87）**：横向跨度比值从投影模型的
+>   **0.52** 回到 **1.046..1.259**，坍缩消失。全量 378/378、浏览器 27/27。
+> - **两个已知未解项（如实记录，勿当已修）**：
+>   ㈠ **camber 导致跨度偏大**：camber = `curvature·halfWidth·(1−u²)` 是"偏离中性面 n 的偏移"，
+>      弯曲时其弧长按 `(1 + n·k)` 放大。Test 2 上 camber=0.45、k≈0.95 ⇒ 峰值 ~1.43，实测中面
+>      弧长 +26.5%。方向与用户报告的"坍缩"**相反**（偏大而非偏小），是否需要修正（把 camber
+>      折进弧长参数化，即用截面自身弧长而非横向坐标做 bend 参数）需由观感决定。
+>   ㈡ **row 0 会移动 ⇒ U 尺度变 4.6%**：uv-unfold 的 U 由 row-0 逐段**弦长**累加得出，而弯曲后
+>      弦长和 ≠ 原弧长（折线内接圆弧 + camber 放大）。我曾在 curve-math 注释里断言"保弧长正好
+>      给出 UV 不变"，**那是错的**（连续保弧长 ≠ 离散弦长和不变），已就地更正。解法是给
+>      `gridUvTable` 传未弯曲的 `referenceCircumference`（该参数已在签名里），尚未实现。
+
+## 最近更新（0.2.137：修掉 Scalp Conform 的中段鼓包 —— Root Release 钳到 0.25）
+
+> 用户报告：「靠近尖端的部分完美的按照头皮类似胶囊半体来变形, 要的就是这种, 不过根部附近
+> 可能由于算法问题或者模型不正确导致会有很诡异的挤压, 而且比整个头都要宽」，并提供了
+> 复现文件（`Scalp Conform Test 1.ahs`，单个 panel、width=5、amount=1、**range=0.91**）。
+>
+> - **"尖端对、根部错"本身就是最强的线索**：它排除了"代理形状不对"整类猜测 —— 若代理错，
+>   尖端不会正确。差别只在 weight：尖端 `weight==1`（**没在插值**），根部到中段 weight 在
+>   0→1 之间（**正在插值**）。
+> - **根因**：`range`（当时叫 Falloff、上限 1、默认 0.6）让 ramp 跨度内的行处于**部分贴合**。
+>   `delta = (target − point)·amount·weight` 是**位置线性插值**，而「原始构型」与「裹住头的
+>   构型」差异极大 ⇒ 中间态不落在任何光滑曲面上（糖纸褶皱）。实测该 panel（目标距头心
+>   1.155）：`range=0.91` 时各行距离 `1.17→1.42→1.24`，**中段停在 1.42** —— 既没贴上头也不是
+>   原始形状，就是那个"包"；`range=0.15` 时距离几乎恒定 `1.17→1.24`。
+> - **修复 = 把 range 钳到 0.25 并重命名 `Root Release`**（默认 0.15）。上限**是扫出来的**：
+>   0.05–0.25 跨度反转 1 次（与 conform 关闭时相同）、最大偏离 ≤0.093；**0.30 反转跳到 3 次**、
+>   偏离 0.104。边界与细分有关（`panelLengthLoops=10` ⇒ 行距 0.1，0.25 ≈ 放开两行），故是
+>   **经验上限**，改细分默认值时应重扫。语义随之改变：它不再是艺术衰减，只是**把被 UV 红线
+>   钉死的 row 0 平滑放开**；不给过渡则根部留台阶。
+> - **单一定义点**：`PANEL_SCALP_CONFORM_MAX_RANGE` 与 `PANEL_SCALP_CONFORM_DEFAULTS` 都在
+>   curve-math.js，**app.js 改为 import**（本轮初版在 app.js 里硬写了三处 `0.3`，是同一条规则
+>   的多个定义点）。`index.html` 的 `value=`/`max=` 仍是必须人工同步的第三处，有测试钉住。
+> - **旧档兼容**：0.2.136 存的大 range 在反序列化处被钳回 0.25。这是**刻意的形状变更**
+>   （变的方向是"不再鼓包"），不是静默丢数据。
+> - **回归测试的判据经过两轮修正，过程本身值得记**：
+>   ① 初版判据是"clearance 剖面的方向反转次数不多于 flat" —— **变异测试证明它不咬**
+>      （把上限改回 1，该测试仍绿）。原因是 fixture 的 camber = `curvature×width×0.5 = 0.45`
+>      在 harness 的**常量 frame.z** 上整体平移中面，把精心构造的 clearance 剖面淹掉了；
+>      修法是 fixture 里 `panelCurvature: 0`，此时中面点恰好等于曲线点。
+>   ② 修完 fixture 后判据**又太严**：任何非零长度的释放带都会在带内留下一个极小反转
+>      （实测 `range=0.15` 时 `0.020→0.059→0.050`，overshoot 仅 0.009），那是正常的。
+>   ③ 最终判据 = **鼓包幅度**：`overshoot / flat跨度 < 10%`。两种情形相差一个数量级
+>      （正常 2% vs 病态 39.8%），阈值干净分开。变异测试确认它现在真的咬（`range=1` 时报
+>      `overshoot=0.1829（39.8%）`，剖面 `0.020→0.233→0.050` 正是用户文件的形状）。
+>   **教训**：判据要选**幅度**而不是**存在性** —— "有没有反转"把正常现象和病态混为一谈。
+> - **fixture 必须复刻病征的全部成因**（这条最容易漏）：宽度远大于头径、曲线逐渐远离头部、
+>   且 **clearance 上升是"前重"的**（前 1/3 涨掉大半）。第三条才是鼓包成因：早期 w 小 ⇒
+>   conformed 跟着 flat 猛涨，等 w 追上来才被拽回 gap ⇒ 中途出现局部极大。flat 若匀速上升，
+>   两个效应互相抵消、鼓包不显形。初版 fixture 只满足前两条，于是空转。
+> - **真实浏览器验收**（`verify-scalp-conform.mjs`，在**用户的 repro 文件**上 28/28）：
+>   `conform=1` 后收满行贴在「半径 + gap」上，最大偏差 **0.0215**（108 顶点）；平均距头心
+>   2.081 → 1.050；row 0 逐位不动；Capsule Length 0→2.5 使包围盒 min.y 0.438 → 0.095；
+>   0 page exception。该脚本本轮修掉两个**自身**缺陷：继承的 `range=0.35` 已超新上限（必然
+>   假红）；以及它假设"全新场景"，而用户文件带着 `amount=1` 存盘 ⇒ 基线本身已是收缩态、
+>   所有方向断言失效。现在先把四个字段归位再取基线，且"授权默认值"改读 `defaultValue`
+>   （HTML `value=` 属性）而不是 `value`（当前状态）。
+
+## 最近更新（0.2.136：Scalp Conform —— 世界空间收缩包裹，替换半球模型）
+
+> **用户驳回了 0.2.134/0.2.135 的整个模型**，原话：「这个使用体验并不好, 可能不能简单根据
+> 法线去弯折一个刘海, 因为那终究是单个刘海, 而非用户想贴着头皮的前额部分去弯折, 导致刘海
+> 会拱起来而且后推的边缘并没有很好的贴近它该有的位置」，并给出方向：「直接分析现有头皮的
+> 集合结构, 把整个头当成 Capsule 的一端」。
+>
+> - **根因确凿（不是调参能救的）**：旧模型的位移是沿**面板自己的 `frame.z`** 的标量偏移 ——
+>   纯局部量，**完全不知道头皮在世界空间的哪里**。所以"后推的边缘"只是沿自己法线退了一段
+>   公式算出来的距离，落点与头皮实际位置无关；"拱起来"同理（面板相对自己弯，而不是去贴一个
+>   外部曲面）。**旁证**：app.js 现有的 `outwardNormalAtPoint`（L12391）也只是「以世界原点为
+>   心的径向」，连 `scalpSurface` 的 y=0.9 都没用上 —— 旧模型建立在同一套错误认知上。
+> - **新模型**：`delta = (target − point) · amount · weight(t)`，`target` = 头部代理表面点 + gap。
+>   落点**由真实几何决定而非公式**。`amount = 1` ⇒ 中面精确落在 target 上（恒等式，1e-12）。
+> - **头部代理 = Capsule 一端**（`capsuleEndNearestSurface`，curve-math.js 唯一定义点）：单位球
+>   空间里轴 = 原点 → (0, −cylinder, 0)，对轴上最近点取径向外推单位半径 ⇒ y≥0 是半球（头顶）、
+>   y<−cylinder 又是半球（下方收口）、中间是**圆柱段**（径向只在 xz 内）。圆柱段的意义：长刘海
+>   垂到下巴时**直着垂下**，而纯球在赤道以下会让顶点朝内卷（往下巴底下收）—— 这是纯球模型
+>   解决不了的，也是用户建议 Capsule 的原因。
+> - **代理跟随真实头皮**：椭球归一用**注入的 `deps.scalpSurface`**（app.js 的
+>   `{x:0,y:0.9,z:0,radius:1,scaleXYZ}`，`panelTipStrandDeps` 里注入**对象本体**而非快照 ⇒ 用户调
+>   头模后下次重建自动生效）。0.2.135 刻意"不跟随头模"，那是错的 —— 收缩的落点必须是真实头皮
+>   位置。**刻意不传 `scalpSurfaceGroup`（Object3D）**：几何重建时机早于渲染，它的 `matrixWorld`
+>   可能是脏的；从纯数据推变换永远是当前值。缺失时走 `PANEL_SCALP_PROXY_FALLBACK` 兜底。
+> - **两壳必须共用同一份 delta**（delta 从 shell 项归零的**中面点**算，再原样加到 front/back）——
+>   若两壳各自朝代理表面收，它们会收到同一张表面上、**面板厚度被压成 0**。这是本模型最容易
+>   踩的坑，两个消费点（`rawPanelPoint` / `tipMainSectionPoint`）的注释互指为同步点，并有
+>   「厚度逐位守恒 + 两壳 delta 完全相同」的回归钉住。
+> - **gap 在世界空间加**（沿"轴上最近点 → 表面点"的世界径向），不在单位球空间加：gap 是"离头皮
+>   多远"的物理距离，而非均匀 `scaleXYZ` 下单位球空间的等距并不对应世界等距。
+> - **四个字段整体改名** `panelHemisphere{Amount,Width,Center,RootAngle}` →
+>   `panelScalpConform{Amount,Range,Gap,Cylinder}`。前两个同义（强度 / 沿 t 跨度），**后两个语义
+>   换掉**（球冠顶点位置 → 离头余量；根部纬度 → Capsule 圆柱段长度）。改名而非复用旧名：本仓库
+>   有"字段名与语义漂移"的历史教训（`bone.spread` 撞上两个无关概念，见 §7.2b）。**旧档刻意不
+>   迁移** —— 把旧数值灌进新字段会得到与作者当年意图无关的形状，回落到 amount 0（关闭）更诚实。
+> - **`Root Latitude` 滑杆随模型一起删除**：新模型里"根在哪个纬度"由顶点**在世界空间的真实位置**
+>   决定，不需要用户告诉我们。这是相对 0.2.135 的实质简化（少一个需要理解的旋钮）。
+> - **测试整份重写** `tests/panel-scalp-conform.test.mjs`（14 条）替换
+>   `panel-hemisphere-deform.test.mjs`（已删）：机械改名会留下"看起来在测新模型、实则断言旧公式"
+>   的假绿。新增判据里最有价值的两条：**中面精确落在 radius+gap 上**（球代理下是独立几何事实，
+>   不是复述实现）、**厚度逐位守恒**。另有"代理跟随 scalpSurface 每个轴"（防退回写死常数）。
+> - **真实浏览器 28/28**（`scripts/verify-scalp-conform.mjs`，原 verify-hemisphere-ui.mjs）：
+>   真实工程 Sussurro_v1_0060.ahs 上 conform=1 后**平均距头心 2.436 → 1.045**（= 半径 1 + gap
+>   0.05），486 个收满顶点最大偏差 0.094（半个板厚量级）；Capsule Length 0 → 2.5 使包围盒
+>   min.y 0.339 → −0.159（圆柱段真的让头发垂更低）；row 0 逐位不动；0 page exception。
+>   判据的 center/radius **从测试缝读注入的 `scalpSurface`**，不写死 `{y:0.9,r:1}` —— 写死就只是
+>   复述实现的假设、用户改过头模后会假绿。
+
+## 最近更新（0.2.135：Panel Width 上限 5 + 半球「两侧后移」）
+
+> 用户两项优化：① Panel 的 Width 上限 2.5 → 5；② 半球手感从「软选后单纯向前凸」改成
+> **两侧在鼓起的同时往后移**。用户原话：「我拉了一个很平的 panel 刘海在额前的这个平面拉下来,
+> 做到我拉宽 width, 然后我拉动 Bulge Amount, 这个 panel 就差不多贴着头皮往后挪了, 而不是我
+> 手动去调整边缘曲线」。并明确「适配当前头皮」**不是要真写适配算法，直接定个常数**。
+>
+> - **Width 上限（index.html 一处属性）**：`#panelWidth` 的 `max` 2.5 → 5。**无 JS 常数需同步** ——
+>   `lock.width` 全局无上限钳位，而多选相对编辑 `relativeEditValue` 的 min/max 直接读
+>   `Number(input.min)`/`Number(input.max)`（app.js L17486-17487），**滑杆属性即唯一真源**。
+>   `dom-contract` 只冻结 `panelWidthLoops`，不冻结 width 的 max。
+> - **两侧后移（curve-math.js）**：`offset = amount·(cap − recede)·guard(t)`。
+>   `recede = (1 − cos(|u|·k)) / k`，`k = wrapRatio = 面板半宽 / 头皮球半径` —— 这是把平面窄条
+>   **卷到半径 R 的球面**上的精确后移量（横向弧长 `s = |u|·W` 对应圆心角 `θ = s/R`，相对切平面
+>   后移 `R(1 − cos θ)`，再除以 W 归一）。**自洽性验证**：乘回世界尺度（半宽）后半宽被约掉，
+>   剩下正是 `R(1 − cos θ)` ⇒ 尺度约定没引入伪量纲。
+>   **关键性质**：k 随 `lock.width` 增大 ⇒「拉宽 width 再拉 Bulge Amount 就贴上头皮」是自然
+>   结果，用户不必再手调边缘曲线。k → 0 时 `recede → 0`，退化为 0.2.134 的纯球冠。
+> - **`amount = 1` 的物理刻度（构造性恒等式，已钉成测试）**：边缘**精确**落在半径 R 的头皮球面上，
+>   实测最大偏差 **1.11e-16**（纯 float64 舍入），因此断言用 1e-12 而非 1e-6 —— 这是恒等式不是近似。
+>   于是滑杆有了明确刻度：1 = 精确贴合头皮、0.5 = 贴一半。**钉住它的理由**：将来任何"简化"若破坏
+>   该等式，滑杆就退化成没有物理含义的魔法系数，而形状看起来仍然"差不多"、行为测试未必发现。
+> - **量级提示（用户手感相关）**：`fullWidth = 5`（UI 上限）时半弧角 = 143.2°/侧 ⇒ 面板一共绕过
+>   **286.5°**，`amount = 1` 会把它几乎整圈包住头。这不是 bug（用户自己选 width 与 amount），但
+>   「一体前额刘海」的实用区间通常是**较低的 amount**；`θ` 在数值层钳到 180° 只是安全网，UI 上限
+>   （143.2° < 180°）够不到它。
+> - **头皮半径是常数** `PANEL_SCALP_RADIUS = 1`（panel-tip-strand.js），与 app.js 的
+>   `scalpSurface = { y: 0.9, radius: 1 }` 同值 —— 这是**应用自己的头皮球**，不是我拍的数。
+>   **受控副本**（几何层不便 import 运行时状态），scalpSurface 默认值变了要同步。用户可缩放头模，
+>   但本值**刻意不跟随**：它只是「快速出半球效果」的手感基准，跟随会让同一 Bulge Amount 在不同
+>   头模上给出不同形状。
+> - **`r ≥ 1` 不再恒为 0**（语义变更，刻意）：后移必须作用于**整片宽度**，否则宽面板的边缘会停在
+>   切平面上、贴不住头。因此原来的 `if (radiusSquared >= 1) return 0` 改成只让 `cap` 归零。
+> - **根部纬度 Root Latitude（新滑杆 `#panelHemisphereRootAngle`，0..1，默认 0.5）**：用户要求
+>   「按照根部的朝向曲率和 panel 末端的朝向去简单计算一下根部大概在什么位置」并「做一个非线性
+>   范围映射，因为根部一般难以从真的头顶上垂直 90 度开始刷，这个控制权给用户」。实现：
+>   `φ₀ = (π/2)·knob²`（**平方映射**：φ₀ 极小时 sin 变化最快、观感最敏感，平方把滑杆低端拉开，
+>   0→0.5 只覆盖 0°→22.5°，把分辨率放在常用的浅纬度、把少用的陡端压到末段）；
+>   `rootFraction = sin φ₀` 的物理含义 = 该纬度处表面已经"侧过去"多少（真头顶 0、赤道 1）；
+>   沿 t 的后移权重 = `rootFraction + (1 − rootFraction)·t`。
+>   **为什么根部要弱**：发根那一圈本来就贴着头，需要往后收的是往下绕过颅侧的部分；整片等权后移
+>   会把根部拉离头皮（观感是"整片往后平移"而不是"包住头"）。
+> - **默认值三处同源**：`PANEL_HEMISPHERE_DEFAULT_ROOT_ANGLE`（curve-math，唯一定义点）、
+>   app.js 的 `panelCreationDefaults`、index.html 的 `value=` —— 不同源会让「没动过滑杆的面板」
+>   与默认几何不一致。
+> - **测试（14 → 19 条）**：新增「中线前凸/边缘后移 + 越宽越贴」「根部弱于发尖（单调）」
+>   「Root Latitude 非线性映射（低半段跨度 < 高半段，带线性映射的负向对照）」「wrapRatio=0 退化
+>   为纯球冠」「**几何层**宽面板中间前凸两侧后移」。接线/镜像断言从三字段扩到四字段。
+>   **两条既有量值断言曾变红，红的是测试不是几何** —— 它们手写了 5 个参数；改为从
+>   `panelHemisphereParams`（参数唯一定义点）取全部参数，并把峰值期望从写死的 `amount × scale`
+>   改成实际采样期望的最大值（后移叠加后峰值不一定还在球冠顶点上）。
+> - **真实浏览器验证** `verify-hemisphere-ui.mjs` 18 → **24/24**：宽面板拉 Bulge Amount 后
+>   **中线沿法线前移 +1.173、两侧后移 −0.747**（正是用户要的手感）；Width 上限实测为 5；
+>   Root Latitude 0 vs 1 包围盒确实不同；row 0 仍逐位不动（UV 红线未破）；0 page exception。
+>   判据取**几何自身法线**（从中线点位移方向反解）而非假设世界 +Z —— 真实工程里 panel 朝向任意。
+
+## 最近更新（Hemispherical Deform，仅 panel，0.2.134）
+
+> **面板「半球隆起」= 四个 Trim 控件的法线方向对位物**。动机（用户原文）：把额头/刘海做成
+> **一整片**大面板时，它必须「在法线方向往前拱出一个半球」，因为额头是凸的；手绘半圆进
+> sweep profile 或 depth 曲线不现实，所以必须程序化。**普通发丝刻意未实现**（用户明确延后）。
+>
+> - **modules/geometry/curve-math.js**：新增 `panelHemisphereOffset(t, u, amount, width, center)`
+>   —— 球冠位移的**唯一定义点**（紧邻 `panelTipCurveParameter`）。剖面是**真球冠**而非泛化凸包：
+>   `dt = (t − center)/width`、`r = hypot(dt, u)`、`offset = amount·sqrt(1 − r²)`（`r < 1`），
+>   `r ≥ 1` 处**精确为 0**；返回标量，世界尺度由调用方乘。与四个 Trim 的分工：它们重参数化
+>   `sampleT`（**切向**），本函数只管**法线方向**。面板自己的 `panelCurvature`（camber，沿 u 的
+>   抛物线）刻意**不与之合并** —— camber 描述截面弧度、本函数描述沿 t 的球冠，是两个艺术控件。
+> - **根部守卫（UV 红线）**：`if (along <= 0) return 0` + 常量 `PANEL_HEMISPHERE_ROOT_GUARD = 0.05`
+>   的 smoothstep 斜坡，**写在纯函数内部**，任何消费方都无法忘记。两条独立理由：① `uv-unfold` 的
+>   U 完全由 row 0 环向弧长决定、V 纯行号 ⇒ 触到 t=0 会静默重排每片面板的 UV；② 面板根锚在头皮，
+>   根部位移物理上就是错的。带宽取 0.05 ≈ 默认 `panelLengthLoops`(10) 行距的一半 ⇒ 默认细分下
+>   **只有 row 0** 落进守卫带、row 1 已拿到完整隆起，所以半球不会被"抹平在根部附近"；用 smoothstep
+>   而非硬阶跃，是因为 `tipSurfaceFrameAt` 靠**差分**求法线，t→0 处的跳变会让它算出错误法线。
+>   **`along <= 0` 提前归零不是冗余**：`strength` 为负时 `strength·…·0` 得到的是 **-0**，虽然对位置
+>   无影响（`x + -0 === x`），但 `Object.is(-0, 0) === false` 会让「精确为 0」的断言与将来按符号
+>   分流的消费方产生歧义。
+> - **modules/geometry/panel-tip-strand.js**：新增 `panelHemisphereParams(lock)` —— 本文件内
+>   lock 读取 + 钳位 + **世界尺度**的唯一定义点，并**导出供测试按同一规则推导期望值**（规范禁止把
+>   现场数值写死进测试）。世界尺度 = `fullWidth * 0.5`（面板半宽），使控件**与面板尺寸无关**：同一
+>   滑杆值在大小不同的面板上观感一致；用绝对世界单位会让宽面板隆起不足、窄面板炸开。
+>   `geometryType === "surface"`（lattice 控制）恒 0，与 `panelTipCurve`/`panelLeftEdgeTrim` 既有先例
+>   一致。两个消费点各加一段沿 `frame.z`（camber 与 `shell*thickness*0.5` 骑的同一基向量）的
+>   `addScaledVector`：① `rawPanelPoint`（几何本身，传**已含 Trim 重参数化的 `sampleT`**，所以半球
+>   活在与扫掠面同一参数空间）；② `tipMainSectionPoint`（宽度把手的截面复刻）。**`amount == 0` 时
+>   两处都整段不执行** ⇒ 与引入前逐位相同（先例：`SWEEP_OVERLAP_DEFAULTS`「全部关到 0 时输出逐位守恒」）。
+> - **消费方审计（只改了上面两处，其余顺着链自动继承）**：`tipSurfaceFrameAt` → `splitTipForSegment`
+>   （发尖 rest 链）→ `tipWidthEdgePosition` / `tipWidthControlPlacement`（绿色宽度把手）→
+>   `usda-export.js` 的 `splitBoneLayout`/`splitChainLayout`（panel 分支取的就是注入的
+>   `splitTipForSegment` 的链点）**全部经由 `tipMainSectionPoint` 取点，故无需各自改动**；漏改
+>   `tipMainSectionPoint` 会让网格鼓起而把手留在原处，该 bug 类见 bug-fixes.md #25。
+> - **app.js**：纯接线，**不参与推导**（有测试断言 app.js 不出现 `panelHemisphereOffset`）。三个字段
+>   `panelHemisphereAmount`(-1..1, 默认 0) / `panelHemisphereWidth`(0.05..1, 默认 0.5) /
+>   `panelHemisphereCenter`(0..1, 默认 0.5) 覆盖 `panelCreationDefaults`、lock normalize、snapshot
+>   序列化/反序列化、镜像伙伴、preset/clone 全部路径。滑杆复用**已有**的 `panelShapeInputs` 通用
+>   接线（`bindUndoCapture` + input 监听 + `setMixedControl` 多选同步各只有一份实现），因此只往字典
+>   补键、不手搓监听器；但通用循环对元素**不判空**，故先 `.filter` 掉缺失元素 —— markup 缺失时这三个
+>   键根本不进字典，启动不会抛。
+> - **镜像语义（与 panelTipCurve / EdgeTrim 都不同）**：三个值**原样拷贝，不取反、不交换**。理由：
+>   球冠剖面 `r = hypot(dt, u)` 在 u 上是**偶函数** ⇒ X 镜像翻转 u 的符号后形状不变；而
+>   `center`/`width` 沿 **t**（长度方向）度量，镜像不动 t。对比：`panelTipCurve` 要取负（其 `bowWeight`
+>   随 strength 符号在"边缘/中心"间切换），左右 `EdgeTrim` 要互换（本身按侧定义）。两个镜像站点
+>   （`createMirrorPartner` / `syncMirrorPartnerFromLock`）的注释互指为同步点。
+> - **tests/panel-hemisphere-deform.test.mjs**（新增，14 条）：`amount==0` 逐位守恒（含 width/center
+>   被改动、含 zipper 路径）、row 0 对任意参数逐位不动（含最恶劣的 `width=1 center=0` 与 zipper 路径）、
+>   `t==0` 纯函数恒 0 的穷举、球冠剖面（`r≥1` 精确 0 / 朝顶点单调 / u 上对称）、负 amount 严格反号、
+>   中段行位移 == `panelHemisphereOffset × fullWidth × 0.5`（**峰值**亦逐值核对）、**跨消费方一致性**
+>   （把手截面点位移 == 网格位移，规范要求的形式）、surface 恒 0 + 尺度正比于面板宽度、以及
+>   **单一定义点的源码级守卫**（球冠公式只在 curve-math.js；panel-tip-strand 恰好 2 个调用点；
+>   app.js 不出现该函数名）。fixture 的 taper 末点为 0，满足 §2.4b「至少一个 taper 收到 0 的构型」。
+>   **另 2 条是 app.js 接线的源码文本断言**：app.js 顶层就 `querySelector`/`new THREE.Scene`，node 里
+>   无法 import 执行（`dom-contract` 全篇同样只读源码文本），所以按本仓库既有惯例把 7 类接线路径
+>   逐条钉住（defaults / DOM 引用含缺失过滤 / normalize / snapshot 序列化 / 反序列化 / 隐藏 + 可选链），
+>   并把**镜像语义**单独立一条：三值在两个镜像站点都「同名→同名」，且带**负向对照**（断言
+>   `panelTipCurve` 确实取负、EdgeTrim 确实互换，证明那两种写法在本文件里写得出来 ⇒ 半球的
+>   「不取反/不互换」断言不是空转）。**这不能替代浏览器验证**，只能防"少接一条路径"。
+> - **「空操作路径」那条为什么必须是源码断言（变异测试结论）**：「`amount==0` 空操作路径不分配」这条要求
+>   **行为测试原理上逮不到** —— `amount==0 ⇒ strength==0 ⇒ offset 恒为 +0`，而 `x + 分量*0 === x`
+>   逐位成立，所以把两处 `hemisphere.amount !== 0` 门控和纯函数早退全部拿掉，输出仍然逐位相同
+>   （实测：该变异体是 **equivalent mutant**）。故只能用源码断言钉住「纯函数早退 1 处 + 消费点门控
+>   恰好 2 处」；少了它，将来有人"简化"掉早退不会有任何测试变红，但每次重建面板都会白算球冠并多
+>   clone 一个 Vector3。
+> - **断言承重性已用变异测试验证**（改**临时副本**、不碰生产文件；探针跑完即删，两个生产文件事后
+>   SHA256 与基线逐位相同）：① 从 `tipMainSectionPoint` 摘掉半球 → 跨消费方断言逮到（最大偏差
+>   1.7e-1，正是 bug-fixes.md #25 那类把手漂移）；② 摘掉根部守卫 → row 0 断言逮到；③ 球冠改成抛物线
+>   （`sqrt(1−r²)` → `1−r²`）→ 量值断言逮到（偏差 5.8e-2）—— 这条证明「峰值 == amount × scale」不是
+>   只要"动了"就通过；④ 取消早退 → 行为判据放过（equivalent mutant，见上条），源码判据逮到。
+>   合计 4/5 被逮，唯一漏网者已证明为等价变异体。
+> - **~~顺带发现：两个镜像站点对 EdgeTrim 处理不一致~~（已实测证伪，勿据此"修 bug"）**：曾记为
+>   「`createMirrorPartner`（L9491）原样拷贝、`syncMirrorPartnerFromLock`（L9669）左右互换，疑为潜伏
+>   镜像 bug」。**这个结论是错的，只读了对象字面量、没跟控制流**：`createMirrorPartner` 在 `return`
+>   之前的 **L9563 无条件调用 `syncMirrorPartnerFromLock(lock, mirrored)`**，而它的守卫
+>   `if (!lock || !partner || partner === lock) return null` 对两个不同 lock 必然通过 ⇒ **互换总是最后
+>   执行、必然生效**，L9491–9492 的字面量是**死值**（被立刻覆盖）。**真实浏览器实测**（走 outliner 右键
+>   Mirror Instance 的真实路径，源 left/right = 0.5/0）：partner 得到 **0/0.5**，互换生效、镜像正确。
+>   **教训**：判断「同一字段在两处赋值哪个生效」必须跟到控制流，不能只对比两处字面量 —— 尤其当其中
+>   一处是构造函数、另一处是它自己在返回前调用的同步函数时。**由此推论也适用于半球三值**：它们在
+>   `syncMirrorPartnerFromLock` 里同样有一份「原样拷贝」，那份才是最终生效的（字面量那份是死值），
+>   两处写法一致所以结论不变。
+> - **scripts/verify-hemisphere-ui.mjs（新增，18/18，主进程补）**：上面那些都是 node 层，**滑杆接线
+>   在真实浏览器里从未验过** —— 而那正是用户实际会碰的东西。本脚本在真实工程 Sussurro_v1_0060.ahs
+>   的 panel（Front Bangs 1）上驱动真实滑杆：控件在 panel 上可见且带蓝框、默认中性 0、派发 `input`
+>   后 `lock.panelHemisphereAmount` 写入 0.8、`<output>` 显示 0.80、网格**重建后顶点数不变**（918）
+>   而平均 z 从 0.966 → 1.126（**真的鼓起来了**）、**row 0 的 20 个顶点在活应用里逐位不动**（UV 红线
+>   在真实管线上成立，不只在测试 fixture 上）、负值反向凹（+0.8: +0.1595 / −0.8: −0.1596）、三个字段
+>   都落到 lock 上，以及 **undo 往返**（0.55 → 0.15 → undo → 0.55，width/center 一并保持、滑杆 UI
+>   重新同步）—— 后者比读 snapshot 更强，因为它同时跑 `snapshotState` 与 `restoreLock` 两条真实路径，
+>   等于把「随 .ahs 持久化」也一并证了，且无需为此加宽 `__AHS_TEST_SEAM__`。全程 0 page exception。
+>   **踩坑**：`bindUndoCapture` 监听 `pointerdown`/`keydown` 而非 `input`，只派发裸 `input` 不会产生
+>   undo 步（初版因此拿不到快照、看着像持久化坏了）；已写进 AGENT_QUICKSTART §5。
 
 ## 最近更新（0.2.132）
 

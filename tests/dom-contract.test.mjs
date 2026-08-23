@@ -2649,7 +2649,7 @@ test("settings menu exposes preferences, language, and app version", async () =>
   assert.match(localization, /"Alt \+ Left Mouse":/);
   assert.match(localization, /"Center viewport on selected object":/);
   assert.equal(packageData.version, "0.1.5-Sintaka.0.2.63");
-  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.133["']/);
+  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.144["']/);
 });
 
 test("title bar exposes icon-only Patreon and Ko-fi support links", async () => {
@@ -2900,7 +2900,7 @@ test("newly drawn strands create linked mirror instances while X mirror is enabl
     readFile(new URL("../modules/geometry/draw-flow.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20260909-1/);
+  assert.match(html, /app\.js\?v=20260910-9/);
   assert.match(html, /id="mirrorInstanceAction"[^>]*>Mirror Strand<\/button>/);
   assert.match(
     source,
@@ -2992,7 +2992,7 @@ test("project materials select standard, anime anisotropic, and Lambert shaders"
     html,
     /id=["']hairMaterialShader["'][\s\S]*value=["']standard-anisotropic["']>Standard Anisotropic<[\s\S]*value=["']anime-anisotropic["']>Anime Anisotropic<[\s\S]*value=["']lambert["']>Lambert</
   );
-  assert.match(html, /app\.js\?v=20260909-1/);
+  assert.match(html, /app\.js\?v=20260910-9/);
   assert.match(
     html,
     /id=["']hairMaterialAnimeControls["'][\s\S]*id=["']hairMaterialAnimeBaseColor["'][\s\S]*value=["']#dbc2aa["'][\s\S]*id=["']hairMaterialAnimeShadowColor["'][\s\S]*value=["']#99675c["'][\s\S]*id=["']hairMaterialAnimeRimColor["'][\s\S]*value=["']#ffd9cf["'][\s\S]*id=["']hairMaterialAnimeRimStrength["'][\s\S]*value=["']0\.35["'][\s\S]*id=["']hairMaterialAnimeRimWidth["'][\s\S]*value=["']0\.3["'][\s\S]*id=["']hairMaterialAnimeHighlightEdgeSuppression["']/
@@ -3041,7 +3041,19 @@ test("project materials select standard, anime anisotropic, and Lambert shaders"
   assert.match(source, /function strandMirrorPartnerHighlighted\(lock\)[\s\S]*selectedStrandIds\.has\(lock\.id\)[\s\S]*mirrorPartnerFor\(lock\)[\s\S]*selectedStrandIds\.has\(partner\.id\)/);
   assert.match(source, /function syncStrandSelectionOutline\(lock\)[\s\S]*outline\.visible = Boolean\(selected \|\| mirrorPartnerHighlighted\)[\s\S]*STRAND_MIRROR_OUTLINE_COLOR : STRAND_SELECTION_OUTLINE_COLOR/);
   assert.match(source, /function setStrandSelectionVisual\(lock\)[\s\S]*setAnimeHairBaseColor\(material, strandViewportBaseColor\(lock\)\)[\s\S]*material\.emissive\?\.set\(0x000000\)[\s\S]*syncStrandSelectionOutline\(lock\)/);
+  // 几何重建必须把**两条**轮廓都重指向新几何。两条由 createStrandSelectionOutline 用同一份
+  // geometry 引用创建，而 rebuildLockGeometry 紧接着 dispose 掉旧几何 —— 漏掉任何一条，它就
+  // 攥着已 dispose 的旧几何；`dispose()` 只释放 GPU buffer、JS 侧属性仍在，下次渲染重新上传
+  // ⇒ **画出旧形状**（不是消失，所以易被误判为"缓存没刷新"）。0.2.138 由用户在 Scalp Conform
+  // 上报告（"我拉宽 width 和 Conform, 橙色高亮选择仍然还是原来的很窄的状态"），但任何几何
+  // 重建都中招。两条断言分开写：合成一条正则会让漏掉 hoverOutline 时仍然通过。
   assert.match(source, /function rebuildLockGeometry\(lock, options = \{\}\)[\s\S]*lock\.selectionOutline\.geometry = lock\.mesh\.geometry/);
+  assert.match(source, /function rebuildLockGeometry\(lock, options = \{\}\)[\s\S]*lock\.hoverOutline\.geometry = lock\.mesh\.geometry/);
+  // 且必须在 dispose 之前完成重指向（顺序判据：两条重指向都出现在 previousGeometry.dispose() 前）
+  assert.match(
+    source,
+    /lock\.selectionOutline\.geometry = lock\.mesh\.geometry;\s*\n\s*if \(lock\.hoverOutline\) lock\.hoverOutline\.geometry = lock\.mesh\.geometry;\s*\n\s*previousGeometry\.dispose\(\)/
+  );
   assert.doesNotMatch(source, /material\.color\.getLuminance\(\)[\s\S]*contrastTint/);
   assert.match(source, /function updateStrandSelectionHighlightForLock\(item\) \{[\s\S]*setStrandSelectionVisual\(item\)/);
   assert.match(source, /function updateStrandSelectionHighlight\(\) \{[\s\S]*locks\.forEach\(updateStrandSelectionHighlightForLock\)/);
@@ -4456,7 +4468,15 @@ test("project restore preserves authored strand and braid points while presets m
   ]);
   // moved to modules/scalp/scalp-builder.js
   const refreshStart = scalpBuilder.indexOf("function refreshLoadedRootAttachmentsOnAuthoredScalp()");
-  const refreshEnd = scalpBuilder.indexOf("\r\n}\r\n\r\nfunction remapLegacyPresetToActiveScalp", refreshStart) + 2;
+  // **行尾无关**：磁盘上的行尾取决于 checkout 平台（Windows 给 CRLF、Linux 给 LF），而 git 存的是 LF
+  // ⇒ 把 `\r\n` 写死进 indexOf 会让这条断言**只在 CRLF checkout 下成立**，在任何 LF 检出（含 CI）下
+  // 静默切出空串、断言空转。`split-tip-geometry.test.mjs:3035` 已为同一个坑留过记录（那里的修法是
+  // `\r?\n`）。这里用正则定位到 `}` 本身，两种行尾都对。
+  const refreshEndMatch = /\r?\n\}\r?\n\r?\nfunction remapLegacyPresetToActiveScalp/.exec(
+    scalpBuilder.slice(refreshStart)
+  );
+  assert.ok(refreshEndMatch, "未找到 refreshLoadedRootAttachmentsOnAuthoredScalp 的结束边界");
+  const refreshEnd = refreshStart + refreshEndMatch.index + refreshEndMatch[0].indexOf("}");
   const refreshSource = scalpBuilder.slice(refreshStart, refreshEnd);
 
   assert.match(projectState, /function createProjectRestorePlan\(state,[\s\S]*counters:[\s\S]*visibility:[\s\S]*resources:[\s\S]*scene:[\s\S]*strandSelection:[\s\S]*selection:/);
@@ -4507,8 +4527,8 @@ test("strand width and depth curve editors expose draggable viewport mesh points
     /class="profile-dialog-actions taper-curve-actions"[\s\S]*id="addTaperPoint"[\s\S]*class="taper-toggle-stack"[\s\S]*id="taperAsymmetryToggle"[\s\S]*id="taperMeshPointsToggle"/
   );
   assert.doesNotMatch(html, /id="taperCurveSide"/);
-  assert.match(html, /styles\.css\?v=20260909-1/);
-  assert.match(html, /app\.js\?v=20260909-1/);
+  assert.match(html, /styles\.css\?v=20260910-9/);
+  assert.match(html, /app\.js\?v=20260910-9/);
   // localization.js is now loaded as an ES-module import inside app.js (there is no
   // separate localization script tag anymore).
   assert.match(source, /from "\.\/modules\/data\/localization\.js\?v=20260901-1"/);

@@ -4311,6 +4311,41 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
   border-bottom: 1px solid #332e35;
 }
 
+/* 控件组强调框：把「一组相关控件」从周围的普通滑杆里视觉分出来。
+   一个基类给版式（浅灰底 + 圆角 + 1px 描边），三个修饰类只改描边颜色。
+   底色用**半透明白叠加**而不是字面浅灰：本主题是纯暗色（:root 的 color-scheme: dark，
+   面板底 #19181d），字面浅灰会变成一块突兀的亮斑；叠加则只把该组抬亮一档、
+   在深浅底上都成立。参照同文件既有的 .visibility-filter-box（同为「框起一组」的组件）。
+   描边刻意用低饱和 rgba 而非纯色：目标是现代 UI 的“强调”，不是警告框。
+   三色亮度**刻意不等**：在暗底上蓝色天生显得更弱，故蓝的 alpha 最高、绿最低，
+   让三个框的视觉重量接近（纯粹按同一 alpha 给会让「深蓝」几乎看不见）。
+   分组本身由各组的文字小标题承载，颜色只是辅助 ⇒ 不违反「不得只靠颜色传达信息」。 */
+.control-emphasis {
+  margin: 12px 0 6px;
+  padding: 2px 8px 8px;
+  border: 1px solid #403a43;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+/* 组内第一个小标题自带 16px 上边距（.subsection-label），叠上盒子的 padding 会显得脱节；
+   收掉它，让标题贴住框顶。其余控件的既有间距一律不动。 */
+.control-emphasis > .subsection-label:first-child {
+  margin-top: 4px;
+}
+
+.control-emphasis--red {
+  border-color: rgba(226, 104, 104, 0.5);
+}
+
+.control-emphasis--green {
+  border-color: rgba(132, 214, 146, 0.45);
+}
+
+.control-emphasis--blue {
+  border-color: rgba(104, 138, 232, 0.62);
+}
+
 .visibility-filter-box {
   margin-top: 10px;
   border: 1px solid #403a43;

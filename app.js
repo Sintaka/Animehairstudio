@@ -3,7 +3,7 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260901-1";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-8";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
 import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-1";
@@ -31,7 +31,7 @@ import { createReferenceHeadApi } from "./modules/scene/reference-head.js?v=2026
 import { createMiscStore } from "./modules/core/misc-store.js?v=20260814-12";
 import { createSculptEditStore } from "./modules/edit/sculpt-edit-store.js?v=20260830-1";
 import { createScalpStore } from "./modules/scalp/scalp-store.js?v=20260809-10";
-import { createProjectStore } from "./modules/io/project-store.js?v=20260809-9";
+import { createProjectStore } from "./modules/io/project-store.js?v=20260909-2";
 import { createHairStore } from "./modules/core/hair-store.js?v=20260816-7";
 import { createGuideStore } from "./modules/core/guide-store.js?v=20260809-8";
 import { createCameraStore } from "./modules/core/camera-store.js?v=20260809-8";
@@ -105,8 +105,11 @@ import {
   twistRateDegreesFromUnits,
   twistRateUnitsFromDegrees,
   upperProfileArcIndices,
-  uniformCurveParameters
-} from "./modules/geometry/curve-math.js?v=20260813-3";
+  uniformCurveParameters,
+  // Scalp Conform 的默认值：**唯一定义点在 curve-math.js**。import 而不是抄写 —— 抄写会让
+  // 默认值变成多个定义点（0.2.137 初版在此硬写过三处上限，已改为 import）。
+  PANEL_SCALP_CONFORM_DEFAULTS
+} from "./modules/geometry/curve-math.js?v=20260910-5";
 import {
   curveLatticeLoopPointIndices,
   DEFAULT_CURVE_LATTICE_PLANE,
@@ -1510,6 +1513,13 @@ const panelCreationDefaults = {
   panelRightEdgeTrim: 0,
   panelTipCurve: 0,
   panelTipLoops: 0,
+  // Scalp Conform（0.2.138 绕竖直轴的 Bend，保弧长）：两个默认值**直接取自** curve-math.js
+  // 的 PANEL_SCALP_CONFORM_DEFAULTS（唯一定义点），不抄写字面量。index.html 的 value= 是
+  // 必须人工同步的第三处，有测试钉住三者一致。amount 0 ⇒ 输出与引入前逐位相同。
+  // 0.2.138 删掉了 Range/Cylinder：Bend 下曲率插值处处光滑（不需要根部释放带），
+  // 竖直弯曲轴又天然让长发直垂（不需要 Capsule 圆柱段）。
+  panelScalpConformAmount: PANEL_SCALP_CONFORM_DEFAULTS.amount,
+  panelScalpConformGap: PANEL_SCALP_CONFORM_DEFAULTS.gap,
   panelSplitEnabled: true,
   panelSplitSnapToLoops: true,
   panelSplitHeight: 0.3,
@@ -3350,6 +3360,20 @@ const surfaceLatticeRowsInput = document.querySelector("#surfaceLatticeRows");
 const surfaceLatticeRowsValue = document.querySelector("#surfaceLatticeRowsValue");
 const panelCurvatureControl = document.querySelector("#panelCurvatureControl");
 const panelTipCurveControl = document.querySelector("#panelTipCurveControl");
+const panelScalpConformControls = document.querySelector("#panelScalpConformControls");
+// Scalp Conform 的四个滑杆走**已有**的 panelShapeInputs 通用接线（bindUndoCapture + input
+// 监听 + setMixedControl 多选同步各只有一份实现），因此这里只需把键补进字典。
+// 但通用接线对元素做 `input.addEventListener` 时**不判空**，而本文件被 index.html
+// 加载时该 markup 可能尚未存在 —— 所以先滤掉缺失项：缺失时这四个键根本不进字典，
+// 通用循环遍历不到，启动不会抛（其余既有键沿用原样，行为逐字节不变）。
+const panelScalpConformInputEntries = Object.entries({
+  panelScalpConformAmount: document.querySelector("#panelScalpConformAmount"),
+  panelScalpConformGap: document.querySelector("#panelScalpConformGap")
+}).filter(([, element]) => Boolean(element));
+const panelScalpConformValueEntries = Object.entries({
+  panelScalpConformAmount: document.querySelector("#panelScalpConformAmountValue"),
+  panelScalpConformGap: document.querySelector("#panelScalpConformGapValue")
+}).filter(([, element]) => Boolean(element));
 const panelShapeInputs = {
   width: document.querySelector("#panelWidth"),
   panelThickness: document.querySelector("#panelThickness"),
@@ -3361,7 +3385,8 @@ const panelShapeInputs = {
   panelTipCurve: document.querySelector("#panelTipCurve"),
   panelTipLoops: document.querySelector("#panelTipLoops"),
   panelSplitEnabled: document.querySelector("#panelSplitEnabled"),
-  panelSplitSnapToLoops: document.querySelector("#panelSplitSnapToLoops")
+  panelSplitSnapToLoops: document.querySelector("#panelSplitSnapToLoops"),
+  ...Object.fromEntries(panelScalpConformInputEntries)
 };
 const panelShapeValues = {
   width: document.querySelector("#panelWidthValue"),
@@ -3372,7 +3397,8 @@ const panelShapeValues = {
   panelLeftEdgeTrim: document.querySelector("#panelLeftEdgeTrimValue"),
   panelRightEdgeTrim: document.querySelector("#panelRightEdgeTrimValue"),
   panelTipCurve: document.querySelector("#panelTipCurveValue"),
-  panelTipLoops: document.querySelector("#panelTipLoopsValue")
+  panelTipLoops: document.querySelector("#panelTipLoopsValue"),
+  ...Object.fromEntries(panelScalpConformValueEntries)
 };
 // 0.2.132：全局 Split Spacing 滑杆（#strandSplitGap）已删除 —— 它承载的「segment separate
 // / 整管横向平移」语义被整体移除，发尖聚合改由每管 Tip Clump（#strandSegmentSpread）表达。
@@ -3511,6 +3537,9 @@ miscState.state.groupDefaultsWarningAcknowledged = localStorage.getItem("anime-h
 const panelSplitSnapWarning = document.querySelector("#panelSplitSnapWarning");
 const confirmPanelSplitSnapDisable = document.querySelector("#confirmPanelSplitSnapDisable");
 const cancelPanelSplitSnapDisable = document.querySelector("#cancelPanelSplitSnapDisable");
+const newProjectWarning = document.querySelector("#newProjectWarning");
+const confirmNewProjectButton = document.querySelector("#confirmNewProject");
+const cancelNewProjectButton = document.querySelector("#cancelNewProject");
 const scalpInputs = {
   x: document.querySelector("#scalpX"),
   y: document.querySelector("#scalpY"),
@@ -3521,6 +3550,26 @@ const scalpInputs = {
   scaleZ: document.querySelector("#scalpScaleZ")
 };
 const scalpSurface = { x: 0, y: 0.9, z: 0, radius: 1, scaleX: 1, scaleY: 1, scaleZ: 1 };
+// Scalp Conform 拟合椭球（第五版，纬线 + 椭球密切圆心）：**全局**，头只有一个，不进 lock
+// （与逐 lock 的 panelScalpConformAmount/Gap 是两套不同粒度的参数，互不影响）。
+// 中心复用 scalpSurface 的 x/y/z（不新增中心字段），半轴只暴露水平两个方向的比例——
+// 竖直半轴与整体半径被 curve-math.js 的 PANEL_SCALP_CONFORM_DEFAULTS 写死为 1（球构型下
+// 对结果的影响代数为 0，理由见该文件 PANEL_SCALP_CONFORM_DEFAULTS 上方注释）。
+// 默认值**唯一定义点**是 PANEL_SCALP_CONFORM_DEFAULTS，这里 import 而不抄字面量。
+const scalpConformFit = {
+  fitScaleX: PANEL_SCALP_CONFORM_DEFAULTS.fitScaleX,
+  fitScaleZ: PANEL_SCALP_CONFORM_DEFAULTS.fitScaleZ
+};
+// 两个滑杆的 DOM 引用字典，照 scalpInputs 的样子做（全局对象、不进 panelShapeInputs——
+// 那套走 editSelectedLocks 逐 lock，本参数是全局，见下方事件绑定处的说明）。
+const scalpConformFitInputs = {
+  fitScaleX: document.querySelector("#scalpConformFitScaleX"),
+  fitScaleZ: document.querySelector("#scalpConformFitScaleZ")
+};
+const scalpConformFitValueOutputs = {
+  fitScaleX: document.querySelector("#scalpConformFitScaleXValue"),
+  fitScaleZ: document.querySelector("#scalpConformFitScaleZValue")
+};
 const scalpArtistInputs = {
   mirrorX: document.querySelector("#scalpMirrorX"),
   sideFlatten: document.querySelector("#scalpSideFlatten"),
@@ -3965,6 +4014,11 @@ Object.assign(scalpBuilderDeps, {
   scalpSetupMenu,
   scalpSetupToggle,
   scalpSurface,
+  // Scalp Conform 拟合椭球（全局，第五版）：scalp-builder.js 的 syncScalpConformFitInputs /
+  // restoreAuthoredScalpForStateRestore 要读这三个。纯数据对象本体注入，同 scalpSurface。
+  scalpConformFit,
+  scalpConformFitInputs,
+  scalpConformFitValueOutputs,
   scalpSurfaceGeometry,
   scalpSurfaceGroup,
   scalpSurfaceMesh,
@@ -9293,6 +9347,18 @@ function addLock(presetName, overrides = {}, options = {}) {
   lock.panelTipLoops = lock.geometryType === "surface"
     ? 0
     : THREE.MathUtils.clamp(Math.round(Number(base.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16);
+  // Scalp Conform：amount 在 surface（lattice 控制）上恒 0，与上面 panelTipCurve /
+  // panelTipLoops 同规则；gap 即使被忽略也无害，照常规范化以便 UI 显示稳定。
+  lock.panelScalpConformAmount = lock.geometryType === "surface"
+    ? 0
+    : THREE.MathUtils.clamp(Number(base.panelScalpConformAmount ?? panelCreationDefaults.panelScalpConformAmount), -1, 1);
+  // Gap 上限 0.5：世界单位的"弯曲半径相对头皮的外扩量"，头皮球半径为 1，半个半径已远超
+  // 任何合理发厚。同步点：panel-tip-strand.js 的 panelScalpConformParams 同名钳位。
+  lock.panelScalpConformGap = THREE.MathUtils.clamp(
+    Number(base.panelScalpConformGap ?? panelCreationDefaults.panelScalpConformGap),
+    0,
+    0.5
+  );
   lock.panelSplitEnabled = base.panelSplitEnabled !== false;
   lock.panelSplitSnapToLoops = base.panelSplitSnapToLoops !== false;
   lock.panelSplitHeight = Number(base.panelSplitHeight ?? panelCreationDefaults.panelSplitHeight);
@@ -9447,10 +9513,24 @@ function createMirrorPartner(lock, options = {}) {
     panelLengthLoops: lock.panelLengthLoops,
     panelWidthLoops: lock.panelWidthLoops,
     panelCurvature: lock.panelCurvature,
+    // 注意：本对象字面量里的 panel 字段大多是**死值** —— 本函数在 return 前的
+    // `syncMirrorPartnerFromLock(lock, mirrored)`（见下方，无条件调用）会把它们全部重写，
+    // 那里才是镜像语义的真源。左右 EdgeTrim 在那里是**互换**的（本处看起来"没互换"因此
+    // 不是 bug，已用真实浏览器实测确认：源 0.5/0 ⇒ partner 0/0.5）。
+    // 勿据本处字面量判断镜像行为，也勿"顺手把这里改成互换"——那会变成互换两次。
     panelLeftEdgeTrim: lock.panelLeftEdgeTrim,
     panelRightEdgeTrim: lock.panelRightEdgeTrim,
     panelTipCurve: lock.panelTipCurve,
     panelTipLoops: lock.panelTipLoops,
+    // Scalp Conform：两个值镜像时**原样拷贝，不取反、不交换**。0.2.138 Bend 模型下的理由
+    // （与被替换的投影模型不同，但结论相同）：弯曲是 `along(s)·T − inward(s)·N`，其中
+    // `along = sin(ks)/k` 在 s 上是**奇函数**、`inward = (1−cos ks)/k` 是**偶函数**。X 镜像
+    // 同时翻转横向坐标 s 与基向量 T 的符号 ⇒ 奇×奇 = 不变、偶项本就不受影响 ⇒ 形状严格镜像。
+    // gap 是标量半径外扩量，与左右无关。
+    // 对比：panelTipCurve 要取负（它的 bowWeight 随 strength 符号在"边缘/中心"间切换），
+    // panelLeftEdgeTrim/panelRightEdgeTrim 要左右互换（它们本身就是按侧定义的）。
+    panelScalpConformAmount: lock.panelScalpConformAmount,
+    panelScalpConformGap: lock.panelScalpConformGap,
     profileTrimLeft: lock.profileTrimRight,
     profileTrimRight: lock.profileTrimLeft,
     profileTrimRoundness: lock.profileTrimRoundness,
@@ -9625,6 +9705,18 @@ function syncMirrorPartnerFromLock(lock, partner = mirrorPartnerFor(lock), optio
   partner.panelTipLoops = lock.geometryType === "surface"
     ? 0
     : THREE.MathUtils.clamp(Math.round(Number(lock.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16);
+  // Scalp Conform：两个值**原样拷贝，不取反、不交换**（与 createMirrorPartner 同规则，
+  // 同步点：那里的同名注释，推导写在那里 —— along 在 s 上是奇函数、inward 是偶函数，
+  // X 镜像同时翻转 s 与 T 的符号 ⇒ 形状严格镜像）。
+  // 对比上面两条：panelTipCurve 取负、左右 EdgeTrim 互换 —— 弯曲两者都不需要。
+  partner.panelScalpConformAmount = lock.geometryType === "surface"
+    ? 0
+    : THREE.MathUtils.clamp(Number(lock.panelScalpConformAmount ?? panelCreationDefaults.panelScalpConformAmount), -1, 1);
+  partner.panelScalpConformGap = THREE.MathUtils.clamp(
+    Number(lock.panelScalpConformGap ?? panelCreationDefaults.panelScalpConformGap),
+    0,
+    0.5
+  );
   partner.profileTrimLeft = Number(lock.profileTrimRight ?? 0);
   partner.profileTrimRight = Number(lock.profileTrimLeft ?? 0);
   partner.profileTrimRoundness = Number(lock.profileTrimRoundness ?? 1);
@@ -9787,6 +9879,7 @@ function snapshotState() {
     scalpGuideSource: scalpState.state.scalpGuideSource,
     customScalpRegions: [...scalpState.state.customScalpRegions],
     scalpSurface: { ...scalpSurface },
+    scalpConformFit: { ...scalpConformFit },
     scalpArtistShape: { ...scalpArtistShape },
     scalpLatticePoints: scalpLatticePoints.map(vectorToData),
     scalpRegionAssignments: [...scalpState.state.scalpRegionAssignments],
@@ -9862,6 +9955,8 @@ function snapshotState() {
       panelRightEdgeTrim: Number(lock.panelRightEdgeTrim ?? panelCreationDefaults.panelRightEdgeTrim),
       panelTipCurve: Number(lock.panelTipCurve ?? panelCreationDefaults.panelTipCurve),
       panelTipLoops: Number(lock.panelTipLoops ?? panelCreationDefaults.panelTipLoops),
+      panelScalpConformAmount: Number(lock.panelScalpConformAmount ?? panelCreationDefaults.panelScalpConformAmount),
+      panelScalpConformGap: Number(lock.panelScalpConformGap ?? panelCreationDefaults.panelScalpConformGap),
       profileTrimLeft: Number(lock.profileTrimLeft ?? 0),
       profileTrimRight: Number(lock.profileTrimRight ?? 0),
       profileTrimRoundness: Number(lock.profileTrimRoundness ?? 1),
@@ -10367,6 +10462,59 @@ function restoreState(state, {
   }
 }
 
+// File > New：把场景重置回**应用自己的初始状态**。
+// 做法是复用 restoreState 而不是另写一条清空路径：restoreState 已经是「整场景换掉」的
+// 唯一入口（打开项目 / undo / redo 都走它），它内部的 resetEditableSceneForStateRestore
+// 已处理吹风预览互斥 + disposeAllEditableObjects + 清 locks/selectionSets/guides
+// （见那里的注释，其中已把 "new project" 列为该路径的既定用例之一）。
+// 基准取自 boot 时抓的 pristineProjectSnapshot（存的是 JSON 字符串，每次 New 重新
+// parse 出全新对象，避免上一次 New 的还原过程污染基准）。
+function startNewProject() {
+  const pristine = projectState.state.pristineProjectSnapshot;
+  if (!pristine) return false;
+  try {
+    restoreState(JSON.parse(pristine));
+  } catch (error) {
+    console.error("New project could not reset the scene", error);
+    presetLibraryStatus.textContent = "Could not start a new project";
+    return false;
+  }
+  // 头模 / 头皮引导资产**不在** snapshotState 里（它们随 .ahs 的 headAsset /
+  // scalpGuideAsset 单独走），所以必须显式复位 —— 否则 New 之后仍留着上一个项目导入
+  // 的自定义头模。这两段与 openHairProjectFile 处理「项目未带资产」时同规则（同步点：
+  // modules/io/io-tail.js 的 headAssetOmitted / hasOwnProperty("scalpGuideAsset") 分支）。
+  if (head.state.importedHeadAsset) {
+    head.state.importedHeadAsset = null;
+    referenceHeadApi.loadDefaultGuideModel().catch((error) => {
+      console.warn("Could not restore the default head mesh", error);
+    });
+    document.querySelector("#importHeadMesh").title = "Import head mesh from an OBJ file";
+    document.querySelector("#importFullBodyMesh").title = "Import a full body OBJ, scale it to seven head heights, and align its top to the scalp guide";
+  }
+  if (scalpState.state.importedScalpGuideAsset) {
+    scalpState.state.importedScalpGuideAsset = null;
+    scalpBuilder.setScalpGuideSource("default");
+  }
+  // New 是一条**新的 undo 基准**，不是一个可撤销的步骤（与 openHairProjectFile 的
+  // 同名处理逐条一致）：否则 Ctrl+Z 会把用户拖回一个已被 dispose 的半场景。
+  undoHistory.clear();
+  redoHistory.clear();
+  updateHistoryButtons();
+  // 快速保存/快速导出的文件句柄必须**忘掉**：留着会让 New 之后的 Ctrl+S 静默覆盖
+  // 上一个项目的文件（本功能最高风险项）。名字一并回到默认，避免另存对话框预填旧名。
+  projectState.state.currentProjectName = "Untitled Hair Project";
+  projectState.state.quickSaveFileHandle = null;
+  projectState.state.quickSaveFileName = null;
+  projectState.state.lastExport = null;
+  projectState.state.quickExportFileHandle = null;
+  presetLibraryStatus.textContent = "New project started";
+  // 崩溃恢复快照：New 之后场景已与快照无关，清掉以免下次启动提示恢复一个用户刚丢弃的项目。
+  clearAcknowledgedRecovery().catch((error) => {
+    console.warn("Could not clear project recovery data", error);
+  });
+  return true;
+}
+
 function disposeAllEditableObjects() {
   restoreUvCheckerPreview();
   referenceHeadApi.clearReferenceImages();
@@ -10485,6 +10633,20 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
     panelTipLoops: snapshot.geometryType === "surface"
       ? 0
       : THREE.MathUtils.clamp(Math.round(Number(snapshot.panelTipLoops ?? panelCreationDefaults.panelTipLoops)), 0, 16),
+    // Scalp Conform：amount 在 surface 上恒 0（与上面 panelTipCurve/panelTipLoops 同规则）；
+    // gap 照常钳位反序列化，旧档缺字段时回落到中性默认值。
+    // **旧档兼容**：0.2.135 及更早的 `panelHemisphere*`、以及 0.2.136/137 的
+    // `panelScalpConformRange` / `panelScalpConformCylinder` 都**刻意不迁移** —— 三代模型
+    // （法线球冠 / 世界空间投影 / 绕竖直轴 Bend）语义互不相通，把旧数值灌进新字段只会得到
+    // 与作者当年意图无关的形状。amount 与 gap 同名同义，照常读取；被删的两个字段直接忽略。
+    panelScalpConformAmount: snapshot.geometryType === "surface"
+      ? 0
+      : THREE.MathUtils.clamp(Number(snapshot.panelScalpConformAmount ?? panelCreationDefaults.panelScalpConformAmount), -1, 1),
+    panelScalpConformGap: THREE.MathUtils.clamp(
+      Number(snapshot.panelScalpConformGap ?? panelCreationDefaults.panelScalpConformGap),
+      0,
+      0.5
+    ),
     panelSplitEnabled: snapshot.panelSplitEnabled !== false,
     panelSplitSnapToLoops: snapshot.panelSplitSnapToLoops !== false,
     panelSplitHeight: Number(snapshot.panelSplitHeight ?? panelCreationDefaults.panelSplitHeight),
@@ -12242,6 +12404,17 @@ Object.assign(panelTipStrandDeps, {
   strandInfluenceColor,
   isPanelGeometry,
   outwardNormalAtPoint,
+  // Scalp Conform（0.2.136）的头部代理源：**注入纯数据对象本体**（不是快照拷贝），
+  // 这样用户调整头皮尺寸/位置后，下一次几何重建自动读到新值。刻意不传 scalpSurfaceGroup
+  // （Object3D）—— 几何重建时机比渲染早，它的 matrixWorld 可能是脏的；从这份纯数据推
+  // 椭球变换永远是当前值。同步点：modules/geometry/panel-tip-strand.js 的
+  // panelScalpConformParams 与 scalp-builder.js 的 updateScalpSurface 用同一套
+  // `radius * scaleXYZ` 规则。
+  scalpSurface,
+  // Scalp Conform 拟合椭球（第五版）：**独立注入**的纯数据对象本体，与 scalpSurface
+  // 同一条理由——不是快照拷贝，用户调滑杆后下次几何重建自动读到新值。缺失时
+  // panelScalpConformParams 回退到 PANEL_SCALP_CONFORM_DEFAULTS（curve-math.js），见该文件。
+  scalpConformFit,
   sculptState: sculptState.state
 });
 // Strand geometry api deps batch (refactor 3d batches G2+G3): all deps are defined by this
@@ -12418,7 +12591,14 @@ function rebuildLockGeometry(lock, options = {}) {
   const previousGeometry = lock.mesh.geometry;
   lock.mesh.geometry = strandGeometryApi.createHairGeometry(lock);
   branchBridge.applyBranchRootRegionCarving(lock, lock.mesh.geometry);
+  // 两条轮廓**都**要重指向新几何。它们由 createStrandSelectionOutline 用同一份 geometry
+  // 引用创建（modules/material/material-ui.js），而下一行就 dispose 掉旧几何 —— 漏掉任何
+  // 一条，它就攥着已 dispose 的旧几何。`dispose()` 只释放 GPU buffer、JS 侧属性数据仍在，
+  // 下次渲染会重新上传，于是**画出旧形状**（不是消失，所以很容易被当成"缓存没刷新"）。
+  // 症状：改 width 或任何影响几何的滑杆后，悬停高亮仍是旧轮廓，选中后才对
+  // —— 0.2.138 由用户在 Scalp Conform 上报告（位移量大才显眼），但**任何**几何重建都中招。
   if (lock.selectionOutline) lock.selectionOutline.geometry = lock.mesh.geometry;
+  if (lock.hoverOutline) lock.hoverOutline.geometry = lock.mesh.geometry;
   previousGeometry.dispose();
   if ((hairState.state.hairTopologyVisible || lock.proceduralParentHidden || lock.locked) && lock.wireOverlay) {
     lock.wireOverlay.geometry.dispose();
@@ -13554,6 +13734,10 @@ function updateAttributeEditorMode() {
   surfaceLatticeControls.hidden = !selectedSurface;
   panelCurvatureControl.hidden = Boolean(selectedSurface);
   panelTipCurveControl.hidden = Boolean(selectedSurface);
+  // Scalp Conform 容器与 panelTipCurveControl 同规则隐藏（lattice 面板不适用程序化形变）。
+  // 可选链：本文件加载时该 markup 可能尚未存在，缺失不得在启动路径上抛。
+  panelScalpConformControls?.classList.toggle("hidden", Boolean(selectedSurface));
+  if (panelScalpConformControls) panelScalpConformControls.hidden = Boolean(selectedSurface);
   compoundBridgeLoopsControl.classList.toggle("hidden", !selectedCompound);
   compoundBridgeSmoothingControl.classList.toggle("hidden", !selectedCompound);
   if (selectedSurface) {
@@ -16123,6 +16307,18 @@ cancelPanelSplitSnapDisable.addEventListener("click", () => {
 panelSplitSnapWarning.addEventListener("cancel", () => {
   ui.state.panelSplitSnapWarningContinuation = null;
 });
+// File > New：先确认再清场景。刻意**不做**「不再提示」勾选（对比 groupDefaultsWarning）：
+// 这一步会丢弃未保存的全部工作且不可撤销（New 会清 undo 栈），不给静默跳过的开关。
+document.querySelector("#newHairProject").addEventListener("click", () => {
+  if (!newProjectWarning.open) newProjectWarning.showModal();
+});
+confirmNewProjectButton.addEventListener("click", () => {
+  newProjectWarning.close();
+  startNewProject();
+});
+cancelNewProjectButton.addEventListener("click", () => {
+  newProjectWarning.close();
+});
 editSweepProfileButtons.forEach((button) => button.addEventListener("click", branchSweep.openSweepProfileEditor));
 document.querySelector("#closeSweepProfile").addEventListener("click", branchSweep.closeSweepProfileEditor);
 sweepProfileEditor.addEventListener("cancel", () => {
@@ -16759,6 +16955,25 @@ Object.entries(scalpInputs).forEach(([key, input]) => {
   input.addEventListener("input", () => {
     scalpSurface[key] = Number(input.value);
     scalpBuilder.updateScalpSurface();
+  });
+});
+
+// Scalp Conform 拟合椭球（全局，见 scalpConformFit 定义处注释）：两个滑杆改动必须让**所有**
+// panel 发片重建几何（不只是选中的那一片）——它不进 lock，不能走 panelShapeInputs 的
+// editSelectedLocks 通用接线（那套只改选中项）。照 sweepOverlapStrengthInput 等「无选中 lock
+// 时的全局回退」分支的既有做法：直接对 `locks` 全量调用 rebuildLockGeometry，用 isPanelGeometry
+// 过滤（非 panel/surface 几何不读 scalpConformFit，重建它们没有意义）。撤销：scalpSurface 的
+// 滑杆没有接 bindUndoCapture 之外的任何 undo 捕获（bindUndoCapture 本身就是这套滑杆唯一的
+// undo 接入点），这里同样只挂 bindUndoCapture，不额外接。
+Object.entries(scalpConformFitInputs).forEach(([key, input]) => {
+  if (!input) return;
+  bindUndoCapture(input);
+  input.addEventListener("input", () => {
+    const value = Number(input.value);
+    scalpConformFit[key] = value;
+    const output = scalpConformFitValueOutputs[key];
+    if (output) output.textContent = value.toFixed(2);
+    locks.forEach((lock) => { if (isPanelGeometry(lock)) rebuildLockGeometry(lock); });
   });
 });
 
@@ -20730,6 +20945,11 @@ updateAttributeEditorMode();
 setSideNamingPerspective(miscState.state.sideNamingPerspective, { persist: false });
 setAutosaveInterval(recovery.state.autosaveIntervalSeconds, { persist: false });
 setAutosaveEnabled(recovery.state.autosaveEnabled, { persist: false });
+// File > New 的空场景基准：必须在 offerRecoverySnapshot() **之前**抓 —— 恢复流程会把
+// 上一次崩溃的场景灌进来，抓晚了基准就变成"上次的项目"而不是空项目。
+// 存 JSON 字符串（不是对象）：restoreState 会就地消费还原出的集合，留对象引用会让
+// 第二次 New 拿到被污染的基准。字段说明见 modules/io/project-store.js。
+projectState.state.pristineProjectSnapshot = JSON.stringify(snapshotState());
 offerRecoverySnapshot();
 resize();
 animate();
@@ -20762,6 +20982,16 @@ if (new URLSearchParams(location.search).has("ahstest")) {
     // capture 阶段的 prepareCurvePointSelection 会 stopImmediatePropagation，主 pointerdown
     // 根本不执行（真实用户走 pointermove 不会有这个残留）。见 scripts/verify-tip-clump.mjs。
     guideState,
+    // projectState：File > New 的验收要断言「快速保存/快速导出句柄被忘掉」。这些值只存在
+    // 于 projectState store —— fileApi **只导出函数**（那些 currentProjectName /
+    // quickSaveFileHandle getter 在传进 createProjectSaveApi 的 deps 对象上，不在返回值上），
+    // 从 fileApi 读会拿到 undefined、写会凭空造出一个同名属性，断言因此会假绿/假红
+    // （scripts/verify-new-project.mjs 初版实测踩过）。见该脚本。
+    projectState,
+    // scalpSurface：Scalp Conform 的验收要独立判断「顶点是否真的落在头皮表面 + gap 上」，
+    // 而那需要**真实头部代理参数**（中心/半径/三轴缩放）。若验收脚本自己写死 {y:0.9, r:1}，
+    // 它就只是在复述实现的假设、用户改过头模后会假绿。见 scripts/verify-scalp-conform.mjs。
+    scalpSurface,
     beginTipSubBoneRotate: bonesApi.beginTipSubBoneRotate,
     beginTipSubBoneTranslate: bonesApi.beginTipSubBoneTranslate,
     updateTipHighlight: panelTipStrand.updateTipHighlight,

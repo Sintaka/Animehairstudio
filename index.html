@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anime Hair Studio</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=20260909-1" />
+    <link rel="stylesheet" href="./styles.css?v=20260910-9" />
   </head>
   <body>
     <main class="studio-shell">
@@ -14,6 +14,8 @@
             <div class="app-menu-shell">
               <button id="fileMenuToggle" class="app-menu-trigger" type="button" aria-haspopup="menu" aria-expanded="false">File</button>
               <div id="fileMenu" class="app-menu-dropdown hidden" role="menu" aria-label="File">
+                <button id="newHairProject" type="button" role="menuitem"><span>New</span></button>
+                <div class="app-menu-separator" role="separator"></div>
                 <button id="openHairProject" type="button" role="menuitem"><span>Open</span></button>
                 <div class="app-menu-submenu-shell">
                   <button id="recentProjectsMenu" type="button" role="menuitem" aria-haspopup="menu" aria-expanded="false">
@@ -1054,11 +1056,13 @@
         </div>
 
         <div id="sweepOverlapPanel" class="panel-section sliders hidden" data-attribute-panel="strands">
+          <div id="sweepSmoothGroup" class="control-emphasis control-emphasis--red">
           <label class="topology-control" for="sweepOverlapStrengthInput" title="Sweep corner overlap prevention: narrows the swept profile at sharp bends so adjacent rings stop interpenetrating. 0 = off; default 0.7">Sweep Overlap Strength <input id="sweepOverlapStrengthInput" type="range" min="0" max="1" step="0.01" value="0.7" /></label>
           <label class="topology-control" for="sweepOverlapThresholdInput" title="Sweep overlap threshold (safety coefficient): clamps when local curvature radius < threshold × ring half-width. Lower = only sharper bends; default 0.6">Sweep Overlap Threshold <input id="sweepOverlapThresholdInput" type="range" min="0.1" max="2" step="0.01" value="0.6" /></label>
           <label class="topology-control" for="sweepEdgeSmoothInput" title="Sweep edge smooth: relaxes the swept surface along its length at sharp bends after the overlap clamp, preserving the cross-section. 0 = off; default 0.3">Sweep Edge Smooth <input id="sweepEdgeSmoothInput" type="range" min="0" max="1" step="0.01" value="0.3" /></label>
           <label class="topology-control" for="sweepOverlapFalloffInput" title="Sweep overlap falloff: propagates the narrowing to neighboring rings so the transition at a sharp bend is gradual instead of an abrupt step that can open gaps. 0 = off (sharp); default 3">Sweep Overlap Falloff <input id="sweepOverlapFalloffInput" type="range" min="0" max="8" step="1" value="3" /></label>
           <label class="topology-control" for="sweepTangentSmoothInput" title="Sweep tangent smooth: post-processes the per-ring frame tangent at sharp bends (weighted by curvature) so ring orientation turns gradually instead of kinking. 0 = off; default 0.3">Sweep Tangent Smooth <input id="sweepTangentSmoothInput" type="range" min="0" max="1" step="0.01" value="0.3" /></label>
+          </div>
         </div>
         <div id="strandShapePanel" class="panel-section sliders" data-attribute-panel="strands">
           <div class="section-head">
@@ -1090,16 +1094,26 @@
               <label class="topology-control" title="Sets the number of editable points across the Surface.">Horizontal Points <input id="surfaceLatticeColumns" type="range" min="3" max="11" step="2" value="3" /><output id="surfaceLatticeColumnsValue" class="slider-value">3</output></label>
               <label class="topology-control" title="Sets the number of editable points along the Surface.">Vertical Points <input id="surfaceLatticeRows" type="range" min="3" max="11" step="2" value="3" /><output id="surfaceLatticeRowsValue" class="slider-value">3</output></label>
             </div>
-            <label class="topology-control" title="Sets the full width of the procedural panel.">Width <input id="panelWidth" type="range" min="0.08" max="2.5" step="0.01" value="0.62" /><output id="panelWidthValue" class="slider-value">0.62</output></label>
+            <label class="topology-control" title="Sets the full width of the procedural panel.">Width <input id="panelWidth" type="range" min="0.08" max="5" step="0.01" value="0.62" /><output id="panelWidthValue" class="slider-value">0.62</output></label>
             <label class="topology-control" title="Adds non-destructive front-to-back extrusion to the flat panel.">Thickness <input id="panelThickness" type="range" min="0.005" max="0.5" step="0.005" value="0.08" /><output id="panelThicknessValue" class="slider-value">0.08</output></label>
             <label class="topology-control" title="Controls the number of vertical loops along the panel.">Vertical Loops <input id="panelLengthLoops" type="range" min="3" max="32" step="1" value="10" /><output id="panelLengthLoopsValue" class="slider-value">10</output></label>
             <label class="topology-control" title="Controls the number of horizontal loops across the panel.">Horizontal Loops <input id="panelWidthLoops" type="range" min="3" max="24" step="1" value="6" /><output id="panelWidthLoopsValue" class="slider-value">6</output></label>
             <label id="panelCurvatureControl" class="topology-control" title="Bows the flat panel across its width while preserving its center path.">Horizontal Curvature <input id="panelCurvature" type="range" min="-1" max="1" step="0.01" value="0.18" /><output id="panelCurvatureValue" class="slider-value">0.18</output></label>
-            <div class="subsection-label">Edge Length</div>
-            <label class="topology-control" title="Shortens the left boundary toward the root while leaving the opposite edge at full length.">Left Edge Trim <input id="panelLeftEdgeTrim" type="range" min="0" max="0.75" step="0.01" value="0" /><output id="panelLeftEdgeTrimValue" class="slider-value">0.00</output></label>
-            <label class="topology-control" title="Shortens the right boundary toward the root while leaving the opposite edge at full length.">Right Edge Trim <input id="panelRightEdgeTrim" type="range" min="0" max="0.75" step="0.01" value="0" /><output id="panelRightEdgeTrimValue" class="slider-value">0.00</output></label>
-            <label id="panelTipCurveControl" class="topology-control" title="Bows the fringe tip in either direction without changing the panel topology.">Tip Curve <input id="panelTipCurve" type="range" min="-1" max="1" step="0.01" value="0" /><output id="panelTipCurveValue" class="slider-value">0.00</output></label>
-            <label class="topology-control" title="Adds extra horizontal loops only through the lower fringe for smoother tips and zipper openings.">Tip Loops <input id="panelTipLoops" type="range" min="0" max="16" step="1" value="0" /><output id="panelTipLoopsValue" class="slider-value">0</output></label>
+            <div id="panelEdgeLengthGroup" class="control-emphasis control-emphasis--blue">
+              <div class="subsection-label">Edge Length</div>
+              <label class="topology-control" title="Shortens the left boundary toward the root while leaving the opposite edge at full length.">Left Edge Trim <input id="panelLeftEdgeTrim" type="range" min="0" max="0.75" step="0.01" value="0" /><output id="panelLeftEdgeTrimValue" class="slider-value">0.00</output></label>
+              <label class="topology-control" title="Shortens the right boundary toward the root while leaving the opposite edge at full length.">Right Edge Trim <input id="panelRightEdgeTrim" type="range" min="0" max="0.75" step="0.01" value="0" /><output id="panelRightEdgeTrimValue" class="slider-value">0.00</output></label>
+              <label id="panelTipCurveControl" class="topology-control" title="Bows the fringe tip in either direction without changing the panel topology.">Tip Curve <input id="panelTipCurve" type="range" min="-1" max="1" step="0.01" value="0" /><output id="panelTipCurveValue" class="slider-value">0.00</output></label>
+              <label class="topology-control" title="Adds extra horizontal loops only through the lower fringe for smoother tips and zipper openings.">Tip Loops <input id="panelTipLoops" type="range" min="0" max="16" step="1" value="0" /><output id="panelTipLoopsValue" class="slider-value">0</output></label>
+            </div>
+            <div id="panelScalpConformControls" class="control-emphasis control-emphasis--blue">
+              <div class="subsection-label">Scalp Conform</div>
+              <label class="topology-control" title="Bends the panel around a vertical axis through the head, like rolling a flat sheet onto a tube. Arc length is preserved, so the panel keeps its width instead of collapsing. 0 = flat, 1 = fully rolled onto the scalp radius, negative curls the other way.">Conform <input id="panelScalpConformAmount" type="range" min="-1" max="1" step="0.01" value="0" /><output id="panelScalpConformAmountValue" class="slider-value">0.00</output></label>
+              <label class="topology-control" title="Grows the bend radius beyond the scalp radius, in world units. Raise it for a looser roll that clears the head mesh; 0 rolls exactly onto the scalp radius.">Scalp Gap <input id="panelScalpConformGap" type="range" min="0" max="0.5" step="0.005" value="0.02" /><output id="panelScalpConformGapValue" class="slider-value">0.020</output></label>
+              <label class="topology-control" title="Sets the left-right half-axis of the head-fitting ellipsoid used by Scalp Conform's wrap radius. Shared by every panel; independent from the visible Scalp proxy size. 1 = default head width.">Fit Width <input id="scalpConformFitScaleX" type="range" min="0.5" max="1.5" step="0.01" value="1" /><output id="scalpConformFitScaleXValue" class="slider-value">1.00</output></label>
+              <label class="topology-control" title="Sets the front-back half-axis of the head-fitting ellipsoid used by Scalp Conform's wrap radius. Shared by every panel; independent from the visible Scalp proxy size. 1 = default head depth.">Fit Depth <input id="scalpConformFitScaleZ" type="range" min="0.5" max="1.5" step="0.01" value="1" /><output id="scalpConformFitScaleZValue" class="slider-value">1.00</output></label>
+            </div>
+            <div id="panelZipperGroup" class="control-emphasis control-emphasis--green">
             <div class="subsection-label">Split Segments</div>
             <div class="panel-zipper-count-row" title="Selects the split segment to adjust (per-segment spread + width/depth curves).">
               <span>Segment</span>
@@ -1130,6 +1144,7 @@
                 <output id="panelSplitCount">2</output>
                 <button id="addPanelSplit" type="button" title="Add a zipper control" aria-label="Add a zipper control">+</button>
               </div>
+            </div>
             </div>
 
           </div>
@@ -2037,6 +2052,17 @@
       </div>
     </dialog>
 
+    <dialog id="newProjectWarning" class="warning-dialog" aria-labelledby="newProjectWarningTitle">
+      <div class="warning-dialog-body">
+        <h2 id="newProjectWarningTitle">Start a new project?</h2>
+        <p>This clears every strand, guide and reference in the current scene and resets it to an empty project. You will lose any unsaved progress, and Quick Save will stop pointing at the previously opened file.</p>
+        <div class="dialog-actions">
+          <button id="cancelNewProject" type="button">Cancel</button>
+          <button id="confirmNewProject" type="button" class="primary-action">New Project</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="dropImportDialog" class="warning-dialog drop-import-dialog" aria-labelledby="dropImportDialogTitle">
       <form id="dropImportForm" class="warning-dialog-body">
         <div class="profile-dialog-head">
@@ -2388,6 +2414,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260909-1"></script>
+    <script type="module" src="./app.js?v=20260910-9"></script>
   </body>
 </html>
