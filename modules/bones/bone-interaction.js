@@ -410,13 +410,24 @@ function beginPanelSplitHandleDrag(event) {
   if (deps.sculptState.panelSplitDrag.kind === "panel" && hit.object.userData.panelSplitIndex != null) {
     const selectSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
     const selected = selectSplits[hit.object.userData.panelSplitIndex];
-    if (selected) deps.sculptState.panelSplitSelection = { lockId: lock.id, order: Number(selected.order) };
+    if (selected) {
+      deps.sculptState.panelSplitSelection = { lockId: lock.id, order: Number(selected.order) };
+      // bug3（0.2.147）：拖拽身份也记 order，不再只靠 pointerdown 时的排序下标。跨越邻居后
+      // 排序会变，下标会指向**别的** zipper；order 是稳定键，updatePanelSplitHandleDrag 每帧
+      // 用它反查当前下标。**刻意不复用 panelSplitSelection**：选中态可被 Del/其它交互清空，
+      // 而拖拽身份必须活到 pointerup。
+      deps.sculptState.panelSplitDrag.panelSplitOrder = Number(selected.order);
+    }
   }
   // 点击 strand zipper 手柄（kind==="strand"）时同时选中它，供 Del 删除。
   if (deps.sculptState.panelSplitDrag.kind === "strand" && hit.object.userData.strandSplitIndex != null) {
     const selectSplits = deps.cloneStrandSplits(lock.strandSplits, lock.strandSplitPosition, lock.strandSplitHeight);
     const selected = selectSplits[hit.object.userData.strandSplitIndex];
-    if (selected) deps.sculptState.strandSplitSelection = { lockId: lock.id, order: Number(selected.order) };
+    if (selected) {
+      deps.sculptState.strandSplitSelection = { lockId: lock.id, order: Number(selected.order) };
+      // bug3（0.2.147）：与 panel 的 panelSplitOrder 同规则，拖拽身份记 order 而非排序下标。
+      deps.sculptState.panelSplitDrag.strandSplitOrder = Number(selected.order);
+    }
   }
   deps.renderer.domElement.setPointerCapture?.(event.pointerId);
   deps.renderer.domElement.style.cursor = "grabbing";
@@ -458,16 +469,24 @@ function updatePanelSplitHandleDrag(event) {
       }
     }
     if (!best) return;
-    // 写回 strandSplits[index]（N 拉链），并夹在相邻拉链之间保持最小间距；
-    // 随后 syncStrandSplitLegacyFields 把 splits[0] 回写 legacy 标量（N=1 与旧行为一致）。
+    // 写回 strandSplits[index]（N 拉链）；随后 syncStrandSplitLegacyFields 把 splits[0]
+    // 回写 legacy 标量（N=1 与旧行为一致）。
+    // bug3（0.2.147）：与 panel 分支**同一处修复**（详见本文件下方 panel 分支的长注释）。
+    // 发丝拉链此前有一份逐字同构的邻居间距钳位（minimumSeparation = 0.12 + 紧邻两侧），
+    // 症状与 panel 完全一样：拉链之间互相挡路，跨不过去。cloneStrandSplits 走
+    // normalizeStrandSplits，同样「按 position 升序 + order 唯一」，故同一套 order 反查
+    // 直接适用；strandSplitBones 也同样是 index-keyed、在跨越点同样连续，故同样不做 remap。
+    // 边界仍是 ±0.8（normalizeStrandSplits 对 position 的钳制区间），不是 panel 的 ±0.88。
     const splits = deps.cloneStrandSplits(lock.strandSplits, lock.strandSplitPosition, lock.strandSplitHeight);
-    const index = deps.sculptState.panelSplitDrag.splitIndex;
-    if (!splits[index]) return;
-    const minimumSeparation = 0.12;
-    const minPosition = index > 0 ? splits[index - 1].position + minimumSeparation : -0.8;
-    const maxPosition = index < splits.length - 1 ? splits[index + 1].position - minimumSeparation : 0.8;
-    splits[index].position = THREE.MathUtils.clamp(best.position, minPosition, maxPosition);
+    const strandDragOrder = Number(deps.sculptState.panelSplitDrag.strandSplitOrder);
+    const index = Number.isFinite(strandDragOrder)
+      ? splits.findIndex((split) => Number(split.order) === strandDragOrder)
+      : deps.sculptState.panelSplitDrag.splitIndex;
+    if (!(index >= 0) || !splits[index]) return;
+    splits[index].position = THREE.MathUtils.clamp(best.position, -0.8, 0.8);
     splits[index].height = THREE.MathUtils.clamp(best.height, 0.02, 0.8);
+    // 与 panel 分支同规则：改完值必须重新排序再写回，否则这一帧的几何/把手看到乱序数组。
+    splits.sort((a, b) => a.position - b.position);
     lock.strandSplits = splits;
     deps.syncStrandSplitLegacyFields(lock);
     deps.updateLockGeometry(lock, { immediate: true });
@@ -670,6 +689,35 @@ function updatePanelSplitHandleDrag(event) {
     event.preventDefault();
     return;
   }
+  // ── bug3（0.2.147）：zipper 拖拽身份按 order 匹配，允许跨越邻居 ────────────────────────
+  // 此前这里在扫描之后才取 splitIndex（pointerdown 时的**排序下标**），并把位置硬钳在
+  // 「紧邻两侧 ± minimumSeparation」之间 —— 那道钳位正是「zipper 无法跨 zipper 移动」的
+  // 直接原因（用户报告：必须先选中前一个 zipper 才能新增）。
+  // 改法：先用 order（0.2.115 起每个 zipper 都带的稳定创建序号，clonePanelSplits 会保留并
+  // 保证唯一）在**当前排序结果**里反查下标，再扫描。于是排序一变，下标随之更新，被拖的始终
+  // 是同一个 zipper。钳位只剩画布边界。
+  //
+  // minimumSeparation 已整条删除，不再在拖拽路径使用。理由：它唯一的作用就是「别碰到邻居」，
+  // 而这正是本 bug；退化（零宽段）风险本就由别处兜住 —— `+` 按钮有 MINIMUM_PANEL_SEGMENT_SPAN
+  // 守卫（segment-control.js:392,395）不会**创建**退化段；拖拽扫描的 u 量化步长是 1.76/48
+  // ≈ 0.0367，只有两个 zipper 落到同一格才会完全重合；段拖拽分支的 span 有
+  // `Math.max(0.0001, …)`（本文件 :644）兜底。零宽段是瞬时、可逆、不崩的，用户拖开即恢复。
+  //
+  // splitBones **刻意不做任何 remap**（这是本次最关键的判断，探针实证见
+  // tests/split-tip-geometry.test.mjs 的 bug3 用例）：splitBones[k] 按「排序后段 k」索引，
+  // 而段 k = 边界 k..k+1。设被拖的 A 越过右邻 N：跨越前段为 …[s,A][A,N][N,s']…，跨越后为
+  // …[s,N][N,A][A,s']…。在 A == N 的**跨越瞬间**两侧逐段完全相等（[s,A]=[s,N]、中间段零宽、
+  // [A,s']=[N,s']）⇒ index-keyed 映射本身就是连续的，taperCurve/depthCurve 不会错配。
+  // 会变的只是「该段右边界属于哪个 zipper 对象」（rightOrder），而 zipper 球体彼此无外观差异，
+  // 用户不可见。一次帧内跨 N 个邻居 = N 次单跨越的复合，同样连续（探针实测 3 连跨 taper 表不变）。
+  // 若在此处补 remap（例如交换相邻两段 bones），反而会把段姿态从**连续**变成跳变。
+  const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight, Math.max(0, Number(lock.panelWidthLoops ?? 6) - 1));
+  const dragOrder = Number(deps.sculptState.panelSplitDrag.panelSplitOrder);
+  // order 缺失（旧 drag 状态/非 panel 入口）时回退到 pointerdown 时的下标，行为与修复前一致。
+  const index = Number.isFinite(dragOrder)
+    ? splits.findIndex((split) => Number(split.order) === dragOrder)
+    : deps.sculptState.panelSplitDrag.splitIndex;
+  if (!(index >= 0) || !splits[index]) return;
   for (let tStep = 0; tStep <= 42; tStep += 1) {
     const t = THREE.MathUtils.lerp(0.22, 1, tStep / 42);
     for (let uStep = 0; uStep <= 48; uStep += 1) {
@@ -679,7 +727,7 @@ function updatePanelSplitHandleDrag(event) {
         { position: u, height: 1 - t },
         t,
         curve,
-        deps.sculptState.panelSplitDrag.splitIndex
+        index
       ).project(deps.camera);
       if (projected.z < -1 || projected.z > 1) continue;
       const x = (projected.x * 0.5 + 0.5) * rect.width;
@@ -689,18 +737,20 @@ function updatePanelSplitHandleDrag(event) {
     }
   }
   if (!best) return;
-  const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight, Math.max(0, Number(lock.panelWidthLoops ?? 6) - 1));
-  const index = deps.sculptState.panelSplitDrag.splitIndex;
-  if (!splits[index]) return;
-  const minimumSeparation = Math.min(0.12, 0.8 / Math.max(3, Number(lock.panelWidthLoops ?? 6)));
-  const minPosition = index > 0 ? splits[index - 1].position + minimumSeparation : -0.88;
-  const maxPosition = index < splits.length - 1 ? splits[index + 1].position - minimumSeparation : 0.88;
-  splits[index].position = THREE.MathUtils.clamp(best.position, minPosition, maxPosition);
+  // 只钳画布边界（见上方 bug3 说明：邻居间距钳位已删除）。
+  splits[index].position = THREE.MathUtils.clamp(best.position, -0.88, 0.88);
   let nextHeight = best.height < 0.018 ? 0 : THREE.MathUtils.clamp(best.height, 0, 0.78);
   if (lock.panelSplitSnapToLoops !== false) {
     nextHeight = deps.snapPanelSplitHeight(nextHeight, lock.panelLengthLoops);
   }
   splits[index].height = nextHeight;
+  // **必须重新排序后再写回**：跨越后 splits 已不是位置升序，而 lock.panelSplits「始终按
+  // position 升序」是全仓库的既有不变量（clonePanelSplits/normalizePanelSplits 都以排序结尾，
+  // 几何的段边界、bone-view-handles 的把手下标、segment-control 的 +/- remap 全按它推导）。
+  // 下一帧的 clonePanelSplits 固然会排，但本函数紧接着就同步调用 updateLockGeometry /
+  // updateCurveObjects —— 若不在此处排序，这一帧的几何与把手会看到乱序数组。
+  // 排序在赋值 position/height **之后**：先改值再排，被拖对象的新位置才参与排序。
+  splits.sort((a, b) => a.position - b.position);
   lock.panelSplits = splits;
   deps.updateLockGeometry(lock, { immediate: true });
   deps.updateCurveObjects(lock, { visible: true });

@@ -22,6 +22,7 @@ import {
   strandSplitForkTForSegment,
   strandSplitBonesFromData,
   strandSplitBonesToData,
+  normalizeSplitBones,
   splitBonesFromData,
   splitBonesToData,
   bonesFromData,
@@ -1027,6 +1028,214 @@ test("deleting a zipper merges two segments and keeps the wider segment's pose",
   );
   // 删除首段的拉链：段 0/1 合并，原段 2 前移。
   assert.deepEqual(remapSegmentBonesOnDelete(bones, 0, { spans: [0.2, 0.8, 0.5] }).map(tipDeltaOf), [1, 2]);
+});
+
+// ── bug3（0.2.147）：zipper 可跨 zipper 移动 ────────────────────────────────────────────
+// 修复前 bone-interaction.js 把每个 zipper 硬钳在「排序后紧邻两侧 ± minimumSeparation」内，
+// 于是无法跨越（用户：必须先选中前一个 zipper 才能新增）。放开钳位的前提是两件事：
+//   (a) 拖拽身份按 order 反查下标（排序一变，下标随之更新）；
+//   (b) splitBones 的 index-keyed 语义在跨越处**本就连续**，故刻意不做 remap。
+// 下面用**幅度判据 + 逐段对照**证明 (b)，而不是只断言「跨越没报错」。
+const BUG3_PROBE_STEP = 0.001;
+// 变异开关（本仓库强制的变异验证用）：置 true 会在跨越处对 splitBones 做「相邻两段原地交换」
+// 的 remap —— 那正是本次**刻意没做**的那件事。开着必须让下面的段表判据变红。
+const BUG3_MUTATE_REMAP = false;
+function bug3SwapRemap(bones, at) {
+  const out = bones.slice();
+  [out[at], out[at + 1]] = [out[at + 1], out[at]];
+  return out;
+}
+
+// 逐字复刻 app.js normalizePanelSplits 的排序契约（钳制 + 按 position 升序），
+// 用于在纯函数层面复现「拖拽写回后重新排序」这一步。
+function sortPanelSplits(list) {
+  return list
+    .map((s) => ({
+      position: THREE.MathUtils.clamp(Number(s.position), -0.88, 0.88),
+      height: Number(s.height),
+      order: Number(s.order)
+    }))
+    .sort((a, b) => a.position - b.position);
+}
+
+// 段表：段 k = 边界 k..k+1；bones[k] 治理段 k。taper/depth 用可辨识的标记值充当物理身份。
+function bug3SegmentTable(splits, bones) {
+  const b = [-1, ...splits.map((s) => s.position), 1];
+  return bones.map((bone, k) => ({
+    range: [Number(b[k].toFixed(6)), Number(b[k + 1].toFixed(6))],
+    taper: bone.taperCurve?.[0]?.v ?? null,
+    depth: bone.depthCurve?.[0]?.v ?? null
+  }));
+}
+
+function bug3MoveOrder(splits, order, position) {
+  const raw = splits.map((s) => ({ ...s }));
+  const target = raw.find((s) => Number(s.order) === order);
+  assert.ok(target, `order ${order} must exist`);
+  target.position = position;
+  return sortPanelSplits(raw);
+}
+
+test("bug3: 跨越邻居时 index-keyed splitBones 逐段连续（故不需要 remap）", () => {
+  const lock = { panelSplitGap: 0.07 };
+  const startSplits = sortPanelSplits([
+    { position: -0.4, height: 0.3, order: 0 },
+    { position: 0.0, height: 0.3, order: 1 },
+    { position: 0.4, height: 0.3, order: 2 }
+  ]);
+  // taper/depth 标记值 = 物理身份；normalizeSplitBones 会原样透传曲线数组。
+  const bones = normalizeSplitBones(
+    [10, 20, 30, 40].map((v) => ({ taperCurve: [{ t: 0, v }], depthCurve: [{ t: 0, v: v * 10 }] })),
+    startSplits,
+    lock
+  );
+  assert.equal(bones.length, 4, "3 zippers -> 4 segments");
+
+  // order 1 从 0.0 走到 order 2（0.4）的两侧，跨越点前后各 1 个探针步长。
+  const pre = bug3MoveOrder(startSplits, 1, 0.4 - BUG3_PROBE_STEP);
+  const post = bug3MoveOrder(startSplits, 1, 0.4 + BUG3_PROBE_STEP);
+  const tablePre = bug3SegmentTable(pre, bones);
+  const tablePost = bug3SegmentTable(post, BUG3_MUTATE_REMAP ? bug3SwapRemap(bones, 1) : bones);
+
+  // 空集防护：判据必须真的检查到 4 段。
+  assert.equal(tablePre.length, 4, "sanity: 跨越前必须有 4 段可比");
+  assert.equal(tablePost.length, 4, "sanity: 跨越后必须有 4 段可比");
+
+  // ① 每段的 taper/depth 标记必须与跨越前**同段位**完全一致（bones 数组未被 remap）。
+  assert.deepEqual(
+    tablePost.map((r) => [r.taper, r.depth]),
+    tablePre.map((r) => [r.taper, r.depth]),
+    "跨越不得搬动 taperCurve/depthCurve"
+  );
+
+  // ② 幅度判据：每段的 u 区间在跨越点前后的位移必须 <= 2 个探针步长（即连续，不是跳变）。
+  //    这正是「不需要 remap」的实证 —— 若 index-keyed 在此处不连续，某段会跳一整段宽度。
+  let checked = 0;
+  let maxShift = 0;
+  tablePre.forEach((before, k) => {
+    const after = tablePost[k];
+    const shift = Math.max(
+      Math.abs(after.range[0] - before.range[0]),
+      Math.abs(after.range[1] - before.range[1])
+    );
+    maxShift = Math.max(maxShift, shift);
+    checked += 1;
+  });
+  assert.ok(checked === 4, `sanity: 必须逐段检查过 4 段（实测 ${checked}）`);
+  assert.ok(
+    maxShift <= BUG3_PROBE_STEP * 2 + 1e-9,
+    `每段 u 区间必须在跨越点连续（实测最大位移 ${maxShift}，允许 ${BUG3_PROBE_STEP * 2}）`
+  );
+
+  // ③ 变异防护：如果有人「顺手」在跨越处交换相邻两段的 bones，段表会立刻不一致。
+  const swapped = bones.slice();
+  [swapped[1], swapped[2]] = [swapped[2], swapped[1]];
+  const tableSwapped = bug3SegmentTable(post, swapped);
+  assert.notDeepEqual(
+    tableSwapped.map((r) => r.taper),
+    tablePre.map((r) => r.taper),
+    "sanity: 交换相邻两段确实会改变段表，故上面的 deepEqual 是有咬合力的判据"
+  );
+});
+
+test("bug3: 一帧内跨越多个邻居 = 多次单跨越的复合（段表不变）", () => {
+  const lock = { panelSplitGap: 0.07 };
+  const splits = sortPanelSplits([
+    { position: -0.6, height: 0.3, order: 0 },
+    { position: -0.2, height: 0.3, order: 1 },
+    { position: 0.2, height: 0.3, order: 2 },
+    { position: 0.6, height: 0.3, order: 3 }
+  ]);
+  const bones = normalizeSplitBones(
+    [10, 20, 30, 40, 50].map((v) => ({ taperCurve: [{ t: 0, v }], depthCurve: [{ t: 0, v: v * 10 }] })),
+    splits,
+    lock
+  );
+
+  // 一次到位：order 0 从 -0.6 跳到 0.85（越过 order 1/2/3 三个邻居）。
+  const oneShot = bug3MoveOrder(splits, 0, 0.85);
+  // 分步走：每次只越过一个邻居。
+  let stepwise = splits;
+  [-0.1, 0.3, 0.85].forEach((p) => { stepwise = bug3MoveOrder(stepwise, 0, p); });
+
+  assert.deepEqual(
+    oneShot.map((s) => [Number(s.position.toFixed(6)), s.order]),
+    stepwise.map((s) => [Number(s.position.toFixed(6)), s.order]),
+    "跨越无路径依赖：一帧跨 3 个邻居与分 3 步跨的最终排序必须一致"
+  );
+  // 段表（taper/depth 标记）在两条路径下都必须是同一张 —— bones 从未被搬动。
+  const tOne = bug3SegmentTable(oneShot, bones);
+  const tStep = bug3SegmentTable(stepwise, bones);
+  assert.equal(tOne.length, 5, "sanity: 4 zippers -> 5 段");
+  assert.deepEqual(tOne, tStep, "两条路径的段表必须逐段相同");
+  assert.deepEqual(tOne.map((r) => r.taper), [10, 20, 30, 40, 50], "taper 标记保持原下标顺序");
+
+  // order 身份守恒：跨越不得改写 order（0.2.115 的语义，服务 `-` 删最近创建者）。
+  assert.deepEqual(oneShot.map((s) => s.order).sort((a, b) => a - b), [0, 1, 2, 3], "order 集合不变");
+});
+
+test("bug3: 拖拽路径按 order 反查下标、且只钳画布边界（源码契约）", async () => {
+  // 行为层无法在纯 node 里驱动（updatePanelSplitHandleDrag 需要 renderer/camera/DOM 事件），
+  // 故这里锁住三条源码契约。判据是**幅度**意义上的「钳位表达式已消失」，不是存在性。
+  const [src, boneViewHandlesSource] = await Promise.all([
+    readFile(new URL("../modules/bones/bone-interaction.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/bones/bone-view-handles.js", import.meta.url), "utf8")
+  ]);
+  assert.ok(src.length > 5000, `sanity: 必须真的读到 bone-interaction.js（实测 ${src.length} 字节）`);
+
+  // (1) 邻居间距钳位必须整条消失 —— 它就是 bug3 的直接原因。判据剥掉行注释后再看，
+  //     否则会被解释这次修复的注释本身命中（注释里必须能提到这个名字）。
+  const code = src.replace(/^\s*\/\/.*$/gm, "");
+  assert.ok(code.length > 5000, `sanity: 剥注释后仍须有实码（实测 ${code.length} 字节）`);
+  assert.match(src, /minimumSeparation/, "sanity: 注释里应保留这次删除的说明，故原文必然命中");
+  assert.doesNotMatch(code, /minimumSeparation/, "实码里不得再出现邻居间距钳位");
+  // (2) 位置只钳画布边界。
+  assert.match(
+    src,
+    /splits\[index\]\.position = THREE\.MathUtils\.clamp\(best\.position, -0\.88, 0\.88\)/,
+    "zipper 位置只钳 [-0.88, 0.88]"
+  );
+  // (3) 下标按 order 反查（排序变化后仍拖同一个 zipper），且写回前重新排序。
+  assert.match(
+    src,
+    /splits\.findIndex\(\(split\) => Number\(split\.order\) === dragOrder\)/,
+    "拖拽下标必须按 order 反查"
+  );
+  assert.match(src, /panelSplitDrag\.panelSplitOrder/, "drag 状态必须记录 order");
+  assert.match(
+    src,
+    /splits\.sort\(\(a, b\) => a\.position - b\.position\);\s*\n\s*lock\.panelSplits = splits;/,
+    "写回 lock.panelSplits 前必须重新排序（全仓库依赖它按 position 升序）"
+  );
+  // (4) 把手拖拽高亮按 order 匹配（否则跨越后高亮留在别的球上）。panel 与 strand 各一处。
+  assert.match(
+    boneViewHandlesSource,
+    /dragOrder === Number\(split\.order\)/,
+    "bone-view-handles 的 panel dragging 判据必须按 order"
+  );
+  assert.match(
+    boneViewHandlesSource,
+    /strandDragOrder === Number\(split\.order\)/,
+    "bone-view-handles 的 strand dragging 判据必须按 order"
+  );
+  // (5) 发丝拉链分支是同一个 bug 的第二处（同一函数内、逐字同构的钳位）：必须同样放开，
+  //     否则「拉链互相挡路」在发丝上照旧复现。边界是 ±0.8（normalizeStrandSplits 的钳制区间）。
+  assert.match(
+    code,
+    /splits\[index\]\.position = THREE\.MathUtils\.clamp\(best\.position, -0\.8, 0\.8\)/,
+    "strand 拉链位置只钳 [-0.8, 0.8]"
+  );
+  assert.match(
+    code,
+    /splits\.findIndex\(\(split\) => Number\(split\.order\) === strandDragOrder\)/,
+    "strand 拖拽下标也必须按 order 反查"
+  );
+  // 两处分支都必须在写回前排序：panel 写 lock.panelSplits，strand 写 lock.strandSplits。
+  assert.equal(
+    (code.match(/splits\.sort\(\(a, b\) => a\.position - b\.position\);/g) || []).length,
+    2,
+    "panel 与 strand 两条写回路径都必须先排序"
+  );
 });
 
 // 悬空 zipper 选择必须被清除：否则 - 删掉被选中的 zipper 后，下次按 Del 会因

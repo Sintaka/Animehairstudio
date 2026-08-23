@@ -460,7 +460,15 @@ function updateBoneViewHandles(lock, ctx) {
       return;
     }
     handle.position.copy(zipperHandlePoint(split, index));
-    const dragging = deps.sculptState.panelSplitDrag?.lockId === lock.id && deps.sculptState.panelSplitDrag.splitIndex === index;
+    // 拖拽高亮按 order 匹配（bug3，0.2.147），与下一行的选中高亮同规则。此前按数组下标比，
+    // 一旦被拖的 zipper 跨过邻居、排序改变，高亮就留在原下标那颗球上（=另一个 zipper）。
+    // 球体本身仍按下标渲染排序后的第 index 个 zipper —— 那是对的：球彼此无外观差异，
+    // 「哪个 mesh 显示哪个 zipper」不可见；可见的只有高亮与被拖对象，两者都必须按身份走。
+    const dragOrder = Number(deps.sculptState.panelSplitDrag?.panelSplitOrder);
+    const dragging = deps.sculptState.panelSplitDrag?.lockId === lock.id
+      && (Number.isFinite(dragOrder)
+        ? dragOrder === Number(split.order)
+        : deps.sculptState.panelSplitDrag.splitIndex === index);
     // 被选中的 zipper（按 order 匹配）放大并提亮，便于识别 Del 目标。
     const selected = deps.sculptState.panelSplitSelection?.lockId === lock.id
       && Number(deps.sculptState.panelSplitSelection.order) === Number(split.order);
@@ -815,9 +823,13 @@ function updateBoneViewHandles(lock, ctx) {
       return;
     }
     handle.position.copy(deps.strandSplitControlPoint(lock, split, null, null, strandProfileData));
+    // 拖拽高亮按 order 匹配（bug3，0.2.147）—— 与 panel zipper 同规则，见本文件上方说明。
+    const strandDragOrder = Number(deps.sculptState.panelSplitDrag?.strandSplitOrder);
     const dragging = deps.sculptState.panelSplitDrag?.lockId === lock.id
       && deps.sculptState.panelSplitDrag.kind === "strand"
-      && deps.sculptState.panelSplitDrag.splitIndex === index;
+      && (Number.isFinite(strandDragOrder)
+        ? strandDragOrder === Number(split.order)
+        : deps.sculptState.panelSplitDrag.splitIndex === index);
     // 被选中的 strand zipper（按 order 匹配）放大并提亮，便于识别 Del 目标。
     const selected = deps.sculptState.strandSplitSelection?.lockId === lock.id
       && Number(deps.sculptState.strandSplitSelection.order) === Number(split.order);
