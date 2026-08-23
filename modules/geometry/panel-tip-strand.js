@@ -472,18 +472,21 @@ function tipPanelFrameAt(lock, t) {
 // `(radius·scaleX + radius·scaleZ)/2 + gap` 这个**单一值**、对所有行通用，而各行到头心的
 // 真实距离实测是 1.021..1.440 ⇒ 外侧行按过小的半径过度卷绕、直接扎进头皮
 // （amount=0.87 最深穿透 +0.235）。半径现在改为**逐行**在 panelScalpConformOffsets 里取
-// 「该行到胶囊轴的真实距离」，所以本函数只需交出 `center`。
-// **`scaleX`/`scaleY`/`scaleZ` 与 `radius` 因此也不再被读取**，于是不必再决定哪些轴参与平均
-// （旧版取水平平均、刻意排除 scaleY，那套取舍随该标量一起没了）。
-// **⚠️ 实测口径：代理的缩放与半径对 conform 结果的影响是「零」，不是「间接」**（勿写成间接 ——
-// 本轮逐位实测：scaleX=1.4 / scaleZ=1.6 / scaleY=0.5 / 三轴=2.0 / radius=2.0 / radius=0.3
-// **全部逐位相同**，maxDiff = 0；同一探针里只把 center.y 从 0.9 挪到 0.2 就变了 5.729e-1）。
-// 成因：卷绕半径 R = 该行到胶囊轴的真实距离，而**行的位置来自授权数据 `lock.points`**、不来自
-// 代理 ⇒ 缩放代理既不移动面板也不移动 center，也就不改变任何东西。
+// 「该行到（拟合椭球纬线密切圆）圆心的真实距离」，所以本函数只需交出 `center` 与拟合椭球的半轴。
+// **第五版新增：`deps.scalpConformFit` 的 `fitScaleX`/`fitScaleZ` 现在确实参与 conform**——
+// 但那是**另一份独立注入的参数**，不是下面这段仍然成立的 `deps.scalpSurface`：
+// **⚠️ 实测口径：`scalpSurface` 代理自身的缩放与半径对 conform 结果的影响是「零」，不是「间接」**
+// （勿写成间接 —— 本轮逐位实测：scaleX=1.4 / scaleZ=1.6 / scaleY=0.5 / 三轴=2.0 / radius=2.0 /
+// radius=0.3 **全部逐位相同**，maxDiff = 0；同一探针里只把 center.y 从 0.9 挪到 0.2 就变了 5.729e-1）。
+// 成因：卷绕半径 R 来自**拟合椭球**（`deps.scalpConformFit`，见下），而**行的位置来自授权数据
+// `lock.points`**，两者都不来自 `scalpSurface` 的缩放/半径 ⇒ 那组字段既不移动面板也不移动
+// center，也就不改变任何东西。**两套参数刻意不合并**：`scalpSurface` 是头部代理**渲染网格**的
+// 形状，`scalpConformFit` 是 conform 用的拟合椭球——合并会让"调渲染网格外观"意外改变已调好的
+// 贴合手感。
 // **这是相对 0.2.138–142 的用户可见变化**（那版 scaleX/scaleZ 直接进弯曲半径，放大头会让卷绕变松），
 // 属本模型的固有语义：conform 卷的是「过面板自身的同心面」（amount=1 ⇒ 弧半径恰为 R+gap），
-// 而不是「贴到头皮表面上」。所以放大头模不会让面板跟着让开 —— 若这不是想要的手感，要改的是
-// 模型（把 R 改成到代理**表面**的距离），不是在这里补一个缩放系数。
+// 而不是「贴到头皮表面上」。所以放大 `scalpSurface` 渲染代理不会让面板跟着让开 —— 若想让卷绕
+// 跟头模大小走，要调的是 `deps.scalpConformFit`（这正是它存在的理由），不是在这里补一个缩放系数。
 // geometryType === "surface"（lattice 控制）恒 0：与 panelTipCurve / panelLeftEdgeTrim
 // 的既有先例一致（tipOffsetSampleT 与 createPanelStrandGeometry 都在 latticeControlled
 // 时把这些强制为 0）—— lattice 面板的形状由控制网格直接决定，程序化形变不适用。
@@ -492,6 +495,21 @@ function panelScalpConformParams(lock) {
     ? 0
     : THREE.MathUtils.clamp(Number(lock?.panelScalpConformAmount ?? 0), -1, 1);
   const proxySource = deps.scalpSurface || PANEL_SCALP_PROXY_FALLBACK;
+  // 拟合椭球的半轴来源：**独立注入**的 `deps.scalpConformFit`（Phase 2 负责接线与 UI，本函数
+  // 只负责读取 + 钳位 + 回退）。缺失时回退到 PANEL_SCALP_CONFORM_DEFAULTS 里的全 1 默认值 ——
+  // 这条回退让本次改动在 Phase 2 落地前也能独立跑通，且全 1 ⇒ 椭球退化为单位球，
+  // 与本版之前（球构型）逐位等价。
+  const fitSource = deps.scalpConformFit || PANEL_SCALP_CONFORM_DEFAULTS;
+  const fitScaleX = THREE.MathUtils.clamp(
+    Number(fitSource.fitScaleX ?? PANEL_SCALP_CONFORM_DEFAULTS.fitScaleX),
+    0.5,
+    1.5
+  );
+  const fitScaleZ = THREE.MathUtils.clamp(
+    Number(fitSource.fitScaleZ ?? PANEL_SCALP_CONFORM_DEFAULTS.fitScaleZ),
+    0.5,
+    1.5
+  );
   return {
     amount,
     gap: THREE.MathUtils.clamp(
@@ -499,28 +517,39 @@ function panelScalpConformParams(lock) {
       0,
       0.5
     ),
-    // 头部代理中心（**世界空间**），胶囊轴由它推出。刻意**不读 Object3D 的 matrixWorld**：
+    // 头部代理中心（**世界空间**），拟合椭球以它为中心。刻意**不读 Object3D 的 matrixWorld**：
     // 几何重建时机比渲染早，那个矩阵可能是脏的；从纯数据推变换永远是当前值。
     center: new THREE.Vector3(
       Number(proxySource.x ?? 0),
       Number(proxySource.y ?? 0.9),
       Number(proxySource.z ?? 0)
-    )
+    ),
+    // 拟合椭球三半轴（世界单位）：`ax`/`az` = fitScale{X,Z}，`ay` **写死为 1**（不是回退值，
+    // 是刻意的固定取值——理由见 curve-math.js 里 PANEL_SCALP_CONFORM_DEFAULTS 上方注释的
+    // 「三难」与代数退化证明：球构型下整体半径/竖直半轴对结果的影响精确为 0，非球构型下
+    // 才重新变得有效，所以把它们从可调参数里去掉、固定在"默认头模尺寸"这一族上，
+    // 只留水平两半轴的比例（各向异性）给用户调）。中心复用上面的 `center`，
+    // **不额外读取中心参数** —— 椭球与头部代理中心同源是设计选择，不是遗漏。
+    ax: fitScaleX,
+    ay: 1,
+    az: fitScaleZ
   };
 }
 
-// 逐行绕**头部胶囊轴**的同心 wrap：**唯一定义点**，弯曲平面与曲率都在这里从头部代理推出。
-// 返回值是**世界空间的 `THREE.Vector3` 偏移，起点为 `frame.point`**（调用方用法：
+// 逐行绕**头部拟合椭球纬线的密切圆**同心 wrap：**唯一定义点**，弯曲平面与曲率都在这里从
+// 头部代理现场推出。返回值是**世界空间的 `THREE.Vector3` 偏移，起点为 `frame.point`**（调用方用法：
 // `point = frame.point.clone().add(offsets)`）。为什么不能再返回 `{lateral, normal}`：那对
 // 系数隐含基 = `(frame.x, frame.z)`，而弯曲平面已不再是那张平面 —— 这是一次**受控 API 变更**，
 // 影响**恰好 2 个消费点**（几何 `rawPanelPoint`、宽度把手复刻 `tipMainSectionPoint`），两处
 // 必须同步改，否则绿色宽度把手会浮在面板外（bug-fixes.md #25 那一类），有跨消费方一致性测试咬住。
 //
-// 逐行推导（`frame` = 该行的完整 frame，`params.center` = 头部代理中心）：
-//   胶囊轴最近点 A = (C.x, min(C.y, P.y), C.z)、半径 R = |P − A|、径向 r̂ = (P − A)/R；
+// 逐行推导（`frame` = 该行的完整 frame，`params.center`/`ax`/`ay`/`az` = 头部拟合椭球）：
+//   纬线椭圆半轴 A = ax·c、B = az·c（c = √(1−h²)，h = (P.y−C.y)/ay 钳位到 ±(1−1e-3)）；
+//   Pe = 该纬线椭圆上与 P 同方位角的点、ρ = 该处曲率半径、O_osc = Pe + ρ·n̂ₑ（n̂ₑ 指向椭圆内侧）；
+//   Reff = |P − O_osc|（恒水平）、径向 r̂ = (P − O_osc)/Reff；
 //   弯曲平面 = (x̂_t, n̂)、弯曲轴 â = x̂_t × n̂ —— **完全由头部几何决定，与曲线切线无关**。
 // `camber` 已折进 `sample(v)` 返回的**中面**截面（0.2.139，含 camber、不含 shell 厚度），
-// 本函数把它弯到 `k = amount / (R + gap)` 上并**严格保弧长**（离散逐段保长，见 curve-math）。
+// 本函数把它弯到 `k = amount / (Reff + gap)` 上并**严格保弧长**（离散逐段保长，见 curve-math）。
 // `shellOffset` 是"中面之外"的部分（shell·thickness/2 + centerZ 权重），沿**弯后法向**
 // 放上去，因此厚度不被剪切。
 //
@@ -534,13 +563,56 @@ function panelScalpConformParams(lock) {
 // 砍掉一半积分。**key 必须含 sampleT 本身** —— `sampleT` 在 tipCurve≠0 或左右 EdgeTrim 不等时
 // 是 u 的函数，用 (row, u) 之类的索引做 key 会把不同截面混成一份、静默给出错误几何。
 // **第四版起缓存的是「加 shell 之前」的世界向量**（步骤 1–12），与旧版同构：`shellOffset` 仍在
-// 缓存之外才加。**既有 key 无需扩充**：新引入的 `frame`（进而 A / R / x̂_t / â / k）是 `sampleT`
-// 的**确定性函数**（`panelFrameAt(sampleT)` 纯由 frames 链插值得出），已被 key 里的 sampleT 覆盖。
+// 缓存之外才加。**既有 key 无需扩充**：新引入的 `frame`（进而 O_osc / Reff / x̂_t / â / k）是
+// `sampleT` 的**确定性函数**（`panelFrameAt(sampleT)` 纯由 frames 链插值得出），已被 key 里的
+// sampleT 覆盖。
 // `frame` = 该行的完整 frame（`{point, x, y, z}`，世界空间）。**必须传整个 frame 而不是 frame.x**：
 // 弯曲平面要由 `frame.point` 相对头心的位置推出，只给宽度轴推不出半径与径向。
 // **0.2.142 的 `k·cos²α` 已删除**：那是对**错误轴**（= 曲线切线）的症状补偿 —— 它让倾斜处少弯，
 // 代价是该贴合的地方也不贴。删除的正当理由是**轴已经对了、不需要补偿**：`x̂_t` 的职责是把弯曲
 // **平面**定到同心面的切平面上，它不是一个幅度衰减项。
+//
+// ── 第五版：为什么把「胶囊轴」换成「纬线 + 椭球密切圆心」──────────────────────
+// **第四版的病根是 `min`**：`axisPoint = (C.x, min(C.y, P.y), C.z)`。当 `P.y > C.y`（行落在
+// 头心高度以上）时，`min` 把轴塌成 `center` 这一个点 ⇒ 弯曲退化成一个**过头顶的大圆**，轴本身
+// 因此是**倾斜**的（不垂直于任何一条纬线）。真实档发根实测：该轴方向 ≈ `(0, −0.407, 0.913)`，
+// 边缘到中线的 `Δy = −1.578` —— 一条本该近似水平的"纬线包裹"被拉成了斜穿头顶的弧，行序也因此
+// 逆序（4/6 行的推进顺序被打乱）。**本版不再用胶囊轴，而是逐行在头部拟合椭球的纬线上取密切圆**：
+//   c    = √(1 − h²)，h = (P.y − C.y)/ay 钳位到 ±(1 − 1e-3)（钳位是防 NaN，见下，不是软化）
+//   A = ax·c、B = az·c            —— 该纬度处纬线椭圆的两个半轴
+//   t    = atan2(dz/B, dx/A)      —— P 的方位角在该纬线椭圆上的参数（dx = P.x−C.x, dz = P.z−C.z）
+//   Pe   = (C.x + A·cos t, P.y, C.z + B·sin t)     —— 纬线椭圆上同方位的点
+//   ρ    = (A²sin²t + B²cos²t)^{3/2} / (A·B)        —— 该处曲率半径
+//   O_osc = Pe + ρ·n̂ₑ（n̂ₑ 指向椭圆内侧，y = P.y）   —— 密切圆心，恒水平
+//   Reff = |P − O_osc|、r̂ = (P − O_osc)/Reff（恒水平）
+// 这条纬线本身处处水平，密切圆心也恒在 `y = P.y` 上，弯曲轴因此不再随行的高度倾斜。
+//
+// **`h` 钳位是防 NaN，不是软化，本轮新修的真实缺陷**：`h = ±1` ⇒ `c = 0` ⇒ `A = B = 0` ⇒
+// `ρ = 0/0 = NaN`。而 `panelBendCrossSection` 首行 `Number(curvature) || 0` 把 `NaN` 当 falsy
+// 静默变成 `0` ⇒ 该行悄悄摊平成直线、不报错、不被现有 `radius < 1e-6` 守卫抓到（`NaN < 1e-6`
+// 为 `false`）。`ay` 现已写死为 1，椭球顶恒为 `y = C.y + 1`；发根 `y` 高于此值（真实档案曾
+// 实测到 `1.8326 > C.y + 1`）就会撞上 `h > 1` 触发的这个 NaN。两道措施因此都要上：(a) 上面的
+// `h` 钳位；(b) 下面把退化守卫从 `radius < 1e-6` 扩成 `!Number.isFinite(Reff) || Reff < 1e-6`。
+//
+// **球退化自检**：`ax === ay === az` 时，纬线圆退化为水平大圆（`Pe` 在圆上任意一点，曲率恒为
+// `ax`），`O_osc` 必须精确等于纬线圆心 `(C.x, P.y, C.z)`，`Reff` 必须精确等于水平距离
+// `hypot(dx, dz)` —— 实测该等价的浮点误差量级为 1.11e-16（用临时脚本核对到 <1e-9，验完已删）。
+//
+// **⚠️ 已知限制一（非球构型下"不穿透"不再由构造保证）**：椭球横截面是椭圆而不是圆，同一纬线
+// 上不同方位角的水平半径可以大于 `Reff`（`Reff` 只是"密切圆"半径，不是该纬线到轴的最大距离）。
+// 实测 `fitScale = (1, 0.9, 1.6)` 时边缘椭球归一化深度 P5 达 **−0.668**、P4 **−0.605**（负值即
+// 已穿透代理表面）；球构型（三轴相等）不受此影响。**这是已知限制，不是待修 bug**——用户已按
+// 「椭球只是近似，不追求处处不穿透」的口径接受。
+//
+// **⚠️ 已知限制二（椭球下包裹松紧随方位角不对称）**：同一纬线上，正面（沿 z 轴方向）与侧面
+// （沿 x 轴方向）的曲率半径不同 ⇒ 同一 amount 下卷起的角度不同。实测 `fitScale = (1.4, 1, 1)`
+// 时 `y = 1.4` 处正面 wrap 69.33° vs 侧面 173.42°（2.5×）；`fitScale = (1.4, 0.9, 1.6)` 时方向
+// 甚至**翻转**为正面 111.41° > 侧面 76.90°。这是椭球曲率随方位变化的固有几何行为，不是 bug。
+//
+// **不加"极区软化"、不加向三维半径的混合**：用户已拍板这条模型（代号 L1）就是纯纬线 + 椭球
+// 密切圆心，任何"满足条件 C 就切到别的公式"的补偿都不在本版范围内（会掩盖上面两条已知限制，
+// 而已知限制是被接受的，不是要被掩盖的）。
+//
 // **⚠️ 计划 §5.3「若宽度方向直指头心则 x̂_t → 0、弯曲自行消失」是错的（本轮实测证伪，勿据此
 // 以为有内建衰减）**：`x̂_t` 在**归一化之前**确实趋于 0，但它**被归一化**，所以弯曲平面始终良定义。
 // 实测把宽度轴从切向转到径向（α: 0→89.999°），位移量恒为 1.75144（β=0）/1.74259（β=25°）/
@@ -562,18 +634,30 @@ function panelScalpConformOffsets(params, sample, u, shellOffset, cache = null, 
   if (!frame) return null;
   let cached = cache && cacheKey !== null ? cache.get(cacheKey) : null;
   if (!cached) {
-    // 胶囊轴上的最近点：头心高度**以上**退化为 center 本身（球冠 ⇒ 根部得到纬度式包裹）、
-    // **以下**是过 center 的竖直线（圆柱 ⇒ 长发直垂，不朝下巴底下卷）。min 而非 clamp：
-    // 胶囊向下无限延伸，长发再长也仍绕同一根竖直轴。
-    const axisPoint = new THREE.Vector3(
-      params.center.x,
-      Math.min(params.center.y, frame.point.y),
-      params.center.z
-    );
-    const radial = frame.point.clone().sub(axisPoint);
-    const radius = radial.length();
-    if (radius < 1e-6) return null; // 行落在轴上 ⇒ 径向无定义，不弯（而不是除零炸开）
-    const radialHat = radial.divideScalar(radius);
+    const { center: C, ax, ay, az } = params;
+    const P = frame.point;
+    // h 钳位是**防 NaN，不是软化**：h=±1 ⇒ A=B=0 ⇒ rho=0/0=NaN（见函数头注释「第五版」小节）。
+    const h = THREE.MathUtils.clamp((P.y - C.y) / ay, -(1 - 1e-3), 1 - 1e-3);
+    const c = Math.sqrt(1 - h * h);
+    const A = ax * c;
+    const B = az * c;
+    const dx = P.x - C.x;
+    const dz = P.z - C.z;
+    const t = Math.atan2(dz / B, dx / A);
+    const cosT = Math.cos(t);
+    const sinT = Math.sin(t);
+    const Pe = new THREE.Vector3(C.x + A * cosT, P.y, C.z + B * sinT);
+    const rho = Math.pow(A * A * sinT * sinT + B * B * cosT * cosT, 1.5) / (A * B);
+    // n̂ₑ：椭圆在 Pe 处的外法向 ∝ (cos t/A, sin t/B)，取反得内法向（凹侧，密切圆心所在方向）。
+    const outwardLength = Math.hypot(cosT / A, sinT / B);
+    const nEx = -(cosT / A) / outwardLength;
+    const nEz = -(sinT / B) / outwardLength;
+    const oOsc = new THREE.Vector3(Pe.x + rho * nEx, P.y, Pe.z + rho * nEz);
+    const radial = P.clone().sub(oOsc);
+    const reff = radial.length();
+    // 退化守卫**扩成 isFinite 检查**：`NaN < 1e-6` 为 false，旧守卫抓不住上面 h=±1 触发的 NaN。
+    if (!Number.isFinite(reff) || reff < 1e-6) return null;
+    const radialHat = radial.divideScalar(reff);
     // 让径向与面板自己的法向同侧：正的 amount 因此**恒朝头部方向**弯，与面板被翻到哪一面无关。
     const normalHat = frame.z.dot(radialHat) < 0 ? radialHat.clone().negate() : radialHat.clone();
     // 宽度方向投影到该同心球/圆柱的切平面。**投影的作用是把弯曲平面定住，不是衰减幅度**
@@ -582,7 +666,7 @@ function panelScalpConformOffsets(params, sample, u, shellOffset, cache = null, 
     const lateralHat = frame.x.clone().addScaledVector(normalHat, -frame.x.dot(normalHat));
     if (lateralHat.lengthSq() < 1e-12) return null;
     lateralHat.normalize();
-    const k = params.amount / (radius + params.gap);
+    const k = params.amount / (reff + params.gap);
     const axisHat = new THREE.Vector3().crossVectors(lateralHat, normalHat);
     // 适配层：把平截面从 (frame.x, frame.z) 换到 (x̂_t, n̂) 这张平面里，再交给**未改动的**内核。
     const sample2 = (v) => {

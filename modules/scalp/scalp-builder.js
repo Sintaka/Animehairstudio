@@ -445,6 +445,19 @@ function syncScalpInputs() {
   });
 }
 
+// Scalp Conform 拟合椭球（全局，第五版）的滑杆同步：与 syncScalpInputs 同一条路径，
+// 额外同步 <output> 读数——scalpInputs 那组滑杆没有读数元素，本组有（照 panelShapeValues
+// 的样子），所以多写一行 textContent。
+function syncScalpConformFitInputs() {
+  Object.entries(deps.scalpConformFitInputs).forEach(([key, input]) => {
+    if (!input) return;
+    const value = Number(deps.scalpConformFit[key]);
+    input.value = value;
+    const output = deps.scalpConformFitValueOutputs?.[key];
+    if (output) output.textContent = value.toFixed(2);
+  });
+}
+
 function syncScalpArtistInputs() {
   deps.scalpArtistInputs.mirrorX.checked = deps.scalpArtistShape.mirrorX;
   ["sideFlatten", "topHeight", "bottomHeight", "hairlineRows", "sideBangRows", "rootScalpOffset", "topWidth", "topDepth", "middleWidth", "middleDepth", "bottomWidth", "bottomDepth"].forEach((key) => {
@@ -3032,6 +3045,10 @@ function restoreAuthoredScalpForStateRestore(state, { preservePlacement = false 
       refreshLoadedRootAttachmentsOnAuthoredScalp();
     }).catch((error) => console.error("Could not restore the authored scalp surface", error));
     if (state.scalpSurface) Object.assign(deps.scalpSurface, state.scalpSurface);
+    // Scalp Conform 拟合椭球（全局，第五版）：与 scalpSurface 同一条路径——旧存档没有这个字段
+    // 时 Object.assign 的第二个参数缺失，不覆盖当前值（等价于回退到 PANEL_SCALP_CONFORM_DEFAULTS，
+    // 因为 deps.scalpConformFit 在 app.js 里就是拿那份默认值初始化的）。
+    if (state.scalpConformFit) Object.assign(deps.scalpConformFit, state.scalpConformFit);
     if (state.scalpArtistShape) Object.assign(deps.scalpArtistShape, state.scalpArtistShape);
   }
   if (state.strandGroupDefaults) {
@@ -3059,6 +3076,7 @@ function restoreAuthoredScalpForStateRestore(state, { preservePlacement = false 
       deps.scalpState.scalpManualRegionQuads = new Set(state.scalpManualRegionQuads || []);
     }
     syncScalpInputs();
+    syncScalpConformFitInputs();
     syncScalpArtistInputs();
     updateScalpTopology();
     if (state.customScalpRegions?.length === deps.scalpState.customScalpRegions.length) {
@@ -3168,6 +3186,7 @@ function drawScalpRegionAtEvent(event, surfaceHit) {
     applyScalpRoughScale,
     realignFullBodyGuideToScalpTop,
     syncScalpInputs,
+    syncScalpConformFitInputs,
     syncScalpArtistInputs,
     rootScalpOffsetDistance,
     applyLockRootScalpOffset,

@@ -3550,6 +3550,26 @@ const scalpInputs = {
   scaleZ: document.querySelector("#scalpScaleZ")
 };
 const scalpSurface = { x: 0, y: 0.9, z: 0, radius: 1, scaleX: 1, scaleY: 1, scaleZ: 1 };
+// Scalp Conform 拟合椭球（第五版，纬线 + 椭球密切圆心）：**全局**，头只有一个，不进 lock
+// （与逐 lock 的 panelScalpConformAmount/Gap 是两套不同粒度的参数，互不影响）。
+// 中心复用 scalpSurface 的 x/y/z（不新增中心字段），半轴只暴露水平两个方向的比例——
+// 竖直半轴与整体半径被 curve-math.js 的 PANEL_SCALP_CONFORM_DEFAULTS 写死为 1（球构型下
+// 对结果的影响代数为 0，理由见该文件 PANEL_SCALP_CONFORM_DEFAULTS 上方注释）。
+// 默认值**唯一定义点**是 PANEL_SCALP_CONFORM_DEFAULTS，这里 import 而不抄字面量。
+const scalpConformFit = {
+  fitScaleX: PANEL_SCALP_CONFORM_DEFAULTS.fitScaleX,
+  fitScaleZ: PANEL_SCALP_CONFORM_DEFAULTS.fitScaleZ
+};
+// 两个滑杆的 DOM 引用字典，照 scalpInputs 的样子做（全局对象、不进 panelShapeInputs——
+// 那套走 editSelectedLocks 逐 lock，本参数是全局，见下方事件绑定处的说明）。
+const scalpConformFitInputs = {
+  fitScaleX: document.querySelector("#scalpConformFitScaleX"),
+  fitScaleZ: document.querySelector("#scalpConformFitScaleZ")
+};
+const scalpConformFitValueOutputs = {
+  fitScaleX: document.querySelector("#scalpConformFitScaleXValue"),
+  fitScaleZ: document.querySelector("#scalpConformFitScaleZValue")
+};
 const scalpArtistInputs = {
   mirrorX: document.querySelector("#scalpMirrorX"),
   sideFlatten: document.querySelector("#scalpSideFlatten"),
@@ -3994,6 +4014,11 @@ Object.assign(scalpBuilderDeps, {
   scalpSetupMenu,
   scalpSetupToggle,
   scalpSurface,
+  // Scalp Conform 拟合椭球（全局，第五版）：scalp-builder.js 的 syncScalpConformFitInputs /
+  // restoreAuthoredScalpForStateRestore 要读这三个。纯数据对象本体注入，同 scalpSurface。
+  scalpConformFit,
+  scalpConformFitInputs,
+  scalpConformFitValueOutputs,
   scalpSurfaceGeometry,
   scalpSurfaceGroup,
   scalpSurfaceMesh,
@@ -9854,6 +9879,7 @@ function snapshotState() {
     scalpGuideSource: scalpState.state.scalpGuideSource,
     customScalpRegions: [...scalpState.state.customScalpRegions],
     scalpSurface: { ...scalpSurface },
+    scalpConformFit: { ...scalpConformFit },
     scalpArtistShape: { ...scalpArtistShape },
     scalpLatticePoints: scalpLatticePoints.map(vectorToData),
     scalpRegionAssignments: [...scalpState.state.scalpRegionAssignments],
@@ -12385,6 +12411,10 @@ Object.assign(panelTipStrandDeps, {
   // panelScalpConformParams 与 scalp-builder.js 的 updateScalpSurface 用同一套
   // `radius * scaleXYZ` 规则。
   scalpSurface,
+  // Scalp Conform 拟合椭球（第五版）：**独立注入**的纯数据对象本体，与 scalpSurface
+  // 同一条理由——不是快照拷贝，用户调滑杆后下次几何重建自动读到新值。缺失时
+  // panelScalpConformParams 回退到 PANEL_SCALP_CONFORM_DEFAULTS（curve-math.js），见该文件。
+  scalpConformFit,
   sculptState: sculptState.state
 });
 // Strand geometry api deps batch (refactor 3d batches G2+G3): all deps are defined by this
@@ -16925,6 +16955,25 @@ Object.entries(scalpInputs).forEach(([key, input]) => {
   input.addEventListener("input", () => {
     scalpSurface[key] = Number(input.value);
     scalpBuilder.updateScalpSurface();
+  });
+});
+
+// Scalp Conform 拟合椭球（全局，见 scalpConformFit 定义处注释）：两个滑杆改动必须让**所有**
+// panel 发片重建几何（不只是选中的那一片）——它不进 lock，不能走 panelShapeInputs 的
+// editSelectedLocks 通用接线（那套只改选中项）。照 sweepOverlapStrengthInput 等「无选中 lock
+// 时的全局回退」分支的既有做法：直接对 `locks` 全量调用 rebuildLockGeometry，用 isPanelGeometry
+// 过滤（非 panel/surface 几何不读 scalpConformFit，重建它们没有意义）。撤销：scalpSurface 的
+// 滑杆没有接 bindUndoCapture 之外的任何 undo 捕获（bindUndoCapture 本身就是这套滑杆唯一的
+// undo 接入点），这里同样只挂 bindUndoCapture，不额外接。
+Object.entries(scalpConformFitInputs).forEach(([key, input]) => {
+  if (!input) return;
+  bindUndoCapture(input);
+  input.addEventListener("input", () => {
+    const value = Number(input.value);
+    scalpConformFit[key] = value;
+    const output = scalpConformFitValueOutputs[key];
+    if (output) output.textContent = value.toFixed(2);
+    locks.forEach((lock) => { if (isPanelGeometry(lock)) rebuildLockGeometry(lock); });
   });
 });
 

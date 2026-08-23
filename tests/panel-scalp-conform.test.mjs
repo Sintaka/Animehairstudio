@@ -32,6 +32,15 @@
 //   ⑥ **不穿透**：amount=1 不得比平板基线更深地进入头部代理（0.2.138–142 的病根）
 //   ⑦ **轴与切线无关、与头心有关**（取代 cos²α 那条；正反两条都要，否则 stub 也能过）
 //   ⑧ **逐行半径**：不同距离的行必须拿到不同曲率（负向对照：全局标量会让它们相同）
+//
+// **第五版契约更新（子智能体 γ）**：模型从「胶囊轴」（`A = (C.x, min(C.y,P.y), C.z)`，
+// 球冠/圆柱二分）换成「纬线 + 椭球密切圆心」（见 modules/geometry/panel-tip-strand.js
+// 的 panelScalpConformOffsets 头注释「第五版」小节）。球构型（`ax == az`，含默认全 1）下
+// 纬线截面退化为圆，密切圆心精确等于纬线圆心 `(C.x, P.y, C.z)`，代数上 `C.y`、`ay`、
+// 整体半径对结果的影响恰好为 0（不是"很小"，是浮点精确的 0）——下面 ⑦/⑧/头心 三条
+// 原本断言"移动头心必改变结果"的地方据此拆成"C.x/C.z 必变、C.y 在球构型下不变"两条。
+// 「胶囊轴」「球冠区/圆柱区」的旧二分已废除，⑧ 的用例名与断言随之改写。新增用例覆盖
+// 拟合椭球参与度、`ay` 写死为 1、NaN 防护（h 钳位）、弯曲轴恒竖直、默认值与三语覆盖。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
@@ -96,7 +105,9 @@ function panelLock(overrides = {}) {
 // 且 t=1 那一行落到中心高度**以下** ⇒ 进入**圆柱**区（A 跟着 P.y 走）。
 // 即本 fixture 同时覆盖球冠区与圆柱区，而且行半径**确实不同** —— 若实现退回全局标量
 // bendRadius，逐行判据才咬得住。
-function panelApi(lock, proxy = SPHERE_PROXY) {
+// `fit` = deps.scalpConformFit 注入（第五版拟合椭球半轴，{fitScaleX, fitScaleZ}）。
+// 省略时走 panelScalpConformParams 内部的 PANEL_SCALP_CONFORM_DEFAULTS 回退（全 1，球构型）。
+function panelApi(lock, proxy = SPHERE_PROXY, fit = undefined) {
   const curve = new THREE.CatmullRomCurve3(
     lock.points.map((point) => new THREE.Vector3(point.x, point.y, point.z))
   );
@@ -113,6 +124,7 @@ function panelApi(lock, proxy = SPHERE_PROXY) {
     clonePanelSplits: (value) => (Array.isArray(value) ? value.map((split) => ({ ...split })) : []),
     isPanelGeometry: (item) => item?.geometryType === "panel" || item?.geometryType === "surface",
     scalpSurface: proxy,
+    scalpConformFit: fit,
     sculptState: {}
   });
 }
@@ -425,7 +437,11 @@ test("跨消费方一致：宽度把手的截面点与网格拿到同一份弯�
 // 判据取**纯函数层**并且**正反两条都要**：只断言「转切线不变」的话，一个恒返回 null 的 stub
 // 也能过；只断言「移头心会变」的话，旧模型（轴来自 frame）也能过 —— 因为 params 里含 center。
 // 两条合起来才唯一地钉住「轴来自头、不来自面板 frame」。
-test("⑦ 弯曲轴取自头部几何：转切线不变、移头心必变", () => {
+// **第五版改写**：「移头心必变」在球构型下不再成立（`C.y` 被纬线密切圆代数消掉，见文件头
+// 「第五版契约更新」）。原用例名与"必变"断言只在球构型下测过，实为对旧「胶囊轴」模型的
+// 误判——现拆成三条：① 转切线不变（原样保留）；② 移 `C.x`/`C.z` 必变（任何构型都成立）；
+// ③ 移 `C.y` 在球构型（`ax==az`）下不变、在各向异性（`ax≠az`）下必变（双向，唯一钉死语义）。
+test("⑦ 弯曲轴取自头部几何：转切线不变、移 C.x/C.z 必变、移 C.y 仅各向异性下变", () => {
   const lock = panelLock({ width: 5, panelScalpConformAmount: 1 });
   const api = panelApi(lock);
   const params = api.panelScalpConformParams(lock);
@@ -455,27 +471,43 @@ test("⑦ 弯曲轴取自头部几何：转切线不变、移头心必变", () =
       `切线/法向转 ${degrees}° 不得改变弯曲（轴取自头，不取自 frame）：偏差 ${rotated.distanceTo(upright)}`
     );
   }
-  // 反向：移动头心必须改变结果（否则「取自头」是空话）
-  const moved = panelApi(lock, { ...SPHERE_PROXY, y: 0.2 });
-  const movedOffsets = moved.panelScalpConformOffsets(
-    moved.panelScalpConformParams(lock),
-    sample,
-    1,
-    0,
-    null,
-    null,
-    { point, x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, -1, 0), z: new THREE.Vector3(0, 0, 1) }
+  const uprightFrame = { point, x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, -1, 0), z: new THREE.Vector3(0, 0, 1) };
+  const offsetsAt = (proxy, fit) => {
+    const moved = panelApi(lock, proxy, fit);
+    return moved.panelScalpConformOffsets(moved.panelScalpConformParams(lock), sample, 1, 0, null, null, uprightFrame);
+  };
+  // 移动 C.x 或 C.z：任何构型下都必须改变结果（水平位置直接改变每一行的 dx/dz）。
+  const movedX = offsetsAt({ ...SPHERE_PROXY, x: 0.3 });
+  assert.ok(movedX.distanceTo(upright) > 1e-3, `移动 C.x 必须改变弯曲，偏差仅 ${movedX.distanceTo(upright)}`);
+  const movedZ = offsetsAt({ ...SPHERE_PROXY, z: -0.2 });
+  assert.ok(movedZ.distanceTo(upright) > 1e-3, `移动 C.z 必须改变弯曲，偏差仅 ${movedZ.distanceTo(upright)}`);
+  // 移动 C.y，球构型（默认 fit 全 1，ax==az）：代数上精确不变（h/A/B 随 P.y-C.y 变化，
+  // 但纬线是圆时密切圆心恰好落回 (C.x, P.y, C.z)，与 C.y 无关）—— 断言 maxDiff === 0。
+  const movedYSphere = offsetsAt({ ...SPHERE_PROXY, y: 0.2 });
+  assert.equal(
+    movedYSphere.distanceTo(upright), 0,
+    `球构型下移动 C.y 不得改变弯曲（代数消掉），实测偏差 ${movedYSphere.distanceTo(upright)}`
   );
+  // 各向异性（ax≠az）：移动 C.y 现在必须改变结果，否则"仅各向异性下变"是空话。
+  const anisoFit = { fitScaleX: 1.4, fitScaleZ: 0.9 };
+  const anisoUpright = offsetsAt(SPHERE_PROXY, anisoFit);
+  const anisoMovedY = offsetsAt({ ...SPHERE_PROXY, y: 0.2 }, anisoFit);
   assert.ok(
-    movedOffsets.distanceTo(upright) > 1e-3,
-    `移动头心必须改变弯曲，偏差仅 ${movedOffsets.distanceTo(upright)}`
+    anisoMovedY.distanceTo(anisoUpright) > 1e-3,
+    `各向异性下移动 C.y 必须改变弯曲，偏差仅 ${anisoMovedY.distanceTo(anisoUpright)}`
   );
 });
 
 // ── ⑧ 逐行半径（负向对照：全局标量会让两行拿到同一曲率）────────────────────────
 // 这是 0.2.138–142 根因 B 的回归：`bendRadius` 曾是单一全局标量 1.1，而真实档各行到头心
 // 距离是 1.021–1.440 ⇒ 外侧行过度卷绕、边缘扎进头里（实测最深 +0.235）。
-test("⑧ 曲率逐行取自该行到胶囊轴的真实距离", () => {
+//
+// **第五版改写（用例名去掉"胶囊轴"）**：旧断言「球冠区与圆柱区必须给出不同曲率」
+// （`bendAtRadius(1.4,1.5)` vs `bendAtRadius(0.5,1.5)`）测的是已废除的球冠/圆柱二分——
+// 纬线轴下同一水平距离的两行 `Reff` 恒等（球构型下密切圆心恒为 `(C.x,P.y,C.z)`，
+// 见文件头「第五版契约更新」），该断言现在恒假。反过来钉：同一水平距离、不同高度
+// ⇒ **`Reff` 相同 ⇒ 位移相同**，这正是纬线模型的核心不变式（取代原来"必须不同"）。
+test("⑧ 曲率逐行取自该行到纬线轴的真实水平距离", () => {
   const lock = panelLock({ width: 5, panelScalpConformAmount: 1, panelScalpConformGap: 0 });
   const api = panelApi(lock);
   const params = api.panelScalpConformParams(lock);
@@ -498,26 +530,22 @@ test("⑧ 曲率逐行取自该行到胶囊轴的真实距离", () => {
     });
     return offsets.clone().sub(FLAT_AT_U1);
   };
-  // 两行都在头心高度以上（球冠区），到轴距离分别为 1.5 与 2.5。
+  // 同一水平距离 z=1.5，三个不同高度（含头心以上与以下）：球构型下 Reff 恒为 1.5，
+  // 位移必须逐值相同——这正是纬线模型取代"球冠/圆柱二分"的核心不变式。
+  const highY = bendAtRadius(1.4, 1.5);
+  const midY = bendAtRadius(0.9, 1.5);
+  const lowY = bendAtRadius(0.5, 1.5);
+  assert.ok(
+    Math.abs(highY.length() - midY.length()) < 1e-9 && Math.abs(midY.length() - lowY.length()) < 1e-9,
+    `同一水平距离、不同高度必须给出相同位移（纬线轴，球构型）：${highY.length()} / ${midY.length()} / ${lowY.length()}`
+  );
+  // 不同水平距离（z=1.5 vs z=2.5，同高度 y=0.9）：曲率逐行取自到轴的真实水平距离，位移必须不同。
   const near = bendAtRadius(0.9, 1.5);
   const far = bendAtRadius(0.9, 2.5);
   // 半径越大 ⇒ 曲率越小 ⇒ 相对平板的位移越小。全局标量会让两者相等。
   assert.ok(
     far.length() < near.length() - 1e-6,
     `半径 2.5 的行位移必须小于半径 1.5 的行（逐行曲率）：${far.length()} vs ${near.length()}`
-  );
-  // 圆柱区：中心高度以下，到**竖直轴**的距离与 y 无关 ⇒ 同一 z 的两行必须拿到同一曲率。
-  const lowA = bendAtRadius(0.5, 1.5);
-  const lowB = bendAtRadius(0.1, 1.5);
-  assert.ok(
-    Math.abs(lowA.length() - lowB.length()) < 1e-9,
-    `圆柱区同一 z 的两行曲率必须相同（轴是竖直线段）：${lowA.length()} vs ${lowB.length()}`
-  );
-  // 而球冠区同一 z、不同 y 必须不同（否则上面那条是恒真的）
-  const highA = bendAtRadius(1.4, 1.5);
-  assert.ok(
-    Math.abs(highA.length() - lowA.length()) > 1e-6,
-    "球冠区与圆柱区必须给出不同曲率，否则圆柱区断言空转"
   );
   // gap 加在半径上 ⇒ 曲率变小 ⇒ 相对平板的位移变小（同上，量的是位移不是 |offset|）
   const gappedLock = panelLock({ width: 5, panelScalpConformAmount: 1, panelScalpConformGap: 0.4 });
@@ -540,8 +568,10 @@ test("⑧ 曲率逐行取自该行到胶囊轴的真实距离", () => {
 // 头心必须**跟随注入的 scalpSurface**，不能是几何层写死的常数。
 // **与 0.2.138–142 的差别**：那版把 `bendRadius` 由 `(radius·scaleX + radius·scaleZ)/2 + gap`
 // 算成一个全局标量，于是 `scaleX/scaleZ` 直接进半径、`scaleY` 刻意排除。本版**没有**这个标量
-// —— 卷绕半径是该行到胶囊轴的真实距离，所以三个 scale 只通过「面板相对 center 落在哪」间接
-// 影响结果。因此本条只钉 `center`，并要求几何输出确实随 center 改变。
+// —— 卷绕半径是该行到纬线密切圆心的真实距离，所以三个 scale 只通过「面板相对 center 落在哪」
+// 间接影响结果。因此本条只钉 `center`，并要求几何输出确实随 center 改变。
+// **第五版改写**：「移动头心必须改变边缘落点」在球构型（默认 fit 全 1）下现在必然为假
+// （`C.y` 被纬线密切圆代数消掉，见文件头「第五版契约更新」；`C.x`/`C.z` 仍必变）。
 test("头心跟随注入的 scalpSurface（非写死常数）", () => {
   const lock = panelLock({ width: 5, panelScalpConformAmount: 1, panelScalpConformGap: 0 });
   const sphere = panelApi(lock, SPHERE_PROXY).panelScalpConformParams(lock);
@@ -554,10 +584,23 @@ test("头心跟随注入的 scalpSurface（非写死常数）", () => {
     offCentre.center.distanceTo(new THREE.Vector3(ELLIPSOID_PROXY.x, ELLIPSOID_PROXY.y, ELLIPSOID_PROXY.z)) < 1e-12,
     `center 必须跟随代理的 x/y/z，得到 ${offCentre.center.toArray()}`
   );
-  // 几何层实际输出也必须随 center 改变（不只是参数字段不同）
+  // 几何层实际输出也必须随 C.x/C.z 改变（不只是参数字段不同）——任何构型都成立。
   const here = panelApi(lock, SPHERE_PROXY).tipMainSectionPoint(lock, 0.6, 1, 0, null, -1, null);
-  const there = panelApi(lock, { ...SPHERE_PROXY, y: 0.2 }).tipMainSectionPoint(lock, 0.6, 1, 0, null, -1, null);
-  assert.ok(here.distanceTo(there) > 1e-6, "移动头心必须改变边缘落点");
+  const thereX = panelApi(lock, { ...SPHERE_PROXY, x: 0.3 }).tipMainSectionPoint(lock, 0.6, 1, 0, null, -1, null);
+  assert.ok(here.distanceTo(thereX) > 1e-6, "移动 C.x 必须改变边缘落点");
+  const thereZ = panelApi(lock, { ...SPHERE_PROXY, z: -0.2 }).tipMainSectionPoint(lock, 0.6, 1, 0, null, -1, null);
+  assert.ok(here.distanceTo(thereZ) > 1e-6, "移动 C.z 必须改变边缘落点");
+  // 移动 C.y：球构型（默认 fit 全 1）下不得改变边缘落点——代数上精确消掉。
+  const thereY = panelApi(lock, { ...SPHERE_PROXY, y: 0.2 }).tipMainSectionPoint(lock, 0.6, 1, 0, null, -1, null);
+  assert.equal(here.distanceTo(thereY), 0, `球构型下移动 C.y 不得改变边缘落点，实测偏差 ${here.distanceTo(thereY)}`);
+  // 各向异性拟合椭球（ax≠az）下，移动 C.y 现在必须改变边缘落点（否则上面那条断言空转）。
+  const anisoFit = { fitScaleX: 1.4, fitScaleZ: 0.9 };
+  const hereAniso = panelApi(lock, SPHERE_PROXY, anisoFit).tipMainSectionPoint(lock, 0.6, 1, 0, null, -1, null);
+  const thereAniso = panelApi(lock, { ...SPHERE_PROXY, y: 0.2 }, anisoFit).tipMainSectionPoint(lock, 0.6, 1, 0, null, -1, null);
+  assert.ok(
+    hereAniso.distanceTo(thereAniso) > 1e-6,
+    `各向异性下移动 C.y 必须改变边缘落点（否则球构型下不变这条断言空转），实测偏差 ${hereAniso.distanceTo(thereAniso)}`
+  );
   // 缺省代理（deps.scalpSurface 未注入）必须走 fallback 而不是崩
   const bare = createPanelTipStrandApi({
     strandGeometryCurve: () => new THREE.CatmullRomCurve3(lock.points.map((p) => new THREE.Vector3(p.x, p.y, p.z))),
@@ -939,6 +982,189 @@ test("镜像：同一 u 处的位移在 X 镜像下严格反对称", () => {
     Math.abs(source.z - partner.z)
   );
   assert.ok(worst < 1e-9, `X 镜像下位移必须严格反对称，最大偏差 ${worst.toExponential(3)}`);
-  // 负向对照：证明该构型下 residual 确实非零（否则 â 的符号翻转未被测到）
-  assert.ok(Math.abs(source.y) > 1e-9, "sanity：camber 必须在弯曲轴上留下非零残余分量");
+  // **第五版改写 sanity 前置条件**：旧断言「camber 必须在弯曲轴上留下非零残余分量」
+  // （`|source.y| > 1e-9`）在新模型下**结构性恒为 0**——弯曲轴 â 恒竖直（0,±1,0），
+  // camber 位移落在水平面内，residual = d⃗·â 沿竖直轴，而这里的 d⃗（camber 贡献）没有
+  // 竖直分量，所以该 sanity 已不适用（不是"用户没测到"，是"这个量本来就该是 0"）。
+  // 换成两条在本版下确实有意义、非空转的前置：
+  // ① â 恒竖直：world offset 没有绕轴分量泄漏出竖直以外的方向——用 offset.y === 0 直接钉住
+  //   「â=(0,±1,0)」这条文件头声明的不变式（否则镜像断言可能是在一个退化到 0 的分量上空转）。
+  assert.equal(source.y, 0, `sanity：弯曲轴 â 恒竖直 ⇒ world offset 的 y 分量必须精确为 0，实测 ${source.y}`);
+  // ② camber 确实参与了这份位移（把 camber 关掉，位移必须变化）——防止"看似非零其实是
+  //   flat 分支在空转"：若 camber 被静默丢弃，下式会恒等于 0。
+  const flatSample = (v) => ({ lateral: v * 2.5, normal: 0 });
+  const noCamber = api.panelScalpConformOffsets(params, flatSample, 0.7, 0.03, null, null, {
+    point: new THREE.Vector3(0.6, 1.7, 1.5),
+    x: new THREE.Vector3(1, 0, 0),
+    y: new THREE.Vector3(0, -1, 0),
+    z: new THREE.Vector3(0, 0, 1)
+  });
+  assert.ok(
+    source.distanceTo(noCamber) > 1e-6,
+    `sanity：camber 必须实际改变这份位移（否则镜像断言可能在退化输入上空转），差异 ${source.distanceTo(noCamber)}`
+  );
+});
+
+// ── 第五版新增 1：拟合椭球确实参与 conform（deps.scalpConformFit） ────────────────
+// **变异验证**：把 `panelApi` 的 `fit` 参数固定传 `undefined`（即恒回退到默认全 1），
+// 会让 `fitScaleX≠fitScaleZ` 那组断言的 `maxDiff` 变成 0 ⇒ 变红。已在改写本文件过程中
+// 用独立探针脚本手工验证过这条会抓（临时脚本已删）。
+test("第五版：拟合椭球 fitScaleX/fitScaleZ 确实参与 conform", () => {
+  const lock = panelLock({ width: 5, panelScalpConformAmount: 1 });
+  const point = new THREE.Vector3(0, 1.7, 1.5);
+  const frame = { point, x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, -1, 0), z: new THREE.Vector3(0, 0, 1) };
+  const sample = (v) => ({ lateral: v * 2.5, normal: 0 });
+  const offsetsWith = (fit) => {
+    const api = panelApi(lock, SPHERE_PROXY, fit);
+    return api.panelScalpConformOffsets(api.panelScalpConformParams(lock), sample, 1, 0, null, null, frame);
+  };
+  // fitScaleX ≠ fitScaleZ ⇒ 几何必须改变。
+  const iso = offsetsWith({ fitScaleX: 1, fitScaleZ: 1 });
+  const aniso = offsetsWith({ fitScaleX: 1.4, fitScaleZ: 0.9 });
+  assert.ok(
+    iso.distanceTo(aniso) > 1e-6,
+    `fitScaleX≠fitScaleZ 必须改变几何，实测偏差 ${iso.distanceTo(aniso)}`
+  );
+  // 两者相等时，把 fitScaleX+fitScaleZ 一起改到同一个新值（仍是球构型）⇒ 恰好不变（maxDiff===0）。
+  const isoScaled = offsetsWith({ fitScaleX: 1.3, fitScaleZ: 1.3 });
+  assert.equal(
+    iso.distanceTo(isoScaled), 0,
+    `fitScaleX==fitScaleZ 时改变到同一新值不得改变几何（球构型代数消掉），实测偏差 ${iso.distanceTo(isoScaled)}`
+  );
+});
+
+// ── 第五版新增 2：ay 写死为 1，ax/az 来自 fitScale 并被钳位到 [0.5, 1.5] ──────────
+// **变异验证**：若把 `ay` 改回读取某个可调字段（如误接 fitScaleY），本条会因 `params.ay !== 1`
+// 直接变红；若钳位改错范围（如钳到 [0,2]），下面两条超界探针会变红。
+test("第五版：panelScalpConformParams 的 ay 写死为 1，ax/az 钳位到 [0.5,1.5]", () => {
+  const lock = panelLock({ width: 5, panelScalpConformAmount: 1 });
+  const api = panelApi(lock, SPHERE_PROXY, { fitScaleX: 1.2, fitScaleZ: 0.7 });
+  const params = api.panelScalpConformParams(lock);
+  assert.equal(params.ay, 1, `ay 必须写死为 1，实测 ${params.ay}`);
+  assert.equal(params.ax, THREE.MathUtils.clamp(1.2, 0.5, 1.5), `ax 必须等于钳位后的 fitScaleX，实测 ${params.ax}`);
+  assert.equal(params.az, THREE.MathUtils.clamp(0.7, 0.5, 1.5), `az 必须等于钳位后的 fitScaleZ，实测 ${params.az}`);
+  // 钳位探针：超界值必须被夹住，不是原样传递（负向对照）。
+  const clampedApi = panelApi(lock, SPHERE_PROXY, { fitScaleX: 9, fitScaleZ: -9 });
+  const clampedParams = clampedApi.panelScalpConformParams(lock);
+  assert.equal(clampedParams.ax, 1.5, `fitScaleX=9 必须被钳到 1.5，实测 ${clampedParams.ax}`);
+  assert.equal(clampedParams.az, 0.5, `fitScaleZ=-9 必须被钳到 0.5，实测 ${clampedParams.az}`);
+});
+
+// ── 第五版新增 3：防 NaN（本轮修的真实缺陷）───────────────────────────────────
+// **本条断言在防什么**：椭球顶点在 `y = C.y + ay`（球构型 `ay=1`）处，纬线椭圆的两个半轴
+// `A = ax·c`、`B = az·c` 都随 `c = sqrt(1-h²)` 趋于 0（`h = (P.y-C.y)/ay → 1`）。密切圆曲率半径
+// `rho = (...)^1.5/(A·B)` 在 `A=B=0` 处是 `0/0 = NaN`。而 `panelBendCrossSection` 首行
+// `Number(curvature) || 0` 把 `NaN` 当 falsy 静默改写成 `0` ⇒ 该行悄悄摊平成直线、不报错、
+// 不被旧的 `radius < 1e-6` 守卫抓到（`NaN < 1e-6` 恒为 false）。本条直接构造一行 `P.y ≥ C.y + ay`
+// 的输入（`C.y=0.9, ay=1 ⇒ P.y=1.95`，恰好落在椭球顶点之上一点点），断言结果依然有限、非零。
+// **变异验证**：把 `panel-tip-strand.js` 里的 `THREE.MathUtils.clamp((P.y - C.y) / ay, -(1 - 1e-3), 1 - 1e-3)`
+// 手工改成不钳位的 `(P.y - C.y) / ay`（临时改，验证后已还原，见报告），复跑本条：
+// `k` 变成 `NaN`，位移退化为 `sample(1) = (2.5, 0, 0)`（被摊平成直线，长度仍是 2.5 但已不再弯曲，
+// 与钳位版本的真实弯曲结果 1.4958.. 不同）——`length()>0` 这一断言本身不会变红（摊平后长度非零），
+// 但配合下方的 `!== FLAT_LENGTH_AT_U1` 精确比较会变红，证明该断言确实咬住了"被摊平"这个失效模式。
+test("第五版新增：防 NaN——P.y ≥ C.y+ay 时 k 必须有限、位移非零（未被静默摊平）", () => {
+  const lock = panelLock({ width: 5, panelScalpConformAmount: 1, panelScalpConformGap: 0 });
+  const api = panelApi(lock); // 默认 fit 全 1 ⇒ ay=1，C.y=0.9（SPHERE_PROXY）⇒ 椭球顶点在 y=1.9
+  const params = api.panelScalpConformParams(lock);
+  const sample = (v) => ({ lateral: v * 2.5, normal: 0 });
+  // P.y = 1.95 > C.y(0.9) + ay(1) = 1.9：越过椭球顶点，h 若不钳位会 > 1。
+  const frame = {
+    point: new THREE.Vector3(0, 1.95, 1.5),
+    x: new THREE.Vector3(1, 0, 0),
+    y: new THREE.Vector3(0, -1, 0),
+    z: new THREE.Vector3(0, 0, 1)
+  };
+  const offsets = api.panelScalpConformOffsets(params, sample, 1, 0, null, null, frame);
+  assert.ok(offsets, "sanity：越过椭球顶点的行不得返回 null（钳位后 Reff 仍有限）");
+  assert.ok(Number.isFinite(offsets.length()), `位移必须有限，实测 ${offsets.length()}`);
+  // 摊平成直线时 sample(1)=(2.5,0,0) 的世界化结果长度恰为 2.5（frame.x 方向）；真实弯曲后的
+  // 位移长度必须与之不同（若相同，说明该行其实被摊平了，只是数值上凑巧非零）。
+  const FLAT_LENGTH_AT_U1 = 2.5;
+  assert.ok(
+    Math.abs(offsets.length() - FLAT_LENGTH_AT_U1) > 1e-6,
+    `该行必须仍在弯（不得被静默摊平成平板长度 ${FLAT_LENGTH_AT_U1}），实测 ${offsets.length()}`
+  );
+});
+
+// ── 第五版新增 4：弯曲轴恒竖直 + 边缘点相对 P 的 Δy 恒为 0 ───────────────────────
+// **变异验证**：若把 `axisHat`（= `lateralHat × normalHat`）算错成非竖直方向（例如漏乘某个
+// 分量），`offsets.y` 会随构型出现非零值，下面多高度探针中至少一档会变红。已用独立探针脚本
+// （现已删除）核对当前实现在多个高度下 `offsets.y` 恒为 0。
+test("第五版新增：弯曲轴恒竖直，边缘点相对 P 的 Δy 恒为 0（多高度，含 P.y>C.y 与 P.y<C.y）", () => {
+  const lock = panelLock({ width: 5, panelScalpConformAmount: 1 });
+  const api = panelApi(lock);
+  const params = api.panelScalpConformParams(lock);
+  const sample = (v) => ({ lateral: v * 2.5, normal: 0.3 * (1 - v * v) }); // camber ≠ 0：更严格的探针
+  for (const y of [0.5, 0.9, 1.4, 1.89]) { // 含 P.y < C.y(0.9) 与 P.y > C.y 两侧
+    const frame = {
+      point: new THREE.Vector3(0, y, 1.5),
+      x: new THREE.Vector3(1, 0, 0),
+      y: new THREE.Vector3(0, -1, 0),
+      z: new THREE.Vector3(0, 0, 1)
+    };
+    const offsets = api.panelScalpConformOffsets(params, sample, 1, 0, null, null, frame);
+    assert.ok(offsets, `sanity：y=${y} 必须给出非 null 位移`);
+    assert.equal(offsets.y, 0, `弯曲轴恒竖直 ⇒ 边缘点相对 P 的 Δy 必须精确为 0，y=${y} 实测 ${offsets.y}`);
+  }
+});
+
+// ── 第五版新增 5：默认值唯一定义点（PANEL_SCALP_CONFORM_DEFAULTS + index.html 滑杆同值） ──
+// 照本文件既有"源码文本断言"风格（参考「单一定义点」与「app.js 接线」两个用例）。
+// **变异验证**：把 index.html 里 `scalpConformFitScaleX` 的 `value="1"` 手工改成 `value="1.1"`
+// 复跑，本条会因 `htmlValueX !== PANEL_SCALP_CONFORM_DEFAULTS.fitScaleX` 变红（已手工验证后还原）。
+test("第五版新增：默认值唯一定义点——PANEL_SCALP_CONFORM_DEFAULTS 与 index.html 滑杆同值", async () => {
+  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  assert.equal(PANEL_SCALP_CONFORM_DEFAULTS.fitScaleX, 1, "sanity：fitScaleX 默认值必须是 1");
+  assert.equal(PANEL_SCALP_CONFORM_DEFAULTS.fitScaleZ, 1, "sanity：fitScaleZ 默认值必须是 1");
+  const matchX = html.match(/id="scalpConformFitScaleX"[^>]*value="([^"]+)"/);
+  const matchZ = html.match(/id="scalpConformFitScaleZ"[^>]*value="([^"]+)"/);
+  assert.ok(matchX, "index.html 必须有 #scalpConformFitScaleX 滑杆");
+  assert.ok(matchZ, "index.html 必须有 #scalpConformFitScaleZ 滑杆");
+  assert.equal(
+    Number(matchX[1]), PANEL_SCALP_CONFORM_DEFAULTS.fitScaleX,
+    `#scalpConformFitScaleX 的 value 必须与 PANEL_SCALP_CONFORM_DEFAULTS.fitScaleX 同值，实测 ${matchX[1]}`
+  );
+  assert.equal(
+    Number(matchZ[1]), PANEL_SCALP_CONFORM_DEFAULTS.fitScaleZ,
+    `#scalpConformFitScaleZ 的 value 必须与 PANEL_SCALP_CONFORM_DEFAULTS.fitScaleZ 同值，实测 ${matchZ[1]}`
+  );
+});
+
+// ── 第五版新增 6：app.js 接线——scalpConformFit 出现在定义/注入/存档快照三处，
+// scalp-builder.js 里有存档恢复 ───────────────────────────────────────────────
+// 照现有源码文本断言风格（参考「app.js 接线：两个字段覆盖全部 7 类路径」）。
+// **变异验证**：把下面任一正则的关键字改成不存在的字符串（如 `scalpConformFitXXX`）复跑，
+// 对应断言必然变红（已逐条手工核对，见报告逐条记录；核对后未修改文件本体，只在本地临时
+// 改字符串测试变红即还原，未落盘）。
+test("第五版新增：app.js/scalp-builder.js 接线——scalpConformFit 定义/注入/快照/恢复四处", async () => {
+  const [app, scalpBuilder] = await Promise.all([
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/scalp/scalp-builder.js", import.meta.url), "utf8")
+  ]);
+  // ① 定义：app.js 顶层声明 scalpConformFit 这个纯数据对象。
+  assert.match(app, /const scalpConformFit = \{/, "app.js 必须定义 scalpConformFit 对象");
+  // ② 注入：panelTipStrandDeps（Object.assign 批次）里必须包含 scalpConformFit。
+  assert.match(
+    app, /Object\.assign\(panelTipStrandDeps, \{[\s\S]*?\n  scalpConformFit,/,
+    "panelTipStrandDeps 的 Object.assign 批次必须注入 scalpConformFit"
+  );
+  // ③ 存档快照：snapshotState 里必须把 scalpConformFit 写进去。
+  assert.match(app, /scalpConformFit: \{ \.\.\.scalpConformFit \}/, "snapshotState 必须序列化 scalpConformFit");
+  // ④ 存档恢复：scalp-builder.js 里必须有 state.scalpConformFit 的恢复逻辑。
+  assert.match(
+    scalpBuilder, /if \(state\.scalpConformFit\) Object\.assign\(deps\.scalpConformFit, state\.scalpConformFit\);/,
+    "scalp-builder.js 必须从存档 state.scalpConformFit 恢复 deps.scalpConformFit"
+  );
+});
+
+// ── 第五版新增 7：三语覆盖——Fit Width / Fit Depth 在中文与日文本地化表里都有条目 ──
+test("第五版新增：Fit Width / Fit Depth 在 loc-zh.js 与 loc-ja.js 均有本地化条目", async () => {
+  const [locZh, locJa] = await Promise.all([
+    readFile(new URL("../modules/data/loc-zh.js", import.meta.url), "utf8"),
+    readFile(new URL("../modules/data/loc-ja.js", import.meta.url), "utf8")
+  ]);
+  for (const [label, source] of [["loc-zh.js", locZh], ["loc-ja.js", locJa]]) {
+    assert.match(source, /"Fit Width":\s*"[^"]+"/, `${label} 必须有 "Fit Width" 条目`);
+    assert.match(source, /"Fit Depth":\s*"[^"]+"/, `${label} 必须有 "Fit Depth" 条目`);
+  }
 });
