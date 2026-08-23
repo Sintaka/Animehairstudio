@@ -456,7 +456,16 @@ export function panelBendCrossSection(sample, u, curvature, steps = 8) {
       x += dx * cos - dz * sin;
       z += dx * sin + dz * cos;
       sigma += direction * length;
-      angle = Math.atan2(dz, dx) + rotation;
+      // **方向修正是本轮新修的真实缺陷**：`atan2(dz, dx)` 直接用**未定向**的段向量算切向角，
+      // 而 u<0 时整条折线是从 sample(0) **反向**走向 sample(target) 的（direction=-1），于是
+      // `atan2` 在 u 跨越 0 的瞬间把切向角反转 180°（同一条几何切线，参数化方向翻了）。
+      // `cos(angle)` 因此从 +1 摔到 −1 ⇒ 调用方拿它算的 `shellDirection` 整体反号 ⇒ 厚度沿
+      // **反的那侧**法向铺 ⇒ front/back 两壳在 u<0 一侧对调（front 跑到头皮一侧、back 跑到
+      // 外侧），选中高亮用的是原本 front 壳的位置却读了对调后的材质/法向，视觉上就是「高亮
+      // 盖住了头发材质」。**乘 `direction` 把切向角先转回参数递增的方向**，`rotation` 已经是
+      // 相对该方向定义的，两者统一后 `angle` 在 u=0 两侧连续（数值验证见 devlog/bug-fixes.md
+      // 「面板选中高亮覆盖材质」条目）。u>0 时 `direction=1`，本行对现有行为逐位无影响。
+      angle = Math.atan2(direction * dz, direction * dx) + rotation;
     }
     previous = current;
   }

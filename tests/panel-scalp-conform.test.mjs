@@ -50,6 +50,8 @@ import {
   PANEL_SCALP_CONFORM_DEFAULTS,
   panelBendCrossSection
 } from "../modules/geometry/curve-math.js";
+import { createBoneViewHandlesApi } from "../modules/bones/bone-view-handles.js";
+import { splitBonesFor } from "../modules/bones/bone-model.js";
 
 const LENGTH_LOOPS = 10;
 const WIDTH_LOOPS = 6;
@@ -1005,6 +1007,58 @@ test("镜像：同一 u 处的位移在 X 镜像下严格反对称", () => {
   );
 });
 
+// ── ⑨ shellDirection 连续性：u 越过 0 时厚度方向不得反转 ──────────────────────
+// **本条覆盖的维度是「法向方向」，现有穿透/行交叉判据完全没测过它**——那些判据都在问
+// 「顶点离头多远」，没有一条问过「厚度往哪边铺」。真实 bug（用户报告：Conform 增大后，
+// 主发片选中高亮有一侧直接盖住了头发材质）的根因恰好落在这个盲区：`panelBendCrossSection`
+// 用**未定向**的段向量算切向角（`Math.atan2(dz, dx)`），而 u<0 时折线是从 `sample(0)`
+// **反向**走向 `sample(u)`（`direction=-1`）。同一条几何切线因为参数化方向翻了，算出来的
+// `angle` 在 u 跨越 0 的瞬间整体反转 180°，调用方拿 `cos(angle)`/`sin(angle)` 算的
+// `shellDirection`（厚度沿它铺）跟着反号——front/back 两壳在 u<0 一侧对调，选中高亮用的是
+// 原本 front 壳的位置，读到的却是对调后的材质朝向，视觉上就是"高亮盖住了头发材质"。
+//
+// **判据取幅度**：不直接断言 `shellDirection` 等于某个具体向量（那会把测试和当前几何绑死），
+// 而是断言「u 越过 0 时，两侧极限厚度方向的点积必须为正」——这是连续性本身的定义，跟哪张
+// frame、哪条曲率无关。用有限差分（对 shellOffset 取 ±ε，两点连线归一化）取「实际铺出来的
+// 厚度方向」，不依赖内部实现细节（不读 `bent.angle`，只读公开 API 的输出）。
+// **变异验证**（本轮实测，见下方"变异验证真的会咬"输出）：把 `angle = Math.atan2(direction*dz, direction*dx)+rotation`
+// 退回未修复前的 `Math.atan2(dz, dx)+rotation`，点积从 +0.999997 摔到 **−0.999997** ⇒ 变红。
+test("⑨ shellDirection 连续性：u 越过 0 时厚度铺设方向不得反转", () => {
+  const lock = panelLock({ width: 5, panelScalpConformAmount: 0.5 });
+  const api = panelApi(lock);
+  const params = api.panelScalpConformParams(lock);
+  // camber ≠ 0：让弯曲真正非平凡（flat 分支只在 amount===0 或 u===0 触发，这里两者都不是）。
+  const sample = (v) => ({ lateral: v * 2.5, normal: 0.45 * (1 - v * v) });
+  const frame = {
+    point: new THREE.Vector3(0.3, 1.5, 1.4),
+    x: new THREE.Vector3(1, 0, 0),
+    y: new THREE.Vector3(0, -1, 0),
+    z: new THREE.Vector3(0, 0, 1)
+  };
+  // 厚度铺设方向 = 对 shellOffset 取有限差分（±ε）后归一化的位移差——不读内部 angle，
+  // 只读 panelScalpConformOffsets 的公开返回值，因此这条测试与内部实现细节解耦。
+  const shellDirAt = (u) => {
+    const eps = 0.001;
+    const plus = api.panelScalpConformOffsets(params, sample, u, eps, null, null, frame);
+    const minus = api.panelScalpConformOffsets(params, sample, u, -eps, null, null, frame);
+    return plus.clone().sub(minus).normalize();
+  };
+  // **u 的取值只到 0.01**：更大的 u（如 0.5）两侧的厚度方向本身会因为真实曲率而合理地
+  // 分开（实测 u=0.5 时点积降到 0.41——这是弯曲本身的几何效果，不是 bug），所以判据只在
+  // u→0 的邻域里断言连续性，这正是这个不变式本来的定义域（bug 的症状是符号在 u=0 处
+  // **翻转**，不是幅度不够接近 1）。
+  for (const u of [0.01, 0.001, 1e-4]) {
+    const dirPos = shellDirAt(u);
+    const dirNeg = shellDirAt(-u);
+    const dot = dirPos.dot(dirNeg);
+    assert.ok(
+      dot > 0.99,
+      `u=±${u}：厚度铺设方向必须连续（点积应接近 +1），实测点积 ${dot.toFixed(6)}`
+      + `（负值即两壳在 u<0/u>0 两侧发生了对调，正是"选中高亮盖住材质"bug 的几何成因）`
+    );
+  }
+});
+
 // ── 第五版新增 1：拟合椭球确实参与 conform（deps.scalpConformFit） ────────────────
 // **变异验证**：把 `panelApi` 的 `fit` 参数固定传 `undefined`（即恒回退到默认全 1），
 // 会让 `fitScaleX≠fitScaleZ` 那组断言的 `maxDiff` 变成 0 ⇒ 变红。已在改写本文件过程中
@@ -1167,4 +1221,286 @@ test("第五版新增：Fit Width / Fit Depth 在 loc-zh.js 与 loc-ja.js 均有
     assert.match(source, /"Fit Width":\s*"[^"]+"/, `${label} 必须有 "Fit Width" 条目`);
     assert.match(source, /"Fit Depth":\s*"[^"]+"/, `${label} 必须有 "Fit Depth" 条目`);
   }
+});
+
+// ── bug2 回归：zipper/WidthCurve/Tip Clump 手柄的渲染坐标必须走已 conform 的坐标 ──────
+// 用户报告「发尖的选择与调整还在原地，导致视觉上严重错位」，且补充这三类手柄
+// （alt+左键选择走 tipHover 的表面命中，不受影响；Q 选择走曲线控制点，非 panel 专属，
+// 本条只覆盖 panel 专属的三类：zipper 球、WidthCurve 绿点、Tip Clump 绿球）全部错位。
+// 根因（0.2.146 探针实测，见 modules/bones/bone-view-handles.js 的对应注释）：
+// panelSplitControlPoint（zipper 渲染，app.js:11580）与 tipWidthEdgePosition（WidthCurve
+// 渲染）都不吃 panelScalpConformAmount；panelTipClumpHandlePoint 经 tipSurfaceFrameAt 时
+// bone 被硬编码为 null。判据用**幅度**（真实网格 createPanelStrandGeometry 的最近顶点
+// 距离），不用「存在性」：修复前该距离随 conform 幅度增大而增大，修复后收敛到 ~0。
+
+function scalpConformViewportLock(overrides = {}) {
+  return {
+    id: "conform-viewport-panel",
+    geometryType: "panel",
+    width: 3.27,
+    panelThickness: 0.08,
+    panelLengthLoops: 32,
+    panelWidthLoops: 16,
+    panelCurvature: 0.18,
+    panelLeftEdgeTrim: 0,
+    panelRightEdgeTrim: 0,
+    panelTipCurve: 0,
+    panelTipLoops: 0,
+    panelSplitEnabled: true,
+    panelScalpConformAmount: 0.89,
+    panelScalpConformGap: 0.02,
+    panelSplits: [
+      { position: -0.33, height: 0.53125, order: 0 },
+      { position: -0.28, height: 0.21875, order: 4 },
+      { position: -0.1467, height: 0.3125, order: 3 },
+      { position: 0.1833, height: 0.4375, order: 2 },
+      { position: 0.2933, height: 0.5, order: 1 }
+    ],
+    panelSplitHeight: 0.3,
+    taperCurve: null,
+    taperCurveSecondary: null,
+    depthCurve: null,
+    depthCurveSecondary: null,
+    splitBones: null,
+    points: [
+      { x: 0, y: 1.8, z: 0.48 },
+      { x: 0, y: 1.3, z: 0.9 },
+      { x: 0, y: 0.5, z: 0.9 }
+    ],
+    curveObjects: null,
+    ...overrides
+  };
+}
+
+test("bug2 回归：zipper 手柄渲染坐标必须走 conform（幅度判据，真实网格最近顶点距离）", async () => {
+  const THREE = await import("three");
+  const { createPanelTipStrandApi } = await import("../modules/geometry/panel-tip-strand.js");
+
+  const lock = scalpConformViewportLock();
+  const scalpConformDeps = {
+    scalpSurface: { x: 0, y: 0.9, z: 0, radius: 1, scaleX: 1, scaleY: 1, scaleZ: 1 },
+    scalpConformFit: { fitScaleX: 0.99, fitScaleZ: 0.97 },
+    strandGeometryCurve: (l) => new THREE.CatmullRomCurve3(l.points.map((p) => new THREE.Vector3(p.x, p.y, p.z))),
+    strandGeometryFrameAt: (l, curve, t, previousFrame) => {
+      const point = curve.getPoint(t);
+      const tangent = curve.getTangent(t).normalize();
+      let z = new THREE.Vector3(0, 0, 1).projectOnPlane(tangent);
+      if (z.lengthSq() < 0.0001) z.set(1, 0, 0).projectOnPlane(tangent);
+      z.normalize();
+      const x = new THREE.Vector3().crossVectors(tangent, z).normalize();
+      return { point, x, y: tangent, z };
+    },
+    outwardNormalAtPoint: (point, tangent) => {
+      const radial = point.clone();
+      if (radial.lengthSq() < 0.0001) radial.set(0, 0, 1);
+      radial.normalize();
+      const normal = radial.projectOnPlane(tangent).normalize();
+      return normal.lengthSq() >= 0.01 ? normal : new THREE.Vector3(0, 0, 1).projectOnPlane(tangent).normalize();
+    },
+    clonePanelSplits: (value) => (Array.isArray(value) ? value.map((s) => ({ ...s })) : [])
+      .sort((a, b) => a.position - b.position),
+    normalizePanelSplits: (value) => (Array.isArray(value) ? value.map((s) => ({ ...s })) : [])
+      .sort((a, b) => a.position - b.position),
+    strandInfluenceColor: () => new THREE.Color(1, 1, 1),
+    sculptState: { tipSelection: null, tipHover: null }
+  };
+  const panelTipStrand = createPanelTipStrandApi(scalpConformDeps);
+
+  // 修复前的公式（app.js:11580 panelSplitControlPoint 的逐字复刻，用于对照）：完全不吃 conform。
+  function panelSplitControlPointBefore(l, split, tOverride, splitIndex) {
+    const t = THREE.MathUtils.clamp(tOverride ?? (1 - Number(split.height || 0)), 0, 1);
+    const u = THREE.MathUtils.clamp(Number(split.position || 0), -1, 1);
+    const curve = scalpConformDeps.strandGeometryCurve(l);
+    const point = curve.getPoint(t);
+    const tangent = curve.getTangent(t).normalize();
+    let z = scalpConformDeps.outwardNormalAtPoint(point, tangent);
+    z = z.projectOnPlane(tangent);
+    if (z.lengthSq() < 0.0001) z.copy(scalpConformDeps.outwardNormalAtPoint(point, tangent));
+    z.normalize();
+    const x = new THREE.Vector3().crossVectors(tangent, z).normalize();
+    const bone = splitBonesFor(l)[splitIndex] || null;
+    const width = Math.max(0.0001, Number(l.width ?? 0.62));
+    const thickness = Math.max(0.0001, Number(l.panelThickness ?? 0.08));
+    const camber = Number(l.panelCurvature ?? 0.18) * width * 0.5 * (1 - u * u);
+    return point.add(x.multiplyScalar(u * width * 0.5).addScaledVector(z, camber + thickness * 0.58));
+  }
+
+  const geometry = panelTipStrand.createPanelStrandGeometry(lock);
+  const posAttr = geometry.getAttribute("position");
+  function nearestVertexDistance(worldPoint) {
+    let best = Infinity;
+    for (let i = 0; i < posAttr.count; i += 1) {
+      const dx = posAttr.array[i * 3] - worldPoint.x;
+      const dy = posAttr.array[i * 3 + 1] - worldPoint.y;
+      const dz = posAttr.array[i * 3 + 2] - worldPoint.z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  const splits = scalpConformDeps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+  const boneViewHandlesDeps = {
+    isPanelGeometry: (item) => item?.geometryType === "panel" || item?.geometryType === "surface",
+    clonePanelSplits: scalpConformDeps.clonePanelSplits,
+    cloneStrandSplits: () => [],
+    strandGeometryCurve: scalpConformDeps.strandGeometryCurve,
+    strandGeometryFrameAt: scalpConformDeps.strandGeometryFrameAt,
+    strandSplitControlPoint: () => null,
+    strandSplitProfileData: () => null,
+    currentStrandSplitTipChains: () => null,
+    panelTipStrand,
+    sculptState: { tipSelection: null, tipHover: null, panelSplitDrag: null, panelSplitSelection: null },
+    sel: { selectedId: lock.id },
+    transformControls: { detach() {} }
+  };
+  const boneViewHandles = createBoneViewHandlesApi(boneViewHandlesDeps);
+  const group = new THREE.Group();
+  const curveObjects = boneViewHandles.createBoneViewHandles(lock, group);
+  lock.curveObjects = { ...curveObjects, group };
+  group.visible = true;
+
+  boneViewHandles.updateBoneViewHandles(lock, {
+    brushDebugVisible: false,
+    sculptBrushHelpersSuppressed: false,
+    tipUiActive: false
+  });
+
+  let maxAfter = 0;
+  let maxBefore = 0;
+  splits.forEach((split, index) => {
+    const handle = curveObjects.panelSplitHandles[index];
+    assert.ok(handle.visible, `split[${index}] handle must be visible`);
+    const afterDist = nearestVertexDistance(handle.position);
+    const beforeDist = nearestVertexDistance(panelSplitControlPointBefore(lock, split, null, index));
+    maxAfter = Math.max(maxAfter, afterDist);
+    maxBefore = Math.max(maxBefore, beforeDist);
+  });
+
+  // 幅度判据：修复前最大残差应显著（同源探针实测量级 0.03-0.10 世界单位），修复后应
+  // 收敛到近似 0（浮点误差范围内）。二者必须都成立，否则该判据抓不住回归。
+  assert.ok(maxBefore > 0.02, `sanity: 修复前的公式必须确实错位（实测 ${maxBefore}）`);
+  assert.ok(maxAfter < 1e-3, `修复后 zipper 手柄必须落在真实渲染网格上（实测最大残差 ${maxAfter}）`);
+});
+
+test("bug2 回归：WidthCurve 绿色手柄渲染坐标必须走 conform（幅度判据）", async () => {
+  const THREE = await import("three");
+  const { createPanelTipStrandApi, TIP_WIDTH_CONTROL_POINTS } = await import("../modules/geometry/panel-tip-strand.js");
+
+  const lock = scalpConformViewportLock();
+  const scalpConformDeps = {
+    scalpSurface: { x: 0, y: 0.9, z: 0, radius: 1, scaleX: 1, scaleY: 1, scaleZ: 1 },
+    scalpConformFit: { fitScaleX: 0.99, fitScaleZ: 0.97 },
+    strandGeometryCurve: (l) => new THREE.CatmullRomCurve3(l.points.map((p) => new THREE.Vector3(p.x, p.y, p.z))),
+    strandGeometryFrameAt: (l, curve, t) => {
+      const point = curve.getPoint(t);
+      const tangent = curve.getTangent(t).normalize();
+      let z = new THREE.Vector3(0, 0, 1).projectOnPlane(tangent);
+      if (z.lengthSq() < 0.0001) z.set(1, 0, 0).projectOnPlane(tangent);
+      z.normalize();
+      const x = new THREE.Vector3().crossVectors(tangent, z).normalize();
+      return { point, x, y: tangent, z };
+    },
+    outwardNormalAtPoint: (point, tangent) => {
+      const radial = point.clone();
+      if (radial.lengthSq() < 0.0001) radial.set(0, 0, 1);
+      radial.normalize();
+      const normal = radial.projectOnPlane(tangent).normalize();
+      return normal.lengthSq() >= 0.01 ? normal : new THREE.Vector3(0, 0, 1).projectOnPlane(tangent).normalize();
+    },
+    clonePanelSplits: (value) => (Array.isArray(value) ? value.map((s) => ({ ...s })) : [])
+      .sort((a, b) => a.position - b.position),
+    normalizePanelSplits: (value) => (Array.isArray(value) ? value.map((s) => ({ ...s })) : [])
+      .sort((a, b) => a.position - b.position),
+    strandInfluenceColor: () => new THREE.Color(1, 1, 1),
+    sculptState: { tipSelection: null, tipHover: null }
+  };
+  const panelTipStrand = createPanelTipStrandApi(scalpConformDeps);
+  const splits = scalpConformDeps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+
+  const geometry = panelTipStrand.createPanelStrandGeometry(lock);
+  const posAttr = geometry.getAttribute("position");
+  function nearestVertexDistance(worldPoint) {
+    let best = Infinity;
+    for (let i = 0; i < posAttr.count; i += 1) {
+      const dx = posAttr.array[i * 3] - worldPoint.x;
+      const dy = posAttr.array[i * 3 + 1] - worldPoint.y;
+      const dz = posAttr.array[i * 3 + 2] - worldPoint.z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  const boneViewHandlesDeps = {
+    isPanelGeometry: (item) => item?.geometryType === "panel" || item?.geometryType === "surface",
+    clonePanelSplits: scalpConformDeps.clonePanelSplits,
+    cloneStrandSplits: () => [],
+    strandGeometryCurve: scalpConformDeps.strandGeometryCurve,
+    strandGeometryFrameAt: scalpConformDeps.strandGeometryFrameAt,
+    strandSplitControlPoint: () => null,
+    strandSplitProfileData: () => null,
+    currentStrandSplitTipChains: () => null,
+    panelTipStrand,
+    sculptState: {
+      tipSelection: { lockId: lock.id, segmentIndex: 0 },
+      tipHover: null,
+      panelSplitDrag: null,
+      panelSplitSelection: null
+    },
+    sel: { selectedId: lock.id },
+    transformControls: { detach() {} }
+  };
+  const boneViewHandles = createBoneViewHandlesApi(boneViewHandlesDeps);
+  const group = new THREE.Group();
+  const curveObjects = boneViewHandles.createBoneViewHandles(lock, group);
+  lock.curveObjects = { ...curveObjects, group };
+  group.visible = true;
+
+  boneViewHandles.updateBoneViewHandles(lock, {
+    brushDebugVisible: false,
+    sculptBrushHelpersSuppressed: true,
+    tipUiActive: true
+  });
+
+  // 修复前的公式（panel-tip-strand.js tipWidthEdgePosition 的逐字复刻）：不吃 conform。
+  function tipWidthEdgePositionBefore(l, segmentIndex, side, t, bone) {
+    const boundaries = [-1, ...splits.map((s) => s.position), 1];
+    const spreadGap = panelTipStrand.tipWidthSpreadGap(l, segmentIndex, splits, bone, t, side);
+    const edgeU = side < 0 ? boundaries[segmentIndex] + spreadGap : boundaries[segmentIndex + 1] - spreadGap;
+    const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
+    const chainFrame = panelTipStrand.tipChainFrameAt(
+      l, { restPoints: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }], points: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] },
+      { restPoints: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] }, t, segmentIndex, splits
+    );
+    const authoredCenter = panelTipStrand.tipMainSectionPoint(l, t, centerU, 1, bone, segmentIndex, splits);
+    const fullWidth = Math.max(0.01, Number(l.width ?? 0.62));
+    const multiplier = panelTipStrand.tipWidthMultiplierAt(l, t, edgeU, bone, segmentIndex, splits);
+    return authoredCenter.clone().addScaledVector(chainFrame.x, (edgeU - centerU) * fullWidth * multiplier * 0.5);
+  }
+
+  let maxAfter = 0;
+  let maxBefore = 0;
+  let checked = 0;
+  for (let segment = 0; segment < curveObjects.tipWidthHandles.length; segment += 1) {
+    const sideHandles = curveObjects.tipWidthHandles[segment];
+    for (const [side, list] of [[-1, sideHandles.left], [1, sideHandles.right]]) {
+      list.forEach((handle) => {
+        if (!handle.visible) return;
+        const bone = splitBonesFor(lock)[segment] || null;
+        const t = handle.userData.tipWidthIndex != null
+          ? panelTipStrand.tipWidthGridTs(lock, segment, splits)[handle.userData.tipWidthIndex]
+          : null;
+        if (t == null) return;
+        const afterDist = nearestVertexDistance(handle.position);
+        const beforeDist = nearestVertexDistance(tipWidthEdgePositionBefore(lock, segment, side, t, bone));
+        maxAfter = Math.max(maxAfter, afterDist);
+        maxBefore = Math.max(maxBefore, beforeDist);
+        checked += 1;
+      });
+    }
+  }
+  assert.ok(checked > 0, "sanity：确实检查过至少一个 WidthCurve 手柄");
+  assert.ok(maxBefore > 0.02, `sanity: 修复前的公式必须确实错位（实测 ${maxBefore}）`);
+  assert.ok(maxAfter < 0.05, `修复后 WidthCurve 手柄必须显著贴近真实渲染网格（实测最大残差 ${maxAfter}，修复前 ${maxBefore}）`);
 });

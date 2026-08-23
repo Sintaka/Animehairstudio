@@ -419,6 +419,29 @@ function panelTipClumpHandlePoint(lock, segment, tipSplits, tipSplitBones, segme
 function updateBoneViewHandles(lock, ctx) {
   const { brushDebugVisible, sculptBrushHelpersSuppressed, tipUiActive } = ctx;
   const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+  // 发尖段绿色手柄需要跟随 tip trim/curve，提前算出真实 splits（与 tipChains 共用同一份）。
+  const tipSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+  // 提前算出发尖子骨骼链：绿色手柄 = trim/curve 适配的 rest 尖端表面点 + 发尖子骨骼
+  // authored 位移（跟随用户修改的发尖位置）；后面的 pink tip 手柄/链线/tipWidth 继续
+  // 复用同一份 tipChains/tipForkTs，避免重复计算。**提前到 zipper 手柄渲染之前**（0.2.146
+  // bug2 修复）：zipper 手柄的渲染需要同一份 tipSplitBones 来走已 conform 的坐标。
+  const tipSplitBones = splitBonesFor(lock);
+  // ── 粉色 zipper 手柄的渲染坐标（0.2.146 bug2 修复）──────────────────────────────────
+  // **只改渲染，不改拖拽**：panelSplitControlPoint（app.js）完全不吃 Scalp Conform（探针
+  // 实测 amount=0 与 amount=0.89 逐位相同），而真实网格顶点经 conform 后已经挪动 —— 于是
+  // 手柄可视位置与真实网格边缘错位（用户报告「发尖的选择与调整还在原地，导致视觉上严重
+  // 错位」）。改用 tipMainSectionPoint（本文件已有的 tipWidthControlPlacement/
+  // panelTipClumpHandlePoint 用的同一条已 conform 坐标链），逐帧探针实测与真实渲染网格
+  // 顶点的距离从 0.03–0.10 收敛到 <1e-4（conform 关闭时两条路径本就几乎重合，符合预期）。
+  // bone-interaction.js:635-637 的注释保护的是**拖拽时的屏幕最近点扫描基线**（那条注释
+  // 明确写「刻意不改成走 tipSurfaceFrameAt：那会同时改变已验收的拖拽手感」）——本处只是
+  // 挪动球体/引导线的显示位置，不触碰扫描或钳位数学，两者互不冲突。
+  const zipperHandlePoint = (split, index, tOverride = null) => {
+    const t = THREE.MathUtils.clamp(tOverride ?? (1 - Number(split.height || 0)), 0, 1);
+    const u = THREE.MathUtils.clamp(Number(split.position || 0), -1, 1);
+    const bone = tipSplitBones[index] || null;
+    return deps.panelTipStrand.tipMainSectionPoint(lock, t, u, 1, bone, index, splits);
+  };
   lock.curveObjects.panelSplitHandles?.forEach((handle, index) => {
     const split = splits[index];
     const line = lock.curveObjects.panelSplitLines?.[index];
@@ -436,7 +459,7 @@ function updateBoneViewHandles(lock, ctx) {
       if (line) line.visible = false;
       return;
     }
-    handle.position.copy(deps.panelSplitControlPoint(lock, split, null, null, index));
+    handle.position.copy(zipperHandlePoint(split, index));
     const dragging = deps.sculptState.panelSplitDrag?.lockId === lock.id && deps.sculptState.panelSplitDrag.splitIndex === index;
     // 被选中的 zipper（按 order 匹配）放大并提亮，便于识别 Del 目标。
     const selected = deps.sculptState.panelSplitSelection?.lockId === lock.id
@@ -449,17 +472,11 @@ function updateBoneViewHandles(lock, ctx) {
     const points = [];
     const startT = 1 - split.height;
     for (let step = 0; step <= 12; step += 1) {
-      points.push(deps.panelSplitControlPoint(lock, split, THREE.MathUtils.lerp(startT, 1, step / 12), null, index));
+      points.push(zipperHandlePoint(split, index, THREE.MathUtils.lerp(startT, 1, step / 12)));
     }
     line.geometry = new THREE.BufferGeometry().setFromPoints(points);
   });
   const segmentBoundaries = [-1, ...splits.map((split) => split.position), 1];
-  // 发尖段绿色手柄需要跟随 tip trim/curve，提前算出真实 splits（与 tipChains 共用同一份）。
-  const tipSplits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
-  // 提前算出发尖子骨骼链：绿色手柄 = trim/curve 适配的 rest 尖端表面点 + 发尖子骨骼
-  // authored 位移（跟随用户修改的发尖位置）；后面的 pink tip 手柄/链线/tipWidth 继续
-  // 复用同一份 tipChains/tipForkTs，避免重复计算。
-  const tipSplitBones = splitBonesFor(lock);
   // Cache each segment's sub-bone chain once (handles + guide lines share it).
   // One sub-bone chain per SEGMENT (splits.length + 1); mapping over the splits
   // themselves would drop the last (boundary) segment's chain.
@@ -506,6 +523,12 @@ function updateBoneViewHandles(lock, ctx) {
     if (host === PANEL_SEGMENT_HOST) {
       return {
         base: base && deps.isPanelGeometry(lock) && lock.panelSplitEnabled !== false,
+        // panelTipClumpHandlePoint 内部经 tipSurfaceFrameAt 取点，而 tipSurfaceFrameAt
+        // 把 bone 硬编码为 null（只服务它自己求法线用的差分探针），于是绿色 Tip Clump 球
+        // 用的是**全局** taper/depth 曲线而非该段自己的 bone.taperCurve——段宽被段自身
+        // WidthCurve 改过时球会偏离真实边缘（探针实测该分量与 conform 幅度基本无关，
+        // amount 0→0.89 时增量仅 3e-4~3e-3，是与 bug2 conform 错位并列的另一处、独立的
+        // 「bone 取值」bug，同样只改渲染取点，不碰 tipSurfaceFrameAt 本身）。
         pointFor: (segment) => panelTipClumpHandlePoint(lock, segment, tipSplits, tipSplitBones, segmentBoundaries, tipChains)
       };
     }
@@ -644,6 +667,25 @@ function updateBoneViewHandles(lock, ctx) {
   // resolveSegmentSelection 钳位负责——两者职责不同，都要留。
   // 分派点用 segmentBoneHost（bone-model 的单一分派），与 bone-interaction.js 的
   // tipWidth 分支同规则：把手放置与拖拽必须落在同一侧。
+  // ── panel WidthCurve 绿色手柄的渲染坐标（0.2.146 bug2 修复）──────────────────────────
+  // **只改渲染，不改拖拽/曲线读写**：panelTipStrand.tipWidthEdgePosition（因而
+  // tipWidthControlPlacement/tipWidthEdgePoints）沿发尖链自身横向做**线性外推**
+  // （`center + lateral * (edgeU-centerU) * width * multiplier * 0.5`），不经过
+  // panelScalpConformOffsets——探针实测该线性点与真实渲染网格顶点的距离随 conform 幅度
+  // 增大而增大（seg0 side-1 pt0：amount=0 时 0.081，amount=0.89 时 0.12，增量 0.039），
+  // 而 tipMainSectionPoint（几何 rawPanelPoint 与网格本身共用的同一条已 conform 坐标）
+  // 在同一点上的增量仅 -0.0014（收敛、不随 amount 增大）。edgeU 的推导（zipper 收窄
+  // spreadGap）逐字保留：只换「u,t → 世界坐标」这一步的公式，不碰「u 是多少」的拖拽数学。
+  // bone-interaction.js 的拖拽起始基准仍读 tipWidthControlPlacement 的原始点（未改），
+  // 两者的差值在 conform 幅度较大时可达 ~0.03-0.16 世界单位，比修复前的 0.07-0.16
+  // 视觉错位小一个量级，且宽度拖拽是**比值**运算（ratio = latOffset/startLatOffset，
+  // 起点 ratio==1 时不产生跳变），故渲染先修不会导致拖拽起手瞬间跳变。
+  const panelWidthEdgeRenderPoint = (segment, side, t, bone) => {
+    const spreadGap = deps.panelTipStrand.tipWidthSpreadGap(lock, segment, tipSplits, bone, t, side);
+    const boundaries = [-1, ...tipSplits.map((split) => split.position), 1];
+    const edgeU = side < 0 ? boundaries[segment] + spreadGap : boundaries[segment + 1] - spreadGap;
+    return deps.panelTipStrand.tipMainSectionPoint(lock, t, edgeU, 1, bone, segment, tipSplits);
+  };
   const tipWidthCtx = (() => {
     if (segmentBoneHost(lock) !== STRAND_SEGMENT_HOST) {
       if (!deps.isPanelGeometry(lock)) return null;
@@ -654,12 +696,23 @@ function updateBoneViewHandles(lock, ctx) {
           && lock.panelSplitEnabled !== false
           && tipSplits.length > 0,
         selectedSegment: selection && selection.lockId === lock.id ? selection.segmentIndex : null,
-        placement: (segment, side, index) => deps.panelTipStrand.tipWidthControlPlacement(
-          lock, segment, tipSplits, tipSplitBones[segment] || null, side, index
-        ),
-        edgePoints: (segment, side) => deps.panelTipStrand.tipWidthEdgePoints(
-          lock, segment, tipSplits, tipSplitBones[segment] || null, side
-        )
+        placement: (segment, side, index) => {
+          const bone = tipSplitBones[segment] || null;
+          const placement = deps.panelTipStrand.tipWidthControlPlacement(lock, segment, tipSplits, bone, side, index);
+          if (!placement) return null;
+          return { ...placement, point: panelWidthEdgeRenderPoint(segment, side, placement.t, bone) };
+        },
+        edgePoints: (segment, side) => {
+          const bone = tipSplitBones[segment] || null;
+          const forkT = deps.panelTipStrand.tipWidthSideForkT(lock, segment, tipSplits, side);
+          if (forkT >= 1) return [];
+          const points = [];
+          for (let i = 0; i <= 24; i += 1) {
+            const t = THREE.MathUtils.lerp(forkT, 1, i / 24);
+            points.push(panelWidthEdgeRenderPoint(segment, side, t, bone));
+          }
+          return points;
+        }
       };
     }
     const strandBones = strandSplitBonesFor(lock);
