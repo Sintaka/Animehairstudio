@@ -22,6 +22,71 @@
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
 
+## 最近更新（0.2.148：Conform 回归修复 + Tip Clump 全局曲线回退 + zipper 加号联动 + Width Brush 调研）
+
+> 三个 bug 修复 + 一处未实施的调研，详见 `devlog/bug-fixes.md` #27–#29。本条目只记录改了哪些文件、
+> 怎么改，决策理由与实测数字见 bug-fixes.md。
+
+- **`modules/geometry/panel-tip-strand.js`**（bug①②，130 行新增）：
+  - `tipSurfaceFrameAt` 签名增加**可选**形参 `bone = null`（原签名 `(lock, t, centerU, segmentIndex, splits)`），
+    内部三处 `tipMainSectionPoint(...)` 调用把硬编码的 `null` 换成 `bone`（bug②）。上方补 12 行契约注释，
+    说明另两个调用点（`tipChainFrameAt`、`splitTipForSegment` 的 `restPointAt`）为什么**绝不能**传 bone。
+  - 新增 `tipChainReanchorAt(lock, segmentIndex, splits, bone, t)`：取 `bone.tip` 的 rest→authored 变换
+    （四元数 + twist 滚转 + 两个中心点），无 authored 链或 `active:false` 返回 null。与
+    `strand-tip-width.js` 的 `strandTipChainTransformAt`（0.2.127）成对同构。
+  - 新增 `applyTipChainReanchor(transform, reference, worldPoint, blend)`：按上面的变换把一个已 conform
+    的世界点搬到 authored 空间，`blend<=0` 或 `transform` 为 null 时原样返回。
+  - 新增 `panelRowParameters(lock)` / `panelLengthLoopCount(lock)`：把 `createPanelStrandGeometry` 里内联
+    的行参数表推导（`panelTipLoopParameters(baseLengthLoops, tipLoops)`，钳位 `[3,32]`/`[0,16]`）收成唯一
+    定义点，`createPanelStrandGeometry` 改为调用它（原三行内联删除）。
+  - 新增 `tipWidthEdgeRenderPoint(lock, segmentIndex, splits, bone, side, t)`：绿色 WidthCurve 手柄渲染坐标
+    的唯一定义点——先 `tipMainSectionPoint`（conform）再 `tipChainReanchorAt`/`applyTipChainReanchor`
+    （链再锚定，bug①）。`blend` 与 `reference` 都与网格同源（`panelLengthLoopCount` + 段中心点）。
+  - deps 导出新增 4 个：`tipWidthEdgeRenderPoint`、`tipChainReanchorAt`、`applyTipChainReanchor`、
+    `panelLengthLoopCount`。
+- **`modules/bones/bone-view-handles.js`**（11 行改 / 7 行删）：
+  - `panelTipClumpHandlePoint` 调 `tipSurfaceFrameAt` 时补上第 6 个参数 `bone`（bug②）。
+  - `updateBoneViewHandles` 内联的 `panelWidthEdgeRenderPoint`（原 6d4e9b0 引入的公式，只做 conform 不做
+    链再锚定）改为直接调用 `deps.panelTipStrand.tipWidthEdgeRenderPoint(...)`（bug①），公式本体从此文件
+    移进 `panel-tip-strand.js`，此处只调用不复制。
+- **`modules/bones/segment-control.js`**（23 行新增 / 1 行改，bug③）：`changePanelSplitCount` 的 `+`
+  分支在既有 `selectionUsable ? selectedIndex : largestGapIndex` 之前插入一级：读
+  `deps.sculptState.panelSplitSelection`，`lockId` 匹配时按 `order` 反查 splits 下标 `j`，可用则
+  `insertIndex = j + 1`；不可用（lockId 不符 / order 查不到 / 该段放不下）静默回落到原有两级链。
+- **版本号三件套**：`APP_VERSION` → `0.1.5-Sintaka.0.2.148`；`index.html` 两处入口缓存号
+  `20260910-11` → `20260910-12`；`tests/dom-contract.test.mjs` 5 处冻结断言同步（4 处缓存号 + 1 处
+  APP_VERSION 字面量）。
+- **测试**：`tests/panel-scalp-conform.test.mjs` +397 行 / 6 条（bug①×3 含惰性、bug②×3 含源码契约）；
+  `tests/strand-segment-ui.test.mjs` +158 行 / 3 条（bug③正向 / 回落逐位相同 / `panelSegmentIndex` 不变量）。
+- 回归：全量 **410/410**。实测数字、判据踩坑（两次误报分母、容差 2e-3 的成因、契约断言大小写漏网）
+  见 `devlog/bug-fixes.md` #27–#29。
+
+### 调研（未实施，供下一轮）：Width Brush 的「紫色 WidthCurve」是哪套数据
+
+> 用户想要一个沿链扫过的 Width 笔刷，效果类似发尖绿色 WidthCurve 控制点，但作用于普通发丝/panel 的
+> 整体宽度曲线（非发尖）。本轮只调研数据结构与可行性，**未写任何代码**。
+
+用户原话逐字：「我本意是像刷 WidthCurve 而不涉及那个整体的宽度调节，对应发尖的是绿色的 WidthCurve
+控制点和线，对应普通发丝和 panel 就是紫色的 WidthCurve 和控制点而不是控制整体的 Width 属性」
+
+- 绿 `0x5df0a8` = 发尖 WidthCurve 控制点/线，写 `bone.taperCurve`/`taperCurveSecondary`（段骨骼）。
+  **用户的绿色对应关系成立。**
+- 「紫色」实为两种易混的品红，按证据判断用户指的是后者：
+  - `0xff42cf` = **zipper 分裂点手柄**，写 `lock.panelSplits`/`strandSplits`，**不是曲线**。
+  - `0xe62bea` = **taperMeshPoints**，即 `lock.taperCurve`/`taperCurveSecondary` 在 3D 视口的可拖拽
+    叠加，**默认隐藏**，需勾 `#moveWidthCurveControls` 或打开曲线编辑器才出现。
+- panel 与发丝的整体 taperCurve 是**两套独立实现**，只共享最底层纯函数 `sampleAsymmetricTaperCurve`
+  （`curve-math.js`）；这与绿色发尖曲线**相反**（那套刻意抽了共享中间层）。
+- 点数规则也相反：紫色是**自由格式关键点数组**（最少 2 点，可任意增删，两侧独立、点数可不同）；
+  绿色是固定网格、共享索引、按侧暴露子集。
+- **可行性困难（下一轮必须先解决）**：笔刷是沿链稠密扫过，紫色曲线是稀疏自由关键点且一点移动会经
+  插值影响相邻大段，需要「曲线 → 稠密采样 → 笔刷编辑 → 重新拟合关键点」的转换层，这是当前完全没有
+  的能力。且紫色 taperCurve 同时存在于 lock 全局 / strand group 默认 / segment 骨骼**三个层级**，笔刷
+  该写哪层有歧义（绿色不存在此歧义）。
+- 用户已拍板的其它决策点（供下一轮实施时直接采用，不必重新确认）：反向增大宽度用 **Ctrl**（沿用既有
+  `reverse = Boolean(event.ctrlKey)`）；W/E/R 的 Shift 平滑**本轮不做**，原话「Smooth 默认行为保持
+  不变在兼容的情况下直接加入几个笔刷的特殊支持即可」。
+
 ## 最近更新（File > New，0.2.134）
 
 > **左上角 File 菜单新增 New**（main 无此项）。做法是**复用 `restoreState`**，不另写清空路径。

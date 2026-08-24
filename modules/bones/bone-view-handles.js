@@ -405,7 +405,9 @@ function panelTipClumpHandlePoint(lock, segment, tipSplits, tipSplitBones, segme
   const span = Math.max(0.0001, segmentBoundaries[segment + 1] - segmentBoundaries[segment]);
   const tipClump = bone?.tipClump ?? 0;
   const handleU = segmentBoundaries[segment] + (tipClump / SPREAD_MAX) * span;
-  const surfaceFrame = deps.panelTipStrand.tipSurfaceFrameAt(lock, 1, handleU, segment, tipSplits);
+  // bone 必须传下去（0.2.146 bug②）：绿球取的是该段真实边缘，须与网格同吃该段自己的
+  // Width/DepthCurve。不传则 tipMainSectionPoint 回退全局曲线 ⇒ 拖过该段曲线后绿球偏移。
+  const surfaceFrame = deps.panelTipStrand.tipSurfaceFrameAt(lock, 1, handleU, segment, tipSplits, bone);
   const point = surfaceFrame.point.clone().addScaledVector(surfaceFrame.y, TIP_CLUMP_HANDLE_TANGENT_OFFSET);
   const chain = tipChains[segment];
   if (chain && Array.isArray(chain.points) && Array.isArray(chain.restPoints)
@@ -688,12 +690,14 @@ function updateBoneViewHandles(lock, ctx) {
   // 两者的差值在 conform 幅度较大时可达 ~0.03-0.16 世界单位，比修复前的 0.07-0.16
   // 视觉错位小一个量级，且宽度拖拽是**比值**运算（ratio = latOffset/startLatOffset，
   // 起点 ratio==1 时不产生跳变），故渲染先修不会导致拖拽起手瞬间跳变。
-  const panelWidthEdgeRenderPoint = (segment, side, t, bone) => {
-    const spreadGap = deps.panelTipStrand.tipWidthSpreadGap(lock, segment, tipSplits, bone, t, side);
-    const boundaries = [-1, ...tipSplits.map((split) => split.position), 1];
-    const edgeU = side < 0 ? boundaries[segment] + spreadGap : boundaries[segment + 1] - spreadGap;
-    return deps.panelTipStrand.tipMainSectionPoint(lock, t, edgeU, 1, bone, segment, tipSplits);
-  };
+  // ── 发尖链再锚定（0.2.146 bug①）───────────────────────────────────────────────────
+  // 上面那版（6d4e9b0）只做了 conform、**没做** rest→authored 再锚定：tipMainSectionPoint
+  // 只读 bone 的曲线类参数（taperCurve/depthCurve/tipClump），从不读 bone.tip（发尖子骨骼的
+  // authored 链）。而网格走 addPatch 会 splitTipForSegment 取物化链、算四元数再锚定 ⇒ 用户
+  // 拖发尖骨骼时网格动、绿点不动（用户报告的 bug）。公式已收拢进 panel-tip-strand.js 的
+  // tipWidthEdgeRenderPoint（唯一定义点，与 addPatch 同步），此处只调用、不复制。
+  const panelWidthEdgeRenderPoint = (segment, side, t, bone) => deps.panelTipStrand
+    .tipWidthEdgeRenderPoint(lock, segment, tipSplits, bone, side, t);
   const tipWidthCtx = (() => {
     if (segmentBoneHost(lock) !== STRAND_SEGMENT_HOST) {
       if (!deps.isPanelGeometry(lock)) return null;

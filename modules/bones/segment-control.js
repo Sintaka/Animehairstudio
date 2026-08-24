@@ -390,7 +390,29 @@ function changePanelSplitCount(delta) {
       && selectedIndex >= 0
       && selectedIndex < spans.length
       && spans[selectedIndex] >= MINIMUM_PANEL_SEGMENT_SPAN;
-    insertIndex = selectionUsable ? selectedIndex : largestGapIndex;
+    // 方案 B（0.2.148，用户拍板）：+ 也认「当前选中的 zipper」（panelSplitSelection），优先级
+    // 高于上面的 panelSegmentIndex 段选中——拖 zipper 手柄（bone-interaction.js
+    // beginPanelSplitHandleDrag）只写 panelSplitSelection，从不写 panelSegmentIndex，两套选中
+    // 状态本是独立的（0.2.117/0.2.126 设计，sculpt-edit-store.js 注释），点了 zipper 就按 +
+    // 却要求「先选中前一个段」才生效，正是这条同步缺口。刻意不去同步 panelSegmentIndex（方案
+    // A）：那会带动右侧面板段标签/Prev-Next 可用性/Tip Clump 值/Width-Depth 曲线预览随手一拖
+    // 就变，浮动曲线编辑器开着还会热切换到另一段（retargetOpenSegmentTaperEditor）、预设下拉框
+    // 写入目标也被带走（segmentCurveTargetForWrite）——用户只是想拖 zipper，不该有这些连带跳变。
+    const zipperSelection = deps.sculptState.panelSplitSelection;
+    let zipperIndex = -1;
+    if (zipperSelection && zipperSelection.lockId === target?.id) {
+      // 按 order 反查下标（62fbd31 的写法，跟 dropDanglingPanelSplitSelection 同源）：splits
+      // 已按 position 升序，选中的 zipper j 落在 boundaries[j+1]，其右侧是段 j+1。插在右侧
+      // （k+1 而非 k）：与「点了这个 zipper 再按 + 期望紧接着多一条」的直觉一致——新拉链出现在
+      // 其后，重复点同一颗 zipper 连按 + 会朝同一方向连续细分。若选 k（插左侧）则新拉链会出现
+      // 在被点 zipper 之前，效果是对称但方向相反，同样合法，只是与「往后加」的手感不一致。
+      const zipperOrderIndex = splits.findIndex((split) => Number(split.order) === Number(zipperSelection.order));
+      if (zipperOrderIndex >= 0) zipperIndex = zipperOrderIndex + 1;
+    }
+    const zipperUsable = zipperIndex >= 0 && zipperIndex < spans.length && spans[zipperIndex] >= MINIMUM_PANEL_SEGMENT_SPAN;
+    // 陈旧/不匹配的 panelSplitSelection（lockId 不符、order 查不到、段放不下）静默回落到原有
+    // 「选中段 → 最大间隙段」两级链，不抛错、不改变原有回落路径的逐位行为。
+    insertIndex = zipperUsable ? zipperIndex : (selectionUsable ? selectedIndex : largestGapIndex);
     // 选中段与回退段都放不下最小跨度时放弃（与既有守卫同义：不产生退化段）。
     if (!(spans[insertIndex] >= MINIMUM_PANEL_SEGMENT_SPAN)) return;
   } else {

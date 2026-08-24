@@ -1535,3 +1535,400 @@ test("bug #26 回归：scalp-builder 不得再出现裸 deps.editedScalp* / deps
       `deps.${field} 是裸引用（app.js 顶层无同名变量可批填，恒为 undefined），应写 deps.scalpState.${field}`);
   }
 });
+
+// ── 0.2.146 bug① / bug② 回归 ────────────────────────────────────────────────────────
+// 两条都放在本文件（而不是 split-tip-geometry.test.mjs），理由是**约束的张力在这里**：
+// bug① 的病根正是 6d4e9b0 为了让手柄吃 conform 而换公式时丢掉了发尖链再锚定 —— 两个约束
+// 互相拉扯过一次，所以「吃 conform」（上方两条 bug2 回归）与「跟随 bone.tip」（下方）必须
+// 相邻可见，否则下一个改这段代码的人只会看到其中一半。bug② 同理：它改的 tipSurfaceFrameAt
+// 就在同一条渲染坐标链上，且本文件已有 nearestVertexDistance 这套幅度判据工具。
+
+// 双拉链 panel（3 段），conform 可开可关。刻意与 scalpConformViewportLock 分开：本批需要
+// 一个**窄**面板 + 少量 loop 以便逐顶点比对，且需要能注入 splitBones。
+function tipFollowLock(overrides = {}) {
+  return {
+    id: "tip-follow-panel",
+    geometryType: "panel",
+    width: 1.4,
+    panelThickness: 0.08,
+    panelLengthLoops: 12,
+    panelWidthLoops: 8,
+    panelCurvature: 0.18,
+    panelLeftEdgeTrim: 0,
+    panelRightEdgeTrim: 0,
+    panelTipCurve: 0,
+    panelTipLoops: 0,
+    panelSplitEnabled: true,
+    panelScalpConformAmount: 0,
+    panelScalpConformGap: 0.02,
+    panelSplits: [
+      { position: -0.2, height: 0.4, order: 0 },
+      { position: 0.3, height: 0.3, order: 1 }
+    ],
+    panelSplitHeight: 0.3,
+    taperCurve: null,
+    taperCurveSecondary: null,
+    depthCurve: null,
+    depthCurveSecondary: null,
+    splitBones: null,
+    points: [
+      { x: 0, y: 1.8, z: 0.48 },
+      { x: 0, y: 1.3, z: 0.9 },
+      { x: 0, y: 0.5, z: 0.9 }
+    ],
+    curveObjects: null,
+    ...overrides
+  };
+}
+
+// 被测段：**刻意选中间段 1**（不是 0 或 2）。它左右各有一条拉链（高度 0.4 / 0.3 不等），
+// 所以两侧 fork 不同、spreadGap 不对称；边缘段只有单侧拉链，会让「两侧同源」类错误漏网。
+const TIP_FOLLOW_SEGMENT = 1;
+// 拖动量：整链沿 +x 平移一个已知量。选 1.0（远大于面板半宽 0.7）使跟随/不跟随的差别
+// 无法被浮点噪声或 camber 量级淹没。
+const TIP_FOLLOW_DRAG = 1;
+
+function tipFollowApi() {
+  const d = {
+    scalpSurface: { x: 0, y: 0.9, z: 0, radius: 1, scaleX: 1, scaleY: 1, scaleZ: 1 },
+    scalpConformFit: { fitScaleX: 0.99, fitScaleZ: 0.97 },
+    strandGeometryCurve: (l) => new THREE.CatmullRomCurve3(
+      l.points.map((p) => new THREE.Vector3(p.x, p.y, p.z))
+    ),
+    strandGeometryFrameAt: (l, curve, t) => {
+      const point = curve.getPoint(t);
+      const tangent = curve.getTangent(t).normalize();
+      let z = new THREE.Vector3(0, 0, 1).projectOnPlane(tangent);
+      if (z.lengthSq() < 0.0001) z.set(1, 0, 0).projectOnPlane(tangent);
+      z.normalize();
+      const x = new THREE.Vector3().crossVectors(tangent, z).normalize();
+      return { point, x, y: tangent, z };
+    },
+    outwardNormalAtPoint: (point, tangent) => {
+      const radial = point.clone();
+      if (radial.lengthSq() < 0.0001) radial.set(0, 0, 1);
+      radial.normalize();
+      const n = radial.projectOnPlane(tangent).normalize();
+      return n.lengthSq() >= 0.01 ? n : new THREE.Vector3(0, 0, 1).projectOnPlane(tangent).normalize();
+    },
+    clonePanelSplits: (v) => (Array.isArray(v) ? v.map((s) => ({ ...s })) : [])
+      .sort((a, b) => a.position - b.position),
+    normalizePanelSplits: (v) => (Array.isArray(v) ? v.map((s) => ({ ...s })) : [])
+      .sort((a, b) => a.position - b.position),
+    strandInfluenceColor: () => new THREE.Color(1, 1, 1),
+    sculptState: { tipSelection: null, tipHover: null }
+  };
+  return { deps: d, api: createPanelTipStrandApi(d) };
+}
+
+// 最近顶点距离（幅度判据工具，与上方 bug2 回归同款）。
+function nearestVertexDistanceOf(posAttr, worldPoint) {
+  let best = Infinity;
+  for (let i = 0; i < posAttr.count; i += 1) {
+    const dx = posAttr.array[i * 3] - worldPoint.x;
+    const dy = posAttr.array[i * 3 + 1] - worldPoint.y;
+    const dz = posAttr.array[i * 3 + 2] - worldPoint.z;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+// 网格两版之间的最大顶点位移（顶点数必须相同，否则判据无意义 —— 由调用方断言）。
+function maxVertexDelta(a, b) {
+  let worst = 0;
+  for (let i = 0; i < Math.min(a.count, b.count); i += 1) {
+    const dx = b.array[i * 3] - a.array[i * 3];
+    const dy = b.array[i * 3 + 1] - a.array[i * 3 + 1];
+    const dz = b.array[i * 3 + 2] - a.array[i * 3 + 2];
+    worst = Math.max(worst, Math.sqrt(dx * dx + dy * dy + dz * dz));
+  }
+  return worst;
+}
+
+// authored 发尖链 = rest 链整体沿 +x 平移 shift。用 splitTipForSegment 取 rest 基准，
+// 保证 restPoints 与几何用的是**同一条** rest（否则 delta 的基准就错了，见 0.2.120）。
+function draggedTipBone(api, lock, splits, shift) {
+  const rest = api.splitTipForSegment(lock, TIP_FOLLOW_SEGMENT, splits, null);
+  assert.ok(rest && rest.restPoints.length >= 2, "sanity：rest 链必须可物化");
+  return {
+    tip: {
+      active: true,
+      points: rest.restPoints.map((p) => ({ x: p.x + shift, y: p.y, z: p.z })),
+      restPoints: rest.restPoints.map((p) => ({ ...p })),
+      twists: null
+    }
+  };
+}
+
+// bug① 回归：绿色 WidthCurve 手柄必须跟随被拖动的发尖子骨骼（bone.tip）。
+// 镜像 split-tip-geometry.test.mjs 里 0.2.127 那批发丝侧的 "WidthCurve handle FOLLOWS the
+// dragged tip sub-bone"，这里换成 panel 侧的 tipWidthControlPlacement + 渲染覆写路径。
+// 判据是**幅度**（手柄位移 / 网格位移的比值落在 [0.7, 1.3]），不是「非零」：只断言非零会
+// 让「只跟了一点点」的半修状态照样绿。conform 关/开各跑一遍 —— 关的那遍证明修复本身，
+// 开的那遍证明它没把 6d4e9b0 的 conform 贴合顶掉。
+for (const amount of [0, 0.89]) {
+  test(`bug① 回归：panel WidthCurve 绿点必须跟随 bone.tip（conform amount=${amount}，幅度判据）`, () => {
+    const { deps, api } = tipFollowApi();
+    const lock = tipFollowLock({ panelScalpConformAmount: amount });
+    const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const grid = api.tipWidthGridTs(lock, TIP_FOLLOW_SEGMENT, splits);
+    assert.ok(grid.length >= 2, `sanity：共享网格必须非空（实测 ${grid.length}）`);
+
+    const boneRest = { tip: null };
+    const boneMoved = draggedTipBone(api, lock, splits, TIP_FOLLOW_DRAG);
+
+    // 网格侧的真实位移：同一次拖动下 createPanelStrandGeometry 的最大顶点位移。
+    const meshRest = api.createPanelStrandGeometry(tipFollowLock({ panelScalpConformAmount: amount }));
+    const movedLock = tipFollowLock({ panelScalpConformAmount: amount });
+    movedLock.splitBones = [null, draggedTipBone(api, lock, splits, TIP_FOLLOW_DRAG), null];
+    const meshMoved = api.createPanelStrandGeometry(movedLock);
+    const restPos = meshRest.getAttribute("position");
+    const movedPos = meshMoved.getAttribute("position");
+    assert.equal(restPos.count, movedPos.count,
+      "sanity：拖发尖不改变拓扑，顶点数必须相同（否则逐顶点位移判据无意义）");
+    const meshDelta = maxVertexDelta(restPos, movedPos);
+    assert.ok(meshDelta > TIP_FOLLOW_DRAG * 0.7,
+      `sanity：网格自己必须跟随 bone.tip（实测最大顶点位移 ${meshDelta}）`);
+
+    // 判据必须用**该手柄所在位置的局部**网格位移，不能用整网格最大位移：网格的跟随权重
+    // （tipSegmentBlendAt）在 fork 上方有一条渐变带，带内顶点只跟随一部分、fork 处完全不跟。
+    // 拿全局最大值当分母会把「fork 附近本该不动」误判成回归（初版实测在 t=0.64 side−1 报
+    // 比值 0 —— 那里网格自己的 blend 就是 0，手柄不动才是对的）。
+    // 做法：取 rest 手柄的最近顶点**下标**，在移动后的网格里查**同一下标**（拓扑相同、
+    // 顶点数已断言相等 ⇒ 下标同源），得到那一点的真实位移。
+    const nearestIndex = (worldPoint) => {
+      let best = Infinity;
+      let bestIndex = -1;
+      for (let i = 0; i < restPos.count; i += 1) {
+        const dx = restPos.array[i * 3] - worldPoint.x;
+        const dy = restPos.array[i * 3 + 1] - worldPoint.y;
+        const dz = restPos.array[i * 3 + 2] - worldPoint.z;
+        const d = dx * dx + dy * dy + dz * dz;
+        if (d < best) { best = d; bestIndex = i; }
+      }
+      return bestIndex;
+    };
+    const vertexMotion = (i) => Math.sqrt(
+      (movedPos.array[i * 3] - restPos.array[i * 3]) ** 2
+      + (movedPos.array[i * 3 + 1] - restPos.array[i * 3 + 1]) ** 2
+      + (movedPos.array[i * 3 + 2] - restPos.array[i * 3 + 2]) ** 2
+    );
+
+    // 期望值按**被测代码自己的规则**推导，不写死现场数字（development-standards「验收脚本
+    // 与真实存档解耦」）：拖动是纯平移 ⇒ 再锚定的四元数是恒等 ⇒ 手柄位移恰等于
+    //   blend(t, edgeU) × 拖动量
+    // 其中 blend 取导出的 tipSegmentBlendAt、行细分数取导出的 panelLengthLoopCount。
+    // **为什么不与最近网格顶点逐点比**：网格行是离散的（1/lengthLoops 一档），手柄的 t 取自
+    // 共享控制网格、落在两行之间；渐变带内 blend 随 t 陡变，于是「手柄在 t=0.96 的 blend
+    // =0.874」与「最近顶点在 t=1.0 的 blend=1.0」本就不同 —— 那是采样位置差异，不是回归
+    // （初版据此误报过两次，比值 0.57 与 0.87）。网格交叉校验放在下面的 t=1 端点上，那里
+    // 两边的 blend 都精确为 1、无歧义。
+    const loops = api.panelLengthLoopCount(lock);
+    const boundariesForBlend = [-1, ...splits.map((s) => s.position), 1];
+    let checked = 0;
+    const motionByT = { "-1": [], 1: [] };
+    for (const side of [-1, 1]) {
+      grid.forEach((t, index) => {
+        const rest = api.tipWidthControlPlacement(lock, TIP_FOLLOW_SEGMENT, splits, boneRest, side, index);
+        if (!rest) return;
+        const pRest = api.tipWidthEdgeRenderPoint(lock, TIP_FOLLOW_SEGMENT, splits, boneRest, side, t);
+        const pMoved = api.tipWidthEdgeRenderPoint(lock, TIP_FOLLOW_SEGMENT, splits, boneMoved, side, t);
+        const handleMotion = pMoved.distanceTo(pRest);
+        const gap = api.tipWidthSpreadGap(lock, TIP_FOLLOW_SEGMENT, splits, boneRest, t, side);
+        const edgeU = side < 0
+          ? boundariesForBlend[TIP_FOLLOW_SEGMENT] + gap
+          : boundariesForBlend[TIP_FOLLOW_SEGMENT + 1] - gap;
+        const blend = api.tipSegmentBlendAt(lock, TIP_FOLLOW_SEGMENT, splits, t, edgeU, loops);
+        const expected = blend * TIP_FOLLOW_DRAG;
+        motionByT[side].push({ t, handleMotion, blend });
+        checked += 1;
+        // 容差 2e-3（不是 1e-6）：再锚定的参考点是**截面中心点** tipMainSectionPoint，而
+        // authoredCenter 取自 3 点 rest 链的 CatmullRom 采样 —— 两者在非节点 t 上差一个插值
+        // 残差（本 fixture 实测约 8.5e-4）。addPatch 用的是同一对量、带同一个残差，所以这
+        // 不是偏差而是**与网格一致**的表现；把容差收到 1e-6 会误报（初版实测报过 9.8e-5）。
+        // 逐位强断言放在下面「与模块自己的再锚定原语逐位一致」那条上。
+        assert.ok(Math.abs(handleMotion - expected) < 2e-3,
+          `side ${side} index ${index} (t=${t})：手柄位移必须≈blend×拖动量（实测 ${handleMotion}，期望 ${expected}，blend ${blend}）`);
+      });
+    }
+    assert.ok(checked >= 2, `sanity：至少检查过两个手柄（实测 ${checked}）`);
+    // 非平凡性：必须真的有 blend 饱和的采样点，否则上面那条断言可能全落在 blend==0 上、
+    // 变成「0 == 0」恒真（0.2.134「DOM 计数类断言先确认它非平凡」同类）。
+    const saturated = [...motionByT[-1], ...motionByT[1]].filter((s) => s.blend > 0.99);
+    assert.ok(saturated.length >= 2,
+      `sanity：至少两个采样点的 blend 饱和（实测 ${saturated.length}）—— 否则判据在 0==0 上通过`);
+    // 逐位强断言：渲染点必须**恰好**是「conform 截面点 → 再锚定原语」的复合，且这两个原语
+    // 就是网格 addPatch 用的那一对（tipChainReanchorAt / applyTipChainReanchor 同为导出的
+    // 唯一定义点）。这条把「blend 从哪来、reference 取哪个点」一起钉住 —— 删掉再锚定后
+    // pMoved 会退回纯截面点，与右侧复合值相差 blend×拖动量、立刻变红。
+    for (const side of [-1, 1]) {
+      grid.forEach((t) => {
+        const gap = api.tipWidthSpreadGap(lock, TIP_FOLLOW_SEGMENT, splits, boneMoved, t, side);
+        const edgeU = side < 0
+          ? boundariesForBlend[TIP_FOLLOW_SEGMENT] + gap
+          : boundariesForBlend[TIP_FOLLOW_SEGMENT + 1] - gap;
+        const centerU = (boundariesForBlend[TIP_FOLLOW_SEGMENT]
+          + boundariesForBlend[TIP_FOLLOW_SEGMENT + 1]) * 0.5;
+        const plain = api.tipMainSectionPoint(lock, t, edgeU, 1, boneMoved, TIP_FOLLOW_SEGMENT, splits);
+        const reference = api.tipMainSectionPoint(lock, t, centerU, 1, boneMoved, TIP_FOLLOW_SEGMENT, splits);
+        const transform = api.tipChainReanchorAt(lock, TIP_FOLLOW_SEGMENT, splits, boneMoved, t);
+        assert.ok(transform, `sanity side ${side} t=${t}：authored 链存在时必须拿到变换`);
+        const blend = api.tipSegmentBlendAt(lock, TIP_FOLLOW_SEGMENT, splits, t, edgeU, loops);
+        const expected = api.applyTipChainReanchor(transform, reference, plain, blend);
+        const got = api.tipWidthEdgeRenderPoint(lock, TIP_FOLLOW_SEGMENT, splits, boneMoved, side, t);
+        assert.ok(got.distanceTo(expected) < 1e-12,
+          `side ${side} t=${t}：渲染点必须逐位等于 conform 截面点经再锚定原语的结果（偏差 ${got.distanceTo(expected)}）`);
+      });
+    }
+    // 网格交叉校验：t=1 处 blend 精确为 1，手柄与网格必须都按满量跟随。
+    for (const side of [-1, 1]) {
+      const pRest = api.tipWidthEdgeRenderPoint(lock, TIP_FOLLOW_SEGMENT, splits, boneRest, side, 1);
+      const localMotion = vertexMotion(nearestIndex(pRest));
+      assert.ok(Math.abs(localMotion - TIP_FOLLOW_DRAG) < 1e-3,
+        `sanity side ${side}：t=1 处网格必须满量跟随（实测 ${localMotion}）`);
+    }
+    // 渐变带 + 饱和区合起来必须单调不减：跟随量沿 t 只能越来越大。若把再锚定删掉，全部
+    // 归零 ⇒ 下面的「末点必须接近满量」立刻变红。
+    for (const side of [-1, 1]) {
+      const series = motionByT[side];
+      for (let i = 1; i < series.length; i += 1) {
+        assert.ok(series[i].handleMotion >= series[i - 1].handleMotion - 1e-9,
+          `side ${side}：跟随量必须沿 t 单调不减（t=${series[i - 1].t}→${series[i].t}：${series[i - 1].handleMotion}→${series[i].handleMotion}）`);
+      }
+      if (series.length) {
+        const last = series[series.length - 1];
+        assert.ok(last.handleMotion > TIP_FOLLOW_DRAG * 0.9,
+          `side ${side}：发尖端（t=${last.t}）必须接近满量跟随（实测 ${last.handleMotion} / ${TIP_FOLLOW_DRAG}）`);
+      }
+    }
+
+    // 手柄落在**移动后**的真实网格上（不只是"动了"，还得动到对的地方）。
+    const tipT = grid[grid.length - 1];
+    const onMesh = nearestVertexDistanceOf(
+      movedPos,
+      api.tipWidthEdgeRenderPoint(lock, TIP_FOLLOW_SEGMENT, splits, boneMoved, 1, tipT)
+    );
+    assert.ok(onMesh < 0.06,
+      `修复后手柄必须贴在移动后的网格上（实测最近顶点距离 ${onMesh}）`);
+  });
+}
+
+// bug① 惰性对照：**保护 6d4e9b0 的 conform 成果**。bone.tip 为空 / 未激活时（今天真实工程
+// 的常见状态），渲染坐标必须与「只做 conform、不做再锚定」的那一版**逐位相同**。
+// 这条是与上面那批配对的负向断言：若把再锚定写成无条件生效（忘了门控），它会变红。
+test("bug① 惰性：bone.tip 为空/未激活 ⇒ 渲染坐标与 6d4e9b0 的公式逐位不变", () => {
+  const { deps, api } = tipFollowApi();
+  for (const amount of [0, 0.89]) {
+    const lock = tipFollowLock({ panelScalpConformAmount: amount });
+    const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const boundaries = [-1, ...splits.map((s) => s.position), 1];
+    const grid = api.tipWidthGridTs(lock, TIP_FOLLOW_SEGMENT, splits);
+    const cases = [
+      ["tip == null", { tip: null }],
+      ["tip.active === false", { tip: { active: false, points: [], restPoints: [], twists: null } }]
+    ];
+    for (const [label, bone] of cases) {
+      for (const side of [-1, 1]) {
+        for (const t of grid) {
+          const got = api.tipWidthEdgeRenderPoint(lock, TIP_FOLLOW_SEGMENT, splits, bone, side, t);
+          // 6d4e9b0 的公式逐字复刻：spreadGap → edgeU → tipMainSectionPoint，无再锚定。
+          const gap = api.tipWidthSpreadGap(lock, TIP_FOLLOW_SEGMENT, splits, bone, t, side);
+          const edgeU = side < 0
+            ? boundaries[TIP_FOLLOW_SEGMENT] + gap
+            : boundaries[TIP_FOLLOW_SEGMENT + 1] - gap;
+          const want = api.tipMainSectionPoint(lock, t, edgeU, 1, bone, TIP_FOLLOW_SEGMENT, splits);
+          // 同一条代码路径产出同一个值 ⇒ 逐位断言成立（见 development-standards「探针容差」条）。
+          assert.deepEqual(got.toArray(), want.toArray(),
+            `amount=${amount} ${label} side ${side} t=${t}：必须与改动前逐位相同`);
+        }
+      }
+    }
+  }
+});
+
+// bug② 回归：Tip Clump 绿球取点必须吃**该段自己的** Width/DepthCurve。
+// 根因：tipSurfaceFrameAt 的签名里原先没有 bone 形参，内部三处 tipMainSectionPoint 调用把
+// 第 5 参（bone）硬编码为 null ⇒ tipMainSectionPoint 里的 `bone?.taperCurve || lock.taperCurve`
+// 永远回退**全局**曲线。真实网格走 panelPoint→rawPanelPoint 是正确传了 bone 的，于是用户拖过
+// 该段自己的 WidthCurve 后，绿球与网格出现残余偏差（与 conform amount 无关，两个 amount 都测）。
+// 判据用**幅度**（frame 位移 / 网格位移的比值），并配一条 byte-identical 负向断言。
+const SEGMENT_OWN_WIDTH_CURVE = [
+  { position: 0, value: 1 },
+  { position: 0.5, value: 0.7 },
+  { position: 1, value: 0.35 }
+];
+
+for (const amount of [0, 0.89]) {
+  test(`bug② 回归：Tip Clump 绿球必须吃该段自己的 taperCurve（conform amount=${amount}，幅度判据）`, () => {
+    const { deps, api } = tipFollowApi();
+    const lock = tipFollowLock({ panelScalpConformAmount: amount });
+    const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+    const boundaries = [-1, ...splits.map((s) => s.position), 1];
+    // panelTipClumpHandlePoint 的 handleU：tipClump == 0 ⇒ 就是段左边界（逐字同源）。
+    const handleU = boundaries[TIP_FOLLOW_SEGMENT];
+
+    const boneOwn = { taperCurve: SEGMENT_OWN_WIDTH_CURVE, depthCurve: null };
+    const boneGlobal = { taperCurve: null, depthCurve: null };
+
+    // 修复后：传 bone ⇒ 段曲线生效。修复前的行为等价于传 null。
+    const withOwn = api.tipSurfaceFrameAt(lock, 1, handleU, TIP_FOLLOW_SEGMENT, splits, boneOwn);
+    const asNull = api.tipSurfaceFrameAt(lock, 1, handleU, TIP_FOLLOW_SEGMENT, splits, null);
+    const frameDelta = withOwn.point.distanceTo(asNull.point);
+
+    // 网格侧的真实位移：同一条段曲线改动下 createPanelStrandGeometry 的最大顶点位移。
+    const meshBase = api.createPanelStrandGeometry(tipFollowLock({ panelScalpConformAmount: amount }));
+    const curvedLock = tipFollowLock({ panelScalpConformAmount: amount });
+    curvedLock.splitBones = [null, { taperCurve: SEGMENT_OWN_WIDTH_CURVE }, null];
+    const meshCurved = api.createPanelStrandGeometry(curvedLock);
+    const basePos = meshBase.getAttribute("position");
+    const curvedPos = meshCurved.getAttribute("position");
+    assert.equal(basePos.count, curvedPos.count,
+      "sanity：改段曲线不改变拓扑，顶点数必须相同");
+    const meshDelta = maxVertexDelta(basePos, curvedPos);
+    assert.ok(meshDelta > 0.05,
+      `sanity：网格自己必须吃该段曲线（实测最大顶点位移 ${meshDelta}）—— 否则本判据在空集上通过`);
+
+    // 幅度判据：段曲线末点 0.35 vs 全局 1.0（差 65% 宽度）⇒ frame 位移必须与网格同量级。
+    const ratio = frameDelta / meshDelta;
+    assert.ok(ratio > 0.3 && ratio < 3,
+      `Tip Clump 取点必须与网格同量级地吃该段曲线（实测 frame 位移 ${frameDelta}，网格 ${meshDelta}，比值 ${ratio}）`);
+
+    // 负向断言：bone 存在但曲线字段为 null ⇒ 与 bone=null **逐位相同**。
+    // 保护「未创作段曲线」的存量档：本轮加的可选形参不得改变它们的坐标。
+    const withGlobal = api.tipSurfaceFrameAt(lock, 1, handleU, TIP_FOLLOW_SEGMENT, splits, boneGlobal);
+    assert.deepEqual(withGlobal.point.toArray(), asNull.point.toArray(),
+      "bone 的曲线字段为 null 时必须与 bone=null 逐位相同");
+  });
+}
+
+// bug② 的两个**刻意不传 bone** 的调用点：契约断言。tipChainFrameAt 与 splitTipForSegment 的
+// restPointAt 都只传 5 个实参（bone 取默认 null）。让 rest 链依赖 authored 曲线会形成循环
+// 依赖（rest 随用户拖曲线漂移 ⇒ materializeTipChain 的 delta 基准跟着动），症状是「拖完曲线
+// 发尖自己跑掉」。用源码契约钉住，因为行为测试无法区分「传了但恰好无差别」。
+test("bug② 契约：tipSurfaceFrameAt 的 rest 定义调用点必须不传 bone", async () => {
+  const raw = await readFile(new URL("../modules/geometry/panel-tip-strand.js", import.meta.url), "utf8");
+  const code = raw
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\/\/.*$/, ""))
+    .join("\n");
+  assert.ok(code.length > 5000, `sanity：剥注释后仍应是完整源码（实测 ${code.length} 字符）`);
+
+  // 形参必须是可选的（默认 null），这正是让下面两处保持现状的机制。
+  assert.match(code, /function tipSurfaceFrameAt\(lock, t, centerU = null, segmentIndex = -1, splits = null, bone = null\)/,
+    "签名必须带可选 bone = null（默认值保证 rest 定义路径行为不变）");
+
+  const calls = code.match(/tipSurfaceFrameAt\([^)]*\)/g) || [];
+  const internal = calls.filter((c) => !c.startsWith("tipSurfaceFrameAt(lock, t, centerU = null"));
+  assert.equal(internal.length, 2,
+    `本文件内应恰有 2 处内部调用（tipChainFrameAt 的参考法线 + restPointAt），实测 ${internal.length}：${internal.join(" | ")}`);
+  // 判据是**实参个数恰为 5**，不是「文本里没有 bone 字样」：后者按变量名匹配，
+  // `splitBone`（restPointAt 现场就有这个名字）大小写不同即漏网 —— 初版实测放过了一次
+  // 人为注入的 `..., splits, splitBone)`。个数判据与变量叫什么无关。
+  for (const call of internal) {
+    const args = call.slice(call.indexOf("(") + 1, -1).split(",");
+    assert.equal(args.length, 5,
+      `rest 定义路径必须只传 5 个实参、让 bone 取默认 null（否则 rest 依赖 authored、形成循环依赖）：${call}`);
+  }
+});

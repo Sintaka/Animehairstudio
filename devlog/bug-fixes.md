@@ -248,3 +248,28 @@
    - **真实症状比"取到 undefined"更重**：`targetMesh` 拿到 `undefined` 后，紧接的 `targetMesh.geometry.getAttribute("position")` **直接 TypeError** ⇒ 给**内置**头皮刷区域从来就是崩的，不是"行为不对"。另一处 L310 的 `content === null` 分支本意是"保留既有 guide 资产"，实际把 store 里的值**清成 undefined**；补 `.scalpState` 后成为自赋值 = 真正的 no-op，符合原意。
    - **为什么躲过了所有测试**：`createScalpBuilderApi` 要约 157 个注入依赖 + renderer/DOM/THREE 场景图，纯 node 驱动不了 `paintScalpAt`。回归改用**源码契约断言**（`panel-scalp-conform.test.mjs`，本仓库 dom-contract / split-tip-geometry 已有同手法）：剥掉注释后断言三个裸 `deps.X` 出现 0 次。**必须先剥注释** —— 修复处的解释性注释逐字引用了这三个错误写法，不剥则断言被自己的注释满足、永远绿。已变异验证：改回任一处即 `not ok`。
    - **教训**：`Object.assign(deps, {...})` 批填式依赖注入，漏填一个 key 不会有任何静态或运行时提示，直到那条分支被走到。这类 bug 的可检出面在**源码层**（`deps.X` 是否在批填清单里），不在行为层。
+
+27. **panel 侧发尖 WidthCurve 绿色控制点不跟随发尖骨骼（0.2.148 修复，0.2.146 的 `6d4e9b0` 引入的回归）**
+   - 问题：用户拖动 `bone.tip`（发尖子骨骼的 authored 链）后，网格随之形变，但绿色 WidthCurve 手柄停在原地不动。
+   - 根因：`6d4e9b0`（0.2.146）为让手柄渲染吃 scalp conform，新增 `modules/bones/bone-view-handles.js` 的 `panelWidthEdgeRenderPoint` 覆写 `placement.point`，但它只调 `tipMainSectionPoint`，而后者**只读 `bone` 的曲线类参数**（taperCurve/depthCurve/tipClump）**、从不读 `bone.tip`**。真正让网格跟随 `bone.tip` 的是 `createPanelStrandGeometry` → `addPatch` 的 rest→authored 四元数再锚定这一步；旧公式 `tipWidthEdgePosition` 走 `splitTipForSegment` 所以本来是跟随的，`6d4e9b0` 换公式时把这一步丢了。
+   - **为什么此前的验收探针没抓到**：panel 侧「把手跟随发尖骨骼」这条不变式此前只在**发丝侧**被显式钉住（`tests/split-tip-geometry.test.mjs` 约 L2719-2969，0.2.127 同一类 bug 的回归，走 `strandTipWidthControlPlacement`），panel 侧从未有等价测试。`6d4e9b0` 自己的验收探针只测了 amount=0 vs amount=0.89 的静态残差，两条回归用例传的 `bone` 全是 `{tipClump:0, taperCurve:null, ...}`，从没设过 `.tip`，因此从未测过「`bone.tip` 被拖动」这个场景。
+   - 修复：`modules/geometry/panel-tip-strand.js` 新增三个函数——`tipChainReanchorAt`（取 rest→authored 变换：四元数 + twist 滚转 + 两个中心点，无 authored 链返回 null）、`applyTipChainReanchor`（按变换搬点）、`tipWidthEdgeRenderPoint`（渲染坐标的唯一定义点：先 conform 再链再锚定）。同时把 `panelRowParameters`/`panelLengthLoopCount` 收成唯一定义点——把手侧的 blend 分母必须与网格同源，否则渐变带内会与网格错位。`bone-view-handles.js` L691-696 原内联公式改为调用 `tipWidthEdgeRenderPoint`。**拖拽路径（bone-interaction.js）未动**——宽度拖拽是比值运算（`ratio = latOffset/startLatOffset`，起点 `ratio==1` 不产生跳变），渲染先修不会造成拖拽起手瞬间跳变。
+   - 做法参照发丝侧 `strand-tip-width.js` 的 `strandTipChainTransformAt`/`applyStrandTipChainTransform`（0.2.127 同一 bug 在发丝侧的修法）：选「新增对称导出函数」而非内联进调用处，便于测试断言复合关系。
+   - **实测数字**（双拉链 panel，segment=1，`bone.tip` 整链沿 +x 平移 1.0）：amount=0 时手柄位移 1.000000、网格最大顶点位移 1.000000、比值 1.0000；amount=0.89 时同为 1.000000 / 1.000000 / 1.0000。`bone.tip` 为 null 或 `active:false` 时，修复后与 `6d4e9b0` 公式**逐位相同**（在两个 amount × 两侧 × 全部网格点上 worst delta = 0）。
+   - **判据踩过两个坑**：① 拿网格**全局**最大位移当分母——fork 处 blend=0，手柄本不该动，用全局最大值会稀释掉这个 0；② 拿**最近离散顶点**当分母——手柄 t=0.96 的 blend=0.874 vs 顶点 t=1.0 的 blend=1.0，比值 0.87 纯属采样位置差异，不是 bug。最终容差取 **2e-3 而非 1e-6**：reference 是截面中心点的解析值，`authoredCenter` 是 3 点链的 CatmullRom 采样，两者天然差一个插值残差（实测约 8.5e-4），`addPatch` 带着同一个残差，所以那正是「与网格一致」的表现，不该被精确断言拒绝。
+   - 验证：`tests/panel-scalp-conform.test.mjs` 新增 3 条（含惰性 —— `bone.tip` 为 null/inactive 时逐位不变）。变异验证：注释掉再锚定步骤 ⇒ 比值变 0.0000，2 处断言变红。
+
+28. **panel 侧 Tip Clump 绿球回退到全局曲线（0.2.148 修复，随 0.2.146 引入、与 conform 幅度无关）**
+   - 问题：用户拖过某一段自己的 WidthCurve/DepthCurve 后，该段的 Tip Clump 绿球位置与网格产生残余偏差；与 Scalp Conform 的幅度无关，这是它与上一条 bug 的区别特征。
+   - 根因：`modules/geometry/panel-tip-strand.js` 的 `tipSurfaceFrameAt` **签名里没有 `bone` 形参**，内部三处调用 `tipMainSectionPoint` 时第 5 个参数（bone）被硬编码传 `null`，导致 `bone?.taperCurve || lock.taperCurve` 永远回退到**全局**曲线；而真实网格走 `panelPoint`→`rawPanelPoint` 是正确传 bone 的，两条路径就此分叉。
+   - 修复：签名末尾加**可选**形参 `bone = null`（默认 null，保证现有调用逐位不变），函数体内三处 `null` 换成 `bone`；`bone-view-handles.js` L408 把该函数本来就已经算出的 `tipSplitBones[segment] || null` 传下去。
+   - **两个调用点刻意不传 bone**（已在函数上方补 12 行契约注释，防止后人顺手传进去）：`tipChainFrameAt`——该 frame 同时服务 rest/authored 两个空间，传 bone 会让 rest 侧的参考法线依赖 authored 数据；`splitTipForSegment` 的 `restPointAt`——它**定义** rest 链本身，若让 rest 依赖 authored 曲线，会造成 delta（points − restPoints）基准跟着用户拖曲线漂移，症状是「拖完曲线发尖自己跑掉」，与 0.2.120 修掉的「一动就跳回原位」同类。
+   - **实测数字**（段自己的 taperCurve 末点 0.35 vs 全局 1.0）：frame 位移 0.113750，网格位移 0.097825，比值 1.1628；bone 曲线字段全为 null 时，修复后与旧行为（`bone=null`）逐位相同（delta 0）。
+   - 验证：新增测试 2 条正向 + 1 条源码契约。变异验证：把传入的 `bone` 改回 `null` ⇒ frame 位移变 0.000000，2 处断言变红；给 `restPointAt` 注入 bone ⇒ 契约断言变红。**契约断言第一版没抓到**：原判据是「调用文本里不含 `bone`」，而注入的变量名叫 `splitBone`，大小写不同直接漏网；改成「实参个数恰为 5」才咬住。
+
+29. **panel 加 zipper「必须先选中前一个」（0.2.148 修复，方案 B，用户拍板）**
+   - 问题：用户报告「zipper 无法跨 zipper 移动，这导致必须先选中前一个 zipper 才能新增 zipper，挺麻烦的」（该条实为「点击拖过 zipper 手柄后按 + 加号不生效」）。
+   - 根因：`+` 按钮（`modules/bones/segment-control.js` 的 `changePanelSplitCount` 的 `+` 分支）的 `insertIndex` 来自 `selectedPanelSegment` → `resolveSegmentSelection` 读 `panelSegmentIndex`；而点击 zipper 手柄（`bone-interaction.js` 的 `beginPanelSplitHandleDrag`）只写 `sculptState.panelSplitSelection`，**从不写** `panelSegmentIndex`。两套选中状态之间没有同步路径。
+   - **用户拍板方案 B**（不动 `panelSegmentIndex`，改 `+` 识别 zipper 选中）。**为什么不选方案 A**（同步 `panelSegmentIndex`）：会产生用户没预期的连带跳变——右侧面板段标签/Prev-Next 可用性/Tip Clump 值/Width-Depth 曲线预览（`syncSegmentControls`）随「只是想拖 zipper」而变；浮动曲线编辑器开着会热切换到另一段（`taper-editor.js` 的 `retargetOpenSegmentTaperEditor`）；Width/Depth 预设下拉框的写入目标也被带走（`segmentCurveTargetForWrite`）。且 `panelSegmentIndex` 只由 Prev/Next 与选中发尖子骨骼驱动、zipper 选中是独立的第二套状态，这是 **0.2.117/0.2.126 的明确设计**（`modules/edit/sculpt-edit-store.js` L14-22 注释）。
+   - 实施：优先级改为 `zipper 选中 > 段选中 > 最大间隙`；按 `order` 反查下标复用 `62fbd31` 的既有写法（不另发明）；反查失败（陈旧 selection / lockId 不匹配 / order 查不到）**静默回落**到现有逻辑，回落路径逐位未改。插入位置选 **k+1**（插在被点 zipper 右侧）：`insertIndex` 既有语义是「细分第 insertIndex 段」，选中 zipper 排序下标 j 的右侧是段 j+1，选 k+1 使连按 `+` 时新拉链朝同一方向持续排开。
+   - 验证：`tests/strand-segment-ui.test.mjs` 新增 3 条（正向 / 回落逐位相同 / `panelSegmentIndex` 不变量）。变异验证：短路 zipper 判断 ⇒ 正向测试变红；把 `k+1` 改成 `k` ⇒ 同一测试**依然变红**（证明位置断言能咬住 k/k+1 的差异，不是仅判断存在性）。**已知盲区**（如实记录）：去掉跨度守卫的第三次变异未被捕捉，因本轮用例里 zipper 优先段本身放得下、未触发降级路径。

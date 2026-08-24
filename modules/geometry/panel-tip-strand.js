@@ -786,7 +786,19 @@ function tipOffsetSampleT(lock, t, u) {
   return panelTipCurveParameter(THREE.MathUtils.clamp(t, 0, 1), THREE.MathUtils.clamp(u, -1, 1), tipCurve, edgeTrim);
 }
 
-function tipSurfaceFrameAt(lock, t, centerU = null, segmentIndex = -1, splits = null) {
+// `bone` 是**可选**形参（默认 null），这不是疏忽而是契约：三个调用点里只有一个该传它。
+//   ① bone-view-handles 的 panelTipClumpHandlePoint（Tip Clump 绿球）**必须传** —— 它取的
+//      是该段真实边缘，须与网格同吃该段自己的 taperCurve/depthCurve；不传则
+//      tipMainSectionPoint 内部的 `bone?.taperCurve || lock.taperCurve` 回退到**全局**曲线，
+//      用户拖过该段曲线后绿球与网格出现残余偏差（0.2.146 bug② 的成因）。
+//   ② tipChainFrameAt（本文件）**刻意不传**：它只取 frame 的 z 作参考法线，段曲线只会
+//      让参考法线随该段宽度轻微倾斜，而该 frame 同时服务 rest 与 authored 两个空间 ——
+//      传 bone 会让 rest 侧的参考法线依赖 authored 数据，把 ③ 的循环依赖引到这里。
+//   ③ splitTipForSegment 的 restPointAt（本文件 L1017）**绝不能传**：它**定义** rest 链，
+//      而 bone 的曲线是 authored 数据。让 rest 依赖 authored ⇒ rest 随用户拖曲线而漂移 ⇒
+//      materializeTipChain 的 delta（points − restPoints）基准跟着动 = 循环依赖，症状是
+//      「拖完曲线发尖自己跑掉」（与 0.2.120 修掉的「一动就跳回原位」同类）。
+function tipSurfaceFrameAt(lock, t, centerU = null, segmentIndex = -1, splits = null, bone = null) {
   const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
   const center = centerU == null
     ? (segmentIndex >= 0 && segmentIndex < boundaries.length - 1
@@ -802,8 +814,8 @@ function tipSurfaceFrameAt(lock, t, centerU = null, segmentIndex = -1, splits = 
   // 含在其中 ⇒ 球冠沿 u 的变化自动进入 dP/du，法线随隆起倾斜（这正是想要的：
   // 拱起后的表面法线应垂直于拱面）。在此另加一项等于把隆起算两次。
   const step = THREE.MathUtils.clamp((boundaries[1] - boundaries[0]) * 0.2, 0.01, 0.04);
-  const lower = tipMainSectionPoint(lock, sampleT, THREE.MathUtils.clamp(center - step, -1, 1), 1, null, segmentIndex, splits);
-  const upper = tipMainSectionPoint(lock, sampleT, THREE.MathUtils.clamp(center + step, -1, 1), 1, null, segmentIndex, splits);
+  const lower = tipMainSectionPoint(lock, sampleT, THREE.MathUtils.clamp(center - step, -1, 1), 1, bone, segmentIndex, splits);
+  const upper = tipMainSectionPoint(lock, sampleT, THREE.MathUtils.clamp(center + step, -1, 1), 1, bone, segmentIndex, splits);
   const sectionTangent = new THREE.Vector3().subVectors(upper, lower);
   if (!Number.isFinite(sectionTangent.x) || sectionTangent.lengthSq() < 1e-8) sectionTangent.copy(panel.x);
   else sectionTangent.normalize();
@@ -812,7 +824,7 @@ function tipSurfaceFrameAt(lock, t, centerU = null, segmentIndex = -1, splits = 
   if (z.lengthSq() < 0.0001) z.copy(panel.z);
   z.normalize();
   const x = new THREE.Vector3().crossVectors(y, z).normalize();
-  const point = tipMainSectionPoint(lock, sampleT, center, 1, null, segmentIndex, splits);
+  const point = tipMainSectionPoint(lock, sampleT, center, 1, bone, segmentIndex, splits);
   return { point, x, y, z };
 }
 
@@ -832,6 +844,109 @@ function tipChainFrameAt(lock, tip, restTip, t, segmentIndex = -1, splits = null
   // tangent, z = reference normal rotated by the rest->authored bend (Gram-Schmidt
   // against y), x = lateral (binormal). Accepts plain {x,y,z} chain points.
   return tipSubBoneTipChainFrameAt(restTip, tip, t, referenceZ);
+}
+
+// ── 发尖链再锚定（0.2.146 bug①）：把手渲染坐标必须跟随 bone.tip ─────────────────────
+// 与发丝侧 strand-tip-width.js 的 strandTipChainTransformAt / applyStrandTipChainTransform
+// （0.2.127 的同一个 bug）成对同构，**刻意分两个函数**：一次取变换、多个点（point /
+// center / 引导线采样）复用同一份，避免每点重算 CatmullRom 与四元数。
+//
+// 这条变换是 createPanelStrandGeometry → addPatch 的**逐字同构副本**（同步点，改一处必须
+// 改两处）：
+//   dq          = setFromUnitVectors(restTangent, authoredTangent)（反向退化时绕轴 π）
+//   dqRoll      = twist 非零时再绕 authoredTangent 滚转（tip.twists）
+//   transformed = (point − reference)·dq + authoredCenter
+//   final       = lerp(point, transformed, blend)
+// reference 取该段中心点（addPatch 的 sectionCenter），authoredCenter/restCenter 取物化链
+// 的 CatmullRom 采样（addPatch 的 tipCurve/tipRestCurve.getPoint(t)）。
+//
+// **坐标空间**：本函数消费的 worldPoint 必须是「已 conform 的主帧世界点」——即
+// tipMainSectionPoint 的输出（网格侧对应 addPatch 里 panelPoint 的输出）。reference 必须与
+// worldPoint 走**同一个采样器**，否则 (point − reference) 不再是纯截面内偏移。
+//
+// 返回 null ⇒ 无 authored 发尖链 ⇒ 调用方必须走与 6d4e9b0 逐字节相同的老路径（保住那一版
+// 的 conform 贴合成果）。门控与 addPatch 的 `tip && tip.points.length >= 2` 逐字对应，外加
+// materializeTipChain 对「无 authored tip」也会返回等于 rest 的链，故必须另查 active。
+function tipChainReanchorAt(lock, segmentIndex, splits, bone, t) {
+  const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
+  if (!tip || !Array.isArray(tip.points) || tip.points.length < 2) return null;
+  if (tip.active === false) return null;
+  if (!bone?.tip || bone.tip.active === false) return null;
+  const authoredCurve = new THREE.CatmullRomCurve3(tipChainPointsAsVectors(tip.points));
+  const restCurve = (Array.isArray(tip.restPoints) && tip.restPoints.length >= 2)
+    ? new THREE.CatmullRomCurve3(tipChainPointsAsVectors(tip.restPoints))
+    : authoredCurve;
+  const authoredCenter = authoredCurve.getPoint(t);
+  const authoredTangent = authoredCurve.getTangent(t).normalize();
+  const restTangent = restCurve.getTangent(t).normalize();
+  // 反向退化（切线几乎正相反）时 setFromUnitVectors 的轴不确定 ⇒ 显式绕一条与 restTangent
+  // 不平行的轴转 π。判据 −0.9999 与轴的选择逐字取自 addPatch，勿改成别的阈值。
+  const dq = restTangent.dot(authoredTangent) < -0.9999
+    ? (new THREE.Quaternion()).setFromAxisAngle(
+      Math.abs(restTangent.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0),
+      Math.PI
+    )
+    : (new THREE.Quaternion()).setFromUnitVectors(restTangent, authoredTangent);
+  const twist = Array.isArray(tip.twists) ? sampleArray(tip.twists, t) : 0;
+  const dqRoll = Math.abs(twist) > 1e-6
+    ? (new THREE.Quaternion()).setFromAxisAngle(authoredTangent, twist).multiply(dq)
+    : dq;
+  return { authoredCenter, restCenter: restCurve.getPoint(t), dq: dqRoll };
+}
+
+// 把一个「已 conform 的主帧世界点」按上面的链变换搬过去。reference 为 null 时回退
+// restCenter（与 addPatch 的 `sectionCenter || tipTransform.restCenter` 逐字对应）。
+function applyTipChainReanchor(transform, reference, worldPoint, blend) {
+  if (!transform || !(blend > 0)) return worldPoint.clone();
+  const base = reference || transform.restCenter;
+  const transformed = worldPoint.clone().sub(base).applyQuaternion(transform.dq).add(transform.authoredCenter);
+  return worldPoint.clone().lerp(transformed, blend);
+}
+
+// 面板的行参数表（沿曲线的 t 序列）。**唯一定义点**：createPanelStrandGeometry 的
+// rowParameters 与把手侧的 blend 分母都从这里取，两处不同源会让把手与网格用不同的 blend
+// 起点、在 fork 附近错位。钳位区间 [3,32] / [0,16] 是既有值，逐字保留。
+function panelRowParameters(lock) {
+  const baseLengthLoops = THREE.MathUtils.clamp(Math.round(lock.panelLengthLoops ?? 10), 3, 32);
+  const tipLoops = THREE.MathUtils.clamp(Math.round(lock.panelTipLoops ?? 0), 0, 16);
+  return panelTipLoopParameters(baseLengthLoops, tipLoops);
+}
+
+// 网格的行细分数（addPatch 的 blend 分母）。
+function panelLengthLoopCount(lock) {
+  return panelRowParameters(lock).length - 1;
+}
+
+// 绿色 WidthCurve 手柄 / 引导线的**渲染坐标**（0.2.146 起唯一定义点，原先内联在
+// bone-view-handles.js 的 panelWidthEdgeRenderPoint）。两步，缺一个就是一个已修过的 bug：
+//   ① conform：走 tipMainSectionPoint —— 与网格 rawPanelPoint 同一条已 conform 坐标
+//      （6d4e9b0 修的就是这一步；tipWidthEdgePosition 的线性外推不吃 conform）；
+//   ② 再锚定：rest→authored 的链变换 —— 与 addPatch 同款公式（本轮 bug① 修的这一步；
+//      6d4e9b0 换公式时把它丢了，导致「网格跟着 bone.tip 动、绿点不动」）。
+// edgeU 的推导（zipper 收窄 spreadGap）逐字取自 tipWidthEdgePosition：拖拽数学读的仍是
+// tipWidthControlPlacement 的原始点，两者必须用同一个 u。
+// **拖拽（bone-interaction.js）刻意不改**：宽度拖拽是比值运算（ratio =
+// latOffset/startLatOffset，起点 ratio==1 不跳变），故渲染先修不会导致起手瞬间跳变。
+function tipWidthEdgeRenderPoint(lock, segmentIndex, splits, bone, side, t) {
+  const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
+  const spreadGap = tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side);
+  const edgeU = side < 0
+    ? boundaries[segmentIndex] + spreadGap
+    : boundaries[segmentIndex + 1] - spreadGap;
+  const point = tipMainSectionPoint(lock, t, edgeU, 1, bone, segmentIndex, splits);
+  // 段号越界时**刻意不提前 return null**：0.2.146 前这里是内联表达式，越界只会产出 NaN 点、
+  // 由上游（tipWidthControlPlacement 的 sideForkT 守卫）拦住。改成返回 null 会让调用方的
+  // `{...placement, point: null}` 把一个本来可见的手柄变成崩溃点，属于夹带的行为变更。
+  if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return point;
+  const transform = tipChainReanchorAt(lock, segmentIndex, splits, bone, t);
+  if (!transform) return point;
+  // blend 与 reference 都必须与网格同源：blend 用 edgeU（网格逐顶点也用该顶点自己的 u），
+  // reference 用段中心点且**与 point 同一个采样器**（tipMainSectionPoint）。
+  const blend = tipSegmentBlendAt(lock, segmentIndex, splits, t, edgeU, panelLengthLoopCount(lock));
+  if (!(blend > 0)) return point;
+  const centerU = (boundaries[segmentIndex] + boundaries[segmentIndex + 1]) * 0.5;
+  const reference = tipMainSectionPoint(lock, t, centerU, 1, bone, segmentIndex, splits);
+  return applyTipChainReanchor(transform, reference, point, blend);
 }
 
 // Edge position of a tip side at chain parameter t, matching the geometry's own tip
@@ -1023,9 +1138,9 @@ function createPanelStrandGeometry(lock) {
   lock._tipWidthFrames = null; // the width-UI frame cache depends on the rebuilt points
   const latticeControlled = lock.geometryType === "surface";
   const curve = latticeControlled ? null : deps.strandGeometryCurve(lock);
-  const baseLengthLoops = THREE.MathUtils.clamp(Math.round(lock.panelLengthLoops ?? 10), 3, 32);
-  const tipLoops = THREE.MathUtils.clamp(Math.round(lock.panelTipLoops ?? 0), 0, 16);
-  const rowParameters = panelTipLoopParameters(baseLengthLoops, tipLoops);
+  // 行参数表走 panelRowParameters（唯一定义点）：把手侧的 blend 分母取自同一个函数，
+  // 否则把手与网格会在 fork 上方的渐变带里错位。原先这三行内联在此处。
+  const rowParameters = panelRowParameters(lock);
   const lengthLoops = rowParameters.length - 1;
   const widthLoops = THREE.MathUtils.clamp(
     Math.round(lock.panelWidthLoops ?? 6),
@@ -1433,6 +1548,14 @@ function createPanelStrandGeometry(lock) {
     tipWidthEdgePosition,
     tipWidthEdgePoints,
     tipWidthControlPlacement,
+    // 0.2.146 bug①：绿色手柄渲染坐标的唯一定义点（conform + 发尖链再锚定），
+    // 与 addPatch 的网格变换同步。视口侧 bone-view-handles.js 只调用、不复制公式。
+    tipWidthEdgeRenderPoint,
+    tipChainReanchorAt,
+    applyTipChainReanchor,
+    // 行细分数的唯一定义点（addPatch 的 blend 分母）：导出供回归测试按**同一规则**推导
+    // 期望值，而不是把 1/12 之类的现场数字写死进测试。
+    panelLengthLoopCount,
     tipHighlightMaterial,
     updateTipHighlight,
     splitTipForSegment,

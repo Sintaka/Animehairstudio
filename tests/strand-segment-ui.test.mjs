@@ -408,6 +408,164 @@ test("changeStrandSplitCount(+1) applies the neighbour rule end to end", () => {
   assert.equal(calls.undo, 1, "insertion pushes exactly one undo entry");
 });
 
+// ── Bug 3（0.2.148，用户拍板方案 B）：+ 按钮认「当前选中的 zipper」，不需要先选中前一个段──
+// 用户报告：「加 zipper 必须先选中前一个」。根因：+ 按钮只看 panelSegmentIndex（段选中），
+// 而点击 zipper 手柄只写 panelSplitSelection（拉链选中），两套选中状态互不同步。方案 B：
+// + 按钮额外识别 panelSplitSelection，不去反向同步 panelSegmentIndex（那会带动右侧面板的
+// 段标签/曲线预览随手一拖就跳，方案 A 的代价，用户已否决）。
+function panelSplitCountHarness(lock) {
+  const dom = {
+    panelSegmentLabel: fakeElement(),
+    previousPanelSegmentButton: fakeElement(),
+    nextPanelSegmentButton: fakeElement(),
+    panelSegmentSpread: fakeElement(),
+    panelSegmentSpreadValue: fakeElement(),
+    segmentTaperPreview: fakeElement(),
+    segmentDepthPreview: fakeElement(),
+    panelSplitCountValue: fakeElement(),
+    removePanelSplitButton: fakeElement(),
+    addPanelSplitButton: fakeElement()
+  };
+  const calls = { geometry: 0, curveObjects: 0, mirror: 0, topology: 0, undo: 0 };
+  const sculptState = { panelSegmentIndex: 0, strandSegmentIndex: 0, panelSplitSelection: null };
+  const api = createSegmentControlApi({
+    ...dom,
+    sculptState,
+    sel: {},
+    panelShapeInputs: {},
+    panelShapeValues: {},
+    panelCreationDefaults: { panelSplitHeight: 0.28, panelWidthLoops: 6 },
+    syncShapePresetSelects: () => {},
+    taperEditor: {
+      activeStrandShapeTarget: () => lock,
+      renderTaperPreview: () => {},
+      retargetOpenSegmentTaperEditor: () => {}
+    },
+    getSelectedLock: () => lock,
+    isPanelGeometry: (target) => ["panel", "surface"].includes(target?.geometryType),
+    updateLockGeometry: () => { calls.geometry += 1; },
+    rebuildCurveObjects: () => { calls.curveObjects += 1; },
+    syncActiveMirror: () => { calls.mirror += 1; },
+    updateTopologyStats: () => { calls.topology += 1; },
+    pushUndoState: () => { calls.undo += 1; },
+    updateDrawStrandPreview: () => {},
+    snapPanelSplitHeight: (height) => height,
+    // 与 strand 侧测试同规则的最小替身：排序 + 深克隆，跳过 app.js 的钳位/去重（测试数据本就
+    // 在合法区间内），保留 order 供本轮的反查逻辑消费。
+    clonePanelSplits: (value, _fallbackHeight, maxCount) => (Array.isArray(value) ? value : [])
+      .map((split) => ({ ...split }))
+      .sort((a, b) => a.position - b.position)
+      .slice(0, maxCount ?? 23)
+  });
+  return { api, calls, sculptState, dom };
+}
+
+function panelLockWithSplits(splits) {
+  return {
+    id: "panel-1",
+    geometryType: "panel",
+    panelWidthLoops: 12,
+    panelSplitHeight: 0.28,
+    panelSplitSnapToLoops: false,
+    panelSplits: splits,
+    taperCurve: [{ position: 0, value: 1 }, { position: 1, value: 1 }],
+    depthCurve: [{ position: 0, value: 1 }, { position: 1, value: 1 }]
+  };
+}
+
+test("+ inserts beside the selected zipper when panelSplitSelection matches", () => {
+  // 3 条 zipper（order 0/1/2）→ 4 段；边界 [-0.88, -0.4, 0, 0.4, 0.88]。选中 order 1（position 0）
+  // 时，方案 B 应插在其右侧段（段 2：[0, 0.4]，跨度 0.4，足够放下新拉链），而不是最大间隙段
+  // （段 0/3 跨度都是 0.48，若走旧的「选中段/最大间隙」两级回退会落在段 0）。
+  const lock = panelLockWithSplits([
+    { position: -0.4, height: 0.3, order: 0 },
+    { position: 0, height: 0.3, order: 1 },
+    { position: 0.4, height: 0.3, order: 2 }
+  ]);
+  const { api, sculptState } = panelSplitCountHarness(lock);
+  sculptState.panelSplitSelection = { lockId: lock.id, order: 1 };
+
+  api.changePanelSplitCount(1);
+
+  assert.equal(lock.panelSplits.length, 4, "one zipper inserted");
+  // 新拉链落在段 2 = [0, 0.4] 的中点 0.2（不是段 0 的中点 -0.64，也不是段 1/3 任何其它中点）。
+  const positions = lock.panelSplits.map((split) => split.position).sort((a, b) => a - b);
+  assert.ok(positions.some((p) => Math.abs(p - 0.2) < 1e-9), "new zipper sits at the midpoint right of the selected one");
+  // panelSegmentIndex（右侧面板显示哪一段）必须原样不变——这是方案 B 相对方案 A 的核心承诺：
+  // 拖/点 zipper 不该带动右侧面板跳段。
+  assert.equal(sculptState.panelSegmentIndex, 0, "panelSegmentIndex is untouched by the zipper-priority insert");
+});
+
+test("+ falls back to the existing segment-then-largest-gap logic when panelSplitSelection is stale", () => {
+  // 同一形状分三种陈旧情形逐一验证：lockId 不匹配 / order 查不到 / 选择为 null。三者都必须
+  // 落到与「改动前」逐位相同的结果——用回退基线本身做判据，而不是硬编码一个期望位置。
+  const shape = () => panelLockWithSplits([
+    { position: -0.4, height: 0.3, order: 0 },
+    { position: 0, height: 0.3, order: 1 },
+    { position: 0.4, height: 0.3, order: 2 }
+  ]);
+
+  const baselineLock = shape();
+  const baseline = panelSplitCountHarness(baselineLock);
+  baseline.sculptState.panelSplitSelection = null; // 改动前唯一存在的路径
+  baseline.api.changePanelSplitCount(1);
+  const baselinePositions = baselineLock.panelSplits.map((s) => s.position).sort((a, b) => a - b);
+
+  const staleLockId = shape();
+  const wrongLock = panelSplitCountHarness(staleLockId);
+  wrongLock.sculptState.panelSplitSelection = { lockId: "some-other-panel", order: 1 };
+  wrongLock.api.changePanelSplitCount(1);
+  assert.deepEqual(
+    staleLockId.panelSplits.map((s) => s.position).sort((a, b) => a - b),
+    baselinePositions,
+    "a selection belonging to a different lock is ignored, falling back byte-for-byte"
+  );
+
+  const staleOrder = shape();
+  const wrongOrder = panelSplitCountHarness(staleOrder);
+  wrongOrder.sculptState.panelSplitSelection = { lockId: staleOrder.id, order: 999 };
+  wrongOrder.api.changePanelSplitCount(1);
+  assert.deepEqual(
+    staleOrder.panelSplits.map((s) => s.position).sort((a, b) => a - b),
+    baselinePositions,
+    "an order that no longer exists (deleted zipper) is ignored, falling back byte-for-byte"
+  );
+
+  const nullSelectionLock = shape();
+  const nullSelection = panelSplitCountHarness(nullSelectionLock);
+  nullSelection.sculptState.panelSplitSelection = null;
+  nullSelection.api.changePanelSplitCount(1);
+  assert.deepEqual(
+    nullSelectionLock.panelSplits.map((s) => s.position).sort((a, b) => a - b),
+    baselinePositions,
+    "no selection at all reproduces the pre-fix behaviour exactly"
+  );
+});
+
+test("+ never writes panelSegmentIndex regardless of which insertion path is taken", () => {
+  // 方案 B 的核心承诺：无论走 zipper 优先分支还是回退分支，panelSegmentIndex（右侧面板当前
+  // 显示哪一段）都不能被 + 按钮改写——那是 Prev/Next 与选中发尖子骨骼的专属写入口。
+  const withSelection = panelLockWithSplits([
+    { position: -0.4, height: 0.3, order: 0 },
+    { position: 0.4, height: 0.3, order: 1 }
+  ]);
+  const a = panelSplitCountHarness(withSelection);
+  a.sculptState.panelSegmentIndex = 2;
+  a.sculptState.panelSplitSelection = { lockId: withSelection.id, order: 0 };
+  a.api.changePanelSplitCount(1);
+  assert.equal(a.sculptState.panelSegmentIndex, 2, "zipper-priority insert leaves panelSegmentIndex alone");
+
+  const withoutSelection = panelLockWithSplits([
+    { position: -0.4, height: 0.3, order: 0 },
+    { position: 0.4, height: 0.3, order: 1 }
+  ]);
+  const b = panelSplitCountHarness(withoutSelection);
+  b.sculptState.panelSegmentIndex = 2;
+  b.sculptState.panelSplitSelection = null;
+  b.api.changePanelSplitCount(1);
+  assert.equal(b.sculptState.panelSegmentIndex, 2, "fallback insert also leaves panelSegmentIndex alone");
+});
+
 // ── 0.2.126：普通发丝的发尖子骨骼选择（tipSelection）的生命周期 ─────────────────────
 // 用户报告：普通发丝上「选不到 zipper 分裂出来的子发尖，更没法进一步控制」。根因是选择
 // 状态本身只有 panel 有。这组测试守的是「选择能建立 / 能切换 / 能取消 / 删管后不悬空」。
