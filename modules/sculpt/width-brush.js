@@ -85,3 +85,43 @@ export function sculptWidthBrushMultiplier(currentMultiplier, strokeDistance, we
   const max = Number.isFinite(Number(options.max)) ? Number(options.max) : TIP_WIDTH_VALUE_MAX;
   return Math.min(max, Math.max(min, next));
 }
+
+// ── Shift 临时平滑（Width Brush 特化）的线性标量序列平滑 ─────────────────────────────────
+// 用途：sculpt-width 被 Shift 临时切到 sculpt-smooth 时，平滑的是紫色/绿色 WidthCurve 关键点
+// 的 value 序列——那是**线性倍率域**（1 = 中性宽度，无环绕语义），不是角度。
+//
+// 为什么不能复用 sculpt-brush.js 的 smoothSculptTwistDeltas：那个函数内部硬编码了 Math.PI
+// 角度 wrap（取「最短角差」），套在线性值上会把跨越某个数值的一对邻居错当成「绕了一圈的
+// 角度」去算目标值，产生方向/幅度都错误的结果（对照测试见
+// tests/sculpt-brush-shift-smooth-freedom.test.mjs）。
+//
+// 为什么放在 width-brush.js 而不是 sculpt-brush.js：见本文件头「刻意不改的原因」——
+// tests/dom-contract.test.mjs 冻结了 app.js 里 sculpt-brush.js 的具体 `?v=` 版本串，而
+// 0.2.110 的教训是"新增 export 的模块，其全部 import 站点都要一起 bump 那个版本号"，否则
+// 回访用户会用缓存里的旧模块解析新增的 named export 直接 SyntaxError。width-brush.js 的
+// import 站点少（仅 sculpt-geometry.js / bone-interaction.js 两处，且两处的调用方本轮已经在
+// 改），风险可控，故新函数落在这里而不是去碰被冻结的 sculpt-brush.js。
+//
+// 语义与 smoothSculptTwistDeltas 同构（同构不是巧合——两者都是"链上/曲线上相邻元素平均"的
+// 同一套平滑算法，唯一区别是要不要 wrap）：逐元素向左右邻居的平均值靠近；首尾各只有一侧
+// 邻居时就直接靠近那一侧（不像 smoothSculptPointDeltas/smoothSculptTwistDeltas 把 index 0
+// 硬钳成「根节点绝不动」——WidthCurve 没有那个「链根必须锚定」的约定，手动拖拽和真正的
+// Width Brush 都允许推动第一个关键点，这里的平滑也不该比手动编辑更保守）。
+export function smoothLinearScalarDeltas(values, weights, strength = 1, rate = 0.04) {
+  const source = Array.isArray(values) ? values : [];
+  const influence = Math.min(1, Math.max(0, Number(strength) || 0));
+  const smoothingRate = Math.min(1, Math.max(0, Number(rate) || 0));
+  return source.map((value, index) => {
+    if (source.length < 2) return 0;
+    const weight = Math.min(1, Math.max(0, Number(weights?.[index]) || 0));
+    const amount = weight * influence * smoothingRate;
+    if (amount <= 0) return 0;
+    const previous = index > 0 ? Number(source[index - 1]) || 0 : null;
+    const next = index < source.length - 1 ? Number(source[index + 1]) || 0 : null;
+    let target;
+    if (previous !== null && next !== null) target = (previous + next) * 0.5;
+    else target = previous !== null ? previous : next;
+    if (target === null) return 0;
+    return (target - (Number(value) || 0)) * amount;
+  });
+}

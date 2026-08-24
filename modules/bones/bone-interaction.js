@@ -19,10 +19,11 @@ import {
   strandTipWidthMultiplierAt
 } from "../geometry/strand-tip-width.js?v=20260901-1";
 import { leafIndexAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
-import { sculptBrushWeight, sculptTwistBrushDeltas, smoothSculptPointDeltas, resolveFrozenTwistStrokeWeights } from "../sculpt/sculpt-brush.js?v=20260814-12";
+import { sculptBrushWeight, sculptTwistBrushDeltas, smoothSculptPointDeltas, smoothSculptTwistDeltas, resolveFrozenTwistStrokeWeights } from "../sculpt/sculpt-brush.js?v=20260814-12";
 // Width Brush 内核单独成文件的理由（dom-contract 冻结了 app.js 的 sculpt-brush 版本串）见
-// width-brush.js 文件头。
-import { nearestScreenCandidate, sculptWidthBrushMultiplier } from "../sculpt/width-brush.js?v=20260910-9";
+// width-brush.js 文件头。smoothLinearScalarDeltas 是本轮新增的线性（无角度 wrap）标量平滑，
+// 同一理由落在这个文件而不是 sculpt-brush.js。
+import { nearestScreenCandidate, sculptWidthBrushMultiplier, smoothLinearScalarDeltas } from "../sculpt/width-brush.js?v=20260910-9";
 // 控制点总数：与 bone-view-handles.js 的把手分配同一个常量（每侧 TIP_WIDTH_CONTROL_POINTS + 1
 // 个，索引完整共享网格）。笔刷枚举候选点必须用同一个上界，否则会漏掉最后一个（发尖端点）。
 import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260910-8";
@@ -907,6 +908,15 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   const strength = Number(deps.sculptBrushStrengthByTool[deps.effectiveSculptBrushTool()] ?? deps.sculptBrushStrengthInput.value);
   const reverse = Boolean(stroke.reverse);
   const tool = deps.effectiveSculptBrushTool();
+  // Shift 临时平滑的自由度分派（用户拍板的加法特化，同步点：app.js 的
+  // sculptBrushShiftSmoothFreedomByTool 定义处与 sculpt-geometry.js 的同名变量）。只有
+  // 「Shift 临时切到 smooth」且「底层选中的是登记过的特化笔刷」时才非 undefined。用户主动
+  // 选中 sculpt-smooth 作为工具时 deps.sel.activeTool 恒为 "sculpt-smooth"，从未登记在表里，
+  // 查表恒 undefined ⇒ 下面 `tool === "sculpt-smooth" && shiftSmoothFreedom === ...` 三个特化
+  // 分支全部不命中，落回原有的纯位置平滑分支（一个字节不变，加法约束）。
+  const shiftSmoothFreedom = deps.sculptState.sculptBrushShiftSmoothHeld
+    ? deps.sculptBrushShiftSmoothFreedomByTool[deps.sel.activeTool]
+    : undefined;
   // fork 与暴露区间都按几何分派后走**唯一定义点** firstExposedTipChainIndex：笔刷能动的
   // 区间必须与视口有把手的区间逐点相同（否则用户会看到"能刷动但抓不到"或反之）。
   const forkT = host.forkTFor(segmentIndex);
@@ -1037,6 +1047,83 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
       const dragWorld = deps.sculptGeom.sculptBrushWorldDelta(current[index], deltaX, deltaY, rect);
       const amount = (reverse ? -1 : 1) * weights[index] * strength * dragWorld.dot(up);
       points[index].addScaledVector(up, amount);
+      changed = true;
+    }
+  } else if (tool === "sculpt-smooth" && shiftSmoothFreedom === "twist") {
+    // Shift 临时平滑 + 底层选中 twist/orient：只平滑发尖 twist 标量，链点不动（用户拍板
+    // 决定 2）。currentTwists 是本函数已有的局部变量（见函数头 :900），写回 authored.twists
+    // 的方式照抄下方 sculpt-twist/sculpt-orient 分支的既有写法。
+    const twistArr = (Array.isArray(currentTwists) && currentTwists.length === current.length)
+      ? currentTwists.map((v) => Number(v) || 0)
+      : current.map(() => 0);
+    const smoothTwistDeltas = smoothSculptTwistDeltas(twistArr, weights, strength);
+    smoothTwistDeltas.forEach((delta, index) => {
+      if (!delta) return;
+      twistArr[index] += delta;
+      changed = true;
+    });
+    if (changed) authored.twists = twistArr.map((v) => Number(v) || 0);
+  } else if (tool === "sculpt-smooth" && shiftSmoothFreedom === "width") {
+    // Shift 临时平滑 + 底层选中 sculpt-width：只平滑绿色 WidthCurve 的 value 序列，链点与
+    // twist 都不动（用户拍板决定 1 的姊妹条款）。必须双侧（[1, -1]）——与 bug 1 的双侧宽度
+    // 修复同一约定（本文件 :951 `[target.side, -target.side].forEach`），否则会重新引入
+    // "刷一侧、另一侧不动" 的非对称回归。候选点/权重取法与 sculpt-width 分支
+    // （tool === "sculpt-width"，:921 附近）完全一致：候选点来自 tipWidthBrushCandidates
+    // （与绿色手柄同一个 placement），权重按屏幕距离过 sculptBrushWeight——WidthCurve 的
+    // 关键点是共享网格 pointIndex，不是链点，不能复用逐链点的 weights 数组（同步点：
+    // sculpt-geometry.js 的 widthCurveKeypointWeights 同一条理由）。
+    const candidates = tipWidthBrushCandidates(lock, host, segmentIndex, rect);
+    [1, -1].forEach((side) => {
+      const sideCandidates = candidates.filter((candidate) => candidate.side === side);
+      if (!sideCandidates.length) return;
+      const keypointWeights = sideCandidates.map((candidate) => {
+        const distance = Math.hypot(candidate.x - cursor.x, candidate.y - cursor.y);
+        return sculptBrushWeight(distance, radius, falloff);
+      });
+      const currentValues = sideCandidates.map((candidate) => readTipWidthMultiplierForHost({
+        lock, host, segmentIndex, side, t: candidate.t
+      }));
+      const widthDeltas = smoothLinearScalarDeltas(currentValues, keypointWeights, strength);
+      widthDeltas.forEach((delta, index) => {
+        if (!delta) return;
+        writeTipWidthValueForHost({
+          lock, host, segmentIndex, side, t: sideCandidates[index].t, value: currentValues[index] + delta
+        });
+        changed = true;
+      });
+    });
+    if (changed) {
+      deps.updateLockGeometry(lock, { immediate: true });
+      deps.updateCurveObjects(lock, { visible: true });
+      deps.syncActiveMirror(lock, { deferGeometry: false });
+      deps.updateTopologyStats();
+      stroke.editedLockIds.add(lock.id);
+      return true;
+    }
+  } else if (tool === "sculpt-smooth" && shiftSmoothFreedom === "axis") {
+    // Shift 临时平滑 + 底层选中 push/slide：位置平滑的 delta 投影到该笔刷自己的方向轴上，
+    // 只施加投影分量（用户拍板决定 1）。axis 取法照抄下方 sculpt-slide/sculpt-push 分支的
+    // 现成算法（:1023-1051），不重新实现 guidedNormalAt 的调用方式。
+    const curve = new THREE.CatmullRomCurve3(current);
+    const smoothDeltas = smoothSculptPointDeltas(points, weights, strength, 0.04);
+    for (let index = firstBelow; index < current.length; index += 1) {
+      const d = smoothDeltas[index];
+      if (d.x === 0 && d.y === 0 && d.z === 0) continue;
+      const t = index / Math.max(1, current.length - 1);
+      const tangent = curve.getTangent(t).normalize();
+      let axis;
+      if (deps.sel.activeTool === "sculpt-slide") {
+        axis = tangent;
+      } else {
+        // sculpt-push：与下方 sculpt-push 分支（:1044-1046）同一条公式取 up 轴。
+        const point = curve.getPoint(t);
+        const twist = Array.isArray(currentTwists) ? Number(currentTwists[index]) || 0 : 0;
+        axis = deps.guidedNormalAt(lock, point, tangent, t).applyAxisAngle(tangent, twist).normalize();
+      }
+      const deltaVec = new THREE.Vector3(d.x, d.y, d.z);
+      const projected = axis.clone().multiplyScalar(deltaVec.dot(axis));
+      if (projected.x === 0 && projected.y === 0 && projected.z === 0) continue;
+      points[index].addScaledVector(axis, deltaVec.dot(axis));
       changed = true;
     }
   } else if (tool === "sculpt-smooth") {

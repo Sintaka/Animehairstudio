@@ -22,7 +22,7 @@ import {
 // Width Brush 紫色分支（刷 panel/发丝自己的 WidthCurve）复用的纯函数内核：与绿色
 // tip-width 笔刷（bone-interaction.js）同一个模块、同一版本号。见 width-brush.js 文件头
 // 关于「为什么这个内核独立成文件」的说明（dom-contract 冻结了 sculpt-brush.js 的版本串）。
-import { nearestScreenCandidate, sculptWidthBrushMultiplier } from "../sculpt/width-brush.js?v=20260910-9";
+import { nearestScreenCandidate, sculptWidthBrushMultiplier, smoothLinearScalarDeltas } from "../sculpt/width-brush.js?v=20260910-9";
 // 紫色曲线自己的钳位区间 [0, TAPER_VALUE_MAX]（手动拖拽 taper-editor.js:1032 同一个上界）。
 // **不要**跟绿色 tip-width 的 TIP_WIDTH_VALUE_MIN/MAX 混用 —— 那是另一套曲线的区间。
 import { TAPER_VALUE_MAX } from "../core/app-config.js?v=20260815-4";
@@ -635,6 +635,29 @@ function applyWidthCurveBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   return true;
 }
 
+// Shift 临时平滑（Width Brush 特化，"width" 自由度）用：给紫色 WidthCurve 的某一条 value
+// 数组算出「逐关键点」的笔刷权重。**不能**复用逐链点的 smoothingWeights——那是按屏幕距离对
+// 链点算的，WidthCurve 的关键点是曲线数组自己的下标，两者不是同一个索引空间（前者长度=
+// 链点数，后者长度=控制点数，见任务里"权重"一节）。做法与其它笔刷取权重的方式完全一致：
+// 候选点的屏幕坐标（candidates 来自 taperEditor.taperCurveBrushCandidates，与紫色手柄同一条
+// 投影公式）与光标算距离，过 sculptBrushWeight——即 applyWidthCurveBrushSample 取权重
+// （:601 nearest.distance -> sculptBrushWeight）的同一条路径，只是这里要给**每一个**关键点
+// 都算一份（笔刷推单点，平滑要动一整条邻域）。
+// candidates 只传该 lock 自己的候选列表（source 用 source 的、partner 用 partner 的）——
+// 不同 lock 各自独立一条 taperCurve，混用会把权重错配到另一条曲线的关键点上。
+function widthCurveKeypointWeights(curveArray, candidates, curveSide, cursor, radius, falloff) {
+  return curveArray.map((_, pointIndex) => {
+    let best = 0;
+    (candidates || []).forEach((candidate) => {
+      if (candidate.curveSide !== curveSide || candidate.pointIndex !== pointIndex) return;
+      const distance = Math.hypot(candidate.x - cursor.x, candidate.y - cursor.y);
+      const weight = sculptBrushWeight(distance, radius, falloff);
+      if (weight > best) best = weight;
+    });
+    return best;
+  });
+}
+
 function applySculptMoveStrokeSample(stroke, clientX, clientY) {
   const deltaX = clientX - stroke.lastX;
   const deltaY = clientY - stroke.lastY;
@@ -663,6 +686,13 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
   const pushBrushActive = deps.effectiveSculptBrushTool() === "sculpt-push";
   const orientBrushActive = deps.effectiveSculptBrushTool() === "sculpt-orient";
   const twistBrushActive = deps.effectiveSculptBrushTool() === "sculpt-twist";
+  // Shift 临时平滑的自由度分派（用户拍板的加法特化）：只有「Shift 临时切到 smooth」且
+  // 「底层选中的是登记过的特化笔刷」时才非 undefined。用户主动选中 sculpt-smooth 作为工具
+  // 时，sel.activeTool 恒为 "sculpt-smooth"，从未登记在表里 ⇒ 查表结果仍是 undefined，
+  // 下面 `if (!shiftSmoothFreedom)` 落回原有默认分支，一个字节不变（加法约束）。
+  const shiftSmoothFreedom = deps.sculptState.sculptBrushShiftSmoothHeld
+    ? deps.sculptBrushShiftSmoothFreedomByTool[deps.sel.activeTool]
+    : undefined;
   const reverse = Boolean(stroke.reverse);
   const preserveTips = Boolean(deps.sculptBrushPreserveTipsByTool[deps.sel.activeTool]);
   // Twist joins move in reading the stroke-START influence snapshot: once the button goes
@@ -846,7 +876,15 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
       }
     }
 
-    if (smoothBrushActive) {
+    // ★加法约束（用户拍板）：这条 if 的判据从 `smoothBrushActive` 收窄成
+    // `smoothBrushActive && !shiftSmoothFreedom`——多加的这半句是本条件唯一的改动，块内一个
+    // 字节没动。shiftSmoothFreedom 只在「Shift 临时切到 smooth」且「底层选中的是登记过的
+    // 特化笔刷」时才非 undefined（定义处见上方，deps.sculptState.sculptBrushShiftSmoothHeld
+    // && deps.sculptBrushShiftSmoothFreedomByTool[deps.sel.activeTool]）。用户主动选中
+    // sculpt-smooth 作为工具：sel.activeTool 恒为 "sculpt-smooth"，从未登记在表里，
+    // shiftSmoothFreedom 恒 undefined ⇒ `!shiftSmoothFreedom` 恒真 ⇒ 走的仍是这条原有分支，
+    // 行为不变。真正的新增分派见下面紧接着的 `if (smoothBrushActive && shiftSmoothFreedom)`。
+    if (smoothBrushActive && !shiftSmoothFreedom) {
       const smoothingWeights = deps.sculptState.proportionalEditing
         ? proportionalSculptWeights(
             pointWeights,
@@ -889,6 +927,126 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
         }
         sourceChanged = true;
       });
+    }
+    // ── Shift 临时平滑的特化自由度分派（本轮新增，纯加法：上面 smoothBrushActive 块的判据
+    // 已经把这三种情况都排除在外，两块互斥，不会重复处理同一次采样）───────────────────────
+    if (smoothBrushActive && shiftSmoothFreedom === "twist") {
+      // 只平滑 twist/orient 共用的标量字段，位置完全不动（用户拍板决定 2）。
+      const smoothingWeights = deps.sculptState.proportionalEditing
+        ? proportionalSculptWeights(
+            pointWeights,
+            Number(deps.proportionalRadiusInput.value),
+            Number(deps.proportionalFalloffInput.value)
+          )
+        : pointWeights;
+      const smoothTwistDeltas = smoothSculptTwistDeltas(source.pointTwists || [], smoothingWeights, strength);
+      smoothTwistDeltas.forEach((delta, pointIndex) => {
+        if (delta === 0) return;
+        if (!stroke.undoCaptured) {
+          deps.pushUndoState();
+          stroke.undoCaptured = true;
+        }
+        if (!source.pointTwists) source.pointTwists = source.points.map(() => 0);
+        source.pointTwists[pointIndex] += delta;
+        sourceChanged = true;
+      });
+    } else if (smoothBrushActive && shiftSmoothFreedom === "width") {
+      // 只平滑紫色 WidthCurve 的 value 序列，位置与 twist 都不动（用户拍板决定 1 的姊妹条款：
+      // width 笔刷的 Shift 平滑动的是曲线数据，不是链点）。source 与 partner（镜像存在时）各
+      // 自的 taperCurve/taperCurveSecondary 都要处理——与 applyWidthCurveBrushSample 枚举
+      // candidates 时 source+partner 都纳入的既有约定一致。
+      const rect = deps.renderer.domElement.getBoundingClientRect();
+      const cursor = new THREE.Vector2(clientX - rect.left, clientY - rect.top);
+      [source, partner].filter(Boolean).forEach((widthLock) => {
+        const candidates = deps.taperEditor.taperCurveBrushCandidates(widthLock, rect);
+        const asymmetric = Boolean(widthLock.asymmetricWidthCurve);
+        const curveTargets = asymmetric
+          ? [
+              { curveArray: widthLock.taperCurve, curveSide: "primary" },
+              { curveArray: widthLock.taperCurveSecondary, curveSide: "secondary" }
+            ]
+          : [{ curveArray: widthLock.taperCurve, curveSide: "primary" }];
+        curveTargets.forEach(({ curveArray, curveSide }) => {
+          if (!Array.isArray(curveArray) || curveArray.length < 2) return;
+          const keypointWeights = widthCurveKeypointWeights(curveArray, candidates, curveSide, cursor, radius, falloff);
+          const values = curveArray.map((point) => Number(point.value) || 0);
+          const widthDeltas = smoothLinearScalarDeltas(values, keypointWeights, strength);
+          let widthChanged = false;
+          widthDeltas.forEach((delta, pointIndex) => {
+            if (!delta) return;
+            if (!stroke.undoCaptured) {
+              deps.pushUndoState();
+              stroke.undoCaptured = true;
+            }
+            // 紫色自己的钳位区间 [0, TAPER_VALUE_MAX]（与 applyWidthCurveBrushSample 手动拖拽
+            // /笔刷推点同一个上界，:616），不能落回 width-brush.js 默认的绿色 TIP_WIDTH 区间。
+            curveArray[pointIndex].value = Math.min(
+              TAPER_VALUE_MAX,
+              Math.max(0, curveArray[pointIndex].value + delta)
+            );
+            widthChanged = true;
+          });
+          if (widthChanged) {
+            deps.rebuildLockGeometry(widthLock);
+            deps.syncActiveMirror(widthLock, { deferGeometry: false });
+            stroke.editedLockIds.add(widthLock.id);
+          }
+        });
+      });
+      deps.updateTopologyStats();
+    } else if (smoothBrushActive && shiftSmoothFreedom === "axis") {
+      // push/slide 的 Shift 平滑：位置平滑算出的 delta 投影到该笔刷自己的方向轴上，只施加
+      // 投影分量（用户拍板决定 1）。axis 取法照抄 slideBrushActive/pushBrushActive 分支现成
+      // 的算法（:718-751），不重新实现 guidedNormalAt 的调用方式。
+      const smoothingWeights = deps.sculptState.proportionalEditing
+        ? proportionalSculptWeights(
+            pointWeights,
+            Number(deps.proportionalRadiusInput.value),
+            Number(deps.proportionalFalloffInput.value)
+          )
+        : pointWeights;
+      const smoothDeltas = smoothSculptPointDeltas(
+        source.points,
+        smoothingWeights,
+        strength,
+        0.04,
+        { preserveTip: preserveTips }
+      );
+      const curve = stroke.originalCurves?.get(source.id);
+      if (curve) {
+        smoothDeltas.forEach((delta, pointIndex) => {
+          if (pointIndex === 0 || (delta.x === 0 && delta.y === 0 && delta.z === 0)) return;
+          const t = pointIndex / Math.max(1, source.points.length - 1);
+          const tangent = curve.getTangent(t).normalize();
+          let axis;
+          if (deps.sel.activeTool === "sculpt-slide") {
+            axis = tangent;
+          } else {
+            // sculpt-push：与 pushBrushActive 分支（:722-724）同一条公式取 up 轴。
+            const point = curve.getPoint(t);
+            axis = deps.guidedNormalAt(source, point, tangent, t)
+              .applyAxisAngle(tangent, sampleArray(source.pointTwists || [], t))
+              .normalize();
+          }
+          const deltaVec = new THREE.Vector3(delta.x, delta.y, delta.z);
+          const projected = axis.clone().multiplyScalar(deltaVec.dot(axis));
+          if (projected.x === 0 && projected.y === 0 && projected.z === 0) return;
+          if (!stroke.undoCaptured) {
+            deps.pushUndoState();
+            stroke.undoCaptured = true;
+          }
+          source.points[pointIndex].x += projected.x;
+          source.points[pointIndex].y += projected.y;
+          source.points[pointIndex].z += projected.z;
+          const basePoint = source.groupLatticeBasePoints?.[pointIndex];
+          if (basePoint) {
+            basePoint.x += projected.x;
+            basePoint.y += projected.y;
+            basePoint.z += projected.z;
+          }
+          sourceChanged = true;
+        });
+      }
     }
     if (!sourceChanged) return;
     if (inflateBrushActive) {

@@ -537,6 +537,26 @@ const sculptBrushPreserveTipsByTool = {
   "sculpt-move": false,
   "sculpt-smooth": true
 };
+// Shift 临时平滑（sculptBrushShiftSmoothHeld）按**当前选中的特化笔刷**分派要平滑的自由度。
+// 只在 Shift 临时态下查表——用户主动选中 sculpt-smooth 作为工具时，effectiveSculptBrushTool()
+// 恒返回 "sculpt-smooth"，这张表根本不参与判断（判据见 sculpt-geometry.js/bone-interaction.js
+// 里的 `shiftSmoothFreedom`：显式要求 sculptBrushShiftSmoothHeld === true 且
+// sel.activeTool 命中本表，缺一不可），保证用户主动选 smooth 时行为一个字节不变（加法约束，
+// 用户拍板）。
+// - "twist": 只平滑 twist/orient 共用的标量字段（source.pointTwists / 发尖 authored.twists），
+//   位置不动。
+// - "width": 只平滑该笔刷对应 WidthCurve 的 value 序列（紫色 taperCurve[Secondary] 或绿色
+//   发尖曲线），位置与 twist 都不动。
+// - "axis": 仍走位置平滑，但把算出的 delta 投影到该笔刷自己的方向轴（push=up / slide=
+//   tangent）上再施加，垂直分量不动。
+// 未登记的工具（move/inflate/scale）落回默认——现状的整体位置平滑，不查这张表。
+const sculptBrushShiftSmoothFreedomByTool = {
+  "sculpt-width": "width",
+  "sculpt-twist": "twist",
+  "sculpt-orient": "twist",
+  "sculpt-push": "axis",
+  "sculpt-slide": "axis"
+};
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
@@ -3194,6 +3214,7 @@ Object.assign(sculptGeomDeps, {
   sculptBrushRadiusInput,
   sculptBrushRadiusValue,
   sculptBrushSelectionAllows,
+  sculptBrushShiftSmoothFreedomByTool,
   sculptBrushShowClippingPlaneInput,
   sculptBrushShowCurvesInput,
   sculptBrushStrengthByTool,
@@ -8849,6 +8870,7 @@ Object.assign(boneInteractionDeps, {
   sculptBrushFalloffInput,
   sculptBrushStrengthInput,
   sculptBrushStrengthByTool,
+  sculptBrushShiftSmoothFreedomByTool,
   getSelectedLock,
   isPanelGeometry,
   pushUndoState,
