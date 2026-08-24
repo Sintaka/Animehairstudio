@@ -191,6 +191,8 @@ export default Object.freeze({
   "Orient Brush": "オリエントブラシ",
   "Twist Brush": "ツイストブラシ",
   "Twist strands around their tangent axis by dragging horizontally": "左右のドラッグでストランドを接線軸まわりにねじります",
+  "Width Brush": "幅ブラシ",
+  "Drag to shrink the strand width curve; hold Ctrl to grow it": "ドラッグでストランドの幅カーブを縮小します。Ctrlキーを押すと逆に拡大します。",
   "Scale Mode": "スケールモード",
   "Cut/Extend": "カット/延長",
   "Brush Settings": "\u30d6\u30e9\u30b7\u8a2d\u5b9a",

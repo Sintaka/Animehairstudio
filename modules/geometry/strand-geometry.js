@@ -37,7 +37,7 @@ import {
 import { SWEEP_OVERLAP_DEFAULTS } from "./strand-sweep.js?v=20260813-3";
 // fork-T（`1 − max(相邻 zipper 高)`）的唯一定义点。本文件此前自写一份 sectionSplitStart，
 // 0.2.133 折叠。无新依赖边：strand-tip-width.js 已 import 同一模块。
-import { tipWidthCommonForkFromHeights } from "./tip-width-curve.js?v=20260901-1";
+import { tipWidthCommonForkFromHeights } from "./tip-width-curve.js?v=20260910-9";
 
 export function createStrandGeometryApi(deps) {
   // deps: api objects (branchSweep/strandSweep/branchBridge/curveSurfaceCreate/panelTipStrand/

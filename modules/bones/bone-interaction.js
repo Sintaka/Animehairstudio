@@ -19,7 +19,13 @@ import {
   strandTipWidthMultiplierAt
 } from "../geometry/strand-tip-width.js?v=20260901-1";
 import { leafIndexAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
-import { sculptTwistBrushDeltas, smoothSculptPointDeltas, resolveFrozenTwistStrokeWeights } from "../sculpt/sculpt-brush.js?v=20260814-12";
+import { sculptBrushWeight, sculptTwistBrushDeltas, smoothSculptPointDeltas, resolveFrozenTwistStrokeWeights } from "../sculpt/sculpt-brush.js?v=20260814-12";
+// Width Brush 内核单独成文件的理由（dom-contract 冻结了 app.js 的 sculpt-brush 版本串）见
+// width-brush.js 文件头。
+import { nearestScreenCandidate, sculptWidthBrushMultiplier } from "../sculpt/width-brush.js?v=20260910-9";
+// 控制点总数：与 bone-view-handles.js 的把手分配同一个常量（每侧 TIP_WIDTH_CONTROL_POINTS + 1
+// 个，索引完整共享网格）。笔刷枚举候选点必须用同一个上界，否则会漏掉最后一个（发尖端点）。
+import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260910-8";
 import { solvePulledStrand } from "../geometry/strand-constraints.js?v=20260814-12";
 
 // deps: store .state proxies (sculptState/sel/guideState/scalpState) + module instances
@@ -305,7 +311,15 @@ function beginPanelSplitHandleDrag(event) {
     const tipHost = resolveTipHost(lock);
     const tip = tipHost?.tipChainFor(tipIndex);
     if (tip && tip.points[tipPoint]) tipStartWorld = new THREE.Vector3(tip.points[tipPoint].x, tip.points[tipPoint].y, tip.points[tipPoint].z);
-  } else if (tipWidthSegment != null && tipWidthSide != null && tipWidthIndex != null) {
+  } else if (
+    tipWidthSegment != null && tipWidthSide != null && tipWidthIndex != null
+    // 门 2/2（Width Brush 模式互斥，要求 a）：笔刷激活时**真的禁止**直接拖绿色 WidthCurve
+    // 控制点 —— 该走笔刷。另一道门在 taper-editor.js 的 beginTaperMeshPointDrag（紫色）。
+    // 两处必须同时存在：只关一道，用户在笔刷模式下仍能从另一条路径拖到曲线。
+    // 放在这个 else-if 的**条件**里而不是函数开头：其余把手（tip 链点、zipper、Tip Clump）
+    // 在笔刷模式下仍应可拖，只有「宽度控制点」这一种被笔刷接管。
+    && deps.sel.activeTool !== "sculpt-width"
+  ) {
     // 发尖 WidthCurve 把手：起始状态按几何分派。两条分支产出**同一组** drag 字段
     // （tipWidthT / StartWorld / StartLatOffset / StartMult / StartClientX/Y /
     // StartEdgeScreenDist / Bones），因此 updatePanelSplitHandleDrag 的拖拽数学（世界
@@ -770,6 +784,74 @@ function endPanelSplitHandleDrag(event) {
   deps.updateInteractionLocks();
 }
 
+// ── Width Brush 的写入适配层 ───────────────────────────────────────────────────────────
+// 两个写入函数的**参数顺序不一致**（历史遗留，两侧各自与自己的几何模块同构）：
+//   panel  : setTipWidthCurveValue(lock, segmentIndex, splits, bone, side, t, value)
+//   发丝   : setStrandTipWidthCurveValue(lock, splits, tubeIndex, bone, side, t, value)
+//                                              ^^^^^^^^^^^^^^^^^^ splits 与索引对调
+// 笔刷不该知道这件事，所以在这里收一次口。按 resolveTipHost 的 kind 分派（**不是**
+// isPanelGeometry —— 见 AGENT_QUICKSTART §2.4b 的定论）。
+//
+// 返回值语义：**原样透传** setTipWidthCurveValueFrom 的 null（低于本侧 fork 的锁定区、或本
+// 侧暴露子集为空 ⇒ 无处可写）。调用方据此保持「无处可写就跳过」，而不是把 undefined 当成
+// 写入成功后去重建几何。
+function writeTipWidthValueForHost({ lock, host, segmentIndex, side, t, value }) {
+  if (!lock || !host) return null;
+  const bone = host.bones?.[segmentIndex];
+  if (!bone) return null;
+  if (host.kind === "strand") {
+    return setStrandTipWidthCurveValue(lock, host.splits, segmentIndex, bone, side, t, value);
+  }
+  return deps.panelTipStrand.setTipWidthCurveValue(lock, segmentIndex, host.splits, bone, side, t, value);
+}
+
+// 读回某侧在 t 处**当前**的宽度倍率（笔刷的相对增量需要它当基数）。
+// 坐标空间（standards 第三类注释）：第三个入参是「本侧的横向坐标」，两侧含义不同 ——
+// panel 传 edgeU（段边界的 u），发丝传**管内相对坐标**的符号（被拖侧极值恒为 ±1，见
+// strandTubeSignedCoordinate）。**不得给发丝传 raw profile.x**：裁剪后边缘管只有单一符号，
+// 一侧会永远读不到自己的曲线（0.2.80 死区同类）。
+function readTipWidthMultiplierForHost({ lock, host, segmentIndex, side, t }) {
+  if (!lock || !host) return 1;
+  const bone = host.bones?.[segmentIndex];
+  if (host.kind === "strand") {
+    return strandTipWidthMultiplierAt(lock, t, side < 0 ? -1 : 1, bone, segmentIndex, host.splits);
+  }
+  // panel：tipPanelWidthAt 返回**绝对宽度**，除以 lock.width 才是倍率（与
+  // beginPanelSplitHandleDrag 的 tipWidthStartMult 逐字同式，勿改成别的基准）。
+  const boundaries = [-1, ...(Array.isArray(host.splits) ? host.splits : []).map((split) => split.position), 1];
+  const edgeU = boundaries[side < 0 ? segmentIndex : segmentIndex + 1];
+  const fullWidth = Math.max(0.01, Number(lock.width ?? 0.62));
+  return deps.panelTipStrand.tipPanelWidthAt(lock, t, edgeU, bone, segmentIndex, host.splits) / fullWidth;
+}
+
+// 枚举本段**两侧全部已暴露**的宽度控制点，并投影到屏幕像素。
+// ★ 方案 C 的核心：候选点一律来自 tipWidthControlPlacement —— 与绿色手柄**同一个函数**。
+// 因此笔刷刷得到的位置集合 ≡ 手柄抓得到的位置集合（按构造，不是靠守卫），且**没有任何**
+// chain-t → 曲线 position 的换算参与（无 getUtoTmapping、无 panelTipCurveParameter）。
+// 未暴露的网格位置由 placement 自己返回 null（浅 zipper 侧只暴露靠发尖的几个），在这里被
+// 跳过 —— 越界与锁定区因此都不需要额外守卫。
+// pointIndex 索引**完整共享网格**（TIP_WIDTH_CONTROL_POINTS + 1），与 bone-view-handles.js
+// 的把手分配逐个对应；勿改成索引过滤后的子集（同一 index 的含义会随 zipper 高度漂移）。
+function tipWidthBrushCandidates(lock, host, segmentIndex, rect) {
+  const bone = host.bones?.[segmentIndex] || null;
+  const candidates = [];
+  [-1, 1].forEach((side) => {
+    for (let pointIndex = 0; pointIndex < TIP_WIDTH_CONTROL_POINTS + 1; pointIndex += 1) {
+      const placement = host.kind === "strand"
+        ? strandTipWidthControlPlacement(
+          strandTipWidthGeoDeps(), lock, host.splits, segmentIndex, bone, side, pointIndex
+        )
+        : deps.panelTipStrand.tipWidthControlPlacement(
+          lock, segmentIndex, host.splits, bone, side, pointIndex
+        );
+      if (!placement?.point) continue;
+      const pixel = deps.sculptGeom.viewportPixelPoint(placement.point, rect);
+      candidates.push({ x: pixel.x, y: pixel.y, side, pointIndex, t: placement.t });
+    }
+  });
+  return candidates;
+}
+
 function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   // When a split tip sub-bone is selected, the brush edits ONLY that sub-bone's chain
   // points (masked by screen distance) - never other sub-bones or the main chain.
@@ -830,6 +912,50 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   const forkT = host.forkTFor(segmentIndex);
   const firstBelow = firstExposedTipChainIndex(forkT, rest.length);
   const scaleCenter = current[firstBelow] || current[0];
+  // ── Width Brush（sculpt-width）：刷发尖 WidthCurve 的**既有**控制点 ────────────────────
+  // 位置**必须**在下方 `if (changed)` 之前 return：那一段写 authored.points / restPoints，而
+  // 宽度笔刷根本不动链点（它只改曲线数据）。落到那里会把「没被编辑的链」原样重写一遍，把
+  // 物化 delta 烘进 authored（0.2.120 规则的反面），发尖会跳。
+  // 方案 C：候选点来自与绿色手柄同一个 placement，按**屏幕距离**取最近的一个 —— 与笔刷的
+  // 圆形选区语义一致，也是「笔刷与手柄按构造一致」的落点。
+  if (tool === "sculpt-width") {
+    const candidates = tipWidthBrushCandidates(lock, host, segmentIndex, rect);
+    // 半径当选区：光标离所有已暴露控制点都超过一个笔刷半径时什么都不做（但仍 return true
+    // ——「选中了发尖子骨骼就独占笔刷」的既有语义不变，见本函数开头的注释）。
+    const nearest = nearestScreenCandidate(candidates, cursor.x, cursor.y, radius);
+    if (!nearest) return true;
+    const target = nearest.candidate;
+    // 权重按**屏幕距离**衰减，用的是其它笔刷同一个 falloff 内核 sculptBrushWeight ——
+    // 这里直接调它而不是 sculptGeom.sculptBrushPointWeight，因为后者的职责是「世界点 →
+    // 投影 → 距离 → 权重」，而 tipWidthBrushCandidates 已经投影过了（placement 的 point
+    // 经 viewportPixelPoint），再投一次等于把同一条投影写两遍。
+    const weight = sculptBrushWeight(nearest.distance, radius, falloff);
+    if (!(weight > 0)) return true;
+    const currentMultiplier = readTipWidthMultiplierForHost({
+      lock, host, segmentIndex, side: target.side, t: target.t
+    });
+    const nextMultiplier = sculptWidthBrushMultiplier(
+      currentMultiplier,
+      Math.hypot(deltaX, deltaY),
+      weight,
+      strength,
+      { reverse }
+    );
+    // 写入位置 = placement 自己报告的 t（**原样**，无换算）。吸附由
+    // setTipWidthCurveValueFrom 完成，且它吸附的目标集合与 placement 的暴露判据是同一个
+    // 定义点（tipWidthSideExposesTAt）⇒ 点数前后不变、不会新增关键点。
+    const written = writeTipWidthValueForHost({
+      lock, host, segmentIndex, side: target.side, t: target.t, value: nextMultiplier
+    });
+    // null = 无处可写（锁定区 / 暴露子集为空）：跳过，不重建几何。
+    if (!written) return true;
+    stroke.editedLockIds.add(lock.id);
+    deps.updateLockGeometry(lock, { immediate: true });
+    deps.updateCurveObjects(lock, { visible: true });
+    deps.syncActiveMirror(lock, { deferGeometry: false });
+    deps.updateTopologyStats();
+    return true;
+  }
   const computeCursorWeights = () => {
     const computed = new Array(current.length).fill(0);
     for (let index = firstBelow; index < current.length; index += 1) {

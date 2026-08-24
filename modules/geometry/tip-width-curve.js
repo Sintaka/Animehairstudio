@@ -15,6 +15,15 @@ import { sampleTaperCurve } from "./curve-math.js?v=20260910-5";
 // 无循环依赖：bone-model 只 import three。
 import { SPREAD_MAX } from "../bones/bone-model.js?v=20260901-1";
 
+// 发尖宽度 multiplier 的取值区间：**唯一定义点**。本模块内两处钳位（createCurvePoints 的
+// 累加器、setTipWidthCurveValueFrom 的入口）都引用它，Width Brush 也 import 它来钳自己算出
+// 的目标倍率 —— 笔刷若用自己的一套界，就会算出一个「写进去会被静默改小」的值，于是「刷到
+// 底」与「写入饱和」不在同一点，用户看到的是最后一段刷不动。
+// 消费方（改这里要看全部）：本模块 createCurvePoints / setTipWidthCurveValueFrom；
+//   modules/sculpt/sculpt-brush.js sculptWidthBrushMultiplier。
+export const TIP_WIDTH_VALUE_MIN = 0.08;
+export const TIP_WIDTH_VALUE_MAX = 2;
+
 // Shared tip width control point count: 5 midpoints (common fork) + the tip end (t=1).
 // app.js createCurveObjects reuses this constant for the viewport tip width handles
 // (re-exported by panel-tip-strand.js / imported by bone-view-handles.js).
@@ -170,7 +179,7 @@ function createCurvePoints() {
     if (points.some((point) => Math.abs(point.position - clampedPosition) < 1e-4)) return;
     points.push({
       position: clampedPosition,
-      value: THREE.MathUtils.clamp(Number(value) ?? 0.5, 0.08, 2),
+      value: THREE.MathUtils.clamp(Number(value) ?? 0.5, TIP_WIDTH_VALUE_MIN, TIP_WIDTH_VALUE_MAX),
       interpolation: "linear"
     });
   };
@@ -206,7 +215,7 @@ export function tipWidthResetCurveFrom({ gridTs, sideForkT, oppositeForkT }) {
 // null when this side has nowhere writable. 只动曲线数组，bone 字段（taperCurve /
 // taperCurveSecondary / asymmetricWidthCurve）与写后重建由调用方拥有。
 export function setTipWidthCurveValueFrom({ curve, gridTs, sideForkT, t, value }) {
-  const clamped = THREE.MathUtils.clamp(Number(value) || 0.5, 0.08, 2);
+  const clamped = THREE.MathUtils.clamp(Number(value) || 0.5, TIP_WIDTH_VALUE_MIN, TIP_WIDTH_VALUE_MAX);
   // 写入位置吸附到本侧**暴露的**控制位置（tipWidthSideControlTsFrom = 共享网格 ∩ 本侧
   // 暴露区）。两侧参数虽同源，暴露的子集却按 zipper 高度不同：对称拖拽
   // （bone-interaction 用同一个 t 写两侧）传来的 t 可能不在本侧的暴露子集里。不吸附

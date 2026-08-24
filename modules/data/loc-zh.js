@@ -126,6 +126,8 @@ export default Object.freeze({
   "Smooth Brush": "Smooth Brush",
   "Twist Brush": "Twist Brush",
   "Twist strands around their tangent axis by dragging horizontally": "左右拖拽，使 strand 绕其切线轴扭转。",
+  "Width Brush": "Width Brush",
+  "Drag to shrink the strand width curve; hold Ctrl to grow it": "拖拽以缩小 strand 的宽度曲线；按住 Ctrl 可反向增大。",
   "Brush Settings": "笔刷设置",
   "Controls how strongly each brush affects nearby strands.": "控制每个笔刷对附近 strand 的影响强度。",
   "Sculpt brushes": "雕刻笔刷",

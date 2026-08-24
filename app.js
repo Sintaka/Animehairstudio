@@ -526,8 +526,13 @@ const sculptBrushStrengthByTool = {
   "sculpt-scale": 0.5,
   "sculpt-push": 1,
   "sculpt-orient": 0.5,
-  "sculpt-twist": 0.5
+  "sculpt-twist": 0.5,
+  "sculpt-width": 0.5
 };
+// sculpt-width 刻意**不**登记 preserveTips：该开关的语义是「别动链的最后一个点（发梢位置）」，
+// 而宽度笔刷根本不写链点，只改 taperCurve 数据 —— 登记它会读成 false 却暗示这里有位置写入。
+// twist 同理不在列（它也只写 twist 标量）。缺项在 applySculptMoveStrokeSample 里经
+// Boolean(undefined) 退化为 false，与显式 false 逐值相同。
 const sculptBrushPreserveTipsByTool = {
   "sculpt-move": false,
   "sculpt-smooth": true
@@ -3202,8 +3207,12 @@ Object.assign(sculptGeomDeps, {
   setPointScale,
   signedAngleAroundAxis,
   strandVisibleForDisplay,
+  // Width Brush 紫色分支（applySculptMoveStrokeSample 的第二个早退分支）用它枚举既有
+  // WidthCurve 关键点（taperCurveBrushCandidates）——taperEditor 已在本行之前定义（1867 行）。
+  syncActiveMirror,
   syncInputs,
   syncLockFromCurve,
+  taperEditor,
   undoHistory,
   updateCurveObjects,
   updateHistoryButtons,
@@ -5490,7 +5499,7 @@ function cycleViewportFraming() {
 
 
 function sculptBrushToolActive(tool = sel.state.activeTool) {
-  return ["sculpt-move", "sculpt-smooth", "sculpt-inflate", "sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient", "sculpt-twist"].includes(tool);
+  return ["sculpt-move", "sculpt-smooth", "sculpt-inflate", "sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient", "sculpt-twist", "sculpt-width"].includes(tool);
 }
 
 function sculptBrushSelectionMaskActive() {
@@ -8677,6 +8686,10 @@ Object.assign(taperEditorDeps, {
   sel: sel.state,
   hairState: hairState.state,
   miscState: miscState.state,
+  // Width Brush 紫色分支的候选点枚举（taperCurveBrushCandidates）用它把世界坐标投影到
+  // 像素——与绿色 tip-width 笔刷（bone-interaction.js）用的是同一个函数，sculptGeom 已在
+  // 本行之前定义（1882 行）。
+  viewportPixelPoint: sculptGeom.viewportPixelPoint,
   branchSweep,
   shapePresets,
   locks,

@@ -19,6 +19,13 @@ import {
   normalizeSurfaceLatticeCount,
   surfaceLatticePointIndex
 } from "./surface-lattice.js?v=20260814-12";
+// Width Brush 紫色分支（刷 panel/发丝自己的 WidthCurve）复用的纯函数内核：与绿色
+// tip-width 笔刷（bone-interaction.js）同一个模块、同一版本号。见 width-brush.js 文件头
+// 关于「为什么这个内核独立成文件」的说明（dom-contract 冻结了 sculpt-brush.js 的版本串）。
+import { nearestScreenCandidate, sculptWidthBrushMultiplier } from "../sculpt/width-brush.js?v=20260910-9";
+// 紫色曲线自己的钳位区间 [0, TAPER_VALUE_MAX]（手动拖拽 taper-editor.js:1032 同一个上界）。
+// **不要**跟绿色 tip-width 的 TIP_WIDTH_VALUE_MIN/MAX 混用 —— 那是另一套曲线的区间。
+import { TAPER_VALUE_MAX } from "../core/app-config.js?v=20260815-4";
 
 export function createSculptGeometryApi(deps) {
   // deps: store .state proxies (sculptState/sel) + shared objects (renderer/camera/locks/
@@ -477,7 +484,9 @@ function captureSculptMoveStrokeInfluence(
 }
 
 function beginSculptMoveStroke(event) {
-  const reverseTool = ["sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient", "sculpt-twist"].includes(deps.sel.activeTool);
+  // reverseTool 白名单 = 「Ctrl 是反向修饰键、因此不该被当成 orbit 而早退」的笔刷。
+  // sculpt-width 在列（Ctrl = 加宽，见 index.html 的 tooltip 与 width-brush.js 文件头）。
+  const reverseTool = ["sculpt-slide", "sculpt-scale", "sculpt-push", "sculpt-orient", "sculpt-twist", "sculpt-width"].includes(deps.sel.activeTool);
   if (
     !deps.sculptBrushToolActive()
     || deps.sculptState.brushSizeHotkeyHeld
@@ -542,6 +551,90 @@ function beginSculptMoveStroke(event) {
   event.stopImmediatePropagation();
 }
 
+// ── Width Brush 紫色分支（sculpt-width 刷 panel/发丝自己的 WidthCurve） ───────────────────
+// 用户拍板的情况 1（选中发丝/主发片）与情况 3（未选中任何东西）在这里塌缩成同一条路径：
+// stroke.units 已经过 sculptBrushEditableLock -> deps.sculptBrushSelectionAllows 过滤
+// （:288-319 的 sculptBrushUnits），选中则限定、未选中则放行——本函数不用自己判断选中态。
+// 情况 2（选中发尖）已在下面调用点更早的 deps.applySubBoneBrushSample 分支处理并早退，
+// 不会走到这里；两个分支互斥（发尖分支优先）。
+//
+// 方案 C（用户拍板）：只推既有关键点，按屏幕距离取最近的一个，不插点、不重新拟合曲线——
+// 候选点来自 taperEditor.taperCurveBrushCandidates，与紫色手柄在视口的绘制
+// （addTaperMeshPointsForCurve）同一条几何公式，笔刷与手柄按构造一致（不是靠守卫）。
+//
+// 未命中任何候选点也要 return true（而非 false）：sculpt-width 激活时必须独占这一笔，
+// 不能落到下面的通用 move 主体去移动链点——宁可什么都不做，也不能让宽度笔刷去移动链点
+// （那正是本轮要修的"静默退化成 Move"）。
+function applyWidthCurveBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
+  if (deps.effectiveSculptBrushTool() !== "sculpt-width") return false;
+  const rect = deps.renderer.domElement.getBoundingClientRect();
+  const cursor = new THREE.Vector2(clientX - rect.left, clientY - rect.top);
+  const radius = Number(deps.sculptBrushRadiusInput.value);
+  const falloff = Number(deps.sculptBrushFalloffInput.value);
+  const strength = Number(
+    deps.sculptBrushStrengthByTool[deps.effectiveSculptBrushTool()]
+    ?? deps.sculptBrushStrengthInput.value
+  );
+  const reverse = Boolean(stroke.reverse);
+  // 候选点汇总：source 与 partner（若镜像存在）都枚举，可见性判据与主体循环的逐点权重
+  // 同一份（sourceVisible/partnerVisible 来自 sculptBrushUnits 的同一次视锥/半空间判定），
+  // 而不是自己另写一套。candidate 带 lock 引用，写回时才知道该改哪个 lock 的哪条数组。
+  const candidates = [];
+  stroke.units.forEach(({ source, partner, sourceVisible, partnerVisible }) => {
+    if (sourceVisible) {
+      deps.taperEditor.taperCurveBrushCandidates(source, rect).forEach((candidate) => {
+        candidates.push({ ...candidate, lock: source });
+      });
+    }
+    if (partner && partnerVisible) {
+      deps.taperEditor.taperCurveBrushCandidates(partner, rect).forEach((candidate) => {
+        candidates.push({ ...candidate, lock: partner });
+      });
+    }
+  });
+  const nearest = nearestScreenCandidate(candidates, cursor.x, cursor.y, radius);
+  if (!nearest) return true;
+  const target = nearest.candidate;
+  // 权重按屏幕距离衰减，用其它笔刷同一个 falloff 内核（与绿色 tip-width 分支的
+  // bone-interaction.js:932 同一行为，taperCurveBrushCandidates 已经投影过一次，这里
+  // 不重复投影）。
+  const weight = sculptBrushWeight(nearest.distance, radius, falloff);
+  if (!(weight > 0)) return true;
+  const curveArray = target.curveSide === "secondary"
+    ? target.lock.taperCurveSecondary
+    : target.lock.taperCurve;
+  const point = curveArray?.[target.pointIndex];
+  if (!point) return true;
+  const nextValue = sculptWidthBrushMultiplier(
+    point.value,
+    Math.hypot(deltaX, deltaY),
+    weight,
+    strength,
+    // 紫色自己的钳位区间 [0, TAPER_VALUE_MAX]（手动拖拽 taper-editor.js:1032 同一个上界）。
+    // 绝不能落回 sculptWidthBrushMultiplier 的默认区间（绿色 TIP_WIDTH_VALUE_MIN/MAX）——
+    // 那会让笔刷写出手动拖拽写不出的值。
+    { reverse, min: 0, max: TAPER_VALUE_MAX }
+  );
+  // undo 捕获必须在"确认要写"之后才推（不是每次采样都推）——权重 <= 0 或候选点缺失的
+  // 早退分支都在它之前，不会产生空 undo 步骤。
+  if (!stroke.undoCaptured) { deps.pushUndoState(); stroke.undoCaptured = true; }
+  point.value = nextValue;
+  // 几何重建：手动拖拽的调用链是 updateTaperMeshPointDrag 写 point.value ->
+  // scheduleTaperCurveEdit -> (rAF) -> applyTaperCurveEdit -> editSelectedLocks ->
+  // updateLockGeometry/rebuildLockGeometry。那一层 scheduleTaperCurveEdit/editSelectedLocks
+  // 绑定的是"当前打开的 2D 曲线编辑器目标"（deps.sculptState.taperCurveEdit.id）且会把
+  // 曲线传播给其它被选中的发丝——笔刷可能同一笔触碰多个未打开编辑器的发丝/panel，套用那层
+  // 会改错 lock，还会把这一根的曲线意外扩散给其它被选中的发丝（多选传播是编辑器自己的
+  // 功能，不该是笔刷的副作用）。故直接调用两条调用链共同落到的同一个原语
+  // rebuildLockGeometry（本文件其它笔刷分支——queueSculptBrushGeometryUpdate 排队调用的也
+  // 是它——同一个函数，默认 options 已包含 updateCurveObjects）。
+  deps.rebuildLockGeometry(target.lock);
+  deps.syncActiveMirror(target.lock, { deferGeometry: false });
+  deps.updateTopologyStats();
+  stroke.editedLockIds.add(target.lock.id);
+  return true;
+}
+
 function applySculptMoveStrokeSample(stroke, clientX, clientY) {
   const deltaX = clientX - stroke.lastX;
   const deltaY = clientY - stroke.lastY;
@@ -551,6 +644,9 @@ function applySculptMoveStrokeSample(stroke, clientX, clientY) {
 
   // Selected sub-bone brush (masked to that sub-bone; scale centers on its exposed root).
   if (deps.applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY)) return;
+  // Width Brush 紫色分支（情况 1/3，见上方函数头注释）：发尖分支优先（情况 2），紫色在其
+  // 后面接管。两者互斥，返回 true 即消费掉这一笔——不落到下面的通用 move 主体。
+  if (applyWidthCurveBrushSample(stroke, clientX, clientY, deltaX, deltaY)) return;
 
   const rect = deps.renderer.domElement.getBoundingClientRect();
   const cursor = new THREE.Vector2(clientX - rect.left, clientY - rect.top);

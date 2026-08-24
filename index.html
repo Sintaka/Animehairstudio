@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anime Hair Studio</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=20260910-12" />
+    <link rel="stylesheet" href="./styles.css?v=20260910-13" />
   </head>
   <body>
     <main class="studio-shell">
@@ -282,6 +282,10 @@
           <button class="tool-button sculpt-brush-button" data-tool="sculpt-twist" type="button" title="Twist strands around their tangent axis by dragging horizontally" aria-label="Twist Brush">
             <span class="sculpt-twist-icon" aria-hidden="true"></span>
             <span class="brush-label"><span class="brush-name">Twist</span><span class="brush-suffix"> Brush</span></span>
+          </button>
+          <button class="tool-button sculpt-brush-button" data-tool="sculpt-width" type="button" title="Drag to shrink the strand width curve; hold Ctrl to grow it" aria-label="Width Brush">
+            <span class="sculpt-width-icon" aria-hidden="true"></span>
+            <span class="brush-label"><span class="brush-name">Width</span><span class="brush-suffix"> Brush</span></span>
           </button>
         </div>
         <div id="viewportEditModeControl" class="viewport-edit-mode" aria-label="Viewport workspace and edit mode">
@@ -2414,6 +2418,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260910-12"></script>
+    <script type="module" src="./app.js?v=20260910-13"></script>
   </body>
 </html>

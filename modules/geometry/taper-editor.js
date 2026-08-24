@@ -408,6 +408,51 @@ function addTaperMeshPointsForCurve(lock, curveKey) {
   }));
 }
 
+// ── Width Brush 紫色分支的候选点枚举（方案 C，用户拍板） ───────────────────────────────
+// 只读、无副作用地产出既有 WidthCurve 关键点的屏幕坐标，供笔刷按**屏幕距离**取最近的一个
+// 去推——不插点、不重新拟合曲线。几何公式**照抄** addTaperMeshPointsForCurve 的把手绘制
+// （上面 :340-408）：候选点必须与视口画出的紫色把手逐点重合，否则会出现"离把手很近却推
+// 不动"或反之。只处理 curveKey === "taperCurve"（WidthCurve 本身）——用户要的是宽度笔刷，
+// 不碰 depthCurve/twistCurve（那两条不在本轮范围内，也不测试）。
+//
+// 分侧规则与 addTaperMeshPointsForCurve 的 curveSides 变量（:362-371）同一份判据：
+// asymmetric=false 时两侧手柄都画在同一条 primary 曲线上（sides=[-1,1]，curveSide 恒
+// "primary"）；asymmetric=true 时 primary 只画右侧（sides=[1]）、secondary 只画左侧
+// （sides=[-1]）。candidate.curveSide 是调用方写回时用哪个数组（"secondary" →
+// lock.taperCurveSecondary，否则 lock.taperCurve）的**唯一**依据，缺了它非对称态会写错
+// 曲线。ensureSecondaryTaperCurve 有副作用（会创建 secondary 数组）——只在 asymmetric 为
+// true 时调用，此时 secondary 数组本就该存在，与 addTaperMeshPointsForCurve 的既有行为
+// 一致（不会在对称态下意外造出一条空的 secondary）。
+function taperCurveBrushCandidates(lock, rect) {
+  const curveKey = "taperCurve";
+  if (!lock?.taperCurve?.length) return [];
+  const asymmetric = Boolean(lock.asymmetricWidthCurve);
+  const curveSides = asymmetric
+    ? [
+        { curvePoints: lock.taperCurve, sides: [1], curveSide: "primary" },
+        { curvePoints: ensureSecondaryTaperCurve(lock, curveKey), sides: [-1], curveSide: "secondary" }
+      ]
+    : [{ curvePoints: lock.taperCurve, sides: [-1, 1], curveSide: "primary" }];
+  const curve = deps.strandGeometryCurve(lock);
+  const candidates = [];
+  curveSides.forEach(({ curvePoints, sides, curveSide }) => {
+    if (!curvePoints?.length) return;
+    curvePoints.forEach((point, pointIndex) => {
+      const frame = taperMeshPointFrame(lock, curve, point.position, curveKey);
+      sides.forEach((side) => {
+        // axis 恒 "x"：curveKey 恒为 "taperCurve"（非 depthCurve/twistCurve），与
+        // addTaperMeshPointsForCurve 的 `axis = curveKey === "depthCurve" ? "z" : "x"` 同一
+        // 判据的 "x" 分支。frameAxis 同理恒 "x"。
+        const extent = taperMeshPointExtentPerValue(lock, point.position, side, "x") * point.value;
+        const worldPos = frame.point.clone().addScaledVector(frame.x, side * extent);
+        const pixel = deps.viewportPixelPoint(worldPos, rect);
+        candidates.push({ x: pixel.x, y: pixel.y, pointIndex, side, curveSide });
+      });
+    });
+  });
+  return candidates;
+}
+
 function updateTaperMeshPoints() {
   clearTaperMeshPoints();
   const edits = deps.visibleTaperMeshCurveEdits();
@@ -936,6 +981,11 @@ function beginTaperMeshPointDrag(event) {
     || deps.sculptState.taperMeshPointDrag
     || event.shiftKey
     || event.ctrlKey
+    // 门 1/2（Width Brush 模式互斥，用户原话「进入 WidthCurve 笔刷不应该能够直接鼠标拖动
+    // WidthCurve，而是笔刷操作」）：笔刷激活时**真的禁止**直接拖紫色控制点。另一道门在
+    // bone-interaction.js 的绿色 tipWidth 拖拽入口（beginPanelSplitHandleDrag），两处必须
+    // 同时存在 —— 只关一道会让用户在笔刷模式下仍能从另一条路径拖到曲线。
+    || deps.sel.activeTool === "sculpt-width"
     || event.altKey
     || event.metaKey
   ) return;
@@ -1115,6 +1165,9 @@ function updateSelectedTaperPoint(key, value) {
     clearTaperMeshPoints,
     taperMeshPointFrame,
     taperMeshPointExtentPerValue,
+    // Width Brush 紫色分支专用（挂在工厂返回对象上而非顶层 named export ——
+    // 理由见调用点 app.js 的 taperCurveBrushCandidates 转发注释，及本文件头的同类约束）。
+    taperCurveBrushCandidates,
     updateTaperMeshPoints,
     setTaperMeshPointsVisible,
     renderTaperCurveEditor,

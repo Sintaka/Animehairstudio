@@ -53,7 +53,7 @@ import {
   tipWidthSideControlTsFrom,
   tipWidthSideExposesTAt,
   tipWidthSideForkFromHeights
-} from "./tip-width-curve.js?v=20260901-1";
+} from "./tip-width-curve.js?v=20260910-9";
 
 // Shared tip width control point count: 5 midpoints (common fork) + the tip end (t=1).
 // app.js createCurveObjects reuses this constant for the viewport tip width handles.
@@ -425,9 +425,13 @@ function setTipWidthCurveValue(lock, segmentIndex, splits, bone, side, t, value)
     t,
     value
   });
-  if (!written) return;
+  if (!written) return null;
   if (side < 0) bone.taperCurveSecondary = buildTipWidthCurve(lock, segmentIndex, splits, bone, -1);
   else bone.taperCurve = buildTipWidthCurve(lock, segmentIndex, splits, bone, 1);
+  // 返回**重建后**的本侧曲线（非 null = 确实写进去了）。Width Brush 的写入适配层靠这个
+  // 真假值把 setTipWidthCurveValueFrom 的「无处可写」语义一路透传给笔刷，笔刷据此跳过该
+  // 控制点而不是把 undefined 当成成功。视口拖拽路径不读返回值，行为不变。
+  return side < 0 ? bone.taperCurveSecondary : bone.taperCurve;
 }
 
 // Replicates the panel geometry's frame (panelFrameAt: parallel-transported frames

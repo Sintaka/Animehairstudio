@@ -21,7 +21,7 @@ import {
   tipWidthSideControlTsFrom,
   tipWidthSideExposesTAt,
   tipWidthSideForkFromHeights
-} from "./tip-width-curve.js?v=20260901-1";
+} from "./tip-width-curve.js?v=20260910-9";
 // 发尖子骨骼链的几何无关原语（与 strand-geometry.js 的「Route 2」再锚定趟用**同一批**
 // 函数）：把手必须跟随被拖动的发尖链，见文件下方 strandTipChainTransformAt。
 import {
@@ -354,7 +354,7 @@ export function buildStrandTipWidthCurve(lock, splits, tubeIndex, bone, side) {
 // 与 panel 的 setTipWidthCurveValue 逐字同构（含 asymmetricWidthCurve = true 与
 // 「返回 null ⇒ 跳过写入、不重建」的语义）；吸附规则本体在 setTipWidthCurveValueFrom。
 export function setStrandTipWidthCurveValue(lock, splits, tubeIndex, bone, side, t, value) {
-  if (!bone) return;
+  if (!bone) return null;
   if (!bone.taperCurve) bone.taperCurve = buildStrandTipWidthCurve(lock, splits, tubeIndex, bone, 1);
   if (!bone.taperCurveSecondary) bone.taperCurveSecondary = buildStrandTipWidthCurve(lock, splits, tubeIndex, bone, -1);
   bone.asymmetricWidthCurve = true;
@@ -365,9 +365,12 @@ export function setStrandTipWidthCurveValue(lock, splits, tubeIndex, bone, side,
     t,
     value
   });
-  if (!written) return;
+  if (!written) return null;
   if (side < 0) bone.taperCurveSecondary = buildStrandTipWidthCurve(lock, splits, tubeIndex, bone, -1);
   else bone.taperCurve = buildStrandTipWidthCurve(lock, splits, tubeIndex, bone, 1);
+  // 与 panel 的 setTipWidthCurveValue 逐字同构（0.2.148 起两侧都返回重建后的本侧曲线）：
+  // Width Brush 的写入适配层靠这个真假值透传「无处可写」语义。视口拖拽路径不读返回值。
+  return side < 0 ? bone.taperCurveSecondary : bone.taperCurve;
 }
 
 // ── 把手放置：管的「某侧边缘在世界空间的位置」──────────────────────────────────────

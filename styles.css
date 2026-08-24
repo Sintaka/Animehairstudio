@@ -7520,6 +7520,37 @@ body.no-panels .tool-panel {
   transform: rotate(18deg);
 }
 
+/* Width Brush: two flush horizontal bars of different length (wide over narrow) reads as a
+   tapering width-curve profile, distinct from every other sculpt icon's rotated/concentric
+   motifs (twist's tilted ovals, orient's nested rings, slide/push's chevrons, move's plus). */
+.sculpt-width-icon {
+  position: relative;
+  width: 17px;
+  height: 17px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.sculpt-width-icon::before,
+.sculpt-width-icon::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  height: 2px;
+  background: currentColor;
+  transform: translateX(-50%);
+}
+
+.sculpt-width-icon::before {
+  top: 5px;
+  width: 11px;
+}
+
+.sculpt-width-icon::after {
+  bottom: 5px;
+  width: 5px;
+}
+
 .hidden {
   display: none !important;
 }
