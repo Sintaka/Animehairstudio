@@ -241,7 +241,10 @@
    - 修复：轴跨度改用**标称管宽**（band 的 profile 极值 × baseWidth × widthScale × 该行 pointScales.x，**与 taper 无关**），正对应 panel 用「不随 taper 收缩的段 boundaries」建 handleU。taper 恒 1 时标称跨度与真实边缘重合。同时保住仿射性（两端点都不含 Tip Clump，它只作 lerp 系数）——拖拽端 49 探针反演的前提。
    - 验证：`scripts/verify-tip-clump.mjs` 真实浏览器从 16/17 → **17/17**（`lowToHigh` 由 0 变为 0.146）；补 node 回归「taper(1)=0 时轴仍可拖 + 每管手柄互不重合」，并在该测试里先断言「真实边缘确实横向退化」作为前提确认。
 
-26. **`scalp-builder.js` 三个 `deps.X` 裸引用恒为 undefined（0.2.145 发现，已知未修）**
+26. **`scalp-builder.js` 三个 `deps.X` 裸引用恒为 undefined（0.2.145 发现，0.2.147 已修）**
    - 问题：`modules/scalp/scalp-builder.js` 里 `deps.editedScalpSurfaceMesh` / `deps.editedScalpRegions` / `deps.importedScalpGuideAsset` 三处依赖在 `app.js` 顶层没有同名变量可批填，实际恒为 `undefined`。使用点：L306（`deps.importedScalpGuideAsset`）、L617/L618（`editingAuthoredScalp ? deps.editedScalpSurfaceMesh : deps.scalpState.customScalpSurfaceMesh` 这类三元表达式）——即「编辑内置头皮」（`editingAuthoredScalp` 为真）分支恒取到 `undefined`。
    - 正确字段应在 `scalpState.state` 上：`modules/scalp/scalp-store.js:13` 有 `editedScalpSurfaceMesh: null`，正确写法应为 `deps.scalpState.editedScalpSurfaceMesh`（`editedScalpRegions`/`importedScalpGuideAsset` 同理）。
-   - **状态：已知未修**（0.2.145 发现，用户拍板本轮只记录不修）。修它属于行为变更，需先确认 `editingAuthoredScalp` 分支的预期行为（编辑内置头皮时是否真的要落到 `editedScalpSurfaceMesh` 而非 `customScalpSurfaceMesh`）。代码侧已在 `scalp-builder.js` 顶部（L12–16）注释标注「勿顺手修对」。
+   - **修复（0.2.147）**：三处统一补 `.scalpState`。原意无歧义 —— `paintScalpAt` 的**上一行**（判定 `editingAuthoredScalp` 那行）读的正是 `deps.scalpState.editedScalpSurfaceMesh`，同一个字段隔一行两种写法，是漏写而非设计。
+   - **真实症状比"取到 undefined"更重**：`targetMesh` 拿到 `undefined` 后，紧接的 `targetMesh.geometry.getAttribute("position")` **直接 TypeError** ⇒ 给**内置**头皮刷区域从来就是崩的，不是"行为不对"。另一处 L310 的 `content === null` 分支本意是"保留既有 guide 资产"，实际把 store 里的值**清成 undefined**；补 `.scalpState` 后成为自赋值 = 真正的 no-op，符合原意。
+   - **为什么躲过了所有测试**：`createScalpBuilderApi` 要约 157 个注入依赖 + renderer/DOM/THREE 场景图，纯 node 驱动不了 `paintScalpAt`。回归改用**源码契约断言**（`panel-scalp-conform.test.mjs`，本仓库 dom-contract / split-tip-geometry 已有同手法）：剥掉注释后断言三个裸 `deps.X` 出现 0 次。**必须先剥注释** —— 修复处的解释性注释逐字引用了这三个错误写法，不剥则断言被自己的注释满足、永远绿。已变异验证：改回任一处即 `not ok`。
+   - **教训**：`Object.assign(deps, {...})` 批填式依赖注入，漏填一个 key 不会有任何静态或运行时提示，直到那条分支被走到。这类 bug 的可检出面在**源码层**（`deps.X` 是否在批填清单里），不在行为层。

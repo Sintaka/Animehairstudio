@@ -9,11 +9,12 @@ import { DEFAULT_LAYER_OFFSETS, DEFAULT_SWEEP_PROFILE, ROOT_SCALP_OFFSET_DISTANC
 
 export function createScalpBuilderApi(deps) {
   // deps: store state proxies (scalpState/sculptState/sel/guideState) + app.js functions/consts.
-  // ⚠️ 已知潜在裸引用 bug（非本次改动引入，**勿顺手"修对"**，用户已拍板本轮只记录不修）：
-  // deps.editedScalpSurfaceMesh / deps.editedScalpRegions / deps.importedScalpGuideAsset
-  // 在 app.js 顶层没有同名变量可批填 —— 只有 scalpState.state.X 存在，这三个 dep 实际恒为
-  // undefined（见本文件 L306/L617/L618）。完整依赖清单直接读 app.js 的
-  // Object.assign(scalpBuilderDeps,{...}) 批填点（约 157 项）。
+  // bug #26 已于 0.2.147 修复（此前三处写成 `deps.X` 而 app.js 顶层无同名变量可批填、
+  // 恒为 undefined）：`editedScalpSurfaceMesh` / `editedScalpRegions` /
+  // `importedScalpGuideAsset` 的真源都是 `scalpState.state`，现已统一走 `deps.scalpState.X`。
+  // 症状：给**内置**头皮刷区域直接 TypeError（`targetMesh.geometry` 取自 undefined），
+  // 以及重新导入自定义头皮时把已存的 guide 资产清成 undefined。
+  // 完整依赖清单直接读 app.js 的 Object.assign(scalpBuilderDeps,{...}) 批填点（约 157 项）。
 
 async function createAuthoredScalpGeometry() {
   const materialRegions = {
@@ -307,7 +308,13 @@ function installCustomScalpGeometry(geometry, regions, { name = "custom-scalp.ob
   }
   deps.scalpState.customScalpRegions = [...regions];
   writeCustomScalpRegionColors();
-  deps.scalpState.importedScalpGuideAsset = content === null ? deps.importedScalpGuideAsset : { format: "obj", name, content };
+  // bug #26：`deps.importedScalpGuideAsset` 在 app.js 顶层**没有同名变量可批填**，恒为
+  // undefined ⇒ `content === null`（想表达"保留既有资产"）时会把 store 里的值**清成
+  // undefined**，而不是留住它。真源是 scalpState.state（scalp-store.js 有该字段），故
+  // 补 `.scalpState` 后此分支成为自赋值 = 真正的 no-op，符合原意。
+  deps.scalpState.importedScalpGuideAsset = content === null
+    ? deps.scalpState.importedScalpGuideAsset
+    : { format: "obj", name, content };
   setScalpGuideSource("custom");
 }
 
@@ -618,8 +625,17 @@ function paintScalpAt(hit) {
   const radius = Number(deps.scalpBrushSizeInput.value);
   if (hit.object === deps.scalpState.customScalpSurfaceMesh || hit.object === deps.scalpState.editedScalpSurfaceMesh) {
     const editingAuthoredScalp = hit.object === deps.scalpState.editedScalpSurfaceMesh;
-    const targetMesh = editingAuthoredScalp ? deps.editedScalpSurfaceMesh : deps.scalpState.customScalpSurfaceMesh;
-    const targetRegions = editingAuthoredScalp ? deps.editedScalpRegions : deps.scalpState.customScalpRegions;
+    // bug #26：这两行原本写 `deps.editedScalpSurfaceMesh` / `deps.editedScalpRegions`，
+    // 而 app.js 顶层没有同名变量可批填 ⇒ 恒为 undefined ⇒ 上一行刚判定"正在编辑内置头皮"，
+    // 紧接着 L623 的 `targetMesh.geometry` 就对 undefined 取属性、直接 TypeError（即：给
+    // 内置头皮刷区域**从来就是崩的**）。真源是 scalpState.state —— 注意上一行 620 读的
+    // 正是 `deps.scalpState.editedScalpSurfaceMesh`，同一个字段隔一行两种写法，是漏写。
+    const targetMesh = editingAuthoredScalp
+      ? deps.scalpState.editedScalpSurfaceMesh
+      : deps.scalpState.customScalpSurfaceMesh;
+    const targetRegions = editingAuthoredScalp
+      ? deps.scalpState.editedScalpRegions
+      : deps.scalpState.customScalpRegions;
     const position = targetMesh.geometry.getAttribute("position");
     const triangleCenter = new THREE.Vector3();
     let nearestTriangle = hit.faceIndex ?? 0;

@@ -1504,3 +1504,34 @@ test("bug2 回归：WidthCurve 绿色手柄渲染坐标必须走 conform（幅�
   assert.ok(maxBefore > 0.02, `sanity: 修复前的公式必须确实错位（实测 ${maxBefore}）`);
   assert.ok(maxAfter < 0.05, `修复后 WidthCurve 手柄必须显著贴近真实渲染网格（实测最大残差 ${maxAfter}，修复前 ${maxBefore}）`);
 });
+
+// bug #26 回归：scalp-builder 的注入依赖不得写成裸 `deps.X`，真源在 `deps.scalpState.X`。
+//
+// **为什么用源码契约而不是行为测试**：`createScalpBuilderApi` 要约 157 个注入依赖 +
+// renderer/DOM/THREE 场景图，纯 node 驱动不了 `paintScalpAt`。这三处恰恰因此躲过了所有
+// 测试 —— 给内置头皮刷区域是 `targetMesh.geometry` 对 undefined 取属性、**直接 TypeError**，
+// 却一直没有任何断言覆盖。本仓库已在 dom-contract / split-tip-geometry 里用同样的源码
+// 契约手法，此处沿用。
+//
+// **注释必须先剥掉**：修复处的解释性注释里逐字引用了这三个错误写法（"原本写
+// deps.editedScalpSurfaceMesh"），不剥注释的话断言会被自己的注释满足 ⇒ 永远绿。
+test("bug #26 回归：scalp-builder 不得再出现裸 deps.editedScalp* / deps.importedScalpGuideAsset", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const raw = await readFile(new URL("../modules/scalp/scalp-builder.js", import.meta.url), "utf8");
+  const code = raw
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\/\/.*$/, ""))
+    .join("\n");
+
+  assert.ok(code.length > 5000, `sanity：剥注释后仍应是完整源码（实测 ${code.length} 字符）`);
+  assert.match(code, /deps\.scalpState\.editedScalpSurfaceMesh/,
+    "sanity：正确写法必须存在，否则本断言在空集上通过");
+
+  for (const field of ["editedScalpSurfaceMesh", "editedScalpRegions", "importedScalpGuideAsset"]) {
+    const bare = new RegExp(`deps\\.${field}\\b`, "g");
+    const hits = code.match(bare) || [];
+    assert.equal(hits.length, 0,
+      `deps.${field} 是裸引用（app.js 顶层无同名变量可批填，恒为 undefined），应写 deps.scalpState.${field}`);
+  }
+});
