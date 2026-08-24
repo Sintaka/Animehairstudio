@@ -980,7 +980,6 @@ function beginTaperMeshPointDrag(event) {
     || !deps.taperMeshPointsGroup.visible
     || deps.sculptState.taperMeshPointDrag
     || event.shiftKey
-    || event.ctrlKey
     // 门 1/2（Width Brush 模式互斥，用户原话「进入 WidthCurve 笔刷不应该能够直接鼠标拖动
     // WidthCurve，而是笔刷操作」）：笔刷激活时**真的禁止**直接拖紫色控制点。另一道门在
     // bone-interaction.js 的绿色 tipWidth 拖拽入口（beginPanelSplitHandleDrag），两处必须
@@ -989,12 +988,38 @@ function beginTaperMeshPointDrag(event) {
     || event.altKey
     || event.metaKey
   ) return;
+  // 注意：**刻意没有** `|| event.ctrlKey`。原先那个裸早退让 Ctrl 根本进不到这里，于是紫色
+  // 曲线永远没有非对称模式；下方按 Ctrl 提升为非对称（要求 c，与绿色 tipWidth 的
+  // bone-interaction.js:589-596 对齐）。
   deps.rayFromViewportEvent(event);
   const hit = deps.raycaster.intersectObjects(deps.taperMeshPointsGroup.children, false)[0];
   if (!hit?.object?.userData.taperMeshPoint) return;
   releaseTaperCurveEditorFieldFocus();
   const lock = deps.locks.find((item) => item.id === hit.object.userData.lockId);
   deps.sculptState.taperCurveEdit.side = hit.object.userData.curveSide === "secondary" ? "secondary" : "primary";
+  // ── Ctrl = 非对称（要求 c）：只调被拖的**那一侧** ────────────────────────────────────
+  // 对称态下 addTaperMeshPointsForCurve 用 `sides: [-1, 1]` 从**同一条 primary** 曲线画出左右
+  // 两排把手（:371），所以 userData.curveSide 恒为 "primary"、无法区分被拖的是哪一侧 ——
+  // 真正的物理侧在 userData.side（±1）。因此 Ctrl 提升要做两件事：① 打开 asymmetric 标志并
+  // 用 ensureSecondaryTaperCurve 把 secondary 克隆出来（两侧起始逐位相同，于是「另一侧不变」
+  // 成立）；② 若被拖的是左侧（side < 0）就把编辑目标改到 secondary。
+  // 侧 ↔ 曲线的对应关系与绿色 tipWidth 一致（bone-interaction.js:589-596 的 writeWidth(side)，
+  // 及 buildTipWidthCurve 的 `side < 0 ? secondary : primary`）：**左 = secondary、右 = primary**。
+  // 改这里必须回看那两处，三者是同一条约定。
+  if (event.ctrlKey && lock) {
+    const curveKey = deps.sculptState.taperCurveEdit.curveKey;
+    const target = activeTaperTarget();
+    const twistOrProcedural = deps.branchSweep.twistCurveEditing(curveKey)
+      || deps.branchSweep.proceduralBranchCurveEditing(curveKey);
+    // twist / procedural 曲线没有左右两侧（addTaperMeshPointsForCurve 给它们 `sides: [1]`），
+    // 对它们提升非对称没有意义，故跳过 —— 与那边的分支条件是同一条判据。
+    if (target && !twistOrProcedural) {
+      const asymmetricKey = curveKey === "depthCurve" ? "asymmetricDepthCurve" : "asymmetricWidthCurve";
+      ensureSecondaryTaperCurve(target, curveKey);
+      target[asymmetricKey] = true;
+      if (Number(hit.object.userData.side) < 0) deps.sculptState.taperCurveEdit.side = "secondary";
+    }
+  }
   const curvePoints = activeTaperCurve();
   const pointIndex = hit.object.userData.pointIndex;
   const curvePoint = curvePoints?.[pointIndex];
