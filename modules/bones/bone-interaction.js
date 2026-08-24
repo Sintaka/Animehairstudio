@@ -931,24 +931,50 @@ function applySubBoneBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
     // 经 viewportPixelPoint），再投一次等于把同一条投影写两遍。
     const weight = sculptBrushWeight(nearest.distance, radius, falloff);
     if (!(weight > 0)) return true;
-    const currentMultiplier = readTipWidthMultiplierForHost({
-      lock, host, segmentIndex, side: target.side, t: target.t
+    // ── 双侧等比缩放（回归修复）──────────────────────────────────────────────────────
+    // 同步点：手动拖拽绿色手柄默认就是双侧写，见本文件 ~L606-609 的
+    // writeWidth(side) + writeWidth(-side)。笔刷这里此前只对 target.side 一侧
+    // 读写，没跟上那个既有约定，刷发尖时会变成只有一侧动的非对称编辑。
+    // 为什么是「等比缩放」而不是「设成同一绝对值」：手动拖拽把两侧设为同一个绝对
+    // multiplier（会抹平已有的非对称形状），笔刷不能照抄——sculptWidthBrushMultiplier
+    // 算出的 amount 只依赖笔刷输入（strokeDistance/weight/strength/reverse），与
+    // currentMultiplier 无关，返回的是 current × (1 + amount) 这个相对增量。对两侧
+    // 各自的 current 套用同一个 amount，天然就是等比缩放：保留已有的非对称形状，只把
+    // 整体宽度同步缩放——这正是用户要的效果（紫色 panel/发丝路径
+    // applyWidthCurveBrushSample 早就是这个语义，这里只是把发尖分支补齐）。
+    // 为什么同一个 t 能直接用于对侧：发尖曲线是固定网格共享索引
+    // （TIP_WIDTH_CONTROL_POINTS，见 tip-width-curve.js:30），网格由两侧共用的最深
+    // zipper 高度算出 ⇒ 同一个 pointIndex 在两侧对应同一个 t，tipWidthBrushCandidates
+    // 报告的 target.t 可以原样喂给 -target.side，不需要任何换算。
+    const strokeDistance = Math.hypot(deltaX, deltaY);
+    let written = null;
+    [target.side, -target.side].forEach((side) => {
+      const currentMultiplier = readTipWidthMultiplierForHost({
+        lock, host, segmentIndex, side, t: target.t
+      });
+      // 钳位逐侧独立：sculptWidthBrushMultiplier 内部把结果钳到
+      // [TIP_WIDTH_VALUE_MIN, TIP_WIDTH_VALUE_MAX]（width-brush.js 内的常量）。两侧各自
+      // 调用 ⇒ 一侧撞界饱和时另一侧不受影响继续变化，这正是等比缩放该有的样子，
+      // 刻意不加「一侧撞界就锁住另一侧」的跨侧联动。
+      const nextMultiplier = sculptWidthBrushMultiplier(
+        currentMultiplier,
+        strokeDistance,
+        weight,
+        strength,
+        { reverse }
+      );
+      // 写入位置 = placement 自己报告的 t（**原样**，无换算）。吸附由
+      // setTipWidthCurveValueFrom 完成，且它吸附的目标集合与 placement 的暴露判据是同一个
+      // 定义点（tipWidthSideExposesTAt）⇒ 点数前后不变、不会新增关键点。
+      const sideWritten = writeTipWidthValueForHost({
+        lock, host, segmentIndex, side, t: target.t, value: nextMultiplier
+      });
+      // null = 该侧无处可写（锁定区 / 暴露子集为空）：只跳过这一侧，不影响另一侧。
+      // 只要有一侧写成功就记下来（不用 sideWritten 覆盖已记录的成功结果）。
+      if (sideWritten !== null) written = sideWritten;
     });
-    const nextMultiplier = sculptWidthBrushMultiplier(
-      currentMultiplier,
-      Math.hypot(deltaX, deltaY),
-      weight,
-      strength,
-      { reverse }
-    );
-    // 写入位置 = placement 自己报告的 t（**原样**，无换算）。吸附由
-    // setTipWidthCurveValueFrom 完成，且它吸附的目标集合与 placement 的暴露判据是同一个
-    // 定义点（tipWidthSideExposesTAt）⇒ 点数前后不变、不会新增关键点。
-    const written = writeTipWidthValueForHost({
-      lock, host, segmentIndex, side: target.side, t: target.t, value: nextMultiplier
-    });
-    // null = 无处可写（锁定区 / 暴露子集为空）：跳过，不重建几何。
-    if (!written) return true;
+    // 两侧都 null 才整体跳过、不重建几何；任一侧非 null 就要重建（只重建一次）。
+    if (written === null) return true;
     stroke.editedLockIds.add(lock.id);
     deps.updateLockGeometry(lock, { immediate: true });
     deps.updateCurveObjects(lock, { visible: true });
