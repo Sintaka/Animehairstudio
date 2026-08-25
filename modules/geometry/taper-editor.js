@@ -448,6 +448,23 @@ function taperCurveBrushCandidates(lock, rect) {
         const pixel = deps.viewportPixelPoint(worldPos, rect);
         candidates.push({ x: pixel.x, y: pixel.y, pointIndex, side, curveSide });
       });
+      // 中心轴候选点（主脑拍板：刷左边/右边/中心轴三者等价，靠近主骨骼中心时不该因为
+      // 找不到候选点而静默 no-op）。只在 sides.forEach 之外补一次——对称态 sides=[-1,1]
+      // 若把这行搬进 sides.forEach 会重复产出两个坐标完全相同的候选点。frame.point 就是
+      // addTaperMeshPointsForCurve 摆手柄前的基准点（未加 side*extent 偏移），即主骨骼
+      // 中心轴本身，不需要再算 extent。
+      // side 字段取 sides[0]：对称态两侧本就写回同一个 pointIndex，side 对写回目标无
+      // 影响，取哪个值都一样；非对称态 primary 恒 sides=[1]、secondary 恒 sides=[-1]，
+      // curveSide 才是写回依据（不是 side），所以 sides[0] 在这两种形态下都是安全的占位值。
+      // 非对称态的已知后果：若 primary/secondary 在同一 pointIndex 上 position 相同
+      // （常见情况——两侧关键点通常按同一组归一化高度录入），两条曲线各自的中心候选点
+      // 屏幕坐标会完全重合。nearestScreenCandidate（width-brush.js）文档化的并列规则是
+      // "先到者胜"（严格 `<`），而 curveSides 数组固定 primary 在前、secondary 在后
+      // （:430-435），所以光标精确落在中心轴时命中的是 primary/右侧的那个点。这不是
+      // bug——三者等价只要求「刷中心能命中某个正确的点」，没要求命中哪一侧，且用户拍板
+      // 原话本身就是「两边对应的主骨骼位置是一样的」，即两侧本该等价，谁赢都不影响结果。
+      const centerPixel = deps.viewportPixelPoint(frame.point, rect);
+      candidates.push({ x: centerPixel.x, y: centerPixel.y, pointIndex, side: sides[0], curveSide });
     });
   });
   return candidates;

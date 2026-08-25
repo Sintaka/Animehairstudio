@@ -23,7 +23,7 @@ import { sculptBrushWeight, sculptTwistBrushDeltas, smoothSculptPointDeltas, smo
 // Width Brush 内核单独成文件的理由（dom-contract 冻结了 app.js 的 sculpt-brush 版本串）见
 // width-brush.js 文件头。smoothLinearScalarDeltas 是本轮新增的线性（无角度 wrap）标量平滑，
 // 同一理由落在这个文件而不是 sculpt-brush.js。
-import { nearestScreenCandidate, sculptWidthBrushMultiplier, smoothLinearScalarDeltas } from "../sculpt/width-brush.js?v=20260910-9";
+import { nearestScreenCandidate, sculptWidthBrushMultiplier, smoothLinearScalarDeltas } from "../sculpt/width-brush.js?v=20260910-10";
 // 控制点总数：与 bone-view-handles.js 的把手分配同一个常量（每侧 TIP_WIDTH_CONTROL_POINTS + 1
 // 个，索引完整共享网格）。笔刷枚举候选点必须用同一个上界，否则会漏掉最后一个（发尖端点）。
 import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260910-8";

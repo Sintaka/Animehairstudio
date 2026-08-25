@@ -74,12 +74,26 @@ export function sculptWidthBrushAmount(strokeDistance, weight, strength, options
   return WIDTH_DIRECTION * (options.reverse ? -1 : 1) * distance * influence * amount * scale;
 }
 
+// 乘法模型（`current × (1 + amount)`，用户拍板保留，不换成加法）在 0 是**吸收态**：
+// 0 × 任何倍数都还是 0，一旦某个关键点被写到 0 就永久刷不动——连 Ctrl 加宽（reverse）
+// 也救不回来，因为 0 × (1 + 正数) 仍是 0。而 DEFAULT_TAPER_CURVE（app-config.js）末端点
+// 就是 `{ position: 1, value: 0 }`：普通发丝末端的合法初始值本来就是 0。所以给乘法模型一个
+// 非零下限，把「进入吸收态」这件事从模型里排除掉。
+// 取 0.02：小到视觉上仍是收尖（对比 TIP_WIDTH_VALUE_MIN=0.08、TAPER_VALUE_MAX 通常 1.5，
+// 0.02 已经很窄），大到乘法能把它拉回来（0.02 × 1.05 ≈ 0.021，逐笔可感知地变化，不会像
+// 0 那样卡死）。一行可调：改这一个常量即可整体调整下限松紧，不影响乘法模型本身。
+export const SCULPT_WIDTH_BRUSH_VALUE_FLOOR = 0.02;
+
 // 目标倍率。钳位区间**引用** tip-width-curve 的唯一定义点：笔刷若自带一套界，算出的值会被
 // 写入侧静默改小，于是「刷到底」与「写入饱和」不在同一点，用户看到的是最后一段刷不动。
-// 非有限 / 非正的 current 退化成 1（曲线缺失时的中性宽度），而不是产出 NaN 写进存档。
+// 非有限 / 非正的 current 退化成 SCULPT_WIDTH_BRUSH_VALUE_FLOOR（而不是曾经的中性宽度 1）：
+// 原注释的意图只是防 NaN/undefined 写进存档，但 `current > 0` 把合法的 0（发丝末端的默认
+// 收尖值）也当成了「曲线缺失」，退化到 1 会让末端从 0 一步跳到约 1（bug 报告的「爆开」）。
+// 退化目标改成 floor 后，即使某处遗漏钳位调用点导致 0 混进来，也会被这里兜到一个非零小值
+// 而不是跳回中性宽度；真正的下限保证仍然来自下面的 Math.max(min, next) 钳位。
 export function sculptWidthBrushMultiplier(currentMultiplier, strokeDistance, weight, strength, options = {}) {
   const current = Number(currentMultiplier);
-  const base = Number.isFinite(current) && current > 0 ? current : 1;
+  const base = Number.isFinite(current) && current > 0 ? current : SCULPT_WIDTH_BRUSH_VALUE_FLOOR;
   const next = base * (1 + sculptWidthBrushAmount(strokeDistance, weight, strength, options));
   const min = Number.isFinite(Number(options.min)) ? Number(options.min) : TIP_WIDTH_VALUE_MIN;
   const max = Number.isFinite(Number(options.max)) ? Number(options.max) : TIP_WIDTH_VALUE_MAX;

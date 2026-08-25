@@ -22,7 +22,7 @@ import {
 // Width Brush 紫色分支（刷 panel/发丝自己的 WidthCurve）复用的纯函数内核：与绿色
 // tip-width 笔刷（bone-interaction.js）同一个模块、同一版本号。见 width-brush.js 文件头
 // 关于「为什么这个内核独立成文件」的说明（dom-contract 冻结了 sculpt-brush.js 的版本串）。
-import { nearestScreenCandidate, sculptWidthBrushMultiplier, smoothLinearScalarDeltas } from "../sculpt/width-brush.js?v=20260910-9";
+import { nearestScreenCandidate, sculptWidthBrushMultiplier, smoothLinearScalarDeltas, SCULPT_WIDTH_BRUSH_VALUE_FLOOR } from "../sculpt/width-brush.js?v=20260910-10";
 // 紫色曲线自己的钳位区间 [0, TAPER_VALUE_MAX]（手动拖拽 taper-editor.js:1032 同一个上界）。
 // **不要**跟绿色 tip-width 的 TIP_WIDTH_VALUE_MIN/MAX 混用 —— 那是另一套曲线的区间。
 import { TAPER_VALUE_MAX } from "../core/app-config.js?v=20260815-4";
@@ -610,10 +610,17 @@ function applyWidthCurveBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
     Math.hypot(deltaX, deltaY),
     weight,
     strength,
-    // 紫色自己的钳位区间 [0, TAPER_VALUE_MAX]（手动拖拽 taper-editor.js:1032 同一个上界）。
-    // 绝不能落回 sculptWidthBrushMultiplier 的默认区间（绿色 TIP_WIDTH_VALUE_MIN/MAX）——
-    // 那会让笔刷写出手动拖拽写不出的值。
-    { reverse, min: 0, max: TAPER_VALUE_MAX }
+    // 紫色自己的钳位区间 [SCULPT_WIDTH_BRUSH_VALUE_FLOOR, TAPER_VALUE_MAX]（上界同手动拖拽
+    // taper-editor.js:1032）。绝不能落回 sculptWidthBrushMultiplier 的默认区间（绿色
+    // TIP_WIDTH_VALUE_MIN/MAX）—— 那会让笔刷写出手动拖拽写不出的值。
+    // 下界从 0 抬到 floor（而非沿用手动拖拽允许的 0）：乘法模型 `current × (1 + amount)`
+    // 在 0 是吸收态（0 × 任何倍数都还是 0），笔刷一旦把某个关键点写到 0 就会永久卡死、
+    // 连 Ctrl 加宽都救不回来——普通发丝末端的默认值恰好就是 0（DEFAULT_TAPER_CURVE），
+    // 于是第一笔刷到末端就复现这个 bug。手动 2D 曲线编辑器（taper-editor.js）刻意不跟着
+    // 抬：它是独立输入通道、单点绝对赋值，没有乘法吸收态的问题，抬它的下界只会限制用户
+    // 手动收尖到 0 的合法操作，对本 bug 无意义。笔刷写一个比手动更窄的子集（永不落到 0）
+    // 是更安全的方向，不是反过来。
+    { reverse, min: SCULPT_WIDTH_BRUSH_VALUE_FLOOR, max: TAPER_VALUE_MAX }
   );
   // undo 捕获必须在"确认要写"之后才推（不是每次采样都推）——权重 <= 0 或候选点缺失的
   // 早退分支都在它之前，不会产生空 undo 步骤。

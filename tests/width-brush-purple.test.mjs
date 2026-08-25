@@ -83,21 +83,36 @@ test("taperCurveBrushCandidates: 对称态两侧同一 pointIndex 都写回 prim
   const lock = makeStrandLock();
   const rect = { width: 800, height: 600, left: 0, top: 0 };
   const candidates = taperEditor.taperCurveBrushCandidates(lock, rect);
-  // 3 个关键点 × 2 侧（对称态 sides=[-1,1]）= 6 个候选点。
-  assert.equal(candidates.length, 6);
+  // 3 个关键点 × (2 侧 + 1 中心轴) = 9。旧版是 3×2=6——taper-editor.js :451-467 补了一个
+  // 落在 frame.point（主骨骼中心轴，未加 side*extent 偏移）上的候选点，每个关键点因此多
+  // 出 1 个，让刷子中心命中中心轴时不再因为找不到候选点而静默 no-op。
+  assert.equal(candidates.length, 9);
   assert.ok(candidates.every((candidate) => candidate.curveSide === "primary"));
   const pointIndex1Candidates = candidates.filter((candidate) => candidate.pointIndex === 1);
-  assert.equal(pointIndex1Candidates.length, 2);
-  const sides = pointIndex1Candidates.map((candidate) => candidate.side).sort();
+  // 每个关键点现在是 3 个候选点（左、右、中心），不再是 2 个。
+  assert.equal(pointIndex1Candidates.length, 3);
+  // 中心候选点的世界坐标就是 frame.point 本身（本测试的 deps 里 frame.point.x 恒为 0，
+  // 未加任何 side*extent 偏移），x 像素坐标恒为 0；两条边缘候选点则携带非零偏移。用这个
+  // 区分中心点和边缘点，不触碰下面的镜像判据。
+  const edgeCandidates = pointIndex1Candidates.filter((candidate) => candidate.x !== 0);
+  const centerCandidates = pointIndex1Candidates.filter((candidate) => candidate.x === 0);
+  assert.equal(edgeCandidates.length, 2);
+  assert.equal(centerCandidates.length, 1);
+  assert.equal(centerCandidates[0].pointIndex, 1);
+  const sides = edgeCandidates.map((candidate) => candidate.side).sort();
   assert.deepEqual(sides, [-1, 1]);
   // 两侧 x 像素坐标必须关于中心对称（side 取反 → extent 沿 +x/-x 各推一份），y 相同
   // （position 相同）。幅度断言：不是"存在两个点"，而是它们互为镜像。
-  const [left, right] = pointIndex1Candidates[0].side < 0
-    ? [pointIndex1Candidates[0], pointIndex1Candidates[1]]
-    : [pointIndex1Candidates[1], pointIndex1Candidates[0]];
+  const [left, right] = edgeCandidates[0].side < 0
+    ? [edgeCandidates[0], edgeCandidates[1]]
+    : [edgeCandidates[1], edgeCandidates[0]];
   assert.ok(left.x < 0 && right.x > 0);
   assert.ok(Math.abs(left.x + right.x) < 1e-9);
   assert.equal(left.y, right.y);
+  // 幅度判据（而非存在性）：中心候选点的屏幕 x 坐标确实与边缘候选点不同——证明边缘真的有
+  // 偏移、中心真的在中心，不是凑巧算出同一个值。
+  assert.notEqual(centerCandidates[0].x, left.x);
+  assert.notEqual(centerCandidates[0].x, right.x);
 });
 
 test("taperCurveBrushCandidates: 非对称态 curveSide 分流 primary/secondary", () => {
@@ -112,12 +127,25 @@ test("taperCurveBrushCandidates: 非对称态 curveSide 分流 primary/secondary
   });
   const rect = { width: 800, height: 600, left: 0, top: 0 };
   const candidates = taperEditor.taperCurveBrushCandidates(lock, rect);
-  // 非对称态每条曲线只画一侧（sides=[1]/sides=[-1]）：3 个 primary + 3 个 secondary。
-  assert.equal(candidates.length, 6);
+  // 非对称态每条曲线只画一侧 + 1 个中心轴候选点（sides=[1]+中心 / sides=[-1]+中心）：
+  // 旧版是 3 个 primary + 3 个 secondary = 6；taper-editor.js :451-467 给每个关键点补了
+  // 一个中心轴候选点后，每条曲线变成 3×(1+1)=6，两条曲线合计 3×(1+1)×2=12。
+  assert.equal(candidates.length, 12);
   const primary = candidates.filter((candidate) => candidate.curveSide === "primary");
   const secondary = candidates.filter((candidate) => candidate.curveSide === "secondary");
-  assert.equal(primary.length, 3);
-  assert.equal(secondary.length, 3);
+  assert.equal(primary.length, 6);
+  assert.equal(secondary.length, 6);
+  // 每条曲线内部：1 个边缘候选点（side 与曲线绑定）+ 1 个中心候选点（side 取 sides[0]，
+  // 与边缘候选点的 side 恰好相同，无法用 side 区分——用 x!==0 区分边缘/中心，与对称态测试
+  // 同一判据）。
+  const primaryEdge = primary.filter((candidate) => candidate.x !== 0);
+  const primaryCenter = primary.filter((candidate) => candidate.x === 0);
+  const secondaryEdge = secondary.filter((candidate) => candidate.x !== 0);
+  const secondaryCenter = secondary.filter((candidate) => candidate.x === 0);
+  assert.equal(primaryEdge.length, 3);
+  assert.equal(primaryCenter.length, 3);
+  assert.equal(secondaryEdge.length, 3);
+  assert.equal(secondaryCenter.length, 3);
   assert.ok(primary.every((candidate) => candidate.side === 1));
   assert.ok(secondary.every((candidate) => candidate.side === -1));
   // 幅度判据：写回目标不是"标了 secondary 的字符串"，而是真的能用 pointIndex 找到
@@ -130,6 +158,65 @@ test("taperCurveBrushCandidates: 非对称态 curveSide 分流 primary/secondary
   primary.forEach((candidate) => {
     const point = lock.taperCurve[candidate.pointIndex];
     assert.ok(point);
+  });
+});
+
+test("taperCurveBrushCandidates: 对称态存在中心轴候选点，且数量不随 side 重复", () => {
+  // 追加测试（不改写上面两条既有测试的分侧/写回断言意图）：专门钉中心轴候选点本身——
+  // taper-editor.js :451-467 补的那个落在 frame.point 上的候选点。
+  const taperEditor = createTaperEditorApi(makeTaperEditorDeps());
+  const lock = makeStrandLock();
+  const rect = { width: 800, height: 600, left: 0, top: 0 };
+  const candidates = taperEditor.taperCurveBrushCandidates(lock, rect);
+  // makeTaperEditorDeps 的 strandGeometryFrameAt 把 frame.point 设为 (0, position, 0)，
+  // viewportPixelPoint 恒等投影，所以中心候选点的屏幕 x 坐标必为 0——用这个筛出中心点，
+  // 不依赖候选点在数组里的顺序。
+  const centerCandidates = candidates.filter((candidate) => candidate.x === 0);
+  const edgeCandidates = candidates.filter((candidate) => candidate.x !== 0);
+  // 数量判据：中心候选点数量 == 关键点数量（3 个），证明没有按 side 重复产出（若误把
+  // push 挪进 sides.forEach，对称态会重复产出 2 份坐标相同的中心点，变成 6 个）。
+  assert.equal(centerCandidates.length, 3);
+  assert.equal(edgeCandidates.length, 6);
+  // 幅度判据：中心候选点与边缘候选点的屏幕 x 坐标确实不同——证明边缘真的有偏移、中心真的
+  // 在中心，不是巧合都算出 0。
+  edgeCandidates.forEach((candidate) => {
+    assert.notEqual(candidate.x, 0);
+  });
+  // pointIndex 与该关键点一致：每个 pointIndex（0/1/2）恰好对应 1 个中心候选点。
+  [0, 1, 2].forEach((pointIndex) => {
+    const matches = centerCandidates.filter((candidate) => candidate.pointIndex === pointIndex);
+    assert.equal(matches.length, 1);
+  });
+});
+
+test("taperCurveBrushCandidates: 非对称态 primary/secondary 各自都有中心候选点，curveSide 分流正确", () => {
+  const taperEditor = createTaperEditorApi(makeTaperEditorDeps());
+  const lock = makeStrandLock({
+    asymmetricWidthCurve: true,
+    taperCurveSecondary: [
+      { position: 0, value: 0.2, interpolation: "smooth" },
+      { position: 0.5, value: 0.4, interpolation: "smooth" },
+      { position: 1, value: 0.1, interpolation: "smooth" }
+    ]
+  });
+  const rect = { width: 800, height: 600, left: 0, top: 0 };
+  const candidates = taperEditor.taperCurveBrushCandidates(lock, rect);
+  const centerCandidates = candidates.filter((candidate) => candidate.x === 0);
+  const edgeCandidates = candidates.filter((candidate) => candidate.x !== 0);
+  // 6 个关键点（3 primary + 3 secondary）各自贡献 1 个中心候选点。
+  assert.equal(centerCandidates.length, 6);
+  assert.equal(edgeCandidates.length, 6);
+  const primaryCenters = centerCandidates.filter((candidate) => candidate.curveSide === "primary");
+  const secondaryCenters = centerCandidates.filter((candidate) => candidate.curveSide === "secondary");
+  // curveSide 分流：primary 曲线的中心候选点必须写回 lock.taperCurve，secondary 的必须
+  // 写回 lock.taperCurveSecondary——用 pointIndex 反查验证，与既有非对称测试同一判据。
+  assert.equal(primaryCenters.length, 3);
+  assert.equal(secondaryCenters.length, 3);
+  primaryCenters.forEach((candidate) => {
+    assert.ok(lock.taperCurve[candidate.pointIndex]);
+  });
+  secondaryCenters.forEach((candidate) => {
+    assert.ok(lock.taperCurveSecondary[candidate.pointIndex]);
   });
 });
 
