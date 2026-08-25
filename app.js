@@ -17,7 +17,7 @@ import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitB
 // 分组树（骨骼树）只读展示：新模块，从未被浏览器缓存过 ⇒ 首次引入用一个全新的 ?v=，
 // 且**没有**给 bone-model.js 加 export（那会迫使它的 13 个 import 站点全部同步 bump，
 // 回访用户拿缓存旧模块解析新 export 会 SyntaxError 打不开整个应用——0.2.110 踩过）。
-import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH } from "./modules/bones/panel-bone-groups.js?v=20260925-1";
+import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel } from "./modules/bones/panel-bone-groups.js?v=20260925-2";
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
@@ -14104,6 +14104,10 @@ function syncInputs(lock) {
   presetLibraryApi.syncShapePresetSelects();
   clumpProceduralApi.syncClumpGuidePanel(lock);
   if (isPanelGeometry(lock)) segmentApi.syncPanelShapeInputs(lock);
+  // Zipper 层级面板跟着选中的发片走。挂在这里而不是 syncPanelShapeInputs 内部：那个函数在
+  // segment-control.js（另一个模块），而层级面板的状态与 DOM 都在 app.js，跨模块传依赖只为
+  // 刷一个面板不值得；这里是「选中项变化后同步各面板」的既有汇聚点，语义正好。
+  syncPanelBoneLevelControls();
   if (lock.geometryType === "strand") {
     syncStrandSplitInputs(lock);
     syncStrandTipInputs(lock);
@@ -15495,6 +15499,76 @@ function createSelectionSetsOutlinerFolder() {
   return group;
 }
 
+// ── Zipper 层级面板（阶段 3）────────────────────────────────────────────────────
+// 「当前在调哪一条 zipper」是纯 UI 局部选择，不进 sculpt-edit-store：它不参与几何、不参与
+// 撤销、也不需要跨模块读取。读取时按当前 zipper 数钳位，避免删 zipper 后残留越界下标。
+let boneLevelZipperIndex = 0;
+
+function boneLevelTargetLock() {
+  const selected = getSelectedLock();
+  return panelBoneGroupOutlinerApplies(selected) ? selected : null;
+}
+
+// 改层级**不需要重建几何**：boneLevel 只影响分组归属，position/height/叶子划分全都没动
+// （panel-bone-groups.js 的叶子划分不变量）。所以这里刻意**不调** updateLockGeometry ——
+// 调了只会白重算一整张 mesh。要刷新的只有 outliner（镜像层级）与本面板自己。
+function syncPanelBoneLevelControls() {
+  const group = document.querySelector("#panelBoneLevelGroup");
+  if (!group) return;
+  const lock = boneLevelTargetLock();
+  group.classList.toggle("hidden", !lock);
+  if (!lock) return;
+  const splits = Array.isArray(lock.panelSplits) ? lock.panelSplits : [];
+  const count = splits.length;
+  if (!count) { group.classList.add("hidden"); return; }
+  const index = THREE.MathUtils.clamp(boneLevelZipperIndex, 0, count - 1);
+  boneLevelZipperIndex = index;
+  const levels = normalizePanelBoneLevels(materializePanelBoneLevels(splits));
+  const zipperLabel = document.querySelector("#boneLevelZipperLabel");
+  const levelValue = document.querySelector("#boneLevelValue");
+  const promote = document.querySelector("#promoteBoneLevel");
+  const demote = document.querySelector("#demoteBoneLevel");
+  const hint = document.querySelector("#boneLevelHint");
+  if (zipperLabel) zipperLabel.textContent = `${index + 1} / ${count}`;
+  if (levelValue) levelValue.textContent = `L${levels[index]?.boneLevel ?? 2}`;
+  const canUp = canPromotePanelBoneLevel(splits, index);
+  const canDown = canDemotePanelBoneLevel(splits, index);
+  if (promote) promote.disabled = !canUp;
+  if (demote) demote.disabled = !canDown;
+  // 置灰必须解释原因，否则用户会当成 bug。降级不可用的绝大多数情况是「它是所在分组里唯一的
+  // 最浅切点」——降它只会把同组兄弟全部拉浅（全局重流且加号回不来），故被结构性禁止。
+  if (hint) {
+    if (!canUp && !canDown) hint.textContent = "This zipper's level is fixed by the current grouping.";
+    else if (!canDown) hint.textContent = "Can't go deeper: it's the only split at this level in its group.";
+    else if (!canUp) hint.textContent = "Already at the shallowest level.";
+    else hint.textContent = "";
+  }
+}
+
+function stepBoneLevelZipper(delta) {
+  const lock = boneLevelTargetLock();
+  if (!lock) return;
+  const count = Array.isArray(lock.panelSplits) ? lock.panelSplits.length : 0;
+  if (!count) return;
+  boneLevelZipperIndex = THREE.MathUtils.clamp(boneLevelZipperIndex + delta, 0, count - 1);
+  syncPanelBoneLevelControls();
+}
+
+function changeBoneLevel(delta) {
+  const lock = boneLevelTargetLock();
+  if (!lock) return;
+  const splits = Array.isArray(lock.panelSplits) ? lock.panelSplits : [];
+  const index = THREE.MathUtils.clamp(boneLevelZipperIndex, 0, Math.max(0, splits.length - 1));
+  const allowed = delta < 0 ? canPromotePanelBoneLevel(splits, index) : canDemotePanelBoneLevel(splits, index);
+  if (!allowed) return;
+  pushUndoState();
+  lock.panelSplits = delta < 0
+    ? promotePanelBoneLevel(splits, index)
+    : demotePanelBoneLevel(splits, index);
+  syncPanelBoneLevelControls();
+  renderLockList();
+}
+
 // ── Panel 分组树（骨骼树）在 outliner 里的只读展示 ─────────────────────────────
 // 本轮**只展示不改选择**：点击分组行不写任何选中态（选择层路径化是独立的下一阶段）。
 // 用户拍板的层级口径（原话逐字）：「每层都可以设置, 但是L1也就是主发片的默认层级不显示,
@@ -15523,7 +15597,28 @@ function panelBoneGroupNodeLabel(node) {
   return `L${node.depth} · ${span}`;
 }
 
-function createPanelBoneGroupRow(lock, node, path) {
+// 一条 zipper 行：显示它是第几条 zipper、以及它当前所在的层级。**只读镜像**，不放按钮 ——
+// 调层级在右侧 properties 的 Zipper Levels 区（用户拍板：outliner 只显示结果）。
+function createPanelBoneZipperRow(zipperIndex, level, depth) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "outliner-bone-group";
+  wrapper.style.setProperty("--bone-group-depth", String(Math.max(0, depth - 1)));
+  const row = document.createElement("div");
+  row.className = "outliner-bone-group-row outliner-bone-zipper-row";
+  const spacer = document.createElement("span");
+  spacer.className = "outliner-bone-group-spacer";
+  spacer.setAttribute("aria-hidden", "true");
+  row.appendChild(spacer);
+  const label = document.createElement("span");
+  label.className = "outliner-bone-group-label outliner-bone-zipper-label";
+  label.textContent = `Zipper ${zipperIndex + 1} · L${level}`;
+  label.title = `Zipper ${zipperIndex + 1} separates at level ${level}. Adjust it in Zipper Levels.`;
+  row.appendChild(label);
+  wrapper.appendChild(row);
+  return wrapper;
+}
+
+function createPanelBoneGroupRow(lock, node, path, levels) {
   const key = `${lock.id}:${path.join(".")}`;
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
   const wrapper = document.createElement("div");
@@ -15535,8 +15630,10 @@ function createPanelBoneGroupRow(lock, node, path) {
     const isOpen = panelBoneGroupOpen.get(key) !== false;
     const disclosure = document.createElement("button");
     disclosure.type = "button";
-    disclosure.className = "outliner-disclosure";
-    disclosure.textContent = isOpen ? "▾" : "▸";
+    // 复用既有的 clump disclosure 样式：静态 ">" 由 CSS 在 .open 上旋转，不自己换字形
+    // （outliner 里所有折叠箭头都走这一套，换字形会与其它层级视觉不一致）。
+    disclosure.className = "outliner-clump-disclosure";
+    disclosure.textContent = ">";
     disclosure.setAttribute("aria-expanded", isOpen ? "true" : "false");
     disclosure.setAttribute("aria-label", isOpen ? "Collapse bone group" : "Expand bone group");
     disclosure.addEventListener("click", () => {
@@ -15562,8 +15659,18 @@ function createPanelBoneGroupRow(lock, node, path) {
   if (hasChildren && panelBoneGroupOpen.get(key) !== false) {
     const children = document.createElement("div");
     children.className = "outliner-bone-group-children";
+    // 本组自己「拥有」的 zipper：相邻子节点之间的那些边界。zipper 下标 = 左子节点的 leafEnd
+    // （zipper i 分隔叶子 i 与 i+1，见 panel-bone-groups.js 文件头）。先列 zipper 再列子组，
+    // 这样「这一层是被哪几条 zipper 切开的」一眼可见。
     node.children.forEach((child, index) => {
-      children.appendChild(createPanelBoneGroupRow(lock, child, [...path, index]));
+      if (index < node.children.length - 1) {
+        const zipperIndex = child.leafEnd;
+        const level = levels[zipperIndex]?.boneLevel ?? child.depth;
+        children.appendChild(createPanelBoneZipperRow(zipperIndex, level, child.depth));
+      }
+    });
+    node.children.forEach((child, index) => {
+      children.appendChild(createPanelBoneGroupRow(lock, child, [...path, index], levels));
     });
     wrapper.appendChild(children);
   }
@@ -15572,33 +15679,53 @@ function createPanelBoneGroupRow(lock, node, path) {
 
 // 发片行 + 其下的分组子树。发片行本身仍由既有的 createOutlinerStrandButton 生成
 // （拖拽/改名/可见性/选中高亮全部沿用，一行没动），分组树只是追加在它后面。
+// 发片行 + 其下的分组子树。用户拍板不要单独的浅蓝「Bones」按钮，直接用既有的菜单折叠样式
+// （`outliner-clump` + `outliner-clump-disclosure`，与 clump / curve-surface 容器同一套），
+// 所以折叠箭头挂在**发片行旁边**，而不是另起一个按钮。
 function createOutlinerPanelBoneGroups(lock) {
-  const shell = document.createElement("div");
-  shell.className = "outliner-bone-group-host";
-  shell.appendChild(createOutlinerStrandButton(lock));
-  const root = panelBoneGroupsFor(lock);
   const isOpen = panelBoneGroupOpen.get(`${lock.id}:`) !== false;
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "outliner-bone-group-toggle";
-  toggle.textContent = isOpen ? "▾ Bones" : "▸ Bones";
-  toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
-  toggle.setAttribute("aria-label", isOpen ? "Collapse bone tree" : "Expand bone tree");
-  toggle.addEventListener("click", () => {
+  const container = document.createElement("div");
+  container.className = `outliner-clump outliner-bone-group-host${isOpen ? " open" : ""}`;
+
+  const head = document.createElement("div");
+  head.className = "outliner-clump-head outliner-bone-group-head";
+  const disclosure = document.createElement("button");
+  disclosure.type = "button";
+  disclosure.className = "outliner-clump-disclosure";
+  disclosure.textContent = ">";
+  disclosure.title = `${isOpen ? "Collapse" : "Expand"} bone tree of ${lock.name}`;
+  disclosure.setAttribute("aria-label", disclosure.title);
+  disclosure.setAttribute("aria-expanded", String(isOpen));
+  disclosure.addEventListener("click", () => {
     panelBoneGroupOpen.set(`${lock.id}:`, !isOpen);
     renderLockList();
   });
-  shell.appendChild(toggle);
+  head.appendChild(disclosure);
+  // 发片行本身仍由既有函数生成（拖拽/改名/可见性/选中高亮全部沿用，一行没动）。
+  head.appendChild(createOutlinerStrandButton(lock));
+  container.appendChild(head);
+
   if (isOpen) {
+    const root = panelBoneGroupsFor(lock);
+    // zipper 的层级取规范化后的值（= 实际嵌套深度），与右侧 Zipper Levels 面板显示的同一个数。
+    const splits = Array.isArray(lock.panelSplits) ? lock.panelSplits : [];
+    const levels = normalizePanelBoneLevels(materializePanelBoneLevels(splits));
     const tree = document.createElement("div");
     tree.className = "outliner-bone-group-tree";
     // L1 是发片行自己 ⇒ 从根的**子节点**开始渲染，不给根单独出一行。
+    // 根自己拥有的 zipper（根的相邻子节点边界）也要列出来，否则最浅那几条 zipper 不可见。
     root.children.forEach((child, index) => {
-      tree.appendChild(createPanelBoneGroupRow(lock, child, [index]));
+      if (index < root.children.length - 1) {
+        const zipperIndex = child.leafEnd;
+        tree.appendChild(createPanelBoneZipperRow(zipperIndex, levels[zipperIndex]?.boneLevel ?? child.depth, child.depth));
+      }
     });
-    shell.appendChild(tree);
+    root.children.forEach((child, index) => {
+      tree.appendChild(createPanelBoneGroupRow(lock, child, [index], levels));
+    });
+    container.appendChild(tree);
   }
-  return shell;
+  return container;
 }
 
 function renderLockList() {
@@ -17714,6 +17841,12 @@ Object.entries(panelShapeInputs).forEach(([key, input]) => {
 
 addPanelSplitButton?.addEventListener("click", () => segmentApi.changePanelSplitCount(1));
 removePanelSplitButton?.addEventListener("click", () => segmentApi.changePanelSplitCount(-1));
+// Zipper 层级：- 是升级（变浅、更早分隔），+ 是降级（变深、更晚分隔）。方向刻意与
+// 「Level 数字」同向 —— 数字小 = 浅 = 更早分隔，所以减号让数字变小。
+document.querySelector("#previousBoneLevelZipper")?.addEventListener("click", () => stepBoneLevelZipper(-1));
+document.querySelector("#nextBoneLevelZipper")?.addEventListener("click", () => stepBoneLevelZipper(1));
+document.querySelector("#promoteBoneLevel")?.addEventListener("click", () => changeBoneLevel(-1));
+document.querySelector("#demoteBoneLevel")?.addEventListener("click", () => changeBoneLevel(1));
 addStrandSplitButton?.addEventListener("click", () => segmentApi.changeStrandSplitCount(1));
 removeStrandSplitButton?.addEventListener("click", () => segmentApi.changeStrandSplitCount(-1));
 previousPanelSegmentButton?.addEventListener("click", () => segmentApi.stepPanelSegment(-1));

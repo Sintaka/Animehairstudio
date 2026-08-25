@@ -99,6 +99,65 @@ function buildGroupNode(zips, lo, hi, depth) {
   return node;
 }
 
+// ── 阶段 3：zipper 层级可显式存储 + 按钮升/降 ─────────────────────────────────────────
+// 合法层级：整数，且落在 [2, MAX_PANEL_BONE_DEPTH]（根恒为 1，是 panel 本体，不是任何一条
+// zipper 能取到的层级，故 zipper 的层级下界是 2——最浅的子节点深度）。
+function isValidBoneLevel(value) {
+  return Number.isInteger(value) && value >= 2 && value <= MAX_PANEL_BONE_DEPTH;
+}
+
+// 从一棵已经建好的分组树反推「每条 zipper 的实际嵌套深度」：zipper i 分隔叶子 i 与 i+1，
+// 对应树上某个节点的第 k 个子节点与第 k+1 个子节点之间的边界，边界处的深度 = 该子节点自身
+// 的 depth（clampedFlat 时子节点深度与父节点相同、正常时子节点深度是父节点+1，两种情况
+// 这里都不用关心——直接读子节点已经算好的 depth 即可，不重新推导一遍钳位规则）。
+// 这是 materialize / normalize 共用的核心：「层级」永远以树的真实结构为准，不是别的算法。
+function computeZipperDepths(root, count) {
+  const depths = new Array(count).fill(null);
+  const walk = (node) => {
+    if (!node || !Array.isArray(node.children)) return;
+    const kids = node.children;
+    for (let i = 0; i < kids.length; i += 1) {
+      if (i < kids.length - 1) depths[kids[i].leafEnd] = kids[i].depth;
+      walk(kids[i]);
+    }
+  };
+  walk(root);
+  return depths;
+}
+
+// 与 buildGroupNode 结构完全对称，唯一差异：切分依据从 height 换成显式 boneLevel（取本层
+// 内部「最小 boneLevel」的 zipper 切分，而不是最浅 height）。深度钳位分支与 buildGroupNode
+// 逐字复制——撞 MAX_PANEL_BONE_DEPTH 时的「不报错、不丢数据」这条约束对两条建树路径必须
+// 是同一份规则，不能各写一套后来慢慢长歪。
+function buildGroupNodeFromLevels(zips, lo, hi, depth) {
+  const node = makeLeafNode(lo, hi, depth);
+  if (lo === hi) return node;
+  const inner = zips.filter((z) => z.leftLeaf >= lo && z.rightLeaf <= hi);
+  if (!inner.length) return node;
+  if (depth >= MAX_PANEL_BONE_DEPTH) {
+    const sorted = inner.slice().sort((a, b) => a.leftLeaf - b.leftLeaf);
+    node.children = [];
+    let start = lo;
+    for (const z of sorted) {
+      node.children.push(makeLeafNode(start, z.leftLeaf, depth));
+      start = z.rightLeaf;
+    }
+    node.children.push(makeLeafNode(start, hi, depth));
+    node.clampedFlat = true;
+    return node;
+  }
+  const minLevel = Math.min(...inner.map((z) => z.level));
+  const cuts = inner.filter((z) => z.level === minLevel).sort((a, b) => a.leftLeaf - b.leftLeaf);
+  node.children = [];
+  let start = lo;
+  for (const cut of cuts) {
+    node.children.push(buildGroupNodeFromLevels(zips, start, cut.leftLeaf, depth + 1));
+    start = cut.rightLeaf;
+  }
+  node.children.push(buildGroupNodeFromLevels(zips, start, hi, depth + 1));
+  return node;
+}
+
 // §5.2 派生：从 panelSplits（已按 position 升序）推导初始分组树。只在 lock.panelBoneGroups
 // 缺失时由上层调用一次；本函数本身不知道、也不关心「是否已经派生过」。
 export function derivePanelBoneGroups(panelSplits) {
@@ -122,11 +181,25 @@ export function derivePanelBoneGroups(panelSplits) {
 // 而回访用户若拿到缓存的旧 bone-model 却解析新 export，会 SyntaxError 整个应用打不开
 // （0.2.110 踩过）。本函数只读 lock.panelSplits / lock.panelBoneGroups 两个字段，
 // 不需要 bone-model 的任何内部实现 ⇒ 放这里可以让 bone-model.js 一字不改。
+// 优先级（三级回落，从「最明确的创作意图」到「纯派生」）：
+//   ① lock.panelBoneGroups —— 完整的已创作分组树，最明确，直接用；
+//   ② panelSplits 上的 boneLevel —— 用户用 Zipper Levels 面板调过层级（阶段 3），按显式
+//      level 建树；
+//   ③ 都没有 ⇒ 按 height 现场派生（一次性迁移路径）。
+//
+// ★ ② 这一级是**必须**的，漏了它 = 层级按钮失效：阶段 3 曾漏写，症状是 outliner 里 zipper
+// 的层级标签会从 L2 变 L3、但下面的段分组**一动不动**（按钮只改了个数字）。实测证据：
+// 同一份 splits 带 boneLevel [3,2] 时，derivePanelBoneGroups 给出「根下三个平级 L2」，
+// 而 panelBoneGroupsFromLevels 给出「L2[0..1] 内含两个 L3 + L2[2..2]」—— 两棵树不同，
+// 而当时这里返回的是前者。**改层级的唯一可见效果就是分组变化，这一级不能省。**
 export function panelBoneGroupsFor(lock) {
   const splits = Array.isArray(lock?.panelSplits) ? lock.panelSplits : [];
   const leafCount = splits.length + 1;
   const stored = normalizePanelBoneGroups(lock?.panelBoneGroups, leafCount);
   if (stored) return stored;
+  if (splits.length && splits.every((split) => isValidBoneLevel(split?.boneLevel))) {
+    return panelBoneGroupsFromLevels(splits);
+  }
   return derivePanelBoneGroups(splits);
 }
 
@@ -263,5 +336,150 @@ export function resolvePanelBoneGroupValue(root, path, key, fallback) {
     if (value != null) return value;
   }
   return fallback;
+}
+
+// 物化：把每条 zipper 的「实际嵌套深度」写成显式 boneLevel，供按钮升/降级使用。
+// 已有合法 boneLevel 的条目保留原值不覆盖——物化只补全缺失的，不篡改用户已经拍过的意图
+// （与 materializeSplitBones 的「先取已存在值，缺失才补默认」是同一套语义）。
+// 返回全新数组（每条浅拷贝 + boneLevel），绝不原地改入参：入参可能是 lock.panelSplits 的
+// 直接引用，上层随时可能在别处仍持有旧引用做比较（例如变异测试要做深拷贝对照）。
+export function materializePanelBoneLevels(panelSplits) {
+  const splits = Array.isArray(panelSplits) ? panelSplits : [];
+  const root = derivePanelBoneGroups(splits);
+  const depths = computeZipperDepths(root, splits.length);
+  return splits.map((split, index) => {
+    const existing = split?.boneLevel;
+    const boneLevel = isValidBoneLevel(existing) ? existing : depths[index];
+    return { ...split, boneLevel };
+  });
+}
+
+// 用显式 boneLevel 建树：所有条目都有合法 boneLevel（整数、2..MAX_PANEL_BONE_DEPTH）才生效，
+// 否则回落 derivePanelBoneGroups——缺失/非法数据宁可回落到既有派生规则，也不要在这里悄悄
+// 编造一个层级装作合法（呼应 normalizePanelBoneGroups 的既有取向）。
+export function panelBoneGroupsFromLevels(panelSplits) {
+  const splits = Array.isArray(panelSplits) ? panelSplits : [];
+  const leafCount = splits.length + 1;
+  if (leafCount <= 1) return makeLeafNode(0, 0, 1);
+  const allValid = splits.every((s) => isValidBoneLevel(s?.boneLevel));
+  if (!allValid) return derivePanelBoneGroups(splits);
+  const zips = splits.map((split, index) => ({
+    leftLeaf: index,
+    rightLeaf: index + 1,
+    level: split.boneLevel
+  }));
+  return buildGroupNodeFromLevels(zips, 0, leafCount - 1, 1);
+}
+
+// 规范化（本模块最关键的不变量）：level 只是「意图」，真正决定几何/树形的是嵌套深度，两者
+// 会漂移——例：三条 zipper 全部 boneLevel=5，根内部「最小 level」就是 5，于是恰恰在这里切，
+// 子节点的实际深度是 2 而不是 5。若不做这一步，UI 直接显示存储值会出现「按钮点了、数字变了、
+// 树没变」的假象。规范化用 panelBoneGroupsFromLevels 建树后，把每条 zipper 的实际嵌套深度
+// 写回它的 boneLevel，使「显示值 === 实际深度」恒成立。必须幂等：第二次规范化时树已经和
+// 第一次算出的 level 自洽，深度不会再变，写回的值与已存的值相同。
+export function normalizePanelBoneLevels(panelSplits) {
+  const splits = Array.isArray(panelSplits) ? panelSplits : [];
+  const root = panelBoneGroupsFromLevels(splits);
+  const depths = computeZipperDepths(root, splits.length);
+  return splits.map((split, index) => ({ ...split, boneLevel: depths[index] }));
+}
+
+// 升级（变浅，更早分隔）/ 降级（变深，更晚分隔）。zipperIndex 与叶子下标同一套口径（按
+// position 升序的下标）。流程：先物化补全全部 level，改目标条目，再规范化——规范化会把
+// 钳位后仍然越界的意图拉回真实深度，同时保证返回值的 level 立刻就是「显示值 = 实际深度」，
+// 调用方不需要再额外调一次 normalize。
+function shiftPanelBoneLevel(panelSplits, zipperIndex, delta) {
+  const splits = Array.isArray(panelSplits) ? panelSplits : [];
+  const materialized = materializePanelBoneLevels(splits);
+  const index = Number(zipperIndex);
+  if (!Number.isInteger(index) || index < 0 || index >= materialized.length) {
+    return normalizePanelBoneLevels(splits);
+  }
+  // ★ 禁止降级「它所在分组里唯一的最浅切点」（用户拍板）。
+  //
+  // 为什么必须单独拦这一种：本模块有一条硬不变量「存储的 boneLevel 恒等于实际嵌套深度」
+  // （否则 UI 显示值会与真实层级漂移、按钮变成骗人的）。这条不变量意味着**每个分组内部
+  // 永远至少有一条 zipper 处在该组的最浅层**——规范化总会把最小 level 拉回到组深度+1。
+  // 所以「把唯一的最浅切点再降一级」这个意图在数学上无法被满足：规范化只能反过来把它的
+  // 同组兄弟全部拉浅一级。实测后果（Test 3，levels [3,2,3,4,5]，zipper1 是唯一 L2 切点）：
+  // demote 之后变成 [2,2,2,3,4] —— zipper1 没变深，反而是 zipper0/zipper2 被拉上来当了
+  // 根切点，整棵树全局重流；再 promote 因为已在下界 2 而是 no-op ⇒ **加号回不来**。
+  // 6 个真实 panel 里 4 个中招。
+  //
+  // 语义上这个操作本来也不成立：把唯一的主分叉降级，等于「这个 panel 没有主分叉了」。
+  // 所以这里直接拒绝并返回规范化后的原状（no-op，不抛异常），canDemote 会一致地返回 false
+  // 让按钮置灰。**这不是钳位边界**（level 可能远未到 MAX），是结构性约束，故与下面的
+  // THREE_clamp 分开判断。
+  if (delta > 0 && isSoleShallowestCutInGroup(materialized, index)) {
+    return normalizePanelBoneLevels(materialized);
+  }
+  const current = materialized[index].boneLevel;
+  // 钳位：level 恒在 [2, MAX_PANEL_BONE_DEPTH]。已到边界时不抛异常，直接返回与入参
+  // 深相等的新数组（no-op）——按钮在边界应当置灰，但即便被误触也不能报错或产生副作用。
+  const next = THREE_clamp(current + delta, 2, MAX_PANEL_BONE_DEPTH);
+  materialized[index] = { ...materialized[index], boneLevel: next };
+  return normalizePanelBoneLevels(materialized);
+}
+
+// 本模块刻意不 import three.js（文件头注释已声明），这里只需要一个整数钳位，没有必要为此
+// 破例引入依赖，手写等价逻辑即可。
+function THREE_clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+// 目标 zipper 是否是「它所在分组内唯一的最浅切点」。
+// 判据走**树的真实结构**而不是 level 数字：找到该 zipper 对应的那条分组边界，看它所在的
+// 父分组里、与它同深度的边界一共有几条。只有它自己一条 ⇒ 它是该组唯一的最浅切点。
+// 用结构而不是数字，是因为 clampedFlat 那一层的子节点深度与父节点相同，纯比数字会误判。
+function isSoleShallowestCutInGroup(materialized, index) {
+  const root = panelBoneGroupsFromLevels(materialized);
+  let sole = false;
+  const walk = (node) => {
+    if (!node || !Array.isArray(node.children)) return;
+    const kids = node.children;
+    // 本组内部的切点：相邻子节点之间的边界，边界标识用左子节点的 leafEnd（= zipper 下标）。
+    const cuts = [];
+    for (let i = 0; i < kids.length - 1; i += 1) cuts.push(kids[i].leafEnd);
+    if (cuts.includes(index) && cuts.length === 1) sole = true;
+    for (const kid of kids) walk(kid);
+  };
+  walk(root);
+  return sole;
+}
+
+export function promotePanelBoneLevel(panelSplits, zipperIndex) {
+  return shiftPanelBoneLevel(panelSplits, zipperIndex, -1);
+}
+
+export function demotePanelBoneLevel(panelSplits, zipperIndex) {
+  return shiftPanelBoneLevel(panelSplits, zipperIndex, 1);
+}
+
+// 判据必须与「跑一遍会不会真的变化」完全一致，不能只比 level 数字——规范化会把越界意图拉回
+// 实际深度，数字可能变了但树没变（或数字没变但……不会发生，因为 promote/demote 是纯移动
+// 意图后重新规范化）。这里直接跑一遍目标操作，比较结果树的叶子深度分布，用事实回答，不用
+// 推断。深度分布用 forEachPanelBoneGroup 走一遍叶节点采集，比逐字段深比较更直接也更便宜。
+function leafDepthSignature(panelSplits) {
+  const root = panelBoneGroupsFromLevels(panelSplits);
+  const sig = [];
+  forEachPanelBoneGroup(root, (node) => {
+    if (!Array.isArray(node.children)) sig.push(`${node.leafStart}:${node.leafEnd}:${node.depth}`);
+  });
+  return sig.join("|");
+}
+
+function wouldChangeTree(panelSplits, zipperIndex, delta) {
+  const splits = Array.isArray(panelSplits) ? panelSplits : [];
+  const before = leafDepthSignature(materializePanelBoneLevels(splits));
+  const after = leafDepthSignature(shiftPanelBoneLevel(splits, zipperIndex, delta));
+  return before !== after;
+}
+
+export function canPromotePanelBoneLevel(panelSplits, zipperIndex) {
+  return wouldChangeTree(panelSplits, zipperIndex, -1);
+}
+
+export function canDemotePanelBoneLevel(panelSplits, zipperIndex) {
+  return wouldChangeTree(panelSplits, zipperIndex, 1);
 }
 

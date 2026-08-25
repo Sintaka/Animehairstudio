@@ -4346,6 +4346,23 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
   border-color: rgba(104, 138, 232, 0.62);
 }
 
+/* Zipper Levels 区专用。刻意不复用绿色（那是 Split Segments 区的颜色）也不复用蓝色
+   （面板几何那两块在用）——改 zipper 层级会让段的分组整体重建，与「调段自身参数」是两件
+   不同的事，配色上必须一眼分得开，这正是用户要求「和 Segment 区域隔开」的落点。 */
+.control-emphasis--amber {
+  border-color: rgba(216, 180, 106, 0.62);
+}
+
+/* 层级按钮下方的一行说明：为什么某个方向被置灰（例如「唯一最浅切点不能降级」）。
+   置灰本身不解释原因的话，用户会以为是 bug。 */
+.panel-bone-level-hint {
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 14px;
+  color: #9fb4bb;
+  min-height: 14px;
+}
+
 .visibility-filter-box {
   margin-top: 10px;
   border: 1px solid #403a43;
@@ -7070,20 +7087,28 @@ body.no-panels .tool-panel {
   flex: 0 0 22px;
 }
 
-.outliner-bone-group-toggle {
-  margin: 2px 0 2px 12px;
-  padding: 1px 6px;
-  font-size: 10px;
-  line-height: 16px;
-  color: #8bfbff;
-  background: transparent;
-  border: 1px solid #2c3f45;
-  border-radius: 3px;
-  cursor: pointer;
+/* 发片行 + 折叠箭头的那一行。折叠箭头复用 .outliner-clump-disclosure（含 .open 旋转），
+   所以这里只负责让箭头与发片行并排、并让发片行吃掉剩余宽度。
+   （原先那个浅蓝「Bones」按钮已按用户要求删除，改用既有菜单折叠样式。） */
+.outliner-bone-group-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
-.outliner-bone-group-toggle:hover {
-  background: #17363a;
+.outliner-bone-group-head > .lock-item-shell {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* zipper 行：与分组行区分开——它不是一个「层」，而是造成分层的那条切缝。 */
+.outliner-bone-zipper-row {
+  border-left-style: dashed;
+}
+
+.outliner-bone-zipper-label {
+  color: #7f97a0;
+  font-variant-numeric: tabular-nums;
 }
 
 .outliner-curve-surface .outliner-folder-icon {

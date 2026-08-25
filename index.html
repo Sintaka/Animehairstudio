@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anime Hair Studio</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=20260910-16" />
+    <link rel="stylesheet" href="./styles.css?v=20260910-17" />
   </head>
   <body>
     <main class="studio-shell">
@@ -1149,6 +1149,30 @@
                 <button id="addPanelSplit" type="button" title="Add a zipper control" aria-label="Add a zipper control">+</button>
               </div>
             </div>
+            </div>
+
+            <!-- Zipper 层级区：刻意与上面的 Split Segments 绿框**分开**，因为改 zipper 层级会让
+                 段的分组整体重建（Segment 区域的编号与曲线归属都会变），两者混在一块会让用户
+                 以为是同一层设置。这里只调层级，不增删 zipper（增删仍在绿框的 Zipper Controls）。 -->
+            <div id="panelBoneLevelGroup" class="control-emphasis control-emphasis--amber">
+            <div class="subsection-label">Zipper Levels</div>
+            <div class="panel-zipper-count-row" title="Selects which zipper to adjust. Numbering follows the zipper order across the panel width.">
+              <span>Zipper</span>
+              <div class="panel-zipper-stepper">
+                <button id="previousBoneLevelZipper" type="button" title="Previous zipper" aria-label="Previous zipper">&#8249;</button>
+                <output id="boneLevelZipperLabel">1</output>
+                <button id="nextBoneLevelZipper" type="button" title="Next zipper" aria-label="Next zipper">&#8250;</button>
+              </div>
+            </div>
+            <div class="panel-zipper-count-row" title="Promote makes this zipper separate earlier (shallower level); demote makes it separate later (deeper level). Changing a level rebuilds the segment grouping.">
+              <span>Level</span>
+              <div class="panel-zipper-stepper">
+                <button id="promoteBoneLevel" type="button" title="Promote: separate earlier (shallower)" aria-label="Promote zipper level">-</button>
+                <output id="boneLevelValue">2</output>
+                <button id="demoteBoneLevel" type="button" title="Demote: separate later (deeper)" aria-label="Demote zipper level">+</button>
+              </div>
+            </div>
+            <div id="boneLevelHint" class="panel-bone-level-hint"></div>
             </div>
 
           </div>
@@ -2418,6 +2442,6 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260910-16"></script>
+    <script type="module" src="./app.js?v=20260910-17"></script>
   </body>
 </html>
