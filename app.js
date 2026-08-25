@@ -14,6 +14,10 @@ import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?
 import { createBranchBridgeApi } from "./modules/geometry/branch-bridge.js?v=20260814-8";
 import { createBranchRegionApi } from "./modules/geometry/branch-region-panel.js?v=20260814-12";
 import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitBonesToData, splitBonesFromData, mirrorSplitBones, bonesToData, bonesFromData, mirrorBones, registryForSave, strandTipToData, strandTipFromData, mirrorStrandTip, strandSplitBonesFor, materializeStrandSplitBones, strandSplitBonesToData, strandSplitBonesFromData, mirrorStrandSplitBones, strandSplitsFor, segmentBoneHost, SPREAD_MAX, STRAND_SEGMENT_HOST } from "./modules/bones/bone-model.js?v=20260901-1";
+// 分组树（骨骼树）只读展示：新模块，从未被浏览器缓存过 ⇒ 首次引入用一个全新的 ?v=，
+// 且**没有**给 bone-model.js 加 export（那会迫使它的 13 个 import 站点全部同步 bump，
+// 回访用户拿缓存旧模块解析新 export 会 SyntaxError 打不开整个应用——0.2.110 踩过）。
+import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH } from "./modules/bones/panel-bone-groups.js?v=20260925-1";
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
@@ -2392,6 +2396,11 @@ const strandLayerOpen = new Map();
 const referenceGroupOpen = new Map(["overlay", "front", "back", "left", "right"].map((id) => [id, true]));
 const clumpOpen = new Map();
 const curveSurfaceOpen = new Map();
+// Panel 分组树（骨骼树）的展开状态。键是 `${lock.id}:${path.join(".")}`（根 path 为空串），
+// 刻意**不复用**上面四个 Map：它们各自绑定固定层级语义（区域/发层/clump/curve-surface），
+// 而分组树的深度是 2..MAX_PANEL_BONE_DEPTH 的任意值，需要「lock + 路径」这种复合键。
+// 与既有四个 Map 一致：lock 删除后残留的键不回收（这些 Map 全都如此，是既有约定）。
+const panelBoneGroupOpen = new Map();
 const undo = createUndoStore();
 const inputs = {
   name: document.querySelector("#lockName"),
@@ -15486,6 +15495,112 @@ function createSelectionSetsOutlinerFolder() {
   return group;
 }
 
+// ── Panel 分组树（骨骼树）在 outliner 里的只读展示 ─────────────────────────────
+// 本轮**只展示不改选择**：点击分组行不写任何选中态（选择层路径化是独立的下一阶段）。
+// 用户拍板的层级口径（原话逐字）：「每层都可以设置, 但是L1也就是主发片的默认层级不显示,
+// 因为outliner里面已经有对应的层级了, 就是发片本身」⇒ **L1 = 发片行自己**，不单独渲染，
+// L2 及更深作为发片行的子节点。
+//
+// 门控刻意复用既有的 segmentBoneHost 分派（bone-model.js 的单一真源），不自己写
+// ["panel","surface"] 判据 —— app.js 里的 isPanelGeometry 是 UI 门控、segmentBoneHost 是
+// 数据分派，两处口径必须一致，重复写第三份就是下一个不同步的源头。
+function panelBoneGroupOutlinerApplies(lock) {
+  const host = segmentBoneHost(lock);
+  if (!host || host.kind !== "panel") return false;
+  const root = panelBoneGroupsFor(lock);
+  // 只有真的存在 L2（根有子节点）才接管渲染；单段 panel（0 条 zipper）与派生不出层级的
+  // 情况一律回落原来的 createOutlinerStrandButton，保证视觉逐像素不变。
+  return Boolean(root && Array.isArray(root.children) && root.children.length);
+}
+
+// 分组行的标签：叶节点标它覆盖的 segment 下标（与「Segment 步进器」同一套 1-based 编号），
+// 分组节点标区间。clampedFlat 的节点加一个提示，说明该层因为撞上 MAX_PANEL_BONE_DEPTH
+// 被拍平（不是数据坏了）。
+function panelBoneGroupNodeLabel(node) {
+  const from = Number(node.leafStart) + 1;
+  const to = Number(node.leafEnd) + 1;
+  const span = from === to ? `Segment ${from}` : `Segments ${from}-${to}`;
+  return `L${node.depth} · ${span}`;
+}
+
+function createPanelBoneGroupRow(lock, node, path) {
+  const key = `${lock.id}:${path.join(".")}`;
+  const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+  const wrapper = document.createElement("div");
+  wrapper.className = "outliner-bone-group";
+  wrapper.style.setProperty("--bone-group-depth", String(Math.max(0, node.depth - 1)));
+  const row = document.createElement("div");
+  row.className = "outliner-bone-group-row";
+  if (hasChildren) {
+    const isOpen = panelBoneGroupOpen.get(key) !== false;
+    const disclosure = document.createElement("button");
+    disclosure.type = "button";
+    disclosure.className = "outliner-disclosure";
+    disclosure.textContent = isOpen ? "▾" : "▸";
+    disclosure.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    disclosure.setAttribute("aria-label", isOpen ? "Collapse bone group" : "Expand bone group");
+    disclosure.addEventListener("click", () => {
+      panelBoneGroupOpen.set(key, !isOpen);
+      renderLockList();
+    });
+    row.appendChild(disclosure);
+  } else {
+    const spacer = document.createElement("span");
+    spacer.className = "outliner-bone-group-spacer";
+    spacer.setAttribute("aria-hidden", "true");
+    row.appendChild(spacer);
+  }
+  const label = document.createElement("span");
+  label.className = "outliner-bone-group-label";
+  label.textContent = panelBoneGroupNodeLabel(node);
+  if (node.clampedFlat) {
+    label.title = `Depth limit reached (L${MAX_PANEL_BONE_DEPTH}); deeper zippers are shown flattened here.`;
+    label.classList.add("outliner-bone-group-label--clamped");
+  }
+  row.appendChild(label);
+  wrapper.appendChild(row);
+  if (hasChildren && panelBoneGroupOpen.get(key) !== false) {
+    const children = document.createElement("div");
+    children.className = "outliner-bone-group-children";
+    node.children.forEach((child, index) => {
+      children.appendChild(createPanelBoneGroupRow(lock, child, [...path, index]));
+    });
+    wrapper.appendChild(children);
+  }
+  return wrapper;
+}
+
+// 发片行 + 其下的分组子树。发片行本身仍由既有的 createOutlinerStrandButton 生成
+// （拖拽/改名/可见性/选中高亮全部沿用，一行没动），分组树只是追加在它后面。
+function createOutlinerPanelBoneGroups(lock) {
+  const shell = document.createElement("div");
+  shell.className = "outliner-bone-group-host";
+  shell.appendChild(createOutlinerStrandButton(lock));
+  const root = panelBoneGroupsFor(lock);
+  const isOpen = panelBoneGroupOpen.get(`${lock.id}:`) !== false;
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "outliner-bone-group-toggle";
+  toggle.textContent = isOpen ? "▾ Bones" : "▸ Bones";
+  toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  toggle.setAttribute("aria-label", isOpen ? "Collapse bone tree" : "Expand bone tree");
+  toggle.addEventListener("click", () => {
+    panelBoneGroupOpen.set(`${lock.id}:`, !isOpen);
+    renderLockList();
+  });
+  shell.appendChild(toggle);
+  if (isOpen) {
+    const tree = document.createElement("div");
+    tree.className = "outliner-bone-group-tree";
+    // L1 是发片行自己 ⇒ 从根的**子节点**开始渲染，不给根单独出一行。
+    root.children.forEach((child, index) => {
+      tree.appendChild(createPanelBoneGroupRow(lock, child, [index]));
+    });
+    shell.appendChild(tree);
+  }
+  return shell;
+}
+
 function renderLockList() {
   const list = document.querySelector("#lockList");
   list.innerHTML = "";
@@ -15627,7 +15742,9 @@ function renderLockList() {
         layerItems.appendChild(
           lock.geometryType === "curve-surface"
             ? createOutlinerCurveSurface(lock)
-            : lock.clumpGuide ? clumpProceduralApi.createOutlinerClump(lock) : createOutlinerStrandButton(lock)
+            : lock.clumpGuide ? clumpProceduralApi.createOutlinerClump(lock)
+              : panelBoneGroupOutlinerApplies(lock) ? createOutlinerPanelBoneGroups(lock)
+                : createOutlinerStrandButton(lock)
         );
       });
       layerElement.append(layerHeader, layerItems);

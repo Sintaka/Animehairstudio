@@ -7019,6 +7019,73 @@ body.no-panels .tool-panel {
   padding-bottom: 2px;
 }
 
+/* Panel 分组树（骨骼树）在 outliner 里的只读展示。缩进用 --bone-group-depth 自定义属性
+   驱动，不给每一层写死一条规则 —— 深度是 2..MAX_PANEL_BONE_DEPTH 的任意值，
+   逐层写规则会在改上限时漏改。左侧竖线复用 clump 子项的视觉语言（见 .clump-child）。 */
+/* 三个纯结构容器：缩进完全由 .outliner-bone-group 的 --bone-group-depth 负责，这里
+   刻意只声明 display，不加 padding/margin —— 否则会与逐层缩进叠加成双份。
+   写出来而不是留空，是为了让后来读的人能分辨「有意为之」与「漏写」。 */
+.outliner-bone-group-host,
+.outliner-bone-group-tree,
+.outliner-bone-group-children {
+  display: block;
+}
+
+.outliner-bone-group {
+  --bone-group-indent: 12px;
+  padding-left: calc(var(--bone-group-depth, 0) * var(--bone-group-indent));
+}
+
+.outliner-bone-group-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 1px 4px 1px 0;
+  border-left: 1px solid #2c3f45;
+}
+
+.outliner-bone-group-label {
+  font-size: 11px;
+  color: #9fb4bb;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 撞到深度上限被拍平的那一层：加一点提示色，避免用户以为数据坏了。 */
+.outliner-bone-group-label--clamped {
+  color: #d8b46a;
+}
+
+.outliner-bone-group-label--clamped::after {
+  content: " ⚑";
+}
+
+/* 没有子节点的行也要占住 disclosure 的宽度，否则同层的标签会左右错位。 */
+.outliner-bone-group-spacer {
+  display: inline-block;
+  width: 22px;
+  flex: 0 0 22px;
+}
+
+.outliner-bone-group-toggle {
+  margin: 2px 0 2px 12px;
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 16px;
+  color: #8bfbff;
+  background: transparent;
+  border: 1px solid #2c3f45;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.outliner-bone-group-toggle:hover {
+  background: #17363a;
+}
+
 .outliner-curve-surface .outliner-folder-icon {
   border-color: #e7a95d;
   background: #5a432b;

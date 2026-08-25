@@ -113,6 +113,23 @@ export function derivePanelBoneGroups(panelSplits) {
   return buildGroupNode(zips, 0, leafCount - 1, 1);
 }
 
+// 有效分组树：已创作的 lock.panelBoneGroups 优先，否则按 panelSplits 现场派生。
+// **与 bone-model.js 的 splitBonesFor 同构**（stored 命中 → 否则派生默认值、且都**不写回**），
+// 刻意照抄那条既有约定，好让「读取永远有值、落盘只在用户真的编辑过时发生」这条语义在两处一致。
+//
+// 为什么放在本文件而不是 bone-model.js：给 bone-model.js 新增 export 会迫使它的
+// **13 个 import 站点**全部同步 bump `?v=`（实测 13 处，全部 `?v=20260901-1`），
+// 而回访用户若拿到缓存的旧 bone-model 却解析新 export，会 SyntaxError 整个应用打不开
+// （0.2.110 踩过）。本函数只读 lock.panelSplits / lock.panelBoneGroups 两个字段，
+// 不需要 bone-model 的任何内部实现 ⇒ 放这里可以让 bone-model.js 一字不改。
+export function panelBoneGroupsFor(lock) {
+  const splits = Array.isArray(lock?.panelSplits) ? lock.panelSplits : [];
+  const leafCount = splits.length + 1;
+  const stored = normalizePanelBoneGroups(lock?.panelBoneGroups, leafCount);
+  if (stored) return stored;
+  return derivePanelBoneGroups(splits);
+}
+
 // 校验 + 归一化外部数据（读档路径用）。value 非法/缺失 ⇒ 返回 null（由调用方决定要不要
 // 走 derivePanelBoneGroups 派生——本函数刻意不在这里自动派生，宁可让调用方看到明确的
 // null 再决定，也不要在这里悄悄吞掉一份坏数据装作什么都没发生）。
