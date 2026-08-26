@@ -68,7 +68,12 @@ const { resolveTipHost } = createTipSubBoneHostApi({
   clonePanelSplits: (...args) => deps.clonePanelSplits(...args),
   currentStrandSplitTipChains: (lock) => deps.currentStrandSplitTipChains(lock),
   strandGeometryCurve: (lock) => deps.strandGeometryCurve(lock),
-  strandGeometryFrameAt: (...args) => deps.strandGeometryFrameAt(...args)
+  strandGeometryFrameAt: (...args) => deps.strandGeometryFrameAt(...args),
+  // 第六项（中间层接线）：让 resolveTipHost 自己取当前选中的分组路径。
+  // **本项与 bone-view-handles.js 的同名注入必须逐字一致** —— 这是文件头那条「两个消费方
+  // 必须注入同样的项」的约束在本轮的延伸：拖拽基准（这边）与把手位置（那边）若只有一边
+  // 认得中间层，就会出现「把手画在中间层、拖拽写回叶子」。
+  selectedPanelBoneGroupPath: () => deps.selectedPanelBoneGroupPath?.()
 });
 
 // 发尖子骨骼编辑的公共前置（0.2.126）：解析宿主 → 取**活**骨骼 → 取**物化**发尖链。

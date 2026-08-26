@@ -8876,6 +8876,9 @@ Object.assign(boneInteractionDeps, {
   taperEditor,
   panelTipStrand,
   sculptGeom,
+  // 中间层接线（拖拽侧）。**与 boneViewHandlesDeps 的同名项必须是同一个函数** ——
+  // 把手位置与拖拽基准若来自不同的「当前层」认知，一按下就会跳到另一层。
+  selectedPanelBoneGroupPath,
   syncPanelSegmentControls: segmentApi.syncPanelSegmentControls,
   // 发丝管的发尖 WidthCurve 拖拽同步的是 Phase C 的 #strandSegmentControls（每管
   // spread + 曲线预览），不是 panel 那组。
@@ -12527,6 +12530,10 @@ Object.assign(boneViewHandlesDeps, {
   // **接在本批次**——第一次写时误接进了 sculptGeomDeps（那里没有消费方），
   // 因为 str_replace 的锚点在两个批次里都存在，测试当场抓到。
   panelBoneGroupTierDisplay,
+  // 中间层接线：resolveTipHost 用它自动认出「当前选中的是某个中间层」，
+  // 于是把手取该层的跨叶发尖链、拖拽写回该层自己的 tip。
+  // **必须同时接给 boneInteractionDeps**（拖拽侧），只接一边就是读写不同源。
+  selectedPanelBoneGroupPath,
   cloneStrandSplits,
   isPanelGeometry,
   panelSplitControlPoint,
@@ -15616,6 +15623,18 @@ function syncPanelBoneLevelControls() {
 //
 // 分组树不适用的几何（普通发丝、单段 panel）返回 true 交还给既有可见性逻辑 ——
 // **普通发丝一行都不能受影响**，这是用户第一条需求。
+// 当前选中的分组路径（中间层接线的唯一出口）。返回 null = 没选中任何分组 ⇒
+// resolveTipHost 逐字回落到接线前的叶子路径行为。
+// 刻意只暴露 path 而不暴露整个 selectedPanelBoneGroup：消费方（tip-sub-bone-host）只需要
+// 路径，给它 lockId 反而会诱使它自己做「是不是当前 lock」的判断，那就多了一个可漂移的判据。
+// lockId 的校验留在这里一处。
+function selectedPanelBoneGroupPath() {
+  if (!selectedPanelBoneGroup) return null;
+  const lock = getSelectedLock();
+  if (!lock || selectedPanelBoneGroup.lockId !== lock.id) return null;
+  return selectedPanelBoneGroup.path;
+}
+
 function panelBoneGroupTierDisplay(lock, segment) {
   if (!panelBoneGroupOutlinerApplies(lock)) return true;
   if (!selectedPanelBoneGroup || selectedPanelBoneGroup.lockId !== lock?.id) return false;
