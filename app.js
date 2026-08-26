@@ -17,7 +17,7 @@ import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitB
 // 分组树（骨骼树）只读展示：新模块，从未被浏览器缓存过 ⇒ 首次引入用一个全新的 ?v=，
 // 且**没有**给 bone-model.js 加 export（那会迫使它的 13 个 import 站点全部同步 bump，
 // 回访用户拿缓存旧模块解析新 export 会 SyntaxError 打不开整个应用——0.2.110 踩过）。
-import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel } from "./modules/bones/panel-bone-groups.js?v=20260925-2";
+import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath } from "./modules/bones/panel-bone-groups.js?v=20260925-3";
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
@@ -2401,6 +2401,12 @@ const curveSurfaceOpen = new Map();
 // 而分组树的深度是 2..MAX_PANEL_BONE_DEPTH 的任意值，需要「lock + 路径」这种复合键。
 // 与既有四个 Map 一致：lock 删除后残留的键不回收（这些 Map 全都如此，是既有约定）。
 const panelBoneGroupOpen = new Map();
+// 当前选中的分组节点（阶段 4）：`{ lockId, path }`，path 是整数数组（根的第 k 个子 = [k]）。
+// null = 没选中任何分组 ⇒ 笔刷与曲线面板照旧作用于 lock 层，行为与阶段 3 之前逐位一致。
+// 刻意**不**进 sculpt-edit-store：它与几何无关、不参与撤销快照，且只有 app.js 读写。
+// 换 lock 时必须清空（见 selectLock 里的清理），否则会留下指向别的发片的悬空选择 ——
+// 这与既有 tipSelection / panelSplitSelection 的清理是同一类问题（sculpt-edit-store.js 注释）。
+let selectedPanelBoneGroup = null;
 const undo = createUndoStore();
 const inputs = {
   name: document.querySelector("#lockName"),
@@ -3197,6 +3203,10 @@ Object.assign(sculptGeomDeps, {
   applySubBoneBrushSample: bonesApi.applySubBoneBrushSample,
   average,
   camera,
+  // 阶段 4：紫色 width brush 的写入目标解析。缺这个键时 sculpt-geometry 会回落到
+  // lock 层数组（它自己带 fallback），所以漏接线不会崩，但分组选择会静默失效 ——
+  // tests/panel-bone-brush-wiring.test.mjs 钉住这条接线存在。
+  widthBrushCurveArray,
   commitClumpMemberRestState: clumpProceduralApi.commitClumpMemberRestState,
   curveFrameAt,
   curveSurfaceControllerPointRange: curveSurfaceCreate.curveSurfaceControllerPointRange,
@@ -13227,6 +13237,11 @@ function selectLock(id, options = {}) {
   if (sculptState.state.panelSplitSelection && sculptState.state.panelSplitSelection.lockId !== id) {
     sculptState.state.panelSplitSelection = null;
   }
+  // 分组选择（阶段 4）与上面几个同类：换 lock 后必须清，否则会留下指向旧发片的悬空路径，
+  // 而笔刷/曲线面板会拿它去索引新发片的树 —— 路径可能恰好合法却指向完全无关的一层。
+  if (selectedPanelBoneGroup && selectedPanelBoneGroup.lockId !== id) {
+    selectedPanelBoneGroup = null;
+  }
   if (sculptState.state.strandSplitSelection && sculptState.state.strandSplitSelection.lockId !== id) {
     sculptState.state.strandSplitSelection = null;
   }
@@ -15545,6 +15560,35 @@ function syncPanelBoneLevelControls() {
   }
 }
 
+// 笔刷 / 曲线面板要写哪条曲线数组（阶段 4）。
+// 没选中分组 ⇒ 返回 lock 层数组，行为与阶段 3 之前**逐位一致**（这是回归安全的关键）。
+// 选中了分组 ⇒ 返回该分组节点**自己**的数组。
+//
+// ★ 首笔要「播种」：分组节点的曲线初值是 null（表示继承祖先）。不能直接往 null 上写点，
+// 也不能从空数组开始——那样第一笔会把形状从头变一遍。所以第一次要写时，把该节点当前的
+// **有效值**（沿链回落得到的、也就是用户正看着的那条）深拷贝到节点自己身上，再在副本上改。
+// 于是「第一笔从所见形状继续」，而不是跳变。
+//
+// ★ 只写这一层，不碰后代：用户原话逐字「笔刷仅可改变选中的这一层, 而不是所有叶后代也一起刷」。
+// 后代若自己是 null，会在**读取期**经 resolvePanelBoneGroupValue 自动跟随新值；
+// 后代若有自己的创作值，就保持不变。写入期一律不递归。
+function widthBrushCurveArray(lock, curveSide) {
+  const lockArray = curveSide === "secondary" ? lock?.taperCurveSecondary : lock?.taperCurve;
+  if (!selectedPanelBoneGroup || selectedPanelBoneGroup.lockId !== lock?.id) return lockArray;
+  if (!panelBoneGroupOutlinerApplies(lock)) return lockArray;
+  const key = curveSide === "secondary" ? "taperCurveSecondary" : "taperCurve";
+  const path = selectedPanelBoneGroup.path;
+  const root = materializePanelBoneGroups(lock);
+  const node = root ? panelBoneGroupAtPath(root, path) : null;
+  if (!node) return lockArray;
+  if (!Array.isArray(node[key])) {
+    const seed = panelBoneGroupEffectiveValue(lock, path, key, lockArray);
+    if (!Array.isArray(seed)) return lockArray;
+    setPanelBoneGroupValue(lock, path, key, seed.map((p) => ({ ...p })));
+  }
+  return panelBoneGroupAtPath(lock.panelBoneGroups, path)?.[key] || lockArray;
+}
+
 function stepBoneLevelZipper(delta) {
   const lock = boneLevelTargetLock();
   if (!lock) return;
@@ -15647,13 +15691,28 @@ function createPanelBoneGroupRow(lock, node, path, levels) {
     spacer.setAttribute("aria-hidden", "true");
     row.appendChild(spacer);
   }
-  const label = document.createElement("span");
-  label.className = "outliner-bone-group-label";
+  // 分组行可点选（阶段 4）。用 button 而不是 div：键盘可达、focus 环免费，与 outliner 里
+  // 其它可选行（.outliner-clump-select 等）一致。再点一次同一行 = 取消选择，回到 lock 层。
+  const selected = selectedPanelBoneGroup
+    && selectedPanelBoneGroup.lockId === lock.id
+    && selectedPanelBoneGroup.path.join(".") === path.join(".");
+  const label = document.createElement("button");
+  label.type = "button";
+  label.className = `outliner-bone-group-label${selected ? " selected" : ""}`;
   label.textContent = panelBoneGroupNodeLabel(node);
+  label.setAttribute("aria-pressed", String(Boolean(selected)));
+  label.title = selected
+    ? "Selected — width/depth edits apply to this level only. Click again to deselect."
+    : "Select this level: width/depth edits will apply to it only (descendants inherit unless they have their own value).";
   if (node.clampedFlat) {
     label.title = `Depth limit reached (L${MAX_PANEL_BONE_DEPTH}); deeper zippers are shown flattened here.`;
     label.classList.add("outliner-bone-group-label--clamped");
   }
+  label.addEventListener("click", () => {
+    selectedPanelBoneGroup = selected ? null : { lockId: lock.id, path: [...path] };
+    syncPanelBoneLevelControls();
+    renderLockList();
+  });
   row.appendChild(label);
   wrapper.appendChild(row);
   if (hasChildren && panelBoneGroupOpen.get(key) !== false) {

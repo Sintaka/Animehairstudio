@@ -4823,6 +4823,18 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
   font-variant-numeric: tabular-nums;
 }
 
+/* Zipper Levels 区的两个 stepper 中列放宽：这里的 output 要显示 `1 / 5`、`L3` 这类更长的
+   内容，共享的 34px 中列会挤到换行。只放宽本区（用 #panelBoneLevelGroup 限定作用域）——
+   Split Segments 与 Zipper Controls 的 stepper 只显示单个数字，34px 正好，动共享值会把
+   那两处也一起撑宽。 */
+#panelBoneLevelGroup .panel-zipper-stepper {
+  grid-template-columns: 28px minmax(58px, auto) 28px;
+}
+
+#panelBoneLevelGroup .panel-zipper-stepper output {
+  white-space: nowrap;
+}
+
 .panel-zipper-stepper button:disabled {
   cursor: default;
   opacity: 0.35;
@@ -7062,6 +7074,8 @@ body.no-panels .tool-panel {
   border-left: 1px solid #2c3f45;
 }
 
+/* 分组行标签是 button（阶段 4 起可点选），所以要显式清掉按钮默认外观，
+   否则会在 outliner 里冒出一个和其它行格格不入的原生按钮框。 */
 .outliner-bone-group-label {
   font-size: 11px;
   color: #9fb4bb;
@@ -7069,6 +7083,26 @@ body.no-panels .tool-panel {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 0 4px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.outliner-bone-group-label:hover {
+  color: #d5ced5;
+  background: rgba(139, 251, 255, 0.06);
+}
+
+/* 选中态：与「笔刷只作用于这一层」这条语义对应，视觉上要明显但不抢发片行的高亮。 */
+.outliner-bone-group-label.selected {
+  color: #bffcff;
+  border-color: rgba(139, 251, 255, 0.55);
+  background: rgba(139, 251, 255, 0.1);
 }
 
 /* 撞到深度上限被拍平的那一层：加一点提示色，避免用户以为数据坏了。 */

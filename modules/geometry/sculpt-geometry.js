@@ -600,9 +600,14 @@ function applyWidthCurveBrushSample(stroke, clientX, clientY, deltaX, deltaY) {
   // 不重复投影）。
   const weight = sculptBrushWeight(nearest.distance, radius, falloff);
   if (!(weight > 0)) return true;
-  const curveArray = target.curveSide === "secondary"
-    ? target.lock.taperCurveSecondary
-    : target.lock.taperCurve;
+  // 写哪条数组交给 app.js 的 widthBrushCurveArray 决定（阶段 4）：没选中分组时它返回的就是
+  // lock 层数组，与之前逐位一致；选中了某个分组层则返回该层自己的数组（首笔会用当前有效值
+  // 播种，所以形状从所见处继续）。**只写选中的那一层**，不递归后代 —— 后代靠读取期回落跟随。
+  // 依赖注入而不是在这里 import panel-bone-groups：那样会让本模块知道分组树，而它现在只需要
+  // 知道「给我一条可写的曲线数组」。
+  const curveArray = deps.widthBrushCurveArray
+    ? deps.widthBrushCurveArray(target.lock, target.curveSide)
+    : (target.curveSide === "secondary" ? target.lock.taperCurveSecondary : target.lock.taperCurve);
   const point = curveArray?.[target.pointIndex];
   if (!point) return true;
   const nextValue = sculptWidthBrushMultiplier(

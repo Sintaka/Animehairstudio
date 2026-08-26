@@ -483,3 +483,90 @@ export function canDemotePanelBoneLevel(panelSplits, zipperIndex) {
   return wouldChangeTree(panelSplits, zipperIndex, 1);
 }
 
+// ── 阶段 1.5-B：物化 + 按路径创作单个节点 ─────────────────────────────────────────
+// 与 materializeSplitBones（bone-model.js）同一套语义：派生树是临时对象、不落盘，
+// 用户要在某个分组节点上创作曲线之前，必须先把当前有效树「固化」成 lock.panelBoneGroups
+// 上真正可写的结构，否则创作值无处安放（写完下一次读取又会被派生结果盖掉）。
+
+// 深拷贝一棵分组树：物化写入 lock 前必须拷贝，不能让 lock.panelBoneGroups 与
+// panelBoneGroupsFor 返回的临时对象共享引用——派生路径（buildGroupNode 等）每次都新建
+// 节点，看似安全，但 stored 命中分支会直接返回 normalizePanelBoneGroups 建的树，那棵树
+// 内部节点全是新对象，可以直接复用；为了不依赖「哪条分支返回了什么」这种脆弱假设，统一
+// deep clone 一遍，语义上更安全也更好读。
+function cloneGroupTree(node) {
+  if (!node) return node;
+  const copy = { leafStart: node.leafStart, leafEnd: node.leafEnd, depth: node.depth, children: null };
+  for (const key of AUTHORABLE_KEYS) copy[key] = node[key] === undefined ? null : node[key];
+  if (node.clampedFlat === true) copy.clampedFlat = true;
+  if (Array.isArray(node.children)) copy.children = node.children.map(cloneGroupTree);
+  return copy;
+}
+
+// 物化分组树：把 panelBoneGroupsFor 算出的「当前有效树」（可能是三级回落里任意一级，包括
+// 纯派生的临时对象）固化写进 lock.panelBoneGroups，并返回写入后的根节点。
+//
+// 幂等是硬要求：调用方（width brush 落笔前）可能对同一个 lock 反复调用——例如刷了一笔又刷
+// 一笔，每笔落笔前都会物化一次「确保可写」。若物化不做幂等检查、每次都用派生默认值重新
+// 覆盖，第二笔物化时会把第一笔已经写好的创作值（比如某节点的 taperCurve）冲掉，用户刚
+// 刷完的一笔在下一笔落笔的瞬间就消失了。所以：已经物化过、且合法（能通过 normalize 校验）
+// 时，直接返回归一化后的既有树，不重新派生、不覆盖任何字段。
+export function materializePanelBoneGroups(lock) {
+  if (!lock) return null;
+  const splits = Array.isArray(lock.panelSplits) ? lock.panelSplits : [];
+  const leafCount = splits.length + 1;
+  // 无 panelSplits ⇒ 不是 panel 数据，物化没有意义；不在 lock 上写任何字段，原样返回 null。
+  if (!Array.isArray(lock.panelSplits)) return null;
+  const existing = normalizePanelBoneGroups(lock.panelBoneGroups, leafCount);
+  if (existing) {
+    // 已物化且合法：只做归一化回写（修掉可能缺失的字段/depth 重算之类的表面差异），
+    // 绝不用派生结果覆盖——这是幂等的核心，保护住已经存在的创作数据。
+    lock.panelBoneGroups = existing;
+    return existing;
+  }
+  const effective = panelBoneGroupsFor(lock);
+  const materialized = cloneGroupTree(effective);
+  lock.panelBoneGroups = materialized;
+  return materialized;
+}
+
+// 按路径写一个字段——本模块最容易写错的一处，必须先把语义钉死在注释里：
+//
+// ★ 只写 path 指向的那一个节点自己的字段，绝不递归写子孙节点。用户原话：「笔刷仅可改变
+// 选中的这一层, 而不是所有叶后代也一起刷」。子孙若自己是 null，读取时会经
+// resolvePanelBoneGroupValue 自动沿链回落到这个新值——但那是**读取期**的效果，写入期
+// 不做任何遍历、不touch 任何 children。子孙若已经有自己的创作值，那个值原样保留，因为
+// 它比祖先的回落值更明确，不该被祖先的一次编辑悄悄抹掉。
+//
+// value === null 是合法输入，语义是「清除这一层的创作、恢复继承」，不是「非法值被拒绝」。
+export function setPanelBoneGroupValue(lock, path, key, value) {
+  if (!AUTHORABLE_KEYS.includes(key)) return null;
+  const root = materializePanelBoneGroups(lock);
+  if (!root) return null;
+  const node = panelBoneGroupAtPath(root, path);
+  if (!node) return null;
+  node[key] = value === undefined ? null : value;
+  return root;
+}
+
+// 有效值：沿分组链回落后的结果，直接复用既有 resolvePanelBoneGroupValue——本函数只是把
+// 「先拿到当前有效树」这一步一起做掉，方便 UI 调用方不用自己先取 root。
+export function panelBoneGroupEffectiveValue(lock, path, key, fallback) {
+  const root = panelBoneGroupsFor(lock);
+  if (!root) return fallback;
+  return resolvePanelBoneGroupValue(root, path, key, fallback);
+}
+
+// 该节点自己是否创作过（区别于「继承来的」），给 UI 做灰/斜体展示用。
+// 判据用 `!= null`，不能用真值判断——0 与 false 都是合法的创作值（本模块 resolvePanelBoneGroupValue
+// 的既有注释已经声明过这条：splitEnabled 可以被显式创作成 false，taperCurve 的某个数值
+// 字段可以被显式创作成 0，两者都必须算作「自己创作过」，不能因为它们是假值就被判定成
+// 「未创作」而被真值判断吞掉。）
+export function panelBoneGroupHasOwnValue(lock, path, key) {
+  if (!AUTHORABLE_KEYS.includes(key)) return false;
+  const root = panelBoneGroupsFor(lock);
+  if (!root) return false;
+  const node = panelBoneGroupAtPath(root, path);
+  if (!node) return false;
+  return node[key] != null;
+}
+
