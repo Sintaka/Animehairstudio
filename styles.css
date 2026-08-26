@@ -7053,9 +7053,24 @@ body.no-panels .tool-panel {
    逐层写规则会在改上限时漏改。左侧竖线复用 clump 子项的视觉语言（见 .clump-child）。 */
 /* 结构容器。缩进的**数值**仍由 .outliner-bone-group 的 --bone-group-depth 负责
    （不要在这里再加 padding-left，会与逐层缩进叠加成双份）。 */
-.outliner-bone-group-host,
+.outliner-bone-group-host {
+  display: block;
+}
+
+/* ★ 根层容器也必须有竖轨与缩进。
+   用户报「Front Bangs 2（一条普通发丝）下面出现了 zipper」—— 实测**门控没有泄漏**
+   （发丝的 segmentBoneHost 返回 null，applies 恒 false，7 个真实档逐 lock 验过）。
+   真因是这里：0.2.158 把本选择器与 .outliner-bone-group-children 拆开后，**只给了
+   children 竖轨**，根层的 tree 既无轨也无缩进 ⇒ 根层那几行（Zipper 1 / Segment 1 /
+   Segments 2-3）与发片行左对齐平铺，视觉上像是「下一条发片的内容」，于是被读成
+   发丝长出了 zipper。
+   下边框是收口：让「这个发片的骨骼树到此为止」有明确终点，避免与紧邻的兄弟发片粘连。 */
 .outliner-bone-group-tree {
   display: block;
+  margin-left: 4px;
+  padding-bottom: 2px;
+  border-left: 1px solid rgba(139, 251, 255, 0.18);
+  border-bottom: 1px solid rgba(139, 251, 255, 0.1);
 }
 
 /* 子层容器加一条左侧竖轨：用户反馈「混合显示在一起」—— 原先只有 12px/层 的缩进、

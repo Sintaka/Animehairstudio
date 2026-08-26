@@ -1166,6 +1166,23 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
   return { restPoints: chain.restPoints, points: chain.points, twists: chain.twists, active: chain.active };
 }
 
+// splitTipForLeafSpan：中间层分组节点（覆盖闭区间 leafStart..leafEnd 的连续叶子）的发尖链。
+// 不重新推导几何——把「这一整段区间」交给 syntheticSplitsForLeafSpan 折成一份合成
+// splits + 虚拟 segmentIndex（vIdx），再原样喂给上面的 splitTipForSegment：区间内部的
+// zipper 被去掉后，splitTipForSegment 自己重算的 centerU 恰好落在区间中心（该推导与真实
+// 数字已在 syntheticSplitsForLeafSpan 的模块头注释 + panel-tip-synthetic-splits.test.mjs
+// 验证过），rest 链因此天然贴住区间中心线，不是「叶子 leafStart 自己的中心」。
+// 退化（leafStart===leafEnd，单叶子）：syntheticSplitsForLeafSpan 在此情形返回同一份
+// splits 引用、vIdx===leafStart，本函数因此与既有 splitTipForSegment(lock, leafStart,
+// splits, groupBone) 逐字节等价——不是本函数的特例分支，是它的自然退化，不必另写 if。
+// groupBone 的 tip 字段形状与 splitBone.tip 一致（{points, restPoints, twists, active}，
+// 见 panel-bone-groups.js 的 panelBoneGroupTip / normalizeGroupTip），materializeTipChain
+// 只看形状、不关心它挂在叶子 bone 还是分组节点上。
+function splitTipForLeafSpan(lock, leafStart, leafEnd, splits, groupBone) {
+  const { splits: synthSplits, vIdx } = syntheticSplitsForLeafSpan(splits, leafStart, leafEnd);
+  return splitTipForSegment(lock, vIdx, synthSplits, groupBone);
+}
+
 function createPanelStrandGeometry(lock) {
   lock._tipWidthFrames = null; // the width-UI frame cache depends on the rebuilt points
   const latticeControlled = lock.geometryType === "surface";
@@ -1591,6 +1608,7 @@ function createPanelStrandGeometry(lock) {
     tipHighlightMaterial,
     updateTipHighlight,
     splitTipForSegment,
+    splitTipForLeafSpan,
     createPanelStrandGeometry
   };
 }
