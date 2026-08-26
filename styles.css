@@ -7051,17 +7051,28 @@ body.no-panels .tool-panel {
 /* Panel 分组树（骨骼树）在 outliner 里的只读展示。缩进用 --bone-group-depth 自定义属性
    驱动，不给每一层写死一条规则 —— 深度是 2..MAX_PANEL_BONE_DEPTH 的任意值，
    逐层写规则会在改上限时漏改。左侧竖线复用 clump 子项的视觉语言（见 .clump-child）。 */
-/* 三个纯结构容器：缩进完全由 .outliner-bone-group 的 --bone-group-depth 负责，这里
-   刻意只声明 display，不加 padding/margin —— 否则会与逐层缩进叠加成双份。
-   写出来而不是留空，是为了让后来读的人能分辨「有意为之」与「漏写」。 */
+/* 结构容器。缩进的**数值**仍由 .outliner-bone-group 的 --bone-group-depth 负责
+   （不要在这里再加 padding-left，会与逐层缩进叠加成双份）。 */
 .outliner-bone-group-host,
-.outliner-bone-group-tree,
-.outliner-bone-group-children {
+.outliner-bone-group-tree {
   display: block;
 }
 
+/* 子层容器加一条左侧竖轨：用户反馈「混合显示在一起」—— 原先只有 12px/层 的缩进、
+   各层样式完全相同，L2 与 L3 的行看上去就是一个平铺列表，看不出谁包含谁。
+   竖轨把「这一坨属于上面那个分组」在视觉上圈出来，比继续加大缩进更省横向空间
+   （outliner 面板窄，深到 L5 时纯靠缩进会把标签挤没）。
+   margin-left 只留 4px：真正的层级缩进仍来自 --bone-group-depth，这里只是给竖轨留位置。 */
+.outliner-bone-group-children {
+  display: block;
+  margin-left: 4px;
+  border-left: 1px solid rgba(139, 251, 255, 0.18);
+}
+
 .outliner-bone-group {
-  --bone-group-indent: 12px;
+  /* 10px/层：配合子层容器的竖轨已经足够分辨层级，且深到 L5 时（4 级缩进 = 40px）
+     不会把标签挤出窄面板。原先 12px 无竖轨，实测读不出层级关系。 */
+  --bone-group-indent: 10px;
   padding-left: calc(var(--bone-group-depth, 0) * var(--bone-group-indent));
 }
 
@@ -7135,14 +7146,28 @@ body.no-panels .tool-panel {
   min-width: 0;
 }
 
-/* zipper 行：与分组行区分开——它不是一个「层」，而是造成分层的那条切缝。 */
+/* zipper 行 vs 分组行：这两类**语义完全不同**，必须一眼分得开 ——
+   分组行是「一层骨骼」（可选中、笔刷作用于它），zipper 行是「造成分层的那条切缝」
+   （只读镜像，不可选）。用户反馈「混合显示在一起」的另一半原因就是两者样式太像。
+   区分手段：虚线左边框 + 更暗的字色 + 前缀 ✂ 图示 + 略矮的行高。 */
 .outliner-bone-zipper-row {
   border-left-style: dashed;
+  min-height: 18px;
+  opacity: 0.85;
 }
 
 .outliner-bone-zipper-label {
   color: #7f97a0;
   font-variant-numeric: tabular-nums;
+  font-style: italic;
+}
+
+/* 切缝图示。用 ::before 而不是把字符写进 textContent：那样会进入无障碍朗读与
+   将来可能的文本匹配，而这只是装饰（行文本已含 "Zipper N"）。 */
+.outliner-bone-zipper-label::before {
+  content: "\2702  ";
+  font-style: normal;
+  opacity: 0.7;
 }
 
 .outliner-curve-surface .outliner-folder-icon {
