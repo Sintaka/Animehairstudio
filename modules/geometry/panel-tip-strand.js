@@ -67,6 +67,34 @@ function tipChainPointsAsVectors(points) {
   return points.map((point) => new THREE.Vector3(point.x, point.y, point.z));
 }
 
+// 跨叶区间（中间层分组）的「合成 splits」：让 tipMainSectionPoint / tipSurfaceFrameAt /
+// tipWidthMultiplierAt 这批**按叶子逐个**重算 centerU 的既有函数，不用改一行就能正确处理
+// 「一个分组节点覆盖多个连续叶子」的情形。
+//
+// 推导（已用真实档 Scalp Conform Test 4.ahs 的 Front Bangs 1，N=2 zipper，
+// positions=[-0.3333333333333333, 0.36666666666666675] 逐区间验证，6/6 通过，
+// 含退化情形与对照组，见 .tmp-bone-tree/verify-synthetic-splits.mjs 的历史记录）：
+//   合成 splits = 原数组去掉下标 leafStart..leafEnd-1 的 zipper（区间内部的那些，即分组
+//   自己覆盖的叶子之间的分隔线——它们不该再让内部函数重新切开这个区间）；
+//   该区间在合成数组里的「虚拟 segmentIndex」= leafStart（区间左端叶子在原数组的下标，
+//   因为去掉的都是它右边的内部 zipper，它自己的下标不变）；
+//   于是合成 boundaries[vIdx] / boundaries[vIdx+1] 恰好落在区间两端，内部任何函数重新算出
+//   的 centerU 恰好等于区间中心，lateralU = v - centerU 不再被残留的内部叶子中心污染。
+// 退化情形（leafStart === leafEnd，单叶子）：没有内部 zipper 可去掉，合成数组与原数组
+// 逐元素同源（同一份引用）、长度相同、vIdx === leafStart ⇒ 与「每叶一条」的既有路径逐字
+// 等价，不是这条新逻辑的特例分支，而是它的自然退化。
+//
+// 不改变、不校验 leafStart/leafEnd 是否落在 splits 的合法范围内——那是调用方
+// （panelBoneGroupLeafSpan）的职责，本函数只做纯粹的数组切分。放在模块顶层（而不是
+// createPanelTipStrandApi 闭包内）：它是纯函数、不依赖 deps，测试需要不经过 API 工厂直接
+// import 它。
+export function syntheticSplitsForLeafSpan(splits, leafStart, leafEnd) {
+  const list = Array.isArray(splits) ? splits : [];
+  if (leafStart === leafEnd) return { splits: list, vIdx: leafStart };
+  const kept = list.filter((_, index) => index < leafStart || index > leafEnd - 1);
+  return { splits: kept, vIdx: leafStart };
+}
+
 export function createPanelTipStrandApi(deps) {
   // deps: store proxy (sculptState.state) + app.js helper functions (clonePanelSplits/
   // normalizePanelSplits/strandGeometryCurve/strandGeometryFrameAt/strandInfluenceColor/

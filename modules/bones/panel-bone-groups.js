@@ -56,8 +56,23 @@ const AUTHORABLE_KEYS = [
   "splitSnapToLoops"
 ];
 
+// ── 中间层骨骼载体：tip（发尖链）───────────────────────────────────────────────
+// 用户拍板：像 `L2.Segments 2-3` 这种覆盖多个叶子的中间层分组，笔刷应该刷「这一层自己的
+// 发尖链」而不是刷到主发片上——因为目前几何上只有「主发片链」+「每叶子一条发尖链」两层，
+// 中间层没有承载体。本模块负责让分组节点能挂一条自己的发尖链，几何生成是另一个子智能体
+// 的工作，这里只管数据形状与读写语义。
+//
+// ★ tip 为什么绝不能塞进 AUTHORABLE_KEYS：那个白名单是给「沿链回落的标量/曲线」用的——
+// resolvePanelBoneGroupValue 会从 path 指向的节点往根方向找第一个非 null 的祖先，语义是
+// 「这一层没创作就继承上一层」。tip（发尖链）不是这种东西：它是「这一层是否存在一条属于
+// 自己的发尖骨骼」，要么这一层自己有、要么没有，**绝不能从祖先或子孙借用**——L2 没有发尖链
+// 不代表应该拿 L1（主发片）或某个 L3 叶子的发尖链顶替，那样几何上会长错位置。如果误把 tip
+// 塞进 AUTHORABLE_KEYS，setPanelBoneGroupValue/resolvePanelBoneGroupValue 会把它当成可继承
+// 值处理，読取时会出现「L2 自己没创作却显示了别层的发尖链」这种语义错误。所以 tip 单独用
+// 三个专用导出（panelBoneGroupTip / setPanelBoneGroupTip / clearPanelBoneGroupTip）管理，
+// 不经过白名单、不参与链上回落。
 function makeLeafNode(leafStart, leafEnd, depth) {
-  const node = { leafStart, leafEnd, depth, children: null };
+  const node = { leafStart, leafEnd, depth, children: null, tip: null };
   for (const key of AUTHORABLE_KEYS) node[key] = null;
   return node;
 }
@@ -215,6 +230,20 @@ export function normalizePanelBoneGroups(value, leafCount) {
   return root;
 }
 
+// 校验并深拷贝一条发尖链；形状不合法 ⇒ null（「局部降级」的落点，理由见调用处注释）。
+function normalizeGroupTip(raw) {
+  if (raw == null || typeof raw !== "object") return null;
+  if (!Array.isArray(raw.points) || !Array.isArray(raw.restPoints)) return null;
+  if (raw.points.length !== raw.restPoints.length) return null;
+  const toVec = (p) => ({ x: Number(p?.x) || 0, y: Number(p?.y) || 0, z: Number(p?.z) || 0 });
+  return {
+    points: raw.points.map(toVec),
+    restPoints: raw.restPoints.map(toVec),
+    twists: Array.isArray(raw.twists) ? raw.twists.map((v) => Number(v) || 0) : null,
+    active: raw.active !== false
+  };
+}
+
 function normalizeNodeAt(raw, expectedStart, expectedEnd, depth) {
   if (raw == null || typeof raw !== "object") return null;
   const leafStart = Number(raw.leafStart);
@@ -226,6 +255,15 @@ function normalizeNodeAt(raw, expectedStart, expectedEnd, depth) {
   for (const key of AUTHORABLE_KEYS) {
     node[key] = raw[key] === undefined ? null : raw[key];
   }
+  // tip 的归一化选择「局部降级」而不是「整棵树判非法」：一条发尖链形状坏了（比如存档被
+  // 手改或旧版本写出了长度不等的 points/restPoints），只丢这一层的发尖链，不该连累整棵
+  // 分组树——分组树描述的是叶子划分这一份更重要的不变量，不能因为某一层的发尖链数据坏了
+  // 就让 normalizePanelBoneGroups 整体返回 null（那样用户连基本的段划分都会丢，代价远大于
+  // 丢一层发尖链）。校验规则：必须是对象、points 是数组、restPoints 也是数组且与 points
+  // 等长（呼应 bone-model.js normalizeSplitBones 里 tip.points/restPoints 的既有形状约定，
+  // 但这里不像那边一样「restPoints 缺失时允许 null」——分组层 tip 若要携带 delta 语义，
+  // points 与 restPoints 必须成对出现，缺一即视为非法）。
+  node.tip = normalizeGroupTip(raw.tip);
   const rawChildren = raw.children;
   if (rawChildren == null) {
     return node; // 叶节点
@@ -497,9 +535,23 @@ function cloneGroupTree(node) {
   if (!node) return node;
   const copy = { leafStart: node.leafStart, leafEnd: node.leafEnd, depth: node.depth, children: null };
   for (const key of AUTHORABLE_KEYS) copy[key] = node[key] === undefined ? null : node[key];
+  copy.tip = cloneGroupTip(node.tip);
   if (node.clampedFlat === true) copy.clampedFlat = true;
   if (Array.isArray(node.children)) copy.children = node.children.map(cloneGroupTree);
   return copy;
+}
+
+// 深拷贝一条发尖链（或 null）。与 normalizeGroupTip 分开：normalizeGroupTip 还要做形状校验，
+// 这里假定输入已经合法（cloneGroupTree 只用在已经归一化过的树上），只负责不共享引用。
+function cloneGroupTip(tip) {
+  if (!tip) return null;
+  const toVec = (p) => ({ x: p.x, y: p.y, z: p.z });
+  return {
+    points: tip.points.map(toVec),
+    restPoints: tip.restPoints.map(toVec),
+    twists: Array.isArray(tip.twists) ? tip.twists.slice() : null,
+    active: tip.active !== false
+  };
 }
 
 // 物化分组树：把 panelBoneGroupsFor 算出的「当前有效树」（可能是三级回落里任意一级，包括
@@ -568,5 +620,69 @@ export function panelBoneGroupHasOwnValue(lock, path, key) {
   const node = panelBoneGroupAtPath(root, path);
   if (!node) return false;
   return node[key] != null;
+}
+
+// ── 中间层骨骼载体：读写单层的发尖链 ───────────────────────────────────────────────
+// 只读，不物化：panelBoneGroupTip 直接用 panelBoneGroupsFor 算出的「当前有效树」（可能是
+// 三级回落里任意一级的临时对象），不写 lock、不改变任何状态——与 panelBoneGroupHasOwnValue
+// 同一个只读套路。tip 不参与链上回落（见文件头 makeLeafNode 处的大段注释），所以这里只看
+// path 指向节点自己的 tip，找不到节点或该层没创作过就返回 null。
+export function panelBoneGroupTip(lock, path) {
+  const root = panelBoneGroupsFor(lock);
+  if (!root) return null;
+  const node = panelBoneGroupAtPath(root, path);
+  if (!node) return null;
+  return node.tip ?? null;
+}
+
+// 写入该层自己的发尖链：先物化（同 setPanelBoneGroupValue 的既有套路——创作前必须先把当前
+// 有效树固化成 lock.panelBoneGroups 上真正可写的结构），再只改 path 指向的这一个节点，绝不
+// 触碰子孙（子孙若已有自己的 tip，原样保留；子孙若没有，也不会因为祖先这次写入而"继承"到
+// 什么——tip 不回落，这条规则在写入侧的体现就是"只写这一层，不碰任何 children"）。
+// tip 参数会先经过 normalizeGroupTip 校验形状，非法输入会被存成 null（与归一化路径的
+// "局部降级"是同一份校验函数，不能两处各写一套）。
+export function setPanelBoneGroupTip(lock, path, tip) {
+  const root = materializePanelBoneGroups(lock);
+  if (!root) return null;
+  const node = panelBoneGroupAtPath(root, path);
+  if (!node) return null;
+  node.tip = normalizeGroupTip(tip);
+  return root;
+}
+
+// 清除该层自己的发尖链，恢复"未创作"状态（tip = null）。同样只物化 + 只写这一层。
+export function clearPanelBoneGroupTip(lock, path) {
+  const root = materializePanelBoneGroups(lock);
+  if (!root) return null;
+  const node = panelBoneGroupAtPath(root, path);
+  if (!node) return null;
+  node.tip = null;
+  return root;
+}
+
+// path 指向节点覆盖的叶子闭区间。几何侧用它算 centerU / forkT：中间层没有自己的 u 坐标，
+// 只有「覆盖哪几个叶子」这条拓扑信息，叶子对应的 u 坐标仍完全由 panelSplits 持有（文件头
+// 规则 1），本函数只读不物化，直接在 panelBoneGroupsFor 算出的当前有效树上找节点。
+export function panelBoneGroupLeafSpan(lock, path) {
+  const root = panelBoneGroupsFor(lock);
+  if (!root) return null;
+  const node = panelBoneGroupAtPath(root, path);
+  if (!node) return null;
+  return { leafStart: node.leafStart, leafEnd: node.leafEnd };
+}
+
+// 「当前应该显示/编辑哪一串骨骼」：返回 path 指向节点的**同层兄弟节点数组**（含自己），
+// 按 leafStart 升序——用户要求 outliner 选中某个分组时，笔刷/视口只显示这一层的骨骼，不多
+// 不少。根节点（path 为空数组）没有"同层兄弟"这个概念，根本身就是主骨骼，所以约定返回
+// null，交给调用方去处理"显示主骨骼"这条分支——这里不返回 [root]，因为 [root] 会让调用方
+// 误以为主骨骼也是"某一层的分组节点数组"之一，从而尝试给它取 tip/leafSpan 之类的分组语义。
+export function panelBoneGroupTierNodes(lock, path) {
+  if (!Array.isArray(path) || !path.length) return null;
+  const root = panelBoneGroupsFor(lock);
+  if (!root) return null;
+  const parentPath = path.slice(0, -1);
+  const parent = panelBoneGroupAtPath(root, parentPath);
+  if (!parent || !Array.isArray(parent.children)) return null;
+  return parent.children.slice().sort((a, b) => a.leafStart - b.leafStart);
 }
 
