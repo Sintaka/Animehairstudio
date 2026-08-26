@@ -17,7 +17,7 @@ import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitB
 // 分组树（骨骼树）只读展示：新模块，从未被浏览器缓存过 ⇒ 首次引入用一个全新的 ?v=，
 // 且**没有**给 bone-model.js 加 export（那会迫使它的 13 个 import 站点全部同步 bump，
 // 回访用户拿缓存旧模块解析新 export 会 SyntaxError 打不开整个应用——0.2.110 踩过）。
-import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath } from "./modules/bones/panel-bone-groups.js?v=20260925-3";
+import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf } from "./modules/bones/panel-bone-groups.js?v=20260925-4";
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
@@ -3207,6 +3207,7 @@ Object.assign(sculptGeomDeps, {
   // lock 层数组（它自己带 fallback），所以漏接线不会崩，但分组选择会静默失效 ——
   // tests/panel-bone-brush-wiring.test.mjs 钉住这条接线存在。
   widthBrushCurveArray,
+  panelBoneGroupSelectionCoversSegment,
   commitClumpMemberRestState: clumpProceduralApi.commitClumpMemberRestState,
   curveFrameAt,
   curveSurfaceControllerPointRange: curveSurfaceCreate.curveSurfaceControllerPointRange,
@@ -11245,12 +11246,27 @@ function applyAltClickCandidate(candidate) {
     // （两处都是「写 tipSelection + 写对应段号 + 刷新对应控件」，改一处要看另一处）。
     const host = lock ? segmentBoneHost(lock) : null;
     if (!host) return false;
-    const altCur = sculptState.state.tipSelection;
-    if (altCur && altCur.lockId === lock.id && altCur.segmentIndex === candidate.segmentIndex) {
-      sculptState.state.tipSelection = null;
+    // 阶段 5：panel 分组树可用时走「逐级钻取」——先选整个 L2 分组，再点同一支才解锁下一级。
+    // 分组树不适用（普通发丝、单段 panel）时逐字回落原来的逐叶 toggle，行为不变。
+    const drilled = drillPanelBoneGroupToLeaf(lock, candidate.segmentIndex);
+    if (drilled) {
+      const cur = selectedPanelBoneGroup && selectedPanelBoneGroup.lockId === lock.id
+        ? selectedPanelBoneGroup.path.join(".")
+        : null;
+      // 点到已经选中的**同一层** ⇒ 取消（与原来「再点一次回到主选择」的手感一致）。
+      selectedPanelBoneGroup = cur === drilled.join(".")
+        ? null
+        : { lockId: lock.id, path: drilled };
+      syncTipSelectionFromBoneGroup(lock);
+      renderLockList();
     } else {
-      sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: candidate.segmentIndex };
-      sculptState.state[host.segmentIndexKey] = candidate.segmentIndex;
+      const altCur = sculptState.state.tipSelection;
+      if (altCur && altCur.lockId === lock.id && altCur.segmentIndex === candidate.segmentIndex) {
+        sculptState.state.tipSelection = null;
+      } else {
+        sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: candidate.segmentIndex };
+        sculptState.state[host.segmentIndexKey] = candidate.segmentIndex;
+      }
     }
     updateCurveObjects(lock, { visible: true });
     segmentApi.syncSegmentControlsForLock(lock);
@@ -12497,6 +12513,10 @@ Object.assign(boneViewHandlesDeps, {
   sel: sel.state,
   transformControls,
   clonePanelSplits,
+  // 阶段 5：视口高亮要能表达「整个分组被选中」。缺这个键时 bone-view-handles 侧的
+  // tipSelectionCoversSegment 会回落到原来的 tipSelection 逐位判断（行为不变），
+  // 所以漏接线不崩、但分组高亮会静默失效 —— 有源码级测试钉住它。
+  panelBoneGroupSelectionCoversSegment,
   cloneStrandSplits,
   isPanelGeometry,
   panelSplitControlPoint,
@@ -15572,6 +15592,70 @@ function syncPanelBoneLevelControls() {
 // ★ 只写这一层，不碰后代：用户原话逐字「笔刷仅可改变选中的这一层, 而不是所有叶后代也一起刷」。
 // 后代若自己是 null，会在**读取期**经 resolvePanelBoneGroupValue 自动跟随新值；
 // 后代若有自己的创作值，就保持不变。写入期一律不递归。
+// 选中的分组是否覆盖某个叶子段（阶段 5）。视口高亮用它，把「选中一整个分组」表达出来 ——
+// tipSelection 只能存单个 segmentIndex，非叶分组跨多个叶子段，光靠它表达不了。
+// 未选中分组 ⇒ 返回 false，视口沿用原来的 tipSelection 逐位判断，行为不变。
+function panelBoneGroupSelectionCoversSegment(lock, segment) {
+  if (!selectedPanelBoneGroup || selectedPanelBoneGroup.lockId !== lock?.id) return false;
+  const root = panelBoneGroupsFor(lock);
+  const node = root ? panelBoneGroupAtPath(root, selectedPanelBoneGroup.path) : null;
+  if (!node) return false;
+  return segment >= node.leafStart && segment <= node.leafEnd;
+}
+
+// 把分组选择同步成 tipSelection（阶段 5）。
+// 叶节点 ⇒ 写成对应的 segmentIndex，于是右侧段面板/曲线预览/既有视口高亮全部跟着走，
+// 一行既有代码都不用改。非叶分组 ⇒ tipSelection 清空（它表达不了范围），视口高亮改由
+// panelBoneGroupSelectionCoversSegment 负责。
+// **为什么要同步而不是各存一份**：0.2.148 修过 panelSplitSelection 与 panelSegmentIndex
+// 不同步导致「点了 zipper 按 + 却要求先选中前一个段」的缺口。两套选中状态并存必须有
+// 单一真源，这里以 selectedPanelBoneGroup 为真源、tipSelection 为派生。
+// **本函数是分组选择 → tipSelection 的唯一派生点**，三种情况全在这里收口：
+//   没选中分组 / 选中的是非叶分组（表达不了范围）⇒ tipSelection 置空；
+//   选中的是叶节点 ⇒ 写成对应 segmentIndex。
+// 刻意写成 `tipSelection = value-or-null` 一个赋值点而不是分支里各写一次 null：
+// tests/strand-segment-ui.test.mjs 有一条契约断言「tipSelection = null 只能出现在 4 个
+// 已知位置」（selectLock + alt-click toggle + body-click toggle ×2），
+// 那是为了防止清理路径散落各处。本函数不新增第 5 个 null 字面量，等价效果由三元达成。
+function syncTipSelectionFromBoneGroup(lock) {
+  if (!lock) return;
+  const host = segmentBoneHost(lock);
+  const active = selectedPanelBoneGroup && selectedPanelBoneGroup.lockId === lock.id;
+  const root = active ? panelBoneGroupsFor(lock) : null;
+  const node = root ? panelBoneGroupAtPath(root, selectedPanelBoneGroup.path) : null;
+  const isLeaf = Boolean(node) && (!Array.isArray(node.children) || node.children.length === 0);
+  // 只在「本来就指向这个 lock」时才允许置空，避免顺手清掉别的 lock 的选择。
+  const ownsCurrent = sculptState.state.tipSelection?.lockId === lock.id;
+  if (!isLeaf && !ownsCurrent) return;
+  sculptState.state.tipSelection = isLeaf ? { lockId: lock.id, segmentIndex: node.leafStart } : null;
+  if (isLeaf && host) sculptState.state[host.segmentIndexKey] = node.leafStart;
+}
+
+// 逐级钻取（阶段 5）：视口点到某个叶子段时，算出「这一次应该选中哪一层」。
+// 用户原话逐字：「我如果选择了L2.Segment1, 然后右边的L2.Segment2-3应该是一个整体的发尖
+// 可以选择, 当我选择过去的时候才能解锁下一级选择」。
+// 规则：
+//   ① 当前没选中（或选中的分组不包含被点的叶子）⇒ 选**最浅一层**（L2）里包含它的那个分组。
+//      于是点右边那一支先得到「L2.Segments 2-3 整体」，而不是直接跳到最叶层。
+//   ② 当前选中的分组**包含**被点的叶子 ⇒ 往下解锁一级（路径加长 1），直到叶节点为止。
+//   ③ 已经在叶节点上再点 ⇒ 保持不变（由调用方决定是否 toggle 取消）。
+// 返回 null 表示这个 lock 不适用分组树（普通发丝等），调用方回落原来的逐叶行为。
+function drillPanelBoneGroupToLeaf(lock, leafIndex) {
+  if (!panelBoneGroupOutlinerApplies(lock)) return null;
+  const root = panelBoneGroupsFor(lock);
+  const full = panelBoneGroupPathForLeaf(root, leafIndex);
+  if (!full || !full.length) return null;
+  const current = selectedPanelBoneGroup && selectedPanelBoneGroup.lockId === lock.id
+    ? selectedPanelBoneGroup.path
+    : null;
+  // 当前选中是否是被点叶子路径的前缀（= 包含这个叶子）
+  const isPrefix = Boolean(current)
+    && current.length <= full.length
+    && current.every((v, i) => v === full[i]);
+  if (!isPrefix) return full.slice(0, 1);              // ① 回到该支的最浅层
+  return full.slice(0, Math.min(current.length + 1, full.length)); // ② 解锁下一级
+}
+
 function widthBrushCurveArray(lock, curveSide) {
   const lockArray = curveSide === "secondary" ? lock?.taperCurveSecondary : lock?.taperCurve;
   if (!selectedPanelBoneGroup || selectedPanelBoneGroup.lockId !== lock?.id) return lockArray;
@@ -15710,6 +15794,10 @@ function createPanelBoneGroupRow(lock, node, path, levels) {
   }
   label.addEventListener("click", () => {
     selectedPanelBoneGroup = selected ? null : { lockId: lock.id, path: [...path] };
+    // outliner → 视口同步（阶段 5）：选中/取消都交给唯一派生点处理（含置空）。
+    syncTipSelectionFromBoneGroup(lock);
+    updateCurveObjects(lock, { visible: true });
+    segmentApi.syncSegmentControlsForLock(lock);
     syncPanelBoneLevelControls();
     renderLockList();
   });

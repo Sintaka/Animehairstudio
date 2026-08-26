@@ -34,6 +34,19 @@ import {
 //   tipUiActive, brushBonesOnly } (computed in the spine, not recomputed here).
 // Batch-fill point in app.js: after the strandGeometryDeps batch (all deps defined).
 export function createBoneViewHandlesApi(deps) {
+  // 「这一段是否处于选中态」的唯一判据（阶段 5 收敛）。
+  // 原先有 4 处逐字重复的 inline 比较（tipSelection?.lockId === lock.id &&
+  // tipSelection.segmentIndex === segment）。分组树引入后，选中的可能是一个**跨多段的分组**，
+  // 而 tipSelection 只能存单个 segmentIndex、表达不了范围 —— 所以判据必须是
+  // 「tipSelection 精确命中 **或** 选中的分组覆盖这一段」。
+  // 收敛成一个函数而不是改 4 处：4 份重复的判据迟早会长歪（本仓有先例：段选中与 zipper
+  // 选中两套状态各写一份判断，0.2.148 才修好不同步）。
+  // deps.panelBoneGroupSelectionCoversSegment 缺失时只走 tipSelection，行为与阶段 4 逐位一致。
+  const tipSelectionCoversSegment = (lock, segment) => {
+    const sel = deps.sculptState.tipSelection;
+    if (sel?.lockId === lock?.id && sel.segmentIndex === segment) return true;
+    return Boolean(deps.panelBoneGroupSelectionCoversSegment?.(lock, segment));
+  };
 // 发尖子骨骼宿主适配器：panel 段 / 发丝管的单一几何分派（见 tip-sub-bone-host.js）。
 // 同规则同步点：bone-interaction.js 用同样的五项 deps 构造同一个 API —— 把手放置（这边）
 // 与编辑基准（那边）必须来自同一条变换链，否则一按下就跳。
@@ -568,8 +581,7 @@ function updateBoneViewHandles(lock, ctx) {
     }
     handle.position.copy(point);
     // 选中段高亮与 WidthCurve 一致（选中 0.9、拖拽中 1、未选中 0.68）。
-    const selected = deps.sculptState.tipSelection?.lockId === lock.id
-      && deps.sculptState.tipSelection.segmentIndex === segment;
+    const selected = tipSelectionCoversSegment(lock, segment);
     const dragging = deps.sculptState.panelSplitDrag?.lockId === lock.id
       && deps.sculptState.panelSplitDrag.kind === "segment"
       && deps.sculptState.panelSplitDrag.splitIndex === segment;
@@ -583,8 +595,7 @@ function updateBoneViewHandles(lock, ctx) {
     // 旋转模式下选中发尖子骨骼时，给每个暴露链点显示自身法线箭头。
     const syncTipNormalArrow = () => {
       if (!arrow) return;
-      const tipSelected = deps.sculptState.tipSelection?.lockId === lock.id
-        && deps.sculptState.tipSelection.segmentIndex === segment;
+      const tipSelected = tipSelectionCoversSegment(lock, segment);
       arrow.visible = handle.visible && tipSelected && deps.sel.activeTool === "rotate";
       if (!arrow.visible) return;
       const chainT = point / Math.max(1, tip.points.length - 1);
@@ -630,8 +641,7 @@ function updateBoneViewHandles(lock, ctx) {
       const chainFrame = tipChainCtx.host.chainFrameAt(segment, tip, t);
       handle.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(chainFrame.x, chainFrame.y, chainFrame.z));
     }
-    const isSelected = deps.sculptState.tipSelection?.lockId === lock.id
-      && deps.sculptState.tipSelection.segmentIndex === segment;
+    const isSelected = tipSelectionCoversSegment(lock, segment);
     const isDragged = deps.sculptState.panelSplitDrag?.lockId === lock.id
       && deps.sculptState.panelSplitDrag.kind === "tip"
       && deps.sculptState.panelSplitDrag.splitIndex === segment
@@ -661,8 +671,7 @@ function updateBoneViewHandles(lock, ctx) {
     }
     line.geometry.dispose();
     line.geometry = new THREE.BufferGeometry().setFromPoints(exposed);
-    line.material.opacity = deps.sculptState.tipSelection?.lockId === lock.id
-      && deps.sculptState.tipSelection.segmentIndex === segment
+    line.material.opacity = tipSelectionCoversSegment(lock, segment)
       ? 0.95 : 0.45;
   });
   // ── 发尖 WidthCurve 把手/引导线的几何分派 ────────────────────────────────────────
