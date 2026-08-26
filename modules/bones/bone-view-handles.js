@@ -47,6 +47,15 @@ export function createBoneViewHandlesApi(deps) {
     if (sel?.lockId === lock?.id && sel.segmentIndex === segment) return true;
     return Boolean(deps.panelBoneGroupSelectionCoversSegment?.(lock, segment));
   };
+  // 骨骼分组树「层级显示」判据：某个分组层被折叠/隐藏时，其下所有段的发尖链把手/
+  // 引导线都不画。与 tipSelectionCoversSegment 同风格收敛成一处，避免两个 visible
+  // 判断各写一份。deps.panelBoneGroupTierDisplay 缺失、或返回 null/undefined 时按
+  // 「显示」处理——漏接线不得改变现状可见性（分组树落地前一律可见）。
+  const panelBoneGroupTierAllowsSegment = (lock, segment) => {
+    if (typeof deps.panelBoneGroupTierDisplay !== "function") return true;
+    const result = deps.panelBoneGroupTierDisplay(lock, segment);
+    return result !== false;
+  };
 // 发尖子骨骼宿主适配器：panel 段 / 发丝管的单一几何分派（见 tip-sub-bone-host.js）。
 // 同规则同步点：bone-interaction.js 用同样的五项 deps 构造同一个 API —— 把手放置（这边）
 // 与编辑基准（那边）必须来自同一条变换链，否则一按下就跳。
@@ -605,7 +614,8 @@ function updateBoneViewHandles(lock, ctx) {
       arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tipChainCtx.host.chainFrameAt(segment, tip, chainT).z);
       arrow.scale.setScalar(0.14);
     };
-    const visible = Boolean(tipChainCtx) && tipChainCtx.base;
+    const visible = Boolean(tipChainCtx) && tipChainCtx.base
+      && panelBoneGroupTierAllowsSegment(lock, segment);
     handle.visible = visible;
     if (!visible) {
       syncTipNormalArrow();
@@ -651,7 +661,8 @@ function updateBoneViewHandles(lock, ctx) {
   });
   // Guide lines connecting each sub-bone's exposed (below-fork) chain portion.
   lock.curveObjects.tipChainLines?.forEach((line, segment) => {
-    const visible = Boolean(tipChainCtx) && tipChainCtx.base;
+    const visible = Boolean(tipChainCtx) && tipChainCtx.base
+      && panelBoneGroupTierAllowsSegment(lock, segment);
     line.visible = visible;
     if (!visible) return;
     const tip = tipChainCtx.chains?.[segment];

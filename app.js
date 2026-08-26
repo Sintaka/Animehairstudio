@@ -8727,6 +8727,10 @@ Object.assign(taperEditorDeps, {
   sel: sel.state,
   hairState: hairState.state,
   miscState: miscState.state,
+  // 候选点解析：让 taperCurveBrushCandidates 枚举**当前选中层**的曲线，而不是恒取 lock 层。
+  // 与 sculptGeomDeps 里的同名 dep 是**同一个函数**——必须同源：候选点（瞄哪里）与写入
+  // 目标（改哪条数组）来自不同曲线时，就是用户实测的「选中 L2.Segments 2-3 却刷到主发片」。
+  widthBrushCurveArray,
   // Width Brush 紫色分支的候选点枚举（taperCurveBrushCandidates）用它把世界坐标投影到
   // 像素——与绿色 tip-width 笔刷（bone-interaction.js）用的是同一个函数，sculptGeom 已在
   // 本行之前定义（1882 行）。
@@ -12517,6 +12521,12 @@ Object.assign(boneViewHandlesDeps, {
   // tipSelectionCoversSegment 会回落到原来的 tipSelection 逐位判断（行为不变），
   // 所以漏接线不崩、但分组高亮会静默失效 —— 有源码级测试钉住它。
   panelBoneGroupSelectionCoversSegment,
+  // 仅显当前层（用户拍板）。缺这个键时 bone-view-handles 的
+  // panelBoneGroupTierAllowsSegment 回落成恒 true（维持现状可见性）⇒ 漏接线不崩，
+  // 但「仅显当前层」会静默失效。tests/panel-bone-brush-target-parity.test.mjs 钉住它
+  // **接在本批次**——第一次写时误接进了 sculptGeomDeps（那里没有消费方），
+  // 因为 str_replace 的锚点在两个批次里都存在，测试当场抓到。
+  panelBoneGroupTierDisplay,
   cloneStrandSplits,
   isPanelGeometry,
   panelSplitControlPoint,
@@ -15595,6 +15605,23 @@ function syncPanelBoneLevelControls() {
 // 选中的分组是否覆盖某个叶子段（阶段 5）。视口高亮用它，把「选中一整个分组」表达出来 ——
 // tipSelection 只能存单个 segmentIndex，非叶分组跨多个叶子段，光靠它表达不了。
 // 未选中分组 ⇒ 返回 false，视口沿用原来的 tipSelection 逐位判断，行为不变。
+// 「这一段的发尖把手/引导线该不该画」（用户拍板：仅显示当前层的骨骼）。
+// 用户原话逐字：「至于刘海的每层的骨骼显示, 设置为仅显示当前层的骨骼, 而且用户只能更改
+// 选中的这一层的这一串骨骼 / 如果没选中就显示主骨骼, 而不是现在主骨骼和最叶级骨骼一起显示」。
+//
+// 两种情况：
+//   ① 没选中任何分组 ⇒ 返回 false，**一条发尖把手都不画**，视口里只剩主骨骼。
+//      这正是用户要改掉的现状（主骨骼与最叶级骨骼一起显示）。
+//   ② 选中了某个分组 ⇒ 只画该分组覆盖的段，其余段全部隐藏。
+//
+// 分组树不适用的几何（普通发丝、单段 panel）返回 true 交还给既有可见性逻辑 ——
+// **普通发丝一行都不能受影响**，这是用户第一条需求。
+function panelBoneGroupTierDisplay(lock, segment) {
+  if (!panelBoneGroupOutlinerApplies(lock)) return true;
+  if (!selectedPanelBoneGroup || selectedPanelBoneGroup.lockId !== lock?.id) return false;
+  return panelBoneGroupSelectionCoversSegment(lock, segment);
+}
+
 function panelBoneGroupSelectionCoversSegment(lock, segment) {
   if (!selectedPanelBoneGroup || selectedPanelBoneGroup.lockId !== lock?.id) return false;
   const root = panelBoneGroupsFor(lock);

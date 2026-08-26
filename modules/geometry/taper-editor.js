@@ -427,12 +427,26 @@ function taperCurveBrushCandidates(lock, rect) {
   const curveKey = "taperCurve";
   if (!lock?.taperCurve?.length) return [];
   const asymmetric = Boolean(lock.asymmetricWidthCurve);
+  // 候选点必须来自**当前选中的那一层**的曲线，不能恒取 lock 层。
+  //
+  // 这是用户实测「选中 L2.Segments 2-3 后笔刷仍然刷到主发片」的真因：写入目标早在阶段 4
+  // 就已经按选中分组路由（sculpt-geometry.js 的 deps.widthBrushCurveArray），但**候选点**
+  // 一直硬取 lock.taperCurve ⇒ 屏幕上可命中的点、以及 nearestScreenCandidate 返回的
+  // pointIndex，全都是主发片曲线的。于是「瞄的是主发片、写的是分组」——用户看到的就是
+  // 刷主发片。两侧必须同源，只改写入侧治不了。
+  //
+  // deps.widthBrushCurveArray 缺失或没选中分组时返回 lock 层数组，行为与之前逐位一致。
+  const resolveSide = (side) => (deps.widthBrushCurveArray
+    ? deps.widthBrushCurveArray(lock, side)
+    : (side === "secondary" ? ensureSecondaryTaperCurve(lock, curveKey) : lock.taperCurve));
+  const primaryPoints = resolveSide("primary");
+  if (!primaryPoints?.length) return [];
   const curveSides = asymmetric
     ? [
-        { curvePoints: lock.taperCurve, sides: [1], curveSide: "primary" },
-        { curvePoints: ensureSecondaryTaperCurve(lock, curveKey), sides: [-1], curveSide: "secondary" }
+        { curvePoints: primaryPoints, sides: [1], curveSide: "primary" },
+        { curvePoints: resolveSide("secondary"), sides: [-1], curveSide: "secondary" }
       ]
-    : [{ curvePoints: lock.taperCurve, sides: [-1, 1], curveSide: "primary" }];
+    : [{ curvePoints: primaryPoints, sides: [-1, 1], curveSide: "primary" }];
   const curve = deps.strandGeometryCurve(lock);
   const candidates = [];
   curveSides.forEach(({ curvePoints, sides, curveSide }) => {
