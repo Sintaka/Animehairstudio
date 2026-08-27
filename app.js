@@ -15678,9 +15678,10 @@ function syncTipSelectionFromBoneGroup(lock) {
   //   ① tipUiActive（app.js:12179）要求 tipSelection?.lockId === lock.id ——
   //      置空会让**整组发尖 UI 在笔刷激活时被隐藏** ⇒ 用户报的「没有高亮显示」；
   //   ② applySubBoneBrushSample（bone-interaction.js）第一行就是 `if (!selection) return false`，
-  //      返回 fals
-...[276 chars omitted]...
-  // 覆盖 ⇒ 整层高亮。
+  //      返回 false 就落到主笔刷体去改 source.points ⇒ 用户报的「直接刷还是更改主骨骼」；
+  //   ③ tipSelectionCoversSegment（bone-view-handles.js）先看 tipSelection 精确命中，
+  //      再看 panelBoneGroupSelectionCoversSegment ⇒ 后者对该层覆盖的每个段都为真
+  //      ⇒ 整层高亮。
   //
   // 换言之：置空**同时**关掉了高亮与笔刷路由，这就是「显然我们漏掉了很多东西」的单一根因。
   const anchorSegment = node ? node.leafStart : null;
