@@ -57,7 +57,13 @@ test("panel-tip-strand 真的把祖先 delta 累加进 rest，且未创作时回
   const src = readFileSync(new URL("../modules/geometry/panel-tip-strand.js", import.meta.url), "utf8");
   const i = src.indexOf("const baseRestPointAt =");
   assert.notEqual(i, -1, "找不到 baseRestPointAt");
-  const body = src.slice(i, i + 1400);
+  // 窗口取到 restPointAt 赋值结束（`: baseRestPointAt;` 那一行），不用固定字符数。
+  // ★ 原本是 `src.slice(i, i + 1400)`，0.2.170 加解释注释后三条断言全被挤出窗口、
+  // 测试变红，而代码其实是对的 —— 固定字符窗口会把「注释变长」误报成「实现变错」，
+  // 这类假红比漏报更消耗排查时间（本仓已有多次「假绿/假红」教训）。改成锚到结构边界。
+  const end = src.indexOf(": baseRestPointAt;", i);
+  assert.notEqual(end, -1, "找不到 restPointAt 的回落分支");
+  const body = src.slice(i, end + ": baseRestPointAt;".length);
   assert.match(body, /ancestorTips\.length/, "必须按有无祖先分流");
   assert.match(body, /point\.x \+= a\.x - r\.x/, "必须累加祖先 delta");
   // 未创作时**必须**回落到同一个函数引用，而不是包一层恒等映射：

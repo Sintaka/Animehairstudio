@@ -3,11 +3,11 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-11";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-12";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
 import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-1";
-import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-3";
+import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-4";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260814-1";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260814-12";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260814-12";
@@ -21,7 +21,7 @@ import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, n
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
-import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-4";
+import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-5";
 import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-3";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260829-1";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260901-1";

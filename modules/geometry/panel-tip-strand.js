@@ -1235,11 +1235,56 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone, options = {})
   const ancestorTips = Array.isArray(options.ancestorTips)
     ? options.ancestorTips
     : ancestorTipsForLeaf(lock, segmentIndex);
+  // ★ 0.2.170：继承从「逐点平移」升级为「逐点刚体变换」。
+  //
+  // 用户原话：「应该表现为作为尖端的整体控制, 就是说我如果orient中间层, 尖端应该按照
+  // 中间层的中心骨骼去旋转, 而不是按照自己的尖端骨骼中心旋转」。
+  //
+  // 为什么旧的纯平移不够：中间层链的 rest 走**span 中心 u**（syntheticSplitsForLeafSpan
+  // 折出的合成 boundaries 的中点），叶子链走**自己那片叶子的中心 u**，两者天生有横向
+  // 偏移（实测区间 [1,2] 的 lateralU 差 0.316667）。把「中心线那一点的位移」原样加给一个
+  // 偏离中心线的叶子，叶子只会被平行搬走 —— 中间层转 90° 时叶子仍保持原朝向、且离轴心
+  // 越远错得越多。这就是用户说的「直接应用绝对值」。
+  //
+  // 刚体式（逐下标 i，由浅到深复合）：
+  //   p ← tip.points[i] + dq_i · (p − tip.restPoints[i])
+  // 括号内是子点在该层 rest 帧下的**力臂**，dq_i 是该层 rest→authored 的朝向变化。
+  //
+  // ★ 退化条件是「该层没旋转」而不是「力臂为 0」：dq 为恒等时上式化简成
+  //   p + (tip.points[i] − tip.restPoints[i])
+  // 对**任意**力臂都精确等于旧公式 ⇒ 只拖动过中间层（未旋转）的存量档逐字节不变。
+  // tipRigidStepsFor 正是靠这条在无旋转时返回 null，让该层走原平移分支。
+  // 这是恒等式，不是近似，所以不需要为存量档写迁移代码。
+  //
+  // 为什么能对每个祖先独立取 pivot：ancestorTipsForLeaf 返回的是各节点的**原始创作值**
+  // （node.tip，不是物化链），每层的 points/restPoints 都是「该层自己相对自己 rest」的
+  // 一对，因此由浅到深依次复合等价于骨骼链的逐级父子变换，不会把更浅祖先的位移算两次。
+  const ancestorSteps = ancestorTips.length
+    ? ancestorTips.map((tip) => ({ tip, steps: tipRigidStepsFor(tip, mainCount) }))
+    : null;
+  // 刻意声明在函数内而非模块级：模块级可变状态在本仓有清单在追踪（GLOBAL_LET_INVENTORY），
+  // 且同一 lock 的多条链会并发物化，共享一个模块级临时向量会串味。
+  const rigidArm = new THREE.Vector3();
   const restPointAt = ancestorTips.length
     ? (t) => {
       const point = baseRestPointAt(t);
       const index = Math.round(t * Math.max(1, mainCount - 1));
-      for (const tip of ancestorTips) {
+      for (const { tip, steps } of ancestorSteps) {
+        if (steps) {
+          const step = steps[index];
+          if (!step) continue;
+          // 力臂在该层 rest 帧下取，转过 dq 后落到 authored 点上。复用一个临时向量避免
+          // 在热路径上逐点 new（本函数每个 t 都会被调用）。
+          const armX = point.x - step.pivot.x;
+          const armY = point.y - step.pivot.y;
+          const armZ = point.z - step.pivot.z;
+          rigidArm.set(armX, armY, armZ).applyQuaternion(step.dq);
+          point.x = step.translate.x + rigidArm.x;
+          point.y = step.translate.y + rigidArm.y;
+          point.z = step.translate.z + rigidArm.z;
+          continue;
+        }
+        // 该层未旋转 ⇒ 纯平移，与 0.2.168 逐字节相同。
         const a = tip.points[index];
         const r = tip.restPoints[index];
         if (!a || !r) continue;
@@ -1278,6 +1323,59 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone, options = {})
 // 该叶子的祖先中间层里「已创作过发尖链」的那些，按由浅到深顺序返回其 tip。
 // 形状不合法（点数与 restPoints 不匹配）的一律丢弃：与 materializeTipChain 的 authoredValid
 // 同一条口径，避免半个链造成错位位移。
+// 把一个祖先中间层的链预折成「逐下标的刚体变换」：pivot（该层 rest 上的点）、
+// translate（该层 authored 上的同下标点）、dq（rest→authored 的朝向变化，含 twist 滚转）。
+//
+// ★ 为什么必须预计算而不是在 restPointAt 里现算：restPointAt 是热路径（网格逐顶点、
+// 把手逐点、USD 导出都会调），而 dq 只依赖祖先链本身、与被变换的子点无关 ⇒ 每个祖先
+// 每个下标只需算一次。现算会在每个 t 上重建两条 CatmullRomCurve3。
+//
+// ★ 切线估计器刻意与 tipChainReanchorAt 同源（都用 CatmullRomCurve3 的 getTangent）：
+// 同一根中间层链会同时被两处消费 —— 这里决定「子链 rest 落在哪」，tipChainReanchorAt
+// 决定「网格点重锚到哪」。两处若用不同的切线估计（如这里用有限差分），同一次旋转会
+// 得出两个略微不同的朝向，表现为网格与骨骼把手错位。反向退化的阈值 −0.9999 与备用轴
+// 的选法也逐字取自那里，勿改成别的值。
+function tipRigidStepsFor(tip, mainCount) {
+  const pts = tip.points;
+  const rest = tip.restPoints;
+  if (!Array.isArray(pts) || !Array.isArray(rest)) return null;
+  if (pts.length !== mainCount || rest.length !== mainCount) return null;
+  const authoredCurve = new THREE.CatmullRomCurve3(tipChainPointsAsVectors(pts));
+  const restCurve = new THREE.CatmullRomCurve3(tipChainPointsAsVectors(rest));
+  const twists = Array.isArray(tip.twists) && tip.twists.length === mainCount ? tip.twists : null;
+  const denom = Math.max(1, mainCount - 1);
+  const steps = [];
+  let anyRotation = false;
+  for (let i = 0; i < mainCount; i += 1) {
+    const a = pts[i];
+    const r = rest[i];
+    if (!a || !r) return null;
+    const t = i / denom;
+    const authoredTangent = authoredCurve.getTangent(t).normalize();
+    const restTangent = restCurve.getTangent(t).normalize();
+    const dq = restTangent.dot(authoredTangent) < -0.9999
+      ? (new THREE.Quaternion()).setFromAxisAngle(
+        Math.abs(restTangent.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0),
+        Math.PI
+      )
+      : (new THREE.Quaternion()).setFromUnitVectors(restTangent, authoredTangent);
+    // twist 也参与刚体变换（用户拍板）。与 chain.twists 的相加**不重复**、是两件互补的事：
+    // 相加让叶子**自己的截面**跟着祖先滚（叶子链上每点的朝向），这里的滚转让**偏离
+    // 中间层中心线的叶子整体**绕中间层切线划圆（叶子链的位置）。少了后者，中间层
+    // 扭转时偏心的叶子只会自转不会公转。构造方式与 tipChainReanchorAt 的 dqRoll 同构。
+    const twist = twists ? (Number(twists[i]) || 0) : 0;
+    const dqRoll = Math.abs(twist) > 1e-6
+      ? (new THREE.Quaternion()).setFromAxisAngle(authoredTangent, twist).multiply(dq)
+      : dq;
+    // 判「这一层到底有没有转」：w≈±1 的四元数是恒等旋转（含 −1 的双覆盖表示）。
+    if (Math.abs(Math.abs(dqRoll.w) - 1) > 1e-9) anyRotation = true;
+    steps.push({ pivot: r, translate: a, dq: dqRoll });
+  }
+  // 该层只平移未旋转 ⇒ 返回 null 让调用方走纯平移路径。这不只是优化：纯平移路径与
+  // 0.2.168 逐字节相同，于是「只拖动过中间层、没旋转过」的存量档输出完全不变。
+  return anyRotation ? steps : null;
+}
+
 function ancestorTipsForLeaf(lock, leafIndex) {
   const root = panelBoneGroupsFor(lock);
   if (!root) return [];
