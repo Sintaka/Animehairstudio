@@ -283,3 +283,67 @@ export function buildTipWidthCurveFrom({ gridTs, sideForkT, oppositeForkT, globa
   points.sort((a, b) => a.position - b.position);
   return points;
 }
+
+// ── 中间层 WidthCurve 所有权转移（生成/销毁）───────────────────────────────────
+// 背景：Panel 骨骼分组树里，「中间层」= 覆盖连续多个叶子段的非叶节点。用户拍板的模型是
+// 「生成时把叶子曲线烘进中间层」+「销毁时写回各叶子，视觉不变」。这两个函数只做曲线
+// 数组层面的纯数学转换，不碰 bone 字段/分组树遍历，调用方（分组树那一侧）负责决定何时
+// 调用、把结果写进哪个字段。
+//
+// 跨网格重采样的必要性：TIP_WIDTH_CONTROL_POINTS 个控制点的位置由 tipWidthControlTs(forkT)
+// 决定，forkT 不同 ⇒ 网格位置不同。中间层的 forkT 走 span 级（覆盖多个叶子的整体深度），
+// 各叶子走叶子级 forkT，两者一般不相等，因此中间层⇄叶子之间不能直接复制曲线数组，
+// 必须用 sampleTaperCurve 在对方的网格位置上重新取值。
+
+// 把多个叶子的当前有效曲线合并烘成一条中间层曲线：在 tierGridTs 的每个位置上，对全部
+// 叶子曲线各采样一次取算术平均。
+//
+// 为什么是平均而不是「取第一个」/「取最深叶子」：中间层曲线是唯一真源，一旦生成，各叶子
+// 原来可能不同的曲线就不再单独存在（这是用户已接受的「合并 ⇒ 有信息损失」前提）。在没有
+// 任何一个叶子比其他叶子更该被信任的先验下，平均是对「信息损失」最中立、最可辩护的处理：
+// 它不偏向任何一侧，且退化到单叶子时精确等于该叶子（不引入额外偏差）。
+export function bakeTierWidthCurveFromLeaves({ leafCurves, leafGridTs, tierGridTs, fallbackCurve }) {
+  const curves = Array.isArray(leafCurves) ? leafCurves : [];
+  const grids = Array.isArray(leafGridTs) ? leafGridTs : [];
+  const tierTs = (Array.isArray(tierGridTs) ? tierGridTs : []).filter((t) => Number.isFinite(Number(t)));
+  const fallback = Array.isArray(fallbackCurve) ? fallbackCurve : null;
+  if (!tierTs.length) return [];
+  // 逐叶子解析出「这个叶子实际要采样的曲线」：叶子曲线缺失（null）时回落到 lock 层曲线。
+  // leafGridTs 在这里只用来确定叶子数量（合并规则只关心值，不关心叶子自己的网格
+  // 位置——那是 resampleTierWidthCurveToLeaf 的职责），长度不符的 grid 条目不影响
+  // 能否采样，只要曲线本身有效即可。
+  const count = Math.max(curves.length, grids.length);
+  const effectiveCurves = [];
+  for (let i = 0; i < count; i += 1) {
+    const curve = curves[i];
+    effectiveCurves.push(Array.isArray(curve) && curve.length ? curve : fallback);
+  }
+  const usable = effectiveCurves.filter((curve) => Array.isArray(curve) && curve.length);
+  return tierTs.map((position) => {
+    const clampedPosition = THREE.MathUtils.clamp(Number(position) || 0, 0, 1);
+    const value = usable.length
+      ? usable.reduce((acc, curve) => acc + sampleTaperCurve(curve, clampedPosition), 0) / usable.length
+      : 1;
+    return {
+      position: clampedPosition,
+      value: THREE.MathUtils.clamp(Number(value) || 1, TIP_WIDTH_VALUE_MIN, TIP_WIDTH_VALUE_MAX),
+      interpolation: "linear"
+    };
+  });
+}
+
+// 把一条中间层曲线按某个叶子自己的网格重采样，写回该叶子。调用方对每个叶子各调一次。
+export function resampleTierWidthCurveToLeaf({ tierCurve, leafGridTs }) {
+  const tier = Array.isArray(tierCurve) ? tierCurve : null;
+  const leafTs = (Array.isArray(leafGridTs) ? leafGridTs : []).filter((t) => Number.isFinite(Number(t)));
+  if (!leafTs.length) return [];
+  return leafTs.map((position) => {
+    const clampedPosition = THREE.MathUtils.clamp(Number(position) || 0, 0, 1);
+    const sampled = tier && tier.length ? sampleTaperCurve(tier, clampedPosition) : 1;
+    return {
+      position: clampedPosition,
+      value: THREE.MathUtils.clamp(Number(sampled) || 1, TIP_WIDTH_VALUE_MIN, TIP_WIDTH_VALUE_MAX),
+      interpolation: "linear"
+    };
+  });
+}

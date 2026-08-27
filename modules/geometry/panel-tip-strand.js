@@ -43,7 +43,9 @@ import { leafWeightAt, leafWeightsValid } from "./leaf-weights.js?v=20260813-1";
 // 叶子链的 rest 必须由祖先层的 delta 顶起来，层级继承是发尖几何的**固有语义**，不是外部关切。
 import {
   panelBoneGroupAncestorsForLeaf,
-  panelBoneGroupsFor
+  panelBoneGroupPathForLeaf,
+  panelBoneGroupsFor,
+  resolvePanelBoneGroupValue
 } from "../bones/panel-bone-groups.js?v=20260925-6";
 import {
   TIP_WIDTH_CONTROL_POINTS as SHARED_TIP_WIDTH_CONTROL_POINTS,
@@ -60,7 +62,7 @@ import {
   tipWidthSideControlTsFrom,
   tipWidthSideExposesTAt,
   tipWidthSideForkFromHeights
-} from "./tip-width-curve.js?v=20260910-9";
+} from "./tip-width-curve.js?v=20260910-10";
 
 // Shared tip width control point count: 5 midpoints (common fork) + the tip end (t=1).
 // app.js createCurveObjects reuses this constant for the viewport tip width handles.
@@ -374,10 +376,35 @@ function tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side) {
   return 0.5 * span * tipClumpNarrowFraction(zipper.height ?? 0, bone?.tipClump ?? 0, t);
 }
 
+// §3.3 中间层曲线回落：leaf(bone 自己的值) → 祖先中间层（沿分组链） → lock 的全局曲线。
+// 只用于 taperCurve/taperCurveSecondary —— 这两个字段在 panel-bone-groups.js 的
+// AUTHORABLE_KEYS 白名单里，可以被中间层创作、也可以沿链回落（resolvePanelBoneGroupValue
+// 本来就是干这件事的现成纯函数，直接复用，不新写一份回落公式）。
+// asymmetricWidthCurve **刻意不在这里**：AUTHORABLE_KEYS 没有这个字段，分组树节点上根本
+// 不存在这个属性（只有 tip/AUTHORABLE_KEYS 两类字段），中间层从未有机会创作它 ⇒ 给它加
+// 三级回落等于凭空发明一层新的可创作状态，是设计变更，不是本轮该做的 bug 修复；那个参数
+// 维持原来的 `bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve` 两级回落。
+// segmentIndex < 0（主发片路径，无段）或分组树取不到 ⇒ 直接回落 lock[key]，与改前的
+// 「两级回落」逐字节等价（真中间层没有创作过时，resolvePanelBoneGroupValue 沿链一路查到根
+// 全是 null，最终落到 fallback 参数——我们传的正是 lock[key]，退化输出与改前相同）。
+function panelTierCurveFallback(lock, segmentIndex, key) {
+  if (segmentIndex < 0) return lock[key];
+  const root = panelBoneGroupsFor(lock);
+  if (!root) return lock[key];
+  const path = panelBoneGroupPathForLeaf(root, segmentIndex);
+  if (!path) return lock[key];
+  return resolvePanelBoneGroupValue(root, path, key, lock[key]);
+}
+
 // Shared tip width sampler: above the segment's fork (locked) or without a segment the
 // global panel curve applies with the main-panel split (u sign); below the fork the tip's
 // OWN WidthCurve applies, split/blended across the segment (centerU +/- half span) so the
 // tip width belongs to the tip sub-bone, not the main bone.
+//
+// ★ 性能提示（未解决，见函数尾部同名注释与本轮报告 §2）：below-fork 分支每次调用都会走
+// panelTierCurveFallback → panelBoneGroupsFor（现场派生/归一化整棵分组树），本函数是热路径
+// （网格逐顶点、把手逐点都调），已实测有可观测的重复开销，但**没有**在此加缓存——按约定
+// 「判断有性能风险时停下来报告主脑，不要自己引入缓存机制」，把决定权留给主脑。
 function tipWidthMultiplierAt(lock, t, u, bone, segmentIndex = -1, splits = null) {
   const segSplits = splits || deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
   const boundaries = [-1, ...(Array.isArray(segSplits) ? segSplits : []).map((split) => split.position), 1];
@@ -409,8 +436,8 @@ function tipWidthMultiplierAt(lock, t, u, bone, segmentIndex = -1, splits = null
     );
   }
   return sampleAsymmetricTaperCurve(
-    bone?.taperCurve || lock.taperCurve,
-    bone?.taperCurveSecondary || lock.taperCurveSecondary,
+    bone?.taperCurve || panelTierCurveFallback(lock, segmentIndex, "taperCurve"),
+    bone?.taperCurveSecondary || panelTierCurveFallback(lock, segmentIndex, "taperCurveSecondary"),
     bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve,
     (u - centerU) / halfSpan,
     t,
@@ -1224,7 +1251,28 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone, options = {})
     }
     : baseRestPointAt;
   const chain = materializeTipChain(splitBone?.tip || null, restPointAt, mainCount);
-  return { restPoints: chain.restPoints, points: chain.points, twists: chain.twists, active: chain.active };
+  // ★ 0.2.169 twist 层级继承：动机与上面 points 的 delta 累加相同（中间层刷 twist 也要带动
+  // 叶子），但**不是同一套算法**——materializeTipChain 里 twists 是**绝对值数组**
+  // （`Number(authored.twists[i]) || 0`，见 tip-sub-bone.js materializeTipChain），隐含的
+  // rest 基线恒为 0，不是 points 那种 `authored.points - authored.restPoints` 的 delta 形式。
+  // points 之所以要「先减 rest 再加到新 rest 上」，是因为 authored 点的绝对坐标依赖 rest
+  // 基准（换了 rest 基准后必须重新叠加）；twist 从来不依赖任何坐标基准，叶子自己的 twist
+  // 与各祖先的 twist 都已经是「绕切线转了多少」这同一个量纲的绝对值，因此层级叠加只需
+  // **直接相加**——套用 points 那套减法反而是错的（祖先没有与 twist 对应的 rest 字段可减）。
+  // 退化（ancestorTips 为空）直接返回 chain.twists 本身、不包一层恒等映射，与上面
+  // restPointAt 的 `: baseRestPointAt` 同一退化写法，保证无祖先时逐字节不变。
+  const twists = ancestorTips.length
+    ? chain.twists.map((leafTwist, i) => {
+      let sum = leafTwist;
+      for (const tip of ancestorTips) {
+        const ancestorTwists = tip.twists;
+        if (!Array.isArray(ancestorTwists) || ancestorTwists.length !== mainCount) continue;
+        sum += Number(ancestorTwists[i]) || 0;
+      }
+      return sum;
+    })
+    : chain.twists;
+  return { restPoints: chain.restPoints, points: chain.points, twists, active: chain.active };
 }
 
 // 该叶子的祖先中间层里「已创作过发尖链」的那些，按由浅到深顺序返回其 tip。

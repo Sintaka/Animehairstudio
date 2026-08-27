@@ -21,7 +21,7 @@ import {
   tipWidthSideControlTsFrom,
   tipWidthSideExposesTAt,
   tipWidthSideForkFromHeights
-} from "./tip-width-curve.js?v=20260910-9";
+} from "./tip-width-curve.js?v=20260910-10";
 // 发尖子骨骼链的几何无关原语（与 strand-geometry.js 的「Route 2」再锚定趟用**同一批**
 // 函数）：把手必须跟随被拖动的发尖链，见文件下方 strandTipChainTransformAt。
 import {

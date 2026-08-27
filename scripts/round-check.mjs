@@ -12,6 +12,9 @@
 //   浏览器会用缓存的旧模块版本去解析新增的 named export —— ESM 是链接期解析，直接抛
 //   SyntaxError，整个应用白屏。这是唯一真正会让用户打不开应用的缓存问题（其余"旧文件 import
 //   旧依赖"的组合是自洽的，只是浏览器多留一份旧模块，不会崩）。
+// - encoding：接 scripts/check-commit-encoding.mjs，守 staged 文件的 BOM / 行尾翻转
+//   （种类：LF/CRLF/MIXED/none，不是 CR 条数）。仅对**本次 staged 的文件**生效，不扫描
+//   全仓——本仓库有 170 个历史行尾翻转文件（已拍板不动存量），扫全部会恒为噪音判据。
 // - hygiene：合并前工作树里残留的探针/临时文件如果被误合并进主干，会污染仓库（脏树）。
 // - version：APP_VERSION / index.html 缓存号 / dom-contract 冻结断言三处如果互相脱节，
 //   说明某次 bump 只改了一部分，容易造成"看似已发布新版本，测试却锁死旧号"的假绿。
@@ -41,7 +44,7 @@
 //       （始终打印）
 // ---------------------------------------------------------------------------
 
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -308,17 +311,35 @@ function cmdExports(args) {
     }
     const unchanged = [];
     const changedVals = new Set();
+    const notApplicable = [];
     for (const site of sites) {
       const oldContent = gitOrEmpty(`show "${rev}:${site.file}"`);
       const fileIsNewAtRev = oldContent === "" && !gitTryShow(rev, site.file);
       const oldVal = fileIsNewAtRev ? undefined : extractModuleVersionFromContent(oldContent, mod.basename);
       const newVal = site.currentVal;
+      // ★ 裸 import（`from "../modules/x.js"`，无 `?v=`）判为**不适用**，不是「未更新」。
+      // `?v=` 是浏览器 ESM 缓存破壁机制，只对 index.html 加载的那棵模块树有意义；
+      // tests/ 与 scripts/ 由 Node 直接跑，不经浏览器缓存，本来就**不该**带版本串
+      // （实测惯例：32 个测试文件全用裸 import，tests/ 里带 ?v= 的一个也没有）。
+      // 为什么必须单列：`extractModuleVersionFromContent` 对裸 import 返回 null，
+      // 旧值与新值同为 null ⇒ `oldVal !== newVal` 恒 false ⇒ 恒判 UNCHANGED，
+      // 于是 unchanged.length 永远 ≥ 裸 import 数，**这个闸门无论怎么 bump 都过不去**
+      // （0.2.169 首次实用就撞到：6 个真站点全改对，仍因 4 个裸 import 报 FAIL）。
+      // 一个永远为红的判据与不咬的判据一样坏 —— 同本文件开头对 VACUOUS 的论述同理。
+      if (newVal === null && (oldVal === null || oldVal === undefined)) {
+        notApplicable.push(site);
+        verboseLines.push(`  ${site.file}:${site.lineNo}  裸 import（无 ?v=）⇒ N/A：Node 直跑，不经浏览器缓存`);
+        continue;
+      }
       const updated = oldVal === undefined ? true : oldVal !== newVal;
       if (!updated) unchanged.push(site);
       else changedVals.add(newVal);
       verboseLines.push(
         `  ${site.file}:${site.lineNo}  old=${oldVal === undefined ? "N/A(new)" : oldVal ?? "(none)"} now=${newVal ?? "(none)"}  ${updated ? "updated" : "UNCHANGED"}`
       );
+    }
+    if (notApplicable.length) {
+      verboseLines.push(`  (${notApplicable.length} 个裸 import 站点不参与判定)`);
     }
     const uniformNewValue = changedVals.size <= 1;
     const moduleOk = unchanged.length === 0 && uniformNewValue;
@@ -335,6 +356,10 @@ function cmdExports(args) {
           problemLines.push(`  未更新: ${s.file}:${s.lineNo}`);
         });
       }
+    } else if (notApplicable.length === sites.length) {
+      // 全部站点都是裸 import ⇒ 没有任何**浏览器加载**的 importer ⇒ 结构上不存在白屏风险，
+      // 通过是正确结论。但不能复用上面那句「全部站点已同步」——那会谎称查过了。
+      verboseLines.push(`  [PASS] ${mod.basename}: 无浏览器侧 importer（${sites.length} 个站点全为裸 import）⇒ 无缓存危害`);
     } else {
       verboseLines.push(`  [PASS] ${mod.basename}: 全部 import 站点已同步更新到统一新值`);
     }
@@ -479,6 +504,62 @@ function cmdVersion() {
       : "[FAIL] version: 数量断言或一致性判据未通过（见上方差异列表）"
   );
   return ok ? passResult(verboseLines) : failResult(verboseLines, problemLines);
+}
+
+// ---------------------------------------------------------------------------
+// encoding —— 接 scripts/check-commit-encoding.mjs（BOM + 行尾翻转闸门）。
+// ---------------------------------------------------------------------------
+// 语义陷阱（已核实，写在这里免得下一轮又踩）：check-commit-encoding.mjs 默认检查
+// **staged 文件**（git diff --cached）。round-check 的典型调用场景（npm run check）
+// 通常没有任何 staged 内容 —— 这不是异常，是「还没到提交那一步」的正常状态。
+// 如果这里改成扫「全部跟踪文本文件」，会立刻因本仓库既有的 170 个历史行尾翻转文件
+// （2026-08-23/24 四个 commit 遗留，已拍板不动存量）而全部报红，把这条闸门变成对
+// 稳态噪音的判据 —— 与 exports 子命令「零改动是合法通过，不是 VACUOUS」同一个道理：
+// 「本次没有 staged 文件」是合法的干净状态，判 PASS，不判 VACUOUS。
+// 因此本判据的作用域严格限定为「本次要提交的文件」，与既有的「不碰存量」决定一致；
+// 它在有 staged 内容的提交前场景（或未来接 pre-commit hook）才会真正咬人。
+function cmdEncoding() {
+  const staged = gitOrEmpty(`diff --cached --name-only --diff-filter=ACM`)
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (staged.length === 0) {
+    return passResult([
+      "encoding: 当前没有 staged 文件 ⇒ 本次提交无行尾/BOM 翻转风险可查（非 VACUOUS，是合法的干净状态）",
+    ]);
+  }
+
+  const scriptPath = path.join(ROOT, "scripts", "check-commit-encoding.mjs");
+  let stdout = "";
+  let stderr = "";
+  let code = 0;
+  try {
+    stdout = execFileSync(process.execPath, [scriptPath, ...staged], {
+      cwd: ROOT,
+      encoding: "utf8",
+    });
+  } catch (e) {
+    code = typeof e.status === "number" ? e.status : 1;
+    stdout = e.stdout ? e.stdout.toString() : "";
+    stderr = e.stderr ? e.stderr.toString() : "";
+  }
+
+  const verboseLines = [`encoding: staged 文件数=${staged.length}`];
+  staged.forEach((f) => verboseLines.push(`  ${f}`));
+
+  if (code === 0) {
+    verboseLines.push("[PASS] encoding: 无 BOM 违规 / 无行尾翻转风险");
+    return passResult(verboseLines);
+  }
+
+  const problemLines = `${stderr}${stdout}`
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  verboseLines.push("[FAIL] encoding: check-commit-encoding.mjs 报告问题（见下）");
+  verboseLines.push(...problemLines);
+  return failResult(verboseLines, problemLines);
 }
 
 // ---------------------------------------------------------------------------
@@ -655,6 +736,7 @@ function cmdAll() {
     version: cmdVersion(),
     exports: cmdExports([]),
     hygiene: cmdHygiene(),
+    encoding: cmdEncoding(),
   };
 
   // all 的合成规则：任一子命令 code=3(ERROR) 优先冒泡；否则任一 code=2(VACUOUS)
@@ -682,7 +764,7 @@ function cmdAll() {
       warnLines.push(...r.warnLines);
     }
   }
-  const summary = `version:${statusWord(results.version)}  exports:${statusWord(results.exports)}  hygiene:${statusWord(results.hygiene)}`;
+  const summary = `version:${statusWord(results.version)}  exports:${statusWord(results.exports)}  hygiene:${statusWord(results.hygiene)}  encoding:${statusWord(results.encoding)}`;
   verboseLines.push("=== summary ===");
   verboseLines.push(summary);
 
@@ -740,6 +822,9 @@ function main() {
       break;
     case "hygiene":
       result = cmdHygiene();
+      break;
+    case "encoding":
+      result = cmdEncoding();
       break;
     case "all":
     case undefined:

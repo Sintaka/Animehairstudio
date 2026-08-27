@@ -15,7 +15,7 @@ import { materializeTipChain, tipChainFrameAt as strandTipChainFrameAt } from ".
 import {
   tipWidthCommonForkFromHeights,
   tipWidthCommonForkFromPresentHeights
-} from "../geometry/tip-width-curve.js?v=20260910-9";
+} from "../geometry/tip-width-curve.js?v=20260910-10";
 import { createHairProject } from "./project-schema.js?v=20260814-12";
 import { unfoldHairMesh, gridUvTable, gridUvAt, childUTopologyScale } from "./uv-unfold.js?v=20260817-1";
 import { applyBridgeBoneCapture, mergeBranchFamilyMeshes } from "./bridge-export.js?v=20260817-2";

@@ -9,7 +9,7 @@ import { strandSplitTubeCenter } from "../bones/bone-model.js?v=20260901-1";
 import {
   tipWidthCommonForkFromHeights,
   tipWidthCommonForkFromPresentHeights
-} from "../geometry/tip-width-curve.js?v=20260910-9";
+} from "../geometry/tip-width-curve.js?v=20260910-10";
 
 function finiteNumber(value) {
   const number = Number(value);

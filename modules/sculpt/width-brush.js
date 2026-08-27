@@ -27,7 +27,7 @@
 // 一轮修。笔刷复用 placement 正是为了**不碰**它 —— 这样笔刷与手柄的错位量恒等，修
 // placement 时两者一起修好。若在这里另做一次换算来「绕过」它，就会造出第三种行为，且那一
 // 轮修完还得回来拆掉。
-import { TIP_WIDTH_VALUE_MAX, TIP_WIDTH_VALUE_MIN } from "../geometry/tip-width-curve.js?v=20260910-9";
+import { TIP_WIDTH_VALUE_MAX, TIP_WIDTH_VALUE_MIN } from "../geometry/tip-width-curve.js?v=20260910-10";
 
 export const SCULPT_WIDTH_BRUSH_SCALE = 0.01;
 
