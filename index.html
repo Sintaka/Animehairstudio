@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anime Hair Studio</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=20260910-26" />
+    <link rel="stylesheet" href="./styles.css?v=20260910-27" />
   </head>
   <body>
     <main class="studio-shell">
@@ -2442,6 +2442,42 @@
         }
       }
     </script>
-    <script type="module" src="./app.js?v=20260910-26"></script>
+    <!-- 启动错误浮层：必须是**普通 inline script 且排在 module 之前** —— module 是 defer 语义，
+         等它执行时才注册处理器就已经错过自己的加载错误了。inline 保证处理器先就位。
+         用户报「刷新后加载失败 / 停在基本模型出来的前一刻」时，控制台第一条报错是唯一能定位
+         的证据；但要求用户去翻 F12 太绕，所以直接画在页面上。
+         正常启动时这个浮层永不出现（只在真的抛错时才创建节点），不影响任何现有行为。 -->
+    <script>
+      window.addEventListener("error", function (e) {
+        var d = document.getElementById("ahsBootError");
+        if (!d) {
+          d = document.createElement("div");
+          d.id = "ahsBootError";
+          var s = d.style;
+          s.position = "fixed";
+          s.left = "0";
+          s.top = "0";
+          s.right = "0";
+          s.zIndex = "99999";
+          s.background = "#3a0d14";
+          s.color = "#ffd9de";
+          s.font = "12px/1.5 monospace";
+          s.padding = "8px 10px";
+          s.whiteSpace = "pre-wrap";
+          s.maxHeight = "45vh";
+          s.overflow = "auto";
+          document.body.appendChild(d);
+        }
+        var msg = e.message || "(no message)";
+        var src = e.filename ? e.filename + ":" + e.lineno + ":" + e.colno : "";
+        var stack = e.error && e.error.stack ? "\n" + e.error.stack : "";
+        d.textContent += "BOOT ERROR: " + msg + "\n" + src + stack + "\n\n";
+      });
+      window.addEventListener("unhandledrejection", function (e) {
+        var r = e.reason;
+        window.dispatchEvent(new ErrorEvent("error", { message: "Unhandled rejection: " + (r && (r.stack || r.message) || r) }));
+      });
+    </script>
+    <script type="module" src="./app.js?v=20260910-27"></script>
   </body>
 </html>
