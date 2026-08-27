@@ -21,7 +21,7 @@ import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, n
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
-import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-1";
+import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-2";
 import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-3";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260829-1";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260901-1";
@@ -15635,10 +15635,23 @@ function selectedPanelBoneGroupPath() {
   return selectedPanelBoneGroup.path;
 }
 
+// 「只画当前层」的**绘制**判据（注意与 panelBoneGroupSelectionCoversSegment 的分工）：
+//   覆盖判据（高亮）= 该层覆盖的**每一段**都为真 —— 整层一起亮，这是用户要的手感；
+//   绘制判据（本函数）= 该层只在**锚点段**（leafStart）画一套把手。
+// 为什么绘制必须收窄到一段：中间层宿主对覆盖的每个段都返回**同一条**合成链
+// （panelTierHost.tipChainFor，见 tip-sub-bone-host.js:146），若每段都画，L2·Segments 2-3
+// 会在同一批坐标上叠两套把手 —— 视觉上是一套（完全重合），但抓取时有两个 object 争同一个
+// 射线命中点，且每套都各自 raycast/各自建 gizmo。锚点取 leafStart，与
+// syncTipSelectionFromBoneGroup 的 anchorSegment 同一个口径（那边也取 node.leafStart），
+// 于是「tipSelection 指向的段」与「画把手的段」恒为同一段，不会出现选中 A 段却画在 B 段。
+// 叶节点 leafStart === leafEnd，本条对叶子无影响（行为与 0.2.166 逐位一致）。
 function panelBoneGroupTierDisplay(lock, segment) {
   if (!panelBoneGroupOutlinerApplies(lock)) return true;
   if (!selectedPanelBoneGroup || selectedPanelBoneGroup.lockId !== lock?.id) return false;
-  return panelBoneGroupSelectionCoversSegment(lock, segment);
+  const root = panelBoneGroupsFor(lock);
+  const node = root ? panelBoneGroupAtPath(root, selectedPanelBoneGroup.path) : null;
+  if (!node) return false;
+  return segment === node.leafStart;
 }
 
 function panelBoneGroupSelectionCoversSegment(lock, segment) {

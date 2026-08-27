@@ -534,14 +534,30 @@ function updateBoneViewHandles(lock, ctx) {
     const host = resolveTipHost(lock);
     if (!host) return null;
     const base = (!sculptBrushHelpersSuppressed || tipUiActive) && !brushDebugVisible;
-    if (host.kind === "panel") {
-      return { host, base: base && tipSplits.length > 0, chains: tipChains, forkTs: tipForkTs };
-    }
+    const isPanel = host.kind === "panel";
+    // ★ 0.2.167：panel 分支**必须**经 host 取链，不能复用上面的 tipChains。
+    //
+    // 原来这里写的是 `chains: tipChains`，注释理由是「复用已算好的同一批值，panel 行为逐字
+    // 不变」。那条理由在 0.2.161 引入中间层宿主之后就**失效**了：tipChains 是在第 520 行用
+    // `splitTipForSegment` 逐叶算的，而中间层的合成链只存在于 `host.tipChainFor`
+    // （panelTierHost 会对覆盖段返回 splitTipForLeafSpan 的跨段链）。于是把手位置永远画在
+    // 叶子链上、而拖拽/笔刷侧（bone-interaction.js 走 resolveTipHost().tipChainFor）拿的是
+    // 中间层链 —— 这正是用户报的「中间层没有骨骼给我刷」：显示与编辑不同源，中间层的几何
+    // 从未参与把手放置。实测（scripts/probe-tier-bones.mjs）选中 L2·Segments 2-3 时
+    // seg1 画在 x≈0.00、seg2 画在 x≈-0.18，两条独立叶子链，而非一条合成链。
+    //
+    // 改成经 host 取值后，panel 与发丝两个分支只剩「门控」不同，故合并成一份表达式：
+    // 非中间层时 host.tipChainFor 逐字等价于原来的 splitTipForSegment（同一个
+    // clonePanelSplits + splitBonesFor 真源，见 tip-sub-bone-host.js:192），所以既有
+    // panel 行为在没有分组选择时仍然一字不变。
+    // 段数仍用 tipSplits.length + 1 而不是 host.segmentCount：后者是
+    // `max(1, panelSplits.length + 1)`，在 0 段时为 1，与本文件其它把手分配口径不一致。
+    const count = isPanel ? tipSplits.length + 1 : host.segmentCount;
     return {
       host,
-      base: base && Boolean(lock.strandSplitEnabled),
-      chains: Array.from({ length: host.segmentCount }, (_, segment) => host.tipChainFor(segment)),
-      forkTs: Array.from({ length: host.segmentCount }, (_, segment) => host.forkTFor(segment))
+      base: base && (isPanel ? tipSplits.length > 0 : Boolean(lock.strandSplitEnabled)),
+      chains: Array.from({ length: count }, (_, segment) => host.tipChainFor(segment)),
+      forkTs: Array.from({ length: count }, (_, segment) => host.forkTFor(segment))
     };
   })();
   // ── 绿色 Tip Clump 手柄的几何分派（0.2.130） ──────────────────────────────────────
