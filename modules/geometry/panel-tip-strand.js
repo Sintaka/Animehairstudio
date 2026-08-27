@@ -38,6 +38,13 @@ import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260814-12";
 import { cloneSplitBones, segmentBoneHost } from "../bones/bone-model.js?v=20260901-1";
 import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260830-1";
 import { leafWeightAt, leafWeightsValid } from "./leaf-weights.js?v=20260813-1";
+// 直接 import 而不是注入：panel-bone-groups.js 是**零 import 的纯函数模块**，不存在环。
+// 对比 sculpt-geometry.js:606 刻意用注入 —— 那里分组树是它「本不需要知道」的东西；这里不同，
+// 叶子链的 rest 必须由祖先层的 delta 顶起来，层级继承是发尖几何的**固有语义**，不是外部关切。
+import {
+  panelBoneGroupAncestorsForLeaf,
+  panelBoneGroupsFor
+} from "../bones/panel-bone-groups.js?v=20260925-6";
 import {
   TIP_WIDTH_CONTROL_POINTS as SHARED_TIP_WIDTH_CONTROL_POINTS,
   buildTipWidthCurveFrom,
@@ -1092,6 +1099,19 @@ function updateTipHighlight(lock) {
   const hover = deps.sculptState.tipHover;
   const selectedSeg = selection && selection.lockId === lock.id ? selection.segmentIndex : null;
   const hoveredSeg = hover && hover.lockId === lock.id ? hover.segmentIndex : null;
+  // ★ 0.2.168：选中中间层时，高亮必须覆盖该层的**整个叶子区间**，不能只亮 tipSelection
+  // 指向的那一段。tipSelection.segmentIndex 存的是锚点（leafStart），下面原来的
+  // `segment === selectedSeg` 精确比较因此只给 leafStart 那一段的顶点着色 ——
+  // 用户报「高亮显示只有一半，选中 L2·Segments 2-3 仅高亮 L3·Segment 2」，实测
+  // litVertsByLeafSegment 只有 {1: 22}、段 2 为 0。
+  // 判据经 deps 注入（app.js 的 panelBoneGroupSelectionCoversSegment，与 bone-view-handles
+  // 的把手高亮**同一个函数**），所以网格高亮与把手高亮不可能再各走一套而分叉。
+  // 缺注入时回落到精确比较 ⇒ 与 0.2.167 行为逐字节相同。
+  const coversSelected = (segment) => {
+    if (selectedSeg == null) return false;
+    if (segment === selectedSeg) return true;
+    return Boolean(deps.panelBoneGroupSelectionCoversSegment?.(lock, segment));
+  };
   // 几何门控从 isPanelGeometry 扩为 segmentBoneHost（0.2.126）：本函数主体**本来就与几何
   // 无关** —— 它只读 geometry.userData.leafWeights（panelWeights 是 panel 侧的旧别名），而
   // createSplitStrandGeometry 早就以逐字段相同的 [mainJoint, leafIndex, weight] stride-3
@@ -1133,7 +1153,7 @@ function updateTipHighlight(lock) {
     const w = leafWeightAt(leafWeights, vertex);
     const segment = w.leafIndex;
     const weight = w.weight;
-    if (selectedSeg != null && segment === selectedSeg && weight > 0.001) {
+    if (coversSelected(segment) && weight > 0.001) {
       colors[vertex * 3] = 1.0;
       colors[vertex * 3 + 1] = 0.55;
       colors[vertex * 3 + 2] = 0.1;
@@ -1151,7 +1171,12 @@ function updateTipHighlight(lock) {
   overlay.visible = true;
 }
 
-function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
+// options.ancestorTips（0.2.168）：显式给定「祖先中间层的 tip 数组」，用于中间层自己的链
+// —— 那条路径经 splitTipForLeafSpan 传进来的是**合成 splits + 虚拟 vIdx**，vIdx 不是真实叶子
+// 下标，内部再按叶子去查祖先会查错层。省略时按 `segmentIndex 是真实叶子下标`自行推导，
+// 这对其余**全部**既有调用点（addPatch / bone-view-handles / bone-interaction / 宿主叶子分支）
+// 都成立，故它们一行都不用改。
+function splitTipForSegment(lock, segmentIndex, splits, splitBone, options = {}) {
   // Tip sub-bone chain mirrors the MAIN BONE topology (same point count), laterally
   // offset to the segment's center (u = segment center). Rest pose = the segment's
   // center line on the base panel; authored edits are stored as absolute points + their
@@ -1168,9 +1193,56 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
   // tipSurfaceFrameAt 的点，而它内部经 tipMainSectionPoint 已经含了收缩位移 ⇒ 这里再加
   // 就会叠加两次。rest 链因此自动跟随收缩（与 camber 的处理方式逐条相同），发尖
   // 的 authored delta 会在新 rest 上重新叠加，存量 .ahs 无需迁移。
-  const restPointAt = (t) => tipSurfaceFrameAt(lock, t, centerU, segmentIndex, splits).point;
+  const baseRestPointAt = (t) => tipSurfaceFrameAt(lock, t, centerU, segmentIndex, splits).point;
+  // ★ 0.2.168 层级继承：先把祖先中间层的 delta 顶进 rest，再叠加本层自己的 delta。
+  //
+  // 用户原话：「L3.Segments 2/3 应该是挂在这个中间骨骼下的, 而不是挂在主骨骼下」。
+  // 改之前叶子与中间层各自独立从基础面板算 rest，两者只共享主骨骼，所以刷中间层时叶子链
+  // 与网格（addPatch 也走本函数）**一动不动**（实测 leaf1/leaf2/meshSumX 三项全部逐字节相同）。
+  //
+  // 为什么能直接相加：materializeTipChain 的物化式是
+  //   points[i] = rest[i] + (authored.points[i] - authored.restPoints[i])
+  // 所有链（叶子/中间层/主骨骼）点数恒等于 mainCount，delta 因此**逐下标对齐**、可直接求和。
+  // 多层嵌套时由浅到深依次累加，等价于骨骼链上的逐级父子变换。
+  // 祖先没有创作过（tip 为 null）⇒ 贡献 0，rest 与改前逐字节相同 ⇒ 存量 .ahs 不迁移。
+  const ancestorTips = Array.isArray(options.ancestorTips)
+    ? options.ancestorTips
+    : ancestorTipsForLeaf(lock, segmentIndex);
+  const restPointAt = ancestorTips.length
+    ? (t) => {
+      const point = baseRestPointAt(t);
+      const index = Math.round(t * Math.max(1, mainCount - 1));
+      for (const tip of ancestorTips) {
+        const a = tip.points[index];
+        const r = tip.restPoints[index];
+        if (!a || !r) continue;
+        point.x += a.x - r.x;
+        point.y += a.y - r.y;
+        point.z += a.z - r.z;
+      }
+      return point;
+    }
+    : baseRestPointAt;
   const chain = materializeTipChain(splitBone?.tip || null, restPointAt, mainCount);
   return { restPoints: chain.restPoints, points: chain.points, twists: chain.twists, active: chain.active };
+}
+
+// 该叶子的祖先中间层里「已创作过发尖链」的那些，按由浅到深顺序返回其 tip。
+// 形状不合法（点数与 restPoints 不匹配）的一律丢弃：与 materializeTipChain 的 authoredValid
+// 同一条口径，避免半个链造成错位位移。
+function ancestorTipsForLeaf(lock, leafIndex) {
+  const root = panelBoneGroupsFor(lock);
+  if (!root) return [];
+  const ancestors = panelBoneGroupAncestorsForLeaf(root, leafIndex);
+  if (!ancestors.length) return [];
+  const out = [];
+  for (const node of ancestors) {
+    const tip = node?.tip;
+    if (!tip || !Array.isArray(tip.points) || !Array.isArray(tip.restPoints)) continue;
+    if (tip.points.length !== tip.restPoints.length) continue;
+    out.push(tip);
+  }
+  return out;
 }
 
 // splitTipForLeafSpan：中间层分组节点（覆盖闭区间 leafStart..leafEnd 的连续叶子）的发尖链。
@@ -1185,9 +1257,34 @@ function splitTipForSegment(lock, segmentIndex, splits, splitBone) {
 // groupBone 的 tip 字段形状与 splitBone.tip 一致（{points, restPoints, twists, active}，
 // 见 panel-bone-groups.js 的 panelBoneGroupTip / normalizeGroupTip），materializeTipChain
 // 只看形状、不关心它挂在叶子 bone 还是分组节点上。
-function splitTipForLeafSpan(lock, leafStart, leafEnd, splits, groupBone) {
+function splitTipForLeafSpan(lock, leafStart, leafEnd, splits, groupBone, groupPath) {
   const { splits: synthSplits, vIdx } = syntheticSplitsForLeafSpan(splits, leafStart, leafEnd);
-  return splitTipForSegment(lock, vIdx, synthSplits, groupBone);
+  // 中间层自己也可能嵌在更浅的中间层下（L3 挂在 L2 下），所以它同样要继承祖先 delta。
+  // 但**不能**让内部按 vIdx 去查：vIdx 是合成 splits 里的虚拟下标，不是真实叶子。
+  // 这里按该层自己的 groupPath 取严格祖先（不含自己），与叶子那侧同一个语义。
+  // groupPath 缺省（既有调用点未传）⇒ 传空数组显式关掉推导，行为与 0.2.167 逐字节相同。
+  const ancestorTips = Array.isArray(groupPath) && groupPath.length > 1
+    ? ancestorTipsForGroupPath(lock, groupPath)
+    : [];
+  return splitTipForSegment(lock, vIdx, synthSplits, groupBone, { ancestorTips });
+}
+
+// 与 ancestorTipsForLeaf 同构，但入口是分组路径而不是叶子下标：取 path 的**严格前缀**所指
+// 的各级节点（不含 path 自己、不含根），过滤出创作过且形状合法的 tip。
+function ancestorTipsForGroupPath(lock, groupPath) {
+  const root = panelBoneGroupsFor(lock);
+  if (!root) return [];
+  const out = [];
+  let node = root;
+  for (let i = 0; i < groupPath.length - 1; i += 1) {
+    node = node.children?.[groupPath[i]];
+    if (!node) break;
+    const tip = node.tip;
+    if (!tip || !Array.isArray(tip.points) || !Array.isArray(tip.restPoints)) continue;
+    if (tip.points.length !== tip.restPoints.length) continue;
+    out.push(tip);
+  }
+  return out;
 }
 
 function createPanelStrandGeometry(lock) {

@@ -3,11 +3,11 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-9";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-10";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
 import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-1";
-import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-1";
+import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-2";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260814-1";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260814-12";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260814-12";
@@ -17,11 +17,11 @@ import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitB
 // 分组树（骨骼树）只读展示：新模块，从未被浏览器缓存过 ⇒ 首次引入用一个全新的 ?v=，
 // 且**没有**给 bone-model.js 加 export（那会迫使它的 13 个 import 站点全部同步 bump，
 // 回访用户拿缓存旧模块解析新 export 会 SyntaxError 打不开整个应用——0.2.110 踩过）。
-import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf } from "./modules/bones/panel-bone-groups.js?v=20260925-5";
+import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf } from "./modules/bones/panel-bone-groups.js?v=20260925-6";
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
-import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-2";
+import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-3";
 import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-3";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260829-1";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260901-1";
@@ -12487,6 +12487,9 @@ Object.assign(panelTipStrandDeps, {
   // 同一条理由——不是快照拷贝，用户调滑杆后下次几何重建自动读到新值。缺失时
   // panelScalpConformParams 回退到 PANEL_SCALP_CONFORM_DEFAULTS（curve-math.js），见该文件。
   scalpConformFit,
+  // 网格高亮的「选中覆盖」判据（0.2.168）：与 bone-view-handles 的把手高亮**注入同一个
+  // 函数**，中间层因此整层一起亮。两处若各写一份判断迟早分叉（本仓 0.2.148 有先例）。
+  panelBoneGroupSelectionCoversSegment,
   sculptState: sculptState.state
 });
 // Strand geometry api deps batch (refactor 3d batches G2+G3): all deps are defined by this

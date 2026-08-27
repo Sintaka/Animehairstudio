@@ -354,6 +354,32 @@ export function panelBoneGroupPathForLeaf(root, leafIndex) {
   return path;
 }
 
+// ── 层级继承：某个叶子的「祖先中间层」链 ──────────────────────────────────────────────
+// 返回从根到该叶子路径上、**严格介于根与叶子之间**的节点数组（由浅到深）。
+//
+// 为什么两头都排除：
+//   - 根（path 为空）**就是主骨骼**（同 panelBoneGroupTierNodes 的注释）。主骨骼已经通过
+//     tipSurfaceFrameAt 决定了整条 rest 链，把它当作"祖先 delta"会把主骨骼的位移叠加两次。
+//   - 叶子自己的 delta 由它自己的 bone.tip 承担（materializeTipChain 那一层），不属于"继承"。
+// 于是返回的正是「用户在 outliner 里能选中、且位于该叶子之上的那些中间层」。
+//
+// 用途：叶子链的 rest 必须先被祖先各层的 delta 顶起来，否则刷中间层带不动叶层
+// （0.2.168 用户报「L3.Segments 2/3 应该挂在这个中间骨骼下, 而不是挂在主骨骼下」）。
+// 纯函数、只读，不物化：与 panelBoneGroupTip 同一个套路，直接在传入的 root 上走。
+export function panelBoneGroupAncestorsForLeaf(root, leafIndex) {
+  const path = panelBoneGroupPathForLeaf(root, leafIndex);
+  if (!path || path.length < 2) return [];
+  const out = [];
+  let node = root;
+  // 走到倒数第二个下标为止：最后一个下标指向叶子本身，刻意不含它。
+  for (let i = 0; i < path.length - 1; i += 1) {
+    node = node.children?.[path[i]];
+    if (!node) return out;
+    out.push(node);
+  }
+  return out;
+}
+
 // §3.3：曲线/参数沿分组链向上回落到最近的「已创作」（非 null）祖先。path 指向的节点出发，
 // 向上查找第一个 key 非 null 的祖先（含自身），都为 null ⇒ 返回 fallback。
 // 这不是新发明：tip-width-curve.js 的 buildTipWidthCurveFrom 已经在做「segment 无创作

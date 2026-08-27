@@ -38,8 +38,8 @@ import {
   panelBoneGroupAtPath,
   panelBoneGroupLeafSpan,
   panelBoneGroupTip
-} from "./panel-bone-groups.js?v=20260925-5";
-import { syntheticSplitsForLeafSpan } from "../geometry/panel-tip-strand.js?v=20260910-9";
+} from "./panel-bone-groups.js?v=20260925-6";
+import { syntheticSplitsForLeafSpan } from "../geometry/panel-tip-strand.js?v=20260910-10";
 
 // deps: panelTipStrand（panel 侧发尖链/fork/帧）+ clonePanelSplits + currentStrandSplitTipChains
 //   + strandGeometryCurve + strandGeometryFrameAt。
@@ -143,8 +143,11 @@ function panelTierHost(lock, host, splits, bones, tierSpan, groupPath, materiali
     tierSpan,
     segmentCount: host.segmentCount(lock),
     pointCount: host.tipChainPointCount(lock),
+    // 第 6 个实参 groupPath（0.2.168）：让中间层自己也能继承**更浅**的中间层 delta
+    // （L3 挂在 L2 下时 L3 的 rest 要被 L2 顶起来）。不传的话嵌套层会各自独立算 rest，
+    // 于是刷 L2 带不动 L3 —— 与用户报的「叶层挂在主骨骼下」是同一个缺陷在更深一层的翻版。
     tipChainFor: (segment) => (coversSegment(segment)
-      ? deps.panelTipStrand.splitTipForLeafSpan(lock, leafStart, leafEnd, splits, tierBone)
+      ? deps.panelTipStrand.splitTipForLeafSpan(lock, leafStart, leafEnd, splits, tierBone, groupPath)
       : deps.panelTipStrand.splitTipForSegment(lock, segment, splits, bones[segment] || null)),
     forkTFor: (segment) => (coversSegment(segment)
       ? deps.panelTipStrand.splitForkT(lock, vIdx, synthSplits)
