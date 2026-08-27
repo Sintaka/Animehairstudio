@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anime Hair Studio</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=20260910-28" />
+    <link rel="stylesheet" href="./styles.css?v=20260910-29" />
   </head>
   <body>
     <main class="studio-shell">
@@ -2464,8 +2464,19 @@
           s.font = "12px/1.5 monospace";
           s.padding = "8px 10px";
           s.whiteSpace = "pre-wrap";
-          s.maxHeight = "45vh";
+          s.maxHeight = "30vh";
           s.overflow = "auto";
+          s.paddingRight = "72px";
+          var x = document.createElement("button");
+          x.textContent = "关闭";
+          x.type = "button";
+          var xs = x.style;
+          xs.position = "absolute";
+          xs.right = "8px";
+          xs.top = "6px";
+          xs.cursor = "pointer";
+          x.onclick = function () { d.remove(); };
+          d.appendChild(x);
           document.body.appendChild(d);
         }
         var msg = e.message || "(no message)";
@@ -2478,6 +2489,6 @@
         window.dispatchEvent(new ErrorEvent("error", { message: "Unhandled rejection: " + (r && (r.stack || r.message) || r) }));
       });
     </script>
-    <script type="module" src="./app.js?v=20260910-28"></script>
+    <script type="module" src="./app.js?v=20260910-29"></script>
   </body>
 </html>

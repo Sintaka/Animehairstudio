@@ -1081,6 +1081,13 @@ function tipHighlightMaterial() {
 }
 
 function updateTipHighlight(lock) {
+  // lock 可以是 undefined：两个调用点都传 deps.getSelectedLock() 的返回值，而它在
+  // 「当前没有选中任何发片」时返回 undefined（bone-interaction.js 的 updatePanelTipHover
+  // 有 1225 与 1253 两处，后者在 changed 为真时**无条件**调用，绕过了上面 `if (lock && …)`
+  // 那道门）。没有 lock 就没有可高亮的对象 ⇒ 直接返回是正确语义，不是错误。
+  // 实测症状：启动时（未选中任何发片）鼠标掠过视口即抛
+  // `TypeError: Cannot read properties of undefined (reading 'id')`（用户 0.2.165 真机报的）。
+  if (!lock) return;
   const selection = deps.sculptState.tipSelection;
   const hover = deps.sculptState.tipHover;
   const selectedSeg = selection && selection.lockId === lock.id ? selection.segmentIndex : null;
