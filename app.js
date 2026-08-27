@@ -15669,12 +15669,27 @@ function syncTipSelectionFromBoneGroup(lock) {
   const active = selectedPanelBoneGroup && selectedPanelBoneGroup.lockId === lock.id;
   const root = active ? panelBoneGroupsFor(lock) : null;
   const node = root ? panelBoneGroupAtPath(root, selectedPanelBoneGroup.path) : null;
-  const isLeaf = Boolean(node) && (!Array.isArray(node.children) || node.children.length === 0);
-  // 只在「本来就指向这个 lock」时才允许置空，避免顺手清掉别的 lock 的选择。
+  // ★ 0.2.162 修正：中间层（非叶）**也要**写 tipSelection，指向 node.leafStart。
+  //
+  // 阶段 5 当初把非叶置空，理由是「tipSelection 只能存单个 segmentIndex、表达不了跨段区间」。
+  // 那个理由**在 0.2.161 之后已经失效**：中间层接线让该层覆盖的每个叶子段的 host.bones[segment]
+  // 都指向同一个分组节点，所以只要 segmentIndex 落在该层区间内（取 leafStart 即可），
+  // 三条既有机制全部自动正确：
+  //   ① tipUiActive（app.js:12179）要求 tipSelection?.lockId === lock.id ——
+  //      置空会让**整组发尖 UI 在笔刷激活时被隐藏** ⇒ 用户报的「没有高亮显示」；
+  //   ② applySubBoneBrushSample（bone-interaction.js）第一行就是 `if (!selection) return false`，
+  //      返回 fals
+...[276 chars omitted]...
+  // 覆盖 ⇒ 整层高亮。
+  //
+  // 换言之：置空**同时**关掉了高亮与笔刷路由，这就是「显然我们漏掉了很多东西」的单一根因。
+  const anchorSegment = node ? node.leafStart : null;
   const ownsCurrent = sculptState.state.tipSelection?.lockId === lock.id;
-  if (!isLeaf && !ownsCurrent) return;
-  sculptState.state.tipSelection = isLeaf ? { lockId: lock.id, segmentIndex: node.leafStart } : null;
-  if (isLeaf && host) sculptState.state[host.segmentIndexKey] = node.leafStart;
+  if (anchorSegment === null && !ownsCurrent) return;
+  sculptState.state.tipSelection = anchorSegment === null
+    ? null
+    : { lockId: lock.id, segmentIndex: anchorSegment };
+  if (anchorSegment !== null && host) sculptState.state[host.segmentIndexKey] = anchorSegment;
 }
 
 // 逐级钻取（阶段 5）：视口点到某个叶子段时，算出「这一次应该选中哪一层」。
@@ -15839,6 +15854,12 @@ function createPanelBoneGroupRow(lock, node, path, levels) {
     label.classList.add("outliner-bone-group-label--clamped");
   }
   label.addEventListener("click", () => {
+    // 先让这个发片成为当前选中项，再记分组选择。
+    // 缺这一步时，selectedPanelBoneGroupPath() 的 `selectedPanelBoneGroup.lockId !==
+    // getSelectedLock().id` 门禁会返回 null ⇒ resolveTipHost 取不到 groupPath ⇒
+    // 中间层接线**静默失效**（把手仍画叶子、笔刷仍写主骨骼），而 outliner 里却显示已选中。
+    // 在 outliner 点某个发片的分组行，语义上本来就是「我要编辑这个发片的这一层」。
+    if (sel.state.selectedId !== lock.id) selectLock(lock.id);
     selectedPanelBoneGroup = selected ? null : { lockId: lock.id, path: [...path] };
     // outliner → 视口同步（阶段 5）：选中/取消都交给唯一派生点处理（含置空）。
     syncTipSelectionFromBoneGroup(lock);
