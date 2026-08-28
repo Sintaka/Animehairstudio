@@ -43,10 +43,11 @@ import { leafWeightAt, leafWeightsValid } from "./leaf-weights.js?v=20260813-1";
 // 叶子链的 rest 必须由祖先层的 delta 顶起来，层级继承是发尖几何的**固有语义**，不是外部关切。
 import {
   panelBoneGroupAncestorsForLeaf,
+  panelBoneGroupLeafSpan,
   panelBoneGroupPathForLeaf,
   panelBoneGroupsFor,
   resolvePanelBoneGroupValue
-} from "../bones/panel-bone-groups.js?v=20260925-7";
+} from "../bones/panel-bone-groups.js?v=20260925-8";
 import {
   TIP_WIDTH_CONTROL_POINTS as SHARED_TIP_WIDTH_CONTROL_POINTS,
   buildTipWidthCurveFrom,
@@ -61,7 +62,9 @@ import {
   tipWidthResetCurveFrom,
   tipWidthSideControlTsFrom,
   tipWidthSideExposesTAt,
-  tipWidthSideForkFromHeights
+  tipWidthSideForkFromHeights,
+  bakeTierWidthCurveFromLeaves,
+  resampleTierWidthCurveToLeaf
 } from "./tip-width-curve.js?v=20260910-10";
 
 // Shared tip width control point count: 5 midpoints (common fork) + the tip end (t=1).
@@ -394,6 +397,75 @@ function panelTierCurveFallback(lock, segmentIndex, key) {
   const path = panelBoneGroupPathForLeaf(root, segmentIndex);
   if (!path) return lock[key];
   return resolvePanelBoneGroupValue(root, path, key, lock[key]);
+}
+
+// ── 中间层 WidthCurve 所有权转移的接线（0.2.172）─────────────────────────────────
+//
+// 这两个函数把 tip-width-curve.js 里的纯数学（bakeTierWidthCurveFromLeaves /
+// resampleTierWidthCurveToLeaf）接到真实的 lock 上。
+//
+// ★ 为什么接线点放在本文件而不是 app.js：bake 需要三个入参 leafCurves / leafGridTs /
+// tierGridTs，其中 grid 由 `tipWidthControlTs(forkT)` 决定、forkT 又要从 splits 推导 ——
+// 这条推导链（segmentZipperHeights → tipWidthGridFromHeights）整条都在本文件里，且
+// `syntheticSplitsForLeafSpan`（算 span 级 forkT 用的合成 splits）也在本文件。放 app.js 要
+// 新拉三个跨模块 import 并把 grid 推导抄一份出去 —— 那就是「同一推导两个定义点」。
+// 本文件已经 import 了 tip-width-curve 与 panel-bone-groups，接在这里零新增依赖。
+//
+// ★ 跨网格重采样为什么必要（实测数字）：真实档 Test 4 的 Front Bangs 1（2 zipper,
+// heights [0.3, 0.4]）上，叶 1/叶 2 的 forkT 都是 0.6、grid 是 [0.64 … 1]，而覆盖它们的
+// 中间层走 span 级 forkT = 0.7、grid 是 [0.73 … 1]。控制点位置根本不在同一批 t 上，
+// 直接复制曲线数组会让形状整体错位，必须用 sampleTaperCurve 在对方的网格上重取值。
+
+// 取某个叶子段在「沿分组链回落」口径下的有效曲线。
+// fallback 传 lock[key]，与 panelTierCurveFallback 同一口径。
+function leafEffectiveCurve(lock, root, leafIndex, key) {
+  const path = panelBoneGroupPathForLeaf(root, leafIndex);
+  if (!path) return lock[key];
+  return resolvePanelBoneGroupValue(root, path, key, lock[key]);
+}
+
+// 把一个中间层覆盖的各叶子曲线烘成该层自己的一条曲线。
+//
+// ★ 这取代了 0.2.155 的「首笔播种」（app.js 的 widthBrushCurveArray）。播种沿分组链**向上**
+// 取第一个非 null 值，**完全不看子孙**：叶子各自创作过 0.5 / 1.9 时，播种给中间层的是
+// lock 层的 1 —— 既不是任一叶子的值也不是它们的平均。而播种自己的设计意图注释写的是
+// 「第一笔从所见形状继续、不跳变」，在这种情形下它违反了自己的意图。bake 取叶子平均才是
+// 「从所见形状继续」的正确实现（用户拍板选 bake）。
+// 两者在叶子都未创作时给出相同结果（都回落到 lock 层），所以这次替换只在「叶子已各自
+// 创作过」时改变行为 —— 那恰好是 bake 被设计出来要解决的场景。
+//
+// 返回 null ⇒ 调用方应保持原行为（不是错误，是「这个 path 不是真中间层」或数据不足）。
+function bakeTierWidthCurve(lock, groupPath, key) {
+  if (!Array.isArray(groupPath) || !groupPath.length) return null;
+  const span = panelBoneGroupLeafSpan(lock, groupPath);
+  // leafStart === leafEnd 的节点就是某个叶子段本身，没有「把多个叶子合并」这回事 ⇒
+  // 不该走 bake（与 resolvePanelTierSpan 的退化判据同一口径）。
+  if (!span || span.leafStart === span.leafEnd) return null;
+  const root = panelBoneGroupsFor(lock);
+  if (!root) return null;
+  const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+  const leafCurves = [];
+  const leafGridTs = [];
+  for (let leaf = span.leafStart; leaf <= span.leafEnd; leaf += 1) {
+    leafCurves.push(leafEffectiveCurve(lock, root, leaf, key));
+    leafGridTs.push(tipWidthGridTs(lock, leaf, splits));
+  }
+  const { splits: synthSplits, vIdx } = syntheticSplitsForLeafSpan(splits, span.leafStart, span.leafEnd);
+  const tierGridTs = tipWidthGridTs(lock, vIdx, synthSplits);
+  const baked = bakeTierWidthCurveFromLeaves({
+    leafCurves, leafGridTs, tierGridTs, fallbackCurve: lock[key]
+  });
+  return Array.isArray(baked) && baked.length ? baked : null;
+}
+
+// 把一个中间层的曲线按某个叶子自己的网格重采样，供「该层消失时写回叶子」用。
+// 调用方对该层覆盖的每个叶子各调一次。
+function resampleTierCurveToLeaf(lock, tierCurve, leafIndex) {
+  if (!Array.isArray(tierCurve) || !tierCurve.length) return null;
+  const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+  const leafGridTs = tipWidthGridTs(lock, leafIndex, splits);
+  const out = resampleTierWidthCurveToLeaf({ tierCurve, leafGridTs });
+  return Array.isArray(out) && out.length ? out : null;
 }
 
 // Shared tip width sampler: above the segment's fork (locked) or without a segment the
@@ -1859,6 +1931,8 @@ function createPanelStrandGeometry(lock) {
     updateTipHighlight,
     splitTipForSegment,
     splitTipForLeafSpan,
+    bakeTierWidthCurve,
+    resampleTierCurveToLeaf,
     createPanelStrandGeometry
   };
 }

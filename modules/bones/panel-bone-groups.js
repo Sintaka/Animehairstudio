@@ -679,16 +679,32 @@ export function rebuildPanelBoneGroupsFromLevels(lock) {
       moved += 1;
     }
   });
-  // 统计丢失的创作值，供调用方决定要不要提示用户。只数**真的带创作值**的节点，
-  // 结构上消失但本来就空的层不算损失。
+  // 收集**消失了且带创作值**的层，连同它的 span 与创作值一起交给调用方。
+  // 结构上消失但本来就空的层不算损失，不收。
+  //
+  // ★ 为什么返回节点而不只返回计数（0.2.172）：中间层消失时它的 WidthCurve 应该按各叶子
+  // 自己的网格重采样后**写回叶子**，让视觉保持不变（用户拍板的「销毁时写回」）。但重采样
+  // 需要 forkT/grid，那条推导链在 panel-tip-strand.js（几何侧），而本模块是纯拓扑模块、
+  // 刻意不 import 任何几何 —— 所以本函数只负责**告诉调用方哪些层消失了、带着什么值**，
+  // 由持有几何 API 的一侧去做重采样与写回。职责边界与本模块「不 import three.js」的既有
+  // 约定一致，不为了少一次回调而把几何依赖拉进来。
+  const droppedTiers = [];
   for (const [key, node] of bySpan) {
     if (seen.has(key)) continue;
     const hadValue = node.tip != null || AUTHORABLE_KEYS.some((k) => node[k] != null);
-    if (hadValue) dropped += 1;
+    if (!hadValue) continue;
+    dropped += 1;
+    // 只有覆盖 ≥2 个叶子的**真中间层**才有「写回各叶子」这回事；leafStart === leafEnd
+    // 的节点就是叶子本身，它的值消失没有别的叶子可以承接。
+    if (node.leafStart < node.leafEnd) {
+      const values = {};
+      for (const k of AUTHORABLE_KEYS) if (node[k] != null) values[k] = node[k];
+      droppedTiers.push({ leafStart: node.leafStart, leafEnd: node.leafEnd, values });
+    }
   }
 
   lock.panelBoneGroups = rebuilt;
-  return { root: rebuilt, movedValues: moved, droppedNodes: dropped };
+  return { root: rebuilt, movedValues: moved, droppedNodes: dropped, droppedTiers };
 }
 
 export function setPanelBoneGroupValue(lock, path, key, value) {
