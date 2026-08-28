@@ -616,6 +616,81 @@ export function materializePanelBoneGroups(lock) {
 // 它比祖先的回落值更明确，不该被祖先的一次编辑悄悄抹掉。
 //
 // value === null 是合法输入，语义是「清除这一层的创作、恢复继承」，不是「非法值被拒绝」。
+// ── 改层级后重建分组树（0.2.171）──────────────────────────────────────────────
+//
+// ★ 修的缺陷：`panelBoneGroupsFor` 的回落链是「stored → 按 boneLevel 建树 → 按 height 派生」，
+// stored 优先。而改层级只写 `panelSplits[i].boneLevel`，不碰 `lock.panelBoneGroups` ⇒ 一旦这个
+// lock 被物化过，改层级就**只变数字不变树**，层级按钮静默失效。
+// 物化并不需要用户刻意做什么：`resolveTipHost`（tip-sub-bone-host.js）在**显示中间层把手**时
+// 就会调 materializePanelBoneGroups ⇒ 用户只要用过一次中间层功能，按钮从此失效。
+// 四个真实档（Test 3 / Test 4 / Sussurro 的两个 panel）全部复现。
+//
+// 为什么不能直接 `delete lock.panelBoneGroups` 让它重新派生：那会把**中间层节点上的全部创作
+// 数据**（tip 发尖链、taperCurve/depthCurve 等 AUTHORABLE_KEYS）一起丢掉。用户刷过的中间层
+// 曲线、拖过的中间层骨骼都会凭空消失。
+//
+// 所以做法是「重建 + 移植」：按新 boneLevel 建一棵干净的树，再把旧树上的创作值按
+// **leafStart..leafEnd 相同**这个键搬到新树的对应节点上。
+//
+// ★ 为什么用 leaf span 而不是 path 做匹配键：path（如 [1,0]）是**结构位置**，改层级恰恰就是
+// 在改结构 ⇒ 同一个 path 在新旧树里可能指着完全不同的区间。而 leaf span 是**语义身份**
+// （「这一层管哪几片叶子」），用户心里的「那个中间层」指的就是这个。span 相同的节点在用户
+// 看来就是同一层，创作值理应跟着走。
+//
+// 旧树里某个 span 在新树里不存在时，它的创作值**会丢失**，这是改层级的固有代价而非缺陷：
+// 该层级已经不存在了，没有节点能承载它的值。（例：把唯一的 L3 拍平成 L2 后，原 L3 那一层
+// 连同它的曲线一起消失。）刻意不做「找最接近的 span」这种模糊匹配——猜错了会把值搬到用户
+// 没预期的层上，比明确丢失更难排查。
+export function rebuildPanelBoneGroupsFromLevels(lock) {
+  if (!lock || !Array.isArray(lock.panelSplits)) return null;
+  const leafCount = lock.panelSplits.length + 1;
+  // 未物化 ⇒ 无需重建：panelBoneGroupsFor 本来就会现场按 boneLevel 建树，已经是对的。
+  // 这里返回 null 而不是建一棵树，保持「没物化过的 lock 不因为改层级而被物化」——
+  // 物化会把树写进存档，凭空增大 .ahs 且让后续派生失效，不该由改层级这个动作触发。
+  const stored = normalizePanelBoneGroups(lock.panelBoneGroups, leafCount);
+  if (!stored) return null;
+
+  const rebuilt = normalizePanelBoneGroups(panelBoneGroupsFromLevels(lock.panelSplits), leafCount);
+  if (!rebuilt) return null;
+
+  // 旧树按 span 建索引。同一个 span 在一棵合法树里只会出现一次（区间树的性质），所以
+  // 不需要处理冲突。
+  const bySpan = new Map();
+  forEachPanelBoneGroup(stored, (node) => {
+    bySpan.set(`${node.leafStart}:${node.leafEnd}`, node);
+  });
+
+  let moved = 0;
+  let dropped = 0;
+  const seen = new Set();
+  forEachPanelBoneGroup(rebuilt, (node) => {
+    const key = `${node.leafStart}:${node.leafEnd}`;
+    seen.add(key);
+    const old = bySpan.get(key);
+    if (!old) return;
+    for (const authorKey of AUTHORABLE_KEYS) {
+      if (old[authorKey] != null) {
+        node[authorKey] = old[authorKey];
+        moved += 1;
+      }
+    }
+    if (old.tip != null) {
+      node.tip = old.tip;
+      moved += 1;
+    }
+  });
+  // 统计丢失的创作值，供调用方决定要不要提示用户。只数**真的带创作值**的节点，
+  // 结构上消失但本来就空的层不算损失。
+  for (const [key, node] of bySpan) {
+    if (seen.has(key)) continue;
+    const hadValue = node.tip != null || AUTHORABLE_KEYS.some((k) => node[k] != null);
+    if (hadValue) dropped += 1;
+  }
+
+  lock.panelBoneGroups = rebuilt;
+  return { root: rebuilt, movedValues: moved, droppedNodes: dropped };
+}
+
 export function setPanelBoneGroupValue(lock, path, key, value) {
   if (!AUTHORABLE_KEYS.includes(key)) return null;
   const root = materializePanelBoneGroups(lock);
