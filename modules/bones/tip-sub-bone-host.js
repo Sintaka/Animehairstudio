@@ -38,8 +38,8 @@ import {
   panelBoneGroupAtPath,
   panelBoneGroupLeafSpan,
   panelBoneGroupTip
-} from "./panel-bone-groups.js?v=20260925-8";
-import { syntheticSplitsForLeafSpan } from "../geometry/panel-tip-strand.js?v=20260910-14";
+} from "./panel-bone-groups.js?v=20260925-9";
+import { syntheticSplitsForLeafSpan } from "../geometry/panel-tip-strand.js?v=20260910-15";
 
 // deps: panelTipStrand（panel 侧发尖链/fork/帧）+ clonePanelSplits + currentStrandSplitTipChains
 //   + strandGeometryCurve + strandGeometryFrameAt。

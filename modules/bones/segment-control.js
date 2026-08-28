@@ -438,6 +438,15 @@ function changePanelSplitCount(delta) {
     target.splitBones = remapSegmentBonesOnDelete(previousBones, deleteIndex, { spans });
   }
   target.panelSplits = splits;
+  // ★ 0.2.173：分组树的 span 也要跟着重映射，否则 leafCount 变了之后
+  // normalizePanelBoneGroups 会整棵拒绝这棵树 ⇒ 全部中间层创作值蒸发（实测 2 → 0）。
+  // 必须在 target.panelSplits 已经是新值**之后**调（重建按新 splits 派生），而
+  // prevLeafCount 取的是改动**之前**的段数。缺这个 dep 时静默跳过，行为与接线前逐位一致。
+  deps.onPanelSplitCountChanged?.(target, {
+    kind: delta > 0 ? "insert" : "delete",
+    index: delta > 0 ? insertIndex : deleteIndex,
+    prevLeafCount: previousBones.length
+  });
   // 双写 lock.splitBones + lock.bones（kind="split"）；此时长度已与新段数一致，重映射不被覆盖。
   materializeSplitBones(target);
   // 选中的 zipper 可能刚被 - 删掉：清掉悬空选择，否则下次按 Del 会因 order 找不到而
@@ -478,6 +487,12 @@ function deleteSelectedPanelSplit() {
   // 两段合并为一段：保留跨度更大的那段姿态（最接近合并后的几何），其后段整体前移。
   target.splitBones = remapSegmentBonesOnDelete(previousBones, index, { spans });
   target.panelSplits = splits;
+  // ★ 0.2.173：与 changePanelSplitCount 的删除分支同构（见那边的说明）。
+  deps.onPanelSplitCountChanged?.(target, {
+    kind: "delete",
+    index,
+    prevLeafCount: previousBones.length
+  });
   materializeSplitBones(target);
   deps.sculptState.panelSplitSelection = null;
   dropDanglingTipSelection(target, splits.length + 1);

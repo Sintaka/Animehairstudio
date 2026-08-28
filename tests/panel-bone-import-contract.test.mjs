@@ -39,6 +39,13 @@ test("import 列表里的每个名字都真的被模块导出", () => {
 test("app.js 里用到的分组树标识符都在 import 列表里（防「用了但忘了导入」）", () => {
   // 收集 app.js 里所有像分组树 API 的标识符用法。前缀取两族：
   //   panelBoneGroup* / panelBoneGroups*  与  *PanelBoneLevel* / *PanelBoneGroups*
+  //
+  // ★ 刻意**不剥注释**：在注释里裸写一个已导出的名字会触发假阳性（0.2.173 撞过一次 ——
+  // 一句「normalizePanelBoneGroups 会整棵拒绝这棵树」让本条变红，代码其实是对的）。
+  // 这是有意保留的取舍：本条是防「用了但忘了 import」的守卫，而那种缺陷要到用户交互时
+  // 才 undefined 抛错，`node --check` 与纯函数测试都抓不到 ⇒ **宁可假阳不可假阴**。
+  // 剥注释需要处理字符串里的 `//`、模板串、正则字面量等，做错了就是假阴。
+  // 撞到时的正确做法是**改注释措辞**（用中文描述那个函数而不是裸写标识符），不是放宽本条。
   const used = new Set();
   for (const m of appSource.matchAll(/\b(panelBoneGroup[A-Za-z0-9_]*|[a-z][A-Za-z0-9_]*PanelBone(?:Level|Levels|Groups)[A-Za-z0-9_]*)\b/g)) {
     used.add(m[1]);

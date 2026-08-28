@@ -3,11 +3,11 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-14";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-15";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
-import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-1";
-import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-6";
+import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-2";
+import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-7";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260814-1";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260814-12";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260814-12";
@@ -17,11 +17,11 @@ import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitB
 // 分组树（骨骼树）只读展示：新模块，从未被浏览器缓存过 ⇒ 首次引入用一个全新的 ?v=，
 // 且**没有**给 bone-model.js 加 export（那会迫使它的 13 个 import 站点全部同步 bump，
 // 回访用户拿缓存旧模块解析新 export 会 SyntaxError 打不开整个应用——0.2.110 踩过）。
-import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf, rebuildPanelBoneGroupsFromLevels } from "./modules/bones/panel-bone-groups.js?v=20260925-8";
+import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf, rebuildPanelBoneGroupsFromLevels, remapPanelBoneGroupsForSplitChange } from "./modules/bones/panel-bone-groups.js?v=20260925-9";
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
-import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-7";
+import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-8";
 import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-3";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260829-1";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260901-1";
@@ -8818,6 +8818,10 @@ Object.assign(taperEditorDeps, {
 // call (updateAttributeEditorMode -> segmentApi.syncPanelShapeInputs) and before the init-block
 // listeners that reference segmentApi.
 Object.assign(segmentControlDeps, {
+  // 0.2.173：增删 zipper 后保全分组树并写回退化层。漏接线的后果是中间层创作值静默蒸发
+  // （segment-control.js 侧用 `?.` 调用，缺 dep 时行为与接线前逐位一致 ⇒ 不会崩，
+  // 但也不会有人发现 —— 所以有源码级接线断言钉住它）。
+  onPanelSplitCountChanged: handlePanelSplitCountChanged,
   sculptState: sculptState.state,
   sel: sel.state,
   taperEditor,
@@ -15798,6 +15802,52 @@ function changeBoneLevel(delta) {
   renderLockList();
 }
 
+// ── 增删 zipper 时保全分组树 + 写回退化层（0.2.173）─────────────────────────────
+//
+// 注入给 segment-control.js（`deps.onPanelSplitCountChanged`）。分两步：
+//   ① 纯拓扑侧按插入/删除下标重映射 span，保住仍成立的中间层的创作值
+//      （不做的话 leafCount 一变，分组树的归一化校验会整棵拒绝它、创作值全部蒸发）
+//   ② 重映射后退化成单叶的层，把它的 WidthCurve 按那片叶子的网格重采样写回
+//
+// 职责划分与 0.2.172 相同：span 重映射是纯拓扑（panel-bone-groups.js），重采样需要
+// forkT/grid（几何侧），所以由持有 panelTipStrand 的这一侧完成写回。
+function handlePanelSplitCountChanged(lock, info) {
+  const result = remapPanelBoneGroupsForSplitChange(lock, info?.kind, info?.index, info?.prevLeafCount);
+  writeBackTierCurvesToLeaves(lock, result?.orphanedTiers);
+}
+
+// 把一批「不再有承载节点」的中间层曲线按各叶子自己的网格重采样写回。
+// 0.2.172 的 writeBackDroppedTierCurves（改层级）与 0.2.173 的增删 zipper 共用这一个实现 ——
+// 两处的输入形状一致（{leafStart, leafEnd, values}），没有理由写两份。
+function writeBackTierCurvesToLeaves(lock, tiers) {
+  if (!Array.isArray(tiers) || !tiers.length) return;
+  const host = segmentBoneHost(lock);
+  if (!host || host.kind !== "panel") return;
+  const bones = materializeSplitBones(lock);
+  const root = lock.panelBoneGroups;
+  if (!Array.isArray(bones) || !root) return;
+  for (const tier of tiers) {
+    for (const key of ["taperCurve", "taperCurveSecondary"]) {
+      const tierCurve = tier.values?.[key];
+      if (!Array.isArray(tierCurve) || !tierCurve.length) continue;
+      for (let leaf = tier.leafStart; leaf <= tier.leafEnd; leaf += 1) {
+        // 按**这个叶子自己的**网格重采样：中间层走 span 级 forkT、叶子走叶级，控制点位置
+        // 不同，直接复制数组会让形状整体错位（实测 Test 4 上两级 grid 差 0.09）。
+        const resampled = panelTipStrand.resampleTierCurveToLeaf?.(lock, tierCurve, leaf);
+        if (!Array.isArray(resampled) || !resampled.length) continue;
+        // ★ 两处都写（用户拍板）：采样侧读 `bone?.taperCurve || 分组树回落` ⇒ bone 自己的值
+        // 优先。只写分组树的话 splitBones 的旧值会优先命中、把刚写回的值盖掉，用户看到形状
+        // 不变 = 写回静默失效；只写 splitBones 的话分组树那份旧值又会在
+        // panelBoneGroupEffectiveValue 路径上冒出来。双写是当前双存储架构下唯一能让
+        // 「视觉不变」成立的做法。
+        if (bones[leaf]) bones[leaf][key] = resampled.map((p) => ({ ...p }));
+        const leafPath = panelBoneGroupPathForLeaf(root, leaf);
+        if (leafPath) setPanelBoneGroupValue(lock, leafPath, key, resampled.map((p) => ({ ...p })));
+      }
+    }
+  }
+}
+
 // ── 中间层消失时把它的 WidthCurve 写回各叶子（0.2.172）──────────────────────────
 //
 // 用户拍板的模型是「生成时把叶子曲线烘进中间层」+「销毁时写回各叶子，**视觉不变**」。
@@ -15814,29 +15864,9 @@ function changeBoneLevel(delta) {
 // 只写 splitBones 的话，分组树那份旧值又会在别的读取路径（panelBoneGroupEffectiveValue）
 // 上冒出来。所以在两个位置同步同一个值，是当前双存储架构下唯一能让「视觉不变」成立的做法。
 // 这不是理想设计（理想是先统一存储），但统一存储要动 USD 导出等其它消费方，属于独立改动。
+// 0.2.173 起委托给 writeBackTierCurvesToLeaves（两条触发路径共用同一实现，见那边说明）。
 function writeBackDroppedTierCurves(lock, rebuilt) {
-  const tiers = rebuilt?.droppedTiers;
-  if (!Array.isArray(tiers) || !tiers.length) return;
-  const host = segmentBoneHost(lock);
-  if (!host || host.kind !== "panel") return;
-  const bones = materializeSplitBones(lock);
-  const root = lock.panelBoneGroups;
-  if (!Array.isArray(bones) || !root) return;
-  for (const tier of tiers) {
-    for (const key of ["taperCurve", "taperCurveSecondary"]) {
-      const tierCurve = tier.values?.[key];
-      if (!Array.isArray(tierCurve) || !tierCurve.length) continue;
-      for (let leaf = tier.leafStart; leaf <= tier.leafEnd; leaf += 1) {
-        // 按**这个叶子自己的**网格重采样：中间层走 span 级 forkT、叶子走叶级，
-        // 控制点位置不同，直接复制数组会让形状整体错位（实测 Test 4 上 grid 差 0.09）。
-        const resampled = panelTipStrand.resampleTierCurveToLeaf?.(lock, tierCurve, leaf);
-        if (!Array.isArray(resampled) || !resampled.length) continue;
-        if (bones[leaf]) bones[leaf][key] = resampled.map((p) => ({ ...p }));
-        const leafPath = panelBoneGroupPathForLeaf(root, leaf);
-        if (leafPath) setPanelBoneGroupValue(lock, leafPath, key, resampled.map((p) => ({ ...p })));
-      }
-    }
-  }
+  writeBackTierCurvesToLeaves(lock, rebuilt?.droppedTiers);
 }
 
 // ── Panel 分组树（骨骼树）在 outliner 里的只读展示 ─────────────────────────────

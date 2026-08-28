@@ -707,6 +707,102 @@ export function rebuildPanelBoneGroupsFromLevels(lock) {
   return { root: rebuilt, movedValues: moved, droppedNodes: dropped, droppedTiers };
 }
 
+// ── 增删 zipper 时保全分组树（0.2.173）────────────────────────────────────────
+//
+// ★ 修的缺陷：增删 zipper 改变 leafCount，而 `panelBoneGroupsFor` 里
+// `normalizePanelBoneGroups(stored, leafCount)` 对 leafCount 不匹配的树**整棵拒绝** ⇒ 回落
+// 现场派生 ⇒ **全部中间层创作值一起蒸发**（实测：2 个带值的中间层，增加一条 zipper 后有效树
+// 里的创作值总数 0）。旧值其实还留在 `lock.panelBoneGroups` 上，只是读不到 —— 所以在改动
+// 那一刻还能抢救，这是本函数存在的前提。
+//
+// 比改层级（0.2.171）更严重：那里存活的 span 还能保住值，这里是整棵树连同一切被丢弃。
+//
+// span 重映射公式（由「旧叶下标 → 新叶下标」推导，与 remapSegmentBonesOnInsert/OnDelete
+// 的下标约定逐字对齐：insertIndex = 被一分为二的那个段；deleteIndex = 与其右邻合并的那个段）：
+//   插入 i：a' = a<=i ? a : a+1     b' = b<i  ? b : b+1
+//   删除 i：a' = a<=i ? a : a-1     b' = b<=i ? b : b-1
+// 插入时若 i 落在 [a,b] 内，该层多管一片叶子（b+1）——这是对的：被细分的段仍属于这一层，
+// 分成两半后两半都还属于它。删除时若两片被合并的叶子都在层内，该层少管一片。
+//
+// 退化：重映射后 a' === b' 的层只剩一片叶子，**不再是中间层**（与 resolvePanelTierSpan /
+// bakeTierWidthCurve 的退化判据同一口径）。它的创作值没有「多个叶子」可以继续承载 ⇒ 连同
+// span 一起报告给调用方，由持有几何 API 的一侧把曲线重采样写回那片叶子（同 0.2.172 的
+// droppedTiers 通路，理由相同：重采样需要 forkT/grid，本模块刻意不 import 几何）。
+export function remapPanelBoneGroupsForSplitChange(lock, kind, index, prevLeafCount) {
+  if (!lock) return null;
+  const stored = lock.panelBoneGroups;
+  if (!stored) return null;                       // 未物化 ⇒ 无值可保全，现场派生本来就对
+  const prev = normalizePanelBoneGroups(stored, prevLeafCount);
+  if (!prev) return null;                         // 改动前就已不合法 ⇒ 无从保全
+  const at = Math.floor(Number(index));
+  if (!Number.isInteger(at) || at < 0) return null;
+  const insert = kind === "insert";
+  const nextLeafCount = insert ? prevLeafCount + 1 : prevLeafCount - 1;
+  if (nextLeafCount < 1) return null;
+
+  const mapStart = (a) => (insert ? (a <= at ? a : a + 1) : (a <= at ? a : a - 1));
+  const mapEnd = (b) => (insert ? (b < at ? b : b + 1) : (b <= at ? b : b - 1));
+
+  // 收集旧树上「带创作值的节点」按新 span 归档。根节点不收：它恒覆盖全部叶子，
+  // 重映射后仍是根，值由 normalize 自己带过去。
+  const carried = new Map();
+  const pending = [];   // 候选：映射后仍是多叶区间的，等新树建好再看它还在不在
+  const orphaned = [];  // 确定要写回叶子的（退化成单叶 / 或新树里没有这个 span）
+  forEachPanelBoneGroup(prev, (node, path) => {
+    if (!path.length) return;
+    const values = {};
+    let hasValue = false;
+    for (const k of AUTHORABLE_KEYS) {
+      if (node[k] != null) { values[k] = node[k]; hasValue = true; }
+    }
+    const tip = node.tip != null ? node.tip : null;
+    if (!hasValue && !tip) return;
+    const a = mapStart(node.leafStart);
+    const b = mapEnd(node.leafEnd);
+    if (a > b || a < 0 || b >= nextLeafCount) return;         // 映射出界 ⇒ 丢弃
+    if (a === b) {
+      // 退化成单叶：不再是中间层。只有原本是真中间层的才需要写回（原本就是叶子的
+      // 节点其值本来就属于那片叶子，normalize 会照常带过去，不算「转移」）。
+      if (node.leafStart < node.leafEnd) orphaned.push({ leafStart: a, leafEnd: a, values });
+      return;
+    }
+    carried.set(`${a}:${b}`, { values, tip });
+    pending.push({ key: `${a}:${b}`, leafStart: a, leafEnd: b, values });
+  });
+
+  // 按新 leafCount 派生一棵干净树，再把归档值贴回 span 相同的节点。
+  // 用现场派生（按 height）而不是按 boneLevel：增删 zipper 之后 boneLevel 与实际结构的
+  // 对应关系已被打断（新 zipper 没有 boneLevel、被删的那条带走了它的层级），
+  // 此时 height 派生才是唯一自洽的重建依据。
+  const rebuilt = normalizePanelBoneGroups(derivePanelBoneGroups(lock.panelSplits), nextLeafCount);
+  if (!rebuilt) return null;
+
+  let moved = 0;
+  const landed = new Set();
+  forEachPanelBoneGroup(rebuilt, (node, path) => {
+    if (!path.length) return;
+    const key = `${node.leafStart}:${node.leafEnd}`;
+    const hit = carried.get(key);
+    if (!hit) return;
+    for (const [k, v] of Object.entries(hit.values)) { node[k] = v; moved += 1; }
+    if (hit.tip != null) { node.tip = hit.tip; moved += 1; }
+    landed.add(key);
+  });
+
+  // ★ 映射后仍是多叶区间、但新树里**不存在这个 span** 的层，同样要写回叶子。
+  // 实测例子（3 zipper、heights 递增、在末段插一条）：旧树的 [2..3] 映射成 [2..4]，
+  // 而按新 height 派生出来的树里只有 [1..3] / [2..3]，没有 [2..4] ⇒ 该层的曲线既没被
+  // 移植、又不满足「退化成单叶」⇒ 第一版实现里它**既没保住也没写回**，静默丢失。
+  // 这与 0.2.171 的 droppedNodes 是同一类缺口，所以两种情形统一按「叶子区间」写回。
+  for (const p of pending) {
+    if (landed.has(p.key)) continue;
+    orphaned.push({ leafStart: p.leafStart, leafEnd: p.leafEnd, values: p.values });
+  }
+
+  lock.panelBoneGroups = rebuilt;
+  return { root: rebuilt, movedValues: moved, orphanedTiers: orphaned };
+}
+
 export function setPanelBoneGroupValue(lock, path, key, value) {
   if (!AUTHORABLE_KEYS.includes(key)) return null;
   const root = materializePanelBoneGroups(lock);

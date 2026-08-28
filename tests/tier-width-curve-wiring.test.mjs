@@ -277,8 +277,10 @@ test("接线：app.js 的 widthBrushCurveArray 必须调用 bakeTierWidthCurve",
 // ---------------------------------------------------------------------------
 test("接线：写回必须同时落到 splitBones 与分组树叶节点两处", () => {
   const src = readFileSync(new URL("../app.js", import.meta.url), "utf8");
-  const at = src.indexOf("function writeBackDroppedTierCurves(");
-  assert.notEqual(at, -1, "找不到 writeBackDroppedTierCurves");
+  // 0.2.173 起两条触发路径（改层级 / 增删 zipper）共用 writeBackTierCurvesToLeaves，
+  // 所以断言指向这个共用实现；writeBackDroppedTierCurves 已收缩成一行转发。
+  const at = src.indexOf("function writeBackTierCurvesToLeaves(");
+  assert.notEqual(at, -1, "找不到 writeBackTierCurvesToLeaves");
   const body = src.slice(at, src.indexOf("\n}", src.indexOf("for (const tier of tiers)", at)));
   assert.match(body, /bones\[leaf\]\[key\]\s*=/, "必须写 splitBones[leaf][key]（旧路径，读取时优先命中）");
   assert.match(body, /setPanelBoneGroupValue\(lock, leafPath, key/, "必须写分组树叶节点");

@@ -12,8 +12,8 @@ import {
   SPREAD_MAX,
   STRAND_SEGMENT_HOST
 } from "./bone-model.js?v=20260901-1";
-import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260901-6";
-import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260910-14";
+import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260901-7";
+import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260910-15";
 import {
   strandTipClumpAxis,
   strandTipWidthControlPlacement,
