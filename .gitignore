@@ -1,5 +1,13 @@
 node_modules/
 
 # 骨骼树重构的临时工作区（探针脚本、真实档副本、导出的顶点 buffer 对照件）。
-# 放仓库内是为了避免仓库外路径的权限问题；收尾时整目录删除。
+# 放仓库内是为了避免仓库外路径的权限问题。
+#
+# ★ 原注释写「收尾时整目录删除」，0.2.173 收尾时**刻意没有整删**：
+# `archives/` 里五个真实 .ahs（Scalp Conform Test 1-4 + Sussurro_v1_0060）是用户当初从
+# D:\Downloads 提供的，那个目录后续会话未挂载 ⇒ 这是中间层/分组树验收**唯一**的真实
+# fixture 来源，删掉拿不回来。Test 4 尤其关键（panel, 2 zipper, heights [0.3, 0.4]，
+# 能派生出 L2·Segment 1 / L2·Segments 2-3 / L3·Segment 2 / L3·Segment 3）。
+# 一次性探针与备份已清掉；保留的是 archives/ 与几个可复用工具（eol-check 行尾种类比对、
+# closure ?v= 传递闭包、mutate-* 变异验证骨架）。
 .tmp-bone-tree/
