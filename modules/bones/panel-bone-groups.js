@@ -354,6 +354,52 @@ export function panelBoneGroupPathForLeaf(root, leafIndex) {
   return path;
 }
 
+// 某条 zipper 归属的「拥有这条切缝」的分组节点路径——outliner 里点某条 zipper 行时应该
+// 选中的父层。zipper i 分隔叶子 i 与 i+1（文件头规则 1），outliner 用 child.leafEnd（左子
+// 节点的右边界）作为这一行的下标（见 app.js 两处调用点）。「拥有」的定义：存在相邻子节点
+// 对 children[k]、children[k+1]，使 children[k].leafEnd === zipperIndex——这条切缝正是
+// 在这个节点内部把它的子节点分开的那一刀，故这个节点是它的所有者。
+//
+// 遍历骨架照抄 isSoleShallowestCutInGroup（同文件内）：都是「走到某节点，看它 children 数组
+// 里相邻两个的边界是否等于目标下标」，唯一差异是那边只返回布尔、这里收集并返回 path。
+// 不新发明遍历方式，避免这里长出第二套结构判断逻辑。
+//
+// ★ 返回值语义（[] 与 null 不同，调用方必须能区分）：
+//   - 找到 ⇒ 返回拥有该切缝的节点的 path（数组）。切缝恰好是 root 自己拥有（即 root 的
+//     children 数组里就含有这个边界）⇒ 返回**空数组 []**，代表根节点——[] 是「根拥有它」
+//     这个明确答案，不是"没找到"。
+//   - 找不到（zipperIndex 越界、root 为 null/undefined、root 是单叶子树没有 children、
+//     或 zipperIndex 根本不是整数）⇒ 返回 **null**，且不抛异常——安全回落是本模块既有约定
+//     （normalizePanelBoneGroups / panelBoneGroupAtPath 等都遵循「非法输入返回 null」而不是
+//     抛错）。切勿把 [] 与 null 混用：`if (result)` 足够区分两者（[] 是 truthy），但
+//     `assert.ok(result)` 这类真值判断在测试里无法区分 [] 与非空数组，写断言时要用
+//     `deepStrictEqual` 显式比较。
+//
+// ★ 为什么不能与 panelBoneGroupPathForLeaf 合并成一个函数：那个函数回答的是「叶子下标 →
+// 覆盖它的最深叶节点路径」，永远沿着"包含该叶子"的分支一路走到底（children===null 才停）。
+// 本函数回答的是完全不同的问题——「哪个节点内部的子节点边界正好卡在这条 zipper 上」，命中
+// 点必然是某个**有 children 的中间/根节点**，绝不会是叶节点（叶节点没有子节点边界可言）。
+// 两者在同一个 zipperIndex 上通常给出不同的路径（叶子路径更深、切缝路径更浅），语义方向
+// 相反，合并会让调用方必须靠额外参数分辨「我要哪种」，反而更容易用错。
+export function panelBoneGroupPathForZipper(root, zipperIndex) {
+  if (!root) return null;
+  const target = Number(zipperIndex);
+  if (!Number.isInteger(target)) return null;
+  const walk = (node, path) => {
+    if (!node || !Array.isArray(node.children)) return null;
+    const kids = node.children;
+    for (let i = 0; i < kids.length - 1; i += 1) {
+      if (kids[i].leafEnd === target) return path;
+    }
+    for (let i = 0; i < kids.length; i += 1) {
+      const found = walk(kids[i], [...path, i]);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(root, []);
+}
+
 // ── 层级继承：某个叶子的「祖先中间层」链 ──────────────────────────────────────────────
 // 返回从根到该叶子路径上、**严格介于根与叶子之间**的节点数组（由浅到深）。
 //

@@ -3,11 +3,11 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-15";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-16";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
 import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-2";
-import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-7";
+import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-8";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260814-1";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260814-12";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260814-12";
@@ -17,11 +17,11 @@ import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitB
 // 分组树（骨骼树）只读展示：新模块，从未被浏览器缓存过 ⇒ 首次引入用一个全新的 ?v=，
 // 且**没有**给 bone-model.js 加 export（那会迫使它的 13 个 import 站点全部同步 bump，
 // 回访用户拿缓存旧模块解析新 export 会 SyntaxError 打不开整个应用——0.2.110 踩过）。
-import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf, rebuildPanelBoneGroupsFromLevels, remapPanelBoneGroupsForSplitChange } from "./modules/bones/panel-bone-groups.js?v=20260925-9";
+import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf, panelBoneGroupPathForZipper, rebuildPanelBoneGroupsFromLevels, remapPanelBoneGroupsForSplitChange } from "./modules/bones/panel-bone-groups.js?v=20260925-10";
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
-import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-8";
+import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-9";
 import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-3";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260829-1";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260901-1";
@@ -15897,9 +15897,12 @@ function panelBoneGroupNodeLabel(node) {
   return `L${node.depth} · ${span}`;
 }
 
-// 一条 zipper 行：显示它是第几条 zipper、以及它当前所在的层级。**只读镜像**，不放按钮 ——
-// 调层级在右侧 properties 的 Zipper Levels 区（用户拍板：outliner 只显示结果）。
-function createPanelBoneZipperRow(zipperIndex, level, depth) {
+// 一条 zipper 行：显示它是第几条 zipper、以及它当前所在的层级。
+// **可选中**（0.2.174，用户要求「outliner中增加zipper可选中」）：点它 = 选中这条切缝本身
+// （视口 zipper 手柄进入选中态、Del 可删、「+」分段认它），**并且**把选择层级切到「拥有这条
+// 切缝的那个父层」。调层级仍在右侧 properties 的 Zipper Levels 区（用户拍板：outliner 不放
+// 层级按钮），本行只做选中。
+function createPanelBoneZipperRow(lock, zipperIndex, level, depth, splits) {
   const wrapper = document.createElement("div");
   wrapper.className = "outliner-bone-group";
   wrapper.style.setProperty("--bone-group-depth", String(Math.max(0, depth - 1)));
@@ -15909,10 +15912,53 @@ function createPanelBoneZipperRow(zipperIndex, level, depth) {
   spacer.className = "outliner-bone-group-spacer";
   spacer.setAttribute("aria-hidden", "true");
   row.appendChild(spacer);
-  const label = document.createElement("span");
-  label.className = "outliner-bone-group-label outliner-bone-zipper-label";
+  // 稳定键用 order 而不是下标：panelSplitSelection 的既有约定（bone-interaction.js:434
+  // 视口拖拽写的也是 order）。下标会随增删 zipper 漂移，order 不会。
+  // splits 已按 position 排序（normalizePanelSplits 末尾 sort），而树里的 zipperIndex
+  // 同样是 position 序 ⇒ splits[zipperIndex] 就是这一行对应的那条切缝。
+  const order = Number(splits?.[zipperIndex]?.order);
+  const selected = Number.isFinite(order)
+    && sculptState.state.panelSplitSelection?.lockId === lock.id
+    && Number(sculptState.state.panelSplitSelection.order) === order;
+  const label = document.createElement("button");
+  label.type = "button";
+  label.className = `outliner-bone-group-label outliner-bone-zipper-label${selected ? " selected" : ""}`;
   label.textContent = `Zipper ${zipperIndex + 1} · L${level}`;
-  label.title = `Zipper ${zipperIndex + 1} separates at level ${level}. Adjust it in Zipper Levels.`;
+  label.setAttribute("aria-pressed", String(Boolean(selected)));
+  label.title = selected
+    ? `Zipper ${zipperIndex + 1} selected (level ${level}). Click again to deselect. Adjust its level in Zipper Levels.`
+    : `Select zipper ${zipperIndex + 1} (level ${level}): highlights it in the viewport and switches to its owning level. Adjust its level in Zipper Levels.`;
+  label.addEventListener("click", () => {
+    // 与分组行同规则：先让这个发片成为当前选中项，否则 selectedPanelBoneGroupPath() 的
+    // lockId 门禁会返回 null ⇒ 中间层接线静默失效（详见 createPanelBoneGroupRow 的注释）。
+    if (sel.state.selectedId !== lock.id) selectLock(lock.id);
+    if (selected) {
+      // 再点一次取消：zipper 选中态与层级选择一起清掉，与分组行的 toggle 语义一致。
+      sculptState.state.panelSplitSelection = null;
+      selectedPanelBoneGroup = null;
+    } else {
+      sculptState.state.panelSplitSelection = Number.isFinite(order)
+        ? { lockId: lock.id, order }
+        : null;
+      // 「切换到对应的选择层级」= 拥有这条切缝的那个父层（用户拍板）。
+      // ★ 空数组代表**根**拥有这条切缝，而根就是发片自己（用户拍板：L1 不单独出行，
+      // 「outliner里面已经有对应的层级了, 就是发片本身」），且 resolvePanelTierSpan
+      // 明确拒绝空 path ⇒ 此时**清空**分组选择，让编辑落回主发片曲线，而不是造一个
+      // 无效的「根中间层」选中态（那会让 resolveTipHost 拿到 tierSpan=null 却显示已选中，
+      // 正是 0.2.171 那类「按钮可点、点了没用」的静默失效）。
+      const root = panelBoneGroupsFor(lock);
+      const ownerPath = root ? panelBoneGroupPathForZipper(root, zipperIndex) : null;
+      selectedPanelBoneGroup = ownerPath && ownerPath.length
+        ? { lockId: lock.id, path: [...ownerPath] }
+        : null;
+    }
+    // 同步链与分组行逐字一致（唯一派生点 → 视口 → 段面板 → 层级面板 → outliner 重绘）。
+    syncTipSelectionFromBoneGroup(lock);
+    updateCurveObjects(lock, { visible: true });
+    segmentApi.syncSegmentControlsForLock(lock);
+    syncPanelBoneLevelControls();
+    renderLockList();
+  });
   row.appendChild(label);
   wrapper.appendChild(row);
   return wrapper;
@@ -15991,7 +16037,9 @@ function createPanelBoneGroupRow(lock, node, path, levels) {
       if (index < node.children.length - 1) {
         const zipperIndex = child.leafEnd;
         const level = levels[zipperIndex]?.boneLevel ?? child.depth;
-        children.appendChild(createPanelBoneZipperRow(zipperIndex, level, child.depth));
+        // levels 由 materializePanelBoneLevels 从 splits 派生（`{ ...split, boneLevel }`）
+        // ⇒ 逐项保留 order 字段与 position 序，可直接当 splits 用，不另传一份数组。
+        children.appendChild(createPanelBoneZipperRow(lock, zipperIndex, level, child.depth, levels));
       }
     });
     node.children.forEach((child, index) => {
@@ -16042,7 +16090,7 @@ function createOutlinerPanelBoneGroups(lock) {
     root.children.forEach((child, index) => {
       if (index < root.children.length - 1) {
         const zipperIndex = child.leafEnd;
-        tree.appendChild(createPanelBoneZipperRow(zipperIndex, levels[zipperIndex]?.boneLevel ?? child.depth, child.depth));
+        tree.appendChild(createPanelBoneZipperRow(lock, zipperIndex, levels[zipperIndex]?.boneLevel ?? child.depth, child.depth, levels));
       }
     });
     root.children.forEach((child, index) => {

@@ -47,7 +47,7 @@ import {
   panelBoneGroupPathForLeaf,
   panelBoneGroupsFor,
   resolvePanelBoneGroupValue
-} from "../bones/panel-bone-groups.js?v=20260925-9";
+} from "../bones/panel-bone-groups.js?v=20260925-10";
 import {
   TIP_WIDTH_CONTROL_POINTS as SHARED_TIP_WIDTH_CONTROL_POINTS,
   buildTipWidthCurveFrom,

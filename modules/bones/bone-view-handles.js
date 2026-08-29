@@ -12,8 +12,10 @@ import {
   SPREAD_MAX,
   STRAND_SEGMENT_HOST
 } from "./bone-model.js?v=20260901-1";
-import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260901-7";
-import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260910-15";
+import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260901-8";
+// syntheticSplitsForLeafSpan（本次修复新增引用）：中间层被选中时，绿色 WidthCurve 只在
+// 锚点段画一套，取值要换成 span 级合成参数——加进这条既有 import，不新开一条 import 语句。
+import { syntheticSplitsForLeafSpan, TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260910-16";
 import {
   strandTipClumpAxis,
   strandTipWidthControlPlacement,
@@ -281,6 +283,43 @@ function createBoneViewHandles(lock, group) {
       const handle = createSplitControlHandle();
       handle.userData.lockId = lock.id;
       handle.userData.panelSplitIndex = index;
+      // 选中高亮外壳（叠加 additive 发光球壳，替代"单纯放大一点点"）：用户原话要求 zipper
+      // 选中时要有明显的高亮 shader。方案是给手柄挂一个略大的半透明 additive 球作为子
+      // 对象——子对象自动跟随父手柄的 position（每帧只更新 handle.position，光晕不需要
+      // 单独同步坐标）。
+      // 为什么只在这个 panel zipper 分配块里加，不放进 createSplitControlHandle 工厂：该
+      // 工厂被 4 处调用（panel zipper / strand zipper / tip handle / branch sweep），用户
+      // 原话只提「zipper 选中」，且当前语境是 panel 骨骼树（outliner 的 zipper 行只在
+      // panel 下渲染）。strand zipper 严格说也是"zipper"，但不确定用户是否也要它加高亮，
+      // 本轮不动，需要主脑另行拍板。
+      const selectionShell = new THREE.Mesh(
+        new THREE.SphereGeometry(0.052 * 1.6, 12, 8),
+        new THREE.MeshBasicMaterial({
+          // 同色系但更亮（0xff42cf → 0xffb3ec）：保持"这仍是同一个 zipper"的色相识别，
+          // 又让光晕比本体更亮，符合"高亮"诉求而不是变成另一种颜色。
+          color: 0xffb3ec,
+          transparent: true,
+          // additive 混合：光晕要叠加发光而不是覆盖遮挡——若用默认 NormalBlending，半透明
+          // 外壳会把内部本体球「盖灰」，视觉上更像多裹了一层壳而不是发光。
+          blending: THREE.AdditiveBlending,
+          depthTest: false,
+          depthWrite: false,
+          opacity: 0.35
+        })
+      );
+      // renderOrder 必须比手柄本体（7）更大：同一 depthTest:false 队列里 renderOrder 更小
+      // 的先画，additive 壳若排在本体之前会被本体的不透明球心盖住大半，叠加发光的效果就
+      // 出不来。
+      selectionShell.renderOrder = 8;
+      // 不参与射线拾取：bone-interaction.js 两处 intersectObjects 调用（pointerHitsTip
+      // ClumpHandle 与 beginPanelSplitHandleDrag）都显式传 recursive=false，子对象本就不进
+      // 遍历，理论上不需要这一行。这里仍显式清空 raycast 方法做二次保险——万一将来命中
+      // 列表改成对 group 做 recursive 遍历，或外壳被并入别处的命中数组，也不会意外抢走
+      // zipper 本体的拾取判定。
+      selectionShell.raycast = () => {};
+      selectionShell.visible = false;
+      handle.add(selectionShell);
+      handle.userData.selectionShell = selectionShell;
       group.add(handle);
       panelSplitHandles.push(handle);
     });
@@ -474,10 +513,24 @@ function updateBoneViewHandles(lock, ctx) {
   lock.curveObjects.panelSplitHandles?.forEach((handle, index) => {
     const split = splits[index];
     const line = lock.curveObjects.panelSplitLines?.[index];
+    // 选中判定（按 order 匹配，理由见下方 dragging 处的注释）**提到可见性之前**算：
+    // 0.2.174 起「这一颗是否被选中」参与可见性判定，所以不能等到下面再算。
+    const selected = deps.sculptState.panelSplitSelection?.lockId === lock.id
+      && Number(deps.sculptState.panelSplitSelection.order) === Number(split?.order);
     // Hide the zipper handles while a tip sub-bone is selected: the tip width control
     // points sit on the segment edges (zipper u), so the bigger zipper sphere would
     // steal the drag. The zipper LINES stay visible; deselect the tip to drag zippers.
-    const visible = !tipUiActive
+    //
+    // ★ 0.2.174 例外（用户拍板）：**被选中的那一颗**即使 tipUiActive 也可见。
+    // 起因：outliner 的 zipper 行可选中后，点它会「切到拥有这条切缝的父层」，而切层级会写
+    // tipSelection ⇒ tipUiActive=true ⇒ 整颗球连同它的高亮外壳一起被这条门控隐藏，于是
+    // 「zipper 选中时加高亮」这个需求在非根层永远看不到效果（无头 Chrome 实测：选中
+    // Zipper 2 后 handle.visible=false、shell.visible=false；选中归属根的 Zipper 1 则正常）。
+    // 代价是**已知且刻意接受的**：这一颗球重新参与射线拾取，可能抢走同位置 WidthCurve
+    // 控制点的拖拽（正是上面那段英文注释防的事）。范围被收窄到「用户主动选中的那一颗」——
+    // 其余 zipper 球在 tipUiActive 时仍然全部隐藏，拖拽保护对它们照旧生效。
+    // 想恢复拖 WidthCurve 控制点：再点一次该 zipper 行取消选中即可。
+    const visible = (!tipUiActive || selected)
       && !sculptBrushHelpersSuppressed
       && !brushDebugVisible
       && deps.isPanelGeometry(lock)
@@ -499,10 +552,14 @@ function updateBoneViewHandles(lock, ctx) {
         ? dragOrder === Number(split.order)
         : deps.sculptState.panelSplitDrag.splitIndex === index);
     // 被选中的 zipper（按 order 匹配）放大并提亮，便于识别 Del 目标。
-    const selected = deps.sculptState.panelSplitSelection?.lockId === lock.id
-      && Number(deps.sculptState.panelSplitSelection.order) === Number(split.order);
+    // selected 已在上方可见性判定处算好（0.2.174 起它参与可见性），此处直接用。
     handle.material.opacity = selected ? 1 : dragging ? 0.9 : 0.68;
-    handle.scale.setScalar(selected ? 1.3 : 1);
+    // 刻意保留轻微放大（用户原话是嫌"单纯放大一点点"不够明显，要加高亮，不是要求去掉
+    // 放大）：1.3 调小到 1.15，让"放大 + 光晕外壳"叠加而不是互相顶替。
+    handle.scale.setScalar(selected ? 1.15 : 1);
+    // 高亮外壳仅在选中时可见：未选中时不产生任何视觉变化，外壳作为 handle 的子对象自动
+    // 跟随 handle.position（上面刚 copy 过），无需单独同步坐标。
+    if (handle.userData.selectionShell) handle.userData.selectionShell.visible = selected;
     if (!line) return;
     line.visible = true;
     line.geometry.dispose();
@@ -530,8 +587,13 @@ function updateBoneViewHandles(lock, ctx) {
   // 所以 panel 的可见性、位置、朝向、透明度逐字不变；发丝分支从 host 现取。
   // 基础门控与 panel 原条件同构：brush 抑制时若有发尖被选中仍显示（tipUiActive），
   // 发丝额外要求 strandSplitEnabled（非 split 发丝走 Route 1 的单发尖把手，见文件末尾）。
+  // ★ 本次修复（中间层 WidthCurve 高亮错层）：host 提到 tipChainCtx 之前算好并复用，供
+  // 下方 tipWidthCtx 的 panel 分支直接消费——tipWidthCtx 原来完全没有调用 resolveTipHost，
+  // 现在需要 host.tierSpan 判断是否命中中间层。同一个 host 只物化/解析一次，避免两次调用
+  // resolveTipHost 拿到不同的物化状态（一次 materialize=false 供渲染读取，不脏 lock）。
+  const tipHost = resolveTipHost(lock);
   const tipChainCtx = (() => {
-    const host = resolveTipHost(lock);
+    const host = tipHost;
     if (!host) return null;
     const base = (!sculptBrushHelpersSuppressed || tipUiActive) && !brushDebugVisible;
     const isPanel = host.kind === "panel";
@@ -737,32 +799,82 @@ function updateBoneViewHandles(lock, ctx) {
   // authored 链）。而网格走 addPatch 会 splitTipForSegment 取物化链、算四元数再锚定 ⇒ 用户
   // 拖发尖骨骼时网格动、绿点不动（用户报告的 bug）。公式已收拢进 panel-tip-strand.js 的
   // tipWidthEdgeRenderPoint（唯一定义点，与 addPatch 同步），此处只调用、不复制。
-  const panelWidthEdgeRenderPoint = (segment, side, t, bone) => deps.panelTipStrand
-    .tipWidthEdgeRenderPoint(lock, segment, tipSplits, bone, side, t);
+  // splitsOverride（本次修复新增第 5 个可选参数）：中间层命中时要传 span 级合成 splits
+  // 而不是 tipSplits——不新开一个函数，省一处「两条几乎相同代码」的分岔。省略时默认
+  // tipSplits，与改动前逐字等价（退化路径）。
+  const panelWidthEdgeRenderPoint = (segment, side, t, bone, splitsOverride) => deps.panelTipStrand
+    .tipWidthEdgeRenderPoint(lock, segment, splitsOverride || tipSplits, bone, side, t);
   const tipWidthCtx = (() => {
+    // 复用上面已解析好的同一个 host（tipChainCtx 用的那个），不第二次调 resolveTipHost：
+    // 两次调用可能拿到不同的物化状态，且多一次开销（主脑要求）。host 对非 panel 几何或
+    // 分组树未启用的 panel 几何可能是 null / host.tierSpan 为 null，下面按需判空。
+    const host = tipHost;
     if (segmentBoneHost(lock) !== STRAND_SEGMENT_HOST) {
       if (!deps.isPanelGeometry(lock)) return null;
       const selection = deps.sculptState.tipSelection;
+      // ★ 本次修复核心：中间层被选中时（host.tierSpan 非 null 且 host.kind === "panel"），
+      // 绿色 WidthCurve 只在**锚点段**（tierSpan.leafStart）画一套，取几何用 span 级合成
+      // 参数——这与 panelBoneGroupTierDisplay 的**绘制判据**同规则（只在锚点段画一套），
+      // 而不是 panelBoneGroupSelectionCoversSegment 的**覆盖判据**（整层每段都为真）。
+      // 原因见 tip-sub-bone-host.js:150：中间层宿主对覆盖的每个 segment 都返回**同一条**
+      // 合成链，若每段都画绿色宽度把手，会在同一批坐标上叠出两套 object 争同一个射线命中点
+      // （tipChainCtx 已用绘制判据避开这个问题，WidthCurve 是同类问题，同规则解决）。
+      // host.tierSpan 为 null（未选中中间层 / 选中的是叶子 / 分组树未启用）时 tierSpan 为
+      // null，下面的 showsSegment 与 placement/edgePoints 逐字回落到改动前的逐叶行为。
+      const tierSpan = host && host.kind === "panel" ? host.tierSpan : null;
+      const tierAnchorSegment = tierSpan ? tierSpan.leafStart : null;
+      // synthSplits/vIdx 只算一次（tierSpan 非 null 时），供 widthParamsFor 的所有调用
+      // 共享同一个数组引用——与 tip-sub-bone-host.js 的 panelTierHost 同规则（那边也是
+      // 在函数作用域算一次 synthSplits/vIdx，chains/forkTFor/chainFrameAt 三个闭包共享同一
+      // 引用），不在每次调用时重算一份新数组。
+      const tierSynthetic = tierSpan
+        ? syntheticSplitsForLeafSpan(host.splits, tierSpan.leafStart, tierSpan.leafEnd)
+        : null;
+      // widthParamsFor：把「取 bone / splits / segment 索引」的分支收敛成一处，
+      // placement 与 edgePoints 都调它——避免两处各写一份 tierSpan 判断（本文件 L42-44
+      // 那条「重复判据迟早长歪」的先例）。中间层命中时 bone 取 host.bones[segment]
+      // （panelTierHost 已把覆盖段全部映射到同一个 tierBone 引用），splits/segment 换成
+      // syntheticSplitsForLeafSpan 的 span 级合成参数（synthSplits/vIdx，取上面算好的
+      // 同一份 tierSynthetic）；否则逐字沿用 tipSplitBones[segment] / tipSplits / segment
+      // （改动前的表达式，一字不变）。
+      const widthParamsFor = (segment) => {
+        if (tierSynthetic) {
+          return { segment: tierSynthetic.vIdx, splits: tierSynthetic.splits, bone: host.bones[segment] || null };
+        }
+        return { segment, splits: tipSplits, bone: tipSplitBones[segment] || null };
+      };
       return {
         base: (!sculptBrushHelpersSuppressed || tipUiActive)
           && !brushDebugVisible
           && lock.panelSplitEnabled !== false
           && tipSplits.length > 0,
         selectedSegment: selection && selection.lockId === lock.id ? selection.segmentIndex : null,
+        tierAnchorSegment,
+        // 门控收敛成一个方法：有 tier 时只认锚点段；无 tier 时逐字保持
+        // selectedSegment === segment（改动前的判据，一字不变）。
+        showsSegment(segment) {
+          return this.tierAnchorSegment !== null
+            ? segment === this.tierAnchorSegment
+            : this.selectedSegment === segment;
+        },
         placement: (segment, side, index) => {
-          const bone = tipSplitBones[segment] || null;
-          const placement = deps.panelTipStrand.tipWidthControlPlacement(lock, segment, tipSplits, bone, side, index);
+          // ★ 三个消费方（tipWidthControlPlacement / tipWidthEdgeRenderPoint 经
+          // panelWidthEdgeRenderPoint / tipWidthSideForkT）必须用同一份合成数组
+          // （0.2.157 的既有教训，见 panel-tip-strand.js 的 syntheticSplitsForLeafSpan
+          // 说明）：widthParamsFor 只调一次，segment/splits/bone 三者一起传下去。
+          const { segment: s, splits, bone } = widthParamsFor(segment);
+          const placement = deps.panelTipStrand.tipWidthControlPlacement(lock, s, splits, bone, side, index);
           if (!placement) return null;
-          return { ...placement, point: panelWidthEdgeRenderPoint(segment, side, placement.t, bone) };
+          return { ...placement, point: panelWidthEdgeRenderPoint(s, side, placement.t, bone, splits) };
         },
         edgePoints: (segment, side) => {
-          const bone = tipSplitBones[segment] || null;
-          const forkT = deps.panelTipStrand.tipWidthSideForkT(lock, segment, tipSplits, side);
+          const { segment: s, splits, bone } = widthParamsFor(segment);
+          const forkT = deps.panelTipStrand.tipWidthSideForkT(lock, s, splits, side);
           if (forkT >= 1) return [];
           const points = [];
           for (let i = 0; i <= 24; i += 1) {
             const t = THREE.MathUtils.lerp(forkT, 1, i / 24);
-            points.push(panelWidthEdgeRenderPoint(segment, side, t, bone));
+            points.push(panelWidthEdgeRenderPoint(s, side, t, bone, splits));
           }
           return points;
         }
@@ -783,6 +895,12 @@ function updateBoneViewHandles(lock, ctx) {
         && Boolean(lock.strandSplitEnabled)
         && lock.id === deps.sel.selectedId,
       selectedSegment: strandSelection && strandSelection.lockId === lock.id ? strandSelection.segmentIndex : null,
+      // 发丝没有分组树/中间层，tierAnchorSegment 恒 null ⇒ showsSegment 恒走
+      // selectedSegment === segment，与改动前逐字等价（发丝分支本次一字未动）。
+      tierAnchorSegment: null,
+      showsSegment(segment) {
+        return this.selectedSegment === segment;
+      },
       placement: (segment, side, index) => strandTipWidthControlPlacement(
         geo, lock, strandSplits, segment, strandBones[segment] || null, side, index
       ),
@@ -792,9 +910,12 @@ function updateBoneViewHandles(lock, ctx) {
     };
   })();
   lock.curveObjects.tipWidthHandles?.forEach((sideHandles, segment) => {
+    // 门控收敛成 tipWidthCtx.showsSegment(segment)（本次修复）：有 tier 时只认锚点段，
+    // 无 tier 时逐字等价于原来的 tipWidthCtx.selectedSegment === segment。两个 forEach
+    // 都调同一个方法，不各写一份 if——理由见 tipWidthCtx 定义处的注释与本文件 L42-44。
     const baseVisible = Boolean(tipWidthCtx)
       && tipWidthCtx.base
-      && tipWidthCtx.selectedSegment === segment;
+      && tipWidthCtx.showsSegment(segment);
     for (const side of [-1, 1]) {
       const list = side < 0 ? sideHandles.left : sideHandles.right;
       list.forEach((handle, index) => {
@@ -821,7 +942,7 @@ function updateBoneViewHandles(lock, ctx) {
   lock.curveObjects.tipWidthLines?.forEach((sideLines, segment) => {
     const lineBase = Boolean(tipWidthCtx)
       && tipWidthCtx.base
-      && tipWidthCtx.selectedSegment === segment;
+      && tipWidthCtx.showsSegment(segment);
     for (const side of [-1, 1]) {
       const line = side < 0 ? sideLines.left : sideLines.right;
       if (!line) continue;
@@ -949,6 +1070,14 @@ function disposeBoneViewHandles(curveObjects) {
   curveObjects.panelSplitHandles?.forEach((handle) => {
     handle.geometry.dispose();
     handle.material.dispose();
+    // 高亮外壳是逐个手动 dispose 的（本清理块不是遍历 children，是直接读 handle.geometry/
+    // material），子对象的几何与材质不会被上面两行带到——必须显式补上，否则每次
+    // disposeBoneViewHandles 都会漏释放一份 SphereGeometry + MeshBasicMaterial。
+    const shell = handle.userData.selectionShell;
+    if (shell) {
+      shell.geometry.dispose();
+      shell.material.dispose();
+    }
   });
   curveObjects.panelSplitLines?.forEach((line) => {
     line.geometry.dispose();

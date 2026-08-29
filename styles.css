@@ -7162,9 +7162,13 @@ body.no-panels .tool-panel {
 }
 
 /* zipper 行 vs 分组行：这两类**语义完全不同**，必须一眼分得开 ——
-   分组行是「一层骨骼」（可选中、笔刷作用于它），zipper 行是「造成分层的那条切缝」
-   （只读镜像，不可选）。用户反馈「混合显示在一起」的另一半原因就是两者样式太像。
-   区分手段：虚线左边框 + 更暗的字色 + 前缀 ✂ 图示 + 略矮的行高。 */
+   分组行是「一层骨骼」（笔刷作用于它），zipper 行是「造成分层的那条切缝」。
+   用户反馈「混合显示在一起」的另一半原因就是两者样式太像。
+   区分手段：虚线左边框 + 更暗的字色 + 前缀 ✂ 图示 + 略矮的行高。
+   ★ 0.2.174 起 zipper 行**也可选中**（点它 = 选中这条切缝 + 切到拥有它的父层），
+   所以本注释原来那句「只读镜像，不可选」已作废；但两类行的**语义区分依然成立**
+   （选中分组行 = 编辑这一层的曲线；选中 zipper 行 = 选中切缝本体，供 Del／「+」分段／
+   视口手柄高亮使用），故上述视觉区分手段一并保留。 */
 .outliner-bone-zipper-row {
   border-left-style: dashed;
   min-height: 18px;
@@ -7175,6 +7179,16 @@ body.no-panels .tool-panel {
   color: #7f97a0;
   font-variant-numeric: tabular-nums;
   font-style: italic;
+}
+
+/* zipper 行选中态：与分组行的 .selected 同一套视觉语言（左侧高亮条 + 提亮字色），
+   但保留 zipper 自己的斜体与 ✂ 前缀，避免选中后两类行又变得难以区分。
+   颜色取视口 zipper 手柄的品红 #ff42cf 同色系，让 outliner 选中态与视口高亮光晕
+   在视觉上对得上（用户要求「视口需要切换到对应的选择层级和zipper选中状态」）。 */
+.outliner-bone-zipper-label.selected {
+  color: #ffc4ee;
+  background: #4a2540;
+  border-color: #ff42cf;
 }
 
 /* 切缝图示。用 ::before 而不是把字符写进 textContent：那样会进入无障碍朗读与
