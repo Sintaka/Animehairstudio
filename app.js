@@ -3,11 +3,11 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-16";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-17";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
-import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-2";
-import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-8";
+import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-3";
+import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-9";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260814-1";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260814-12";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260814-12";
@@ -17,11 +17,11 @@ import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitB
 // 分组树（骨骼树）只读展示：新模块，从未被浏览器缓存过 ⇒ 首次引入用一个全新的 ?v=，
 // 且**没有**给 bone-model.js 加 export（那会迫使它的 13 个 import 站点全部同步 bump，
 // 回访用户拿缓存旧模块解析新 export 会 SyntaxError 打不开整个应用——0.2.110 踩过）。
-import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf, panelBoneGroupPathForZipper, rebuildPanelBoneGroupsFromLevels, remapPanelBoneGroupsForSplitChange } from "./modules/bones/panel-bone-groups.js?v=20260925-10";
+import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf, panelBoneGroupPathForZipper, rebuildPanelBoneGroupsFromLevels, remapPanelBoneGroupsForSplitChange, panelBoneGroupNodeLabel, panelTierEnumeration } from "./modules/bones/panel-bone-groups.js?v=20260925-11";
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
-import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-9";
+import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-10";
 import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-3";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260829-1";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260901-1";
@@ -8867,7 +8867,12 @@ Object.assign(segmentControlDeps, {
   syncStrandSplitLegacyFields,
   syncStrandSplitInputs,
   strandCreationDefaults,
-  STRAND_SPLIT_MAX
+  STRAND_SPLIT_MAX,
+  // 阶段 6：Segment 步进器改走分组树枚举表（stepPanelTierSegment）。与 boneViewHandlesDeps /
+  // boneInteractionDeps 里的同名 selectedPanelBoneGroupPath 是**同一个函数**——读侧必须
+  // 三处同源，否则步进器认为「当前在 L2」而把手却画在别的层。
+  selectedPanelBoneGroupPath,
+  setSelectedPanelBoneGroup
 });
 // Bone interaction api deps batch (refactor bones B2): all deps are defined by this point (last
 // dep: shapePresets / taperEditorDeps block); the batch takes effect here, before the init-block
@@ -15580,7 +15585,18 @@ function syncPanelBoneLevelControls() {
   const splits = Array.isArray(lock.panelSplits) ? lock.panelSplits : [];
   const count = splits.length;
   if (!count) { group.classList.add("hidden"); return; }
-  const index = THREE.MathUtils.clamp(boneLevelZipperIndex, 0, count - 1);
+  // 0.2.175：Zipper Levels 面板与「选中的 zipper」同步（用户要求「outliner 中选中 zipper
+  // 和右侧 Main 面板中的同步一下」）。有 panelSplitSelection（outliner 点 zipper 行、或视口
+  // 拖 zipper 都写它）且指向本 lock 时，面板显示的就是那一条 —— 按 order 反查下标（order 是
+  // 稳定键，下标会随增删漂移）。没有选中时回落到本地步进下标 boneLevelZipperIndex。
+  // 变量名刻意不用 sel：app.js 模块级已有一个 sel（选中态 store，形如 sel.state.selectedId），
+  // 在这里同名会遮蔽它 —— 本函数目前不读那个 sel，但遮蔽是给下一个读者埋的坑。
+  const zipperSel = sculptState.state.panelSplitSelection;
+  let index = THREE.MathUtils.clamp(boneLevelZipperIndex, 0, count - 1);
+  if (zipperSel && zipperSel.lockId === lock.id) {
+    const byOrder = splits.findIndex((s) => Number(s?.order) === Number(zipperSel.order));
+    if (byOrder >= 0) index = byOrder;
+  }
   boneLevelZipperIndex = index;
   const levels = normalizePanelBoneLevels(materializePanelBoneLevels(splits));
   const zipperLabel = document.querySelector("#boneLevelZipperLabel");
@@ -15640,6 +15656,25 @@ function selectedPanelBoneGroupPath() {
   const lock = getSelectedLock();
   if (!lock || selectedPanelBoneGroup.lockId !== lock.id) return null;
   return selectedPanelBoneGroup.path;
+}
+
+// 注入给 segment-control.js（阶段 6：Segment 步进器改走分组树枚举表）。写入方式照抄
+// createPanelBoneGroupRow 点击处理器的既有套路（outliner 分组行点击 = 本函数的第二个
+// 消费方）：写 selectedPanelBoneGroup 后必须调用 syncTipSelectionFromBoneGroup（唯一派生
+// 点，会顺带把 panelSegmentIndex 设成 node.leafStart），再刷新曲线对象与 outliner，
+// 保证「步进器点了一下」与「outliner 点了对应那一行」产生完全相同的下游效果——两条入口
+// 汇入同一个写入函数，不会出现只有一边刷新到位的情形。
+// target 用 lock.id 而不是 getSelectedLock().id：调用方（segment-control.js 的
+// stepPanelTierSegment）已经确认过 target 是当前生效的 panel 目标，这里不重复查一遍
+// getSelectedLock，避免「target 是这个、但 getSelectedLock() 恰好是别的」这种理论上的错位
+// （目前不会发生，因为 stepPanelSegment 在 panel 分支时 target 就是 getSelectedLock()，
+// 但把假设钉在调用方而不是这里更安全）。
+function setSelectedPanelBoneGroup(target, path) {
+  if (!target?.id || !Array.isArray(path)) return;
+  selectedPanelBoneGroup = { lockId: target.id, path: [...path] };
+  syncTipSelectionFromBoneGroup(target);
+  updateCurveObjects(target, { visible: true });
+  renderLockList();
 }
 
 // 「只画当前层」的**绘制**判据（注意与 panelBoneGroupSelectionCoversSegment 的分工）：
@@ -15776,7 +15811,19 @@ function stepBoneLevelZipper(delta) {
   const count = Array.isArray(lock.panelSplits) ? lock.panelSplits.length : 0;
   if (!count) return;
   boneLevelZipperIndex = THREE.MathUtils.clamp(boneLevelZipperIndex + delta, 0, count - 1);
+  // 0.2.175：步进器也写选中态，否则两个方向的同步会打架 —— 用 Prev/Next 走到另一条 zipper 后，
+  // syncPanelBoneLevelControls 会因为 panelSplitSelection 仍指着旧那条而把显示拽回去（实测
+  // 表现为「按了下一个但面板没动」）。写它同时让视口那颗球亮起来，与 outliner 三方一致。
+  const splits = Array.isArray(lock.panelSplits) ? lock.panelSplits : [];
+  const order = Number(splits[boneLevelZipperIndex]?.order);
+  if (Number.isFinite(order)) {
+    sculptState.state.panelSplitSelection = { lockId: lock.id, order };
+  }
   syncPanelBoneLevelControls();
+  // 视口要跟着重画（zipper 球高亮/光晕按 panelSplitSelection 走）。改层级本身不重建几何，
+  // 这里同理只刷曲线对象，不调 updateLockGeometry。
+  updateCurveObjects(lock, { visible: true });
+  renderLockList();
 }
 
 function changeBoneLevel(delta) {
@@ -15887,15 +15934,8 @@ function panelBoneGroupOutlinerApplies(lock) {
   return Boolean(root && Array.isArray(root.children) && root.children.length);
 }
 
-// 分组行的标签：叶节点标它覆盖的 segment 下标（与「Segment 步进器」同一套 1-based 编号），
-// 分组节点标区间。clampedFlat 的节点加一个提示，说明该层因为撞上 MAX_PANEL_BONE_DEPTH
-// 被拍平（不是数据坏了）。
-function panelBoneGroupNodeLabel(node) {
-  const from = Number(node.leafStart) + 1;
-  const to = Number(node.leafEnd) + 1;
-  const span = from === to ? `Segment ${from}` : `Segments ${from}-${to}`;
-  return `L${node.depth} · ${span}`;
-}
+// panelBoneGroupNodeLabel 已挪到 modules/bones/panel-bone-groups.js 做具名导出（阶段 6）：
+// segment-control.js 的步进器标签也要用它，而它不该反向 import app.js，所以放在纯数据模块里。
 
 // 一条 zipper 行：显示它是第几条 zipper、以及它当前所在的层级。
 // **可选中**（0.2.174，用户要求「outliner中增加zipper可选中」）：点它 = 选中这条切缝本身

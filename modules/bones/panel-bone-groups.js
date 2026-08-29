@@ -945,3 +945,51 @@ export function panelBoneGroupTierNodes(lock, path) {
   return parent.children.slice().sort((a, b) => a.leafStart - b.leafStart);
 }
 
+// 分组行的标签：叶节点标它覆盖的 segment 下标（与「Segment 步进器」同一套 1-based 编号），
+// 分组节点标区间。clampedFlat 的节点加一个提示，说明该层因为撞上 MAX_PANEL_BONE_DEPTH
+// 被拍平（不是数据坏了）。
+// ★ 从 app.js 挪到本模块（阶段 6，Segment 步进器要在枚举表上走，标签同样要在这里用）：
+// 本函数是纯函数、只读 node 自身的 leafStart/leafEnd/depth/clampedFlat 四个字段，不依赖
+// app.js 的任何状态，挪过来不改变任何调用点的行为，只是把「谁能读到它」的范围扩大到本模块
+// 的其它导出（下面的 panelTierEnumeration 不需要它，但 segment-control.js 的步进器标签需要）。
+export function panelBoneGroupNodeLabel(node) {
+  const from = Number(node.leafStart) + 1;
+  const to = Number(node.leafEnd) + 1;
+  const span = from === to ? `Segment ${from}` : `Segments ${from}-${to}`;
+  return `L${node.depth} · ${span}`;
+}
+
+// ── 阶段 6：Panel 步进器改走「分组树枚举表」──────────────────────────────────────
+//
+// 背景：用户要「Segment 步进器」在按 +/- 时能停在中间层（如 L2·Segments 2-3），不再只在
+// 叶子之间跳。之前一版方案想改 resolveSegmentSelection 的 index 语义（叶子数组下标 →
+// 枚举表行号），已被主脑否决：taper-editor.js 的 segmentCurveTargetForWrite 有
+// `stored.length === count` 长度守卫（写入路径），把 count 改成枚举表长度会让该守卫恒假，
+// 每次都落到 materializeBones 再用行号去索引叶子数组 —— 静默写错段（数据损坏级）。另有
+// 7 处同样把 selection.index 当叶子数组下标用。resolveSegmentSelection 的语义**保持不变**，
+// 步进器改走的是完全独立的一条路径：枚举表 → selectedPanelBoneGroup，不经过 index/count。
+//
+// 本函数返回分组树的扁平枚举表：前序遍历（父先于子，同父按 leafStart 升序），**跳过根**
+// （L1 = 发片行自己，用户拍板不单独出行——与 outliner 的既有约定一致，见 app.js
+// createOutlinerPanelBoneGroups 的「L1 是发片行自己 ⇒ 从根的子节点开始渲染」）。
+//
+// ★ 顺序必须与 outliner 渲染顺序逐位一致：outliner 走
+// createOutlinerPanelBoneGroups → createPanelBoneGroupRow 的递归，对每个节点先渲染它自己
+// 这一行，再递归它的 children（也是前序）；本函数照抄同一遍历顺序，否则步进顺序会与
+// outliner 里视觉排列的顺序错位（用户按下一步却跳到视觉上不相邻的一行）。
+//
+// 返回 [{ path, node }, ...]，path 是可直接喂给 panelBoneGroupAtPath / setPanelBoneGroupValue
+// 等既有函数的路径数组（根路径除外——根被跳过，不会出现在结果里）。
+export function panelTierEnumeration(root) {
+  const rows = [];
+  if (!root || !Array.isArray(root.children)) return rows;
+  const walk = (node, path) => {
+    rows.push({ path, node });
+    if (Array.isArray(node.children)) {
+      node.children.forEach((child, index) => walk(child, [...path, index]));
+    }
+  };
+  root.children.forEach((child, index) => walk(child, [index]));
+  return rows;
+}
+

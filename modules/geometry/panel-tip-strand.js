@@ -47,7 +47,7 @@ import {
   panelBoneGroupPathForLeaf,
   panelBoneGroupsFor,
   resolvePanelBoneGroupValue
-} from "../bones/panel-bone-groups.js?v=20260925-10";
+} from "../bones/panel-bone-groups.js?v=20260925-11";
 import {
   TIP_WIDTH_CONTROL_POINTS as SHARED_TIP_WIDTH_CONTROL_POINTS,
   buildTipWidthCurveFrom,
@@ -380,13 +380,18 @@ function tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side) {
 }
 
 // §3.3 中间层曲线回落：leaf(bone 自己的值) → 祖先中间层（沿分组链） → lock 的全局曲线。
-// 只用于 taperCurve/taperCurveSecondary —— 这两个字段在 panel-bone-groups.js 的
-// AUTHORABLE_KEYS 白名单里，可以被中间层创作、也可以沿链回落（resolvePanelBoneGroupValue
-// 本来就是干这件事的现成纯函数，直接复用，不新写一份回落公式）。
-// asymmetricWidthCurve **刻意不在这里**：AUTHORABLE_KEYS 没有这个字段，分组树节点上根本
-// 不存在这个属性（只有 tip/AUTHORABLE_KEYS 两类字段），中间层从未有机会创作它 ⇒ 给它加
-// 三级回落等于凭空发明一层新的可创作状态，是设计变更，不是本轮该做的 bug 修复；那个参数
-// 维持原来的 `bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve` 两级回落。
+// 用于 taperCurve/taperCurveSecondary 与 depthCurve/depthCurveSecondary（0.2.175 接入）
+// —— 这四个字段全部在 panel-bone-groups.js 的 AUTHORABLE_KEYS 白名单里，可以被中间层
+// 创作、也可以沿链回落（resolvePanelBoneGroupValue 本来就是干这件事的现成纯函数，
+// 直接复用，不新写一份回落公式）。depthCurve 接入前只有 taperCurve 走了这条链，导致
+// 中间态发尖只有宽度（绿色 WidthCurve）跟着分组层走、深度仍卡在 lock 全局值这一处
+// 用户可见的错位——两者读取的都是同一棵分组树、同一个 AUTHORABLE_KEYS 白名单，没有
+// 理由只接一半。
+// asymmetricWidthCurve / asymmetricDepthCurve **刻意不在这里**：AUTHORABLE_KEYS 没有这两个
+// 字段，分组树节点上根本不存在这两个属性（只有 tip/AUTHORABLE_KEYS 两类字段），中间层从未
+// 有机会创作它们 ⇒ 给它们加三级回落等于凭空发明一层新的可创作状态，是设计变更，不是本轮
+// 该做的 bug 修复；这两个参数维持原来的 `bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve`
+// / `bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve` 两级回落。
 // segmentIndex < 0（主发片路径，无段）或分组树取不到 ⇒ 直接回落 lock[key]，与改前的
 // 「两级回落」逐字节等价（真中间层没有创作过时，resolvePanelBoneGroupValue 沿链一路查到根
 // 全是 null，最终落到 fallback 参数——我们传的正是 lock[key]，退化输出与改前相同）。
@@ -849,9 +854,12 @@ function tipMainSectionPoint(lock, t, u, shell, bone, segmentIndex = -1, splits 
   const origin = frame.point.clone();
   const width = tipPanelWidthAt(lock, t, u, bone, segmentIndex, splits);
   const halfWidth = width * 0.5;
+  // depthCurve 走三级回落（同 taperCurve 口径，见 panelTierCurveFallback 顶部注释）：
+  // 中间层选中并创作深度曲线时，把手必须跟着分组链取值，否则会与下面网格侧的
+  // panelThicknessAt 各读各的、球体与网格厚度错层（本函数正是给把手复刻网格用的）。
   const thickness = Math.max(0.0001, Number(lock.panelThickness ?? 0.08) * sampleAsymmetricTaperCurve(
-    bone?.depthCurve || lock.depthCurve,
-    bone?.depthCurveSecondary || lock.depthCurveSecondary,
+    bone?.depthCurve || panelTierCurveFallback(lock, segmentIndex, "depthCurve"),
+    bone?.depthCurveSecondary || panelTierCurveFallback(lock, segmentIndex, "depthCurveSecondary"),
     bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve,
     shell,
     t
@@ -1600,10 +1608,13 @@ function createPanelStrandGeometry(lock) {
     // above the fork the global panel curve applies. Shared with the viewport handles.
     return Math.max(0.0001, fullWidth * tipWidthMultiplierAt(lock, t, side, bone, segment, splits));
   };
-  const panelThicknessAt = (t, side, bone) => {
+  const panelThicknessAt = (t, side, bone, segment = -1) => {
+    // depthCurve 走三级回落，与 panelWidthAt→tipWidthMultiplierAt 同规格（同一段 bone
+    // 缺创作值时都该沿分组链向上找，不能只有宽度接、深度不接——否则中间态发尖只有
+    // 绿色宽度曲线跟着分组层走，深度仍卡在 lock 全局值，正是本轮要修的错位）。
     return Math.max(0.0001, baseThickness * sampleAsymmetricTaperCurve(
-      bone?.depthCurve || lock.depthCurve,
-      bone?.depthCurveSecondary || lock.depthCurveSecondary,
+      bone?.depthCurve || panelTierCurveFallback(lock, segment, "depthCurve"),
+      bone?.depthCurveSecondary || panelTierCurveFallback(lock, segment, "depthCurveSecondary"),
       bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve,
       side,
       t
@@ -1633,12 +1644,12 @@ function createPanelStrandGeometry(lock) {
     if (latticeControlled) return surfacePanelPoint(lock, sampleT, u, shell);
     const frame = panelFrameAt(sampleT);
     const width = panelWidthAt(sampleT, u, bone, segment);
-    const thickness = panelThicknessAt(sampleT, shell, bone);
+    const thickness = panelThicknessAt(sampleT, shell, bone, segment);
     const centerX = lock.centerAsymmetricProfile && (bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve)
       ? (panelWidthAt(sampleT, 1, bone, segment) - panelWidthAt(sampleT, -1, bone, segment)) * 0.25
       : 0;
     const centerZ = lock.centerAsymmetricProfile && (bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve)
-      ? (panelThicknessAt(sampleT, 1, bone) - panelThicknessAt(sampleT, -1, bone)) * 0.25
+      ? (panelThicknessAt(sampleT, 1, bone, segment) - panelThicknessAt(sampleT, -1, bone, segment)) * 0.25
       : 0;
     // 中面截面曲线（含 camber、**不含** shell 厚度），按 v 参数化 —— 弧长参数化的 Bend 需要
     // 在 [0, u] 上采样它。同步点：tipMainSectionPoint 的 midAt（宽度把手的截面复刻，同规则）。

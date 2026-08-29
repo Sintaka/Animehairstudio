@@ -14,6 +14,15 @@ import {
   resolveSegmentSelection,
   segmentBoneHost
 } from "./bone-model.js?v=20260901-1";
+// 阶段 6：Segment 步进器改走「分组树枚举表」。直接 import 而不是走 deps —— panel-bone-groups.js
+// 是零 import 的纯函数模块（文件头已声明），与 tip-sub-bone-host.js 对它的既有引用方式同规格，
+// 不需要为此另开一条 deps 通道。
+import {
+  panelBoneGroupsFor,
+  panelBoneGroupAtPath,
+  panelTierEnumeration,
+  panelBoneGroupNodeLabel
+} from "./panel-bone-groups.js?v=20260925-11";
 
 // 新拉链需要的最小段跨度：段太窄就放不下一条不退化的拉链。
 const MINIMUM_PANEL_SEGMENT_SPAN = 0.02;
@@ -110,6 +119,12 @@ function hasOrder(splits, order) {
 //   (getSelectedLock/isPanelGeometry/pushUndoState/updateDrawStrandPreview/updateLockGeometry/
 //   rebuildCurveObjects/syncActiveMirror/updateTopologyStats/updateViewportStatsVisibility/
 //   clonePanelSplits/snapPanelSplitHeight) + panelCreationDefaults. document is a browser global.
+//   阶段 6 新增两项（panel 步进器走分组树枚举表）：
+//   selectedPanelBoneGroupPath —— 读当前选中的分组路径（与 tip-sub-bone-host.js 的
+//     `deps.selectedPanelBoneGroupPath` 同一个注入函数，读写两侧同源）；
+//   setSelectedPanelBoneGroup(target, path) —— 写入新的分组选择，内部必须调用既有的
+//     syncTipSelectionFromBoneGroup（否则 panelSegmentIndex 不会跟着分组选择联动，
+//     见 stepSegment 处的大段说明）。
 // Batch-fill point in app.js: after the taperEditorDeps batch (all deps defined).
 export function createSegmentControlApi(deps) {
 function dropDanglingPanelSplitSelection(target, splits) {
@@ -174,6 +189,24 @@ function segmentUi(host) {
 
 // 段选择器 + per-segment Tip Clump + 每段曲线预览的共用同步体。panel 与 strand 只在
 // 描述子（host + segmentUi）上不同，逻辑一份。
+// panel 宿主且当前选中了某个分组路径时，标签显示该分组的 L 记号（如「L2 · Segments 2-3」），
+// 让用户能看出步进器停在了中间层而不是某个具体叶子；否则**逐字保持**原来的 1-based 叶子
+// 编号（`String(index + 1)`）——发丝宿主、以及「panel 但没有分组选择/分组树不适用」两种情况
+// 都落到这一支，字面行为与改动前一致。
+// 不读 resolveSegmentSelection 的 index 语义变化（那个语义没变，见 stepSegment 处的大段说明），
+// 只是在它之外叠加一层「如果当前选中的是中间层，标签换个说法」的展示逻辑。
+function panelSegmentControlLabel(target, host, index) {
+  if (host === PANEL_SEGMENT_HOST) {
+    const path = deps.selectedPanelBoneGroupPath?.();
+    if (Array.isArray(path) && path.length) {
+      const root = panelBoneGroupsFor(target);
+      const node = root ? panelBoneGroupAtPath(root, path) : null;
+      if (node) return panelBoneGroupNodeLabel(node);
+    }
+  }
+  return String(index + 1);
+}
+
 function syncSegmentControls(target, host) {
   // Refresh the width/depth curve preset selects (segment selects included) on every sync,
   // including when no panel target is selected (resets the selects).
@@ -187,7 +220,7 @@ function syncSegmentControls(target, host) {
   if (!selection || !bones) return;
   const { index, count } = selection;
   const bone = bones[index] || null;
-  if (ui.label) ui.label.textContent = String(index + 1);
+  if (ui.label) ui.label.textContent = panelSegmentControlLabel(target, host, index);
   if (ui.previousButton) ui.previousButton.disabled = index === 0;
   if (ui.nextButton) ui.nextButton.disabled = index >= count - 1;
   if (ui.tipClumpInput) ui.tipClumpInput.value = String(bone?.tipClump ?? 0);
@@ -309,13 +342,82 @@ function openStrandSegmentCurveEditor(curveKey = "taperCurve") {
   openSegmentCurveEditor(curveKey);
 }
 
+// ── 阶段 6：panel 步进器改走「分组树枚举表」──────────────────────────────────────
+//
+// ★ 为什么不动 resolveSegmentSelection（也不动它 8 处把 index 当叶子数组下标用的调用点）：
+// 前一版方案想把 index 语义从「叶子数组下标」改成「枚举表行号」，已被主脑复核否决——
+// taper-editor.js 的 segmentCurveTargetForWrite（**写入路径**）有 `stored.length === count`
+// 长度守卫：写入前先判断已物化的骨骼数组长度是否与 count 相等，相等就直接用那个 live 数组，
+// 否则才重新 materializeBones。若把 count 改成枚举表长度（4 行 vs 3 个叶子），这个守卫会
+// 恒假 ⇒ 每次写入都落到 materializeBones 拿到的叶子数组，再用「行号」去索引它 ⇒ 行号 1
+// （L2·Segments 2-3）会被当成叶子数组下标 1（叶子 2）—— 两者在有中间层时数值不同，
+// 于是曲线会静默写到错误的叶子上（数据损坏级，且没有任何报错）。除 segmentCurveTargetForWrite
+// 外还有 7 处同样把 selection.index 当叶子数组下标消费（activeTaperTarget /
+// selectedSegmentIndex / openSegmentCurveEditor 等），逐一改风险远大于收益。
+//
+// ★ 为什么写 selectedPanelBoneGroup 就够、不需要碰 resolveSegmentSelection：
+// syncTipSelectionFromBoneGroup（app.js）的最后一行本来就是
+// `if (anchorSegment !== null && host) sculptState.state[host.segmentIndexKey] = anchorSegment`
+// —— 也就是说 panelSegmentIndex **本来就是**由「当前选中的分组节点」派生出来的
+// （取 node.leafStart 这个叶子下标）。所以步进器只需要在分组树的枚举表上移动一行、把新的
+// path 写进 selectedPanelBoneGroup、再调用既有的 syncTipSelectionFromBoneGroup，
+// resolveSegmentSelection 依然按老规矩钳位读到的 panelSegmentIndex（叶子口径不变），
+// 曲线面板 / 笔刷 / 视口把手 / Width Curve tier 采样这些既有派生链全部自动跟上，不需要
+// 逐一改造。
+//
+// deps.setSelectedPanelBoneGroup 由 app.js 注入，内部写 selectedPanelBoneGroup 后必须调用
+// syncTipSelectionFromBoneGroup（见 deps 注入处的注释）——本函数不直接改 selectedPanelBoneGroup
+// 这个 app.js 内部变量（跨模块没有引用），只能通过注入的 setter 间接改。
+//
+// 定位当前行：优先用注入的「当前分组路径」（deps.selectedPanelBoneGroupPath），在枚举表里
+// findIndex；找不到就用当前 panelSegmentIndex 反查「叶子下标恰好等于它」的那一行——枚举表里
+// 每个叶子下标唯一对应一个 leafStart===leafEnd 的行（叶子划分是不重叠的整数分区，见
+// panel-bone-groups.js 文件头规则 1），这就是「包含该叶子的最深叶节点」那一行。
+function panelTierEnumerationRows(target) {
+  const root = panelBoneGroupsFor(target);
+  return panelTierEnumeration(root);
+}
+
+function stepPanelTierSegment(delta, target) {
+  // selectedPanelBoneGroup 的存储键是 lockId（app.js 的 `{ lockId, path }`），没有稳定 id 的
+  // 目标（panelCreationDefaults——draw 工具激活时的创建默认值，从不进 outliner、也从没有
+  // 分组选择可寻址）无法参与这套机制 ⇒ 视为「分组树不适用」，回落原来的逐叶步进。
+  // 创建默认值的默认 panelSplits 两条 zipper 等高，派生出的分组树本来就是三个平级叶子
+  // （没有真中间层），所以回落到逐叶步进不会有任何可观察的行为差异。
+  if (target?.id == null) return false;
+  const rows = panelTierEnumerationRows(target);
+  if (!rows.length) return false; // 分组树不适用（单段 panel 等）⇒ 回落原来的逐叶步进
+  const currentPath = deps.selectedPanelBoneGroupPath?.();
+  let cur = Array.isArray(currentPath) && currentPath.length
+    ? rows.findIndex((row) => row.path.length === currentPath.length && row.path.every((v, i) => v === currentPath[i]))
+    : -1;
+  if (cur < 0) {
+    // 当前没有分组选择（或选择已失效）：用 panelSegmentIndex 反查叶子行作为起点。
+    const { index: leafIndex } = resolveSegmentSelection(target, deps.sculptState, PANEL_SEGMENT_HOST);
+    cur = rows.findIndex((row) => row.node.leafStart === leafIndex && row.node.leafEnd === leafIndex);
+  }
+  if (cur < 0) cur = 0; // 反查也失败（不应发生，防御性兜底）：从表头开始。
+  const next = THREE.MathUtils.clamp(cur + Math.sign(delta), 0, rows.length - 1);
+  deps.setSelectedPanelBoneGroup?.(target, rows[next].path);
+  return true;
+}
+
 // 段步进：把索引写回 store 后重新同步控件。panel 与发丝只差宿主描述子与「目标 lock
 // 怎么取」，逻辑一份（app.js 只负责转发点击）。
 // 浮动面板的热刷新由 syncSegmentControls 末尾的 retargetOpenSegmentTaperEditor 负责，
 // 这里刻意不再补一次：旧 panel 处理器在 sync 之后又 retarget 一遍，同一次点击把曲线
 // 面板渲染两次。retarget 幂等，去掉只是省功，行为不变。
+//
+// panel 宿主改走 stepPanelTierSegment（枚举表，见上方大段说明）；分组树不适用时
+// （panelBoneGroupsFor 派生不出 children，如单段 panel）该函数返回 false，逐字回落到
+// 下面的叶子步进——与改动前行为一致。发丝宿主（STRAND_SEGMENT_HOST）分支逐字不变，
+// 从不查分组树。
 function stepSegment(delta, target, host, syncControls) {
   if (!target) return;
+  if (host === PANEL_SEGMENT_HOST && stepPanelTierSegment(delta, target)) {
+    syncControls(target);
+    return;
+  }
   const { index, count } = resolveSegmentSelection(target, deps.sculptState, host);
   const next = THREE.MathUtils.clamp(index + Math.sign(delta), 0, count - 1);
   deps.sculptState[host.segmentIndexKey] = next;

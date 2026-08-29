@@ -12,10 +12,10 @@ import {
   SPREAD_MAX,
   STRAND_SEGMENT_HOST
 } from "./bone-model.js?v=20260901-1";
-import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260901-8";
+import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260901-9";
 // syntheticSplitsForLeafSpan（本次修复新增引用）：中间层被选中时，绿色 WidthCurve 只在
 // 锚点段画一套，取值要换成 span 级合成参数——加进这条既有 import，不新开一条 import 语句。
-import { syntheticSplitsForLeafSpan, TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260910-16";
+import { syntheticSplitsForLeafSpan, TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260910-17";
 import {
   strandTipClumpAxis,
   strandTipWidthControlPlacement,
