@@ -1576,6 +1576,9 @@ function normalizePanelSplits(value, fallbackHeight = panelCreationDefaults?.pan
       position: THREE.MathUtils.clamp(Number(split?.position ?? fallback[index % fallback.length].position), -0.88, 0.88),
       height: THREE.MathUtils.clamp(Number(split?.height ?? fallback[index % fallback.length].height), 0, 0.78),
       order: Number.isFinite(rawOrder) ? Math.round(rawOrder) : index,
+      // 原样透传，合法性校验推迟到下面的输出映射处统一做（这里不校验是为了让
+      // 「非法值 ⇒ 不写这个键」这条规则只存在于一个地方）。
+      boneLevel: split?.boneLevel,
       _index: index
     };
   });
@@ -1589,7 +1592,32 @@ function normalizePanelSplits(value, fallbackHeight = panelCreationDefaults?.pan
       .forEach((entry, reindex) => { entry.order = reindex; });
   }
   return entries
-    .map((entry) => ({ position: entry.position, height: entry.height, order: entry.order }))
+    .map((entry) => {
+      const split = { position: entry.position, height: entry.height, order: entry.order };
+      // ★ 0.2.176：boneLevel 必须穿过这层白名单。
+      //
+      // 它是「这条 zipper 在分组树的第几层」的唯一持久载体：panelBoneGroupsFor 的回落链是
+      // ① 已物化的 panelBoneGroups → ② 按 boneLevel 建树 → ③ 按 height 派生，而
+      // rebuildPanelBoneGroupsFromLevels 对**未物化**的 lock 刻意返回 null 不写字段
+      // （物化会把树写进存档、凭空增大 .ahs，不该由改层级触发）⇒ 未物化的 lock 改完层级
+      // 后，新层级只活在 panelSplits[i].boneLevel 这一个地方。
+      // 而 clonePanelSplits 是本函数的浅包装、且 bone-view-handles.js 每次重建把手都无条件
+      // 执行 `lock.panelSplits = deps.clonePanelSplits(...)` ⇒ 原先在这里丢掉 boneLevel，
+      // 就等于「改完层级，下一次重建把手就退回按 height 派生」——正是用户报的「点空位退出
+      // 选择后层级回退」，且已物化的 lock 因为走 ① 而不受影响，表现为时有时无。
+      // 同理 createMirrorPartner(L9617) 也经本函数 ⇒ 镜像发片原先同样丢层级。
+      //
+      // 只在合法时带上这个键（整数 2..MAX_PANEL_BONE_DEPTH，与 panel-bone-groups.js 的
+      // isValidBoneLevel 同口径），非法/缺失一律**不写这个键**而不是补一个默认值：
+      // ① 从未用过层级功能的旧档输出形状与从前逐字节相同；
+      // ② panel-bone-groups.js 里「按 boneLevel 建树」那条回落要求**所有条目都合法**才生效，
+      //    否则整体回落 ③ 按 height 派生 —— 在这里编造一个层级会把那条回落悄悄改成「用假
+      //    数据建树」。（刻意不在注释里写那个函数名：tests/panel-bone-import-contract.test.mjs
+      //    的标识符扫描不排除注释，写了会被误报成「用了但忘了 import」。）
+      const level = entry.boneLevel;
+      if (Number.isInteger(level) && level >= 2 && level <= MAX_PANEL_BONE_DEPTH) split.boneLevel = level;
+      return split;
+    })
     .sort((a, b) => a.position - b.position);
 }
 
@@ -11283,6 +11311,11 @@ function applyAltClickCandidate(candidate) {
         sculptState.state.tipSelection = { lockId: lock.id, segmentIndex: candidate.segmentIndex };
         sculptState.state[host.segmentIndexKey] = candidate.segmentIndex;
       }
+      // ★ 0.2.176：视口 → outliner 同步。上面的 drilled 分支本来就调了 renderLockList，
+      // 这条回落分支（普通发丝、单段 panel 等分组树不适用的情形）原先漏了 ⇒ Alt+点击选中
+      // 发尖后 outliner 不跟着高亮。**刻意只加在 else 里**而不是放到下面两条分支的汇合点，
+      // 否则 drilled 路径会重复渲染一次 outliner。
+      renderLockList();
     }
     updateCurveObjects(lock, { visible: true });
     segmentApi.syncSegmentControlsForLock(lock);
@@ -16057,6 +16090,16 @@ function createPanelBoneGroupRow(lock, node, path, levels) {
     // 中间层接线**静默失效**（把手仍画叶子、笔刷仍写主骨骼），而 outliner 里却显示已选中。
     // 在 outliner 点某个发片的分组行，语义上本来就是「我要编辑这个发片的这一层」。
     if (sel.state.selectedId !== lock.id) selectLock(lock.id);
+    // ★ 0.2.176：选分组行必须清掉 zipper 行的选中态。
+    //
+    // outliner 里有**两套互不相干的选中态**：分组行读 selectedPanelBoneGroup，zipper 行读
+    // sculptState.state.panelSplitSelection（键是 order，见 createPanelBoneZipperRow）。
+    // zipper 行的 handler 已经会连带清/写 selectedPanelBoneGroup（它知道自己该让分组行让位），
+    // 但反方向原先没做 ⇒ 先点分组行再点 zipper 行时，若这条 zipper 的归属层恰好等于刚选中的
+    // 那个分组路径，selectedPanelBoneGroup 会被原地写回同一个值 ⇒ **两行同时显示选中**，
+    // 正是用户报的「先选中发尖再选 zipper，发尖不会取消选择」。
+    // 这里清空是安全的：两者语义互斥（要么在编辑某一层的曲线，要么在调某条切缝的层级）。
+    sculptState.state.panelSplitSelection = null;
     selectedPanelBoneGroup = selected ? null : { lockId: lock.id, path: [...path] };
     // outliner → 视口同步（阶段 5）：选中/取消都交给唯一派生点处理（含置空）。
     syncTipSelectionFromBoneGroup(lock);
@@ -21198,6 +21241,15 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     }
   }
   if (bonesApi.beginPanelSplitHandleDrag(event)) {
+    // ★ 0.2.176：视口 → outliner 同步。该函数两条 return true 都改了 outliner 该显示的选中态
+    // （L294 经 selectTipSubBone 写 tipSelection；L456 写 panelSplitSelection），而
+    // bone-interaction.js 全文件对 renderLockList 命中 0、也没有这个 dep ⇒ 原先视口点中
+    // zipper 手柄或发尖子骨骼后，outliner 的 .selected 不重算，要等下一次别的原因触发重渲染
+    // 才「意外」跟上，正是用户报的「在视口中选择 zipper 或者发尖，outliner 不会同步」。
+    // **刻意在调用点刷新而不是给 bone-interaction.js 加 dep**：加 dep 要 bump 它自己的 ?v= 与
+    // 全部 importer（传递闭包），而这里一行就同时覆盖它的两条成功路径；pointerdown 是离散的
+    // 单次用户动作，多刷一次 outliner 的代价可忽略（renderLockList 全仓已有 45 个调用点）。
+    renderLockList();
     event.preventDefault();
     return;
   }
@@ -21235,6 +21287,10 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
       }
       updateCurveObjects(selectedLockNow, { visible: true });
       segmentApi.syncSegmentControlsForLock(selectedLockNow);
+      // ★ 0.2.176：视口 → outliner 同步（与 beginPanelSplitHandleDrag 调用点同因）。上面两条
+      // 分支都改了 tipSelection，而 outliner 的分组行/zipper 行 .selected 是在 renderLockList
+      // 里重算的 ⇒ 不刷新就停在旧高亮。放在两条分支的汇合点，避免在 if/else 里各写一次。
+      renderLockList();
       // 子发尖段切换：浮动面板开着且正在编辑该 lock 时热刷新到新段。
       taperEditor.retargetOpenSegmentTaperEditor?.(selectedLockNow, hoverSeg);
       event.preventDefault();

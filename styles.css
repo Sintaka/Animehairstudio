@@ -4835,6 +4835,20 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
   white-space: nowrap;
 }
 
+/* Split Segments 区的 Segment 步进器中列放宽：panelSegmentControlLabel（segment-control.js）
+   在选中了 panel 分组树的中间层节点时，output 显示的不再是单个数字，而是
+   panelBoneGroupNodeLabel 拼出的 "L2 · Segments 2-3" 这类长字符串（panel-bone-groups.js），
+   共享的 34px 中列放不下就换行。#panelZipperGroup 绿框内还有一个同结构的 stepper
+   （Zipper Controls 行，output 只显示单个计数，34px 够用），所以用 :has(#panelSegmentLabel)
+   精确点这一个 stepper，不靠容器 id 兜底、不牵连同框的另一个。 */
+#panelZipperGroup .panel-zipper-stepper:has(#panelSegmentLabel) {
+  grid-template-columns: 28px minmax(58px, auto) 28px;
+}
+
+#panelZipperGroup .panel-zipper-stepper:has(#panelSegmentLabel) output {
+  white-space: nowrap;
+}
+
 .panel-zipper-stepper button:disabled {
   cursor: default;
   opacity: 0.35;
