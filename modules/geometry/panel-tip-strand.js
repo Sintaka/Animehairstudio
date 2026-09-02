@@ -35,7 +35,7 @@ function boneToken(bone) {
   return token;
 }
 import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260814-12";
-import { cloneSplitBones, segmentBoneHost } from "../bones/bone-model.js?v=20260901-1";
+import { cloneSplitBones, segmentBoneHost, SPREAD_MAX } from "../bones/bone-model.js?v=20260901-1";
 import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260830-1";
 import { leafWeightAt, leafWeightsValid } from "./leaf-weights.js?v=20260813-1";
 // 直接 import 而不是注入：panel-bone-groups.js 是**零 import 的纯函数模块**，不存在环。
@@ -43,11 +43,14 @@ import { leafWeightAt, leafWeightsValid } from "./leaf-weights.js?v=20260813-1";
 // 叶子链的 rest 必须由祖先层的 delta 顶起来，层级继承是发尖几何的**固有语义**，不是外部关切。
 import {
   panelBoneGroupAncestorsForLeaf,
+  panelBoneGroupClumpDeltaForLeaf,
+  panelBoneGroupClumpDeltaForPath,
   panelBoneGroupLeafSpan,
   panelBoneGroupPathForLeaf,
   panelBoneGroupsFor,
+  panelBoneGroupTipClumpDelta,
   resolvePanelBoneGroupValue
-} from "../bones/panel-bone-groups.js?v=20260925-11";
+} from "../bones/panel-bone-groups.js?v=20260925-12";
 import {
   TIP_WIDTH_CONTROL_POINTS as SHARED_TIP_WIDTH_CONTROL_POINTS,
   buildTipWidthCurveFrom,
@@ -366,7 +369,17 @@ function tipWidthResetCurve(lock, segmentIndex, splits, side) {
 // bone.tipClump, same ramp start): 边缘段外侧镜像对侧 zipper 参数，两侧一致收窄（自动
 // 补全，不展示 UI）。Only when a side has no zipper on either side (no splits at all)
 // does it never gap.
-function tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side) {
+// options.groupPath（0.2.177）：显式告诉本函数「这次调用是在为哪个中间层节点求值」。
+// ★ 为什么必须由调用方传、不能由 segmentIndex 自己推：中间层的显示路径传进来的
+// segmentIndex 是**合成 splits 的虚拟下标 vIdx**（bone-view-handles.js 的 widthParamsFor
+// 里 `segment: tierSynthetic.vIdx`），而 vIdx **数值上等于 tierSpan.leafStart** —— 一个
+// 合法的叶子号。于是「拿 segmentIndex 就地去查它的祖先 delta」在中间层路径上会把**这一层
+// 自己**也算成祖先，delta 被静默多加一次（不报错，只是数字偏大）。两者在数值上无法区分，
+// 所以只能由知道上下文的调用方给出。这与本文件 splitTipForSegment 的 options.ancestorTips
+// 是同一条设计原则（那边同样因为 vIdx 查不出真实祖先，改由调用方显式传入）。
+// 缺省（不传 options）= 叶子路径：segmentIndex 是真实叶子号，祖先 delta 就地推导。
+// 漏传的失败方向是**退回 0.2.176 的行为**（不加 delta），而不是加错——刻意选这个方向。
+function tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side, options = {}) {
   const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
   if (segmentIndex < 0 || segmentIndex >= boundaries.length - 1) return 0;
   let zipper = side < 0 ? splits[segmentIndex - 1] : splits[segmentIndex];
@@ -376,7 +389,23 @@ function tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side) {
   // 把「比例」翻译成 panel 的 u 空间位移（× 段自身半跨度）。发丝侧消费同一个比例，只是
   // 乘的是管内半跨度 —— 那正是「两侧 Tip Clump 数值同义」的构造性保证。
   const span = boundaries[segmentIndex + 1] - boundaries[segmentIndex];
-  return 0.5 * span * tipClumpNarrowFraction(zipper.height ?? 0, bone?.tipClump ?? 0, t);
+  // 中间层的 Tip Clump 走 delta 继承（用户拍板）：叶子最终值 = 叶子自己的值 + 该叶子各祖先
+  // 中间层的 tipClumpDelta 之和，再钳位。★ 钳位只在这里做、不在存储端做，这样
+  // 「叶子 0.9 + delta -0.9」这类合法组合不会被提前截断（同一取舍写在
+  // panel-bone-groups.js 的 delta 归一化注释里，两处必须一致）。
+  const tierPath = Array.isArray(options.groupPath) && options.groupPath.length
+    ? options.groupPath
+    : null;
+  // 中间层路径：整层用同一个有效值（tierEffectiveTipClump 内部已钳位）。取不到（groupPath
+  // 非法或退化成单叶）⇒ 回落裸值，即 0.2.176 的行为，不去就地推导——那会重复计数。
+  const effectiveClump = tierPath
+    ? (tierEffectiveTipClump(lock, tierPath) ?? (bone?.tipClump ?? 0))
+    : THREE.MathUtils.clamp(
+      (bone?.tipClump ?? 0) + panelBoneGroupClumpDeltaForLeaf(lock, segmentIndex),
+      0,
+      SPREAD_MAX
+    );
+  return 0.5 * span * tipClumpNarrowFraction(zipper.height ?? 0, effectiveClump, t);
 }
 
 // §3.3 中间层曲线回落：leaf(bone 自己的值) → 祖先中间层（沿分组链） → lock 的全局曲线。
@@ -471,6 +500,47 @@ function resampleTierCurveToLeaf(lock, tierCurve, leafIndex) {
   const leafGridTs = tipWidthGridTs(lock, leafIndex, splits);
   const out = resampleTierWidthCurveToLeaf({ tierCurve, leafGridTs });
   return Array.isArray(out) && out.length ? out : null;
+}
+
+// 中间层节点的「有效 Tip Clump」，给主脑的 UI 层用（滑杆显示 / 把手落点）。
+// 定义（用户拍板的 delta 继承语义在「均值」这个额外维度上的自然推广）：
+//   mean(该层覆盖的各叶子自己的 tipClump) + 该层自己的 delta + 它全部祖先的 delta 之和，
+//   再 clamp 到 [0, SPREAD_MAX]。
+//
+// 为什么是「叶子均值」而不是任选一个叶子：中间层没有自己的 tipClump 基础值（它只创作
+// delta），要显示一个「这一层大概收窄多少」的代表值时，均值是覆盖多个、可能互不相同的
+// 叶子时最没有偏向性的聚合方式——与 bakeTierWidthCurve 的注释同一取向（那边烘曲线用的
+// 也是「叶子平均」而不是挑一个叶子代表全部，理由逐字相同：不能凭空偏向某一个叶子）。
+// 叶子值本身不参与继承链（它们是基础值，不是别处继承来的），所以这里只加一次 delta 总和，
+// 不会像 splitTipForSegment 的链式复合那样按层展开——「有效值」只是给 UI 一个近似代表数，
+// 不是几何渲染要用的精确逐层复合结果（几何侧的精确定义在 tipWidthSpreadGap，任务 B）。
+//
+// span 走既有的 panelBoneGroupLeafSpan；叶子骨骼取法沿用本文件已有惯例
+// （:1550 `cloneSplitBones(lock.splitBones, splits, lock)`），不新发明取法。
+// groupPath 非法/不是真中间层（退化成单叶）/取不到 span 时均视为「无法算」⇒ 返回 null，
+// 交给调用方决定回退显示（与本模块其余「取不到就返回 null」的既有约定一致）。
+function tierEffectiveTipClump(lock, groupPath) {
+  if (!Array.isArray(groupPath) || !groupPath.length) return null;
+  const span = panelBoneGroupLeafSpan(lock, groupPath);
+  if (!span || span.leafStart === span.leafEnd) return null;
+  const splits = deps.clonePanelSplits(lock.panelSplits, lock.panelSplitHeight);
+  const bones = cloneSplitBones(lock.splitBones, splits, lock);
+  let sum = 0;
+  let count = 0;
+  for (let leaf = span.leafStart; leaf <= span.leafEnd; leaf += 1) {
+    const bone = bones[leaf];
+    if (!bone) continue;
+    sum += Number(bone.tipClump) || 0;
+    count += 1;
+  }
+  if (!count) return null;
+  const mean = sum / count;
+  // 该层自己的 delta（panelBoneGroupTipClumpDelta，不含祖先）+ 严格祖先的 delta 之和
+  // （panelBoneGroupClumpDeltaForPath，不含自己、不含根）——两者相加恰好是「该层及其全部
+  // 祖先」，与文件头定义逐字对应，不重复计也不遗漏任何一层。
+  const ownDelta = panelBoneGroupTipClumpDelta(lock, groupPath) ?? 0;
+  const ancestorDelta = panelBoneGroupClumpDeltaForPath(lock, groupPath);
+  return THREE.MathUtils.clamp(mean + ownDelta + ancestorDelta, 0, SPREAD_MAX);
 }
 
 // Shared tip width sampler: above the segment's fork (locked) or without a segment the
@@ -1073,9 +1143,11 @@ function panelLengthLoopCount(lock) {
 // tipWidthControlPlacement 的原始点，两者必须用同一个 u。
 // **拖拽（bone-interaction.js）刻意不改**：宽度拖拽是比值运算（ratio =
 // latOffset/startLatOffset，起点 ratio==1 不跳变），故渲染先修不会导致起手瞬间跳变。
-function tipWidthEdgeRenderPoint(lock, segmentIndex, splits, bone, side, t) {
+function tipWidthEdgeRenderPoint(lock, segmentIndex, splits, bone, side, t, options = {}) {
   const boundaries = [-1, ...(Array.isArray(splits) ? splits : []).map((split) => split.position), 1];
-  const spreadGap = tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side);
+  // options 原样转发给 tipWidthSpreadGap（见那里对 groupPath 的说明）：中间层显示路径传进来的
+  // segmentIndex 是 vIdx，就地推导祖先 delta 会把这一层自己算进去。
+  const spreadGap = tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side, options);
   const edgeU = side < 0
     ? boundaries[segmentIndex] + spreadGap
     : boundaries[segmentIndex + 1] - spreadGap;
@@ -1103,7 +1175,7 @@ function tipWidthEdgeRenderPoint(lock, segmentIndex, splits, bone, side, t) {
 // 是 splitTipForSegment 的链点，而该链的 rest 已由 tipSurfaceFrameAt → tipMainSectionPoint
 // 含入隆起 ⇒ 绿色宽度把手自动落在拱起后的真实边缘上。在此另加一项会把隆起算两次、
 // 让把手浮到面板表面之外（该 bug 类见 devlog/bug-fixes.md #25）。
-function tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t) {
+function tipWidthEdgePosition(lock, segmentIndex, splits, bone, side, t, options = {}) {
   const tip = splitTipForSegment(lock, segmentIndex, splits, bone);
   if (!tip || tip.points.length < 2 || !tip.restPoints || tip.restPoints.length < 2) return null;
   const curve = new THREE.CatmullRomCurve3(tipChainPointsAsVectors(tip.points));
@@ -1944,6 +2016,7 @@ function createPanelStrandGeometry(lock) {
     splitTipForLeafSpan,
     bakeTierWidthCurve,
     resampleTierCurveToLeaf,
+    tierEffectiveTipClump,
     createPanelStrandGeometry
   };
 }

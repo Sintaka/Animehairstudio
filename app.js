@@ -3,11 +3,11 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-17";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-18";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
-import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-3";
-import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-9";
+import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-4";
+import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-10";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260814-1";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260814-12";
 import { createBranchRootBoneApi } from "./modules/geometry/branch-root-bone.js?v=20260814-12";
@@ -17,11 +17,11 @@ import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitB
 // 分组树（骨骼树）只读展示：新模块，从未被浏览器缓存过 ⇒ 首次引入用一个全新的 ?v=，
 // 且**没有**给 bone-model.js 加 export（那会迫使它的 13 个 import 站点全部同步 bump，
 // 回访用户拿缓存旧模块解析新 export 会 SyntaxError 打不开整个应用——0.2.110 踩过）。
-import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf, panelBoneGroupPathForZipper, rebuildPanelBoneGroupsFromLevels, remapPanelBoneGroupsForSplitChange, panelBoneGroupNodeLabel, panelTierEnumeration } from "./modules/bones/panel-bone-groups.js?v=20260925-11";
+import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf, panelBoneGroupPathForZipper, rebuildPanelBoneGroupsFromLevels, remapPanelBoneGroupsForSplitChange, panelBoneGroupNodeLabel, panelTierEnumeration } from "./modules/bones/panel-bone-groups.js?v=20260925-12";
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
-import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-10";
+import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-11";
 import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-3";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260829-1";
 import { createCreationPresetsApi } from "./modules/io/creation-presets.js?v=20260901-1";
@@ -21279,6 +21279,26 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     const hoverSeg = hasSegments && hover && hover.lockId === selectedLockNow.id ? hover.segmentIndex : null;
     const selected = sculptState.state.tipSelection;
     if (hasSegments && hoverSeg != null) {
+      // ★ 0.2.177：视口点叶子段时，若中间层选中态不覆盖被点的段，必须放手。
+      //
+      // 高亮判据 tipSelectionCoversSegment（bone-view-handles.js）是「tipSelection 精确命中
+      // **或** 选中分组覆盖这一段」，而 WidthCurve 的宿主解析 resolveTipHost 只看
+      // selectedPanelBoneGroup（经 selectedPanelBoneGroupPath），压根不看 tipSelection。
+      // 本分支原先只改 tipSelection ⇒ 已选中 L2·Segments 2-3 时去点 L2·Segment 1，
+      // 分组选中态还在 ⇒ 第二个 OR 分支恒真、2-3 一直高亮，且 WidthCurve 控制线继续钉在
+      // 2-3 上；反复 toggle 也没用，因为 toggle 只动 tipSelection 那一半。
+      // 这正是用户报的「视口点 L2.Segment 1，2-3 仍高亮且控制线仍是 2-3 的」。
+      //
+      // 只在「不覆盖」时清：点中间层自己覆盖的段（如 2-3 里的 Segment 2）不该让它放手 ——
+      // 那是「在这一层内部点了一下」，语义上应保持该层选中（与 outliner 逐级钻取一致）。
+      // 用裸赋值不经 syncTipSelectionFromBoneGroup：那是「分组 → tipSelection」的唯一派生点，
+      // 这里是反向清理，且紧接着的两行本来就显式写了 tipSelection，不新增第二个派生点。
+      // 与 selectLock 里换 lock 时的清理（同样是裸赋值）同规格。
+      if (selectedPanelBoneGroup
+        && selectedPanelBoneGroup.lockId === selectedLockNow.id
+        && !panelBoneGroupSelectionCoversSegment(selectedLockNow, hoverSeg)) {
+        selectedPanelBoneGroup = null;
+      }
       if (selected && selected.lockId === selectedLockNow.id && selected.segmentIndex === hoverSeg) {
         sculptState.state.tipSelection = null; // click again -> back to main selection
       } else {

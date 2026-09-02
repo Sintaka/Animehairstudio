@@ -22,7 +22,7 @@ import {
   panelBoneGroupAtPath,
   panelTierEnumeration,
   panelBoneGroupNodeLabel
-} from "./panel-bone-groups.js?v=20260925-11";
+} from "./panel-bone-groups.js?v=20260925-12";
 
 // 新拉链需要的最小段跨度：段太窄就放不下一条不退化的拉链。
 const MINIMUM_PANEL_SEGMENT_SPAN = 0.02;
