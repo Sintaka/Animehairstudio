@@ -1,12 +1,12 @@
 import { createScalpBuilderApi } from "./modules/scalp/scalp-builder.js?v=20260814-12";
 import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260814-12";
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
-import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-1";
+import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-2";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
 import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-19";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
-import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-4";
+import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-5";
 import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-10";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260814-1";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260814-12";
@@ -8761,6 +8761,29 @@ Object.assign(taperEditorDeps, {
   // 与 sculptGeomDeps 里的同名 dep 是**同一个函数**——必须同源：候选点（瞄哪里）与写入
   // 目标（改哪条数组）来自不同曲线时，就是用户实测的「选中 L2.Segments 2-3 却刷到主发片」。
   widthBrushCurveArray,
+  // ★ 0.2.180：让浮动曲线编辑器认得中间层（缺陷①④）。
+  //
+  // 为什么不直接注入 resolveTipHost：它的 materialize=false 分支返回的是
+  // `{ tip }` **桩对象**（tip-sub-bone-host.js:133），身上没有任何曲线字段 —— 那条分支是给
+  // 「把手放置」用的，只需要发尖链。展示侧若拿它去读曲线，会取到一片 undefined 然后回落到
+  // lock 全局值，表现为「显示的是主发片值」，比修之前更错。
+  //
+  // 所以这里提供一个**读写两条路径都能用**的解析器：
+  // - materialize=true（编辑/写入）：走活树，返回的节点就是写入目标；
+  // - materialize=false（展示/预览）：走 panelBoneGroupsFor 的归一化**副本**，绝不脏 lock，
+  //   但身上带着完整曲线字段，够展示侧读。
+  //   ⚠ 副本不可用于写入（改动会静默丢失）—— 这正是两个 materialize 分支必须分开的原因。
+  // 只认**真**中间层（覆盖 ≥2 个叶子）；单叶节点返回 null ⇒ taper-editor 逐字走叶子旧路径。
+  panelTierNodeForSegment: (lock, segmentIndex, { materialize = false } = {}) => {
+    const path = selectedPanelBoneGroupPath();
+    if (!Array.isArray(path) || !path.length) return null;
+    if (!isPanelGeometry(lock) || lock.panelSplitEnabled === false) return null;
+    const root = materialize ? materializePanelBoneGroups(lock) : panelBoneGroupsFor(lock);
+    const node = root ? panelBoneGroupAtPath(root, path) : null;
+    if (!node || !(node.leafStart < node.leafEnd)) return null;
+    if (!(segmentIndex >= node.leafStart && segmentIndex <= node.leafEnd)) return null;
+    return node;
+  },
   // Width Brush 紫色分支的候选点枚举（taperCurveBrushCandidates）用它把世界坐标投影到
   // 像素——与绿色 tip-width 笔刷（bone-interaction.js）用的是同一个函数，sculptGeom 已在
   // 本行之前定义（1882 行）。

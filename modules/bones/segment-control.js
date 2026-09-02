@@ -301,7 +301,23 @@ function openSegmentCurveEditor(curveKey = "taperCurve") {
   const bone = bones?.[selection.index];
   if (!bone) return;
   const ui = segmentUi(host);
-  if (!Array.isArray(bone[curveKey]) || !bone[curveKey].length) {
+  // ★ 0.2.180（缺陷③）：选中真中间层时**不要**给叶子播种。
+  // 播种本身会在叶子上凭空造出一条曲线；而下面 taperCurveEdit 设好之后，
+  // deps.taperEditor.activeTaperTarget() 已经是中间层优先的（0.2.180），真正该拿到曲线的是
+  // 分组树节点。这里若照旧先写叶子，就会留下一条用户没创作过的叶子曲线，且因为采样侧
+  // 「bone 自己的值优先」，它会把中间层的值盖掉 —— 表现为「铅笔打开的是中间层，但改完没效果」。
+  // 判据只认**真**中间层（覆盖 ≥2 个叶子）；叶子节点路径 leafStart===leafEnd 时 span 为 null，
+  // 逐字走原来的播种，退化行为不变。
+  const tierPath = deps.selectedPanelBoneGroupPath?.();
+  const tierNode = (Array.isArray(tierPath) && tierPath.length)
+    ? (() => {
+      const root = panelBoneGroupsFor(selectedLock);
+      const node = root ? panelBoneGroupAtPath(root, tierPath) : null;
+      return (node && node.leafStart < node.leafEnd
+        && selection.index >= node.leafStart && selection.index <= node.leafEnd) ? node : null;
+    })()
+    : null;
+  if (!tierNode && (!Array.isArray(bone[curveKey]) || !bone[curveKey].length)) {
     bone[curveKey] = deps.shapePresets.cloneShapePresetValue(selectedLock[curveKey]);
   }
   if (deps.sweepProfileEditor.open) deps.branchSweep.closeSweepProfileEditor();

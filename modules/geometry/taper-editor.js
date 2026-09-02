@@ -47,6 +47,18 @@ export function createTaperEditorApi(deps) {
 function activeStrandShapeTarget() {
   return deps.getSelectedLock() || (deps.creationToolActive() ? deps.activeCreationShapeDefaults() : null);
 }
+// ★ 0.2.180：段编辑命中中间层时的宿主节点。缺 dep / 没选中中间层 / 选中的不是真中间层
+// （leafStart===leafEnd 的叶子段）⇒ 返回 null ⇒ 调用方逐字回落到原来的叶子路径。
+// 解析交给注入的 dep（app.js 的 panelTierNodeForSegment），它内部取当前选中的分组路径 ——
+// 不在这里另起一套「当前选中的是谁」判据：本仓「三套互不知情的选中判据」正是屎山的形状，
+// 浮动编辑器这条链过去只认叶子（resolveSegmentSelection），选中中间层时套曲线预设会静默
+// 写到叶子。materialize=true 走活树（编辑/写入路径必须，副本上的改动会丢），
+// false 走归一化副本（展示/预览，绝不脏 lock）。两条路径的取向差异见该 dep 处的注释。
+function tierBoneForSegment(lock, segmentIndex, materialize) {
+  const resolve = deps.panelTierNodeForSegment;
+  if (typeof resolve !== "function") return null;
+  return resolve(lock, segmentIndex, { materialize }) || null;
+}
 function activeTaperTarget() {
   if (!deps.sculptState.taperCurveEdit) return null;
   if (deps.sculptState.taperCurveEdit.type === "segment") {
@@ -64,9 +76,32 @@ function activeTaperTarget() {
     const bones = (Array.isArray(stored) && stored.length === segmentCount)
       ? stored
       : host.materializeBones(lock);
-    const bone = bones?.[deps.sculptState.taperCurveEdit.segmentIndex] || null;
-    if (!bone) return null;
+    const segmentIndex = deps.sculptState.taperCurveEdit.segmentIndex;
     const curveKey = deps.sculptState.taperCurveEdit.curveKey;
+    // ★ 0.2.180：中间层优先。选中真中间层且它覆盖当前段时，编辑目标是**分组树节点**而不是
+    // 叶子 bone —— 否则「选中 L2·Segments 2-3 后套曲线预设 / 加删点 / Reset」全部静默写到
+    // 锚点叶子，用户看到「只有一部分变了」。视口侧（笔刷/拖拽）早已经过 resolveTipHost
+    // 覆盖中间层，只有浮动编辑器这条链漏着，两侧因此读写不同源。
+    const tierBone = tierBoneForSegment(lock, segmentIndex, true);
+    if (tierBone) {
+      // 首笔播种沿用 widthBrushCurveArray（它内部先 bake 叶子曲线、失败才回落沿链取值）：
+      // 直接 clone lock[curveKey] 会在「各叶子已各自创作过」时第一笔就跳变（理由见
+      // panel-tip-strand.js bake 相关注释）。宽度键才有这条通路；depth 键的中间层创作入口
+      // 尚未接（见 devlog 计划第 3 步，用户已拍板延后）⇒ depth 维持回落、不在这里假装能写。
+      const isWidthKey = curveKey === "taperCurve" || curveKey === "taperCurveSecondary";
+      if (isWidthKey && typeof deps.widthBrushCurveArray === "function"
+        && (!Array.isArray(tierBone[curveKey]) || !tierBone[curveKey].length)) {
+        deps.widthBrushCurveArray(lock, curveKey === "taperCurveSecondary" ? "secondary" : "primary");
+      }
+      if (Array.isArray(tierBone[curveKey]) && tierBone[curveKey].length) {
+        if (tierBone.centerAsymmetricProfile == null) tierBone.centerAsymmetricProfile = Boolean(lock.centerAsymmetricProfile);
+        return tierBone;
+      }
+      // 播种没成功（非宽度键 / dep 缺失 / bake 与回落都拿不到数组）⇒ 不返回一个没有曲线的
+      // 节点（那会让编辑器拿到 null 曲线、表现为「点了没反应」），逐字回落到叶子路径。
+    }
+    const bone = bones?.[segmentIndex] || null;
+    if (!bone) return null;
     if (!Array.isArray(bone[curveKey]) || !bone[curveKey].length) {
       bone[curveKey] = deps.shapePresets.cloneShapePresetValue(lock[curveKey]);
     }
@@ -194,7 +229,11 @@ function segmentCurveTarget() {
   const lock = deps.getSelectedLock();
   const selection = resolveSegmentSelection(lock, deps.sculptState);
   if (!selection) return null;
-  const bone = selection.host.bonesFor(lock)?.[selection.index];
+  // ★ 0.2.180（缺陷④）：中间层优先，与 segmentCurveTargetForWrite（写入侧）同源。
+  // 两侧必须一起改：只改写入侧会变成「显示的是叶子值、写的是中间层」，比原来的错位更难查。
+  // materialize=false：显示/预览路径绝不能物化（那会凭空把树写进存档）。
+  const bone = tierBoneForSegment(lock, selection.index, false)
+    || selection.host.bonesFor(lock)?.[selection.index];
   if (!bone) return null;
   return {
     ...bone,
@@ -216,6 +255,10 @@ function segmentCurveTargetForWrite() {
   const selection = resolveSegmentSelection(lock, deps.sculptState);
   if (!selection) return null;
   const { host, index, count } = selection;
+  // ★ 0.2.180（缺陷①）：中间层优先。这是「选中中间层却把曲线预设静默写到叶子」的写入侧
+  // 真因——本函数过去只问 resolveSegmentSelection（叶子整数下标），从不查分组路径。
+  const tierBone = tierBoneForSegment(lock, index, true);
+  if (tierBone) return tierBone;
   const stored = lock[host.bonesField];
   const bones = (Array.isArray(stored) && stored.length === count)
     ? stored
