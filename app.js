@@ -17,7 +17,7 @@ import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitB
 // 分组树（骨骼树）只读展示：新模块，从未被浏览器缓存过 ⇒ 首次引入用一个全新的 ?v=，
 // 且**没有**给 bone-model.js 加 export（那会迫使它的 13 个 import 站点全部同步 bump，
 // 回访用户拿缓存旧模块解析新 export 会 SyntaxError 打不开整个应用——0.2.110 踩过）。
-import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf, panelBoneGroupPathForZipper, rebuildPanelBoneGroupsFromLevels, remapPanelBoneGroupsForSplitChange, panelBoneGroupNodeLabel, panelTierEnumeration } from "./modules/bones/panel-bone-groups.js?v=20260925-12";
+import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, normalizePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf, panelBoneGroupPathForZipper, rebuildPanelBoneGroupsFromLevels, remapPanelBoneGroupsForSplitChange, panelBoneGroupNodeLabel, panelTierEnumeration } from "./modules/bones/panel-bone-groups.js?v=20260925-12";
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
@@ -1599,7 +1599,9 @@ function normalizePanelSplits(value, fallbackHeight = panelCreationDefaults?.pan
       // 它是「这条 zipper 在分组树的第几层」的唯一持久载体：panelBoneGroupsFor 的回落链是
       // ① 已物化的 panelBoneGroups → ② 按 boneLevel 建树 → ③ 按 height 派生，而
       // rebuildPanelBoneGroupsFromLevels 对**未物化**的 lock 刻意返回 null 不写字段
-      // （物化会把树写进存档、凭空增大 .ahs，不该由改层级触发）⇒ 未物化的 lock 改完层级
+      // （★ 0.2.178 起这句括号里的前提才成立：分组树在此之前**根本不进存档**，所以当时
+      // 「物化会把树写进存档、凭空增大 .ahs」是个失效理由；现在树确实进存档了，这条理由
+      // 恢复有效，「不该由改层级触发物化」的取向不变）⇒ 未物化的 lock 改完层级
       // 后，新层级只活在 panelSplits[i].boneLevel 这一个地方。
       // 而 clonePanelSplits 是本函数的浅包装、且 bone-view-handles.js 每次重建把手都无条件
       // 执行 `lock.panelSplits = deps.clonePanelSplits(...)` ⇒ 原先在这里丢掉 boneLevel，
@@ -9950,6 +9952,28 @@ function setMirrorXEditing(enabled) {
   }
 }
 
+// ★ 0.2.178：中间层分组树进快照。在此之前 lock 键枚举里没有这个键，于是中间层节点上的
+// 全部创作值（4 条曲线 + tip + tipClumpDelta）**存盘即蒸发，且每按一次撤销也蒸发一次**
+// —— snapshotState 同时服务存盘、撤销、重做、崩溃恢复与 File>New 基准五条路径，所以症状
+// 远不止「关文件才丢」。读回侧无罪（restoreLock 是 spread-first，盘上有就一路穿透），
+// 丢失点唯一，就在这个枚举。
+//
+// 两个取向，都不是随手选的：
+// ① **未物化 / 非法一律不写这个键**（返回 null ⇒ 调用处用条件展开整键省略），而不是写
+//    null 或补一棵派生树。这样从未用过层级功能的旧档，输出形状与从前逐字节相同；且树的
+//    缺失本身是有意义的信号——分组树的回落链（已物化 → 按层级建树 → 按 height 派生）
+//    要靠「没有已存树」来决定走后两级，凭空写一棵会把那条回落悄悄改成「用假数据建树」。
+//    与 panelSplits 白名单里 boneLevel 的既有取向同一口径。
+// ② **必须深拷贝**。归一化函数会重建节点结构，但曲线数组等可创作值是**按引用赋值**的
+//    （实测：改动源树后归一化结果跟着变），而撤销栈存的是内存对象、不经 JSON 往返
+//    ⇒ 只做归一化会让快照与用户正在编辑的那棵树共享曲线数组，撤销回去拿到的是已被改过
+//    的同一份数据。这里补一次 JSON 往返拿到真正独立的副本（树是纯数据，往返安全）。
+function snapshotPanelBoneGroupsFor(lock) {
+  const leafCount = (Array.isArray(lock?.panelSplits) ? lock.panelSplits.length : 0) + 1;
+  const normalized = normalizePanelBoneGroups(lock?.panelBoneGroups, leafCount);
+  return normalized ? JSON.parse(JSON.stringify(normalized)) : null;
+}
+
 function snapshotState() {
   return {
     scalpAttachmentVersion: 4,
@@ -10161,7 +10185,12 @@ function snapshotState() {
       pointTwists: [...lock.pointTwists],
       curveLatticeBinding: lock.curveLatticeBinding ? { ...lock.curveLatticeBinding } : null,
       groupLatticeBasePoints: lock.groupLatticeBasePoints?.map(vectorToData) || null,
-      placementFrame: lock.placementFrame ? frameToData(lock.placementFrame) : null
+      placementFrame: lock.placementFrame ? frameToData(lock.placementFrame) : null,
+      // 未物化 / 非法 ⇒ 整个键省略（理由见 snapshotPanelBoneGroupsFor 的注释①）
+      ...(() => {
+        const groups = snapshotPanelBoneGroupsFor(lock);
+        return groups ? { panelBoneGroups: groups } : {};
+      })()
     })),
     referenceImages: referenceImages.map(referenceHeadApi.serializeReferenceImage),
     guides: guides.map((guide) => guide.type === "capsule" ? {
