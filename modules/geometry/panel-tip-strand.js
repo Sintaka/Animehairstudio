@@ -433,6 +433,23 @@ function panelTierCurveFallback(lock, segmentIndex, key) {
   return resolvePanelBoneGroupValue(root, path, key, lock[key]);
 }
 
+// ★ 0.2.178：四条曲线取值的**唯一入口**（叶子 bone → 分组链 → lock 三级）。
+//
+// 在此之前每个消费点都手写 `bone?.key || panelTierCurveFallback(lock, idx, key)` 这个前缀，
+// 六处逐字重复。收成一个入口的理由不是「少打几个字」，而是**漏接的默认后果变了**：
+// 手写前缀时，漏掉分组链那一级仍然能跑、只是静默取错层（取到 lock 全局值），
+// 症状是「刷了中间层但几何没动」这类没有报错的错位；改用本函数后，新消费点照抄一行即可，
+// 漏接的表现从「静默取错层」变成「取不到值」——后者会立刻暴露。
+//
+// **`||` 不是 `??`，是刻意的**：曲线是控制点数组，空数组 `[]` 为真值，两者对数组行为一致；
+// 但这里保留原来的 `||` 以保证与改造前逐位等价（本函数是纯粹的提取，不改任何语义）。
+//
+// asymmetricWidthCurve / asymmetricDepthCurve **刻意不走本函数**：分组树节点上没有这两个
+// 字段（理由见 panelTierCurveFallback 上方注释），它们维持 `bone?.x ?? lock.x` 两级回落。
+function panelTierCurve(lock, bone, segmentIndex, key) {
+  return bone?.[key] || panelTierCurveFallback(lock, segmentIndex, key);
+}
+
 // ── 中间层 WidthCurve 所有权转移的接线（0.2.172）─────────────────────────────────
 //
 // 这两个函数把 tip-width-curve.js 里的纯数学（bakeTierWidthCurveFromLeaves /
@@ -583,8 +600,8 @@ function tipWidthMultiplierAt(lock, t, u, bone, segmentIndex = -1, splits = null
     );
   }
   return sampleAsymmetricTaperCurve(
-    bone?.taperCurve || panelTierCurveFallback(lock, segmentIndex, "taperCurve"),
-    bone?.taperCurveSecondary || panelTierCurveFallback(lock, segmentIndex, "taperCurveSecondary"),
+    panelTierCurve(lock, bone, segmentIndex, "taperCurve"),
+    panelTierCurve(lock, bone, segmentIndex, "taperCurveSecondary"),
     bone?.asymmetricWidthCurve ?? lock.asymmetricWidthCurve,
     (u - centerU) / halfSpan,
     t,
@@ -928,8 +945,8 @@ function tipMainSectionPoint(lock, t, u, shell, bone, segmentIndex = -1, splits 
   // 中间层选中并创作深度曲线时，把手必须跟着分组链取值，否则会与下面网格侧的
   // panelThicknessAt 各读各的、球体与网格厚度错层（本函数正是给把手复刻网格用的）。
   const thickness = Math.max(0.0001, Number(lock.panelThickness ?? 0.08) * sampleAsymmetricTaperCurve(
-    bone?.depthCurve || panelTierCurveFallback(lock, segmentIndex, "depthCurve"),
-    bone?.depthCurveSecondary || panelTierCurveFallback(lock, segmentIndex, "depthCurveSecondary"),
+    panelTierCurve(lock, bone, segmentIndex, "depthCurve"),
+    panelTierCurve(lock, bone, segmentIndex, "depthCurveSecondary"),
     bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve,
     shell,
     t
@@ -1685,8 +1702,8 @@ function createPanelStrandGeometry(lock) {
     // 缺创作值时都该沿分组链向上找，不能只有宽度接、深度不接——否则中间态发尖只有
     // 绿色宽度曲线跟着分组层走，深度仍卡在 lock 全局值，正是本轮要修的错位）。
     return Math.max(0.0001, baseThickness * sampleAsymmetricTaperCurve(
-      bone?.depthCurve || panelTierCurveFallback(lock, segment, "depthCurve"),
-      bone?.depthCurveSecondary || panelTierCurveFallback(lock, segment, "depthCurveSecondary"),
+      panelTierCurve(lock, bone, segment, "depthCurve"),
+      panelTierCurve(lock, bone, segment, "depthCurveSecondary"),
       bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve,
       side,
       t

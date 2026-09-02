@@ -273,7 +273,8 @@ test("接线：app.js 的 widthBrushCurveArray 必须调用 bakeTierWidthCurve",
 // ---------------------------------------------------------------------------
 // ★ 接线断言（源码级）：写回必须两处都写。
 // 只写一处的话另一处的旧值会在读取时优先命中、把写回的值盖掉 ⇒「视觉不变」不成立。
-// 采样侧读的是 `bone?.taperCurve || panelTierCurveFallback(...)`（bone 自己的值优先）。
+// 采样侧读的是统一入口 `panelTierCurve(lock, bone, ..., "taperCurve")`（0.2.178 起；
+// 它内部就是原先手写的 `bone?.taperCurve || panelTierCurveFallback(...)`，bone 自己的值优先）。
 // ---------------------------------------------------------------------------
 test("接线：写回必须同时落到 splitBones 与分组树叶节点两处", () => {
   const src = readFileSync(new URL("../app.js", import.meta.url), "utf8");

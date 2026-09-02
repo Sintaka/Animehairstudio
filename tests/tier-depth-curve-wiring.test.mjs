@@ -215,11 +215,19 @@ test("网格路径：createPanelStrandGeometry 的段厚度也读到中间层创
 });
 
 // ---------------------------------------------------------------------------
-// ★ 接线断言（源码级）：两个读取点都必须走 panelTierCurveFallback，不能只改一处。
+// ★ 接线断言（源码级）：两个读取点都必须走三级取值入口，不能只改一处。
 // 只改一处会造成「把手用了层级值、网格没用」（或反过来）的新错位——这条直接钉住两处
 // 调用点的源码文本，比数值判据更早发现「漏改一处」这类回归。
+//
+// ★ 0.2.178：断言的**文本形状**跟着生产代码更新了，守的性质**没有放宽**——
+// 原先钉的是手写前缀 `bone?.depthCurve || panelTierCurveFallback(...)`，
+// 现在钉的是统一入口 `panelTierCurve(lock, bone, ..., "depthCurve")`。
+// 两者语义逐位等价（入口函数体就是那个前缀，已用 205 个采样点的数值探针验证改造前后
+// 逐位相同，且反转回落顺序会让 6 行数值变化 ⇒ 判据有分辨力）。
+// 改文本形状而不是放宽成「只要出现 depthCurve 就算过」：后者会让「漏改一处」重新变成
+// 检测不到的回归，正是这条断言存在的理由。
 // ---------------------------------------------------------------------------
-test("接线：tipMainSectionPoint 与 panelThicknessAt 两处都必须调用 panelTierCurveFallback(..., \"depthCurve\")", () => {
+test("接线：tipMainSectionPoint 与 panelThicknessAt 两处都必须调用统一入口 panelTierCurve(..., \"depthCurve\")", () => {
   const src = readFileSync(new URL("../modules/geometry/panel-tip-strand.js", import.meta.url), "utf8");
 
   const sectionAt = src.indexOf("function tipMainSectionPoint(");
@@ -227,13 +235,13 @@ test("接线：tipMainSectionPoint 与 panelThicknessAt 两处都必须调用 pa
   const sectionBody = src.slice(sectionAt, src.indexOf("\n}", sectionAt));
   assert.match(
     sectionBody,
-    /bone\?\.depthCurve \|\| panelTierCurveFallback\(lock, segmentIndex, "depthCurve"\)/,
-    "tipMainSectionPoint 必须把 depthCurve 接到 panelTierCurveFallback"
+    /panelTierCurve\(lock, bone, segmentIndex, "depthCurve"\)/,
+    "tipMainSectionPoint 必须把 depthCurve 接到统一取值入口"
   );
   assert.match(
     sectionBody,
-    /bone\?\.depthCurveSecondary \|\| panelTierCurveFallback\(lock, segmentIndex, "depthCurveSecondary"\)/,
-    "tipMainSectionPoint 必须把 depthCurveSecondary 接到 panelTierCurveFallback"
+    /panelTierCurve\(lock, bone, segmentIndex, "depthCurveSecondary"\)/,
+    "tipMainSectionPoint 必须把 depthCurveSecondary 接到统一取值入口"
   );
 
   const thicknessAt = src.indexOf("const panelThicknessAt = ");
@@ -241,12 +249,12 @@ test("接线：tipMainSectionPoint 与 panelThicknessAt 两处都必须调用 pa
   const thicknessBody = src.slice(thicknessAt, src.indexOf("\n  };", thicknessAt));
   assert.match(
     thicknessBody,
-    /bone\?\.depthCurve \|\| panelTierCurveFallback\(lock, segment, "depthCurve"\)/,
-    "panelThicknessAt（网格路径）必须把 depthCurve 接到 panelTierCurveFallback"
+    /panelTierCurve\(lock, bone, segment, "depthCurve"\)/,
+    "panelThicknessAt（网格路径）必须把 depthCurve 接到统一取值入口"
   );
   assert.match(
     thicknessBody,
-    /bone\?\.depthCurveSecondary \|\| panelTierCurveFallback\(lock, segment, "depthCurveSecondary"\)/,
-    "panelThicknessAt（网格路径）必须把 depthCurveSecondary 接到 panelTierCurveFallback"
+    /panelTierCurve\(lock, bone, segment, "depthCurveSecondary"\)/,
+    "panelThicknessAt（网格路径）必须把 depthCurveSecondary 接到统一取值入口"
   );
 });
