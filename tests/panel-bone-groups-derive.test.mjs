@@ -59,13 +59,10 @@ function anyClampedFlat(node) {
 }
 
 const CREATIVE_FIELDS = [
-  "tipClump",
   "taperCurve",
   "taperCurveSecondary",
   "depthCurve",
-  "depthCurveSecondary",
-  "splitEnabled",
-  "splitSnapToLoops"
+  "depthCurveSecondary"
 ];
 
 function assertCreativeFieldsNull(node, path = "root") {

@@ -43,14 +43,11 @@ import { leafWeightAt, leafWeightsValid } from "./leaf-weights.js?v=20260813-1";
 // 叶子链的 rest 必须由祖先层的 delta 顶起来，层级继承是发尖几何的**固有语义**，不是外部关切。
 import {
   panelBoneGroupAncestorsForLeaf,
-  panelBoneGroupClumpDeltaForLeaf,
-  panelBoneGroupClumpDeltaForPath,
   panelBoneGroupLeafSpan,
   panelBoneGroupPathForLeaf,
   panelBoneGroupsFor,
-  panelBoneGroupTipClumpDelta,
   resolvePanelBoneGroupValue
-} from "../bones/panel-bone-groups.js?v=20260925-12";
+} from "../bones/panel-bone-groups.js?v=20260925-13";
 import {
   TIP_WIDTH_CONTROL_POINTS as SHARED_TIP_WIDTH_CONTROL_POINTS,
   buildTipWidthCurveFrom,
@@ -389,22 +386,15 @@ function tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side, options = 
   // 把「比例」翻译成 panel 的 u 空间位移（× 段自身半跨度）。发丝侧消费同一个比例，只是
   // 乘的是管内半跨度 —— 那正是「两侧 Tip Clump 数值同义」的构造性保证。
   const span = boundaries[segmentIndex + 1] - boundaries[segmentIndex];
-  // 中间层的 Tip Clump 走 delta 继承（用户拍板）：叶子最终值 = 叶子自己的值 + 该叶子各祖先
-  // 中间层的 tipClumpDelta 之和，再钳位。★ 钳位只在这里做、不在存储端做，这样
-  // 「叶子 0.9 + delta -0.9」这类合法组合不会被提前截断（同一取舍写在
-  // panel-bone-groups.js 的 delta 归一化注释里，两处必须一致）。
+  // 用户拍板 D1：tipClump 不做数据继承/层级共享，每个骨骼独立控制——delta 继承机制已
+  // 整套删除。中间层路径（options.groupPath）用 tierEffectiveTipClump 的纯叶子均值；
+  // 叶子路径直接取叶子自己的裸值，两条分支都不再叠加任何祖先贡献。
   const tierPath = Array.isArray(options.groupPath) && options.groupPath.length
     ? options.groupPath
     : null;
-  // 中间层路径：整层用同一个有效值（tierEffectiveTipClump 内部已钳位）。取不到（groupPath
-  // 非法或退化成单叶）⇒ 回落裸值，即 0.2.176 的行为，不去就地推导——那会重复计数。
   const effectiveClump = tierPath
     ? (tierEffectiveTipClump(lock, tierPath) ?? (bone?.tipClump ?? 0))
-    : THREE.MathUtils.clamp(
-      (bone?.tipClump ?? 0) + panelBoneGroupClumpDeltaForLeaf(lock, segmentIndex),
-      0,
-      SPREAD_MAX
-    );
+    : (bone?.tipClump ?? 0);
   return 0.5 * span * tipClumpNarrowFraction(zipper.height ?? 0, effectiveClump, t);
 }
 
@@ -520,17 +510,14 @@ function resampleTierCurveToLeaf(lock, tierCurve, leafIndex) {
 }
 
 // 中间层节点的「有效 Tip Clump」，给主脑的 UI 层用（滑杆显示 / 把手落点）。
-// 定义（用户拍板的 delta 继承语义在「均值」这个额外维度上的自然推广）：
-//   mean(该层覆盖的各叶子自己的 tipClump) + 该层自己的 delta + 它全部祖先的 delta 之和，
-//   再 clamp 到 [0, SPREAD_MAX]。
+// 定义（用户拍板 D1：tipClump 不做数据继承/层级共享，每个骨骼独立控制，delta 继承机制
+// 已整套删除——原先的 mean + 自身 delta + 祖先 delta 之和，收窄成纯叶子均值）：
+//   mean(该层覆盖的各叶子自己的 tipClump)，clamp 到 [0, SPREAD_MAX]。
 //
-// 为什么是「叶子均值」而不是任选一个叶子：中间层没有自己的 tipClump 基础值（它只创作
-// delta），要显示一个「这一层大概收窄多少」的代表值时，均值是覆盖多个、可能互不相同的
-// 叶子时最没有偏向性的聚合方式——与 bakeTierWidthCurve 的注释同一取向（那边烘曲线用的
-// 也是「叶子平均」而不是挑一个叶子代表全部，理由逐字相同：不能凭空偏向某一个叶子）。
-// 叶子值本身不参与继承链（它们是基础值，不是别处继承来的），所以这里只加一次 delta 总和，
-// 不会像 splitTipForSegment 的链式复合那样按层展开——「有效值」只是给 UI 一个近似代表数，
-// 不是几何渲染要用的精确逐层复合结果（几何侧的精确定义在 tipWidthSpreadGap，任务 B）。
+// 为什么是「叶子均值」而不是任选一个叶子：中间层没有自己的 tipClump 基础值，要显示一个
+// 「这一层大概收窄多少」的代表值时，均值是覆盖多个、可能互不相同的叶子时最没有偏向性的
+// 聚合方式——与 bakeTierWidthCurve 的注释同一取向（那边烘曲线用的也是「叶子平均」而不是
+// 挑一个叶子代表全部，理由逐字相同：不能凭空偏向某一个叶子）。
 //
 // span 走既有的 panelBoneGroupLeafSpan；叶子骨骼取法沿用本文件已有惯例
 // （:1550 `cloneSplitBones(lock.splitBones, splits, lock)`），不新发明取法。
@@ -552,12 +539,7 @@ function tierEffectiveTipClump(lock, groupPath) {
   }
   if (!count) return null;
   const mean = sum / count;
-  // 该层自己的 delta（panelBoneGroupTipClumpDelta，不含祖先）+ 严格祖先的 delta 之和
-  // （panelBoneGroupClumpDeltaForPath，不含自己、不含根）——两者相加恰好是「该层及其全部
-  // 祖先」，与文件头定义逐字对应，不重复计也不遗漏任何一层。
-  const ownDelta = panelBoneGroupTipClumpDelta(lock, groupPath) ?? 0;
-  const ancestorDelta = panelBoneGroupClumpDeltaForPath(lock, groupPath);
-  return THREE.MathUtils.clamp(mean + ownDelta + ancestorDelta, 0, SPREAD_MAX);
+  return THREE.MathUtils.clamp(mean, 0, SPREAD_MAX);
 }
 
 // Shared tip width sampler: above the segment's fork (locked) or without a segment the

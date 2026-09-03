@@ -137,31 +137,27 @@ test("写 null 清除创作：hasOwnValue 变 false，有效值回落到祖先/f
   const lock = makeLock(TEST1_SPLITS);
   materializePanelBoneGroups(lock);
 
-  setPanelBoneGroupValue(lock, [], "tipClump", 0.75); // 根节点上先创作一个值
-  setPanelBoneGroupValue(lock, [0], "tipClump", 0.2); // 目标节点自己也创作一个值
-  assert.equal(panelBoneGroupHasOwnValue(lock, [0], "tipClump"), true);
-  assert.equal(panelBoneGroupEffectiveValue(lock, [0], "tipClump", "fallback"), 0.2);
+  setPanelBoneGroupValue(lock, [], "depthCurve", 0.75); // 根节点上先创作一个值
+  setPanelBoneGroupValue(lock, [0], "depthCurve", 0.2); // 目标节点自己也创作一个值
+  assert.equal(panelBoneGroupHasOwnValue(lock, [0], "depthCurve"), true);
+  assert.equal(panelBoneGroupEffectiveValue(lock, [0], "depthCurve", "fallback"), 0.2);
 
-  setPanelBoneGroupValue(lock, [0], "tipClump", null); // 清除
+  setPanelBoneGroupValue(lock, [0], "depthCurve", null); // 清除
 
-  assert.equal(panelBoneGroupHasOwnValue(lock, [0], "tipClump"), false);
+  assert.equal(panelBoneGroupHasOwnValue(lock, [0], "depthCurve"), false);
   // 回落到根节点的 0.75（不是 fallback，因为根节点仍有创作值）。
-  assert.equal(panelBoneGroupEffectiveValue(lock, [0], "tipClump", "fallback"), 0.75);
+  assert.equal(panelBoneGroupEffectiveValue(lock, [0], "depthCurve", "fallback"), 0.75);
 });
 
-test("0 与 false 是合法创作值：hasOwnValue 为 true，effective value 拿到 0/false 本身", () => {
+test("0 是合法创作值：hasOwnValue 为 true，effective value 拿到 0 本身", () => {
   const lock = makeLock(TEST1_SPLITS);
   materializePanelBoneGroups(lock);
 
-  setPanelBoneGroupValue(lock, [], "tipClump", 5); // 祖先先给个非零值，防止「找不到就返回 undefined」这种假阳性
-  setPanelBoneGroupValue(lock, [1], "tipClump", 0);
-  setPanelBoneGroupValue(lock, [2], "splitEnabled", false);
+  setPanelBoneGroupValue(lock, [], "depthCurve", 5); // 祖先先给个非零值，防止「找不到就返回 undefined」这种假阳性
+  setPanelBoneGroupValue(lock, [1], "depthCurve", 0);
 
-  assert.equal(panelBoneGroupHasOwnValue(lock, [1], "tipClump"), true);
-  assert.equal(panelBoneGroupEffectiveValue(lock, [1], "tipClump", "fallback"), 0);
-
-  assert.equal(panelBoneGroupHasOwnValue(lock, [2], "splitEnabled"), true);
-  assert.equal(panelBoneGroupEffectiveValue(lock, [2], "splitEnabled", "fallback"), false);
+  assert.equal(panelBoneGroupHasOwnValue(lock, [1], "depthCurve"), true);
+  assert.equal(panelBoneGroupEffectiveValue(lock, [1], "depthCurve", "fallback"), 0);
 });
 
 test("非法输入：白名单外的 key / 越界 path / null lock 均返回 null，不抛异常、不留垃圾字段", () => {
@@ -169,9 +165,9 @@ test("非法输入：白名单外的 key / 越界 path / null lock 均返回 nul
 
   assert.doesNotThrow(() => {
     assert.equal(setPanelBoneGroupValue(lock, [0], "notARealKey", 1), null);
-    assert.equal(setPanelBoneGroupValue(lock, [99], "tipClump", 1), null);
-    assert.equal(setPanelBoneGroupValue(null, [0], "tipClump", 1), null);
-    assert.equal(setPanelBoneGroupValue(lock, "not-an-array", "tipClump", 1), null);
+    assert.equal(setPanelBoneGroupValue(lock, [99], "depthCurve", 1), null);
+    assert.equal(setPanelBoneGroupValue(null, [0], "depthCurve", 1), null);
+    assert.equal(setPanelBoneGroupValue(lock, "not-an-array", "depthCurve", 1), null);
   });
 
   // 非法 key 的调用不应该在真实存在的节点上留下垃圾字段。
@@ -180,7 +176,7 @@ test("非法输入：白名单外的 key / 越界 path / null lock 均返回 nul
   assert.equal("notARealKey" in node0, false);
 
   assert.equal(panelBoneGroupHasOwnValue(lock, [0], "notARealKey"), false);
-  assert.equal(panelBoneGroupHasOwnValue(null, [0], "tipClump"), false);
+  assert.equal(panelBoneGroupHasOwnValue(null, [0], "depthCurve"), false);
 });
 
 test("叶子划分不变量：物化 + 写值 + 清除后，叶子划分与 panelSplits 数值都没变", () => {

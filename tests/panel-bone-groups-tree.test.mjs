@@ -14,20 +14,17 @@ import {
   resolvePanelBoneGroupValue
 } from "../modules/bones/panel-bone-groups.js";
 
-// 7 个可创作字段：手写测试树时全部显式写出一次，字段名拼错会在断言里立刻暴露。
+// 4 个可创作字段：手写测试树时全部显式写出一次，字段名拼错会在断言里立刻暴露。
 const BLANK_FIELDS = {
-  tipClump: null,
   taperCurve: null,
   taperCurveSecondary: null,
   depthCurve: null,
-  depthCurveSecondary: null,
-  splitEnabled: null,
-  splitSnapToLoops: null
+  depthCurveSecondary: null
 };
-const SEVEN_FIELDS = Object.keys(BLANK_FIELDS);
+const AUTHORABLE_FIELD_KEYS = Object.keys(BLANK_FIELDS);
 
 // 结构测试（section 1/2/4）用的节点构造 helper：只关心 leafStart/leafEnd/depth/children，
-// 7 个可创作字段统一取 null，仍在 BLANK_FIELDS 里显式列出一次。
+// 4 个可创作字段统一取 null，仍在 BLANK_FIELDS 里显式列出一次。
 function structNode(leafStart, leafEnd, depth, children = null) {
   return { leafStart, leafEnd, depth, ...BLANK_FIELDS, children };
 }
@@ -229,35 +226,28 @@ test("resolvePanelBoneGroupValue：不同 key 各自独立回落，互不干扰"
   const childPath = panelBoneGroupPathForLeaf(grandparent, 0);
   assert.equal(resolvePanelBoneGroupValue(grandparent, childPath, "taperCurve", null), grandTaper);
   assert.equal(resolvePanelBoneGroupValue(grandparent, childPath, "depthCurve", null), parent.depthCurve);
-  assert.equal(resolvePanelBoneGroupValue(grandparent, childPath, "tipClump", "TC_FALLBACK"), "TC_FALLBACK");
+  assert.equal(resolvePanelBoneGroupValue(grandparent, childPath, "depthCurveSecondary", "DCS_FALLBACK"), "DCS_FALLBACK");
 });
 
-test("resolvePanelBoneGroupValue：0 与 false 是合法创作值，不是「未创作」，不得被继续向上找", () => {
+test("resolvePanelBoneGroupValue：0 是合法创作值，不是「未创作」，不得被继续向上找", () => {
   // 本仓有先例：`current > 0 ? current : 1` 把合法的 0 误判成缺失，一步爆到 1。
-  // 判据必须用 `!== null`，不能用真值判断（0/false 在真值判断下都是 falsy）。
+  // 判据必须用 `!== null`，不能用真值判断（0 在真值判断下是 falsy）。
   const child = { leafStart: 0, leafEnd: 0, depth: 2, ...BLANK_FIELDS, children: null };
   const root = {
     leafStart: 0,
     leafEnd: 0,
     depth: 1,
     ...BLANK_FIELDS,
-    tipClump: 5, // 祖先层：如果 0 被误判成缺失，就会一路回落到这个非零值，暴露 bug
-    splitEnabled: true,
+    depthCurveSecondary: 5, // 祖先层：如果 0 被误判成缺失，就会一路回落到这个非零值，暴露 bug
     children: [child]
   };
-  child.tipClump = 0; // 合法创作值：用户把 Tip Clump 显式调成了 0
-  child.splitEnabled = false; // 合法创作值：用户显式关闭了 Split
+  child.depthCurveSecondary = 0; // 合法创作值：用户把这个字段显式调成了 0
 
   const childPath = panelBoneGroupPathForLeaf(root, 0);
   assert.equal(
-    resolvePanelBoneGroupValue(root, childPath, "tipClump", "FALLBACK"),
+    resolvePanelBoneGroupValue(root, childPath, "depthCurveSecondary", "FALLBACK"),
     0,
-    "tipClump=0 必须原样取到，不能被真值判断误判成缺失后回落到祖先的 5"
-  );
-  assert.equal(
-    resolvePanelBoneGroupValue(root, childPath, "splitEnabled", "FALLBACK"),
-    false,
-    "splitEnabled=false 必须原样取到，不能被真值判断误判成缺失后回落到祖先的 true"
+    "depthCurveSecondary=0 必须原样取到，不能被真值判断误判成缺失后回落到祖先的 5"
   );
 });
 
@@ -320,13 +310,13 @@ test("normalizePanelBoneGroups：深度超过 MAX_PANEL_BONE_DEPTH=5 ⇒ null", 
 });
 
 test("normalizePanelBoneGroups：合法输入 ⇒ 缺失字段补 null，depth 被重算正确", () => {
-  // 故意用不完整字段（缺 7 个可创作字段中的几个 + 错误的 depth）来验证归一化会修正它们。
+  // 故意用不完整字段（缺 4 个可创作字段中的几个 + 错误的 depth）来验证归一化会修正它们。
   const raw = {
     leafStart: 0,
     leafEnd: 3,
     depth: 999, // 故意写错，验证会被重算成 1
     children: [
-      { leafStart: 0, leafEnd: 1, children: null }, // 缺全部 7 个可创作字段 + depth
+      { leafStart: 0, leafEnd: 1, children: null }, // 缺全部 4 个可创作字段 + depth
       { leafStart: 2, leafEnd: 3, depth: -5, children: null } // depth 也写错
     ]
   };
@@ -335,7 +325,7 @@ test("normalizePanelBoneGroups：合法输入 ⇒ 缺失字段补 null，depth �
   assert.equal(normalized.depth, 1, "根 depth 必须被重算为1");
   assert.equal(normalized.children[0].depth, 2, "第一子节点 depth 必须被重算为2");
   assert.equal(normalized.children[1].depth, 2, "第二子节点 depth 必须被重算为2");
-  for (const key of SEVEN_FIELDS) {
+  for (const key of AUTHORABLE_FIELD_KEYS) {
     assert.equal(normalized.children[0][key], null, `缺失字段 ${key} 必须被补成 null`);
   }
 });

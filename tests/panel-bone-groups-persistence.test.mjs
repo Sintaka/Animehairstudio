@@ -1,7 +1,7 @@
 // 中间层分组树的持久化契约（0.2.178）
 //
 // 背景：在 0.2.178 之前，snapshotState() 的 lock 键枚举里没有 panelBoneGroups ⇒ 中间层
-// 节点上的全部创作值（4 条曲线 + tip + tipClumpDelta）存盘即蒸发，且每按一次撤销也蒸发
+// 节点上的全部创作值（4 条曲线 + tip）存盘即蒸发，且每按一次撤销也蒸发
 // 一次（该函数同时服务存盘/撤销/重做/崩溃恢复/File>New 五条路径）。
 //
 // ★ 判据分工（这一段决定了改坏 app.js 时哪条会红，别删）：
@@ -29,7 +29,6 @@ function makeTree() {
     leafStart: 0, leafEnd: 2, depth: 1,
     taperCurve: [{ t: 0.25, v: 0.77 }],
     depthCurve: [{ t: 0.5, v: 0.61 }],
-    tipClumpDelta: -0.42,
     children: [
       { leafStart: 0, leafEnd: 1, depth: 2, taperCurve: [{ t: 0.5, v: 0.33 }], children: null },
       { leafStart: 2, leafEnd: 2, depth: 2, children: null }
@@ -76,13 +75,12 @@ test("行为：分组树的创作值能活过一次存读往返", () => {
   // 用「幅度」而非存在性：这些值都不与种子化默认值撞车
   assert.equal(snap.taperCurve[0].v, 0.77);
   assert.equal(snap.depthCurve[0].v, 0.61);
-  assert.equal(snap.tipClumpDelta, -0.42);
   assert.equal(snap.children[0].taperCurve[0].v, 0.33);
 
   const restored = normalizePanelBoneGroups(JSON.parse(JSON.stringify(snap)), 3);
   assert.ok(restored, "读回后不该为 null");
   assert.equal(restored.taperCurve[0].v, 0.77, "存读往返后主曲线值丢失");
-  assert.equal(restored.tipClumpDelta, -0.42, "存读往返后 tipClumpDelta 丢失");
+  assert.equal(restored.depthCurve[0].v, 0.61, "存读往返后 depthCurve 丢失");
 });
 
 test("行为：快照与实时树不共享引用（撤销栈存内存对象，这条是必需的）", () => {
@@ -91,11 +89,11 @@ test("行为：快照与实时树不共享引用（撤销栈存内存对象，�
 
   lock.panelBoneGroups.taperCurve[0].v = 999;
   lock.panelBoneGroups.children[0].taperCurve[0].v = 888;
-  lock.panelBoneGroups.tipClumpDelta = 0.99;
+  lock.panelBoneGroups.depthCurve[0].v = 0.99;
 
   assert.equal(snap.taperCurve[0].v, 0.77, "快照被实时树的改动污染了（共享引用）");
   assert.equal(snap.children[0].taperCurve[0].v, 0.33, "子节点曲线共享引用");
-  assert.equal(snap.tipClumpDelta, -0.42, "tipClumpDelta 共享引用");
+  assert.equal(snap.depthCurve[0].v, 0.61, "depthCurve 共享引用");
 
   // 负向对照：只做归一化（不深拷贝）必须能观察到污染，证明上面三条有分辨力
   const naive = normalizePanelBoneGroups(lock.panelBoneGroups, 3);

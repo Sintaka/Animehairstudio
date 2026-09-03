@@ -73,15 +73,15 @@ test("只写选中层：后代自有值保留，后代 null 值经读取期回�
   const lock = makeLock();
   materializePanelBoneGroups(lock);
   const root = panelBoneGroupsFor(lock);
-  // Test1 形状：根下三个平级叶子 ⇒ 选根本身没有子组可验，改用 tipClump 在根与叶之间验证
+  // Test1 形状：根下三个平级叶子 ⇒ 选根本身没有子组可验，改用 depthCurve 在根与叶之间验证
   const childCount = root.children.length;
   assert.ok(childCount >= 2, "前提：根应有多个子节点");
-  setPanelBoneGroupValue(lock, [0], "tipClump", 0.11);
-  setPanelBoneGroupValue(lock, [], "tipClump", 0.77);
-  assert.equal(panelBoneGroupAtPath(lock.panelBoneGroups, [0]).tipClump, 0.11,
+  setPanelBoneGroupValue(lock, [0], "depthCurve", 0.11);
+  setPanelBoneGroupValue(lock, [], "depthCurve", 0.77);
+  assert.equal(panelBoneGroupAtPath(lock.panelBoneGroups, [0]).depthCurve, 0.11,
     "有自有值的后代必须保持不变");
-  assert.equal(panelBoneGroupAtPath(lock.panelBoneGroups, [1]).tipClump, null,
+  assert.equal(panelBoneGroupAtPath(lock.panelBoneGroups, [1]).depthCurve, null,
     "null 的后代不得被递归写入");
-  assert.equal(panelBoneGroupEffectiveValue(lock, [1], "tipClump", "FB"), 0.77,
+  assert.equal(panelBoneGroupEffectiveValue(lock, [1], "depthCurve", "FB"), 0.77,
     "null 的后代应在读取期回落到新值");
 });

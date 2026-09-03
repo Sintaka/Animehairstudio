@@ -43,17 +43,14 @@
 // 上限，bone-model.js:8）是两条独立的轴：一条限制「多深」，一条限制「多宽」，互不影响。
 export const MAX_PANEL_BONE_DEPTH = 5;
 
-// 分组节点的 7 个「可创作」字段：派生出的节点里全部为 null（表示「继承祖先，未创作」），
+// 分组节点的 4 个「可创作」字段：派生出的节点里全部为 null（表示「继承祖先，未创作」），
 // 归一化时缺失的字段也补齐为 null。字段清单与含义见计划文档 §3.1 / §6.1（绿框
 // #panelZipperGroup 内的全部控件对应字段）。
 const AUTHORABLE_KEYS = [
-  "tipClump",
   "taperCurve",
   "taperCurveSecondary",
   "depthCurve",
-  "depthCurveSecondary",
-  "splitEnabled",
-  "splitSnapToLoops"
+  "depthCurveSecondary"
 ];
 
 // ── 中间层骨骼载体：tip（发尖链）───────────────────────────────────────────────
@@ -72,34 +69,8 @@ const AUTHORABLE_KEYS = [
 // 三个专用导出（panelBoneGroupTip / setPanelBoneGroupTip / clearPanelBoneGroupTip）管理，
 // 不经过白名单、不参与链上回落。
 //
-// ── 中间层 Tip Clump 的 delta 继承（用户拍板）─────────────────────────────────────
-// 叶子的最终 tipClump = clamp(叶子自己的 tipClump + 该叶子所有祖先中间层的 tipClumpDelta
-// 之和, 0, SPREAD_MAX)。这与上面 tip（发尖链）已经在用的「祖先逐层累加」机制同构
-// （panel-tip-strand.js splitTipForSegment 的 ancestorTipsForLeaf + restPointAt 逐下标
-// 累加），但语义方向不同：
-//
-// ★ tipClumpDelta 为什么绝不能塞进 AUTHORABLE_KEYS：白名单（resolvePanelBoneGroupValue）
-// 的语义是「沿链回落、从叶子往根方向找第一个非 null 的祖先，那个值整体替换掉当前值」——
-// 一次继承只会命中一层。delta 的语义是**逐层累加**：每一层祖先都贡献自己的一份，多层
-// 嵌套时全部相加，不是「第一个非 null 赢」。把 delta 塞进白名单会让
-// resolvePanelBoneGroupValue/setPanelBoneGroupValue 把它当可继承标量处理——读到的会是
-// 某一层的原始 delta 数值，而不是「多层之和」，是语义错误（与上面 tip 字段的理由是同一类
-// 错误：把一个不该走链上回落的字段塞进只认「第一个非 null」的机制）。所以 delta 同样独立
-// 于白名单，用三个专用导出管理（panelBoneGroupTipClumpDelta /
-// setPanelBoneGroupTipClumpDelta / 累加读取交给 panelBoneGroupClumpDeltaForLeaf /
-// panelBoneGroupClumpDeltaForPath）。
-//
-// ★ 归一化口径——为什么不在存储端钳位（钳位理由，第三类必留注释）：delta 是**偏移量**，
-// 可正可负（用户可能想让某层比叶子更收窄，也可能想让它更不收窄）。叶子自己的 tipClump
-// 值域是 [0, SPREAD_MAX]（0.99），所以 delta 的合法范围取对称的 [-SPREAD_MAX, SPREAD_MAX]
-// ——这是能表达「把一个已在上界的叶子完全拉回 0」所需的最大偏移量，够用且不多给。
-// 最终值的钳位交给消费端（panel-tip-strand.js 的 tipWidthSpreadGap，任务 B）而不是在这里
-// 预先把 delta 本身钳到某个更窄的区间：如果这里也去钳「delta + 叶子值」之类的组合，会把
-// 「叶子 0.9 + delta -0.9」这种合法组合（最终应为 0）在写入时就截断成别的数，而写入时
-// 还不知道叶子当前的值是多少（叶子可能之后再被单独改动）——存储端只保存用户输入的这一个
-// 偏移量本身，不掺和它与别处数值的组合结果，组合与钳位延后到真正消费的那一刻去做。
 function makeLeafNode(leafStart, leafEnd, depth) {
-  const node = { leafStart, leafEnd, depth, children: null, tip: null, tipClumpDelta: null };
+  const node = { leafStart, leafEnd, depth, children: null, tip: null };
   for (const key of AUTHORABLE_KEYS) node[key] = null;
   return node;
 }
@@ -257,22 +228,6 @@ export function normalizePanelBoneGroups(value, leafCount) {
   return root;
 }
 
-// 校验一个 tipClumpDelta 原始值：非有限数 / 越出 [-SPREAD_MAX, SPREAD_MAX]（口径见
-// 文件头「归一化口径」注释）⇒ null；合法 ⇒ 转成 number。0 是合法值（显式创作成 0，
-// 与 AUTHORABLE_KEYS 字段的假值判断同一取向，不能被真值判断吞掉），但 0 与「未创作」
-// 都用 null 表达「无贡献」，两者在归一化路径上刻意不区分——delta 的读取端
-// （panelBoneGroupClumpDeltaForLeaf/ForPath）本来就把 null 当 0 求和，写成 0 或留空
-// 对最终累加结果没有差别，不需要额外的「已创作但为 0」标记。
-const TIP_CLUMP_DELTA_MAX = 0.99; // 与 bone-model.js 的 SPREAD_MAX 同值；本模块刻意零 import
-// 几何/骨骼模块（文件头已声明），不为了一个常量去 import bone-model，手写同值即可。
-function normalizeTipClumpDelta(raw) {
-  if (raw == null) return null;
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return null;
-  if (value < -TIP_CLUMP_DELTA_MAX || value > TIP_CLUMP_DELTA_MAX) return null;
-  return value;
-}
-
 // 校验并深拷贝一条发尖链；形状不合法 ⇒ null（「局部降级」的落点，理由见调用处注释）。
 function normalizeGroupTip(raw) {
   if (raw == null || typeof raw !== "object") return null;
@@ -307,9 +262,6 @@ function normalizeNodeAt(raw, expectedStart, expectedEnd, depth) {
   // 但这里不像那边一样「restPoints 缺失时允许 null」——分组层 tip 若要携带 delta 语义，
   // points 与 restPoints 必须成对出现，缺一即视为非法）。
   node.tip = normalizeGroupTip(raw.tip);
-  // tipClumpDelta 同样走「局部降级」：越界/非数字只丢这一个字段（视为未创作），不连累
-  // 整棵树——与上面 tip 的取向一致，理由同段。
-  node.tipClumpDelta = normalizeTipClumpDelta(raw.tipClumpDelta);
   const rawChildren = raw.children;
   if (rawChildren == null) {
     return node; // 叶节点
@@ -654,9 +606,6 @@ function cloneGroupTree(node) {
   const copy = { leafStart: node.leafStart, leafEnd: node.leafEnd, depth: node.depth, children: null };
   for (const key of AUTHORABLE_KEYS) copy[key] = node[key] === undefined ? null : node[key];
   copy.tip = cloneGroupTip(node.tip);
-  // tipClumpDelta 是数字值类型，直接拷贝即可（不像 tip 那样需要深拷贝内部数组），
-  // 但仍要把 undefined 归成 null，与上面 AUTHORABLE_KEYS 那一行的写法一致。
-  copy.tipClumpDelta = node.tipClumpDelta === undefined ? null : node.tipClumpDelta;
   if (node.clampedFlat === true) copy.clampedFlat = true;
   if (Array.isArray(node.children)) copy.children = node.children.map(cloneGroupTree);
   return copy;
@@ -773,11 +722,6 @@ export function rebuildPanelBoneGroupsFromLevels(lock) {
       node.tip = old.tip;
       moved += 1;
     }
-    // tipClumpDelta 同 tip 一样不在 AUTHORABLE_KEYS 里，走独立分支移植。
-    if (old.tipClumpDelta != null) {
-      node.tipClumpDelta = old.tipClumpDelta;
-      moved += 1;
-    }
   });
   // 收集**消失了且带创作值**的层，连同它的 span 与创作值一起交给调用方。
   // 结构上消失但本来就空的层不算损失，不收。
@@ -791,8 +735,7 @@ export function rebuildPanelBoneGroupsFromLevels(lock) {
   const droppedTiers = [];
   for (const [key, node] of bySpan) {
     if (seen.has(key)) continue;
-    const hadValue = node.tip != null || node.tipClumpDelta != null
-      || AUTHORABLE_KEYS.some((k) => node[k] != null);
+    const hadValue = node.tip != null || AUTHORABLE_KEYS.some((k) => node[k] != null);
     if (!hadValue) continue;
     dropped += 1;
     // 只有覆盖 ≥2 个叶子的**真中间层**才有「写回各叶子」这回事；leafStart === leafEnd
@@ -800,11 +743,6 @@ export function rebuildPanelBoneGroupsFromLevels(lock) {
     if (node.leafStart < node.leafEnd) {
       const values = {};
       for (const k of AUTHORABLE_KEYS) if (node[k] != null) values[k] = node[k];
-      // droppedTiers.values 目前只搭载 AUTHORABLE_KEYS 字段（写回叶子走
-      // panel-tip-strand.js 的曲线重采样通路，tipClumpDelta 不是曲线，没有对应的重采样
-      // 逻辑）。tipClumpDelta 消失时的代价与 tip 一样：这一层的偏移量没有别的叶子可以
-      // 承接，只能随层一起丢失——调用方目前不需要单独得知这一点，故此处不新增字段，
-      // 与 tip 消失时不进 droppedTiers.values 同一个取向。
       droppedTiers.push({ leafStart: node.leafStart, leafEnd: node.leafEnd, values });
     }
   }
@@ -862,11 +800,7 @@ export function remapPanelBoneGroupsForSplitChange(lock, kind, index, prevLeafCo
       if (node[k] != null) { values[k] = node[k]; hasValue = true; }
     }
     const tip = node.tip != null ? node.tip : null;
-    // tipClumpDelta 同 tip 一样不在 AUTHORABLE_KEYS 里，单独判「有没有值」，不能被上面
-    // hasValue 的 AUTHORABLE_KEYS 遍历漏掉——否则一个只创作了 delta、没创作任何白名单
-    // 字段的中间层会被当成「空节点」直接放弃保全。
-    const tipClumpDelta = node.tipClumpDelta != null ? node.tipClumpDelta : null;
-    if (!hasValue && !tip && tipClumpDelta == null) return;
+    if (!hasValue && !tip) return;
     const a = mapStart(node.leafStart);
     const b = mapEnd(node.leafEnd);
     if (a > b || a < 0 || b >= nextLeafCount) return;         // 映射出界 ⇒ 丢弃
@@ -876,7 +810,7 @@ export function remapPanelBoneGroupsForSplitChange(lock, kind, index, prevLeafCo
       if (node.leafStart < node.leafEnd) orphaned.push({ leafStart: a, leafEnd: a, values });
       return;
     }
-    carried.set(`${a}:${b}`, { values, tip, tipClumpDelta });
+    carried.set(`${a}:${b}`, { values, tip });
     pending.push({ key: `${a}:${b}`, leafStart: a, leafEnd: b, values });
   });
 
@@ -896,7 +830,6 @@ export function remapPanelBoneGroupsForSplitChange(lock, kind, index, prevLeafCo
     if (!hit) return;
     for (const [k, v] of Object.entries(hit.values)) { node[k] = v; moved += 1; }
     if (hit.tip != null) { node.tip = hit.tip; moved += 1; }
-    if (hit.tipClumpDelta != null) { node.tipClumpDelta = hit.tipClumpDelta; moved += 1; }
     landed.add(key);
   });
 
@@ -933,10 +866,9 @@ export function panelBoneGroupEffectiveValue(lock, path, key, fallback) {
 }
 
 // 该节点自己是否创作过（区别于「继承来的」），给 UI 做灰/斜体展示用。
-// 判据用 `!= null`，不能用真值判断——0 与 false 都是合法的创作值（本模块 resolvePanelBoneGroupValue
-// 的既有注释已经声明过这条：splitEnabled 可以被显式创作成 false，taperCurve 的某个数值
-// 字段可以被显式创作成 0，两者都必须算作「自己创作过」，不能因为它们是假值就被判定成
-// 「未创作」而被真值判断吞掉。）
+// 判据用 `!= null`，不能用真值判断——0 是合法的创作值（本模块 resolvePanelBoneGroupValue
+// 的既有注释已经声明过这条：taperCurve 的某个数值字段同样可以显式创作成 0，都必须算作
+// 「自己创作过」，不能因为是假值就被判定成「未创作」而被真值判断吞掉。）
 export function panelBoneGroupHasOwnValue(lock, path, key) {
   if (!AUTHORABLE_KEYS.includes(key)) return false;
   const root = panelBoneGroupsFor(lock);
@@ -982,74 +914,6 @@ export function clearPanelBoneGroupTip(lock, path) {
   if (!node) return null;
   node.tip = null;
   return root;
-}
-
-// ── 中间层骨骼载体：读写单层的 Tip Clump delta ──────────────────────────────────────
-// 只读，不物化：与 panelBoneGroupTip 同一个只读套路——path 指向节点自己的 delta，不含
-// 任何祖先贡献（累加求和是 panelBoneGroupClumpDeltaForLeaf/ForPath 的职责，不是这个函数）。
-export function panelBoneGroupTipClumpDelta(lock, path) {
-  const root = panelBoneGroupsFor(lock);
-  if (!root) return null;
-  const node = panelBoneGroupAtPath(root, path);
-  if (!node) return null;
-  return node.tipClumpDelta ?? null;
-}
-
-// 写入该层自己的 delta：先物化（同 setPanelBoneGroupTip 的既有套路），再只改 path 指向的
-// 这一个节点，绝不触碰子孙——子孙的最终值靠 panelBoneGroupClumpDeltaForLeaf 在**读取期**
-// 沿祖先链累加取得，写入期这里只管自己这一层。
-// value == null ⇒ 清除（恢复"未创作"，对累加贡献 0）。非法值（越界/非数字）同样存成 null
-// ——与 normalizeTipClumpDelta 的「局部降级」是同一份校验函数，不能两处各写一套。
-export function setPanelBoneGroupTipClumpDelta(lock, path, value) {
-  const root = materializePanelBoneGroups(lock);
-  if (!root) return null;
-  const node = panelBoneGroupAtPath(root, path);
-  if (!node) return null;
-  node.tipClumpDelta = value == null ? null : normalizeTipClumpDelta(value);
-  return root;
-}
-
-// 给定叶子下标，返回它全部祖先中间层（严格介于根与叶子之间，两头都排除——同
-// panelBoneGroupAncestorsForLeaf 的既有语义）的 tipClumpDelta 之和。无祖先 / 祖先未创作
-// delta ⇒ 各自贡献 0，总和恒为 0（不是 null——调用方总是直接把返回值加到叶子自己的
-// tipClump 上，返回数字 0 比返回 null 再要求调用方自己判空更省一次判断）。
-//
-// ★ 为什么必须走既有的 panelBoneGroupAncestorsForLeaf，不自己重新遍历路径：那个函数已经
-// 把「根不算祖先（是主骨骼，不能重复叠加）、叶子自己不算祖先（那是它自己的基础值，不是
-// 继承）」两条边界钉死并有专门测试覆盖（panel-bone-ancestor-inherit.test.mjs）。这里另写
-// 一份等价遍历只会制造第二个「两头是否排除」的定义点，迟早漂移。
-export function panelBoneGroupClumpDeltaForLeaf(lock, leafIndex) {
-  const root = panelBoneGroupsFor(lock);
-  if (!root) return 0;
-  const ancestors = panelBoneGroupAncestorsForLeaf(root, leafIndex);
-  let sum = 0;
-  for (const node of ancestors) {
-    if (node?.tipClumpDelta != null) sum += node.tipClumpDelta;
-  }
-  return sum;
-}
-
-// 给定分组路径，返回它的**严格祖先**（不含自己、不含根——同上，根是主骨骼不参与叠加）
-// 的 tipClumpDelta 之和。用于「中间层自己也嵌在更浅中间层下」的情形（L3 挂 L2）：L3 节点
-// 没有对应的"叶子下标"，不能走上面按叶子取祖先的那条路，需要按 path 直接取严格前缀。
-//
-// 与 panel-tip-strand.js 的 ancestorTipsForGroupPath（约 :1500）同构：那个函数取 path 的
-// 严格前缀所指的各级节点、过滤出创作过 tip 的那些；这里同样取严格前缀（`i < path.length -
-// 1`，不含 path 自己指向的最后一级），只是取的字段换成 tipClumpDelta、聚合方式从"收集
-// 数组"换成"直接求和"（因为 delta 的用法本来就是求和，不需要像 tip 那样保留每层各自的
-// points/restPoints 供后续按层复合刚体变换）。
-export function panelBoneGroupClumpDeltaForPath(lock, path) {
-  if (!Array.isArray(path) || path.length < 2) return 0;
-  const root = panelBoneGroupsFor(lock);
-  if (!root) return 0;
-  let sum = 0;
-  let node = root;
-  for (let i = 0; i < path.length - 1; i += 1) {
-    node = node?.children?.[path[i]];
-    if (!node) break;
-    if (node.tipClumpDelta != null) sum += node.tipClumpDelta;
-  }
-  return sum;
 }
 
 // path 指向节点覆盖的叶子闭区间。几何侧用它算 centerU / forkT：中间层没有自己的 u 坐标，

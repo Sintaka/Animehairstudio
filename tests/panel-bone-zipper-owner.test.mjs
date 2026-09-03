@@ -124,15 +124,12 @@ test("非整数 zipperIndex（字符串/小数/NaN/undefined）⇒ null，不抛
 // 4. 深层嵌套：合成一棵至少 3 层的树，断言深层切缝返回正确的深层 path
 // ---------------------------------------------------------------------------
 
-// 7 个可创作字段统一置 null，与既有测试文件（panel-bone-groups-tree.test.mjs）同一套写法。
+// 4 个可创作字段统一置 null，与既有测试文件（panel-bone-groups-tree.test.mjs）同一套写法。
 const BLANK_FIELDS = {
-  tipClump: null,
   taperCurve: null,
   taperCurveSecondary: null,
   depthCurve: null,
   depthCurveSecondary: null,
-  splitEnabled: null,
-  splitSnapToLoops: null,
   tip: null
 };
 

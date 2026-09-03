@@ -69,11 +69,11 @@ test("已创作的 panelBoneGroups 优先于 boneLevel", () => {
   // 手写一棵合法的两层树（3 叶子），同时给 splits 一个会产生三层的 boneLevel 组合。
   const authored = {
     leafStart: 0, leafEnd: 2, depth: 1,
-    tipClump: null, taperCurve: null, taperCurveSecondary: null,
-    depthCurve: null, depthCurveSecondary: null, splitEnabled: null, splitSnapToLoops: null,
+    taperCurve: null, taperCurveSecondary: null,
+    depthCurve: null, depthCurveSecondary: null,
     children: [
-      { leafStart: 0, leafEnd: 0, depth: 2, tipClump: null, taperCurve: null, taperCurveSecondary: null, depthCurve: null, depthCurveSecondary: null, splitEnabled: null, splitSnapToLoops: null, children: null },
-      { leafStart: 1, leafEnd: 2, depth: 2, tipClump: null, taperCurve: null, taperCurveSecondary: null, depthCurve: null, depthCurveSecondary: null, splitEnabled: null, splitSnapToLoops: null, children: null }
+      { leafStart: 0, leafEnd: 0, depth: 2, taperCurve: null, taperCurveSecondary: null, depthCurve: null, depthCurveSecondary: null, children: null },
+      { leafStart: 1, leafEnd: 2, depth: 2, taperCurve: null, taperCurveSecondary: null, depthCurve: null, depthCurveSecondary: null, children: null }
     ]
   };
   const splits = [

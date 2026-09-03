@@ -3,7 +3,7 @@ import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
 import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-2";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
-import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-19";
+import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-20";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
 import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-5";
@@ -17,7 +17,7 @@ import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitB
 // 分组树（骨骼树）只读展示：新模块，从未被浏览器缓存过 ⇒ 首次引入用一个全新的 ?v=，
 // 且**没有**给 bone-model.js 加 export（那会迫使它的 13 个 import 站点全部同步 bump，
 // 回访用户拿缓存旧模块解析新 export 会 SyntaxError 打不开整个应用——0.2.110 踩过）。
-import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, normalizePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf, panelBoneGroupPathForZipper, rebuildPanelBoneGroupsFromLevels, remapPanelBoneGroupsForSplitChange, panelBoneGroupNodeLabel, panelTierEnumeration } from "./modules/bones/panel-bone-groups.js?v=20260925-12";
+import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, normalizePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf, panelBoneGroupPathForZipper, rebuildPanelBoneGroupsFromLevels, remapPanelBoneGroupsForSplitChange, panelBoneGroupNodeLabel, panelTierEnumeration } from "./modules/bones/panel-bone-groups.js?v=20260925-13";
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
 import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
@@ -9976,7 +9976,8 @@ function setMirrorXEditing(enabled) {
 }
 
 // ★ 0.2.178：中间层分组树进快照。在此之前 lock 键枚举里没有这个键，于是中间层节点上的
-// 全部创作值（4 条曲线 + tip + tipClumpDelta）**存盘即蒸发，且每按一次撤销也蒸发一次**
+// 全部创作值（当时是 4 条曲线 + tip + 一个已于 0.2.181 删除的 tipClump 偏移量字段）
+// **存盘即蒸发，且每按一次撤销也蒸发一次**
 // —— snapshotState 同时服务存盘、撤销、重做、崩溃恢复与 File>New 基准五条路径，所以症状
 // 远不止「关文件才丢」。读回侧无罪（restoreLock 是 spread-first，盘上有就一路穿透），
 // 丢失点唯一，就在这个枚举。

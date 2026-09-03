@@ -26,7 +26,7 @@ import { sculptBrushWeight, sculptTwistBrushDeltas, smoothSculptPointDeltas, smo
 import { nearestScreenCandidate, sculptWidthBrushMultiplier, smoothLinearScalarDeltas } from "../sculpt/width-brush.js?v=20260910-10";
 // 控制点总数：与 bone-view-handles.js 的把手分配同一个常量（每侧 TIP_WIDTH_CONTROL_POINTS + 1
 // 个，索引完整共享网格）。笔刷枚举候选点必须用同一个上界，否则会漏掉最后一个（发尖端点）。
-import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260910-19";
+import { TIP_WIDTH_CONTROL_POINTS } from "../geometry/panel-tip-strand.js?v=20260910-20";
 import { solvePulledStrand } from "../geometry/strand-constraints.js?v=20260814-12";
 
 // deps: store .state proxies (sculptState/sel/guideState/scalpState) + module instances
