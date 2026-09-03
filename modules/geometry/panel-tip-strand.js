@@ -36,7 +36,7 @@ function boneToken(bone) {
 }
 import { sampleSurfaceLattice } from "./surface-lattice.js?v=20260814-12";
 import { cloneSplitBones, segmentBoneHost, SPREAD_MAX } from "../bones/bone-model.js?v=20260901-1";
-import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260830-1";
+import { materializeTipChain, tipChainFrameAt as tipSubBoneTipChainFrameAt } from "./tip-sub-bone.js?v=20260830-2";
 import { leafWeightAt, leafWeightsValid } from "./leaf-weights.js?v=20260813-1";
 // 直接 import 而不是注入：panel-bone-groups.js 是**零 import 的纯函数模块**，不存在环。
 // 对比 sculpt-geometry.js:606 刻意用注入 —— 那里分组树是它「本不需要知道」的东西；这里不同，

@@ -9,6 +9,9 @@
 
 import assert from "node:assert/strict";
 import { exportAnimeHairUsda, axesToMat3, splitBoneLayout, splitChainLayout, splitParentMainIndex, bridgeRootParentName, smoothMainPair, tipChainNearestIndex } from "../modules/io/usda-export.js";
+// 视口消费方的真实定义点（唯一定义点，standards「一条推导规则只准有一个定义点」）——
+// 用于下面的跨消费方一致性断言，不是本地复刻。
+import { firstExposedTipChainIndex } from "../modules/geometry/tip-sub-bone.js";
 
 // project-files.js 已把内部骨骼名（main./split.）映射为发丝名前缀（jointNameOf），
 // 且 skeleton.name 已是去重后的 `${usdIdentifier(lock.name)}_Skel`；这里直接喂
@@ -841,98 +844,99 @@ for (const t of [0, 0.5, 0.75, 0.99, 1]) {
 }
 
 // ---- 回归：split 骨骼根索引必须严格小于它自己的第一个暴露链索引 ----
-// 第一个暴露索引 firstExposed = clamp(floor(forkT·(mainCount−1)), 1, mainCount−1)：
-// fork 所在那一行本身也暴露，比旧的严格 t > forkT 规则（floor+1）往发根方向多暴露
-// 一行 —— 每个 zipper 高度都多一根发尖骨骼。根 = firstExposed − 1（floor，非 round：
-// round 在 frac > 0.5 时会跳到甚至越过第一个暴露子节点）。
-// 以 mainCount=6 与 6 个常用 zipper 高度逐一验证根与暴露起点、并锁住暴露关节数。
-const rootIndexHeights = [0.4375, 0.5, 0.3, 0.2, 0.78, 0.28];
-const rootIndexMainCount = 6;
-for (const height of rootIndexHeights) {
-  const forkT = 1 - height;
-  const chainLast = rootIndexMainCount - 1;
-  const firstExposed = Math.min(chainLast, Math.max(1, Math.floor(forkT * chainLast)));
-  // 纯函数层：splitParentMainIndex。
-  const rootIndex = splitParentMainIndex(forkT, rootIndexMainCount);
-  assert.ok(
-    rootIndex < firstExposed,
-    `h=${height}（forkT=${forkT}）：根索引 ${rootIndex} 应严格小于第一个暴露索引 ${firstExposed}`
-  );
-  assert.equal(rootIndex, firstExposed - 1, `h=${height}：根应正好锚在第一个暴露点下方一格`);
-  // splitBoneLayout（面板分支）：单 zipper → 相邻高度 max = height。
-  const heightLock = {
-    geometryType: "panel",
-    panelSplitEnabled: true,
-    panelSplits: [{ position: 0, height }],
-    points: Array.from({ length: rootIndexMainCount }, (_, i) => ({ x: 0, y: 1.7 - i * 0.25, z: 0 }))
-  };
-  for (const k of [0, 1]) {
-    assert.equal(
-      splitBoneLayout(heightLock, { name: `split.${k}` }, { mainCount: rootIndexMainCount }).parentMainIndex,
-      rootIndex,
-      `h=${height}：splitBoneLayout split.${k} 根索引应为 ${rootIndex}`
-    );
-  }
-  // splitChainLayout：链根关节 parent 必须是 main.<rootIndex>，且第一个暴露关节
-  // （链根自身采样的链点）索引 = firstExposed → 根严格在其下。
-  const heightChain = splitChainLayout(heightLock, { name: "split.0" }, {
-    mainCount: rootIndexMainCount,
-    splitTipForSegment: tipChainStub,
-    panelTipChainFrameAt: identityTipFrame
-  });
-  assert.equal(
-    heightChain.joints[0].parent,
-    `main.${rootIndex}`,
-    `h=${height}：splitChainLayout 链根父级应为 main.${rootIndex}`
-  );
-  // 链根位置直接采样链点 firstExposed（tipChainStub 的点 i = (i, 10+i, 20+i)）。
-  assert.deepEqual(
-    heightChain.joints[0].p,
-    [firstExposed, 10 + firstExposed, 20 + firstExposed],
-    `h=${height}：链根应采样第一个暴露链点 ${firstExposed}`
-  );
-  // 暴露关节数 = last − firstExposed + 1，且必须严格多于旧规则（floor+1）的数量：
-  // 方向翻转（少暴露一行）会立刻打破这条断言。
-  const oldFirstExposed = Math.min(chainLast, Math.floor(forkT * chainLast) + 1);
-  assert.equal(
-    heightChain.joints.length,
-    chainLast - firstExposed + 1,
-    `h=${height}：暴露关节数应为 ${chainLast - firstExposed + 1}`
-  );
-  assert.equal(
-    heightChain.joints.length,
-    (chainLast - oldFirstExposed + 1) + 1,
-    `h=${height}：暴露关节数应比旧规则（首个暴露 ${oldFirstExposed}）正好多 1`
-  );
-  // 视口规则现在与导出一致（bone-view-handles.js / bone-interaction.js 已由 ceil 改 floor）：
-  // 视口 firstBelow = clamp(floor(forkT·last), 1, last) === firstExposed，根严格在其下。
-  const viewportFirstBelow = Math.min(chainLast, Math.max(1, Math.floor(forkT * chainLast)));
-  assert.equal(
-    viewportFirstBelow,
-    firstExposed,
-    `h=${height}：视口 firstBelow ${viewportFirstBelow} 应与导出 firstExposed ${firstExposed} 一致`
-  );
-  assert.ok(
-    rootIndex < viewportFirstBelow,
-    `h=${height}：根索引 ${rootIndex} 应严格小于视口 firstBelow ${viewportFirstBelow}`
-  );
-}
-// 暴露关节数比旧规则多 1 的代表性硬编码值（mainCount=6、h=0.4375 → forkT 0.5625）：
-// 旧规则 firstExposed=3 → 3 个关节；新规则 firstExposed=2 → 4 个关节。
-const gainedLock = {
-  geometryType: "panel",
-  panelSplitEnabled: true,
-  panelSplits: [{ position: 0, height: 0.4375 }],
-  points: Array.from({ length: 6 }, (_, i) => ({ x: 0, y: 1.7 - i * 0.25, z: 0 }))
-};
-const gainedChain = splitChainLayout(gainedLock, { name: "split.0" }, {
-  mainCount: 6,
-  splitTipForSegment: tipChainStub,
-  panelTipChainFrameAt: identityTipFrame
+// 行为守卫，不是复刻品守卫：firstExposed 不在测试里重新推导公式，而是从生产输出反推
+// ——firstExposedFromProd = mainCount − joints.length（成立前提：splitChainLayout 的
+// panel 分支里 n === mainCount，见 usda-export.js:744-746 的注释）——并与
+// firstExposedTipChainIndex（tip-sub-bone.js，视口把手/引导线/gizmo 的唯一定义点）
+// 逐值核对。这样改生产侧任一端（:739 的暴露 clamp，或 splitParentMainIndex 的 − 1）
+// 都会让 joints.length 或 parentMainIndex 变化而被本守卫捉到；旧版在测试里本地复刻了
+// `Math.min(last, Math.max(1, Math.floor(forkT*last)))`，改生产公式不会牵动它，
+// 是假守卫（历史教训：复刻品守卫 = 假守卫，不要再加回来）。
+// mainCount 覆盖 {2,3,5,6}：每档都放一个落在 floor(forkT·(mainCount−1)) === 0 危险区
+// 的高度（原下界 clamp 的 `Math.max(1, …)` 正是为这个区兜底，去掉 `-1`/下界会在这里露馅），
+// mainCount=6 那 6 个高度是原回归值，保留作全区覆盖 + 历史值不丢的双重保险。
+const rootIndexCases = [
+  // mainCount=2 → last=1，任意 height>0 都落在 floor(forkT·1)===0 区（forkT<1）。
+  { mainCount: 2, heights: [0.5] },
+  // mainCount=3 → last=2，需 forkT<0.5 即 height>0.5。
+  { mainCount: 3, heights: [0.6] },
+  // mainCount=5 → last=4，需 forkT<0.25 即 height∈(0.75,0.78]（app.js:1577 钳到 0.78）。
+  { mainCount: 5, heights: [0.76] },
+  { mainCount: 6, heights: [0.4375, 0.5, 0.3, 0.2, 0.78, 0.28] }
+];
+const tipChainStubFor = (count) => (l, k, splits, b) => ({
+  points: Array.from({ length: count }, (_, i) => ({ x: i, y: 10 + i, z: 20 + i })),
+  restPoints: Array.from({ length: count }, (_, i) => ({ x: i, y: 10 + i, z: 20 + i })),
+  twists: [],
+  active: true
 });
-assert.equal(gainedChain.joints.length, 4, "h=0.4375/mainCount=6 → 4 个暴露关节（旧规则 3）");
-assert.equal(gainedChain.joints[0].parent, "main.1", "h=0.4375：链根应挂 main.1（firstExposed 2 − 1）");
-assert.deepEqual(gainedChain.joints[0].p, [2, 12, 22], "h=0.4375：链根应采样链点 2");
+for (const { mainCount, heights } of rootIndexCases) {
+  const chainLast = mainCount - 1;
+  const stub = tipChainStubFor(mainCount);
+  for (const height of heights) {
+    const forkT = 1 - height;
+    const dangerZoneFloor = Math.floor(forkT * chainLast);
+    // splitBoneLayout（面板分支）：单 zipper → 相邻高度 max = height。
+    const heightLock = {
+      geometryType: "panel",
+      panelSplitEnabled: true,
+      panelSplits: [{ position: 0, height }],
+      points: Array.from({ length: mainCount }, (_, i) => ({ x: 0, y: 1.7 - i * 0.25, z: 0 }))
+    };
+    // splitChainLayout：生产输出，不重算公式。
+    const heightChain = splitChainLayout(heightLock, { name: "split.0" }, {
+      mainCount,
+      splitTipForSegment: stub,
+      panelTipChainFrameAt: identityTipFrame
+    });
+    // 反推暴露起点：n===mainCount（面板分支恒等式，见 usda-export.js:744-746）。
+    const firstExposedFromProd = mainCount - heightChain.joints.length;
+    const rootIndex = splitParentMainIndex(forkT, mainCount);
+    assert.ok(
+      rootIndex < firstExposedFromProd,
+      `mainCount=${mainCount} h=${height}（forkT=${forkT}，floor(forkT·last)=${dangerZoneFloor}）：` +
+      `根索引 ${rootIndex} 应严格小于生产反推的暴露起点 ${firstExposedFromProd}`
+    );
+    assert.equal(
+      rootIndex,
+      firstExposedFromProd - 1,
+      `mainCount=${mainCount} h=${height}：根应正好锚在生产反推暴露起点下方一格`
+    );
+    // 与视口/gizmo/笔刷的唯一定义点 firstExposedTipChainIndex 逐值核对（跨消费方一致性；
+    // 该函数上方注释点名 usda-export.js 是「受控副本」，数值必须一致）。
+    const viewportFirstExposed = firstExposedTipChainIndex(forkT, mainCount);
+    assert.equal(
+      firstExposedFromProd,
+      viewportFirstExposed,
+      `mainCount=${mainCount} h=${height}：生产反推的暴露起点 ${firstExposedFromProd} 应与视口 ` +
+      `firstExposedTipChainIndex ${viewportFirstExposed} 一致`
+    );
+    assert.equal(
+      rootIndex,
+      viewportFirstExposed - 1,
+      `mainCount=${mainCount} h=${height}：splitParentMainIndex 应等于 firstExposedTipChainIndex − 1`
+    );
+    // 链根 parent 与位置：直接读生产输出，不重算。
+    assert.equal(
+      heightChain.joints[0].parent,
+      `main.${rootIndex}`,
+      `mainCount=${mainCount} h=${height}：splitChainLayout 链根父级应为 main.${rootIndex}`
+    );
+    assert.deepEqual(
+      heightChain.joints[0].p,
+      [firstExposedFromProd, 10 + firstExposedFromProd, 20 + firstExposedFromProd],
+      `mainCount=${mainCount} h=${height}：链根应采样第一个暴露链点 ${firstExposedFromProd}`
+    );
+    // splitBoneLayout 的 fork parent 也必须与同一个 rootIndex 一致（两条独立数据流不能分叉）。
+    for (const k of [0, mainCount > 2 ? 1 : 0]) {
+      assert.equal(
+        splitBoneLayout(heightLock, { name: `split.${k}` }, { mainCount }).parentMainIndex,
+        rootIndex,
+        `mainCount=${mainCount} h=${height}：splitBoneLayout split.${k} 根索引应为 ${rootIndex}`
+      );
+    }
+  }
+}
 // mainCount <= 1 时恒为 0（保持既有行为）。
 assert.equal(splitParentMainIndex(0.5, 1), 0, "mainCount=1 → 根索引 0");
 assert.equal(splitParentMainIndex(0.5, 0), 0, "mainCount=0 → 根索引 0");

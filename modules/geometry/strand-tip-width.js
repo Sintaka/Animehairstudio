@@ -29,7 +29,7 @@ import {
   tipChainFrameAt,
   tipWeightAt,
   TIP_CLUMP_HANDLE_TANGENT_OFFSET
-} from "./tip-sub-bone.js?v=20260830-1";
+} from "./tip-sub-bone.js?v=20260830-2";
 
 // panel 的发尖采样混合带宽（tipWidthMultiplierAt 末参 0.25）。发丝要与之同构就必须用同一
 // 个值：带宽决定「离管中心多远算完全属于该侧」，两边不同会让同一条曲线在 panel 与发丝上

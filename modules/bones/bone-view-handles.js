@@ -26,7 +26,7 @@ import {
   materializeTipChain,
   sampleTipPosition,
   TIP_CLUMP_HANDLE_TANGENT_OFFSET
-} from "../geometry/tip-sub-bone.js?v=20260830-1";
+} from "../geometry/tip-sub-bone.js?v=20260830-2";
 
 // deps: store .state proxies (sculptState/sel) + module instances (panelTipStrand) + shared
 //   objects (transformControls) + app.js helper functions (clonePanelSplits/isPanelGeometry/

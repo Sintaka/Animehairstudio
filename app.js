@@ -20,7 +20,7 @@ import { bonesFor, splitBonesFor, cloneSplitBones, materializeSplitBones, splitB
 import { panelBoneGroupsFor, MAX_PANEL_BONE_DEPTH, materializePanelBoneLevels, normalizePanelBoneLevels, promotePanelBoneLevel, demotePanelBoneLevel, canPromotePanelBoneLevel, canDemotePanelBoneLevel, materializePanelBoneGroups, normalizePanelBoneGroups, setPanelBoneGroupValue, panelBoneGroupEffectiveValue, panelBoneGroupAtPath, panelBoneGroupPathForLeaf, panelBoneGroupPathForZipper, rebuildPanelBoneGroupsFromLevels, remapPanelBoneGroupsForSplitChange, panelBoneGroupNodeLabel, panelTierEnumeration } from "./modules/bones/panel-bone-groups.js?v=20260925-13";
 // 发丝段宽度曲线 Reset 的几何分派（见 #resetTaperCurve 处的注释）。
 import { strandTipWidthResetCurve } from "./modules/geometry/strand-tip-width.js?v=20260901-1";
-import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-1";
+import { materializeTipChain, sampleCenterlinePoint } from "./modules/geometry/tip-sub-bone.js?v=20260830-2";
 import { createBoneViewHandlesApi } from "./modules/bones/bone-view-handles.js?v=20260901-11";
 import { createStrandSweepApi, SWEEP_OVERLAP_DEFAULTS } from "./modules/geometry/strand-sweep.js?v=20260813-3";
 import { createShapePresetsApi } from "./modules/io/shape-presets.js?v=20260829-1";
@@ -150,7 +150,7 @@ import {
   scaleCapsuleRadialLoops
 } from "./modules/geometry/capsule-curve.js?v=20260814-12";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./modules/io/obj-export.js?v=20260814-12";
-import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260901-1";
+import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260903-1";
 import {
   fileActionFormat,
   fileNameForAction,

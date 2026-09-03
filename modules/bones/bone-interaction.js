@@ -10,7 +10,7 @@ import {
   STRAND_SEGMENT_HOST
 } from "./bone-model.js?v=20260901-1";
 import { createTipSubBoneHostApi } from "./tip-sub-bone-host.js?v=20260901-10";
-import { firstExposedTipChainIndex } from "../geometry/tip-sub-bone.js?v=20260830-1";
+import { firstExposedTipChainIndex } from "../geometry/tip-sub-bone.js?v=20260830-2";
 import {
   setStrandTipWidthCurveValue,
   strandTipClumpAxis,

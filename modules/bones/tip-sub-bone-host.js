@@ -26,7 +26,7 @@ import {
   PANEL_SEGMENT_HOST,
   STRAND_SEGMENT_HOST
 } from "./bone-model.js?v=20260901-1";
-import { tipChainFrameAt } from "../geometry/tip-sub-bone.js?v=20260830-1";
+import { tipChainFrameAt } from "../geometry/tip-sub-bone.js?v=20260830-2";
 // 中间层 tier 解析所需的两块地基（0.2.157/0.2.159 已落地、未接线）：
 //   panel-bone-groups.js —— 分组树本身是纯数据模块，可以直接 import 具名函数
 //   （不经 deps），与 bone-model.js 里 segmentBoneHost 等纯数据分派同规格。

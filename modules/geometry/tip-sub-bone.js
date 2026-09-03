@@ -102,6 +102,9 @@ export function tipChainFrameAt(restTip, tip, t, referenceFrame) {
 //   - modules/bones/bone-interaction.js   gizmo translate 求解根 + 笔刷影响区间
 //   - modules/io/usda-export.js           splitChainLayout / splitParentMainIndex（同规则，
 //     那边按导出结构自行实现，行号见 development-standards 0.2.119 行；数值必须一致）
+//   - modules/io/usda-export.js 的 tipChainNearestIndex（0.2.181 补入清单）：它把同一条
+//     下界钳位**内联**着，消费方是 project-files.js 的蒙皮绑定。不同批改会差一位 ——
+//     绑到的关节与它实际所在的链索引错开一格。
 export function firstExposedTipChainIndex(forkT, pointCount) {
   const last = Math.max(1, Math.floor(Number(pointCount) || 0) - 1);
   return Math.min(last, Math.max(1, Math.floor(Number(forkT) * last)));

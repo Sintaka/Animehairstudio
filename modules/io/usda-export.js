@@ -731,9 +731,23 @@ export function splitChainLayout(lock, bone, options = {}) {
 
   // 暴露段索引：第一个暴露索引 = clamp(floor(forkT·(n−1)), 1, n−1)，即 fork 所在
   // 那一行本身也暴露 —— 比旧的严格 t > forkT 规则多暴露一行，发尖骨骼覆盖到 fork 行，
-  // 每个 zipper 高度都多一根发尖骨骼（用户要求的方向）。下界钳到 1：索引 0 是链根，
-  // 它坐在主链上，暴露它会与 main 骨骼重复、也让根骨骼无处可锚。
+  // 每个 zipper 高度都多一根发尖骨骼（用户要求的方向）。
   // 无暴露 → 至少末点，即单骨情形。
+  //
+  // ★ 下界钳到 1 的真实理由（0.2.181 实测修正，**这是承重约束，不是历史包袱**）：
+  // 旧注释写的是「索引 0 坐在主链上，暴露它会与 main 骨骼重复」——**前半句经实测不成立**：
+  // tip 链点 0 与最近主链点的距离实测 0.0085~0.104（23 个样本，无一为 0），归一化到相邻
+  // 主链间距后恒 < 1 但从不为 0。原因是两者本来就是不同的东西：主链取 lock.points[i]
+  // 原始控制点，tip 链取曲面采样点。所以「重复」只是旧架构的说法。
+  // **真正承重的是后半句「根骨骼无处可锚」**：parentMainIndex = firstExposed − 1
+  // （依据见下方 parentMainIndex 那段注释），firstExposed 若为 0 则父索引钳回 0，根与它
+  // 自己的第一个暴露子节点落在同一主链索引上，违反 splitParentMainIndex 的不变式。
+  // 实测撞车条件是 floor(forkT·(n−1)) === 0，即 forkT < 1/(n−1)：n≤5 时在合法 zipper
+  // 高度范围内可达（Sussurro 存档就有 3 点与 5 点的 lock），n≥6 时因 panel 高度被钳在
+  // [0, 0.78]（app.js:1577 ⇒ forkT ≥ 0.22）而不可达。
+  // ⇒ 「把主骨骼看成完全暴露的段骨骼」这个概念统一**不能靠拆这个下界实现**：
+  // forkT = 0 本身就不可达，拆下界只会破坏根锚不变式。要真做，得先让中间层节点成为
+  // 导出关节（新增关节命名空间 + 蒙皮索引重排），那是独立里程碑。
   const n = chain.points.length;
   const last = n - 1;
   const firstExposed = Math.min(last, Math.max(1, Math.floor(forkT * last)));

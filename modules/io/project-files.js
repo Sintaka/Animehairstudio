@@ -8,8 +8,8 @@ import * as THREE from "three";
 import { leafWeightAt, leafWeightsValid } from "../geometry/leaf-weights.js?v=20260813-1";
 import { cleanFileBaseName, fileNameForAction, normalizeExportContents, fileActionFormat } from "./file-actions.js?v=20260816-13";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./obj-export.js?v=20260814-12";
-import { exportAnimeHairUsda, usdIdentifier, quatToMat3, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName, smoothMainPair, tipChainNearestIndex } from "./usda-export.js?v=20260901-1";
-import { materializeTipChain, tipChainFrameAt as strandTipChainFrameAt } from "../geometry/tip-sub-bone.js?v=20260830-1";
+import { exportAnimeHairUsda, usdIdentifier, quatToMat3, axesToMat3, splitBoneLayout, splitChainLayout, bridgeRootParentName, smoothMainPair, tipChainNearestIndex } from "./usda-export.js?v=20260903-1";
+import { materializeTipChain, tipChainFrameAt as strandTipChainFrameAt } from "../geometry/tip-sub-bone.js?v=20260830-2";
 // fork-T（`1 − max(相邻 zipper 高)`）的唯一定义点。本文件此前在 tipIdxFor 同一函数内有
 // 两份独立算式（panel guard 形式 + strand `?? 0` 形式），0.2.133 折叠到共享层。
 import {
