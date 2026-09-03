@@ -5293,24 +5293,6 @@ body.compact-tool-buttons .viewport-modes .tool-button kbd {
   display: none;
 }
 
-.twist-curve-control {
-  margin-top: 12px;
-}
-
-.twist-curve-control .subsection-label {
-  margin-bottom: 6px;
-}
-
-.twist-curve-zero {
-  stroke: #e62bea;
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-
-.twist-curve-preview path {
-  fill: rgba(88, 246, 255, 0.12);
-}
-
 .taper-preview-center {
   stroke: #e62bea;
   stroke-width: 1.5;

@@ -11,8 +11,7 @@ export function createBranchSweepApi(deps) {
   //   strandGroupDefaults, strandRegionDisplayLabel, syncShapePresetSelects, taperMeshPointExtentPerValue,
   //   taperMeshPointFrame, taperSamples, updateDrawStrandPreview, updateViewportStatsVisibility,
   //   locks, sculptState, projectState, selState, miscState (store .state proxies),
-  //   taperMeshPointsGroup, twistMeshCurvePositiveFillMaterial, twistMeshCurveNegativeFillMaterial,
-  //   twistMeshCurvePositiveMaterial, twistMeshCurveNegativeMaterial, profilePreviewPaths,
+  //   taperMeshPointsGroup, profilePreviewPaths,
   //   sweepProfileTarget, sweepProfileCanvas, sweepProfileOriginalPath, sweepProfileTrimInputs,
   //   sweepProfileTrimValues, sweepProfileTrimRoundness, sweepProfileTrimRoundnessValue,
   //   sweepProfilePath, sweepProfileHairCardCoveragePath, sweepProfilePoints, sweepPointInterpolation,
@@ -199,85 +198,6 @@ function twistMeshGraphAxis(frame) {
   return frame.x.clone().negate();
 }
 
-function addTwistMeshCurvePath(lock, curve, twistCurve, displayRange) {
-  const samples = [];
-  const positions = [...new Set([
-    ...Array.from({ length: 65 }, (_, index) => index / 64),
-    ...twistCurve.map((point) => Number(point.position))
-  ])].sort((left, right) => left - right);
-  positions.forEach((position) => {
-    const frame = deps.taperMeshPointFrame(lock, curve, position, "twistCurve");
-    const value = sampleTaperCurve(twistCurve, position);
-    const graphAxis = twistMeshGraphAxis(frame);
-    samples.push({
-      value,
-      center: frame.point.clone(),
-      point: frame.point.clone().addScaledVector(
-        graphAxis,
-        twistMeshPointDistancePerDegree(lock, position, displayRange) * value
-      )
-    });
-  });
-  const signedSegments = { positive: [], negative: [] };
-  const signedFills = { positive: [], negative: [] };
-  const appendSegment = (sign, start, end) => {
-    signedSegments[sign < 0 ? "negative" : "positive"].push(start, end);
-  };
-  const appendFill = (sign, start, end) => {
-    signedFills[sign < 0 ? "negative" : "positive"].push(
-      start.center, start.point, end.point,
-      start.center, end.point, end.center
-    );
-  };
-  const appendSignedSection = (sign, start, end) => {
-    appendSegment(sign, start.point, end.point);
-    appendFill(sign, start, end);
-  };
-  for (let index = 1; index < samples.length; index += 1) {
-    const start = samples[index - 1];
-    const end = samples[index];
-    const startSign = Math.sign(start.value);
-    const endSign = Math.sign(end.value);
-    if (!startSign || !endSign || startSign === endSign) {
-      appendSignedSection(startSign || endSign || 1, start, end);
-      continue;
-    }
-    const zeroAmount = Math.abs(start.value) / (Math.abs(start.value) + Math.abs(end.value));
-    const zeroCenter = start.center.clone().lerp(end.center, zeroAmount);
-    const zero = { value: 0, center: zeroCenter, point: zeroCenter };
-    appendSignedSection(startSign, start, zero);
-    appendSignedSection(endSign, zero, end);
-  }
-  [
-    [signedFills.positive, deps.twistMeshCurvePositiveFillMaterial, "positive"],
-    [signedFills.negative, deps.twistMeshCurveNegativeFillMaterial, "negative"]
-  ].forEach(([points, material, sign]) => {
-    if (!points.length) return;
-    const fill = new THREE.Mesh(
-      new THREE.BufferGeometry().setFromPoints(points),
-      material
-    );
-    fill.renderOrder = 33;
-    fill.raycast = () => {};
-    fill.userData.twistMeshCurveFill = sign;
-    deps.taperMeshPointsGroup.add(fill);
-  });
-  [
-    [signedSegments.positive, deps.twistMeshCurvePositiveMaterial, "positive"],
-    [signedSegments.negative, deps.twistMeshCurveNegativeMaterial, "negative"]
-  ].forEach(([points, material, sign]) => {
-    if (!points.length) return;
-    const line = new THREE.LineSegments(
-      new THREE.BufferGeometry().setFromPoints(points),
-      material
-    );
-    line.renderOrder = 34;
-    line.raycast = () => {};
-    line.userData.twistMeshCurvePath = sign;
-    deps.taperMeshPointsGroup.add(line);
-  });
-}
-
 function renderSweepProfileEditor() {
   const profile = activeSweepProfile();
   if (!profile?.length) return;
@@ -403,7 +323,7 @@ function finishSweepProfileDrag(event) {
     createSmoothSweepProfileCurve, sampleSweepProfile, createSweepProfileTopology,
     twistCurveEditing, proceduralBranchLengthCurveEditing, proceduralBranchShapeCurveEditing,
     proceduralBranchCurveEditing, renderTwistCurvePreview, twistMeshPointDistancePerDegree,
-    twistMeshGraphAxis, addTwistMeshCurvePath, renderSweepProfileEditor, applySweepProfileEdit,
+    twistMeshGraphAxis, renderSweepProfileEditor, applySweepProfileEdit,
     openSweepProfileEditor, closeSweepProfileEditor, finishSweepProfileDrag
   };
 }

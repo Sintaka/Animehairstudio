@@ -2700,7 +2700,7 @@ test("settings menu exposes preferences, language, and app version", async () =>
   assert.match(localization, /"Alt \+ Left Mouse":/);
   assert.match(localization, /"Center viewport on selected object":/);
   assert.equal(packageData.version, "0.1.5-Sintaka.0.2.63");
-  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.184["']/);
+  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.185["']/);
 });
 
 test("title bar exposes icon-only Patreon and Ko-fi support links", async () => {
@@ -2951,7 +2951,7 @@ test("newly drawn strands create linked mirror instances while X mirror is enabl
     readFile(new URL("../modules/geometry/draw-flow.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20260910-47/);
+  assert.match(html, /app\.js\?v=20260910-48/);
   assert.match(html, /id="mirrorInstanceAction"[^>]*>Mirror Strand<\/button>/);
   assert.match(
     source,
@@ -3043,7 +3043,7 @@ test("project materials select standard, anime anisotropic, and Lambert shaders"
     html,
     /id=["']hairMaterialShader["'][\s\S]*value=["']standard-anisotropic["']>Standard Anisotropic<[\s\S]*value=["']anime-anisotropic["']>Anime Anisotropic<[\s\S]*value=["']lambert["']>Lambert</
   );
-  assert.match(html, /app\.js\?v=20260910-47/);
+  assert.match(html, /app\.js\?v=20260910-48/);
   assert.match(
     html,
     /id=["']hairMaterialAnimeControls["'][\s\S]*id=["']hairMaterialAnimeBaseColor["'][\s\S]*value=["']#dbc2aa["'][\s\S]*id=["']hairMaterialAnimeShadowColor["'][\s\S]*value=["']#99675c["'][\s\S]*id=["']hairMaterialAnimeRimColor["'][\s\S]*value=["']#ffd9cf["'][\s\S]*id=["']hairMaterialAnimeRimStrength["'][\s\S]*value=["']0\.35["'][\s\S]*id=["']hairMaterialAnimeRimWidth["'][\s\S]*value=["']0\.3["'][\s\S]*id=["']hairMaterialAnimeHighlightEdgeSuppression["']/
@@ -4578,8 +4578,8 @@ test("strand width and depth curve editors expose draggable viewport mesh points
     /class="profile-dialog-actions taper-curve-actions"[\s\S]*id="addTaperPoint"[\s\S]*class="taper-toggle-stack"[\s\S]*id="taperAsymmetryToggle"[\s\S]*id="taperMeshPointsToggle"/
   );
   assert.doesNotMatch(html, /id="taperCurveSide"/);
-  assert.match(html, /styles\.css\?v=20260910-47/);
-  assert.match(html, /app\.js\?v=20260910-47/);
+  assert.match(html, /styles\.css\?v=20260910-48/);
+  assert.match(html, /app\.js\?v=20260910-48/);
   // localization.js is now loaded as an ES-module import inside app.js (there is no
   // separate localization script tag anymore).
   assert.match(source, /from "\.\/modules\/data\/localization\.js\?v=20260901-1"/);
@@ -4754,8 +4754,17 @@ test("strand shape exposes an undoable signed twist curve envelope", async () =>
     readFile(new URL("../modules/geometry/procedural-duplicate.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /id="twist"[\s\S]*id="strandTwistCurveControl"[\s\S]*data-curve-key="twistCurve"/);
-  assert.match(html, /id="strandTwistCurvePreview"/);
+  // 0.2.185：twist 曲线编辑入口已退役（曲线本身在 0.2.184 已退出运行时）。
+  // Twist 滑杆（lock.twist）保留 —— 它仍被 strandProfileTwistAt 消费，与曲线是两回事。
+  assert.match(html, /id="twist"[\s\S]*id="twistNumber"/);
+  // 负向断言：入口不得回来。它是 twistCurveEditing() 唯一的触发源
+  // （curveKey 只能由这个按钮设成 "twistCurve"），回来就意味着整套死分支重新可达。
+  assert.ok(
+    !/data-curve-key="twistCurve"/.test(html),
+    "twist 曲线编辑入口回来了 —— 它会让 taper-editor 里那批 editingTwist 死分支重新可达"
+  );
+  assert.ok(!/id="strandTwistCurveControl"/.test(html), "twist 曲线控件块应已删除");
+  assert.ok(!/id="strandTwistCurvePreview"/.test(html), "twist 曲线预览 SVG 应已删除");
   assert.match(config, /DEFAULT_TWIST_CURVE = \[[\s\S]*position: 0, value: 0[\s\S]*position: 1, value: 0/);
   assert.match(config, /TWIST_CURVE_VALUE_MAX = 4500/);
   assert.match(config, /TWIST_CURVE_DISPLAY_RANGE_DEFAULT = 4500/);
@@ -4829,25 +4838,27 @@ test("strand shape exposes an undoable signed twist curve envelope", async () =>
   assert.match(taperEditor, /deps\.taperAsymmetryToggleRow\.classList\.toggle\("hidden", editingTwist \|\| editingProceduralBranch \|\| segmentEditing\)/);
   // moved to modules/geometry/taper-editor.js
   assert.match(taperEditor, /taperMeshPointsToggleRow\.classList\.toggle\([\s\S]*nextEdit\.type !== "strand"/);
-  assert.match(source, /const twistMeshCurvePositiveMaterial = new THREE\.LineBasicMaterial\([\s\S]*color: 0x58f6ff/);
-  assert.match(source, /const twistMeshCurveNegativeMaterial = new THREE\.LineBasicMaterial\([\s\S]*color: 0xe62bea/);
-  assert.match(source, /const twistMeshCurvePositiveFillMaterial = new THREE\.MeshBasicMaterial\([\s\S]*color: 0x176873[\s\S]*opacity: 0\.48/);
-  assert.match(source, /const twistMeshCurveNegativeFillMaterial = new THREE\.MeshBasicMaterial\([\s\S]*color: 0x701d62[\s\S]*opacity: 0\.48/);
-  // moved to modules/geometry/branch-sweep.js
-  assert.match(branchSweep, /function addTwistMeshCurvePath\([\s\S]*sampleTaperCurve\(twistCurve, position\)[\s\S]*signedSegments\.positive[\s\S]*signedSegments\.negative/);
-  // moved to modules/geometry/branch-sweep.js
+  // 0.2.185：4 个 twist 专属材质与 addTwistMeshCurvePath 一起退役
+  // （那 4 个材质的唯一消费点就在该函数体内 ⇒ 函数没了它们必然是死代码）。
+  assert.ok(
+    !/twistMeshCurvePositiveMaterial|twistMeshCurveNegativeMaterial|twistMeshCurvePositiveFillMaterial|twistMeshCurveNegativeFillMaterial/.test(source),
+    "4 个 twist 专属材质应已随 addTwistMeshCurvePath 一起删除"
+  );
+  assert.ok(
+    !/function addTwistMeshCurvePath\(/.test(branchSweep),
+    "addTwistMeshCurvePath 应已删除（它的唯一调用点在 twist 曲线编辑路径上）"
+  );
+  // twistMeshGraphAxis 刻意保留：它在 taper-editor 还有 2 个把手侧调用点
+  // （editingTwist 三元），那批三元归第 7 步「把手统一」一起收，不在本轮范围。
   assert.match(branchSweep, /function twistMeshGraphAxis\(frame\)[\s\S]*frame\.x\.clone\(\)\.negate\(\)/);
-  // moved to modules/geometry/branch-sweep.js
-  assert.match(branchSweep, /function addTwistMeshCurvePath\([\s\S]*twistMeshGraphAxis\(frame\)[\s\S]*graphAxis/);
   // moved to modules/geometry/taper-editor.js
   assert.match(taperEditor, /const shapeAxis = editingTwist \? deps\.branchSweep\.twistMeshGraphAxis\(frame\) : frame\[axis\]\.clone\(\)[\s\S]*const projectedAxis = shapeAxis\.addScaledVector/);
   assert.doesNotMatch(source, /twistMeshBillboard|updateTwistMeshBillboardForCamera/);
-  // moved to modules/geometry/branch-sweep.js
-  assert.match(branchSweep, /signedFills\.positive[\s\S]*signedFills\.negative[\s\S]*fill\.renderOrder = 33[\s\S]*fill\.raycast = \(\) => \{\}/);
-  // moved to modules/geometry/branch-sweep.js
-  assert.match(branchSweep, /line\.raycast = \(\) => \{\};[\s\S]*line\.userData\.twistMeshCurvePath = sign/);
+  // 原先这里有两条钉住 addTwistMeshCurvePath 内部实现的断言（signedFills / twistMeshCurvePath
+  // 的 renderOrder 与 raycast），随该函数在 0.2.185 一起退役。
   assert.match(source, /edge\.visible = lock\.id === sel\.state\.selectedId[\s\S]*hairState\.state\.taperMeshPointsVisible && branchSweep\.twistCurveEditing\(\)[\s\S]*hairState\.state\.moveCurveControlVisibility\.twistCurve/);
-  assert.match(css, /\.twist-curve-zero[\s\S]*stroke: #e62bea/);
+  // twist 曲线预览的 CSS 随 DOM 一起删除（0.2.185）；这里改为钉住它不再回来。
+  assert.ok(!/\.twist-curve-/.test(css), "twist 曲线预览的 CSS 规则应已随 DOM 删除");
   assert.match(localization, /"Twist Curve":/);
   assert.match(localization, /"Twist Rate Curve":/);
 });

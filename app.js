@@ -2337,36 +2337,6 @@ const taperMeshPointCenterMaterial = new THREE.MeshBasicMaterial({
   depthTest: false,
   depthWrite: false
 });
-const twistMeshCurvePositiveMaterial = new THREE.LineBasicMaterial({
-  color: 0x58f6ff,
-  transparent: true,
-  opacity: 0.9,
-  depthTest: false,
-  depthWrite: false
-});
-const twistMeshCurveNegativeMaterial = new THREE.LineBasicMaterial({
-  color: 0xe62bea,
-  transparent: true,
-  opacity: 0.9,
-  depthTest: false,
-  depthWrite: false
-});
-const twistMeshCurvePositiveFillMaterial = new THREE.MeshBasicMaterial({
-  color: 0x176873,
-  transparent: true,
-  opacity: 0.48,
-  side: THREE.DoubleSide,
-  depthTest: false,
-  depthWrite: false
-});
-const twistMeshCurveNegativeFillMaterial = new THREE.MeshBasicMaterial({
-  color: 0x701d62,
-  transparent: true,
-  opacity: 0.48,
-  side: THREE.DoubleSide,
-  depthTest: false,
-  depthWrite: false
-});
 const taperMeshPointsGroup = new THREE.Group();
 taperMeshPointsGroup.name = "Shape curve mesh points";
 taperMeshPointsGroup.visible = false;
@@ -3581,7 +3551,6 @@ const taperPreviewPaths = {
   groupDepth: document.querySelector("#groupDepthPreview"),
   strandDepth: document.querySelector("#strandDepthPreview")
 };
-const strandTwistCurvePreview = document.querySelector("#strandTwistCurvePreview");
 const taperCurveEditor = document.querySelector("#taperCurveEditor");
 const taperCurveTarget = document.querySelector("#taperCurveTarget");
 const taperCurveCanvas = document.querySelector("#taperCurveCanvas");
@@ -8374,8 +8343,7 @@ const branchSweep = createBranchSweepApi({
   getSelectedLock, profileToCanvas, renderHairCardCoveragePath, renderProfilePreview,
   strandRegionDisplayLabel, syncShapePresetSelects: presetLibraryApi.syncShapePresetSelects, taperMeshPointExtentPerValue: taperEditor.taperMeshPointExtentPerValue,
   taperMeshPointFrame: taperEditor.taperMeshPointFrame, taperSamples: taperEditor.taperSamples, updateDrawStrandPreview: drawFlowApi.updateDrawStrandPreview, updateViewportStatsVisibility, locks,
-  strandGroupDefaults, taperMeshPointsGroup, twistMeshCurvePositiveFillMaterial, twistMeshCurveNegativeFillMaterial,
-  twistMeshCurvePositiveMaterial, twistMeshCurveNegativeMaterial, profilePreviewPaths,
+  strandGroupDefaults, taperMeshPointsGroup, profilePreviewPaths,
   sweepProfileTarget, sweepProfileCanvas, sweepProfileOriginalPath, sweepProfileTrimInputs, sweepProfileTrimValues,
   sweepProfileTrimRoundness, sweepProfileTrimRoundnessValue, sweepProfilePath, sweepProfileHairCardCoveragePath,
   sweepProfilePoints, sweepPointInterpolation, sweepProfileMirrorX, sweepProfileEditor, taperCurveEditor, groupDefaultsWarning,
@@ -8820,7 +8788,6 @@ Object.assign(taperEditorDeps, {
   segmentDepthPreview,
   strandSegmentTaperPreview,
   strandSegmentDepthPreview,
-  strandTwistCurvePreview,
   proceduralBranchLengthCurvePreview,
   proceduralBranchShapeCurvePreview,
   sweepProfileEditor,
@@ -13614,7 +13581,6 @@ function syncCreationShapeInputs() {
   strandLayerInput.value = normalizeHairLayer(defaults.hairLayer);
   taperEditor.renderTaperPreview(taperPreviewPaths.strand, defaults, "taperCurve");
   taperEditor.renderTaperPreview(taperPreviewPaths.strandDepth, defaults, "depthCurve");
-  branchSweep.renderTwistCurvePreview(strandTwistCurvePreview, defaults);
   renderProfilePreview(profilePreviewPaths.strand, defaults.sweepProfile, defaults.profileOffset, defaults);
   syncShapeDimensionInputs(defaults);
   inputs.profileOffset.value = defaults.profileOffset;
@@ -14223,7 +14189,6 @@ function syncInputs(lock) {
   materialApi.syncHairMaterialEditor(lock);
   taperEditor.renderTaperPreview(taperPreviewPaths.strand, lock, "taperCurve");
   taperEditor.renderTaperPreview(taperPreviewPaths.strandDepth, lock, "depthCurve");
-  branchSweep.renderTwistCurvePreview(strandTwistCurvePreview, lock);
   if (!isPanelGeometry(lock)) syncShapeDimensionInputs(lock);
   inputs.rootScalpOffset.value = lock.rootScalpOffset ?? 0;
   document.querySelector("#rootScalpOffsetValue").textContent = Number(lock.rootScalpOffset ?? 0).toFixed(2);

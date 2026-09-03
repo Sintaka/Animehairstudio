@@ -38,7 +38,7 @@ export function createTaperEditorApi(deps) {
   //   taperAsymmetryToggleRow/taperAsymmetryToggle/centerAsymmetricProfileRow/centerAsymmetricProfileToggle/
   //   taperMeshPointsToggleRow/taperMeshPointsToggle/taperPointValue/taperPointPosition/taperPointInterpolation/
   //   taperPreviewPaths/segmentTaperPreview/segmentDepthPreview/strandSegmentTaperPreview/
-  //   strandSegmentDepthPreview/strandTwistCurvePreview/
+  //   strandSegmentDepthPreview/
   //   proceduralBranchLengthCurvePreview/proceduralBranchShapeCurvePreview/sweepProfileEditor/sweepProfileTarget/
   //   groupDefaultsWarning) + app.js helper functions (including visibleTaperMeshCurveEdits for the
   //   Move tool viewport curve controls).
@@ -412,7 +412,6 @@ function addTaperMeshPointsForCurve(lock, curveKey) {
         }
       ]
     : [{ curvePoints: primaryCurve, sides: [-1, 1], curveSide: "primary" }];
-  if (editingTwist) deps.branchSweep.addTwistMeshCurvePath(lock, curve, primaryCurve, twistDisplayRange);
   curveSides.forEach(({ curvePoints: sideCurvePoints, sides, curveSide }) => sideCurvePoints.forEach((point, pointIndex) => {
     const frame = taperMeshPointFrame(lock, curve, point.position, curveKey);
     sides.forEach((side) => {

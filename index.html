@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Anime Hair Studio</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=20260910-47" />
+    <link rel="stylesheet" href="./styles.css?v=20260910-48" />
   </head>
   <body>
     <main class="studio-shell">
@@ -1189,16 +1189,6 @@
               <input id="twistNumber" type="number" step="0.05" aria-label="Twist value" />
             </span>
           </label>
-          <div id="strandTwistCurveControl" class="twist-curve-control">
-            <div class="subsection-label">Twist Curve</div>
-            <div class="shape-preview-shell">
-              <svg class="taper-preview twist-curve-preview" viewBox="0 0 160 70" preserveAspectRatio="none" role="img" aria-label="Selected strand twist curve preview">
-                <line class="twist-curve-zero" x1="9" y1="35" x2="151" y2="35"></line>
-                <path id="strandTwistCurvePreview"></path>
-              </svg>
-              <button class="shape-edit-button edit-shape-curve" data-curve-key="twistCurve" type="button" title="Edit twist curve" aria-label="Edit twist curve"><span class="pencil-glyph" aria-hidden="true"></span></button>
-            </div>
-          </div>
           <div id="strandProfileLabel" class="profile-heading-row">
             <div class="subsection-label">Strand Profile</div>
             <label id="hairCardControl" class="toggle-row profile-hair-card-toggle" for="hairCard" title="Generates the strand as an open, double-sided ribbon instead of a closed volume."><span>Hair Card</span><input id="hairCard" type="checkbox" /></label>
@@ -2489,6 +2479,6 @@
         window.dispatchEvent(new ErrorEvent("error", { message: "Unhandled rejection: " + (r && (r.stack || r.message) || r) }));
       });
     </script>
-    <script type="module" src="./app.js?v=20260910-47"></script>
+    <script type="module" src="./app.js?v=20260910-48"></script>
   </body>
 </html>
