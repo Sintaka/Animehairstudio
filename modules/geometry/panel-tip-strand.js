@@ -399,13 +399,12 @@ function tipWidthSpreadGap(lock, segmentIndex, splits, bone, t, side, options = 
 }
 
 // §3.3 中间层曲线回落：leaf(bone 自己的值) → 祖先中间层（沿分组链） → lock 的全局曲线。
-// 用于 taperCurve/taperCurveSecondary 与 depthCurve/depthCurveSecondary（0.2.175 接入）
-// —— 这四个字段全部在 panel-bone-groups.js 的 AUTHORABLE_KEYS 白名单里，可以被中间层
-// 创作、也可以沿链回落（resolvePanelBoneGroupValue 本来就是干这件事的现成纯函数，
-// 直接复用，不新写一份回落公式）。depthCurve 接入前只有 taperCurve 走了这条链，导致
-// 中间态发尖只有宽度（绿色 WidthCurve）跟着分组层走、深度仍卡在 lock 全局值这一处
-// 用户可见的错位——两者读取的都是同一棵分组树、同一个 AUTHORABLE_KEYS 白名单，没有
-// 理由只接一半。
+// **当前只用于 taperCurve/taperCurveSecondary**（宽度）。
+// ⚠ depthCurve/depthCurveSecondary 曾在 0.2.175 接入本链，**0.2.183 又刻意收回**：
+// 用户拍板「扫掠横截面整体直接由层0决定」⇒ 深度是整片发片的属性、宽度才是分段的。
+// 那两个字段**仍在 AUTHORABLE_KEYS 白名单里、叶子上的值也不删**（「曲线保持原状」），
+// 只是横截面消费点恒读 lock 级。理由与「不要修好它」的警告写在 panelThicknessAt 上方。
+// ⇒ 所以本函数现在被调用时 key 只会是宽度那两个；depth 传进来不会报错，但那是错的用法。
 // asymmetricWidthCurve / asymmetricDepthCurve **刻意不在这里**：AUTHORABLE_KEYS 没有这两个
 // 字段，分组树节点上根本不存在这两个属性（只有 tip/AUTHORABLE_KEYS 两类字段），中间层从未
 // 有机会创作它们 ⇒ 给它们加三级回落等于凭空发明一层新的可创作状态，是设计变更，不是本轮
@@ -923,12 +922,13 @@ function tipMainSectionPoint(lock, t, u, shell, bone, segmentIndex = -1, splits 
   const origin = frame.point.clone();
   const width = tipPanelWidthAt(lock, t, u, bone, segmentIndex, splits);
   const halfWidth = width * 0.5;
-  // depthCurve 走三级回落（同 taperCurve 口径，见 panelTierCurveFallback 顶部注释）：
-  // 中间层选中并创作深度曲线时，把手必须跟着分组链取值，否则会与下面网格侧的
-  // panelThicknessAt 各读各的、球体与网格厚度错层（本函数正是给把手复刻网格用的）。
+  // ★ 0.2.183：depth 恒读 lock 级（第 0 层），刻意不走三级回落。
+  // 理由与「不要修好它」的警告见 panelThicknessAt 上方的长注释（那里是网格侧）。
+  // ⚠ 同步点：本函数是**给把手复刻网格用的**，所以厚度口径必须与 panelThicknessAt
+  // 逐字一致，否则球体把手与网格厚度错层。改一处必须改另一处。
   const thickness = Math.max(0.0001, Number(lock.panelThickness ?? 0.08) * sampleAsymmetricTaperCurve(
-    panelTierCurve(lock, bone, segmentIndex, "depthCurve"),
-    panelTierCurve(lock, bone, segmentIndex, "depthCurveSecondary"),
+    lock.depthCurve,
+    lock.depthCurveSecondary,
     bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve,
     shell,
     t
@@ -1680,12 +1680,20 @@ function createPanelStrandGeometry(lock) {
     return Math.max(0.0001, fullWidth * tipWidthMultiplierAt(lock, t, side, bone, segment, splits));
   };
   const panelThicknessAt = (t, side, bone, segment = -1) => {
-    // depthCurve 走三级回落，与 panelWidthAt→tipWidthMultiplierAt 同规格（同一段 bone
-    // 缺创作值时都该沿分组链向上找，不能只有宽度接、深度不接——否则中间态发尖只有
-    // 绿色宽度曲线跟着分组层走，深度仍卡在 lock 全局值，正是本轮要修的错位）。
+    // ★ 0.2.183：depth **恒读 lock 级（第 0 层）**，刻意不走三级回落。
+    // 用户拍板原话逐字：「曲线保持原状, 扫掠横截面整体直接由层0决定」
+    // ⇒ 深度是**整片发片的属性**，不是每段各自的属性；宽度才是分段的。
+    // 这与 0.2.175 的取向相反 —— 那一版把 depth 接进三级回落，理由是「宽度接了深度
+    // 没接算错位」。0.2.183 判定那个前提本身不对：宽度分段、深度整片，是设计而非错位。
+    // ⚠ **不要"修好"它**：把这里改回 panelTierCurve 会让叶子/中间层创作过的 depth
+    // 重新生效，与用户拍板的口径相悖。数据侧 depthCurve/depthCurveSecondary 仍在
+    // AUTHORABLE_KEYS 白名单里、叶子的 bone.depthCurve 也不删（「曲线保持原状」），
+    // 只是**横截面不再消费它们**。
+    // ⚠ 同步点：本函数与 tipMainSectionPoint 的 thickness 必须同口径，否则把手
+    // 复刻的球体与网格厚度错层。改一处必须改另一处。
     return Math.max(0.0001, baseThickness * sampleAsymmetricTaperCurve(
-      panelTierCurve(lock, bone, segment, "depthCurve"),
-      panelTierCurve(lock, bone, segment, "depthCurveSecondary"),
+      lock.depthCurve,
+      lock.depthCurveSecondary,
       bone?.asymmetricDepthCurve ?? lock.asymmetricDepthCurve,
       side,
       t
