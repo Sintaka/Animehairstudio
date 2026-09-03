@@ -2700,7 +2700,7 @@ test("settings menu exposes preferences, language, and app version", async () =>
   assert.match(localization, /"Alt \+ Left Mouse":/);
   assert.match(localization, /"Center viewport on selected object":/);
   assert.equal(packageData.version, "0.1.5-Sintaka.0.2.63");
-  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.183["']/);
+  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.184["']/);
 });
 
 test("title bar exposes icon-only Patreon and Ko-fi support links", async () => {
@@ -2951,7 +2951,7 @@ test("newly drawn strands create linked mirror instances while X mirror is enabl
     readFile(new URL("../modules/geometry/draw-flow.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20260910-46/);
+  assert.match(html, /app\.js\?v=20260910-47/);
   assert.match(html, /id="mirrorInstanceAction"[^>]*>Mirror Strand<\/button>/);
   assert.match(
     source,
@@ -3043,7 +3043,7 @@ test("project materials select standard, anime anisotropic, and Lambert shaders"
     html,
     /id=["']hairMaterialShader["'][\s\S]*value=["']standard-anisotropic["']>Standard Anisotropic<[\s\S]*value=["']anime-anisotropic["']>Anime Anisotropic<[\s\S]*value=["']lambert["']>Lambert</
   );
-  assert.match(html, /app\.js\?v=20260910-46/);
+  assert.match(html, /app\.js\?v=20260910-47/);
   assert.match(
     html,
     /id=["']hairMaterialAnimeControls["'][\s\S]*id=["']hairMaterialAnimeBaseColor["'][\s\S]*value=["']#dbc2aa["'][\s\S]*id=["']hairMaterialAnimeShadowColor["'][\s\S]*value=["']#99675c["'][\s\S]*id=["']hairMaterialAnimeRimColor["'][\s\S]*value=["']#ffd9cf["'][\s\S]*id=["']hairMaterialAnimeRimStrength["'][\s\S]*value=["']0\.35["'][\s\S]*id=["']hairMaterialAnimeRimWidth["'][\s\S]*value=["']0\.3["'][\s\S]*id=["']hairMaterialAnimeHighlightEdgeSuppression["']/
@@ -4578,8 +4578,8 @@ test("strand width and depth curve editors expose draggable viewport mesh points
     /class="profile-dialog-actions taper-curve-actions"[\s\S]*id="addTaperPoint"[\s\S]*class="taper-toggle-stack"[\s\S]*id="taperAsymmetryToggle"[\s\S]*id="taperMeshPointsToggle"/
   );
   assert.doesNotMatch(html, /id="taperCurveSide"/);
-  assert.match(html, /styles\.css\?v=20260910-46/);
-  assert.match(html, /app\.js\?v=20260910-46/);
+  assert.match(html, /styles\.css\?v=20260910-47/);
+  assert.match(html, /app\.js\?v=20260910-47/);
   // localization.js is now loaded as an ES-module import inside app.js (there is no
   // separate localization script tag anymore).
   assert.match(source, /from "\.\/modules\/data\/localization\.js\?v=20260901-1"/);
@@ -4762,9 +4762,19 @@ test("strand shape exposes an undoable signed twist curve envelope", async () =>
   assert.match(curveMath, /export function normalizeEnvelopeCurve\([\s\S]*valueMinimum[\s\S]*valueMaximum/);
   assert.match(curveMath, /export function blendEnvelopeCurves\([\s\S]*sampleTaperCurve/);
   assert.match(source, /lock\.twistCurve = normalizeEnvelopeCurve\([\s\S]*DEFAULT_TWIST_CURVE[\s\S]*-TWIST_CURVE_VALUE_MAX/);
-  assert.match(source, /function strandTwistAt\(lock, t\) \{[\s\S]*sampleIntegratedEnvelopeCurve\(lock\.twistCurve \|\| DEFAULT_TWIST_CURVE, t\)/);
+  assert.match(source, /function strandTwistAt\(lock, t\) \{\s*return controlPointRotationAt\(lock, t\)\s*\+ strandProfileTwistAt\(lock, t\)/);
   assert.match(source, /function controlPointRotationAt\(lock, t\) \{[\s\S]*sampleArray\(lock\.pointTwists, t\)/);
-  assert.match(source, /function strandProfileTwistAt\(lock, t\) \{[\s\S]*sampleIntegratedEnvelopeCurve\(lock\.twistCurve \|\| DEFAULT_TWIST_CURVE, t\)/);
+  // twistCurve 已退出运行时（0.2.184）：只剩 strandRotation 与 twist 两项。
+  // 曲线的贡献改由加载旧档时 bake 进 pointTwists ⇒ 经 controlPointRotationAt 生效。
+  assert.match(
+    source,
+    /function strandProfileTwistAt\(lock, t\) \{\s*return THREE\.MathUtils\.degToRad\(Number\(lock\.strandRotation \?\? 0\)\)\s*\+ Number\(lock\.twist \|\| 0\) \* THREE\.MathUtils\.clamp\(t, 0, 1\);\s*\}/
+  );
+  // 负向断言：运行时不得再有任何对 twistCurve 的积分采样（否则会与 bake 后的 pointTwists 双计）。
+  assert.ok(
+    !/sampleIntegratedEnvelopeCurve\(lock\.twistCurve/.test(source),
+    "app.js 仍在运行时积分采样 lock.twistCurve —— 与 bake 进 pointTwists 的迁移会双重计数"
+  );
   assert.match(source, /function curveFrameAtPoint\(lock, pointIndex\)[\s\S]*twistAt: \(position\) => controlPointRotationAt\(frameLock, position\)/);
   assert.match(source, /function transportedStrandFrameAt\(lock, curve, t, options = \{\}\)[\s\S]*twistOverrideAt\(clampedT \* step \/ stepCount\)/);
   assert.match(source, /twistCurve: lock\.twistCurve\.map\(\(point\) => \(\{ \.\.\.point, value: -Number\(point\.value \|\| 0\) \}\)\)/);
@@ -4854,8 +4864,13 @@ test("dynamic density can add longitudinal loops to support twist curves", async
   assert.match(html, /id="groupDynamicDensity"[\s\S]*Twist Density[\s\S]*id="groupTwistDensity"/);
   assert.match(html, /id="strandDynamicDensity"[\s\S]*Twist Density[\s\S]*id="strandTwistDensity"/);
   assert.match(curveMath, /export function adaptiveCurveParameters\([\s\S]*additionalDetailSampler/);
+  // 纯函数刻意保留（对曲线来源无关，将来可按 pointTwists 局部变化率复用），
+  // 但 0.2.184 起 app.js 不再传它：twistCurve 已退出运行时，没有输入源了。
   assert.match(curveMath, /export function twistCurveDensityDetail\([\s\S]*sampleTaperCurve/);
-  assert.match(source, /function strandCurveParameters\([\s\S]*twistCurveDensityDetail\([\s\S]*lock\.twistDensity,[\s\S]*segmentLimit/);
+  assert.ok(
+    !/twistCurveDensityDetail\(/.test(source),
+    "app.js 又开始调用按 twist 曲线加细分的采样器了 —— twistCurve 已退出运行时，它拿不到输入"
+  );
   assert.match(source, /const strandCreationDefaults = \{[\s\S]*twistDensity: 0\.5/);
   assert.match(source, /lock\.twistDensity = THREE\.MathUtils\.clamp\(Number\(base\.twistDensity \?\? 0\), 0, 1\)/);
   assert.match(source, /twistDensity: Number\(lock\.twistDensity \?\? 0\)/);

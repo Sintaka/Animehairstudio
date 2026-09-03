@@ -97,13 +97,11 @@ import {
   rootCorrectionFalloff,
   sampleArray,
   sampleAsymmetricTaperCurve,
-  sampleIntegratedEnvelopeCurve,
   sampleScale,
   sampleTaperCurve,
   surfaceArcBlendAmount,
   surfaceArcPolylinePointData,
   symmetricClosedCurveParameters,
-  twistCurveDensityDetail,
   twistCurveDisplayRange,
   twistCurveHandleDistancePerDegree,
   twistRateDegreesFromUnits,
@@ -151,6 +149,7 @@ import {
 } from "./modules/geometry/capsule-curve.js?v=20260814-12";
 import { exportCurvePolyline, exportHairFaces, hairFaceIndices } from "./modules/io/obj-export.js?v=20260814-12";
 import { exportAnimeHairUsda } from "./modules/io/usda-export.js?v=20260903-1";
+import { bakeTwistCurveIntoPointTwists } from "./modules/io/twist-curve-migration.js?v=20260903-1";
 import {
   fileActionFormat,
   fileNameForAction,
@@ -7843,15 +7842,10 @@ function strandCurveParameters(lock, curve, segmentLimit, start = 0, end = 1, mi
     end,
     minimumSegments,
     (parameter) => widthProfileAt(curveParameterAt(parameter)),
-    useSymmetricArcDistribution,
-    (before, middle, after) => twistCurveDensityDetail(
-      lock.twistCurve || DEFAULT_TWIST_CURVE,
-      curveParameterAt(before),
-      curveParameterAt(middle),
-      curveParameterAt(after),
-      lock.twistDensity,
-      segmentLimit
-    )
+    useSymmetricArcDistribution
+    // twistCurve 退出运行时后这里不再传 additionalDetailSampler（原先传的是 curve-math.js
+    // 里那个按 twist 曲线局部斜率加细分的采样器）。该纯函数与其测试刻意保留在 curve-math.js：
+    // 它对曲线来源是无关的，将来若要按 pointTwists 的局部变化率恢复「twist 密处自动加细分」可直接复用。
   );
   return densityParameters.map(curveParameterAt);
 }
@@ -10908,6 +10902,10 @@ function restoreLock(snapshot, { deferRootAttachment = false, remapRootAttachmen
   lock.radialSegments = lock.radialSegments || 10;
   lock.lengthSegments = lock.lengthSegments || 26;
   if (legacyUniformLayerOffset && lock.geometryType !== "poly") applyLayerOffset(lock, lock.layerOffsetApplied);
+  // 旧档兼容：twistCurve 已从运行时下线，把它的贡献 bake 进 pointTwists 并归零曲线。
+  // 必须在 createHairGeometry 之前（否则首帧仍按旧语义建几何），且在 pointTwists
+  // 与 twistCurve 都已展开归一化之后。归零是幂等性要求，见迁移模块注释。
+  bakeTwistCurveIntoPointTwists(lock, DEFAULT_TWIST_CURVE);
   lock.mesh = new THREE.Mesh(
     strandGeometryApi.createHairGeometry(lock),
     materialApi.createHairMaterial(lock)
@@ -12518,9 +12516,10 @@ function controlPointRotationAt(lock, t) {
   return sampleArray(lock.pointTwists, t);
 }
 
+// twistCurve 已退出运行时（加载旧档时 bake 进 pointTwists，见 modules/io/twist-curve-migration.js）
+// ⇒ 这里只剩 strandRotation 与 twist 两项；曲线的贡献现在走 controlPointRotationAt。
 function strandProfileTwistAt(lock, t) {
   return THREE.MathUtils.degToRad(Number(lock.strandRotation ?? 0))
-    + THREE.MathUtils.degToRad(sampleIntegratedEnvelopeCurve(lock.twistCurve || DEFAULT_TWIST_CURVE, t))
     + Number(lock.twist || 0) * THREE.MathUtils.clamp(t, 0, 1);
 }
 
