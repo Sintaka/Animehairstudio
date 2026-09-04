@@ -33,6 +33,20 @@ agent 默认不读这里——除非要追溯某个历史决策的原始推理�
 | `material-io-refactor-map.md` | material + IO 收尾（rootAttachment + createProjectSaveApi 收敛）重构引用图 | 2026-08-23 | 代码注释指针已于 0.2.145 删除（deps 清单以 app.js 的 Object.assign 批填点为真源），零引用后归档 |
 | `scalp-refactor-map.md` | scalp 系统迁出（refactor 3d batch 4）函数引用图 + deps 分类 | 2026-08-23 | 代码注释指针已于 0.2.145 删除（deps 清单以 app.js 的 Object.assign 批填点为真源），零引用后归档 |
 | `draw-creation-refactor-map.md` | draw/creation 流程迁出（批次 B2）函数引用图 + deps 分类 | 2026-08-23 | 代码注释指针已于 0.2.145 删除（deps 清单以 app.js 的 Object.assign 批填点为真源），零引用后归档 |
+| `panel-split-tip-bones.md` | Panel Split 骨骼化 + 发尖子骨骼实施记录（S1–S6，止于 0.2.65） | 2026-09-04 | 文档自身已声明「不是当前状态」；当前状态见 0.2.123/0.2.125/0.2.126 三轮条目 |
+| `child-sweep-unification.md` | 子发片扫掠统一到共享内核 `strand-sweep.js`（P2） | 2026-09-04 | 0.2.59 已实现；`sweepSide` 被 `createBaseHairGeometry` 与 `createBranchChildGeometry` 双双调用 |
+| `uv-pack-parallel-plan.md` | UV pack 并行化（Phase 0/1：行区间表 + worker 池） | 2026-09-04 | 0.2.110 已实施（`local-adaptation-log.md` 按 0.2.110 检索）；Phase 2 由文档自身拍板暂缓并给出触发条件 |
+| `uv-unfold-plan.md` | UV 展开 P1–P9 阶段表 | 2026-09-04 | 0.2.69–0.2.79 全部完成；规则/踩坑全集已迁至 `devlog/uv-unfold.md` |
+| `wind-preview-plan.md` | 风场预览 v1（程序化预览 + 浮动窗口 + seed 卡死修复） | 2026-09-04 | 0.2.112/0.2.113 已实施；§8 碰撞路线图属未开工远期项，文档已标注「另立路线图」 |
+| `delta-mush-plan.md` | 扫掠防重叠（曲率感知收窄 + 转角平滑） | 2026-09-04 | 0.2.66–0.2.68 已实施；§6 Delta Mush 经文档自身评估为「非对症」未立项 |
+| `scalp-conform-ellipsoid-v5-plan.md` | Scalp Conform 第五版：椭球纬线 + 密切圆心 | 2026-09-04 | **原头部写「计划中」已滞后**，实为 0.2.144 已发布；`panelScalpConformOffsets` 实现与文档公式逐项对应。归档时已更正头部 |
+| `strand-tip-selection-port-plan.md` | 发尖子骨骼选中系统移植到普通发丝 | 2026-09-04 | **原头部写「实施中」已滞后**，实为 0.2.126 已落地；`tip-sub-bone-host.js` 已建。归档时已更正头部 |
+| `strand-tip-width-ui-port-plan.md` | 发尖 WidthCurve UI 移植到普通发丝 | 2026-09-04 | **原头部写「实施中」已滞后**，实为 0.2.125 已落地；`tip-width-curve.js` + `strand-tip-width.js` 已建并有测试。归档时已更正头部 |
+| `strand-zipper-port-plan.md` | 普通发丝拉链移植（Phase A–F） | 2026-09-04 | 文档自身状态即「已全部实施」；`strandSplitDirection` 已于 0.2.132 被管中心公式取代 |
+| `main-015-port-plan.md` | main 0.1.5 移植计划（三波任务） | 2026-09-04 | **原头部写「进行中」已滞后**，文档「十三、完成」章节已记收尾（`257225e`/`8584b2f`）。归档时已更正头部 |
+| `branch-geo-merge-eval.md` | 桥接几何合并可行性评估（A/B/C 三层） | 2026-09-04 | 评估结论已拍板：B+C 于 0.2.113 落地（`mergeBranchFamilyMeshes`），A 层定性为独立后续 |
+| `panel-bone-tree-handoff.md` | Panel 骨骼树交接（§4 方案 A：中间层分组节点的发尖链） | 2026-09-04 | 方案 A 已落地为 `splitTipForLeafSpan`；`tests/panel-tip-span-chain.test.mjs` 的指针已同步改指本文件 |
+| `scalp-conform-bend-v4-plan.md` | Scalp Conform 第四版：绕竖直轴 Bend + k·cos²α | 2026-09-04 | 0.2.138–0.2.142 实施，**已被第五版（0.2.144）取代**；两条根因留作 v5 的证据来源，`tests/panel-scalp-conform.test.mjs` 指针已同步 |
 
 判不准就不归档：本索引只收录经核实「代码/测试零引用 + 正文无残留未做项」的文档；其余在 `in-progress/` 里仍被代码注释指向或正文含未完成项的文档，一律留在 `devlog/in-progress/`。
 

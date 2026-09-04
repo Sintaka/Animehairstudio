@@ -1,7 +1,7 @@
 // panel-tip-span-chain.test.mjs — splitTipForLeafSpan（modules/geometry/panel-tip-strand.js
 // 新增，本次是唯一新增函数，未改动任何既有函数体）的回归测试。
 //
-// 背景（devlog/in-progress/panel-bone-tree-handoff.md §4 方案 A）：中间层分组节点（覆盖
+// 背景（devlog/archive/panel-bone-tree-handoff.md §4 方案 A）：中间层分组节点（覆盖
 // 闭区间 leafStart..leafEnd 的连续叶子，如「L2.Segments 2-3」）需要一条属于自己的发尖链，
 // 而不是任何单个叶子自己的发尖链。splitTipForLeafSpan 把这段区间通过
 // syntheticSplitsForLeafSpan（已有 0.2.157 落地、5 条测试）折成合成 splits + 虚拟

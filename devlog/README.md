@@ -40,18 +40,18 @@
 
 > 完成后归档到 [archive/](archive/)（不是 `plans/archive/`——本仓没有 `plans/` 目录）。
 
-- [in-progress/uv-unfold-plan.md](in-progress/uv-unfold-plan.md) — 导出拆 UV：主体已完成（0.2.79），剩余待办 5 项。
-- [in-progress/panel-split-tip-bones.md](in-progress/panel-split-tip-bones.md) — **历史实施记录，止于 0.2.65，已被 0.2.123/0.2.125/0.2.126 三轮取代，勿当当前状态读**：`panelTipSelection`、`isPanelGeometry` 门控、「每段 1 个把手」皆已变更，详见文档头部作废清单。
+- [archive/uv-unfold-plan.md](archive/uv-unfold-plan.md) — 导出拆 UV：主体已完成（0.2.79），剩余待办 5 项。
+- [archive/panel-split-tip-bones.md](archive/panel-split-tip-bones.md) — **历史实施记录，止于 0.2.65，已被 0.2.123/0.2.125/0.2.126 三轮取代，勿当当前状态读**：`panelTipSelection`、`isPanelGeometry` 门控、「每段 1 个把手」皆已变更，详见文档头部作废清单。
 - [in-progress/panel-strand-unify-plan.md](in-progress/panel-strand-unify-plan.md) — 0.2.62 已落地：发尖子骨骼普适化，strandTip/strandSplitBones 启用。
-- [in-progress/child-sweep-unification.md](in-progress/child-sweep-unification.md) — 子发片=默认扫掠+桥接+根部移动，P2 已实现。
-- [in-progress/wind-preview-plan.md](in-progress/wind-preview-plan.md) — 吹风预览已实现（0.2.112–0.2.113）；文档内碰撞路线图 §8 仍未实施。
-- [in-progress/uv-pack-parallel-plan.md](in-progress/uv-pack-parallel-plan.md) — 多线程打包已实现（0.2.110，23 岛 4.0s→341ms）；Phase 2 去栅格暂缓。
-- [in-progress/strand-zipper-port-plan.md](in-progress/strand-zipper-port-plan.md) — 普通发丝多拉链移植，0.2.116 已全部落地；已知未做项见文档头部状态行。
-- [in-progress/strand-tip-width-ui-port-plan.md](in-progress/strand-tip-width-ui-port-plan.md) — 发尖 WidthCurve UI 移植到普通发丝，0.2.125 已实施。**原文 §1.1「按 profile 点的 x 符号判定左右侧」是错的**——裁剪后每根管 raw x 只有一个符号，照做会产生死区；实施时已改为管内相对坐标，先读文档头部「实施期修正」。
-- [in-progress/strand-tip-selection-port-plan.md](in-progress/strand-tip-selection-port-plan.md) — 发尖选中系统移植到普通发丝，0.2.126 已实施：`tip-sub-bone-host.js` + `tipSelection`/`tipHover` 改名 + 每链点把手。
+- [archive/child-sweep-unification.md](archive/child-sweep-unification.md) — 子发片=默认扫掠+桥接+根部移动，P2 已实现。
+- [archive/wind-preview-plan.md](archive/wind-preview-plan.md) — 吹风预览已实现（0.2.112–0.2.113）；文档内碰撞路线图 §8 仍未实施。
+- [archive/uv-pack-parallel-plan.md](archive/uv-pack-parallel-plan.md) — 多线程打包已实现（0.2.110，23 岛 4.0s→341ms）；Phase 2 去栅格暂缓。
+- [archive/strand-zipper-port-plan.md](archive/strand-zipper-port-plan.md) — 普通发丝多拉链移植，0.2.116 已全部落地；已知未做项见文档头部状态行。
+- [archive/strand-tip-width-ui-port-plan.md](archive/strand-tip-width-ui-port-plan.md) — 发尖 WidthCurve UI 移植到普通发丝，0.2.125 已实施。**原文 §1.1「按 profile 点的 x 符号判定左右侧」是错的**——裁剪后每根管 raw x 只有一个符号，照做会产生死区；实施时已改为管内相对坐标，先读文档头部「实施期修正」。
+- [archive/strand-tip-selection-port-plan.md](archive/strand-tip-selection-port-plan.md) — 发尖选中系统移植到普通发丝，0.2.126 已实施：`tip-sub-bone-host.js` + `tipSelection`/`tipHover` 改名 + 每链点把手。
 - [in-progress/tip-subsystem-reuse-audit.md](in-progress/tip-subsystem-reuse-audit.md) — 发尖子系统重复推导规则审计（0.2.126）：残余重复站点 / 建议处置 / 刻意保留的不对称，重构前必读。
-- [in-progress/scalp-conform-bend-v4-plan.md](in-progress/scalp-conform-bend-v4-plan.md) — Scalp Conform 第四版胶囊轴，0.2.143 已实施。**已被第五版取代，「球冠/圆柱二分」概念已废除**——读它只为查 D1–D11 裁决与前四版驳回理由。
-- [in-progress/scalp-conform-ellipsoid-v5-plan.md](in-progress/scalp-conform-ellipsoid-v5-plan.md) — Scalp Conform 第五版纬线轴 + 拟合椭球，0.2.144 已实施（删掉 `min(C.y,P.y)` 病根、新增全局 `scalpConformFit`、修 NaN 静默摊平）。**D11 三难与两条椭球已知限制必读**；CDP 真实链验收尚未跑。
+- [archive/scalp-conform-bend-v4-plan.md](archive/scalp-conform-bend-v4-plan.md) — Scalp Conform 第四版胶囊轴，0.2.143 已实施。**已被第五版取代，「球冠/圆柱二分」概念已废除**——读它只为查 D1–D11 裁决与前四版驳回理由。
+- [archive/scalp-conform-ellipsoid-v5-plan.md](archive/scalp-conform-ellipsoid-v5-plan.md) — Scalp Conform 第五版纬线轴 + 拟合椭球，0.2.144 已实施（删掉 `min(C.y,P.y)` 病根、新增全局 `scalpConformFit`、修 NaN 静默摊平）。**D11 三难与两条椭球已知限制必读**；CDP 真实链验收尚未跑。
 
 以下已完成，仅供追溯：
 

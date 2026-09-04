@@ -17,7 +17,7 @@
 | split 父发片兼容 | `splitFusedGrid` / `parentSupportsTopologyConnect` / `createSplitStrandGeometry` | 0.2.49–0.2.51 | [annotations-split.md](annotations-split.md) |
 | 刘海 / 面板线框三角面显示修复 | `createPanelStrandGeometry` / `addQuad` / `triangleEdgeMasks` / `authoredEdgeMasks` | 0.2.54–0.2.56 | [annotations-display-fixes.md](annotations-display-fixes.md) |
 | 日常适配（保存/导出、语言、导航、笔刷、拖放、材质、快捷键等） | `saveHairProjectQuickly` / `exportHairProjectQuickly` / `localization.js` / Navigation style / `sculpt-brush.js` / `server.js` | 顶部条目、v0.1.4 迁移、0.2.48 | [annotations-adapt.md](annotations-adapt.md) |
-| Panel Split 骨骼化 / 尖端子骨骼 / 统一骨骼模型 / 子发片扫掠 | `lock.splitBones` / `bonesFor` / `sweepStrandGeometry` / `createPanelStrandGeometry` / `createBranchChildGeometry` | 0.2.59 已实施（P1/P2 与 Phase A/B/C 落地）；**发尖子系统的当前状态见 0.2.123/0.2.125/0.2.126 三轮条目**，panel-split-tip-bones.md 只到 0.2.65 | [in-progress/panel-split-tip-bones.md](in-progress/panel-split-tip-bones.md)（**历史实施记录，止于 0.2.65** §8.5–§8.30）+ [in-progress/strand-tip-selection-port-plan.md](in-progress/strand-tip-selection-port-plan.md)（0.2.126 选中系统）+ [in-progress/strand-tip-width-ui-port-plan.md](in-progress/strand-tip-width-ui-port-plan.md)（0.2.125 WidthCurve）+ [archive/bone-system-roadmap.md](archive/bone-system-roadmap.md) + [archive/split-bone-refactor-plan.md](archive/split-bone-refactor-plan.md) + [archive/unified-bone-model.md](archive/unified-bone-model.md) + [in-progress/child-sweep-unification.md](in-progress/child-sweep-unification.md) |
+| Panel Split 骨骼化 / 尖端子骨骼 / 统一骨骼模型 / 子发片扫掠 | `lock.splitBones` / `bonesFor` / `sweepStrandGeometry` / `createPanelStrandGeometry` / `createBranchChildGeometry` | 0.2.59 已实施（P1/P2 与 Phase A/B/C 落地）；**发尖子系统的当前状态见 0.2.123/0.2.125/0.2.126 三轮条目**，panel-split-tip-bones.md 只到 0.2.65 | [archive/panel-split-tip-bones.md](archive/panel-split-tip-bones.md)（**历史实施记录，止于 0.2.65** §8.5–§8.30）+ [archive/strand-tip-selection-port-plan.md](archive/strand-tip-selection-port-plan.md)（0.2.126 选中系统）+ [archive/strand-tip-width-ui-port-plan.md](archive/strand-tip-width-ui-port-plan.md)（0.2.125 WidthCurve）+ [archive/bone-system-roadmap.md](archive/bone-system-roadmap.md) + [archive/split-bone-refactor-plan.md](archive/split-bone-refactor-plan.md) + [archive/unified-bone-model.md](archive/unified-bone-model.md) + [archive/child-sweep-unification.md](archive/child-sweep-unification.md) |
 | **导出拆 UV（0.2.69–0.2.79）** | `unfoldHairMesh` / `gridUvTable` / `gridUvAt` / `childUTopologyScale` / `buildUnfoldedMeshes` / `bridgeUvAnchors` / `bridgeSeamCol` / `gridRowIndices` | 0.2.69–0.2.79（规则/理念/9 条踩坑见右） | [uv-unfold.md](uv-unfold.md) |
 
 > 新 agent 先读 `devlog/AGENT_QUICKSTART.md`；本文档只作索引，不要全文顺序读。
@@ -188,13 +188,13 @@
 >   LF 检出下静默切空串、**断言空转**。改成 `\r?\n` + 边界非空断言（`split-tip-geometry.test.mjs:3035` 早有同坑记录）。
 > - 验收：全量 **394/394**（基线 387 + 新增 7）、专项 **27/27**、变异验证 7 组全部确认变红后还原。
 >   **CDP 真实链（`verify-scalp-conform.mjs`）尚未跑**（沙箱无 Chrome，需 Windows 侧补），且它 4 条硬编码阈值
->   按第四版钉的，**必须重新实测**。详见 `in-progress/scalp-conform-ellipsoid-v5-plan.md`。
+>   按第四版钉的，**必须重新实测**。详见 `archive/scalp-conform-ellipsoid-v5-plan.md`。
 
 ## 最近更新（0.2.143：Scalp Conform 第四版模型 —— 逐行绕头部胶囊轴的同心 wrap）
 
 > 替换 0.2.138–0.2.142 那一版（弯曲发生在面板自己的 `(frame.x, frame.z)` 平面内、
 > `bendRadius` 为全局标量）。根因、全部实测数据、8 点验收判据见
-> `in-progress/scalp-conform-bend-v4-plan.md`（权威文档），本条目只描述两个改动文件里
+> `archive/scalp-conform-bend-v4-plan.md`（权威文档），本条目只描述两个改动文件里
 > 实际改了什么。
 >
 > - **`modules/geometry/curve-math.js`**：只改了 `panelBendCrossSection` 上方的注释块
@@ -712,11 +712,11 @@
 > - **modules/geometry/panel-tip-strand.js**：`updateTipHighlight` 的几何门控从 `isPanelGeometry` 扩为 `segmentBoneHost`——函数主体本来就与几何无关（读 `leafWeights`），只需放开这道门。
 > - **门控口径定论**：正确写法是 `segmentBoneHost(lock) === STRAND_SEGMENT_HOST`，**不是 `!isPanelGeometry`**（后者会把「既非 panel 也非 split 发丝」的几何一并卷入）。**发丝路径绝不调 `clonePanelSplits`**（会造出与真实 zipper 无关的假 splits，段数/fork 全错——本轮前已踩过两次）：已审计全部 6 个调用点，均为 panel 门控或位于 `resolveTipHost` 的 panel 分支。
 > - **panel 行为不变有独立证据**（不只靠套件全绿）：主进程探针对比改动前 HEAD —— `splitBonesFor` 在 4 种 panel 形态下逐值相同、新分派复现 HEAD 的内联规则、`mirrorSplitBones` 逐值相同、索引钳位对 `-3/99/1.6/NaN` 全部落界内。顺带修掉 panel 侧潜伏的 gizmo 种子 bug（见 bug-fixes.md #22）。
-> - 回归：Node 全量 **342/342**。详见 in-progress/strand-tip-selection-port-plan.md。
+> - 回归：Node 全量 **342/342**。详见 archive/strand-tip-selection-port-plan.md。
 
 ## 最近更新（0.2.125，Phase C：普通发丝 per-segment UI）
 
-> 普通发丝（分裂管）补上 panel 早有的「按段编辑」UI 基座：段选择器 + 每段 Spread + 每段 Width/Depth 曲线预览与编辑入口。数据层（`lock.strandSplitBones[i]` 的 spread/曲线，持久化/镜像/增删重映射）0.2.116–0.2.117 已就位，本轮只做 UI 与分派。**曲线在同版本的发尖 WidthCurve 移植中已被几何消费**（见下方 0.2.125 发尖 WidthCurve 条目与 `in-progress/strand-tip-width-ui-port-plan.md`）；原文此处记「尚未被几何消费」已作废。
+> 普通发丝（分裂管）补上 panel 早有的「按段编辑」UI 基座：段选择器 + 每段 Spread + 每段 Width/Depth 曲线预览与编辑入口。数据层（`lock.strandSplitBones[i]` 的 spread/曲线，持久化/镜像/增删重映射）0.2.116–0.2.117 已就位，本轮只做 UI 与分派。**曲线在同版本的发尖 WidthCurve 移植中已被几何消费**（见下方 0.2.125 发尖 WidthCurve 条目与 `archive/strand-tip-width-ui-port-plan.md`）；原文此处记「尚未被几何消费」已作废。
 > - **modules/bones/bone-model.js**（文件末尾新增段）：新增「段骨骼宿主」描述子 `PANEL_SEGMENT_HOST` / `STRAND_SEGMENT_HOST`（各含 `bonesField` / `segmentIndexKey` / `segmentCount` / `bonesFor` / `materializeBones`）、几何分派 `segmentBoneHost(lock)` 与选中段解析 `resolveSegmentSelection(lock, sculptState, host?)`。这是「当前几何的段数 / 段骨骼数组 / 选中段下标」的**唯一定义点**——此前 `panelSplits.length + 1` 与 `clamp(round(panelSegmentIndex))` 在 taper-editor 里各复制了两份、segment-control 里第三份。strand 的段数刻意委托既有 `strandSplitsFor`（排序 + 钳制 + legacy 单标量回退），与几何同真源。
 > - **modules/bones/segment-control.js**：抽出共用同步体 `syncSegmentControls(target, host)` + DOM 侧描述子 `segmentUi(host)`，`syncPanelSegmentControls` 与新增 `syncStrandSegmentControls` 都是它的薄封装（段号/两端禁用/spread/两条曲线预览/浮动面板热刷新一份实现）。新增 `selectedStrandSegment`、`openSegmentCurveEditor`（按几何分派的曲线编辑入口，`openPanelSegmentCurveEditor`/`openStrandSegmentCurveEditor` 为具名封装）、`stepSegment`/`stepPanelSegment`/`stepStrandSegment`（段步进的唯一实现，app.js 只转发点击）、`applyStrandSegmentSpread`（materialize → 写 `strandSplitBones[i].spread` → 几何/曲线对象/镜像/统计，与 `changeStrandSplitCount` 同序列）、`syncSegmentControlsForLock`（供 shape-presets 按几何刷新）。`stepSegment` 刻意不再在 sync 之后补一次 `retargetOpenSegmentTaperEditor`（旧 panel 处理器会让同一次点击把曲线面板渲染两遍；retarget 幂等，去掉只省功）。
 > - **modules/geometry/taper-editor.js**：`activeTaperTarget` 的 segment 分支、`segmentCurveTarget`、`segmentCurveTargetForWrite`、`retargetOpenSegmentTaperEditor` 四处从 `isPanelGeometry` 硬门控改为经 `segmentBoneHost` 分派（panel 行为逐值不变，split 发丝解析到 `strandSplitBones[i]`）；新增 `selectedSegmentIndex(lock)`；segment 编辑的预览刷新按宿主选 `strandSegment*Preview` 或 `segment*Preview`。`renderTaperCurveEditor` 里发尖 WidthCurve 的「按侧暴露锁定点」判定**只对 panel 生效**（`clonePanelSplits` 对发丝会回退出与几何无关的假 splits，据此算暴露会把可编辑点误标成锁定点）——发丝侧的暴露规则留给发尖 WidthCurve 移植那一轮。
@@ -807,7 +807,7 @@
 
 ## 最近更新（0.2.116）
 
-> 普通发丝多拉链移植（panel zipper → strand，分支 DHS/develop，6 阶段并行子智能体 + 主进程 merge/验证；计划 in-progress/strand-zipper-port-plan.md）——普通发丝从单拉链升级为多拉链 `lock.strandSplits=[{position,height,order}]`（N 拉链→N+1 管）：
+> 普通发丝多拉链移植（panel zipper → strand，分支 DHS/develop，6 阶段并行子智能体 + 主进程 merge/验证；计划 archive/strand-zipper-port-plan.md）——普通发丝从单拉链升级为多拉链 `lock.strandSplits=[{position,height,order}]`（N 拉链→N+1 管）：
 > - **app.js（Phase A/E）**：新增 `normalizeStrandSplits`/`cloneStrandSplits`/`syncStrandSplitLegacyFields`（`strandSplits[0]` 镜像 legacy 标量，`STRAND_SPLIT_MAX=8`）；load/save/snapshot/mirror 全程 round-trip；legacy `strandSplit*` 标量加载迁移；`syncStrandSplitControls` + `#addStrandSplit`/`#removeStrandSplit` 按钮接线；Del 处理器 `deleteSelectedStrandSplit`；`selectLock`/`deselectStrands` 清 `strandSplitSelection`；mirror rebuild 触发新增 strand 手柄数校验。
 > - **modules/geometry/strand-geometry.js（Phase B）**：`clipStrandProfileBand`（半平面裁剪串联，±Infinity 跳过）；`createSplitStrandGeometry` sections 数组驱动 N+1 段、per-section direction/`sectionSplitStart`、`colToSection` N 段化。N=1 逐字节等价。
 > - **modules/io/uv-unfold.js（Phase C）**：零改动（split 分支本就按 `splitSections.length` 泛化）；tests/uv-unfold.test.mjs 补 3 管回归。
@@ -825,7 +825,7 @@
 > - **modules/bones/segment-control.js**：`changePanelSplitCount` 的 `+` 分配 `order=max+1`、`-` 改删 order 最大者（最近创建）而非 `splits.pop()`（原删最右 position）；新增 `deleteSelectedPanelSplit()`（按选中 order splice + 沿用同一重建路径，返回 true/false）暴露到 api。
 > - **modules/bones/bone-interaction.js**：`beginPanelSplitHandleDrag` 中 kind==="panel" 且命中普通 zipper 手柄时写 `panelSplitSelection={lockId,order}`（点击即选中；拖拽不删除）。
 > - **modules/bones/bone-view-handles.js**：选中的 zipper 手柄（按 order 匹配）放大 1.3× + opacity 1，其余复位 0.68/1。
-> - 回归：Node 全量 261/261（dom-contract 缓存号 20260822-1 + APP_VERSION 0.2.115 冻结断言同步）。普通发丝多 zipper 移植计划见 in-progress/strand-zipper-port-plan.md。
+> - 回归：Node 全量 261/261（dom-contract 缓存号 20260822-1 + APP_VERSION 0.2.115 冻结断言同步）。普通发丝多 zipper 移植计划见 archive/strand-zipper-port-plan.md。
 
 ## 最近更新（2026-08-17）
 
@@ -877,7 +877,7 @@
 
 ## 最近更新（0.2.66）
 
-> Sweep 转角过大修复：曲率感知环收窄（防自相交/穿插）+ 转角边缘平滑（分支 codex/0.2.66-sweep-corner-smooth，实施依据 devlog/in-progress/delta-mush-plan.md 主任务）：
+> Sweep 转角过大修复：曲率感知环收窄（防自相交/穿插）+ 转角边缘平滑（分支 codex/0.2.66-sweep-corner-smooth，实施依据 devlog/archive/delta-mush-plan.md 主任务）：
 > - **曲率感知环收窄**：`modules/geometry/curve-math.js` 新增纯函数 `sweepCurvatureResponse(centers, radii, { strength, safety, minScale })`（相邻三点外接圆半径作局部曲率半径 ρ，factor = max(minScale, 1 − (1 − min(1, safety·ρ/r))·strength)，返回 `{ factors, heat }`，heat 为与 strength 无关的曲率热度）。依据 Elber 1997 / Maekawa 1999 判据（偏置距离 > 曲率半径即自相交），业界惯例 scale = min(1, safety·ρ/r)。
 > - **接入点**：`strand-sweep.js` `sweepSide`（普通发丝 + 子发片共用内核）+ `strand-geometry.js` `createSplitStrandGeometry` / `createHairCardGeometry`（独立手写环循环同步接入）。脊柱点不动，仅环剖面按曲率收窄。
 > - **边缘平滑**：`curve-math.js` 新增 `smoothSweepChains(vertices, rowCount, columnCount, { strength, iterations, weights, pinRows })`（纵向链 Jacobi Laplacian，按 heat 加权、根环 pinned）；三个 sweep 构建器顶点产出后各跑一遍（iterations=2）。
@@ -888,7 +888,7 @@
 
 ## 最近更新（0.2.65）
 
-> 发尖控件 4 项修复（分支 0.2.64-panel-tip-curve，详见 [in-progress/panel-split-tip-bones.md](in-progress/panel-split-tip-bones.md) §8.29）：
+> 发尖控件 4 项修复（分支 0.2.64-panel-tip-curve，详见 [archive/panel-split-tip-bones.md](archive/panel-split-tip-bones.md) §8.29）：
 > - ① 绿色 spread 手柄视口拖拽热同步 Main 面板 Segment Spread（`updatePanelSplitHandleDrag` segment 分支补 `syncPanelSegmentControls`）；
 > - ② 所有段绿色手柄在任一子发尖选中时显示、拖非选中段不切换选中——有意设计，`bone-view-handles.js` 补注释规范化；
 > - ③ 绿色手柄位置改跟随 tip trim/curve（`tipSurfaceFrameAt`）+ 沿切线外推 `TIP_SEGMENT_HANDLE_TANGENT_OFFSET=0.08`，不再浮在未 trim 尖端；
@@ -898,10 +898,10 @@
 
 ## 最近更新（0.2.59）
 
-> Panel split 尖端子骨骼系统已落地 + 本轮 UI/交互收尾（详细记录见 [in-progress/panel-split-tip-bones.md](in-progress/panel-split-tip-bones.md) §8.5–§8.9，权威当前状态）：
+> Panel split 尖端子骨骼系统已落地 + 本轮 UI/交互收尾（详细记录见 [archive/panel-split-tip-bones.md](archive/panel-split-tip-bones.md) §8.5–§8.9，权威当前状态）：
 > - 已实现：程序化权重字段（panelWeights）+ `splitBone.tip` 链 + 每段 tip 手柄/高亮 + USDA SkelBindingAPI 蒙皮 + `bonesFor` 只读骨骼视图 + `lock.bones` registry 双写；§8.6–§8.8 修复：点击 toggle 选中 + 保持主发丝、overlay z-fighting、双段高亮、笔刷保留 tip UI、边界段 tip 链、orient/scale 统一变换、undo tip 持久化、笔刷 bones-only、alt+点击切换。
 > - 本轮（0.2.59 进行中）：发丝悬停改柔和橙色高亮（hoverOutline）、切换主选中清旧 tip 选中/高亮、alt+点击仅真点击触发、tip 子骨骼完整切线/副切线/法线帧（orient 旋转几何）、修复选中发尖后 Push 笔刷。
-> - 8.19（0.2.59 进行中）：发尖 WidthCurve 修复——① `tipWidthEdgePosition` 的 `lateral` 改用发尖自己 authored 宽度轴（dq*主帧x）并把 baseEdge 提到前表面 shell=1，消除拖拽方向 7°~170° 倾斜的「梯形」手感；② `sampleAsymmetricTaperCurve`（modules/geometry/curve-math.js）由 u<0 硬切分改为线性插值（u=0=左右均值，主面板/strand 非对称一致受益）；③ 拖拽去重（begin 只 materialize 一次并复用 `tipWidthBones`、`setTipWidthCurveValue` 只重建编辑侧曲线）。详见 in-progress/panel-split-tip-bones.md §8.19。
+> - 8.19（0.2.59 进行中）：发尖 WidthCurve 修复——① `tipWidthEdgePosition` 的 `lateral` 改用发尖自己 authored 宽度轴（dq*主帧x）并把 baseEdge 提到前表面 shell=1，消除拖拽方向 7°~170° 倾斜的「梯形」手感；② `sampleAsymmetricTaperCurve`（modules/geometry/curve-math.js）由 u<0 硬切分改为线性插值（u=0=左右均值，主面板/strand 非对称一致受益）；③ 拖拽去重（begin 只 materialize 一次并复用 `tipWidthBones`、`setTipWidthCurveValue` 只重建编辑侧曲线）。详见 archive/panel-split-tip-bones.md §8.19。
 > - 8.20（0.2.59 进行中）：发尖 WidthCurve 拖拽方向真正根因修复——旧实现复用主面板宽度采样（绝对 u、以主中心 u=0 分界），宽度变化沿 `frame.x×edgeU + frame.z×camber(edgeU)` 移动（左半段反向、窄段 camber 主导）→ 手柄沿主骨骼线运动。改造为 tip-relative：几何/UI 的段宽度以段中心为参考（`(u-centerU)×半宽 + centerU×全局半宽` 对齐），camber 固定全局曲线（宽度只改横向）；`splitTipForSegment` rest 链改用全局曲线（稳定基准）；`buildTipWidthCurve` 不再烘焙锁定区网格（采样回退全局），曲线每侧 7 点且全可见；拖拽轴 = `dq×主帧x`。实测全部段/侧 maxAngle=0°。详见 §8.20。
 > - 8.21（0.2.59 进行中）：体验优化 4 项——① tip 端 t=1 绿色控制点暴露（`tipWidthControlTs` 6 个位置、手柄数 +1）；② Segment Spread 0–1 + 线性聚合（SPREAD_MAX/slider/clamp 全改 1，`segmentRamp` smoothstep→线性）；③ 调 spread 绿点/曲线跟随几何（共享 `tipWidthSpreadGap`，几何 uStart/uEnd 与 `tipWidthEdgePosition` 同用，不缩放）；④ 两侧等距分布基于最深 zipper（`tipWidthCommonForkT`），短侧低于本侧 fork 的控制隐藏但数据保留，zipper 上拉重新暴露。详见 §8.21。
 > - 8.22（0.2.59 进行中）：发尖 WidthCurve 浮动面板 4 项修复——① 视口拖拽后浮动面板同步刷新（tipWidth 拖拽分支调用 `renderTaperCurveEditor`）；② Reset 预设改为全 1（`tipWidthResetCurve`，segment 宽度曲线）；③ Asymmetric 混合改为窄带（`sampleAsymmetricTaperCurve` 加可选 `blendZone`，发尖传 0.25，外侧纯本侧曲线不再带动另一侧）；④ 非对称改为 Ctrl 触发（默认等比对称写两侧、Ctrl 只写一侧；`beginPanelSplitHandleDrag` 允许 tipWidth 手柄带 Ctrl；segment 编辑器隐藏 Asymmetric/Center 开关 + 小字 Ctrl 提示）。详见 §8.22。

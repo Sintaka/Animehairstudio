@@ -1,8 +1,8 @@
-# Scalp Conform 第五版：椭球纬线 Bend（**状态：计划中，待用户拍板**）
+# Scalp Conform 第五版：椭球纬线 Bend（**状态：已落地并发布于 0.2.144** —— 归档时更正：原头部写「计划中」已滞后，实测编年史 0.2.144 条目与 `modules/geometry/panel-tip-strand.js` 的 `panelScalpConformOffsets` 实现逐项对应）
 
-> 本轮只调研与出计划，**未改动任何实现代码、未 bump 版本号、未提交**。
+> ~~本轮只调研与出计划，**未改动任何实现代码、未 bump 版本号、未提交**。~~ ← 该句仅描述成文当轮；方案此后已实现并随 **0.2.144** 发布（见 `local-adaptation-log.md` 0.2.144 条目）。
 > 前置基线：`node --test "tests/*.test.mjs"` 实测 **387 pass / 0 fail**（改动前基线，已记录）。
-> 上游文档：`devlog/in-progress/scalp-conform-bend-v4-plan.md`（第四版，已实施并验收）。本轮**重开第四版的 D7**
+> 上游文档：`devlog/archive/scalp-conform-bend-v4-plan.md`（第四版，已实施并验收）。本轮**重开第四版的 D7**
 > （「椭球各向异性：按到轴真实距离近似，不做 Euler 法曲率」当年记为已知限制）。
 
 ## 0. 一句话结论

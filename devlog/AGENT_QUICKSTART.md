@@ -10,7 +10,7 @@
 2. `devlog/README.md` —— devlog 索引字典（各专题文件入口）
 3. `devlog/development-standards.md` —— 开发规范 + 「持续修改功能」清单（main 更新后要优先同步的本地功能）+ 许可证
 4. `devlog/main-sync-conflicts.md` —— 与 main 合并的全部决策（Local 选项移除、桥接区与 compound 并存策略、17 处冲突分类）
-5. 按需跳读：`devlog/APPJS_SPLIT_GUIDE.md`（从原版拆分指引：历程/当前架构/拆分模式/每批执行模板/踩坑/定位字典，新 agent 必读）、`devlog/js-change-annotations.md`（子系统索引表 + 指向 6 个 `annotations-*.md` 专题文件）、`devlog/FUNCTION_INDEX.md`（机器生成，0.2.126 重新生成：2,293 函数 / 105 文件；过期就跑 `node scripts/gen-function-index.js`，勿手改）、`devlog/STATE_MANAGEMENT.md`（状态管理架构：18 个 store 清单 + 发尖选中键 §2.1 + 替换验证 9 点）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）、`devlog/in-progress/wind-preview-plan.md`（吹风预览已实施，仅碰撞路线图未实施）、`devlog/in-progress/uv-pack-parallel-plan.md`（UV 打包并行，0.2.110 已实施，Phase 2 未做）
+5. 按需跳读：`devlog/APPJS_SPLIT_GUIDE.md`（从原版拆分指引：历程/当前架构/拆分模式/每批执行模板/踩坑/定位字典，新 agent 必读）、`devlog/js-change-annotations.md`（子系统索引表 + 指向 6 个 `annotations-*.md` 专题文件）、`devlog/FUNCTION_INDEX.md`（机器生成，0.2.126 重新生成：2,293 函数 / 105 文件；过期就跑 `node scripts/gen-function-index.js`，勿手改）、`devlog/STATE_MANAGEMENT.md`（状态管理架构：18 个 store 清单 + 发尖选中键 §2.1 + 替换验证 9 点）、`devlog/bug-fixes.md`、`devlog/local-adaptation-log.md`（版本时间线）、`devlog/archive/wind-preview-plan.md`（吹风预览已实施，仅碰撞路线图未实施）、`devlog/archive/uv-pack-parallel-plan.md`（UV 打包并行，0.2.110 已实施，Phase 2 未做）
 6. 要派活给子智能体时 → 读 `devlog/SUBAGENT_BRIEF.md`。
 
 > 复盘（仅用户说「复盘」时做）：清单见 `devlog/agent-retrospective.md` §1。
@@ -60,7 +60,7 @@
 ### 2.4c Scalp Conform（面板贴合头皮，仅 panel，当前第五版模型 0.2.144）
 - 当前是**第五版（椭球纬线 + 拟合椭球密切圆心）**：**第四版（胶囊轴、球冠/圆柱二分同心 wrap）已被取代，「球冠/圆柱二分」概念已废除**。第五版改为逐行取竖直纬线轴 + 水平径向（去掉第四版病根 `min(C.y, P.y)`），有效半径改由拟合椭球（新增全局参数 `scalpConformFit`，与可视头皮解耦）推导密切圆心；同时修了 NaN 静默摊平（新增 `isFinite` 守卫 + 极点钳位）。唯一定义点仍是 `panelScalpConformOffsets`（`panel-tip-strand.js`）。
 - **必读两条警告**：(1) **D11 三难**——「发尖逐位不变」「头尺寸/高度影响 conform」「amount=1 时同心面/不穿透由构造保证」三者最多同时成立两条，已选前两者放弃第二条（球构型下纬线截面是圆，密切圆心=圆心，半径与高度代数无关）；(2) **两条椭球已知限制**——非球构型下「不穿透」不再由构造保证，且椭球下包裹松紧随方位角明显不对称（均记为已知限制，非 bug）。
-- 全部实测数据、决策记录（D1–D11）、8 点验收判据见权威文档 `in-progress/scalp-conform-ellipsoid-v5-plan.md`（勿在本页复述实现细节）；第四版历史决策与前三版驳回理由见 `in-progress/scalp-conform-bend-v4-plan.md`。**CDP 真实链验收（`scripts/verify-scalp-conform.mjs`）尚未跑**，现有判据数字来自近似 frame 探针，真实链数字会有偏移。
+- 全部实测数据、决策记录（D1–D11）、8 点验收判据见权威文档 `archive/scalp-conform-ellipsoid-v5-plan.md`（勿在本页复述实现细节）；第四版历史决策与前三版驳回理由见 `archive/scalp-conform-bend-v4-plan.md`。**CDP 真实链验收（`scripts/verify-scalp-conform.mjs`）尚未跑**，现有判据数字来自近似 frame 探针，真实链数字会有偏移。
 
 ### 2.5 Panel Split 子骨骼 / 统一骨骼模型（0.2.59 起）
 - `lock.splitBones`：每 split 段一个完整变换骨骼（P/orient 四元数/spread + 每段 Width/Depth 曲线）；混合持久化——旧档无字段时内存派生、编辑后整体落盘；镜像段序反转 mirrorSplitBones。
