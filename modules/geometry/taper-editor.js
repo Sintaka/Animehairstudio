@@ -36,7 +36,7 @@ export function createTaperEditorApi(deps) {
   //   DOM elements (taperCurveEditor/taperCurveTarget/taperCurveCanvas/taperCurvePath/taperCurveSecondaryPath/
   //   taperCurveBaseAxis/taperCurveValueAxis/taperCurveCenterLine/taperCurvePoints/taperCurveOptions/
   //   taperAsymmetryToggleRow/taperAsymmetryToggle/centerAsymmetricProfileRow/centerAsymmetricProfileToggle/
-  //   taperMeshPointsToggleRow/taperMeshPointsToggle/taperPointValue/taperPointPosition/taperPointInterpolation/
+  //   taperPointValue/taperPointPosition/taperPointInterpolation/
   //   taperPreviewPaths/segmentTaperPreview/segmentDepthPreview/strandSegmentTaperPreview/
   //   strandSegmentDepthPreview/
   //   proceduralBranchLengthCurvePreview/proceduralBranchShapeCurvePreview/sweepProfileEditor/sweepProfileTarget/
@@ -541,7 +541,6 @@ function setTaperMeshPointsVisible(visible) {
   if (deps.hairState.taperMeshPointsVisible && ["draw", "procedural-draw", "braid", "panel"].includes(deps.sel.activeTool)) {
     deps.setActiveTool("select");
   }
-  deps.taperMeshPointsToggle.checked = deps.hairState.taperMeshPointsVisible;
   updateTaperMeshPoints();
   const lock = deps.sculptState.taperCurveEdit?.type === "strand"
     ? deps.locks.find((item) => item.id === deps.sculptState.taperCurveEdit.id)
@@ -994,10 +993,6 @@ function openTaperCurveEditor(curveKey = "taperCurve") {
     : curveKey === "depthCurve" ? "Depth Curve" : "Width Curve";
   updateTaperCurveEditorTargetLabel();
   setTaperMeshPointsVisible(curveKey !== "twistCurve");
-  deps.taperMeshPointsToggleRow.classList.toggle(
-    "hidden",
-    nextEdit.type !== "strand" || deps.branchSweep.proceduralBranchCurveEditing(curveKey)
-  );
   renderTaperCurveEditor();
   deps.taperCurveEditor.show();
   deps.updateViewportStatsVisibility();
@@ -1009,7 +1004,6 @@ function closeTaperCurveEditor() {
   }
   finishTaperMeshPointDrag(null);
   setTaperMeshPointsVisible(false);
-  deps.taperMeshPointsToggleRow.classList.add("hidden");
   deps.sculptState.taperCurveEdit = null;
   if (deps.taperCurveEditor.open) deps.taperCurveEditor.close();
   deps.updateViewportStatsVisibility();

@@ -2700,7 +2700,7 @@ test("settings menu exposes preferences, language, and app version", async () =>
   assert.match(localization, /"Alt \+ Left Mouse":/);
   assert.match(localization, /"Center viewport on selected object":/);
   assert.equal(packageData.version, "0.1.5-Sintaka.0.2.63");
-  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.185["']/);
+  assert.match(configSource, /APP_VERSION\s*=\s*["']0\.1\.5-Sintaka\.0\.2\.186["']/);
 });
 
 test("title bar exposes icon-only Patreon and Ko-fi support links", async () => {
@@ -2951,7 +2951,7 @@ test("newly drawn strands create linked mirror instances while X mirror is enabl
     readFile(new URL("../modules/geometry/draw-flow.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20260910-48/);
+  assert.match(html, /app\.js\?v=20260910-49/);
   assert.match(html, /id="mirrorInstanceAction"[^>]*>Mirror Strand<\/button>/);
   assert.match(
     source,
@@ -3043,7 +3043,7 @@ test("project materials select standard, anime anisotropic, and Lambert shaders"
     html,
     /id=["']hairMaterialShader["'][\s\S]*value=["']standard-anisotropic["']>Standard Anisotropic<[\s\S]*value=["']anime-anisotropic["']>Anime Anisotropic<[\s\S]*value=["']lambert["']>Lambert</
   );
-  assert.match(html, /app\.js\?v=20260910-48/);
+  assert.match(html, /app\.js\?v=20260910-49/);
   assert.match(
     html,
     /id=["']hairMaterialAnimeControls["'][\s\S]*id=["']hairMaterialAnimeBaseColor["'][\s\S]*value=["']#dbc2aa["'][\s\S]*id=["']hairMaterialAnimeShadowColor["'][\s\S]*value=["']#99675c["'][\s\S]*id=["']hairMaterialAnimeRimColor["'][\s\S]*value=["']#ffd9cf["'][\s\S]*id=["']hairMaterialAnimeRimStrength["'][\s\S]*value=["']0\.35["'][\s\S]*id=["']hairMaterialAnimeRimWidth["'][\s\S]*value=["']0\.3["'][\s\S]*id=["']hairMaterialAnimeHighlightEdgeSuppression["']/
@@ -4561,9 +4561,14 @@ test("strand width and depth curve editors expose draggable viewport mesh points
     readFile(new URL("../modules/io/creation-presets.js", import.meta.url), "utf8")
   ]);
 
-  assert.match(
-    html,
-    /id="taperMeshPointsToggleRow"[\s\S]*Show points on mesh[\s\S]*id="taperMeshPointsToggle"/
+  // 0.2.186（Panel 统一第 7 步）：「Show points on mesh」开关退役，改常态显示。
+  // 该开关是「只能关不能开」——openTaperCurveEditor 打开编辑器时就已
+  // setTaperMeshPointsVisible(curveKey !== "twistCurve")，而 twistCurve 入口已在
+  // 0.2.185 删除 ⇒ 条件恒真 ⇒ 点本来就默认显示，开关唯一作用是让用户关掉它。
+  // 常态显示的语义由 setTaperMeshPointsVisible 内部的 type === "strand" 门保证（下方另有断言）。
+  assert.ok(
+    !/taperMeshPointsToggle/.test(html),
+    "「Show points on mesh」开关应已从 DOM 退役（0.2.186 改常态显示）"
   );
   assert.match(
     html,
@@ -4575,11 +4580,11 @@ test("strand width and depth curve editors expose draggable viewport mesh points
   );
   assert.match(
     html,
-    /class="profile-dialog-actions taper-curve-actions"[\s\S]*id="addTaperPoint"[\s\S]*class="taper-toggle-stack"[\s\S]*id="taperAsymmetryToggle"[\s\S]*id="taperMeshPointsToggle"/
+    /class="profile-dialog-actions taper-curve-actions"[\s\S]*id="addTaperPoint"[\s\S]*class="taper-toggle-stack"[\s\S]*id="taperAsymmetryToggle"[\s\S]*id="taperCurveCtrlHint"/
   );
   assert.doesNotMatch(html, /id="taperCurveSide"/);
-  assert.match(html, /styles\.css\?v=20260910-48/);
-  assert.match(html, /app\.js\?v=20260910-48/);
+  assert.match(html, /styles\.css\?v=20260910-49/);
+  assert.match(html, /app\.js\?v=20260910-49/);
   // localization.js is now loaded as an ES-module import inside app.js (there is no
   // separate localization script tag anymore).
   assert.match(source, /from "\.\/modules\/data\/localization\.js\?v=20260901-1"/);
@@ -4690,8 +4695,11 @@ test("strand width and depth curve editors expose draggable viewport mesh points
   // moved to modules/geometry/taper-editor.js
   assert.match(taperEditor, /editingTwist \? "twist" : curveKey === "depthCurve" \? "z" : "x"[\s\S]*target\?\.asymmetricDepthCurve : target\?\.asymmetricWidthCurve[\s\S]*editingTwist \? deps\.branchSweep\.twistMeshGraphAxis\(frame\) : frame\[frameAxis\]/);
   // moved to modules/geometry/taper-editor.js
+  // 0.2.186：原断言用 `nextEdit.type !== "strand"` 锚 openTaperCurveEditor 的尾部，
+  // 那个字面量属于已退役的开关行（它不含 taperMeshPointsToggle 字样，所以按开关名 grep
+  // 搜不到 —— 删开关时正是这条漏网变红）。改用存活的 setTaperMeshPointsVisible 调用锚同一处顺序。
   assert.match(taperEditor,
-    /nextEdit\.type !== "strand"[\s\S]*function closeTaperCurveEditor/
+    /setTaperMeshPointsVisible\(curveKey !== "twistCurve"\)[\s\S]*function closeTaperCurveEditor/
   );
   // moved to modules/geometry/taper-editor.js
   assert.match(taperEditor,
@@ -4836,8 +4844,17 @@ test("strand shape exposes an undoable signed twist curve envelope", async () =>
   assert.match(taperEditor, /point\.value = THREE\.MathUtils\.clamp\([\s\S]*drag\.valueMinimum,[\s\S]*drag\.valueMaximum/);
   // moved to modules/geometry/taper-editor.js
   assert.match(taperEditor, /deps\.taperAsymmetryToggleRow\.classList\.toggle\("hidden", editingTwist \|\| editingProceduralBranch \|\| segmentEditing\)/);
-  // moved to modules/geometry/taper-editor.js
-  assert.match(taperEditor, /taperMeshPointsToggleRow\.classList\.toggle\([\s\S]*nextEdit\.type !== "strand"/);
+  // 0.2.186：开关行的 classList.toggle 随开关一起退役。改常态显示后，
+  // 「只对 strand 生效」这条语义**唯一**由 setTaperMeshPointsVisible 内部的门承担
+  // （panel 类型不显示 taper mesh point，因此删开关不影响 panel）。
+  assert.ok(
+    !/taperMeshPointsToggle/.test(taperEditor),
+    "taper-editor.js 不应再引用已退役的 taperMeshPointsToggle*"
+  );
+  assert.match(
+    taperEditor,
+    /function setTaperMeshPointsVisible\(visible\)[\s\S]*deps\.sculptState\.taperCurveEdit\?\.type === "strand"/
+  );
   // 0.2.185：4 个 twist 专属材质与 addTwistMeshCurvePath 一起退役
   // （那 4 个材质的唯一消费点就在该函数体内 ⇒ 函数没了它们必然是死代码）。
   assert.ok(

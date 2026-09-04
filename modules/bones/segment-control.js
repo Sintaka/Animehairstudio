@@ -115,7 +115,7 @@ function hasOrder(splits, order) {
 //   addPanelSplitButton/removePanelSplitButton/segmentTaperPreview/segmentDepthPreview/
 //   strandSegmentControls/strandSegmentLabel/previousStrandSegmentButton/nextStrandSegmentButton/
 //   strandSegmentSpread/strandSegmentSpreadValue/strandSegmentTaperPreview/strandSegmentDepthPreview/
-//   sweepProfileEditor/taperMeshPointsToggleRow/taperCurveEditor) + app.js helper functions
+//   sweepProfileEditor/taperCurveEditor) + app.js helper functions
 //   (getSelectedLock/isPanelGeometry/pushUndoState/updateDrawStrandPreview/updateLockGeometry/
 //   rebuildCurveObjects/syncActiveMirror/updateTopologyStats/updateViewportStatsVisibility/
 //   clonePanelSplits/snapPanelSplitHeight) + panelCreationDefaults. document is a browser global.
@@ -335,7 +335,6 @@ function openSegmentCurveEditor(curveKey = "taperCurve") {
   document.querySelector("#taperCurveTitle").textContent = curveKey === "depthCurve" ? "Depth Curve" : "Width Curve";
   deps.taperEditor.updateTaperCurveEditorTargetLabel();
   deps.taperEditor.setTaperMeshPointsVisible(false);
-  deps.taperMeshPointsToggleRow.classList.add("hidden");
   deps.taperEditor.renderTaperCurveEditor();
   deps.taperEditor.renderTaperPreview(
     curveKey === "depthCurve" ? ui.depthPreview : ui.taperPreview,

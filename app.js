@@ -1,12 +1,12 @@
 import { createScalpBuilderApi } from "./modules/scalp/scalp-builder.js?v=20260814-12";
 import { createGuideSystemApi } from "./modules/geometry/guide-system.js?v=20260814-12";
 import { createCurveSurfaceCreateApi } from "./modules/geometry/curve-surface-create.js?v=20260814-12";
-import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-2";
+import { createTaperEditorApi } from "./modules/geometry/taper-editor.js?v=20260901-3";
 import { createPolyToolsApi } from "./modules/geometry/poly-tools.js?v=20260830-1";
 import { createPanelTipStrandApi } from "./modules/geometry/panel-tip-strand.js?v=20260910-21";
 import { createStrandGeometryApi } from "./modules/geometry/strand-geometry.js?v=20260901-1";
 import { createSculptGeometryApi } from "./modules/geometry/sculpt-geometry.js?v=20260814-12";
-import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-5";
+import { createSegmentControlApi, canFitAnotherStrandSplit } from "./modules/bones/segment-control.js?v=20260901-6";
 import { createBoneInteractionApi } from "./modules/bones/bone-interaction.js?v=20260901-10";
 import { createBranchSweepApi } from "./modules/geometry/branch-sweep.js?v=20260814-1";
 import { createBranchHierarchyApi } from "./modules/geometry/branch-hierarchy.js?v=20260814-12";
@@ -3564,8 +3564,6 @@ const taperAsymmetryToggleRow = document.querySelector("#taperAsymmetryToggleRow
 const taperAsymmetryToggle = document.querySelector("#taperAsymmetryToggle");
 const centerAsymmetricProfileRow = document.querySelector("#centerAsymmetricProfileRow");
 const centerAsymmetricProfileToggle = document.querySelector("#centerAsymmetricProfile");
-const taperMeshPointsToggleRow = document.querySelector("#taperMeshPointsToggleRow");
-const taperMeshPointsToggle = document.querySelector("#taperMeshPointsToggle");
 const taperCurveOptions = document.querySelector("#taperCurveOptions");
 const taperPointValue = document.querySelector("#taperPointValue");
 const taperPointPosition = document.querySelector("#taperPointPosition");
@@ -8778,8 +8776,6 @@ Object.assign(taperEditorDeps, {
   taperAsymmetryToggle,
   centerAsymmetricProfileRow,
   centerAsymmetricProfileToggle,
-  taperMeshPointsToggleRow,
-  taperMeshPointsToggle,
   taperPointValue,
   taperPointPosition,
   taperPointInterpolation,
@@ -8864,7 +8860,6 @@ Object.assign(segmentControlDeps, {
   addPanelSplitButton,
   removePanelSplitButton,
   sweepProfileEditor,
-  taperMeshPointsToggleRow,
   taperCurveEditor,
   getSelectedLock,
   isPanelGeometry,
@@ -17191,13 +17186,9 @@ taperCurveEditor.addEventListener("cancel", () => {
   taperEditor.flushScheduledTaperCurveEdit();
   taperEditor.finishTaperMeshPointDrag(null);
   taperEditor.setTaperMeshPointsVisible(false);
-  taperMeshPointsToggleRow.classList.add("hidden");
   sculptState.state.taperCurveEdit = null;
 });
 taperCurveEditor.addEventListener("close", updateViewportStatsVisibility);
-taperMeshPointsToggle.addEventListener("change", () => {
-  taperEditor.setTaperMeshPointsVisible(taperMeshPointsToggle.checked);
-});
 taperAsymmetryToggle.addEventListener("change", () => {
   const target = taperEditor.activeTaperTarget();
   if (!target || !sculptState.state.taperCurveEdit || branchSweep.twistCurveEditing() || branchSweep.proceduralBranchCurveEditing()) return;
